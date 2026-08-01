@@ -1,0 +1,39 @@
+{
+  "name": "lilos-platform",
+  "version": "0.0.0",
+  "private": true,
+  "packageManager": "npm@10.9.2",
+  "workspaces": [
+    "apps/web",
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=22",
+    "npm": ">=10"
+  },
+  "scripts": {
+    "build": "npm run build:web",
+    "build:web": "npm run build --workspace @lilos/web",
+    "check": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run build && npm run check:secrets",
+    "check:secrets": "uv run python scripts/check_secrets.py",
+    "dev:api": "uv run uvicorn apps.api.app.main:app --host 127.0.0.1 --port 8000 --reload",
+    "dev:scheduler": "uv run python -m apps.scheduler",
+    "dev:web": "npm run dev --workspace @lilos/web",
+    "dev:worker": "uv run python -m apps.worker",
+    "format": "npm run format:web && npm run format:python",
+    "format:check": "npm run format:check:web && npm run format:check:python",
+    "format:check:python": "uv run ruff format --check apps tests scripts",
+    "format:check:web": "npm run format:check --workspace @lilos/web",
+    "format:python": "uv run ruff format apps tests scripts",
+    "format:web": "npm run format --workspace @lilos/web",
+    "lint": "npm run lint:web && npm run lint:python",
+    "lint:python": "uv run ruff check apps tests scripts",
+    "lint:web": "npm run lint --workspace @lilos/web",
+    "test": "npm run test:web && npm run test:python",
+    "test:python": "uv run pytest",
+    "test:web": "npm run test --workspace @lilos/web",
+    "typecheck": "npm run typecheck:web && npm run typecheck:python",
+    "typecheck:python": "uv run mypy apps tests scripts",
+    "typecheck:web": "npm run typecheck --workspace @lilos/web"
+  }
+}

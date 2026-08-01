@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  frontend:
+    name: Frontend validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check formatting
+        run: npm run format:check:web
+
+      - name: Lint
+        run: npm run lint:web
+
+      - name: Type check
+        run: npm run typecheck:web
+
+      - name: Test
+        run: npm run test:web
+
+      - name: Build
+        run: npm run build:web
+
+  python:
+    name: Python validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v8
+        with:
+          version: "0.9.28"
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - name: Check formatting
+        run: uv run ruff format --check apps tests scripts
+
+      - name: Lint
+        run: uv run ruff check apps tests scripts
+
+      - name: Type check
+        run: uv run mypy apps tests scripts
+
+      - name: Test
+        run: uv run pytest
+
+      - name: Verify environment example
+        run: uv run python scripts/check_secrets.py

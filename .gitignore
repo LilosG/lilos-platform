@@ -1,0 +1,28 @@
+# Operating systems and editors
+.DS_Store
+.idea/
+.vscode/
+
+# JavaScript and Astro
+node_modules/
+dist/
+.astro/
+coverage/
+*.log
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+
+# Local environment files
+.env
+.env.*
+!.env.example
+
+# Temporary files
+*.tmp
+*.swp
