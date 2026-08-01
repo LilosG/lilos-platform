@@ -2,8 +2,8 @@
 
 ## Scope
 
-This guide covers the Roadmap Phase 0 development baseline. It does not connect to Supabase,
-Vercel, Google, AI providers, Stripe, or another external service.
+This guide covers the local development baseline and the Phase 1 FastAPI runtime contract. It does
+not connect to Supabase, Vercel, Google, AI providers, Stripe, or another external service.
 
 ## Prerequisites
 
@@ -28,8 +28,10 @@ Both lockfiles are committed so local development and CI resolve the same depend
 Copy `.env.example` to `.env` only when local overrides are needed. The committed example contains
 variable names with empty values and no credentials. Local `.env` files are ignored by Git.
 
-Phase 0 commands use safe local defaults directly. The listed variable names reserve the `LILOS_`
-namespace for later validated environment configuration; they do not connect any service.
+The API validates `LILOS_ENV`, `LILOS_LOG_LEVEL`, `LILOS_API_TITLE`, and `LILOS_API_VERSION`.
+Supported environments are `local`, `test`, `development`, `staging`, and `production`. Safe local
+defaults are used when values are absent. These variables configure only the local process and do
+not connect any service.
 
 ## Start the frontend
 
@@ -45,8 +47,19 @@ Astro listens on `http://127.0.0.1:4321` by default.
 npm run dev:api
 ```
 
-Uvicorn listens on `http://127.0.0.1:8000`. The Phase 0 application intentionally exposes no
-product routes.
+Uvicorn listens on `http://127.0.0.1:8000`. The application exposes only its health and OpenAPI
+surfaces; it has no product routes.
+
+Verify the runtime from another terminal:
+
+```sh
+curl -i http://127.0.0.1:8000/health/live
+curl -i http://127.0.0.1:8000/health/ready
+curl -i -H 'X-Correlation-ID: local-check-001' http://127.0.0.1:8000/health/live
+```
+
+Each response returns `X-Correlation-ID`. See `docs/API.md` for the accepted format, response
+schemas, error contract, and structured logging fields.
 
 ## Run the worker and scheduler
 
@@ -75,6 +88,12 @@ npm run typecheck
 npm run test
 npm run build
 npm run check:secrets
+```
+
+Run only the focused API runtime tests with:
+
+```sh
+uv run pytest tests/python/api tests/python/test_api.py
 ```
 
 Apply repository formatting with:
