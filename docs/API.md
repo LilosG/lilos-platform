@@ -4,7 +4,8 @@
 
 The FastAPI application in `apps/api` is the HTTP boundary of the LILOs modular monolith. The
 current runtime exposes health and generated OpenAPI documentation only. Product APIs,
-authentication, business persistence, queues, and external providers are not implemented.
+authentication, queues, and external providers are not implemented. The shared audit service is an
+internal transactional capability; this packet exposes no production audit-list or audit-write API.
 
 OpenAPI is available locally at `/openapi.json`, with Swagger UI at `/docs` and ReDoc at `/redoc`.
 

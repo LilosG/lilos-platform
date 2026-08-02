@@ -3,8 +3,8 @@
 ## Current task
 
 - Roadmap phase: Phase 1 — Platform Foundation
-- Implementation packet: `PHASE-01-TASK-02`
-- Deliverable: PostgreSQL, SQLAlchemy, and Alembic persistence foundation
+- Implementation packet: `PHASE-01-TASK-03`
+- Deliverable: Shared immutable audit-event infrastructure
 - Status: Complete for this implementation packet; Phase 1 remains in progress
 - Date: 2026-08-01
 - Commit or pull request: Uncommitted; commit and push explicitly prohibited for this task
@@ -48,36 +48,45 @@
 - Added deterministic Alembic baseline revision `20260801_0001` with no business-domain DDL.
 - Added a PostgreSQL-only integration suite and ephemeral PostgreSQL 17 CI service.
 - Added database documentation and ADR 0002.
+- Added the append-only `audit_events` model and deterministic revision `20260801_0002` without
+  creating organization, location, user, product, workflow, integration, or approval tables.
+- Added typed audit actor and result enums plus a bounded audit creation contract.
+- Added a defensive JSON metadata policy that rejects secret-bearing keys, non-JSON values,
+  excessive nesting, and oversized content.
+- Added a transactional audit service and controlled repository with no update or delete methods.
+- Added deterministic chronological retrieval using `occurred_at DESC, id DESC`.
+- Added PostgreSQL enforcement that rejects update, delete, and truncate operations on audit events.
+- Added focused unit, database, migration, rollback, ordering, immutability, and privacy tests.
+- Added audit schema and usage documentation plus ADR 0003.
 
 ## Test evidence
 
-- `uv sync --locked` — passed with SQLAlchemy 2.0.51, asyncpg 0.31.0, and Alembic 1.18.5
-  resolved from `uv.lock`.
-- `npm run format` — passed; Prettier and Ruff formatting completed successfully.
+- No dependency was added or changed for `PHASE-01-TASK-03`.
+- `npm run format` — passed; Prettier made no frontend changes and Ruff reported all 59 Python
+  files formatted.
 - `npm run check` with the test and migration URLs pointed at the temporary PostgreSQL 17 database
   — passed:
-  - Prettier and Ruff formatting checks passed for 44 Python files.
+  - Prettier and Ruff formatting checks passed for 59 Python files.
   - ESLint and Ruff linting passed.
   - Astro Check passed with 0 errors, 0 warnings, and 0 hints.
-  - strict mypy passed for 41 source files.
+  - strict mypy passed for 56 source files.
   - Vitest passed 1 test in 1 file.
-  - pytest passed all 43 tests.
+  - pytest passed all 65 tests.
   - Astro built 1 static page successfully.
   - environment-example and high-confidence secret-pattern checks passed.
-- `uv run pytest tests/python/database -q` against PostgreSQL 17 — all 11 focused database tests
-  passed.
-- Explicit migration validation against PostgreSQL 17 passed in order: upgrade to head, downgrade
-  to base, and upgrade to head. The deterministic head revision is `20260801_0001` and creates no
-  application tables.
-- The session integration test forced an exception inside a transaction and verified that the
-  inserted row was rolled back; the success-path transaction remained committed.
-- Uvicorn startup and manual HTTP verification passed:
-  - Without `LILOS_DATABASE_URL`, `GET /health/live` returned 200 with `alive` and
-    `GET /health/ready` returned a sanitized 503 with PostgreSQL `unavailable`.
-  - With `LILOS_DATABASE_URL` pointed at the test database, `GET /health/live` remained 200 and
-    `GET /health/ready` returned 200 with PostgreSQL `healthy`.
-  - Both local Uvicorn processes shut down cleanly after verification.
-- `git diff --check` passed, and the three governing documents have no diff.
+- `uv run pytest tests/python/audit -q` against PostgreSQL 17 — all 22 focused audit tests passed.
+- `uv run pytest tests/python/database -q` against PostgreSQL 17 — all 11 persistence tests passed.
+- The focused suite created and retrieved succeeded, failed, and denied audit events; verified
+  nullable scope references, correlation IDs, copied metadata, event chaining, and deterministic
+  ordering; and proved that a failed owning transaction rolls back its audit event.
+- PostgreSQL rejected direct update, delete, and truncate attempts while preserving the audit row.
+- Explicit migration validation passed: upgrade to head, catalog inspection, downgrade to
+  `20260801_0001`, and upgrade to head. At the prior revision, both the audit table and trigger
+  function were absent; the restored head is `20260801_0002`.
+- Catalog inspection verified 24 columns, eight named constraints, five deliberate secondary
+  indexes, timezone-aware timestamps, JSONB metadata, nullable UUID references, and the append-only
+  trigger.
+- `uv run alembic check` passed with no new upgrade operations detected.
 
 ## Deferred items
 
@@ -100,8 +109,13 @@
   dependency.
 - Authentication and authorization enforcement are not implemented; this packet establishes only
   their standard error-contract boundary.
+- The audit repository has no production API and no speculative cross-tenant behavior. Future
+  tenant and authorization packets must scope audit reads before exposure.
+- Database trigger enforcement is active now. Least-privilege production database roles that also
+  revoke update, delete, truncate, trigger-management, and schema-owner privileges remain deployment
+  work.
 
 ## Next eligible task
 
-- Await review and explicit authorization before committing or pushing `PHASE-01-TASK-02`.
+- Await review and explicit authorization before committing or pushing `PHASE-01-TASK-03`.
 - Do not begin another roadmap task as part of this packet.

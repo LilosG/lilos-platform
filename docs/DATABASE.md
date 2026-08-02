@@ -6,8 +6,10 @@ PostgreSQL is the only supported persistence engine. The FastAPI application use
 with `asyncpg`; Alembic uses the same async dialect. SQLite is not a supported runtime or
 integration-test substitute.
 
-No business-domain table is part of `PHASE-01-TASK-02`. The baseline migration manages only
-Alembic's `alembic_version` marker.
+Revision `20260801_0001` is the persistence baseline and manages only Alembic's version marker.
+Revision `20260801_0002` adds the shared append-only `audit_events` table. It does not add an
+organization, location, user, product, workflow, integration, or other business-domain table. See
+`docs/AUDIT.md` for the schema, write contract, metadata policy, and immutability controls.
 
 ## Configuration
 
@@ -79,8 +81,13 @@ npm run db:downgrade
 ```
 
 Revision identifiers follow `YYYYMMDD_NNNN`. The deterministic initial revision is
-`20260801_0001`. Every future migration must document affected tables, constraints, indexes, data
-movement, compatibility, and rollback or forward-fix behavior.
+`20260801_0001`; the audit revision is `20260801_0002`. Every future migration must document
+affected tables, constraints, indexes, data movement, compatibility, and rollback or forward-fix
+behavior.
+
+Downgrading from `20260801_0002` to `20260801_0001` drops `audit_events` and is destructive to
+recorded audit evidence. That downgrade is intended for disposable validation databases before
+production use or an explicitly approved recovery procedure.
 
 ## Test validation
 

@@ -1,0 +1,146 @@
+"""Audit migration schema and revision-transition tests."""
+
+import asyncio
+from pathlib import Path
+
+import pytest
+from alembic import command
+from alembic.config import Config
+from sqlalchemy import inspect, text
+from sqlalchemy.ext.asyncio import create_async_engine
+
+REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
+
+
+async def audit_schema(database_url: str) -> dict[str, object]:
+    engine = create_async_engine(database_url)
+    try:
+        async with engine.connect() as connection:
+            return await connection.run_sync(
+                lambda sync_connection: {
+                    "tables": sorted(inspect(sync_connection).get_table_names()),
+                    "columns": {
+                        column["name"]: str(column["type"])
+                        for column in inspect(sync_connection).get_columns("audit_events")
+                    },
+                    "timezone_columns": sorted(
+                        column["name"]
+                        for column in inspect(sync_connection).get_columns("audit_events")
+                        if getattr(column["type"], "timezone", False)
+                    ),
+                    "checks": sorted(
+                        check["name"]
+                        for check in inspect(sync_connection).get_check_constraints("audit_events")
+                        if check["name"] is not None
+                    ),
+                    "foreign_keys": sorted(
+                        foreign_key["name"]
+                        for foreign_key in inspect(sync_connection).get_foreign_keys("audit_events")
+                        if foreign_key["name"] is not None
+                    ),
+                    "indexes": sorted(
+                        index["name"]
+                        for index in inspect(sync_connection).get_indexes("audit_events")
+                        if index["name"] is not None
+                    ),
+                }
+            )
+    finally:
+        await engine.dispose()
+
+
+async def trigger_names(database_url: str) -> list[str]:
+    engine = create_async_engine(database_url)
+    try:
+        async with engine.connect() as connection:
+            result = await connection.execute(
+                text(
+                    """
+                    SELECT trigger_name
+                    FROM information_schema.triggers
+                    WHERE event_object_schema = 'public'
+                      AND event_object_table = 'audit_events'
+                    ORDER BY trigger_name
+                    """
+                )
+            )
+            return list(result.scalars())
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.integration
+def test_audit_migration_upgrades_downgrades_and_restores_head(
+    postgresql_test_url: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("LILOS_MIGRATION_DATABASE_URL", postgresql_test_url)
+    config = Config(REPOSITORY_ROOT / "alembic.ini")
+
+    command.upgrade(config, "head")
+    command.downgrade(config, "20260801_0001")
+    command.upgrade(config, "head")
+    schema = asyncio.run(audit_schema(postgresql_test_url))
+    triggers = asyncio.run(trigger_names(postgresql_test_url))
+
+    assert schema["tables"] == ["alembic_version", "audit_events"]
+    assert schema["columns"] == {
+        "action": "VARCHAR(128)",
+        "actor_display_reference": "VARCHAR(200)",
+        "actor_id": "UUID",
+        "actor_type": "VARCHAR(32)",
+        "approval_reference_id": "UUID",
+        "correlation_id": "VARCHAR(64)",
+        "error_code": "VARCHAR(64)",
+        "event_type": "VARCHAR(128)",
+        "id": "UUID",
+        "location_id": "UUID",
+        "metadata": "JSONB",
+        "occurred_at": "TIMESTAMP",
+        "organization_id": "UUID",
+        "previous_audit_event_id": "UUID",
+        "product_key": "VARCHAR(64)",
+        "reason_code": "VARCHAR(64)",
+        "recorded_at": "TIMESTAMP",
+        "resource_id": "UUID",
+        "resource_type": "VARCHAR(100)",
+        "result": "VARCHAR(32)",
+        "source_ip": "INET",
+        "summary": "VARCHAR(500)",
+        "user_agent_summary": "VARCHAR(256)",
+        "workflow_execution_id": "UUID",
+    }
+    assert schema["timezone_columns"] == ["occurred_at", "recorded_at"]
+    assert schema["checks"] == [
+        "ck_audit_events_action_not_blank",
+        "ck_audit_events_audit_actor_type",
+        "ck_audit_events_audit_result",
+        "ck_audit_events_event_type_not_blank",
+        "ck_audit_events_metadata_is_object",
+        "ck_audit_events_summary_not_blank",
+    ]
+    assert schema["foreign_keys"] == ["fk_audit_events_previous_audit_event_id_audit_events"]
+    assert schema["indexes"] == [
+        "ix_audit_events_correlation_id",
+        "ix_audit_events_occurred_at_id",
+        "ix_audit_events_organization_occurred_at_id",
+        "ix_audit_events_previous_audit_event_id",
+        "ix_audit_events_resource_occurred_at_id",
+    ]
+    assert triggers == ["audit_events_append_only"] * 2
+
+    command.downgrade(config, "20260801_0001")
+    engine = create_async_engine(postgresql_test_url)
+    try:
+
+        async def tables_at_prior_revision() -> list[str]:
+            async with engine.connect() as connection:
+                return await connection.run_sync(
+                    lambda sync_connection: sorted(inspect(sync_connection).get_table_names())
+                )
+
+        assert asyncio.run(tables_at_prior_revision()) == ["alembic_version"]
+    finally:
+        asyncio.run(engine.dispose())
+
+    command.upgrade(config, "head")
