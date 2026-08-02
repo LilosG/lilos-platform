@@ -4,7 +4,7 @@ from enum import StrEnum
 from functools import lru_cache
 from typing import Annotated, ClassVar
 
-from pydantic import Field, PostgresDsn
+from pydantic import Field, PostgresDsn, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -55,7 +55,20 @@ class Settings(BaseSettings):
     migration_database_url: PostgresDsn | None = None
     test_database_url: PostgresDsn | None = None
     database_connect_timeout_seconds: Annotated[float, Field(gt=0, le=30)] = 5.0
+    internal_admin_routes_enabled: bool = False
     service_name: ClassVar[str] = "lilos-api"
+
+    @model_validator(mode="after")
+    def reject_unsafe_internal_admin_routes(self) -> "Settings":
+        """Allow temporary bootstrap routes only in explicitly enabled local or test runtimes."""
+        if self.internal_admin_routes_enabled and self.environment not in {
+            EnvironmentName.LOCAL,
+            EnvironmentName.TEST,
+        }:
+            raise ValueError(
+                "Internal administrative routes may be enabled only in local or test environments"
+            )
+        return self
 
     def application_database_url(self) -> str | None:
         """Return the application URL using SQLAlchemy's asyncpg dialect."""

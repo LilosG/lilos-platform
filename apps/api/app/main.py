@@ -11,6 +11,7 @@ from apps.api.app.errors import register_exception_handlers
 from apps.api.app.logging_config import configure_logging
 from apps.api.app.middleware import CorrelationIdMiddleware
 from apps.api.app.routes.health import router as health_router
+from apps.api.app.routes.internal_organizations import router as internal_organizations_router
 
 
 def create_app(
@@ -40,6 +41,8 @@ def create_app(
     application.add_middleware(CorrelationIdMiddleware)
     register_exception_handlers(application)
     application.include_router(health_router)
+    if resolved_settings.internal_admin_routes_enabled:
+        application.include_router(internal_organizations_router)
     return application
 
 

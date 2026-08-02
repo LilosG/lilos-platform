@@ -67,7 +67,14 @@ class AuditEvent(Base):
     )
     actor_id: Mapped[UUID | None] = mapped_column(PostgreSQLUUID(as_uuid=True))
     actor_display_reference: Mapped[str | None] = mapped_column(String(200))
-    organization_id: Mapped[UUID | None] = mapped_column(PostgreSQLUUID(as_uuid=True))
+    organization_id: Mapped[UUID | None] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey(
+            "organizations.id",
+            name="fk_audit_events_organization_id_organizations",
+            ondelete="RESTRICT",
+        ),
+    )
     location_id: Mapped[UUID | None] = mapped_column(PostgreSQLUUID(as_uuid=True))
     product_key: Mapped[str | None] = mapped_column(String(64))
     resource_type: Mapped[str | None] = mapped_column(String(100))

@@ -83,7 +83,7 @@ def test_audit_migration_upgrades_downgrades_and_restores_head(
     schema = asyncio.run(audit_schema(postgresql_test_url))
     triggers = asyncio.run(trigger_names(postgresql_test_url))
 
-    assert schema["tables"] == ["alembic_version", "audit_events"]
+    assert schema["tables"] == ["alembic_version", "audit_events", "organizations"]
     assert schema["columns"] == {
         "action": "VARCHAR(128)",
         "actor_display_reference": "VARCHAR(200)",
@@ -119,7 +119,10 @@ def test_audit_migration_upgrades_downgrades_and_restores_head(
         "ck_audit_events_metadata_is_object",
         "ck_audit_events_summary_not_blank",
     ]
-    assert schema["foreign_keys"] == ["fk_audit_events_previous_audit_event_id_audit_events"]
+    assert schema["foreign_keys"] == [
+        "fk_audit_events_organization_id_organizations",
+        "fk_audit_events_previous_audit_event_id_audit_events",
+    ]
     assert schema["indexes"] == [
         "ix_audit_events_correlation_id",
         "ix_audit_events_occurred_at_id",

@@ -2,11 +2,11 @@
 
 ## Current task
 
-- Roadmap phase: Phase 1 — Platform Foundation
-- Implementation packet: `PHASE-01-TASK-03`
-- Deliverable: Shared immutable audit-event infrastructure
-- Status: Complete for this implementation packet; Phase 1 remains in progress
-- Date: 2026-08-01
+- Roadmap phase: Phase 2 — Tenant, Organization and Location Model
+- Implementation packet: `PHASE-02-TASK-01-REVISED`
+- Deliverable: Organization tenant ownership and isolation foundation
+- Status: Complete for this implementation packet; Phase 2 remains in progress
+- Date: 2026-08-02
 - Commit or pull request: Uncommitted; commit and push explicitly prohibited for this task
 
 ## Implemented requirements
@@ -58,8 +58,48 @@
 - Added PostgreSQL enforcement that rejects update, delete, and truncate operations on audit events.
 - Added focused unit, database, migration, rollback, ordering, immutability, and privacy tests.
 - Added audit schema and usage documentation plus ADR 0003.
+- Clarified through ADR 0004 that organization is the technical tenant boundary and no separate
+  tenant table exists.
+- Added the `organizations` model and deterministic revision `20260802_0001` without creating
+  industries, locations, profiles, identities, memberships, products, or other future tables.
+- Added stable organization type/status classifications, immutable normalized slugs, IANA timezone
+  validation, currency validation, bounded fields, archival consistency, and optimistic versioning.
+- Added a controlled repository with no delete, general update, or slug-update method and a
+  database trigger that rejects slug changes.
+- Added organization lifecycle rules, atomic compare-and-swap transitions, archived-state
+  irreversibility, and stable not-found/conflict errors.
+- Added atomic organization and audit writes using the caller-owned transaction. The audit
+  organization reference now has a nullable restrictive foreign key.
+- Added temporary organization bootstrap routes that are absent by default, permitted only through
+  explicit local/test configuration, and rejected in development, staging, and production.
+- Added organization contract, repository, service, API, lifecycle, concurrency, isolation,
+  migration, rollback, audit, and route-safety tests.
+- Added organization architecture, schema, lifecycle, API, privacy, and operational documentation.
 
 ## Test evidence
+
+- No dependency was added or changed for `PHASE-02-TASK-01-REVISED`.
+- `uv run pytest tests/python/organizations -q` against PostgreSQL 17 — all 42 focused
+  organization tests passed with the existing Starlette/httpx warning.
+- `npm run check` with test and migration URLs pointed at temporary PostgreSQL 17 — passed:
+  - Prettier and Ruff formatting checks passed for 75 Python files.
+  - ESLint and Ruff linting passed.
+  - Astro Check passed with 0 errors, 0 warnings, and 0 hints.
+  - strict mypy passed for 72 source files.
+  - Vitest passed 1 test in 1 file.
+  - pytest passed all 107 tests.
+  - Astro built 1 static page successfully.
+  - environment-example and high-confidence secret-pattern checks passed.
+- PostgreSQL catalog inspection verified 19 organization columns, 12 named constraints, the
+  deliberate listing/unique/primary indexes, the immutable-slug trigger, and the restrictive audit
+  organization foreign key.
+- `uv run alembic check` passed with no new upgrade operations detected.
+- Explicit downgrade to `20260801_0002` removed organizations, its foreign key, and slug function
+  while preserving `audit_events` and its append-only trigger/function; re-upgrade restored
+  `20260802_0001`.
+- Live Uvicorn verification confirmed routes return 404 by default, operate only when explicitly
+  enabled in test, propagate correlation IDs, normalize slugs, and return a stable stale-version
+  conflict. Production unsafe enablement failed settings validation before startup.
 
 - No dependency was added or changed for `PHASE-01-TASK-03`.
 - `npm run format` — passed; Prettier made no frontend changes and Ruff reported all 59 Python
@@ -93,6 +133,7 @@
 - All product functionality and later-roadmap platform capabilities.
 - Business-domain schemas, RLS policies, seed data, and Supabase connectivity.
 - Authentication, authorization, memberships, permissions, and entitlements.
+- Industries, locations, organization/location profiles, location groups, and business identity.
 - Durable job execution, queues, schedule dispatch, retries, and workflow state.
 - Vercel, Hetzner, or other production infrastructure configuration.
 - Google, AI-provider, Stripe, email, SMS, and other external integrations.
@@ -105,8 +146,8 @@
   hosted run until repository changes are committed and pushed with explicit authorization.
 - Starlette emits one deprecation warning for its current `httpx`-backed test client. The intended
   and locked dependency remains `httpx`; all tests pass.
-- The API intentionally has no product endpoints. PostgreSQL is its only implemented readiness
-  dependency.
+- The API intentionally has no product endpoints. Temporary organization bootstrap routes are
+  absent unless explicitly enabled in local/test. PostgreSQL is its only readiness dependency.
 - Authentication and authorization enforcement are not implemented; this packet establishes only
   their standard error-contract boundary.
 - The audit repository has no production API and no speculative cross-tenant behavior. Future
@@ -114,8 +155,12 @@
 - Database trigger enforcement is active now. Least-privilege production database roles that also
   revoke update, delete, truncate, trigger-management, and schema-owner privileges remain deployment
   work.
+- Organization isolation currently establishes the ownership record and record-specific data
+  access only. Authentication, membership, authorization, scoped request context, and PostgreSQL
+  RLS remain later packets; the temporary routes are not production-safe.
 
 ## Next eligible task
 
-- Await review and explicit authorization before committing or pushing `PHASE-01-TASK-03`.
+- Await review and explicit authorization before committing or pushing
+  `PHASE-02-TASK-01-REVISED`.
 - Do not begin another roadmap task as part of this packet.

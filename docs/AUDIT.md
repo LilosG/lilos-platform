@@ -25,9 +25,10 @@ Every write uses `AuditEventCreate` and records:
 `recorded_at` is assigned when PostgreSQL persists the record. `occurred_at` identifies when the
 action happened and may be earlier. Event IDs are application-generated UUIDv4 values.
 
-Nullable organization, location, actor, workflow execution, and approval values are UUID references
-without foreign keys until their owning tables exist. `previous_audit_event_id` has a restrictive
-self-referencing foreign key because `audit_events` already owns that identity.
+`organization_id` is a nullable UUID with an `ON DELETE RESTRICT` foreign key now that organization
+is the platform's primary tenant boundary. Location, actor, workflow execution, and approval values
+remain UUID references without foreign keys until their owning tables exist.
+`previous_audit_event_id` retains its restrictive self-reference.
 
 ## Transaction contract
 
@@ -77,6 +78,10 @@ The initial indexes support:
 
 No production list endpoint or speculative cross-tenant query behavior is exposed in this packet.
 Future authorization and tenant services must enforce scope before using audit retrieval.
+
+Organization creation and lifecycle services record organization/resource IDs, correlation ID,
+state, and version in the same transaction as the state change. They do not copy organization
+contact details or other unrestricted personal data into audit metadata.
 
 ## Immutability controls
 

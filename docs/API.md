@@ -3,9 +3,10 @@
 ## Scope
 
 The FastAPI application in `apps/api` is the HTTP boundary of the LILOs modular monolith. The
-current runtime exposes health and generated OpenAPI documentation only. Product APIs,
-authentication, queues, and external providers are not implemented. The shared audit service is an
-internal transactional capability; this packet exposes no production audit-list or audit-write API.
+current runtime exposes health, generated OpenAPI documentation, and conditionally registered
+temporary organization bootstrap routes. Product APIs, authentication, queues, and external
+providers are not implemented. The shared audit service is an internal transactional capability;
+there is no production audit-list or audit-write API.
 
 OpenAPI is available locally at `/openapi.json`, with Swagger UI at `/docs` and ReDoc at `/redoc`.
 
@@ -27,12 +28,16 @@ The runtime recognizes these variables:
 - `LILOS_API_VERSION`
 - `LILOS_DATABASE_URL`
 - `LILOS_DATABASE_CONNECT_TIMEOUT_SECONDS`
+- `LILOS_INTERNAL_ADMIN_ROUTES_ENABLED`
 - `LILOS_MIGRATION_DATABASE_URL`
 - `LILOS_TEST_DATABASE_URL`
 
 Values may come from process environment variables or a local, ignored `.env` file. Environment
 variables take precedence. Empty values in `.env.example` are ignored so safe defaults remain
 usable. Invalid environment names, log levels, or metadata fail settings validation.
+
+`LILOS_INTERNAL_ADMIN_ROUTES_ENABLED` defaults to false. It may be true only with `LILOS_ENV=local`
+or `test`; development, staging, and production reject unsafe enablement during settings validation.
 
 ## Correlation IDs
 
@@ -129,10 +134,34 @@ Current stable mappings are:
 | 500 | `INTERNAL_SERVER_ERROR` | `system` |
 | 503 | `DATABASE_UNAVAILABLE` | `system` |
 
+Organization bootstrap routes additionally use stable `ORGANIZATION_NOT_FOUND`,
+`ORGANIZATION_SLUG_CONFLICT`, `ORGANIZATION_VERSION_CONFLICT`, and
+`ORGANIZATION_TRANSITION_CONFLICT` codes with the same standard envelope.
+
 Validation details contain safe field locations, stable validation types, and messages. Submitted
 values and validator exception context are omitted. Unexpected errors return a generic message;
 stack traces, exception messages, secrets, and internal implementation details are not returned to
 clients.
+
+## Temporary organization bootstrap routes
+
+When explicitly enabled in local or test, these routes are registered:
+
+- `POST /internal/organizations`
+- `GET /internal/organizations/{organization_id}`
+- `GET /internal/organizations?limit=50&offset=0`
+- `POST /internal/organizations/{organization_id}/start-onboarding`
+- `POST /internal/organizations/{organization_id}/activate`
+- `POST /internal/organizations/{organization_id}/pause`
+- `POST /internal/organizations/{organization_id}/resume`
+- `POST /internal/organizations/{organization_id}/suspend`
+- `POST /internal/organizations/{organization_id}/start-offboarding`
+- `POST /internal/organizations/{organization_id}/archive`
+
+Lifecycle request bodies contain `expected_version`. Success bodies use `data` plus correlation
+metadata; collection bodies also include bounded deterministic pagination metadata. These routes
+are unauthenticated temporary bootstrap surfaces, are absent by default, and must not be treated as
+production-safe administration APIs.
 
 ## Logging
 

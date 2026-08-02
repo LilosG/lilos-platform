@@ -11,6 +11,11 @@ Revision `20260801_0002` adds the shared append-only `audit_events` table. It do
 organization, location, user, product, workflow, integration, or other business-domain table. See
 `docs/AUDIT.md` for the schema, write contract, metadata policy, and immutability controls.
 
+Revision `20260802_0001` adds `organizations` as the primary tenant boundary and adds the nullable
+restrictive audit-event organization foreign key. No separate tenant, industry, location, profile,
+identity, membership, product, or other future-domain table is created. Industry ownership is
+deferred until the industries table is implemented.
+
 ## Configuration
 
 The database settings are:
@@ -81,13 +86,18 @@ npm run db:downgrade
 ```
 
 Revision identifiers follow `YYYYMMDD_NNNN`. The deterministic initial revision is
-`20260801_0001`; the audit revision is `20260801_0002`. Every future migration must document
-affected tables, constraints, indexes, data movement, compatibility, and rollback or forward-fix
-behavior.
+`20260801_0001`; the audit revision is `20260801_0002`; and the organization revision is
+`20260802_0001`. Every future migration must document affected tables, constraints, indexes, data
+movement, compatibility, and rollback or forward-fix behavior.
 
 Downgrading from `20260801_0002` to `20260801_0001` drops `audit_events` and is destructive to
 recorded audit evidence. That downgrade is intended for disposable validation databases before
 production use or an explicitly approved recovery procedure.
+
+Downgrading `20260802_0001` to `20260801_0002` removes the audit organization foreign key before
+dropping `organizations`. It preserves `audit_events` and its append-only trigger. Organization
+records must never be removed through this downgrade outside a disposable validation database or
+an explicitly approved recovery procedure.
 
 ## Test validation
 
