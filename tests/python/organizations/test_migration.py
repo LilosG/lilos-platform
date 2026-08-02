@@ -138,7 +138,7 @@ def test_organization_migration_schema_drift_downgrade_and_reupgrade(
     command.upgrade(config, "head")
 
     state = asyncio.run(catalog(postgresql_test_url))
-    assert state["revision"] == "20260802_0001"
+    assert state["revision"] == "20260802_0002"
     assert len(state["columns"]) == 19
     assert ("created_at", "timestamp with time zone", "NO") in state["columns"]
     assert ("updated_at", "timestamp with time zone", "NO") in state["columns"]
@@ -177,4 +177,4 @@ def test_organization_migration_schema_drift_downgrade_and_reupgrade(
     assert slug_function is None
 
     command.upgrade(config, "head")
-    assert asyncio.run(catalog(postgresql_test_url))["revision"] == "20260802_0001"
+    assert asyncio.run(catalog(postgresql_test_url))["revision"] == "20260802_0002"

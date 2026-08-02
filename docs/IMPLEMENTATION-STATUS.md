@@ -3,8 +3,8 @@
 ## Current task
 
 - Roadmap phase: Phase 2 — Tenant, Organization and Location Model
-- Implementation packet: `PHASE-02-TASK-01-REVISED`
-- Deliverable: Organization tenant ownership and isolation foundation
+- Implementation packet: `PHASE-02-TASK-02`
+- Deliverable: Organization-owned location and isolation foundation
 - Status: Complete for this implementation packet; Phase 2 remains in progress
 - Date: 2026-08-02
 - Commit or pull request: Uncommitted; commit and push explicitly prohibited for this task
@@ -36,6 +36,15 @@
   bodies.
 - Added focused tests for configuration, metadata, correlation, errors, security redaction, logging,
   and health contracts.
+- Added organization-owned locations with approved type/address rules, lifecycle and parent-state
+  policy, scoped immutable slugs, optimistic concurrency, and one-primary enforcement.
+- Added strictly organization-scoped location persistence and temporary local/test-only bootstrap
+  routes; location mutations and audit records share the owning transaction.
+- Added audit location ownership, migration `20260802_0002`, ADR 0005, and location documentation.
+- Validation: focused location suite `17 passed`; full Python suite `124 passed`; Ruff, mypy,
+  frontend ESLint/Astro/Vitest/build, Alembic upgrade/check/downgrade/re-upgrade, PostgreSQL catalog
+  inspection, and secret scan passed. The existing upstream Starlette/httpx deprecation warning
+  remains unchanged.
 - Added `docs/API.md` and updated local API development guidance.
 - Added SQLAlchemy 2.x, asyncpg, and Alembic with locked dependency versions.
 - Added optional typed application, migration, and test PostgreSQL URLs.

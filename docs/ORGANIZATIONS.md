@@ -104,3 +104,7 @@ fabricated organizations. Authentication, membership, permissions, organization-
 context, cross-organization authorization, and PostgreSQL Row Level Security belong to later Phase
 2 and Phase 3 packets. Until those controls exist, these routes must remain disabled outside local
 and test use.
+
+Locations are the first organization-owned child records. Their creation and lifecycle permissions
+depend on parent status as recorded in [ADR 0005](decisions/0005-location-foundation-policies.md).
+This does not add authentication, request organization context, authorization, or RLS.

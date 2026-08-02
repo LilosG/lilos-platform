@@ -75,7 +75,14 @@ class AuditEvent(Base):
             ondelete="RESTRICT",
         ),
     )
-    location_id: Mapped[UUID | None] = mapped_column(PostgreSQLUUID(as_uuid=True))
+    location_id: Mapped[UUID | None] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey(
+            "locations.id",
+            name="fk_audit_events_location_id_locations",
+            ondelete="RESTRICT",
+        ),
+    )
     product_key: Mapped[str | None] = mapped_column(String(64))
     resource_type: Mapped[str | None] = mapped_column(String(100))
     resource_id: Mapped[UUID | None] = mapped_column(PostgreSQLUUID(as_uuid=True))
@@ -116,6 +123,12 @@ Index(
     AuditEvent.id.desc(),
 )
 Index("ix_audit_events_correlation_id", AuditEvent.correlation_id)
+Index(
+    "ix_audit_events_location_occurred_at_id",
+    AuditEvent.location_id,
+    AuditEvent.occurred_at.desc(),
+    AuditEvent.id.desc(),
+)
 Index(
     "ix_audit_events_resource_occurred_at_id",
     AuditEvent.resource_type,

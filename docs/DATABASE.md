@@ -86,8 +86,8 @@ npm run db:downgrade
 ```
 
 Revision identifiers follow `YYYYMMDD_NNNN`. The deterministic initial revision is
-`20260801_0001`; the audit revision is `20260801_0002`; and the organization revision is
-`20260802_0001`. Every future migration must document affected tables, constraints, indexes, data
+`20260801_0001`; the audit revision is `20260801_0002`; the organization revision is
+`20260802_0001`; and the location revision is `20260802_0002`. Every future migration must document affected tables, constraints, indexes, data
 movement, compatibility, and rollback or forward-fix behavior.
 
 Downgrading from `20260801_0002` to `20260801_0001` drops `audit_events` and is destructive to
@@ -98,6 +98,87 @@ Downgrading `20260802_0001` to `20260801_0002` removes the audit organization fo
 dropping `organizations`. It preserves `audit_events` and its append-only trigger. Organization
 records must never be removed through this downgrade outside a disposable validation database or
 an explicitly approved recovery procedure.
+
+Downgrading `20260802_0002` to `20260802_0001` removes the audit location index and foreign key,
+then the location table and immutable-slug function. Organizations, audit events, and audit
+append-only controls remain intact. Re-upgrade does not rewrite immutable audit evidence: it
+validates the restored audit location foreign key when all preserved references resolve, or leaves
+the constraint `NOT VALID` for historical rows while still enforcing it for every new write.
+
+This destructive downgrade is not a routine production rollback mechanism when immutable audit
+records retain location UUIDs. It is intended only for disposable local or test databases,
+controlled pre-production validation, or an explicitly approved recovery procedure with operator
+review. Production rollback should normally use forward remediation or an approved compensating
+migration instead of dropping location ownership while immutable audit evidence remains.
+
+### Unvalidated audit location foreign key
+
+An approved destructive downgrade and re-upgrade can preserve legitimate historical
+`audit_events.location_id` values whose location rows no longer exist. PostgreSQL then installs the
+foreign key as `NOT VALID`: it continues rejecting invalid new writes, but its historical rows have
+not all been validated. Operators must handle this state explicitly.
+
+#### Detection
+
+Identify the constraint and inspect its validation state:
+
+```sql
+SELECT conname, convalidated, pg_get_constraintdef(oid)
+FROM pg_constraint
+WHERE conrelid = 'public.audit_events'::regclass
+  AND conname = 'fk_audit_events_location_id_locations';
+```
+
+`convalidated = false` identifies the exceptional unvalidated state. An absent constraint is a
+separate schema incident and must not be treated as equivalent.
+
+#### Investigation
+
+Identify retained references that do not resolve to a current location:
+
+```sql
+SELECT audit.id AS audit_event_id,
+       audit.location_id,
+       audit.occurred_at,
+       audit.event_type
+FROM audit_events AS audit
+LEFT JOIN locations AS location ON location.id = audit.location_id
+WHERE audit.location_id IS NOT NULL
+  AND location.id IS NULL
+ORDER BY audit.occurred_at ASC, audit.id ASC;
+```
+
+Confirm through the approved incident, change, and recovery records whether each row is legitimate
+immutable historical evidence retained from an authorized destructive downgrade. Do not delete,
+null, or rewrite audit events merely to satisfy the constraint.
+
+#### Remediation
+
+When recovery policy requires the references to resolve, restore or reconcile the referenced
+location records through an explicitly reviewed migration or recovery procedure. The procedure
+must preserve organization ownership, approved field validation, and audit meaning. Use forward
+remediation or a compensating migration in normal production operation; do not perform ad hoc data
+changes or silently discard historical evidence.
+
+#### Validation
+
+Only after the investigation query returns no unresolved references may an operator validate the
+constraint:
+
+```sql
+ALTER TABLE audit_events
+VALIDATE CONSTRAINT fk_audit_events_location_id_locations;
+```
+
+Repeat the detection query and require `convalidated = true`. A failed validation must leave the
+constraint unvalidated while the remaining references are investigated; it is not authorization to
+modify immutable audit rows.
+
+#### Audit and change recording
+
+Record detection results, the approved disposition of every unresolved reference, migration or
+recovery identifiers, validation output, operator/reviewer identities, and completion time in the
+applicable incident, change, or recovery log.
 
 ## Test validation
 

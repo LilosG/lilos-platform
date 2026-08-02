@@ -26,9 +26,13 @@ Every write uses `AuditEventCreate` and records:
 action happened and may be earlier. Event IDs are application-generated UUIDv4 values.
 
 `organization_id` is a nullable UUID with an `ON DELETE RESTRICT` foreign key now that organization
-is the platform's primary tenant boundary. Location, actor, workflow execution, and approval values
-remain UUID references without foreign keys until their owning tables exist.
+is the platform's primary tenant boundary. `location_id` is also nullable and references
+`locations.id` with `ON DELETE RESTRICT`. Actor, workflow execution, and approval values remain UUID
+references without foreign keys until their owning tables exist.
 `previous_audit_event_id` retains its restrictive self-reference.
+
+Location audit metadata contains lifecycle, slug, type, primary, and version values; it excludes
+addresses and contact data.
 
 ## Transaction contract
 

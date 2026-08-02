@@ -163,6 +163,18 @@ metadata; collection bodies also include bounded deterministic pagination metada
 are unauthenticated temporary bootstrap surfaces, are absent by default, and must not be treated as
 production-safe administration APIs.
 
+## Temporary location bootstrap routes
+
+The same local/test-only guard registers organization-scoped location create, list, get, and
+lifecycle routes below `/internal/organizations/{organization_id}/locations`. Lifecycle suffixes
+are `activate`, `pause`, `close-temporarily`, `close-permanently`, and `archive`; every mutation
+accepts `{"expected_version": <integer>}`. No global location route exists. Cross-organization IDs
+return the same `LOCATION_NOT_FOUND` response as missing IDs.
+
+Stable conflicts are `LOCATION_SLUG_CONFLICT`, `LOCATION_PRIMARY_CONFLICT`,
+`LOCATION_PARENT_STATE_CONFLICT`, `LOCATION_VERSION_CONFLICT`, and
+`LOCATION_TRANSITION_CONFLICT`. These remain temporary unauthenticated bootstrap surfaces.
+
 ## Logging
 
 LILOs application logs are emitted as one JSON object per line. The base record includes timestamp,
