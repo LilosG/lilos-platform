@@ -116,3 +116,8 @@ and test use.
 Locations are the first organization-owned child records. Their creation and lifecycle permissions
 depend on parent status as recorded in [ADR 0005](decisions/0005-location-foundation-policies.md).
 This does not add authentication, request organization context, authorization, or RLS.
+
+An organization may also have zero or one controlled profile. Profile reads remain available in
+all organization states; create/update are allowed for prospect, onboarding, active, and paused
+organizations and denied for suspended, offboarding, and archived organizations. Profile
+operations never change organization lifecycle. See `docs/PROFILES.md` and ADR 0006.

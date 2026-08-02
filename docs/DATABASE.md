@@ -17,6 +17,10 @@ restrictive audit-event organization foreign key. Revision `20260802_0002` adds 
 the global `industries` registry and a nullable, restrictive `organizations.industry_id`. It does
 not backfill existing organizations or insert seed records.
 
+Revision `20260802_0004` adds optional one-to-one `organization_profiles` and `location_profiles`,
+plus a supporting uniqueness constraint for composite location ownership. It adds no profile data,
+composition behavior, AI path, or audit foreign key.
+
 ## Configuration
 
 The database settings are:
@@ -89,8 +93,9 @@ npm run db:downgrade
 Revision identifiers follow `YYYYMMDD_NNNN`. The deterministic initial revision is
 `20260801_0001`; the audit revision is `20260801_0002`; the organization revision is
 `20260802_0001`; the location revision is `20260802_0002`; and the industry revision is
-`20260802_0003`. Every future migration must document affected tables, constraints, indexes, data
-movement, compatibility, and rollback or forward-fix behavior.
+`20260802_0003`; the profile revision is `20260802_0004`. Every future migration must document
+affected tables, constraints, indexes, data movement, compatibility, and rollback or forward-fix
+behavior.
 
 Downgrading from `20260801_0002` to `20260801_0001` drops `audit_events` and is destructive to
 recorded audit evidence. That downgrade is intended for disposable validation databases before
@@ -199,6 +204,13 @@ npm run db:seed:industries
 The command uses the application database transaction and audited industry service. It is
 idempotent for matching key/name pairs, does not overwrite policy JSON, and fails on a name
 mismatch. See `docs/INDUSTRIES.md` for the full contract.
+
+Downgrading `20260802_0004` to `20260802_0003` removes both profile tables before removing the
+supporting location ownership constraint. Organizations, industries, locations, audit events, and
+their existing controls remain intact. Immutable audit events retain profile IDs as ordinary
+resource references; the downgrade does not delete or rewrite audit evidence. This destructive
+profile-data downgrade is for disposable validation databases or an explicitly approved recovery
+procedure, not routine production rollback.
 
 ## Test validation
 

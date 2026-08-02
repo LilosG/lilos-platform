@@ -14,6 +14,7 @@ from apps.api.app.routes.health import router as health_router
 from apps.api.app.routes.internal_industries import router as internal_industries_router
 from apps.api.app.routes.internal_locations import router as internal_locations_router
 from apps.api.app.routes.internal_organizations import router as internal_organizations_router
+from apps.api.app.routes.internal_profiles import router as internal_profiles_router
 
 
 def create_app(
@@ -47,6 +48,7 @@ def create_app(
         application.include_router(internal_industries_router)
         application.include_router(internal_organizations_router)
         application.include_router(internal_locations_router)
+        application.include_router(internal_profiles_router)
     return application
 
 

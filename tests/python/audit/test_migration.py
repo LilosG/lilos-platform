@@ -87,7 +87,9 @@ def test_audit_migration_upgrades_downgrades_and_restores_head(
         "alembic_version",
         "audit_events",
         "industries",
+        "location_profiles",
         "locations",
+        "organization_profiles",
         "organizations",
     ]
     assert schema["columns"] == {

@@ -140,6 +140,10 @@ Organization bootstrap routes additionally use stable `ORGANIZATION_NOT_FOUND`,
 Industry routes use `INDUSTRY_NOT_FOUND`, `INDUSTRY_KEY_CONFLICT`,
 `INDUSTRY_VERSION_CONFLICT`, `INDUSTRY_TRANSITION_CONFLICT`, and
 `INDUSTRY_ASSIGNMENT_CONFLICT`.
+Profile routes use `ORGANIZATION_PROFILE_NOT_FOUND`, `ORGANIZATION_PROFILE_CONFLICT`,
+`ORGANIZATION_PROFILE_VERSION_CONFLICT`, `LOCATION_PROFILE_NOT_FOUND`,
+`LOCATION_PROFILE_CONFLICT`, `LOCATION_PROFILE_VERSION_CONFLICT`, and
+`PROFILE_PARENT_STATE_CONFLICT`.
 
 Validation details contain safe field locations, stable validation types, and messages. Submitted
 values and validator exception context are omitted. Unexpected errors return a generic message;
@@ -194,6 +198,18 @@ Lifecycle request bodies require `expected_version`. Industry policy bodies use 
 secret-key-rejecting JSON objects documented in `docs/INDUSTRIES.md`. These routes and the
 organization industry-assignment route remain unauthenticated temporary bootstrap surfaces and
 are absent by default.
+
+## Temporary profile bootstrap routes
+
+The same local/test-only guard registers separate controlled profile surfaces:
+
+- `POST`, `GET`, and `PUT /internal/organizations/{organization_id}/profile`
+- `POST`, `GET`, and `PUT /internal/organizations/{organization_id}/locations/{location_id}/profile`
+
+`PUT` is a typed full replacement and requires `expected_version`. Location routes always include
+organization scope. Profiles are returned separately; no effective-profile composition API or AI
+write route exists. Parent lifecycle permissions and content limits are documented in
+`docs/PROFILES.md`. These are temporary unauthenticated bootstrap routes and are absent by default.
 
 ## Logging
 

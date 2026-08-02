@@ -12,6 +12,7 @@ from apps.api.app.config import Settings
 from apps.api.app.industries.models import Industry
 from apps.api.app.locations.models import Location
 from apps.api.app.organizations.models import Organization
+from apps.api.app.profiles.models import LocationProfile, OrganizationProfile
 
 config = context.config
 
@@ -22,6 +23,8 @@ target_metadata = Organization.metadata
 assert AuditEvent.metadata is target_metadata
 assert Location.metadata is target_metadata
 assert Industry.metadata is target_metadata
+assert OrganizationProfile.metadata is target_metadata
+assert LocationProfile.metadata is target_metadata
 
 
 def configured_database_url() -> str:

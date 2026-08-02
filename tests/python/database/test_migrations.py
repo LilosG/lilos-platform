@@ -45,10 +45,12 @@ def test_baseline_migration_upgrades_downgrades_and_upgrades_again(
         "alembic_version",
         "audit_events",
         "industries",
+        "location_profiles",
         "locations",
+        "organization_profiles",
         "organizations",
     ]
-    assert revisions_at_head == ["20260802_0003"]
+    assert revisions_at_head == ["20260802_0004"]
 
     command.downgrade(config, "base")
     tables_at_base, revisions_at_base = asyncio.run(database_state(postgresql_test_url))
@@ -61,7 +63,9 @@ def test_baseline_migration_upgrades_downgrades_and_upgrades_again(
         "alembic_version",
         "audit_events",
         "industries",
+        "location_profiles",
         "locations",
+        "organization_profiles",
         "organizations",
     ]
-    assert revisions_at_final_head == ["20260802_0003"]
+    assert revisions_at_final_head == ["20260802_0004"]

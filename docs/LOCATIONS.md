@@ -28,3 +28,9 @@ The lifecycle and organization-parent restrictions are defined in [ADR 0005](dec
 Creation and lifecycle mutations append organization- and location-scoped audit events through the same caller-owned `AsyncSession`. Neither service commits. Owning transaction failure rolls back both records. Audit location references use `ON DELETE RESTRICT`, while existing append-only controls remain unchanged.
 
 Temporary routes live below `/internal/organizations/{organization_id}/locations`. They are unregistered by default and can be explicitly enabled only in local/test. They are unauthenticated bootstrap surfaces and are not production-safe.
+
+A location may have zero or one organization-scoped controlled profile. Reads remain allowed in
+every parent state. Profile create/update require both an organization that permits profile
+mutation and a location in setup-required, active, paused, or temporarily closed state. Permanently
+closed and archived locations are read-only. Effective organization/location profile composition
+is deferred. See `docs/PROFILES.md` and ADR 0006.

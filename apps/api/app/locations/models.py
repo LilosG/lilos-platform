@@ -64,6 +64,7 @@ class Location(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "location_type <> 'virtual' OR (website_url IS NOT NULL AND address_line_1 IS NULL AND address_line_2 IS NULL AND city IS NULL AND region IS NULL AND postal_code IS NULL AND latitude IS NULL AND longitude IS NULL AND service_area_description IS NULL)",
             name="virtual_requirements",
         ),
+        UniqueConstraint("organization_id", "id", name="uq_locations_organization_id_id"),
         UniqueConstraint("organization_id", "slug", name="uq_locations_organization_id_slug"),
     )
 

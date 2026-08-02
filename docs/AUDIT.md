@@ -39,6 +39,11 @@ Organization industry-assignment events include `organization_id`. These events 
 ID/key, state or assignment changes, and resulting versions where applicable, but never copy full
 default-configuration or policy JSON into audit metadata.
 
+Organization- and location-profile create/update events include their appropriate organization and
+location scope, profile resource ID, operation, resulting version, and changed field names. They do
+not include profile prose, services, claims, guidance, disclaimers, landmarks, references, or CTA
+content. Profile records and audit evidence use one caller-owned transaction.
+
 ## Transaction contract
 
 `AuditEventService.record(session, command)` uses the caller's existing SQLAlchemy `AsyncSession`.

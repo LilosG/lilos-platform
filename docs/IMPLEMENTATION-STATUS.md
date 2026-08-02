@@ -3,8 +3,8 @@
 ## Current task
 
 - Roadmap phase: Phase 2 — Tenant, Organization and Location Model
-- Implementation packet: `PHASE-02-TASK-03`
-- Deliverable: Reusable industry classification and organization ownership foundation
+- Implementation packet: `PHASE-02-TASK-04`
+- Deliverable: Controlled organization-profile and location-profile foundations
 - Status: Complete for this implementation packet; Phase 2 remains in progress
 - Date: 2026-08-02
 - Commit or pull request: Uncommitted; commit and push explicitly prohibited for this task
@@ -99,8 +99,36 @@
   Alembic clean upgrade/check/downgrade/re-upgrade, PostgreSQL catalog inspection, explicit seed
   idempotency, and secret scan passed. The existing upstream Starlette/httpx deprecation warning
   remains unchanged.
+- Added one optional controlled organization profile per organization and one optional,
+  organization-owned controlled location profile per location.
+- Added bounded scalar context and PostgreSQL bounded string arrays without generic JSON metadata,
+  automatic population, AI write behavior, or effective-profile composition.
+- Added normalized claim conflict validation, defensive collection copying, one-to-one ownership,
+  composite organization/location integrity, optimistic replacement, and stable errors.
+- Added ADR 0006 and enforced the approved profile parent-state matrices through transaction-local
+  parent row locks; the strictest organization/location permission wins.
+- Added atomic profile audit events that record identity, operation, version, and changed field
+  names without profile content.
+- Added temporary local/test-only profile routes, migration `20260802_0004`, focused profile tests,
+  and profile architecture and operations documentation.
 
 ## Test evidence
+
+- No dependency was added or changed for `PHASE-02-TASK-04`.
+- `uv run pytest tests/python/profiles -q` against PostgreSQL 17 — all 39 focused profile tests
+  passed with the existing Starlette/httpx warning.
+- Organization, industry, location, audit, and database regression suites — all 117 tests passed.
+- `npm run check` against PostgreSQL 17 passed: formatting checks passed for 126 Python files,
+  ESLint and Ruff passed, Astro Check reported 0 diagnostics, strict mypy passed 123 source files,
+  Vitest passed 1 test, pytest passed all 188 tests, Astro built 1 page, and the environment/secret
+  scan passed.
+- Clean upgrade reached `20260802_0004`; `uv run alembic check` reported no drift. Catalog
+  inspection verified 16 organization-profile columns, 15 location-profile columns, all bounded
+  array checks, the three validated `ON DELETE RESTRICT` foreign keys, one-to-one constraints, and
+  composite organization/location ownership.
+- Downgrade to `20260802_0003` removed both profile tables and their supporting location ownership
+  constraint while retaining organizations, industries, locations, audit events, and the audit
+  append-only and location-slug protections; re-upgrade restored head successfully.
 
 - No dependency was added or changed for `PHASE-02-TASK-03`.
 - `uv run pytest tests/python/industries -q` against PostgreSQL 17 — all 25 focused industry tests
@@ -174,7 +202,7 @@
 - All product functionality and later-roadmap platform capabilities.
 - Business-domain schemas, RLS policies, seed data, and Supabase connectivity.
 - Authentication, authorization, memberships, permissions, and entitlements.
-- Organization/location profiles, location groups, and business identity.
+- Effective profile composition, location groups, and business identity.
 - Durable job execution, queues, schedule dispatch, retries, and workflow state.
 - Vercel, Hetzner, or other production infrastructure configuration.
 - Google, AI-provider, Stripe, email, SMS, and other external integrations.
@@ -202,5 +230,5 @@
 
 ## Next eligible task
 
-- Await review and explicit authorization before committing or pushing `PHASE-02-TASK-03`.
+- Await review and explicit authorization before committing or pushing `PHASE-02-TASK-04`.
 - Do not begin another roadmap task as part of this packet.
