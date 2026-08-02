@@ -12,9 +12,10 @@ organization, location, user, product, workflow, integration, or other business-
 `docs/AUDIT.md` for the schema, write contract, metadata policy, and immutability controls.
 
 Revision `20260802_0001` adds `organizations` as the primary tenant boundary and adds the nullable
-restrictive audit-event organization foreign key. No separate tenant, industry, location, profile,
-identity, membership, product, or other future-domain table is created. Industry ownership is
-deferred until the industries table is implemented.
+restrictive audit-event organization foreign key. Revision `20260802_0002` adds organization-owned
+`locations` and the nullable restrictive audit location foreign key. Revision `20260802_0003` adds
+the global `industries` registry and a nullable, restrictive `organizations.industry_id`. It does
+not backfill existing organizations or insert seed records.
 
 ## Configuration
 
@@ -87,7 +88,8 @@ npm run db:downgrade
 
 Revision identifiers follow `YYYYMMDD_NNNN`. The deterministic initial revision is
 `20260801_0001`; the audit revision is `20260801_0002`; the organization revision is
-`20260802_0001`; and the location revision is `20260802_0002`. Every future migration must document affected tables, constraints, indexes, data
+`20260802_0001`; the location revision is `20260802_0002`; and the industry revision is
+`20260802_0003`. Every future migration must document affected tables, constraints, indexes, data
 movement, compatibility, and rollback or forward-fix behavior.
 
 Downgrading from `20260801_0002` to `20260801_0001` drops `audit_events` and is destructive to
@@ -179,6 +181,24 @@ modify immutable audit rows.
 Record detection results, the approved disposition of every unresolved reference, migration or
 recovery identifiers, validation output, operator/reviewer identities, and completion time in the
 applicable incident, change, or recovery log.
+
+Downgrading `20260802_0003` to `20260802_0002` first removes the organization industry foreign key
+and nullable column, then removes the industry table and immutable-key function. Organizations,
+locations, and immutable audit history otherwise remain intact. The downgrade is destructive to
+industry records and is appropriate only for a disposable database or an explicitly approved
+recovery procedure. The migration never inserts, backfills, or silently assigns an industry.
+
+## Controlled industry seed
+
+Apply migrations before explicitly creating the initial industry registry:
+
+```sh
+npm run db:seed:industries
+```
+
+The command uses the application database transaction and audited industry service. It is
+idempotent for matching key/name pairs, does not overwrite policy JSON, and fails on a name
+mismatch. See `docs/INDUSTRIES.md` for the full contract.
 
 ## Test validation
 

@@ -9,6 +9,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from apps.api.app.audit.contracts import AuditEventCreate
 from apps.api.app.audit.enums import AuditActorType, AuditResult
 from apps.api.app.audit.service import AuditEventService
+from apps.api.app.industries.enums import IndustryStatus
+from apps.api.app.industries.errors import (
+    IndustryAssignmentConflictError,
+    IndustryNotFoundError,
+)
+from apps.api.app.industries.repository import IndustryRepository
 from apps.api.app.organizations.contracts import OrganizationCreate
 from apps.api.app.organizations.enums import (
     OrganizationLifecycleAction,
@@ -71,6 +77,7 @@ class OrganizationService:
     """Own organization validation, lifecycle, concurrency, and audit orchestration."""
 
     repository: OrganizationRepository = field(default_factory=OrganizationRepository)
+    industry_repository: IndustryRepository = field(default_factory=IndustryRepository)
     audit_service: AuditEventService = field(default_factory=AuditEventService)
 
     async def create(
@@ -83,6 +90,13 @@ class OrganizationService:
         """Create one prospect organization and its audit record without committing."""
         if await self.repository.get_by_slug(session, command.slug) is not None:
             raise OrganizationSlugConflictError
+        industry = None
+        if command.industry_id is not None:
+            industry = await self.industry_repository.get_by_id(session, command.industry_id)
+            if industry is None:
+                raise IndustryNotFoundError
+            if industry.status is not IndustryStatus.ACTIVE:
+                raise IndustryAssignmentConflictError
         organization = Organization(
             name=command.name,
             slug=command.slug,
@@ -98,6 +112,7 @@ class OrganizationService:
             billing_email=command.billing_email,
             external_reference=command.external_reference,
             onboarding_status=command.onboarding_status,
+            industry_id=industry.id if industry is not None else None,
             version=1,
         )
         try:
@@ -121,6 +136,11 @@ class OrganizationService:
                     "organization_type": organization.organization_type.value,
                     "status": organization.status.value,
                     "version": organization.version,
+                    "industry_id": (
+                        str(organization.industry_id)
+                        if organization.industry_id is not None
+                        else None
+                    ),
                 },
             ),
         )
@@ -185,6 +205,57 @@ class OrganizationService:
                     "from_status": previous_status.value,
                     "to_status": updated.status.value,
                     "version": updated.version,
+                },
+            ),
+        )
+        return updated
+
+    async def set_industry(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        *,
+        industry_id: UUID,
+        expected_version: int,
+        correlation_id: str,
+    ) -> Organization:
+        """Assign one active primary industry without exposing a generic update."""
+        organization = await self.get(session, organization_id)
+        if organization.version != expected_version:
+            raise OrganizationVersionConflictError
+        industry = await self.industry_repository.get_by_id(session, industry_id)
+        if industry is None:
+            raise IndustryNotFoundError
+        if industry.status is not IndustryStatus.ACTIVE:
+            raise IndustryAssignmentConflictError
+        previous_industry_id = organization.industry_id
+        updated = await self.repository.set_industry(
+            session,
+            organization_id,
+            industry_id=industry.id,
+            expected_version=expected_version,
+        )
+        if updated is None:
+            raise OrganizationVersionConflictError
+        await self.audit_service.record(
+            session,
+            AuditEventCreate(
+                event_type="platform.organization.industry_assigned",
+                action="organization.set_industry",
+                result=AuditResult.SUCCEEDED,
+                actor_type=AuditActorType.SYSTEM,
+                organization_id=updated.id,
+                resource_type="organization",
+                resource_id=updated.id,
+                correlation_id=correlation_id,
+                summary="Organization primary industry assigned.",
+                metadata={
+                    "industry_id": str(industry.id),
+                    "industry_key": industry.key,
+                    "previous_industry_id": (
+                        str(previous_industry_id) if previous_industry_id is not None else None
+                    ),
+                    "organization_version": updated.version,
                 },
             ),
         )

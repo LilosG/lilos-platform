@@ -83,7 +83,13 @@ def test_audit_migration_upgrades_downgrades_and_restores_head(
     schema = asyncio.run(audit_schema(postgresql_test_url))
     triggers = asyncio.run(trigger_names(postgresql_test_url))
 
-    assert schema["tables"] == ["alembic_version", "audit_events", "locations", "organizations"]
+    assert schema["tables"] == [
+        "alembic_version",
+        "audit_events",
+        "industries",
+        "locations",
+        "organizations",
+    ]
     assert schema["columns"] == {
         "action": "VARCHAR(128)",
         "actor_display_reference": "VARCHAR(200)",

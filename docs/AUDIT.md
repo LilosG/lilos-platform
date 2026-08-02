@@ -34,6 +34,11 @@ references without foreign keys until their owning tables exist.
 Location audit metadata contains lifecycle, slug, type, primary, and version values; it excludes
 addresses and contact data.
 
+Industry creation and lifecycle events are global and therefore omit organization scope.
+Organization industry-assignment events include `organization_id`. These events record industry
+ID/key, state or assignment changes, and resulting versions where applicable, but never copy full
+default-configuration or policy JSON into audit metadata.
+
 ## Transaction contract
 
 `AuditEventService.record(session, command)` uses the caller's existing SQLAlchemy `AsyncSession`.

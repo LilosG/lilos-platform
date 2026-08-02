@@ -73,6 +73,15 @@ npm run db:upgrade
 npm run db:current
 ```
 
+Create the five controlled initial industries explicitly after upgrading:
+
+```sh
+npm run db:seed:industries
+```
+
+The command is transactional, idempotent for matching records, and creates audit evidence through
+the application service. It does not run automatically. See `docs/INDUSTRIES.md`.
+
 ## Run the worker and scheduler
 
 ```sh

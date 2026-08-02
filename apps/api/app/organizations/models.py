@@ -1,17 +1,20 @@
 """SQLAlchemy model for the organization tenant boundary."""
 
 from datetime import datetime
+from uuid import UUID
 
 from sqlalchemy import (
     CheckConstraint,
     DateTime,
     Enum,
+    ForeignKey,
     Index,
     Integer,
     String,
     UniqueConstraint,
     text,
 )
+from sqlalchemy.dialects.postgresql import UUID as PostgreSQLUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from apps.api.app.database.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
@@ -87,6 +90,14 @@ class Organization(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     billing_email: Mapped[str | None] = mapped_column(String(254))
     external_reference: Mapped[str | None] = mapped_column(String(200))
     onboarding_status: Mapped[str | None] = mapped_column(String(64))
+    industry_id: Mapped[UUID | None] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey(
+            "industries.id",
+            name="fk_organizations_industry_id_industries",
+            ondelete="RESTRICT",
+        ),
+    )
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     version: Mapped[int] = mapped_column(
         Integer,

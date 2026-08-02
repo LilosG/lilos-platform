@@ -137,6 +137,9 @@ Current stable mappings are:
 Organization bootstrap routes additionally use stable `ORGANIZATION_NOT_FOUND`,
 `ORGANIZATION_SLUG_CONFLICT`, `ORGANIZATION_VERSION_CONFLICT`, and
 `ORGANIZATION_TRANSITION_CONFLICT` codes with the same standard envelope.
+Industry routes use `INDUSTRY_NOT_FOUND`, `INDUSTRY_KEY_CONFLICT`,
+`INDUSTRY_VERSION_CONFLICT`, `INDUSTRY_TRANSITION_CONFLICT`, and
+`INDUSTRY_ASSIGNMENT_CONFLICT`.
 
 Validation details contain safe field locations, stable validation types, and messages. Submitted
 values and validator exception context are omitted. Unexpected errors return a generic message;
@@ -157,6 +160,7 @@ When explicitly enabled in local or test, these routes are registered:
 - `POST /internal/organizations/{organization_id}/suspend`
 - `POST /internal/organizations/{organization_id}/start-offboarding`
 - `POST /internal/organizations/{organization_id}/archive`
+- `POST /internal/organizations/{organization_id}/industry`
 
 Lifecycle request bodies contain `expected_version`. Success bodies use `data` plus correlation
 metadata; collection bodies also include bounded deterministic pagination metadata. These routes
@@ -174,6 +178,22 @@ return the same `LOCATION_NOT_FOUND` response as missing IDs.
 Stable conflicts are `LOCATION_SLUG_CONFLICT`, `LOCATION_PRIMARY_CONFLICT`,
 `LOCATION_PARENT_STATE_CONFLICT`, `LOCATION_VERSION_CONFLICT`, and
 `LOCATION_TRANSITION_CONFLICT`. These remain temporary unauthenticated bootstrap surfaces.
+
+## Temporary industry bootstrap routes
+
+The same local/test-only guard registers:
+
+- `POST /internal/industries`
+- `GET /internal/industries?limit=50&offset=0`
+- `GET /internal/industries/{industry_id}`
+- `POST /internal/industries/{industry_id}/deprecate`
+- `POST /internal/industries/{industry_id}/reactivate`
+- `POST /internal/industries/{industry_id}/archive`
+
+Lifecycle request bodies require `expected_version`. Industry policy bodies use bounded,
+secret-key-rejecting JSON objects documented in `docs/INDUSTRIES.md`. These routes and the
+organization industry-assignment route remain unauthenticated temporary bootstrap surfaces and
+are absent by default.
 
 ## Logging
 

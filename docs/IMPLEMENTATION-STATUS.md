@@ -3,8 +3,8 @@
 ## Current task
 
 - Roadmap phase: Phase 2 — Tenant, Organization and Location Model
-- Implementation packet: `PHASE-02-TASK-02`
-- Deliverable: Organization-owned location and isolation foundation
+- Implementation packet: `PHASE-02-TASK-03`
+- Deliverable: Reusable industry classification and organization ownership foundation
 - Status: Complete for this implementation packet; Phase 2 remains in progress
 - Date: 2026-08-02
 - Commit or pull request: Uncommitted; commit and push explicitly prohibited for this task
@@ -84,8 +84,40 @@
 - Added organization contract, repository, service, API, lifecycle, concurrency, isolation,
   migration, rollback, audit, and route-safety tests.
 - Added organization architecture, schema, lifecycle, API, privacy, and operational documentation.
+- Added the global `industries` registry with immutable normalized keys, controlled lifecycle,
+  bounded JSONB policy documents, optimistic concurrency, and migration `20260802_0003`.
+- Added nullable primary-industry ownership to organizations without backfill, while requiring an
+  active industry for new client, partner, and demo organizations.
+- Added the narrow organization industry-assignment operation and atomic audit orchestration for
+  industry creation, lifecycle changes, and assignments.
+- Added explicit, idempotent, audited initial-industry seeding and temporary local/test-only
+  industry administration routes.
+- Added focused contracts, repository, service, API, seed, migration, rollback, and compatibility
+  tests plus industry operational documentation.
+- Validation: focused industry suite `25 passed`; organization/location/audit/database regressions
+  `92 passed`; full Python suite `149 passed`; Ruff, mypy, frontend ESLint/Astro/Vitest/build,
+  Alembic clean upgrade/check/downgrade/re-upgrade, PostgreSQL catalog inspection, explicit seed
+  idempotency, and secret scan passed. The existing upstream Starlette/httpx deprecation warning
+  remains unchanged.
 
 ## Test evidence
+
+- No dependency was added or changed for `PHASE-02-TASK-03`.
+- `uv run pytest tests/python/industries -q` against PostgreSQL 17 — all 25 focused industry tests
+  passed with the existing Starlette/httpx warning.
+- Organization, location, audit, and database regression suites — all 92 tests passed.
+- `npm run check` against PostgreSQL 17 passed: 110 Python files were formatted, Ruff passed,
+  strict mypy passed 107 source files, Astro Check reported 0 diagnostics, Vitest passed 1 test,
+  pytest passed all 149 tests, Astro built 1 page, and the secret scan passed.
+- Clean upgrade reached `20260802_0003`; `uv run alembic check` reported no drift. Catalog
+  inspection verified 12 industry columns, 15 named constraints, three indexes, the immutable-key
+  trigger, and the validated `ON DELETE RESTRICT` organization foreign key.
+- The explicit seed created the five controlled records and five audit events on its first run,
+  then reported all five as existing on its second run. Every policy document remained `{}` and no
+  full policy document appeared in audit metadata.
+- Downgrade to `20260802_0002` removed `organizations.industry_id` and `industries` while retaining
+  organizations, locations, audit events, and all five industry-creation audit records; re-upgrade
+  restored head successfully.
 
 - No dependency was added or changed for `PHASE-02-TASK-01-REVISED`.
 - `uv run pytest tests/python/organizations -q` against PostgreSQL 17 — all 42 focused
@@ -142,7 +174,7 @@
 - All product functionality and later-roadmap platform capabilities.
 - Business-domain schemas, RLS policies, seed data, and Supabase connectivity.
 - Authentication, authorization, memberships, permissions, and entitlements.
-- Industries, locations, organization/location profiles, location groups, and business identity.
+- Organization/location profiles, location groups, and business identity.
 - Durable job execution, queues, schedule dispatch, retries, and workflow state.
 - Vercel, Hetzner, or other production infrastructure configuration.
 - Google, AI-provider, Stripe, email, SMS, and other external integrations.
@@ -170,6 +202,5 @@
 
 ## Next eligible task
 
-- Await review and explicit authorization before committing or pushing
-  `PHASE-02-TASK-01-REVISED`.
+- Await review and explicit authorization before committing or pushing `PHASE-02-TASK-03`.
 - Do not begin another roadmap task as part of this packet.

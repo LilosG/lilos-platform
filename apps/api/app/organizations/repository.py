@@ -88,3 +88,27 @@ class OrganizationRepository:
             .returning(Organization)
         )
         return cast(Organization | None, await session.scalar(statement))
+
+    async def set_industry(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        *,
+        industry_id: UUID,
+        expected_version: int,
+    ) -> Organization | None:
+        """Assign one primary industry through a compare-and-swap update."""
+        statement = (
+            update(Organization)
+            .where(
+                Organization.id == organization_id,
+                Organization.version == expected_version,
+            )
+            .values(
+                industry_id=industry_id,
+                version=Organization.version + 1,
+                updated_at=utc_now(),
+            )
+            .returning(Organization)
+        )
+        return cast(Organization | None, await session.scalar(statement))

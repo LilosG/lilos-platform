@@ -7,9 +7,9 @@ table or tenant entity. In platform code and architecture, “tenant-aware” me
 organization-scoped. Future location-owned records must also retain direct `organization_id`
 ownership rather than relying only on an indirect location relationship.
 
-This packet does not create industries, locations, organization profiles, users, memberships,
-products, workflows, integrations, or billing data. `industry_id` will be added only when the
-industries table and its ownership contract are implemented.
+The organization foundation now has an optional foreign-key reference to one primary industry.
+Multi-industry ownership, location overrides, profiles, users, memberships, products, workflows,
+integrations, and billing data remain deferred.
 
 ## Schema and classifications
 
@@ -20,6 +20,7 @@ The organization record contains:
 - IANA `timezone` and uppercase three-letter `default_currency`;
 - bounded optional legal, website, contact, billing, external-reference, and onboarding fields;
 - nullable `archived_at`;
+- nullable `industry_id`, referencing the global industry registry with `ON DELETE RESTRICT`;
 - timezone-aware UTC `created_at` and `updated_at`; and
 - integer optimistic-concurrency `version`, beginning at 1.
 
@@ -33,6 +34,13 @@ informational label: when supplied through the typed creation contract, surround
 trimmed and the value must contain 1–64 characters. It has no enumerated values, state machine, or
 automatic transition behavior in this packet. A later onboarding packet may replace or constrain
 this informational field through an explicit migration and contract revision.
+
+New `client`, `partner`, and `demo` organizations require an active industry. New `internal` and
+`test` organizations may omit it. Organizations that predate migration `20260802_0003` may
+temporarily retain a null industry without being invalidated or silently assigned a default. The
+narrow industry-assignment operation accepts only an active industry and an `expected_version`,
+then increments the organization version exactly once. Existing assignments remain readable if an
+industry is later deprecated. Full onboarding-readiness behavior is deferred.
 
 ## Slug contract
 

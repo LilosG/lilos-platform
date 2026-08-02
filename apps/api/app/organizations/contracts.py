@@ -13,6 +13,7 @@ from pydantic import (
     Field,
     field_serializer,
     field_validator,
+    model_validator,
 )
 
 from apps.api.app.organizations.enums import OrganizationStatus, OrganizationType
@@ -53,6 +54,7 @@ class OrganizationCreate(BaseModel):
     billing_email: EmailReference | None = None
     external_reference: Annotated[str, Field(min_length=1, max_length=200)] | None = None
     onboarding_status: Annotated[str, Field(min_length=1, max_length=64)] | None = None
+    industry_id: UUID | None = None
 
     @field_validator("slug", mode="before")
     @classmethod
@@ -83,6 +85,20 @@ class OrganizationCreate(BaseModel):
             raise ValueError("timezone must be a valid IANA timezone identifier") from exc
         return value
 
+    @model_validator(mode="after")
+    def require_industry_for_customer_organizations(self) -> "OrganizationCreate":
+        if (
+            self.organization_type
+            in {
+                OrganizationType.CLIENT,
+                OrganizationType.PARTNER,
+                OrganizationType.DEMO,
+            }
+            and self.industry_id is None
+        ):
+            raise ValueError("client, partner, and demo organizations require industry_id")
+        return self
+
     @field_serializer("website_url")
     def serialize_website_url(self, value: AnyHttpUrl | None) -> str | None:
         """Serialize validated URLs as their normalized string representation."""
@@ -94,6 +110,15 @@ class OrganizationTransition(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
+    expected_version: Annotated[int, Field(ge=1)]
+
+
+class OrganizationIndustryAssignment(BaseModel):
+    """Narrow compare-and-swap command for one primary industry assignment."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    industry_id: UUID
     expected_version: Annotated[int, Field(ge=1)]
 
 
@@ -117,6 +142,7 @@ class OrganizationData(BaseModel):
     billing_email: str | None
     external_reference: str | None
     onboarding_status: str | None
+    industry_id: UUID | None
     archived_at: datetime | None
     created_at: datetime
     updated_at: datetime

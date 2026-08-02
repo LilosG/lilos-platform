@@ -11,6 +11,7 @@ from apps.api.app.errors import request_correlation_id
 from apps.api.app.organizations.contracts import (
     OrganizationCreate,
     OrganizationData,
+    OrganizationIndustryAssignment,
     OrganizationListResponse,
     OrganizationPagination,
     OrganizationResponse,
@@ -228,3 +229,24 @@ async def archive(
     return await transition_organization(
         request, organization_id, command, session, OrganizationLifecycleAction.ARCHIVE
     )
+
+
+@router.post(
+    "/{organization_id}/industry",
+    response_model=OrganizationResponse,
+    summary="Assign an organization industry (temporary internal bootstrap route)",
+)
+async def set_industry(
+    request: Request,
+    organization_id: UUID,
+    command: OrganizationIndustryAssignment,
+    session: DatabaseSession,
+) -> OrganizationResponse:
+    organization = await service.set_industry(
+        session,
+        organization_id,
+        industry_id=command.industry_id,
+        expected_version=command.expected_version,
+        correlation_id=request_correlation_id(request),
+    )
+    return organization_response(request, organization)
