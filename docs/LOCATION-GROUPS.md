@@ -10,6 +10,9 @@ workflows, business identity, billing, or AI behavior.
 Nested groups, automatic membership, bulk reassignment, primary groups, membership ordering, and
 frontend administration are not implemented.
 
+The Phase 2 business-identity resolver does not query or return group membership. Any future
+inclusion requires an explicit revision to ADR 0007 and the identity contract.
+
 ## Group schema and keys
 
 `location_groups` contains exactly `id`, `organization_id`, `name`, `key`, `description`, `status`,

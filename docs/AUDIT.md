@@ -121,3 +121,7 @@ Audit events are long-term records under the platform specification. Detailed re
 hold, privacy deletion, export, and tenant-access policies belong to their owning future packets.
 Until then, callers must minimize metadata, prefer stable references over copied payloads, omit
 source IP and user-agent information unless permitted, and never record secret material.
+
+Business-identity resolution is read-only and does not create an audit event. It neither mutates
+authoritative records nor establishes a persisted snapshot. Every Phase 2 mutation service retains
+its existing atomic audit behavior.

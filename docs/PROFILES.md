@@ -7,10 +7,11 @@ specific to one organization-owned operating location. Both are optional, contro
 records. They are not provider snapshots, generic configuration stores, AI memory, or unrestricted
 metadata.
 
-This foundation deliberately does not resolve an effective combined profile. Scalar and list
-override behavior—especially whether location lists replace, extend, or merge organization
-lists—belongs to the later business-identity packet. Until then, consumers must retrieve the two
-typed records separately and must not invent inheritance behavior.
+The Phase 2 business-identity resolver exposes both profiles separately. It does not compose
+cross-level lists or claims because no replace, extend, merge, or deduplication rule is authorized.
+The explicitly named `call_to_action_override` is the sole resolved scalar and reports whether its
+value came from the location profile, organization profile, or neither. See
+`docs/BUSINESS-IDENTITY.md` and ADR 0008.
 
 ## Organization profile
 

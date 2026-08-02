@@ -40,3 +40,7 @@ membership persists through pause, closure, or archival and is removed only thro
 audited operation. Location lifecycle changes never alter membership. Groups do not change
 location ownership, configuration, profiles, entitlements, workflows, or authorization. See
 `docs/LOCATION-GROUPS.md` and ADR 0007.
+
+Current location business identity is resolved with both organization and location scope. Closed
+and archived locations remain readable, optional profiles remain explicit, cross-level lists stay
+separate, and location groups are excluded. See `docs/BUSINESS-IDENTITY.md` and ADR 0008.

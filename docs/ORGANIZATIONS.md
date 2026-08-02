@@ -60,15 +60,15 @@ trigger rejects any later slug change. Archived slugs remain stored and therefor
 
 The permitted transitions are:
 
-| Action | From | To |
-| --- | --- | --- |
-| Start onboarding | `prospect` | `onboarding` |
-| Activate | `onboarding`, `suspended` | `active` |
-| Pause | `active` | `paused` |
-| Resume | `paused` | `active` |
-| Suspend | `active`, `paused` | `suspended` |
+| Action            | From                               | To            |
+| ----------------- | ---------------------------------- | ------------- |
+| Start onboarding  | `prospect`                         | `onboarding`  |
+| Activate          | `onboarding`, `suspended`          | `active`      |
+| Pause             | `active`                           | `paused`      |
+| Resume            | `paused`                           | `active`      |
+| Suspend           | `active`, `paused`                 | `suspended`   |
 | Start offboarding | any non-archived operational state | `offboarding` |
-| Archive | `offboarding` | `archived` |
+| Archive           | `offboarding`                      | `archived`    |
 
 Archived organizations have no normal outbound transition. Every action requires the version last
 read by the caller. The repository uses one compare-and-swap update matching ID, current status,
@@ -126,3 +126,7 @@ Location groups are organization-owned administrative selected-location sets. Th
 permissions are defined in ADR 0007. They do not change location ownership and do not provide
 authorization, configuration, product, workflow, profile, or business-identity behavior. See
 `docs/LOCATION-GROUPS.md`.
+
+Current organization identity, optional industry, and optional organization profile are available
+through the read-only service documented in `docs/BUSINESS-IDENTITY.md`. Resolution is allowed for
+every organization lifecycle state and never changes the organization.

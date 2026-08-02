@@ -223,6 +223,11 @@ their prior controls remain intact. Immutable audit rows retain group and member
 ordinary resource references and are neither deleted nor rewritten. The destructive group-data
 downgrade is intended for disposable validation or an explicitly approved recovery procedure.
 
+Business identity introduces no database object or migration. It is computed from the current
+organization, location, industry, and optional profile records inside the caller's read
+transaction. `20260802_0005` remains migration head, and a table or snapshot named for business
+identity would be an unexpected duplicate source of truth.
+
 ## Test validation
 
 With `LILOS_TEST_DATABASE_URL` and `LILOS_MIGRATION_DATABASE_URL` pointing to an isolated test

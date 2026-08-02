@@ -124,15 +124,15 @@ All handled API errors use this envelope:
 
 Current stable mappings are:
 
-| HTTP status | Code | Category |
-| --- | --- | --- |
-| 401 | `AUTHENTICATION_REQUIRED` | `authentication` |
-| 403 | `PERMISSION_DENIED` | `authorization` |
-| 404 | `RESOURCE_NOT_FOUND` | `not_found` |
-| 409 | `RESOURCE_CONFLICT` | `conflict` |
-| 422 | `VALIDATION_FAILED` | `validation` |
-| 500 | `INTERNAL_SERVER_ERROR` | `system` |
-| 503 | `DATABASE_UNAVAILABLE` | `system` |
+| HTTP status | Code                      | Category         |
+| ----------- | ------------------------- | ---------------- |
+| 401         | `AUTHENTICATION_REQUIRED` | `authentication` |
+| 403         | `PERMISSION_DENIED`       | `authorization`  |
+| 404         | `RESOURCE_NOT_FOUND`      | `not_found`      |
+| 409         | `RESOURCE_CONFLICT`       | `conflict`       |
+| 422         | `VALIDATION_FAILED`       | `validation`     |
+| 500         | `INTERNAL_SERVER_ERROR`   | `system`         |
+| 503         | `DATABASE_UNAVAILABLE`    | `system`         |
 
 Organization bootstrap routes additionally use stable `ORGANIZATION_NOT_FOUND`,
 `ORGANIZATION_SLUG_CONFLICT`, `ORGANIZATION_VERSION_CONFLICT`, and
@@ -226,6 +226,19 @@ pagination ordered by `created_at ASC, id ASC`.
 There is no global group route, nested-group route, bulk mutation, configuration behavior, or
 frontend. The surfaces are unauthenticated bootstrap routes, absent by default, and not
 production-safe. See `docs/LOCATION-GROUPS.md`.
+
+## Temporary business-identity read routes
+
+The same guard registers two read-only current-context routes:
+
+- `GET /internal/organizations/{organization_id}/business-identity`
+- `GET /internal/organizations/{organization_id}/locations/{location_id}/business-identity`
+
+Responses are immutable typed read models with correlation metadata. Missing profiles and legacy
+missing industries are explicit; no default is fabricated. Location resolution includes
+organization scope and preserves ordinary not-found behavior for a wrong-owner location. Lists and
+claims remain separated by profile source, and only the explicitly named CTA override is resolved.
+See `docs/BUSINESS-IDENTITY.md` and ADR 0008.
 
 ## Logging
 

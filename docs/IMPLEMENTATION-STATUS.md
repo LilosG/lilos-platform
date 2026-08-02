@@ -3,11 +3,11 @@
 ## Current task
 
 - Roadmap phase: Phase 2 — Tenant, Organization and Location Model
-- Implementation packet: `PHASE-02-TASK-05`
-- Deliverable: Organization-scoped location-group foundation
-- Status: Complete for this implementation packet; Phase 2 remains in progress
+- Implementation packet: `PHASE-02-TASK-06`
+- Deliverable: Business identity resolution and Phase 2 acceptance
+- Status: Complete; all Phase 2 deliverables and exit criteria have verified evidence
 - Date: 2026-08-02
-- Commit or pull request: Uncommitted; commit and push explicitly prohibited for this task
+- Commit or pull request: This Phase 2 acceptance commit
 
 ## Implemented requirements
 
@@ -120,8 +120,30 @@
   membership persistence/removal, row-locked mutation validation, and atomic bounded audit events.
 - Added guarded temporary group and membership routes, migration `20260802_0005`, ADR 0007,
   location-group documentation, and focused lifecycle/isolation/migration tests.
+- Added a computed, immutable, read-only business-identity service that resolves current
+  organization, location, industry, and optional controlled profile context without a table,
+  snapshot, cache, mutation, or audit event.
+- Added explicit missing-data indicators, separately attributable cross-level lists and claims, and
+  the one authorized traceable scalar resolution for `call_to_action_override`.
+- Added organization-scoped negative access, all-state read preservation, read-only transaction,
+  no-fabricated-default, no-group-inclusion, contract, and guarded-route tests.
+- Added ADR 0008, business-identity documentation, and the Phase 2 acceptance evidence package.
 
 ## Test evidence
+
+- No dependency or migration was added or changed for `PHASE-02-TASK-06`.
+- `uv run pytest tests/python/business_identity -q` against PostgreSQL 17 — all 32 focused
+  business-identity tests passed with the existing Starlette/httpx warning.
+- `npm run check` and `uv run pytest tests/python -q` against PostgreSQL 17 passed: Ruff formatting
+  checked 152 Python files, ESLint and Ruff passed, Astro Check reported 0 diagnostics, strict mypy
+  passed 149 source files, Vitest passed 1 test, pytest passed all 250 tests, Astro built 1 page,
+  and the environment/secret scan passed.
+- Clean migration upgrade reached unchanged head `20260802_0005`; Alembic reported no drift.
+  Catalog inspection confirmed every Phase 2 table and ownership constraint, immutable-key/slug
+  triggers, append-only audit protection, and the absence of a business-identity table. Downgrade
+  to base and re-upgrade to head completed successfully with no drift.
+- `docs/PHASE-02-ACCEPTANCE.md` records every completed packet, migration, boundary, guarantee,
+  deferral, and exit criterion. Phase 2 is complete.
 
 - No dependency was added or changed for `PHASE-02-TASK-05`.
 - `uv run pytest tests/python/location_groups -q` against PostgreSQL 17 — all 30 focused
@@ -228,7 +250,7 @@
 - All product functionality and later-roadmap platform capabilities.
 - Business-domain schemas, RLS policies, seed data, and Supabase connectivity.
 - Authentication, authorization, memberships, permissions, and entitlements.
-- Effective profile composition and business identity.
+- Cross-level list/claim composition beyond separately attributable business-identity context.
 - Durable job execution, queues, schedule dispatch, retries, and workflow state.
 - Vercel, Hetzner, or other production infrastructure configuration.
 - Google, AI-provider, Stripe, email, SMS, and other external integrations.
@@ -256,5 +278,5 @@
 
 ## Next eligible task
 
-- Await review and explicit authorization before committing or pushing `PHASE-02-TASK-05`.
-- Do not begin another roadmap task as part of this packet.
+- Phase 3 — Authentication, Memberships and Authorization, only when separately authorized.
+- Do not begin Phase 3 as part of this packet.
