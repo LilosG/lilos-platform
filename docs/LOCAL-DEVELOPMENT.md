@@ -82,6 +82,22 @@ npm run db:seed:industries
 The command is transactional, idempotent for matching records, and creates audit evidence through
 the application service. It does not run automatically. See `docs/INDUSTRIES.md`.
 
+## Test authentication locally
+
+Authentication requires explicit HTTPS issuer/JWKS configuration listed in `.env.example`; no
+Supabase secret or Management API key is used. Temporary user bootstrap and `/internal/auth/me`
+routes register only when `LILOS_INTERNAL_ADMIN_ROUTES_ENABLED=true` in local/test. Do not expose
+that unauthenticated bootstrap surface on a shared network.
+
+Run focused tests without external provider access:
+
+```sh
+uv run pytest tests/python/authentication -q
+```
+
+The suite uses an injected verifier and local asymmetric JWKS fixtures. See
+`docs/AUTHENTICATION.md` for token validation, outage, deactivation, MFA, and revocation limits.
+
 ## Run the worker and scheduler
 
 ```sh

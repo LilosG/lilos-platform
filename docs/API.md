@@ -240,6 +240,20 @@ organization scope and preserves ordinary not-found behavior for a wrong-owner l
 claims remain separated by profile source, and only the explicitly named CTA override is resolved.
 See `docs/BUSINESS-IDENTITY.md` and ADR 0008.
 
+## Temporary authentication and user-profile routes
+
+With the existing local/test-only internal guard enabled, the API registers `GET
+/internal/auth/me` plus create, get, deactivate, and reactivate routes below
+`/internal/user-profiles`. `/internal/auth/me` accepts only a bounded bearer access token and
+returns the minimal principal documented in `docs/AUTHENTICATION.md`; it never returns email or
+organization scope. Identity responses use `Cache-Control: no-store`.
+
+Authentication failures use generic `401 AUTHENTICATION_REQUIRED` with `WWW-Authenticate: Bearer`.
+Unavailable JWKS verification uses retryable `503 AUTHENTICATION_UNAVAILABLE`. Both retain the
+standard error envelope and correlation ID without echoing token or account data. These routes are
+unregistered by default and are temporary bootstrap/diagnostic surfaces, not production-safe
+authorization.
+
 ## Logging
 
 LILOs application logs are emitted as one JSON object per line. The base record includes timestamp,

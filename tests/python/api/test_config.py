@@ -55,3 +55,33 @@ def test_application_metadata_comes_from_settings() -> None:
 
     assert app.title == "Metadata Test API"
     assert app.version == "2.0.0"
+
+
+def test_authentication_defaults_and_https_configuration() -> None:
+    settings = Settings.model_validate(
+        {
+            "environment": EnvironmentName.TEST,
+            "supabase_auth_issuer": "https://fabricated.supabase.co/auth/v1",
+            "supabase_auth_jwks_url": "https://fabricated.supabase.co/auth/v1/.well-known/jwks.json",
+        }
+    )
+    assert settings.authentication_algorithms() == ("ES256", "RS256")
+    assert settings.supabase_auth_audience == "authenticated"
+    assert settings.supabase_auth_jwks_cache_seconds == 900
+    assert settings.supabase_auth_jwks_stale_seconds == 3_600
+    assert settings.supabase_auth_clock_skew_seconds == 60
+    assert settings.supabase_auth_max_token_bytes == 16_384
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        {"supabase_auth_allowed_algorithms": "HS256"},
+        {"supabase_auth_issuer": "http://fabricated.invalid/auth/v1"},
+        {"supabase_auth_jwks_url": "http://fabricated.invalid/jwks"},
+        {"supabase_auth_jwks_cache_seconds": 900, "supabase_auth_jwks_stale_seconds": 100},
+    ],
+)
+def test_unsafe_authentication_configuration_is_rejected(values: dict[str, object]) -> None:
+    with pytest.raises(ValidationError):
+        Settings.model_validate({"environment": EnvironmentName.TEST, **values})

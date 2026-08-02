@@ -32,7 +32,7 @@ def test_location_migration_and_downgrade(
     command.upgrade(config, "head")
     assert (
         asyncio.run(scalar(postgresql_test_url, "SELECT version_num FROM alembic_version"))
-        == "20260802_0005"
+        == "20260802_0006"
     )
     assert (
         asyncio.run(

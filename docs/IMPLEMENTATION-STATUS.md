@@ -2,14 +2,34 @@
 
 ## Current task
 
-- Roadmap phase: Phase 2 — Tenant, Organization and Location Model
-- Implementation packet: `PHASE-02-TASK-06`
-- Deliverable: Business identity resolution and Phase 2 acceptance
-- Status: Complete; all Phase 2 deliverables and exit criteria have verified evidence
+- Roadmap phase: Phase 3 — Authentication, Memberships and Authorization
+- Implementation packet: `PHASE-03-TASK-01`
+- Deliverable: Authentication, platform user identity, and session-validation foundation
+- Status: Complete locally; commit, push, and hosted CI evidence pending
 - Date: 2026-08-02
-- Commit or pull request: This Phase 2 acceptance commit
+- Commit or pull request: Pending
 
 ## Implemented requirements
+
+- Added the exact `user_profiles` platform identity record with one-to-one immutable Supabase UUID
+  mapping, controlled lifecycle, optimistic concurrency, and no organization authorization state.
+- Added strict bearer-only ES256/RS256 verification with exact claims, bounded JWKS caching,
+  rotation, outage handling, generic failures, redacted security logs, and an immutable minimal
+  authenticated principal.
+- Added explicit local/test-only provisioning and lifecycle administration, atomic minimized audit
+  events, migration `20260802_0006`, ADR 0009, and authentication operations documentation.
+
+## Phase 3 task 01 validation evidence
+
+- Focused authentication and configuration suite: 45 passed against isolated PostgreSQL 17.
+- Full repository validation: formatting, ESLint, Ruff, Astro type checking, strict mypy over 167
+  source files, Vitest, all 288 Python tests, Astro production build, and secret scan passed.
+- Clean base-to-head migration reached `20260802_0006`; Alembic reported no drift. Catalog review
+  confirmed the exact nine columns, five validated constraints, unique subject mapping, immutable
+  subject trigger, and retained append-only audit trigger.
+- Downgrade to `20260802_0005` removed only `user_profiles` and its trigger function while every
+  Phase 2 table and immutable/audit control remained; re-upgrade restored head.
+- The existing upstream Starlette/httpx deprecation warning remains unchanged and unsuppressed.
 
 - Created the requested `apps`, `packages`, `docs`, `infrastructure`, `scripts`, and `tests`
   structure with explicit modular-monolith boundaries.

@@ -93,6 +93,7 @@ def test_audit_migration_upgrades_downgrades_and_restores_head(
         "locations",
         "organization_profiles",
         "organizations",
+        "user_profiles",
     ]
     assert schema["columns"] == {
         "action": "VARCHAR(128)",

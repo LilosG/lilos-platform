@@ -31,6 +31,7 @@ class ApiError(Exception):
     category = ErrorCategory.SYSTEM
     retryable = False
     public_message = "An unexpected error occurred."
+    response_headers: dict[str, str] = {}
 
 
 class NotFoundError(ApiError):
@@ -85,6 +86,7 @@ def error_response(
     category: ErrorCategory,
     retryable: bool = False,
     details: list[ErrorDetail] | None = None,
+    headers: dict[str, str] | None = None,
 ) -> JSONResponse:
     """Build the standard safe JSON error envelope."""
     correlation_id = request_correlation_id(request)
@@ -101,7 +103,7 @@ def error_response(
     return JSONResponse(
         status_code=status_code,
         content=content.model_dump(mode="json"),
-        headers={CORRELATION_ID_HEADER: correlation_id},
+        headers={CORRELATION_ID_HEADER: correlation_id, **(headers or {})},
     )
 
 
@@ -137,6 +139,7 @@ async def api_exception_handler(request: Request, exc: ApiError) -> JSONResponse
         message=exc.public_message,
         category=exc.category,
         retryable=exc.retryable,
+        headers=exc.response_headers,
     )
 
 

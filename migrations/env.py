@@ -8,6 +8,7 @@ from sqlalchemy import Connection, pool
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from apps.api.app.audit.models import AuditEvent
+from apps.api.app.authentication.models import UserProfile
 from apps.api.app.config import Settings
 from apps.api.app.industries.models import Industry
 from apps.api.app.location_groups.models import LocationGroup, LocationGroupMembership
@@ -28,6 +29,7 @@ assert LocationGroup.metadata is target_metadata
 assert LocationGroupMembership.metadata is target_metadata
 assert OrganizationProfile.metadata is target_metadata
 assert LocationProfile.metadata is target_metadata
+assert UserProfile.metadata is target_metadata
 
 
 def configured_database_url() -> str:

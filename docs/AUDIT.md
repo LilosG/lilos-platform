@@ -125,3 +125,8 @@ source IP and user-agent information unless permitted, and never record secret m
 Business-identity resolution is read-only and does not create an audit event. It neither mutates
 authoritative records nor establishes a persisted snapshot. Every Phase 2 mutation service retains
 its existing atomic audit behavior.
+
+Platform user provision, deactivation, and reactivation append audit events in the same
+caller-owned transaction. Metadata is limited to platform/auth UUIDs, operation, prior/resulting
+status, resulting version, and changed field names; email and credentials are excluded.
+Authentication attempts are redacted structured security logs rather than immutable audit rows.

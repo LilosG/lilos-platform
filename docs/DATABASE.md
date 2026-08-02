@@ -26,6 +26,8 @@ Revision `20260802_0005` adds organization-scoped `location_groups` and
 uniqueness, deliberate deterministic-list indexes, and an immutable group-key trigger. It adds no
 configuration, permission, product, workflow, profile, hierarchy, or business-identity behavior.
 
+Revision `20260802_0006` adds the exact platform `user_profiles` identity mapping described below.
+
 ## Configuration
 
 The database settings are:
@@ -99,8 +101,9 @@ Revision identifiers follow `YYYYMMDD_NNNN`. The deterministic initial revision 
 `20260801_0001`; the audit revision is `20260801_0002`; the organization revision is
 `20260802_0001`; the location revision is `20260802_0002`; and the industry revision is
 `20260802_0003`; the profile revision is `20260802_0004`; and the location-group revision is
-`20260802_0005`. Every future migration must document affected tables, constraints, indexes, data
-movement, compatibility, and rollback or forward-fix behavior.
+`20260802_0005`; and the platform-user revision is `20260802_0006`. Every future migration must
+document affected tables, constraints, indexes, data movement, compatibility, and rollback or
+forward-fix behavior.
 
 Downgrading from `20260801_0002` to `20260801_0001` drops `audit_events` and is destructive to
 recorded audit evidence. That downgrade is intended for disposable validation databases before
@@ -225,8 +228,18 @@ downgrade is intended for disposable validation or an explicitly approved recove
 
 Business identity introduces no database object or migration. It is computed from the current
 organization, location, industry, and optional profile records inside the caller's read
-transaction. `20260802_0005` remains migration head, and a table or snapshot named for business
+transaction. It introduced no Phase 2 migration, and a table or snapshot named for business
 identity would be an unexpected duplicate source of truth.
+
+Revision `20260802_0006` adds only `user_profiles`. It stores the immutable unique Supabase Auth
+UUID mapping, optional bounded administrative display/contact snapshots, controlled lifecycle,
+UTC timestamps, and optimistic version. A PostgreSQL trigger rejects `auth_user_id` changes. There
+are no password, token, session, organization, membership, role, or permission columns and no
+foreign key to the Supabase-owned auth schema.
+
+Downgrade to `20260802_0005` removes the table and its trigger function while preserving every
+Phase 2 table, constraint, immutable-key trigger, and audit append-only control. Audit records keep
+ordinary resource UUID evidence and are not rewritten or deleted.
 
 ## Test validation
 

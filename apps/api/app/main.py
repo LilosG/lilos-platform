@@ -5,12 +5,14 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from apps.api.app.authentication.verifier import TokenVerifier
 from apps.api.app.config import Settings, get_settings
 from apps.api.app.database.runtime import DatabaseRuntime, create_database_runtime
 from apps.api.app.errors import register_exception_handlers
 from apps.api.app.logging_config import configure_logging
 from apps.api.app.middleware import CorrelationIdMiddleware
 from apps.api.app.routes.health import router as health_router
+from apps.api.app.routes.internal_authentication import router as internal_authentication_router
 from apps.api.app.routes.internal_business_identity import (
     router as internal_business_identity_router,
 )
@@ -19,11 +21,13 @@ from apps.api.app.routes.internal_location_groups import router as internal_loca
 from apps.api.app.routes.internal_locations import router as internal_locations_router
 from apps.api.app.routes.internal_organizations import router as internal_organizations_router
 from apps.api.app.routes.internal_profiles import router as internal_profiles_router
+from apps.api.app.routes.internal_user_profiles import router as internal_user_profiles_router
 
 
 def create_app(
     settings: Settings | None = None,
     database_runtime: DatabaseRuntime | None = None,
+    authentication_verifier: TokenVerifier | None = None,
 ) -> FastAPI:
     """Create the API runtime without product routes or eager database connections."""
     resolved_settings = settings or get_settings()
@@ -45,6 +49,7 @@ def create_app(
     )
     application.state.settings = resolved_settings
     application.state.database = resolved_database
+    application.state.authentication_verifier = authentication_verifier
     application.add_middleware(CorrelationIdMiddleware)
     register_exception_handlers(application)
     application.include_router(health_router)
@@ -55,6 +60,8 @@ def create_app(
         application.include_router(internal_profiles_router)
         application.include_router(internal_location_groups_router)
         application.include_router(internal_business_identity_router)
+        application.include_router(internal_authentication_router)
+        application.include_router(internal_user_profiles_router)
     return application
 
 
