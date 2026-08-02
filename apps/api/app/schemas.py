@@ -22,12 +22,14 @@ class HealthStatus(StrEnum):
 
     ALIVE = "alive"
     READY = "ready"
+    NOT_READY = "not_ready"
 
 
 class DependencyStatus(StrEnum):
     """Stable dependency states for implemented readiness checks."""
 
-    READY = "ready"
+    HEALTHY = "healthy"
+    UNAVAILABLE = "unavailable"
 
 
 class DependencyHealth(ApiModel):

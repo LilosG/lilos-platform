@@ -44,6 +44,23 @@ jobs:
   python:
     name: Python validation
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: lilos_test
+          POSTGRES_PASSWORD: lilos_test
+          POSTGRES_USER: lilos_test
+        options: >-
+          --health-cmd "pg_isready -U lilos_test -d lilos_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+        ports:
+          - 5432:5432
+    env:
+      LILOS_MIGRATION_DATABASE_URL: postgresql+asyncpg://lilos_test:lilos_test@127.0.0.1:5432/lilos_test
+      LILOS_TEST_DATABASE_URL: postgresql+asyncpg://lilos_test:lilos_test@127.0.0.1:5432/lilos_test
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -63,16 +80,22 @@ jobs:
         run: uv sync --locked
 
       - name: Check formatting
-        run: uv run ruff format --check apps tests scripts
+        run: uv run ruff format --check apps tests scripts migrations
 
       - name: Lint
-        run: uv run ruff check apps tests scripts
+        run: uv run ruff check apps tests scripts migrations
 
       - name: Type check
-        run: uv run mypy apps tests scripts
+        run: uv run mypy apps tests scripts migrations
 
       - name: Test
         run: uv run pytest
+
+      - name: Validate migrations
+        run: |
+          uv run alembic upgrade head
+          uv run alembic downgrade base
+          uv run alembic upgrade head
 
       - name: Verify environment example
         run: uv run python scripts/check_secrets.py

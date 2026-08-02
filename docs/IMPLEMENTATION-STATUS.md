@@ -3,8 +3,8 @@
 ## Current task
 
 - Roadmap phase: Phase 1 — Platform Foundation
-- Implementation packet: `PHASE-01-TASK-01`
-- Deliverable: Production-quality FastAPI runtime contract
+- Implementation packet: `PHASE-01-TASK-02`
+- Deliverable: PostgreSQL, SQLAlchemy, and Alembic persistence foundation
 - Status: Complete for this implementation packet; Phase 1 remains in progress
 - Date: 2026-08-01
 - Commit or pull request: Uncommitted; commit and push explicitly prohibited for this task
@@ -28,8 +28,8 @@
 - Added typed API settings for all five explicit environment names, log level, title, and version.
 - Added request correlation-ID validation, generation, response propagation, handler context, and
   structured-log context.
-- Added typed liveness and readiness responses. Readiness lists no dependencies because no database,
-  queue, Supabase connection, or external provider is implemented.
+- Added typed liveness and readiness responses. Liveness remains process-only; readiness reports
+  PostgreSQL as the only implemented infrastructure dependency.
 - Added a standard error envelope and handlers for validation, not found, authentication and
   authorization-style failures, conflicts, and unexpected internal failures.
 - Added structured JSON application and request-completion logging without request or response
@@ -37,35 +37,52 @@
 - Added focused tests for configuration, metadata, correlation, errors, security redaction, logging,
   and health contracts.
 - Added `docs/API.md` and updated local API development guidance.
+- Added SQLAlchemy 2.x, asyncpg, and Alembic with locked dependency versions.
+- Added optional typed application, migration, and test PostgreSQL URLs.
+- Added lazy async engine and session-factory ownership with explicit shutdown disposal.
+- Added a transaction-bound FastAPI session dependency with commit, rollback, and sanitized database
+  failure handling.
+- Added a declarative base, UUIDv4 primary-key mixin, timezone-aware UTC timestamp mixin, and
+  deterministic constraint/index naming conventions.
+- Added PostgreSQL to readiness without making liveness database-dependent.
+- Added deterministic Alembic baseline revision `20260801_0001` with no business-domain DDL.
+- Added a PostgreSQL-only integration suite and ephemeral PostgreSQL 17 CI service.
+- Added database documentation and ADR 0002.
 
 ## Test evidence
 
-- `uv sync --locked` — passed with `pydantic-settings` and `httpx2` resolved from `uv.lock`.
-- `npm run format` — passed; Prettier and Ruff reported no changed files.
-- `npm run check` — passed:
-  - Prettier and Ruff formatting checks passed.
+- `uv sync --locked` — passed with SQLAlchemy 2.0.51, asyncpg 0.31.0, and Alembic 1.18.5
+  resolved from `uv.lock`.
+- `npm run format` — passed; Prettier and Ruff formatting completed successfully.
+- `npm run check` with the test and migration URLs pointed at the temporary PostgreSQL 17 database
+  — passed:
+  - Prettier and Ruff formatting checks passed for 44 Python files.
   - ESLint and Ruff linting passed.
   - Astro Check passed with 0 errors, 0 warnings, and 0 hints.
-  - strict mypy passed for 27 source files.
+  - strict mypy passed for 41 source files.
   - Vitest passed 1 test in 1 file.
-  - pytest passed 31 tests.
+  - pytest passed all 43 tests.
   - Astro built 1 static page successfully.
   - environment-example and high-confidence secret-pattern checks passed.
-- `uv run pytest tests/python/api tests/python/test_api.py` — 26 focused API tests passed.
+- `uv run pytest tests/python/database -q` against PostgreSQL 17 — all 11 focused database tests
+  passed.
+- Explicit migration validation against PostgreSQL 17 passed in order: upgrade to head, downgrade
+  to base, and upgrade to head. The deterministic head revision is `20260801_0001` and creates no
+  application tables.
+- The session integration test forced an exception inside a transaction and verified that the
+  inserted row was rolled back; the success-path transaction remained committed.
 - Uvicorn startup and manual HTTP verification passed:
-  - `GET /health/live` returned 200 with `alive` and a generated UUIDv4 correlation ID.
-  - `GET /health/ready` returned 200 with `ready` and an empty dependency list.
-  - A valid `manual.valid_01:retry-2` incoming correlation ID was preserved.
-  - An invalid whitespace-containing correlation ID was replaced with a UUIDv4.
-  - An unknown path returned the standard `RESOURCE_NOT_FOUND` 404 envelope.
-  - An ephemeral test-only input route returned the standard sanitized `VALIDATION_FAILED` 422
-    envelope without adding a production route.
+  - Without `LILOS_DATABASE_URL`, `GET /health/live` returned 200 with `alive` and
+    `GET /health/ready` returned a sanitized 503 with PostgreSQL `unavailable`.
+  - With `LILOS_DATABASE_URL` pointed at the test database, `GET /health/live` remained 200 and
+    `GET /health/ready` returned 200 with PostgreSQL `healthy`.
   - Both local Uvicorn processes shut down cleanly after verification.
+- `git diff --check` passed, and the three governing documents have no diff.
 
 ## Deferred items
 
 - All product functionality and later-roadmap platform capabilities.
-- Database schemas, migrations, persistence, and Supabase connectivity.
+- Business-domain schemas, RLS policies, seed data, and Supabase connectivity.
 - Authentication, authorization, memberships, permissions, and entitlements.
 - Durable job execution, queues, schedule dispatch, retries, and workflow state.
 - Vercel, Hetzner, or other production infrastructure configuration.
@@ -77,12 +94,14 @@
 
 - The CI workflow is locally reviewed and mirrors passing local commands, but it cannot produce a
   hosted run until repository changes are committed and pushed with explicit authorization.
-- The API intentionally has no product endpoints. Its readiness dependency list is empty until a
-  required runtime dependency is actually implemented.
+- Starlette emits one deprecation warning for its current `httpx`-backed test client. The intended
+  and locked dependency remains `httpx`; all tests pass.
+- The API intentionally has no product endpoints. PostgreSQL is its only implemented readiness
+  dependency.
 - Authentication and authorization enforcement are not implemented; this packet establishes only
   their standard error-contract boundary.
 
 ## Next eligible task
 
-- Await review and explicit authorization before committing or pushing this implementation packet.
+- Await review and explicit authorization before committing or pushing `PHASE-01-TASK-02`.
 - Do not begin another roadmap task as part of this packet.

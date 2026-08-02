@@ -30,6 +30,7 @@ def test_settings_load_prefixed_environment_values(
     assert settings.log_level is LogLevel.WARNING
     assert settings.api_title == "Configured LILOs API"
     assert settings.api_version == "1.2.3-rc.1"
+    assert settings.application_database_url() is None
 
 
 def test_invalid_environment_is_rejected(

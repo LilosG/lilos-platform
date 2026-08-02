@@ -4,7 +4,7 @@ from enum import StrEnum
 from functools import lru_cache
 from typing import Annotated, ClassVar
 
-from pydantic import Field
+from pydantic import Field, PostgresDsn
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -51,7 +51,36 @@ class Settings(BaseSettings):
         str,
         Field(min_length=1, max_length=32, pattern=r"^[0-9A-Za-z][0-9A-Za-z.+-]*$"),
     ] = "0.1.0"
+    database_url: PostgresDsn | None = None
+    migration_database_url: PostgresDsn | None = None
+    test_database_url: PostgresDsn | None = None
+    database_connect_timeout_seconds: Annotated[float, Field(gt=0, le=30)] = 5.0
     service_name: ClassVar[str] = "lilos-api"
+
+    def application_database_url(self) -> str | None:
+        """Return the application URL using SQLAlchemy's asyncpg dialect."""
+        return _normalize_postgresql_url(self.database_url)
+
+    def alembic_database_url(self) -> str | None:
+        """Return the migration URL, falling back to the application URL."""
+        return _normalize_postgresql_url(self.migration_database_url or self.database_url)
+
+    def integration_test_database_url(self) -> str | None:
+        """Return the isolated PostgreSQL URL reserved for integration tests."""
+        return _normalize_postgresql_url(self.test_database_url)
+
+
+def _normalize_postgresql_url(value: PostgresDsn | None) -> str | None:
+    if value is None:
+        return None
+    url = value.unicode_string()
+    if url.startswith("postgresql+asyncpg://"):
+        return url
+    if url.startswith("postgresql://"):
+        return url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    if url.startswith("postgres://"):
+        return url.replace("postgres://", "postgresql+asyncpg://", 1)
+    raise ValueError("PostgreSQL URLs must use the asyncpg driver")
 
 
 @lru_cache

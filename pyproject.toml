@@ -4,8 +4,11 @@ version = "0.1.0"
 description = "LILOs modular-monolith application foundation"
 requires-python = ">=3.12,<3.15"
 dependencies = [
+    "alembic>=1.18,<2",
+    "asyncpg>=0.31,<1",
     "fastapi>=0.116,<1",
     "pydantic-settings>=2.14,<3",
+    "sqlalchemy>=2.0.51,<2.1",
     "uvicorn[standard]>=0.35,<1",
 ]
 
@@ -30,10 +33,13 @@ select = ["B", "E", "F", "I", "SIM", "UP"]
 [tool.mypy]
 python_version = "3.12"
 strict = true
-files = ["apps", "tests", "scripts"]
+files = ["apps", "tests", "scripts", "migrations"]
 exclude = ["apps/web"]
 
 [tool.pytest.ini_options]
 addopts = "--strict-config --strict-markers"
+markers = [
+    "integration: requires an isolated PostgreSQL test database",
+]
 testpaths = ["tests/python"]
 pythonpath = ["."]

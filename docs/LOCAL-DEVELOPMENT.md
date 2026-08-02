@@ -2,8 +2,9 @@
 
 ## Scope
 
-This guide covers the local development baseline and the Phase 1 FastAPI runtime contract. It does
-not connect to Supabase, Vercel, Google, AI providers, Stripe, or another external service.
+This guide covers the local development baseline, FastAPI runtime contract, and PostgreSQL
+persistence foundation. It does not connect to Supabase, Vercel, Google, AI providers, Stripe, or
+another external service.
 
 ## Prerequisites
 
@@ -28,7 +29,8 @@ Both lockfiles are committed so local development and CI resolve the same depend
 Copy `.env.example` to `.env` only when local overrides are needed. The committed example contains
 variable names with empty values and no credentials. Local `.env` files are ignored by Git.
 
-The API validates `LILOS_ENV`, `LILOS_LOG_LEVEL`, `LILOS_API_TITLE`, and `LILOS_API_VERSION`.
+The API validates `LILOS_ENV`, `LILOS_LOG_LEVEL`, `LILOS_API_TITLE`, `LILOS_API_VERSION`, and the
+three database URL settings documented in `docs/DATABASE.md`.
 Supported environments are `local`, `test`, `development`, `staging`, and `production`. Safe local
 defaults are used when values are absent. These variables configure only the local process and do
 not connect any service.
@@ -58,8 +60,18 @@ curl -i http://127.0.0.1:8000/health/ready
 curl -i -H 'X-Correlation-ID: local-check-001' http://127.0.0.1:8000/health/live
 ```
 
-Each response returns `X-Correlation-ID`. See `docs/API.md` for the accepted format, response
-schemas, error contract, and structured logging fields.
+Each response returns `X-Correlation-ID`. Without `LILOS_DATABASE_URL`, liveness returns HTTP 200
+and readiness returns HTTP 503 with PostgreSQL unavailable. See `docs/API.md` for the accepted
+format, response schemas, error contract, and structured logging fields.
+
+## Run PostgreSQL migrations
+
+Configure a local PostgreSQL database as described in `docs/DATABASE.md`, then run:
+
+```sh
+npm run db:upgrade
+npm run db:current
+```
 
 ## Run the worker and scheduler
 
@@ -94,6 +106,12 @@ Run only the focused API runtime tests with:
 
 ```sh
 uv run pytest tests/python/api tests/python/test_api.py
+```
+
+Run PostgreSQL integration and migration tests with an isolated test database configured:
+
+```sh
+uv run pytest tests/python/database -q
 ```
 
 Apply repository formatting with:

@@ -60,6 +60,16 @@ class ConflictError(ApiError):
     public_message = "The request conflicts with the current resource state."
 
 
+class DatabaseUnavailableError(ApiError):
+    """Required PostgreSQL functionality is unavailable."""
+
+    status_code = HTTPStatus.SERVICE_UNAVAILABLE
+    code = "DATABASE_UNAVAILABLE"
+    category = ErrorCategory.SYSTEM
+    retryable = True
+    public_message = "The database is currently unavailable."
+
+
 def request_correlation_id(request: Request) -> str:
     """Read the correlation ID established by middleware."""
     correlation_id = getattr(request.state, "correlation_id", None)

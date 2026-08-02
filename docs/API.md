@@ -4,7 +4,7 @@
 
 The FastAPI application in `apps/api` is the HTTP boundary of the LILOs modular monolith. The
 current runtime exposes health and generated OpenAPI documentation only. Product APIs,
-authentication, persistence, queues, and external providers are not implemented.
+authentication, business persistence, queues, and external providers are not implemented.
 
 OpenAPI is available locally at `/openapi.json`, with Swagger UI at `/docs` and ReDoc at `/redoc`.
 
@@ -24,6 +24,10 @@ The runtime recognizes these variables:
 - `LILOS_LOG_LEVEL`
 - `LILOS_API_TITLE`
 - `LILOS_API_VERSION`
+- `LILOS_DATABASE_URL`
+- `LILOS_DATABASE_CONNECT_TIMEOUT_SECONDS`
+- `LILOS_MIGRATION_DATABASE_URL`
+- `LILOS_TEST_DATABASE_URL`
 
 Values may come from process environment variables or a local, ignored `.env` file. Environment
 variables take precedence. Empty values in `.env.example` are ignored so safe defaults remain
@@ -63,14 +67,19 @@ is absent or invalid, the API generates a canonical lowercase UUIDv4. The resolv
 }
 ```
 
-`GET /health/ready` reports whether the API can accept its currently implemented work:
+`GET /health/ready` reports whether PostgreSQL is available for database-backed work. When healthy:
 
 ```json
 {
   "data": {
     "service": "lilos-api",
     "status": "ready",
-    "dependencies": []
+    "dependencies": [
+      {
+        "name": "postgresql",
+        "status": "healthy"
+      }
+    ]
   },
   "meta": {
     "correlation_id": "d67dc931-cc59-4d9d-aa02-f6531803a8f4"
@@ -78,8 +87,9 @@ is absent or invalid, the API generates a canonical lowercase UUIDv4. The resolv
 }
 ```
 
-The empty dependency list is deliberate. It does not claim that a database, queue, Supabase, or
-external provider exists or is healthy.
+When configuration is absent or connectivity fails, readiness returns HTTP 503 with `not_ready` and
+the PostgreSQL status `unavailable`. The response never includes credentials, hostnames, database
+names, exception details, or raw driver errors. Liveness never opens a database connection.
 
 ## Error contract
 
@@ -116,6 +126,7 @@ Current stable mappings are:
 | 409 | `RESOURCE_CONFLICT` | `conflict` |
 | 422 | `VALIDATION_FAILED` | `validation` |
 | 500 | `INTERNAL_SERVER_ERROR` | `system` |
+| 503 | `DATABASE_UNAVAILABLE` | `system` |
 
 Validation details contain safe field locations, stable validation types, and messages. Submitted
 values and validator exception context are omitted. Unexpected errors return a generic message;
@@ -128,4 +139,5 @@ LILOs application logs are emitted as one JSON object per line. The base record 
 severity, environment, service, deployment version, event name, message, and correlation ID.
 Request completion records add method, route, status code, duration, and outcome. Request and
 response bodies, query strings, credentials, and submitted validation values are not logged by
-default.
+default. Database failures log normalized codes and exception types without URLs or raw driver
+messages.
