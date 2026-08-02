@@ -21,6 +21,11 @@ Revision `20260802_0004` adds optional one-to-one `organization_profiles` and `l
 plus a supporting uniqueness constraint for composite location ownership. It adds no profile data,
 composition behavior, AI path, or audit foreign key.
 
+Revision `20260802_0005` adds organization-scoped `location_groups` and
+`location_group_memberships`, restrictive direct/composite ownership constraints, scoped
+uniqueness, deliberate deterministic-list indexes, and an immutable group-key trigger. It adds no
+configuration, permission, product, workflow, profile, hierarchy, or business-identity behavior.
+
 ## Configuration
 
 The database settings are:
@@ -93,9 +98,9 @@ npm run db:downgrade
 Revision identifiers follow `YYYYMMDD_NNNN`. The deterministic initial revision is
 `20260801_0001`; the audit revision is `20260801_0002`; the organization revision is
 `20260802_0001`; the location revision is `20260802_0002`; and the industry revision is
-`20260802_0003`; the profile revision is `20260802_0004`. Every future migration must document
-affected tables, constraints, indexes, data movement, compatibility, and rollback or forward-fix
-behavior.
+`20260802_0003`; the profile revision is `20260802_0004`; and the location-group revision is
+`20260802_0005`. Every future migration must document affected tables, constraints, indexes, data
+movement, compatibility, and rollback or forward-fix behavior.
 
 Downgrading from `20260801_0002` to `20260801_0001` drops `audit_events` and is destructive to
 recorded audit evidence. That downgrade is intended for disposable validation databases before
@@ -211,6 +216,12 @@ their existing controls remain intact. Immutable audit events retain profile IDs
 resource references; the downgrade does not delete or rewrite audit evidence. This destructive
 profile-data downgrade is for disposable validation databases or an explicitly approved recovery
 procedure, not routine production rollback.
+
+Downgrading `20260802_0005` to `20260802_0004` removes memberships before groups and then removes
+the immutable-key function. Organizations, industries, locations, profiles, audit events, and
+their prior controls remain intact. Immutable audit rows retain group and membership UUIDs as
+ordinary resource references and are neither deleted nor rewritten. The destructive group-data
+downgrade is intended for disposable validation or an explicitly approved recovery procedure.
 
 ## Test validation
 

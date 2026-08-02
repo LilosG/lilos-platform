@@ -121,3 +121,8 @@ An organization may also have zero or one controlled profile. Profile reads rema
 all organization states; create/update are allowed for prospect, onboarding, active, and paused
 organizations and denied for suspended, offboarding, and archived organizations. Profile
 operations never change organization lifecycle. See `docs/PROFILES.md` and ADR 0006.
+
+Location groups are organization-owned administrative selected-location sets. Their parent-state
+permissions are defined in ADR 0007. They do not change location ownership and do not provide
+authorization, configuration, product, workflow, profile, or business-identity behavior. See
+`docs/LOCATION-GROUPS.md`.

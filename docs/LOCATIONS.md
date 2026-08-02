@@ -34,3 +34,9 @@ every parent state. Profile create/update require both an organization that perm
 mutation and a location in setup-required, active, paused, or temporarily closed state. Permanently
 closed and archived locations are read-only. Effective organization/location profile composition
 is deferred. See `docs/PROFILES.md` and ADR 0006.
+
+A location may belong to zero, one, or many organization-owned location groups. Existing
+membership persists through pause, closure, or archival and is removed only through an explicit
+audited operation. Location lifecycle changes never alter membership. Groups do not change
+location ownership, configuration, profiles, entitlements, workflows, or authorization. See
+`docs/LOCATION-GROUPS.md` and ADR 0007.

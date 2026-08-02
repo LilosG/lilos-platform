@@ -144,6 +144,10 @@ Profile routes use `ORGANIZATION_PROFILE_NOT_FOUND`, `ORGANIZATION_PROFILE_CONFL
 `ORGANIZATION_PROFILE_VERSION_CONFLICT`, `LOCATION_PROFILE_NOT_FOUND`,
 `LOCATION_PROFILE_CONFLICT`, `LOCATION_PROFILE_VERSION_CONFLICT`, and
 `PROFILE_PARENT_STATE_CONFLICT`.
+Location-group routes use `LOCATION_GROUP_NOT_FOUND`, `LOCATION_GROUP_KEY_CONFLICT`,
+`LOCATION_GROUP_VERSION_CONFLICT`, `LOCATION_GROUP_STATE_CONFLICT`,
+`LOCATION_GROUP_PARENT_STATE_CONFLICT`, `LOCATION_GROUP_LOCATION_STATE_CONFLICT`,
+`LOCATION_GROUP_MEMBERSHIP_CONFLICT`, and `LOCATION_GROUP_MEMBERSHIP_NOT_FOUND`.
 
 Validation details contain safe field locations, stable validation types, and messages. Submitted
 values and validator exception context are omitted. Unexpected errors return a generic message;
@@ -210,6 +214,18 @@ The same local/test-only guard registers separate controlled profile surfaces:
 organization scope. Profiles are returned separately; no effective-profile composition API or AI
 write route exists. Parent lifecycle permissions and content limits are documented in
 `docs/PROFILES.md`. These are temporary unauthenticated bootstrap routes and are absent by default.
+
+## Temporary location-group bootstrap routes
+
+The local/test-only guard also registers organization-scoped location-group create, list, get,
+replace, and archive routes below
+`/internal/organizations/{organization_id}/location-groups`. Membership list, add, and remove use
+`/{group_id}/locations` and `/{group_id}/locations/{location_id}`. Lists use bounded offset
+pagination ordered by `created_at ASC, id ASC`.
+
+There is no global group route, nested-group route, bulk mutation, configuration behavior, or
+frontend. The surfaces are unauthenticated bootstrap routes, absent by default, and not
+production-safe. See `docs/LOCATION-GROUPS.md`.
 
 ## Logging
 

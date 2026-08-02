@@ -44,6 +44,12 @@ location scope, profile resource ID, operation, resulting version, and changed f
 not include profile prose, services, claims, guidance, disclaimers, landmarks, references, or CTA
 content. Profile records and audit evidence use one caller-owned transaction.
 
+Location-group create, content replacement, archive, membership add, and membership removal events
+carry organization scope and group/location identifiers where applicable. Metadata contains only
+operation, resulting group version when applicable, and changed field names; it excludes names,
+descriptions, profile/configuration content, contacts, customer data, credentials, and secrets.
+Group or membership mutation and audit evidence share one caller-owned transaction.
+
 ## Transaction contract
 
 `AuditEventService.record(session, command)` uses the caller's existing SQLAlchemy `AsyncSession`.

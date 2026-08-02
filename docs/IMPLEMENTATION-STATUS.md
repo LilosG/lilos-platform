@@ -3,8 +3,8 @@
 ## Current task
 
 - Roadmap phase: Phase 2 — Tenant, Organization and Location Model
-- Implementation packet: `PHASE-02-TASK-04`
-- Deliverable: Controlled organization-profile and location-profile foundations
+- Implementation packet: `PHASE-02-TASK-05`
+- Deliverable: Organization-scoped location-group foundation
 - Status: Complete for this implementation packet; Phase 2 remains in progress
 - Date: 2026-08-02
 - Commit or pull request: Uncommitted; commit and push explicitly prohibited for this task
@@ -111,8 +111,34 @@
   names without profile content.
 - Added temporary local/test-only profile routes, migration `20260802_0004`, focused profile tests,
   and profile architecture and operations documentation.
+- Added organization-scoped location groups and many-to-many memberships with the exact approved
+  bounded schema, immutable scoped keys, terminal archival, optimistic concurrency, and no nested
+  groups or downstream configuration/authorization behavior.
+- Added direct and composite restrictive ownership constraints that prevent cross-organization
+  membership, plus deterministic bounded group/member listing and narrow repositories.
+- Added the full parent-organization permission matrix, location eligibility rules, explicit
+  membership persistence/removal, row-locked mutation validation, and atomic bounded audit events.
+- Added guarded temporary group and membership routes, migration `20260802_0005`, ADR 0007,
+  location-group documentation, and focused lifecycle/isolation/migration tests.
 
 ## Test evidence
+
+- No dependency was added or changed for `PHASE-02-TASK-05`.
+- `uv run pytest tests/python/location_groups -q` against PostgreSQL 17 — all 30 focused
+  location-group tests passed with the existing Starlette/httpx warning.
+- Organization, location, profile, industry, audit, and database regression suites — all 156
+  tests passed.
+- `npm run check` against PostgreSQL 17 passed: formatting checks passed for 142 Python files,
+  ESLint and Ruff passed, Astro Check reported 0 diagnostics, strict mypy passed 139 source files,
+  Vitest passed 1 test, pytest passed all 218 tests, Astro built 1 page, and the environment/secret
+  scan passed.
+- Clean upgrade reached `20260802_0005`; `uv run alembic check` reported no drift. Catalog
+  inspection verified the exact ten group columns and five membership columns, scoped unique
+  constraints, four validated `ON DELETE RESTRICT` ownership foreign keys, deterministic-list
+  indexes, the immutable-key trigger, and the existing audit append-only trigger.
+- Downgrade to `20260802_0004` removed both location-group tables and their trigger function while
+  retaining organizations, industries, locations, both profile tables, audit events, and prior
+  controls; re-upgrade restored head successfully.
 
 - No dependency was added or changed for `PHASE-02-TASK-04`.
 - `uv run pytest tests/python/profiles -q` against PostgreSQL 17 — all 39 focused profile tests
@@ -202,7 +228,7 @@
 - All product functionality and later-roadmap platform capabilities.
 - Business-domain schemas, RLS policies, seed data, and Supabase connectivity.
 - Authentication, authorization, memberships, permissions, and entitlements.
-- Effective profile composition, location groups, and business identity.
+- Effective profile composition and business identity.
 - Durable job execution, queues, schedule dispatch, retries, and workflow state.
 - Vercel, Hetzner, or other production infrastructure configuration.
 - Google, AI-provider, Stripe, email, SMS, and other external integrations.
@@ -230,5 +256,5 @@
 
 ## Next eligible task
 
-- Await review and explicit authorization before committing or pushing `PHASE-02-TASK-04`.
+- Await review and explicit authorization before committing or pushing `PHASE-02-TASK-05`.
 - Do not begin another roadmap task as part of this packet.

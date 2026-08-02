@@ -12,6 +12,7 @@ from apps.api.app.logging_config import configure_logging
 from apps.api.app.middleware import CorrelationIdMiddleware
 from apps.api.app.routes.health import router as health_router
 from apps.api.app.routes.internal_industries import router as internal_industries_router
+from apps.api.app.routes.internal_location_groups import router as internal_location_groups_router
 from apps.api.app.routes.internal_locations import router as internal_locations_router
 from apps.api.app.routes.internal_organizations import router as internal_organizations_router
 from apps.api.app.routes.internal_profiles import router as internal_profiles_router
@@ -49,6 +50,7 @@ def create_app(
         application.include_router(internal_organizations_router)
         application.include_router(internal_locations_router)
         application.include_router(internal_profiles_router)
+        application.include_router(internal_location_groups_router)
     return application
 
 

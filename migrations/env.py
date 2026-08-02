@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 from apps.api.app.audit.models import AuditEvent
 from apps.api.app.config import Settings
 from apps.api.app.industries.models import Industry
+from apps.api.app.location_groups.models import LocationGroup, LocationGroupMembership
 from apps.api.app.locations.models import Location
 from apps.api.app.organizations.models import Organization
 from apps.api.app.profiles.models import LocationProfile, OrganizationProfile
@@ -23,6 +24,8 @@ target_metadata = Organization.metadata
 assert AuditEvent.metadata is target_metadata
 assert Location.metadata is target_metadata
 assert Industry.metadata is target_metadata
+assert LocationGroup.metadata is target_metadata
+assert LocationGroupMembership.metadata is target_metadata
 assert OrganizationProfile.metadata is target_metadata
 assert LocationProfile.metadata is target_metadata
 

@@ -87,6 +87,8 @@ def test_audit_migration_upgrades_downgrades_and_restores_head(
         "alembic_version",
         "audit_events",
         "industries",
+        "location_group_memberships",
+        "location_groups",
         "location_profiles",
         "locations",
         "organization_profiles",
