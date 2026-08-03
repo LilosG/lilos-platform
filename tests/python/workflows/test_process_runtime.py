@@ -336,9 +336,13 @@ async def test_postgresql_worker_scheduler_and_heartbeat_contracts(
             completed_run = await connection.scalar(
                 select(WorkflowRun.status).where(WorkflowRun.id == run_id)
             )
-            schedule = (
-                await connection.execute(select(Schedule).where(Schedule.id == schedule_id))
-            ).scalar_one()
+            schedule_last_run_at, schedule_next_run_at = (
+                await connection.execute(
+                    select(Schedule.last_run_at, Schedule.next_run_at).where(
+                        Schedule.id == schedule_id
+                    )
+                )
+            ).one()
             heartbeats = (
                 (
                     await connection.execute(
@@ -354,8 +358,8 @@ async def test_postgresql_worker_scheduler_and_heartbeat_contracts(
 
         assert completed_job == "completed"
         assert completed_run == "completed"
-        assert schedule.last_run_at == now - timedelta(minutes=1)
-        assert schedule.next_run_at > now
+        assert schedule_last_run_at == now - timedelta(minutes=1)
+        assert schedule_next_run_at > now
         assert {heartbeat.service for heartbeat in heartbeats} == {
             "lilos-worker",
             "lilos-scheduler",
