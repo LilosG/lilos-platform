@@ -32,6 +32,7 @@ from apps.api.app.administration.models import (
     ServiceAssignment,
     ServiceDefinition,
 )
+from apps.api.app.ai.models import AIExecution, AITaskDefinition
 from apps.api.app.audit.models import AuditEvent
 from apps.api.app.authentication.models import UserProfile
 from apps.api.app.config import Settings
@@ -68,6 +69,13 @@ from apps.api.app.products.gbp.models import (
     GBPProfileChangeRevision,
     GBPProfileSnapshot,
     GBPPublication,
+)
+from apps.api.app.products.reviews.models import (
+    Review,
+    ReviewEscalation,
+    ReviewResponseRevision,
+    ReviewRevision,
+    ReviewRiskFlag,
 )
 from apps.api.app.profiles.models import LocationProfile, OrganizationProfile
 from apps.api.app.synchronization.models import (
@@ -160,6 +168,16 @@ for gbp_model in (
     GBPPublication,
 ):
     assert gbp_model.metadata is target_metadata
+for reviews_model in (
+    AITaskDefinition,
+    AIExecution,
+    Review,
+    ReviewRevision,
+    ReviewRiskFlag,
+    ReviewResponseRevision,
+    ReviewEscalation,
+):
+    assert reviews_model.metadata is target_metadata
 
 
 def configured_database_url() -> str:

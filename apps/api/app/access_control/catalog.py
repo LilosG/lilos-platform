@@ -302,6 +302,31 @@ PERMISSION_CATALOG: dict[str, tuple[str, str, str, str]] = {
         "gbp",
         "diagnostics",
     ),
+    "reviews.read": ("Read reviews", "Read organization review operations.", "reviews", "read"),
+    "reviews.generate_response": (
+        "Draft review response",
+        "Create grounded response revisions.",
+        "reviews",
+        "generate_response",
+    ),
+    "reviews.approve_response": (
+        "Approve review response",
+        "Approve current response revisions.",
+        "reviews",
+        "approve_response",
+    ),
+    "reviews.publish_response": (
+        "Publish review response",
+        "Dispatch approved responses.",
+        "reviews",
+        "publish_response",
+    ),
+    "reviews.escalate": (
+        "Escalate review",
+        "Manage restricted review cases.",
+        "reviews",
+        "escalate",
+    ),
 }
 
 ALL_PERMISSIONS = frozenset(PERMISSION_CATALOG)
@@ -348,6 +373,9 @@ ROLE_MAPPINGS: dict[str, frozenset[str]] = {
             "gbp.sync",
             "gbp.propose",
             "gbp.diagnostics",
+            "reviews.read",
+            "reviews.generate_response",
+            "reviews.escalate",
         }
     ),
     "organization_member": frozenset(
@@ -369,6 +397,7 @@ ROLE_MAPPINGS: dict[str, frozenset[str]] = {
             "integrations.read",
             "synchronization.read",
             "gbp.read",
+            "reviews.read",
         }
     ),
     "organization_viewer": frozenset(
@@ -390,6 +419,7 @@ ROLE_MAPPINGS: dict[str, frozenset[str]] = {
             "integrations.read",
             "synchronization.read",
             "gbp.read",
+            "reviews.read",
         }
     ),
 }
