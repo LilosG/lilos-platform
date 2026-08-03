@@ -400,6 +400,10 @@ Authorization enforcement across existing routes remains deliberately deferred t
 - Phase 5 only when separately authorized. Phase 4 is complete locally pending recorded CI evidence.
 # Phase 5 completion
 # Phase 13 completion
+# Phase 14 completion
+
+Phase 14 completes the capability-governed GBP model at migration `20260803_0011`, including categories, special hours, grouped changes, media rights, posts, scheduling state, and suspension cases. Unsupported provider surfaces remain unavailable.
+
 
 Phase 13 adds the evidence-driven SEO persistence and policy foundation at migration `20260803_0010`: confirmed website/property scope, deterministic URLs, bounded crawl intent, quality-labelled observations, deduplicated opportunities, immutable recommendations, implementation verification, and measurement outcomes. Live Search Console validation is deferred to approved credentials.
 

@@ -78,6 +78,16 @@ from apps.api.app.products.gbp.models import (
     GBPProfileSnapshot,
     GBPPublication,
 )
+from apps.api.app.products.gbp.operations_models import (
+    GBPCapabilitySnapshot,
+    GBPCategory,
+    GBPChangeSet,
+    GBPMedia,
+    GBPPostPublication,
+    GBPPostRevision,
+    GBPSpecialHours,
+    GBPSuspensionCase,
+)
 from apps.api.app.products.leads.models import (
     CRMLeadMapping,
     Lead,
@@ -201,6 +211,17 @@ for seo_model in (
     SEOOutcome,
 ):
     assert seo_model.metadata is target_metadata
+for gbp_operation_model in (
+    GBPCapabilitySnapshot,
+    GBPCategory,
+    GBPChangeSet,
+    GBPSpecialHours,
+    GBPMedia,
+    GBPPostRevision,
+    GBPPostPublication,
+    GBPSuspensionCase,
+):
+    assert gbp_operation_model.metadata is target_metadata
 for gbp_model in (
     GBPAccount,
     GBPLocation,
