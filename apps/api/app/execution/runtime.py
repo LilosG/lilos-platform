@@ -176,6 +176,13 @@ class WorkerBackend(DurableProcessBackend):
                 )
                 if task in done:
                     return task.result()
+
+                # The task may complete after asyncio.wait() times out but before
+                # lease renewal starts. Avoid treating successful completion as
+                # lease loss.
+                if task.done():
+                    return task.result()
+
                 async with self.sessions() as session, session.begin():
                     renewed = await self.execution.renew_lease(
                         session,
@@ -184,7 +191,13 @@ class WorkerBackend(DurableProcessBackend):
                         self.instance_key,
                         self.options.lease_seconds,
                     )
+
                 if not renewed:
+                    # The task may have completed and released its lease while
+                    # the renewal transaction was executing.
+                    if task.done():
+                        return task.result()
+
                     task.cancel()
                     with suppress(asyncio.CancelledError):
                         await task
