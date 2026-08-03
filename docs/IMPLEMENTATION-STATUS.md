@@ -3,21 +3,43 @@
 ## Current task
 
 - Roadmap phase: Phase 3 — Authentication, Memberships and Authorization
-- Implementation packet: `PHASE-03-TASK-01`
-- Deliverable: Authentication, platform user identity, and session-validation foundation
-- Status: Complete locally; commit, push, and hosted CI evidence pending
+- Implementation packet: `PHASE-03-TASK-02`
+- Deliverable: Organization memberships, invitations, fixed roles/permissions, scoped assignments,
+  and explicit denies
+- Status: Complete locally; commit, push, and hosted CI pending
 - Date: 2026-08-02
 - Commit or pull request: Pending
 
 ## Implemented requirements
 
-- Added the exact `user_profiles` platform identity record with one-to-one immutable Supabase UUID
-  mapping, controlled lifecycle, optimistic concurrency, and no organization authorization state.
-- Added strict bearer-only ES256/RS256 verification with exact claims, bounded JWKS caching,
-  rotation, outage handling, generic failures, redacted security logs, and an immutable minimal
-  authenticated principal.
-- Added explicit local/test-only provisioning and lifecycle administration, atomic minimized audit
-  events, migration `20260802_0006`, ADR 0009, and authentication operations documentation.
+- Added organization-scoped permanent memberships and secure hash-only invitations with controlled,
+  versioned lifecycles and atomic minimized audit events.
+- Added fixed immutable global system-role and permission catalogs, explicit idempotent audited seed,
+  multi-role organization/location assignments, and membership-specific denies where every
+  applicable deny overrides allow.
+- Added composite database ownership constraints, guarded local/test administration routes,
+  migration `20260802_0007`, ADR 0010, and focused membership/invitation/authorization docs.
+
+Authorization enforcement across existing routes remains deliberately deferred to
+`PHASE-03-TASK-03`; a valid authenticated principal alone still grants no organization access.
+
+## Phase 3 task 02 validation evidence
+
+- Focused access-domain suite: 9 passed against PostgreSQL 17. All prior suites were also run in
+  bounded isolated databases; together all 297 Python tests passed.
+- `npm run check` passed formatting, ESLint, Ruff, Astro Check (0 errors/warnings/hints), strict
+  mypy over 184 source files, Vitest, non-database pytest, frontend production build, and secret
+  scanning. The production build generated one static page.
+- Clean base-to-head reached `20260802_0007`; two Alembic checks reported no drift. Catalog review
+  verified exact column counts, named checks, restrictive foreign keys, composite ownership,
+  partial duplicate-prevention indexes, immutable type/key triggers, and the audit append-only
+  trigger.
+- Explicit catalog seed created 5 roles, 15 permissions, 49 mappings, and 3 audit events; the
+  second run created none. Unit/integration tests prove mismatch rollback.
+- Downgrade to `20260802_0006` removed only Task 02 tables while retaining `user_profiles`, all
+  Phase 2 tables, three immutable catalog audit events, and append-only audit protection;
+  re-upgrade restored head and no drift.
+- Existing upstream Starlette/httpx deprecation warning remains unchanged and unsuppressed.
 
 ## Phase 3 task 01 validation evidence
 

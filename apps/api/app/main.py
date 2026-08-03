@@ -12,6 +12,7 @@ from apps.api.app.errors import register_exception_handlers
 from apps.api.app.logging_config import configure_logging
 from apps.api.app.middleware import CorrelationIdMiddleware
 from apps.api.app.routes.health import router as health_router
+from apps.api.app.routes.internal_access_control import router as internal_access_control_router
 from apps.api.app.routes.internal_authentication import router as internal_authentication_router
 from apps.api.app.routes.internal_business_identity import (
     router as internal_business_identity_router,
@@ -62,6 +63,7 @@ def create_app(
         application.include_router(internal_business_identity_router)
         application.include_router(internal_authentication_router)
         application.include_router(internal_user_profiles_router)
+        application.include_router(internal_access_control_router)
     return application
 
 

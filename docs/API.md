@@ -262,3 +262,15 @@ Request completion records add method, route, status code, duration, and outcome
 response bodies, query strings, credentials, and submitted validation values are not logged by
 default. Database failures log normalized codes and exception types without URLs or raw driver
 messages.
+
+## Temporary membership and access bootstrap routes
+
+The local/test-only guard registers organization-scoped membership, invitation, role-assignment,
+permission-deny, fixed-catalog-read, and first-owner bootstrap routes. Invitation creation returns
+plaintext once with `Cache-Control: no-store` and `Pragma: no-cache`; it is absent from later reads,
+logs, and audit events. Acceptance requires the existing bearer-authenticated principal.
+
+The router is absent by default and rejected in development, staging, and production. These routes
+do not authorize existing APIs. JWT organization/role claims are ignored, and authentication alone
+grants no organization access. See `docs/MEMBERSHIPS.md`, `docs/INVITATIONS.md`, and
+`docs/AUTHORIZATION-MODEL.md`.

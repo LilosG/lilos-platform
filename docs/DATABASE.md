@@ -268,3 +268,17 @@ Future models inherit from the shared declarative base and opt into:
 
 These conventions do not replace tenant ownership, organization scope, authorization, retention,
 or domain-specific integrity requirements in later implementation packets.
+
+## Access-domain revision
+
+Revision `20260802_0007` adds memberships, hash-only invitations, immutable global role/permission
+catalogs and mappings, plus organization/location-scoped role assignments and permission denies.
+All tenant ownership uses restrictive direct/composite foreign keys. Membership type and catalog
+keys have immutable-key triggers. No custom catalogs, sessions, JWTs, secrets, RLS, or route
+enforcement are stored.
+
+Run `npm run db:seed:access` explicitly after migrations. The deterministic audited seed is
+idempotent for exact matches and fails instead of rewriting mismatches. Downgrade to
+`20260802_0006` removes the seven access tables in dependency order while preserving
+`user_profiles`, every Phase 2 structure, and immutable audit evidence. This destructive downgrade
+is for disposable validation or approved recovery, not routine production rollback.

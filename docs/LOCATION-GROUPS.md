@@ -74,3 +74,7 @@ Temporary routes are under `/internal/organizations/{organization_id}/location-g
 unregistered by default, may be enabled only in local/test, and are rejected in development,
 staging, and production. They are unauthenticated bootstrap surfaces and are not production-safe.
 Authentication, authorization, request scope, RLS, and reporting execution remain future work.
+
+Location groups have no authorization effect in the initial access model. No group-scoped
+assignment or deny exists, and membership changes alter no permission. Group authorization scope is
+explicitly deferred.

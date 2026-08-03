@@ -151,3 +151,8 @@ npm run format
 - If dependencies changed, run `npm ci` and `uv sync --locked` again.
 - Do not add credentials to `.env.example`; keep local values in the ignored `.env` file.
 - Do not use production data or production provider credentials for local development.
+
+After upgrading, run `npm run db:seed:access` to establish the fixed role/permission catalog. It
+creates no membership or owner. Temporary access bootstrap routes require
+`LILOS_INTERNAL_ADMIN_ROUTES_ENABLED=true` with `LILOS_ENV=local` or `test`. Treat one-time
+invitation plaintext as a secret: never log or commit it.

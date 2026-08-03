@@ -49,11 +49,18 @@ def test_baseline_migration_upgrades_downgrades_and_upgrades_again(
         "location_groups",
         "location_profiles",
         "locations",
+        "membership_permission_denies",
+        "membership_role_assignments",
+        "organization_invitations",
+        "organization_memberships",
         "organization_profiles",
         "organizations",
+        "permissions",
+        "role_permissions",
+        "roles",
         "user_profiles",
     ]
-    assert revisions_at_head == ["20260802_0006"]
+    assert revisions_at_head == ["20260802_0007"]
 
     command.downgrade(config, "base")
     tables_at_base, revisions_at_base = asyncio.run(database_state(postgresql_test_url))
@@ -70,8 +77,15 @@ def test_baseline_migration_upgrades_downgrades_and_upgrades_again(
         "location_groups",
         "location_profiles",
         "locations",
+        "membership_permission_denies",
+        "membership_role_assignments",
+        "organization_invitations",
+        "organization_memberships",
         "organization_profiles",
         "organizations",
+        "permissions",
+        "role_permissions",
+        "roles",
         "user_profiles",
     ]
-    assert revisions_at_final_head == ["20260802_0006"]
+    assert revisions_at_final_head == ["20260802_0007"]

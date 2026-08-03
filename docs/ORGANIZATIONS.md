@@ -130,3 +130,8 @@ authorization, configuration, product, workflow, profile, or business-identity b
 Current organization identity, optional industry, and optional organization profile are available
 through the read-only service documented in `docs/BUSINESS-IDENTITY.md`. Resolution is allowed for
 every organization lifecycle state and never changes the organization.
+
+Memberships, invitations, assignments, and denies are owned by this tenant boundary. Composite SQL
+constraints prevent cross-organization membership/location scope. Only an active organization can
+yield effective runtime access; other states suppress access without rewriting memberships. ADR
+0010 defines the administration matrix. Existing-route enforcement remains deferred.

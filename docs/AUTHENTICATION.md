@@ -69,3 +69,9 @@ create/read/deactivate/reactivate mappings and `/internal/auth/me` verifies a be
 temporary unauthenticated administration routes are not production-safe and cannot be enabled in
 development, staging, or production. Tests use injected verifiers and local asymmetric fixtures;
 production never falls back to either.
+
+Authentication remains separate from ADR 0010 access records. A principal must map to an active
+user before invitation acceptance, but gains no organization scope, membership, role, permission,
+or entitlement. Stored profile email is used only for invitation matching; JWT email and
+organization/role claims remain untrusted. Deactivation suppresses access without rewriting
+memberships.

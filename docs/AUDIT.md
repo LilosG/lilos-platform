@@ -130,3 +130,9 @@ Platform user provision, deactivation, and reactivation append audit events in t
 caller-owned transaction. Metadata is limited to platform/auth UUIDs, operation, prior/resulting
 status, resulting version, and changed field names; email and credentials are excluded.
 Authentication attempts are redacted structured security logs rather than immutable audit rows.
+
+Membership/invitation lifecycles, role assignment/removal, explicit deny addition/removal, and
+catalog seed creation append immutable events in their caller-owned transactions. Metadata contains
+only scoped identifiers, operation, status/version, and changed field names. It excludes invitation
+plaintext and hashes, full normalized email, JWTs, authorization headers, customer data, and
+secrets. Removing an assignment or deny never removes its audit evidence.

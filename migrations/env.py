@@ -7,6 +7,15 @@ from alembic import context
 from sqlalchemy import Connection, pool
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
+from apps.api.app.access_control.models import (
+    MembershipPermissionDeny,
+    MembershipRoleAssignment,
+    OrganizationInvitation,
+    OrganizationMembership,
+    Permission,
+    Role,
+    RolePermission,
+)
 from apps.api.app.audit.models import AuditEvent
 from apps.api.app.authentication.models import UserProfile
 from apps.api.app.config import Settings
@@ -30,6 +39,13 @@ assert LocationGroupMembership.metadata is target_metadata
 assert OrganizationProfile.metadata is target_metadata
 assert LocationProfile.metadata is target_metadata
 assert UserProfile.metadata is target_metadata
+assert OrganizationMembership.metadata is target_metadata
+assert OrganizationInvitation.metadata is target_metadata
+assert Role.metadata is target_metadata
+assert Permission.metadata is target_metadata
+assert RolePermission.metadata is target_metadata
+assert MembershipRoleAssignment.metadata is target_metadata
+assert MembershipPermissionDeny.metadata is target_metadata
 
 
 def configured_database_url() -> str:

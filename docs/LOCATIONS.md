@@ -44,3 +44,7 @@ location ownership, configuration, profiles, entitlements, workflows, or authori
 Current location business identity is resolved with both organization and location scope. Closed
 and archived locations remain readable, optional profiles remain explicit, cross-level lists stay
 separate, and location groups are excluded. See `docs/BUSINESS-IDENTITY.md` and ADR 0008.
+
+Role assignments and explicit denies may target one organization-owned location. Composite foreign
+keys prevent cross-organization scope. Organization scope applies to all current/future locations;
+location scope applies only to that location. Permissions never bypass lifecycle restrictions.
