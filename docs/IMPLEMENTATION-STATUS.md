@@ -398,3 +398,6 @@ Authorization enforcement across existing routes remains deliberately deferred t
 ## Next eligible task
 
 - Phase 5 only when separately authorized. Phase 4 is complete locally pending recorded CI evidence.
+# Phase 5 completion
+
+Phase 5 is complete at migration `20260803_0002`: shared workflow definitions and versions, durable runs/steps/jobs/attempts, scheduling, leases, retry, cancellation, dead-letter handling, and organization-scoped idempotency are established. Provider actions remain deferred.

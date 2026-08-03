@@ -216,6 +216,21 @@ PERMISSION_CATALOG: dict[str, tuple[str, str, str, str]] = {
         "offboarding",
         "manage",
     ),
+    "workflows.read": ("Read workflows", "Read workflow and job state.", "workflows", "read"),
+    "workflows.execute": (
+        "Execute workflows",
+        "Submit governed workflows.",
+        "workflows",
+        "execute",
+    ),
+    "workflows.manage": ("Manage workflows", "Cancel or replay workflows.", "workflows", "manage"),
+    "schedules.read": ("Read schedules", "Read workflow schedules.", "schedules", "read"),
+    "schedules.manage": (
+        "Manage schedules",
+        "Administer workflow schedules.",
+        "schedules",
+        "manage",
+    ),
 }
 
 ALL_PERMISSIONS = frozenset(PERMISSION_CATALOG)
@@ -247,6 +262,9 @@ ROLE_MAPPINGS: dict[str, frozenset[str]] = {
             "feature_flags.read",
             "onboarding.read",
             "onboarding.manage",
+            "workflows.read",
+            "workflows.execute",
+            "schedules.read",
         }
     ),
     "organization_member": frozenset(
@@ -262,6 +280,8 @@ ROLE_MAPPINGS: dict[str, frozenset[str]] = {
             "policies.read",
             "feature_flags.read",
             "onboarding.read",
+            "workflows.read",
+            "schedules.read",
         }
     ),
     "organization_viewer": frozenset(
@@ -277,6 +297,8 @@ ROLE_MAPPINGS: dict[str, frozenset[str]] = {
             "policies.read",
             "feature_flags.read",
             "onboarding.read",
+            "workflows.read",
+            "schedules.read",
         }
     ),
 }

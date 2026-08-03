@@ -35,6 +35,16 @@ from apps.api.app.administration.models import (
 from apps.api.app.audit.models import AuditEvent
 from apps.api.app.authentication.models import UserProfile
 from apps.api.app.config import Settings
+from apps.api.app.execution.models import (
+    IdempotencyRecord,
+    Job,
+    JobAttempt,
+    Schedule,
+    WorkflowDefinition,
+    WorkflowRun,
+    WorkflowStep,
+    WorkflowVersion,
+)
 from apps.api.app.industries.models import Industry
 from apps.api.app.location_groups.models import LocationGroup, LocationGroupMembership
 from apps.api.app.locations.models import Location
@@ -79,6 +89,17 @@ for phase4_model in (
     OffboardingStep,
 ):
     assert phase4_model.metadata is target_metadata
+for execution_model in (
+    WorkflowDefinition,
+    WorkflowVersion,
+    WorkflowRun,
+    WorkflowStep,
+    Job,
+    JobAttempt,
+    Schedule,
+    IdempotencyRecord,
+):
+    assert execution_model.metadata is target_metadata
 
 
 def configured_database_url() -> str:
