@@ -3,6 +3,7 @@
 import hashlib
 import re
 from datetime import UTC, datetime
+from typing import TypedDict
 from uuid import UUID
 
 from sqlalchemy import select
@@ -24,9 +25,14 @@ from apps.api.app.products.content.models import (
 SECRET_PATTERN = re.compile(r"(?i)(?:api[_-]?key|secret|token|password)\s*[:=]")
 
 
+class ContentValidation(TypedDict):
+    valid: bool
+    errors: list[str]
+
+
 def validate_content(
     body: str, frontmatter: dict[str, object], prohibited_claims: list[str], fact_ids: list[UUID]
-) -> dict[str, object]:
+) -> ContentValidation:
     errors = []
     lower = body.casefold()
     if not fact_ids:

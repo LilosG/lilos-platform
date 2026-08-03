@@ -3,6 +3,7 @@
 import hashlib
 import json
 from datetime import UTC, datetime
+from typing import TypedDict
 from uuid import UUID, uuid4
 
 from sqlalchemy import select
@@ -16,6 +17,13 @@ from apps.api.app.products.gbp.models import (
     GBPProfileSnapshot,
     GBPPublication,
 )
+
+
+class ProfileHealth(TypedDict):
+    healthy: bool
+    blockers: list[str]
+    warnings: list[str]
+    ranking_claim: None
 
 
 def canonical_hash(value: dict[str, object]) -> str:
@@ -39,7 +47,7 @@ def normalize_profile(payload: dict[str, object]) -> dict[str, object]:
     return {key: payload[key] for key in allowed if key in payload}
 
 
-def profile_health(profile: dict[str, object], observed_at: datetime) -> dict[str, object]:
+def profile_health(profile: dict[str, object], observed_at: datetime) -> ProfileHealth:
     blockers = []
     warnings = []
     if "title" not in profile:

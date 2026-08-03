@@ -9,11 +9,24 @@ from apps.api.app.products.leads.service import normalize_email, normalize_phone
 def test_contact_normalization_and_submission_idempotency() -> None:
     assert normalize_email(" Person@Example.COM ") == "person@example.com"
     assert normalize_phone("+1 (555) 010-0000") == "+15550100000"
-    base = dict(
-        source_id=uuid4(), location_id=None, first_name="Test", received_at=datetime.now(UTC)
-    )
-    assert submission_hash(LeadIntake(external_submission_id="one", **base)) == submission_hash(
-        LeadIntake(external_submission_id="two", **base)
+    source_id = uuid4()
+    received_at = datetime.now(UTC)
+    assert submission_hash(
+        LeadIntake(
+            source_id=source_id,
+            external_submission_id="one",
+            location_id=None,
+            first_name="Test",
+            received_at=received_at,
+        )
+    ) == submission_hash(
+        LeadIntake(
+            source_id=source_id,
+            external_submission_id="two",
+            location_id=None,
+            first_name="Test",
+            received_at=received_at,
+        )
     )
 
 

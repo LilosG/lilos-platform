@@ -2,6 +2,7 @@
 
 import hashlib
 from datetime import datetime
+from typing import TypedDict
 from uuid import UUID
 
 from sqlalchemy import select
@@ -29,11 +30,18 @@ PROHIBITED_DRAFT_TERMS = (
 )
 
 
+class ReviewClassification(TypedDict):
+    risks: list[str]
+    restricted: bool
+    sentiment: str
+    rating_band: str | None
+
+
 def review_hash(rating: float | None, title: str | None, body: str | None) -> str:
     return hashlib.sha256(f"{rating}|{title or ''}|{body or ''}".encode()).hexdigest()
 
 
-def classify(body: str | None, rating: float | None) -> dict[str, object]:
+def classify(body: str | None, rating: float | None) -> ReviewClassification:
     text = (body or "").casefold()
     risks = sorted(key for key, terms in RISK_TERMS.items() if any(term in text for term in terms))
     sentiment = (

@@ -70,7 +70,7 @@ def test_access_migration_upgrade_downgrade_and_preservation(
         "membership_role_assignments",
         "membership_permission_denies",
     }
-    assert state["revision"] == "20260803_0005"
+    assert state["revision"] == "20260803_0009"
     assert expected <= cast(set[str], state["tables"])
     assert {
         "organization_memberships_immutable_type",
@@ -102,4 +102,4 @@ def test_access_migration_upgrade_downgrade_and_preservation(
     } <= cast(set[str], downgraded["tables"])
     assert "audit_events_append_only" in cast(set[str], downgraded["triggers"])
     command.upgrade(config, "head")
-    assert asyncio.run(catalog(postgresql_test_url))["revision"] == "20260803_0005"
+    assert asyncio.run(catalog(postgresql_test_url))["revision"] == "20260803_0009"
