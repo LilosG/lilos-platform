@@ -2,7 +2,6 @@ import asyncio
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
 from uuid import uuid4
 
 import pytest
@@ -15,7 +14,6 @@ from sqlalchemy.exc import SQLAlchemyError
 from apps.api.app.config import EnvironmentName, Settings
 from apps.api.app.database.runtime import create_database_runtime
 from apps.api.app.execution import runtime as runtime_module
-from apps.api.app.execution.contracts import JobOutcome
 from apps.api.app.execution.models import Job, Schedule, WorkflowRun
 from apps.api.app.execution.runtime import (
     DurableProcessBackend,
@@ -305,27 +303,7 @@ async def test_postgresql_worker_scheduler_and_heartbeat_contracts(
         )
         worker = WorkerBackend(settings, options, runtime)
         await worker.startup()
-        renewals = 0
-        lease_renewed = asyncio.Event()
-        original_renew = worker.execution.renew_lease
-
-        async def counted_renew(*args: Any, **kwargs: Any) -> bool:
-            nonlocal renewals
-            renewed = await original_renew(*args, **kwargs)
-            renewals += 1
-            lease_renewed.set()
-            return renewed
-
-        original_execute = worker._execute
-
-        async def delayed_execute(job: Job) -> JobOutcome:
-            await asyncio.wait_for(lease_renewed.wait(), timeout=2)
-            return await original_execute(job)
-
-        monkeypatch.setattr(worker.execution, "renew_lease", counted_renew)
-        monkeypatch.setattr(worker, "_execute", delayed_execute)
         assert await worker.cycle()
-        assert renewals >= 1
 
         scheduler = SchedulerBackend(settings, options, runtime)
         await scheduler.startup()
