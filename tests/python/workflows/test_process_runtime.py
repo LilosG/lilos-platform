@@ -11,7 +11,6 @@ from alembic.config import Config
 from pydantic import PostgresDsn, TypeAdapter
 from sqlalchemy import select, text
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.app.config import EnvironmentName, Settings
 from apps.api.app.database.runtime import create_database_runtime
@@ -314,14 +313,14 @@ async def test_postgresql_worker_scheduler_and_heartbeat_contracts(
             renewals += 1
             return await original_renew(*args, **kwargs)
 
-        original_execute = runtime_module._execute_workflow_job
+        original_execute = worker._execute
 
-        async def delayed_execute(session: AsyncSession, job: Job) -> JobOutcome:
+        async def delayed_execute(job: Job) -> JobOutcome:
             await asyncio.sleep(0.03)
-            return await original_execute(session, job)
+            return await original_execute(job)
 
         monkeypatch.setattr(worker.execution, "renew_lease", counted_renew)
-        monkeypatch.setattr(runtime_module, "_execute_workflow_job", delayed_execute)
+        monkeypatch.setattr(worker, "_execute", delayed_execute)
         assert await worker.cycle()
         assert renewals >= 1
 
