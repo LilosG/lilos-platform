@@ -7,6 +7,7 @@ from typing import Any
 
 from apps.api.app.config import Settings
 from apps.api.app.context import current_correlation_id
+from apps.api.app.observability.telemetry import redact
 
 APPLICATION_LOGGER_NAME = "lilos"
 
@@ -52,7 +53,7 @@ class JsonFormatter(logging.Formatter):
             value = getattr(record, field_name, None)
             if value is not None:
                 payload[field_name] = value
-        return json.dumps(payload, separators=(",", ":"), ensure_ascii=True)
+        return json.dumps(redact(payload), separators=(",", ":"), ensure_ascii=True)
 
 
 def configure_logging(settings: Settings) -> None:

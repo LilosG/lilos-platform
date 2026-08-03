@@ -1,0 +1,3 @@
+# Alert Catalog
+
+Critical rules cover API/readiness/database outages, pool saturation, migration mismatch, queue backlog, stale leases, scheduler silence, delivery failures, provider circuits and refresh, stale sync, verification/reconciliation backlog, AI failures/budget, audit-trigger loss, backup failure/staleness, certificate/DNS failure, rollback, authorization anomalies, isolation tests, and secret scans. Every rule declares severity, duration, operations owner, destination abstraction, runbook, maintenance suppression, and recovery threshold. Destinations contain no credentials in source.

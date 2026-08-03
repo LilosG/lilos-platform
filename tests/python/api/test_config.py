@@ -9,7 +9,12 @@ from apps.api.app.main import create_app
 
 @pytest.mark.parametrize("environment", list(EnvironmentName))
 def test_every_explicit_environment_name_is_valid(environment: EnvironmentName) -> None:
-    settings = Settings(environment=environment)
+    production_values: dict[str, object] = (
+        {"release": "release-test", "telemetry_export_endpoint": "https://telemetry.invalid"}
+        if environment is EnvironmentName.PRODUCTION
+        else {}
+    )
+    settings = Settings.model_validate({"environment": environment, **production_values})
 
     assert settings.environment is environment
 

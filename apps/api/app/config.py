@@ -51,6 +51,9 @@ class Settings(BaseSettings):
         str,
         Field(min_length=1, max_length=32, pattern=r"^[0-9A-Za-z][0-9A-Za-z.+-]*$"),
     ] = "0.1.0"
+    release: Annotated[str, Field(min_length=1, max_length=64)] = "development"
+    trace_sample_rate: Annotated[float, Field(ge=0, le=1)] = 0.1
+    telemetry_export_endpoint: HttpUrl | None = None
     database_url: PostgresDsn | None = None
     migration_database_url: PostgresDsn | None = None
     test_database_url: PostgresDsn | None = None
@@ -84,6 +87,15 @@ class Settings(BaseSettings):
         ):
             if value is not None and value.scheme != "https":
                 raise ValueError(f"{name} must use HTTPS")
+        return self
+
+    @model_validator(mode="after")
+    def validate_production_observability(self) -> "Settings":
+        if self.environment is EnvironmentName.PRODUCTION:
+            if self.release == "development":
+                raise ValueError("production requires an immutable release identifier")
+            if self.telemetry_export_endpoint is None:
+                raise ValueError("production requires a telemetry export endpoint")
         return self
 
     @model_validator(mode="after")

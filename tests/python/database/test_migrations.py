@@ -70,6 +70,7 @@ def test_baseline_migration_upgrades_downgrades_and_upgrades_again(
         "gbp_publications",
         "gbp_special_hours",
         "gbp_suspension_cases",
+        "incident_timeline_entries",
         "industries",
         "insight_annotations",
         "insight_goals",
@@ -102,6 +103,7 @@ def test_baseline_migration_upgrades_downgrades_and_upgrades_again(
         "oauth_authorization_intents",
         "offboarding_plans",
         "offboarding_steps",
+        "operational_incidents",
         "onboarding_checklist_items",
         "organization_invitations",
         "organization_memberships",
@@ -137,6 +139,8 @@ def test_baseline_migration_upgrades_downgrades_and_upgrades_again(
         "seo_websites",
         "service_assignments",
         "service_catalog",
+        "service_heartbeats",
+        "slo_definitions",
         "sync_change_intents",
         "sync_checkpoints",
         "sync_conflicts",
@@ -149,7 +153,7 @@ def test_baseline_migration_upgrades_downgrades_and_upgrades_again(
         "workflow_steps",
         "workflow_versions",
     ]
-    assert revisions_at_head == ["20260803_0012"]
+    assert revisions_at_head == ["20260803_0013"]
 
     command.downgrade(config, "base")
     tables_at_base, revisions_at_base = asyncio.run(database_state(postgresql_test_url))
@@ -187,6 +191,7 @@ def test_baseline_migration_upgrades_downgrades_and_upgrades_again(
         "gbp_publications",
         "gbp_special_hours",
         "gbp_suspension_cases",
+        "incident_timeline_entries",
         "industries",
         "insight_annotations",
         "insight_goals",
@@ -219,6 +224,7 @@ def test_baseline_migration_upgrades_downgrades_and_upgrades_again(
         "oauth_authorization_intents",
         "offboarding_plans",
         "offboarding_steps",
+        "operational_incidents",
         "onboarding_checklist_items",
         "organization_invitations",
         "organization_memberships",
@@ -254,6 +260,8 @@ def test_baseline_migration_upgrades_downgrades_and_upgrades_again(
         "seo_websites",
         "service_assignments",
         "service_catalog",
+        "service_heartbeats",
+        "slo_definitions",
         "sync_change_intents",
         "sync_checkpoints",
         "sync_conflicts",
@@ -266,4 +274,4 @@ def test_baseline_migration_upgrades_downgrades_and_upgrades_again(
         "workflow_steps",
         "workflow_versions",
     ]
-    assert revisions_at_final_head == ["20260803_0012"]
+    assert revisions_at_final_head == ["20260803_0013"]

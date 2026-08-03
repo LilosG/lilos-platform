@@ -73,6 +73,12 @@ from apps.api.app.notifications.models import (
     NotificationPreference,
     NotificationTemplate,
 )
+from apps.api.app.observability.models import (
+    IncidentTimelineEntry,
+    OperationalIncident,
+    ServiceHeartbeat,
+    SLORecord,
+)
 from apps.api.app.organizations.models import Organization
 from apps.api.app.products.content.models import (
     ContentBrief,
@@ -194,6 +200,13 @@ for notification_model in (
     NotificationPreference,
 ):
     assert notification_model.metadata is target_metadata
+for observability_model in (
+    OperationalIncident,
+    IncidentTimelineEntry,
+    ServiceHeartbeat,
+    SLORecord,
+):
+    assert observability_model.metadata is target_metadata
 for integration_model in (
     Provider,
     IntegrationConnection,
