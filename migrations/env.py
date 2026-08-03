@@ -48,6 +48,13 @@ from apps.api.app.execution.models import (
 from apps.api.app.industries.models import Industry
 from apps.api.app.location_groups.models import LocationGroup, LocationGroupMembership
 from apps.api.app.locations.models import Location
+from apps.api.app.notifications.models import (
+    NotificationDelivery,
+    NotificationDeliveryAttempt,
+    NotificationEvent,
+    NotificationPreference,
+    NotificationTemplate,
+)
 from apps.api.app.organizations.models import Organization
 from apps.api.app.profiles.models import LocationProfile, OrganizationProfile
 
@@ -100,6 +107,14 @@ for execution_model in (
     IdempotencyRecord,
 ):
     assert execution_model.metadata is target_metadata
+for notification_model in (
+    NotificationTemplate,
+    NotificationEvent,
+    NotificationDelivery,
+    NotificationDeliveryAttempt,
+    NotificationPreference,
+):
+    assert notification_model.metadata is target_metadata
 
 
 def configured_database_url() -> str:
