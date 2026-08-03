@@ -16,10 +16,13 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "check-jsonschema>=0.35,<1",
     "mypy>=1.17,<2",
     "pip-audit>=2.10.1",
     "pytest>=8.4,<10",
+    "pyyaml>=6.0,<7",
     "ruff>=0.12,<1",
+    "types-pyyaml>=6.0,<7",
 ]
 
 [tool.uv]

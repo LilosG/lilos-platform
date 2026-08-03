@@ -1,0 +1,114 @@
+previews:
+  generation: off
+
+envVarGroups:
+  - name: lilos-production-runtime
+    envVars:
+      - key: LILOS_ENV
+        value: production
+      - key: LILOS_LOG_LEVEL
+        value: INFO
+      - key: LILOS_API_VERSION
+        value: 0.1.0
+      - key: LILOS_TRACE_SAMPLE_RATE
+        value: 0.1
+      - key: LILOS_DATABASE_CONNECT_TIMEOUT_SECONDS
+        value: 5
+      - key: LILOS_INTERNAL_ADMIN_ROUTES_ENABLED
+        value: "false"
+      - key: LILOS_SUPABASE_AUTH_AUDIENCE
+        value: authenticated
+      - key: LILOS_SUPABASE_AUTH_ALLOWED_ALGORITHMS
+        value: ES256,RS256
+
+services:
+  - name: lilos-api
+    type: web
+    runtime: docker
+    region: oregon
+    branch: main
+    autoDeployTrigger: checksPass
+    dockerContext: .
+    dockerfilePath: ./infrastructure/docker/backend.Dockerfile
+    dockerCommand: >-
+      /bin/sh -c 'exec python -m uvicorn apps.api.app.main:app
+      --host 0.0.0.0 --port "${PORT:-10000}"'
+    preDeployCommand: >-
+      uv run alembic upgrade head &&
+      LILOS_DATABASE_URL="$LILOS_MIGRATION_DATABASE_URL" uv run python -m scripts.seed_industries &&
+      LILOS_DATABASE_URL="$LILOS_MIGRATION_DATABASE_URL" uv run python -m scripts.seed_access_catalog &&
+      LILOS_DATABASE_URL="$LILOS_MIGRATION_DATABASE_URL" uv run python -m scripts.seed_administration_catalog
+    healthCheckPath: /health/ready
+    maxShutdownDelaySeconds: 30
+    numInstances: 1
+    envVars:
+      - fromGroup: lilos-production-runtime
+      - key: LILOS_RELEASE
+        fromService:
+          type: web
+          name: lilos-api
+          envVarKey: RENDER_GIT_COMMIT
+      - key: LILOS_DATABASE_URL
+        sync: false
+      - key: LILOS_MIGRATION_DATABASE_URL
+        sync: false
+      - key: LILOS_SUPABASE_AUTH_ISSUER
+        sync: false
+      - key: LILOS_SUPABASE_AUTH_JWKS_URL
+        sync: false
+      - key: LILOS_TELEMETRY_EXPORT_ENDPOINT
+        sync: false
+
+  - name: lilos-worker
+    type: worker
+    runtime: docker
+    region: oregon
+    branch: main
+    autoDeployTrigger: checksPass
+    dockerContext: .
+    dockerfilePath: ./infrastructure/docker/backend.Dockerfile
+    dockerCommand: python -m apps.worker
+    maxShutdownDelaySeconds: 300
+    numInstances: 1
+    envVars:
+      - fromGroup: lilos-production-runtime
+      - key: LILOS_RELEASE
+        fromService:
+          type: worker
+          name: lilos-worker
+          envVarKey: RENDER_GIT_COMMIT
+      - key: LILOS_DATABASE_URL
+        sync: false
+      - key: LILOS_SUPABASE_AUTH_ISSUER
+        sync: false
+      - key: LILOS_SUPABASE_AUTH_JWKS_URL
+        sync: false
+      - key: LILOS_TELEMETRY_EXPORT_ENDPOINT
+        sync: false
+
+  - name: lilos-scheduler
+    type: worker
+    runtime: docker
+    region: oregon
+    branch: main
+    autoDeployTrigger: checksPass
+    dockerContext: .
+    dockerfilePath: ./infrastructure/docker/backend.Dockerfile
+    dockerCommand: python -m apps.scheduler
+    maxShutdownDelaySeconds: 60
+    numInstances: 1
+    envVars:
+      - fromGroup: lilos-production-runtime
+      - key: LILOS_RELEASE
+        fromService:
+          type: worker
+          name: lilos-scheduler
+          envVarKey: RENDER_GIT_COMMIT
+      - key: LILOS_DATABASE_URL
+        sync: false
+      - key: LILOS_SUPABASE_AUTH_ISSUER
+        sync: false
+      - key: LILOS_SUPABASE_AUTH_JWKS_URL
+        sync: false
+      - key: LILOS_TELEMETRY_EXPORT_ENDPOINT
+        sync: false

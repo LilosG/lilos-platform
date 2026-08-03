@@ -1,0 +1,13 @@
+.git
+.github
+.mypy_cache
+.playwright-output
+.pytest_cache
+.ruff_cache
+.venv
+**/__pycache__
+**/*.pyc
+apps/web
+docs
+node_modules
+tests

@@ -4,7 +4,7 @@ Phase 19 production preparation is complete, but deployment and launch are **BLO
 
 Exact external blockers:
 
-1. No approved infrastructure or deployment-provider account/access.
+1. Render Oregon is approved for the API, worker, and scheduler, but no Render workspace/account access or Blueprint deployment approval is available.
 2. No production PostgreSQL or migration identity/access.
 3. No approved secret manager or production environment values.
 4. No domain, DNS, TLS, canonical host, or OAuth callback authority.
@@ -14,3 +14,5 @@ Exact external blockers:
 8. No named architecture, engineering, product, security/privacy, operations, data, DBA, or business approvers and no launch authorization.
 
 Therefore production infrastructure is not provisioned, migrations are not run against production, smoke/pilot/rollback tests are not executed there, monitoring/alerts/backups are not active there, Section 27 is unsigned, and no production-launch claim is made. Phase 20 remains prohibited.
+
+Repository preparation now includes a current-schema Render Blueprint and portable backend Dockerfile. The Blueprint intentionally excludes Vercel, Render Postgres, Render Key Value, Render Workflows, cron services, and persistent disks. This resolves the runtime-vendor decision only; it does not resolve the external blockers above or complete Phase 19.

@@ -104,6 +104,9 @@ jobs:
       - name: Dependency audit
         run: uv run pip-audit
 
+      - name: Validate Render Blueprint
+        run: npm run check:render
+
       - name: Validate migrations
         run: |
           uv run alembic upgrade head
