@@ -249,6 +249,24 @@ PERMISSION_CATALOG: dict[str, tuple[str, str, str, str]] = {
         "notifications",
         "send",
     ),
+    "integrations.read": (
+        "Read integrations",
+        "Read provider connection health.",
+        "integrations",
+        "read",
+    ),
+    "integrations.connect": (
+        "Connect integrations",
+        "Establish provider connections.",
+        "integrations",
+        "connect",
+    ),
+    "integrations.manage": (
+        "Manage integrations",
+        "Reconnect or disconnect providers.",
+        "integrations",
+        "manage",
+    ),
 }
 
 ALL_PERMISSIONS = frozenset(PERMISSION_CATALOG)
@@ -286,6 +304,8 @@ ROLE_MAPPINGS: dict[str, frozenset[str]] = {
             "notifications.read",
             "notifications.manage",
             "notifications.send",
+            "integrations.read",
+            "integrations.connect",
         }
     ),
     "organization_member": frozenset(
@@ -304,6 +324,7 @@ ROLE_MAPPINGS: dict[str, frozenset[str]] = {
             "workflows.read",
             "schedules.read",
             "notifications.read",
+            "integrations.read",
         }
     ),
     "organization_viewer": frozenset(
@@ -322,6 +343,7 @@ ROLE_MAPPINGS: dict[str, frozenset[str]] = {
             "workflows.read",
             "schedules.read",
             "notifications.read",
+            "integrations.read",
         }
     ),
 }
