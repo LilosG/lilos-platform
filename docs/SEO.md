@@ -1,0 +1,3 @@
+# SEO
+
+SEO is an organization-scoped, evidence-driven operating loop: confirmed websites and Search Console properties feed normalized pages and quality-labelled observations; deterministic detectors create deduplicated opportunities; immutable recommendation revisions create separate workflow tasks; verified tasks can be measured against fixed periods. Scores are explainable prioritization aids, never ranking or traffic predictions. Missing, stale, partial, unsupported, and zero remain distinct. Crawls are bounded to confirmed hosts and reject credentials, private networks, redirects beyond policy, oversized responses, unsupported media, and arbitrary client-selected targets. AI is optional and cannot establish business relevance, priority, or approval.

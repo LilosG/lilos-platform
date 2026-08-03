@@ -399,6 +399,10 @@ Authorization enforcement across existing routes remains deliberately deferred t
 
 - Phase 5 only when separately authorized. Phase 4 is complete locally pending recorded CI evidence.
 # Phase 5 completion
+# Phase 13 completion
+
+Phase 13 adds the evidence-driven SEO persistence and policy foundation at migration `20260803_0010`: confirmed website/property scope, deterministic URLs, bounded crawl intent, quality-labelled observations, deduplicated opportunities, immutable recommendations, implementation verification, and measurement outcomes. Live Search Console validation is deferred to approved credentials.
+
 
 Phase 12 is complete at migration `20260803_0009`: evidence-backed content planning, structured briefs, shared-AI/manual immutable revisions, grounding and claim validation, editorial/client approval, allowlisted GitHub/Astro publication intent, build/deployment verification states, reconciliation, and rollback lineage are established. Phases 9–12 milestone is complete; Phase 13 has not begun.
 

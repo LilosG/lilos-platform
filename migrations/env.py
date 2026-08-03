@@ -95,6 +95,17 @@ from apps.api.app.products.reviews.models import (
     ReviewRevision,
     ReviewRiskFlag,
 )
+from apps.api.app.products.seo.models import (
+    SEOCrawlRun,
+    SEOImplementationTask,
+    SEOOpportunity,
+    SEOOutcome,
+    SEOPage,
+    SEORecommendationRevision,
+    SEOSearchObservation,
+    SEOSearchProperty,
+    SEOWebsite,
+)
 from apps.api.app.profiles.models import LocationProfile, OrganizationProfile
 from apps.api.app.synchronization.models import (
     ProviderStateSnapshot,
@@ -178,6 +189,18 @@ for sync_model in (
     SyncConflict,
 ):
     assert sync_model.metadata is target_metadata
+for seo_model in (
+    SEOWebsite,
+    SEOSearchProperty,
+    SEOPage,
+    SEOCrawlRun,
+    SEOSearchObservation,
+    SEOOpportunity,
+    SEORecommendationRevision,
+    SEOImplementationTask,
+    SEOOutcome,
+):
+    assert seo_model.metadata is target_metadata
 for gbp_model in (
     GBPAccount,
     GBPLocation,
