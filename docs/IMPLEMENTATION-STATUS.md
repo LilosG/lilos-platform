@@ -1,5 +1,13 @@
 # LILOs implementation status
 
+## Phase 19 production preparation
+
+The vendor-neutral deployment contract, production preflight, inventories, release and recovery
+runbooks, smoke/pilot plans, support plan, and Section 27 package are implemented. Production
+deployment and launch remain blocked on the exact external access, environment, domain, monitoring,
+backup, pilot, contact, and approval dependencies recorded in `PHASE-19-ACCEPTANCE.md`. No
+production deployment or launch is claimed.
+
 ## Current task
 
 - Roadmap phase: Phase 4 — Shared Administration and Configuration

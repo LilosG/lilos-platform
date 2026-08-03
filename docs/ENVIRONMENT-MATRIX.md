@@ -1,0 +1,5 @@
+# Environment Matrix
+
+Local and test allow deterministic adapters and explicitly enabled bootstrap routes. Development and staging prohibit bootstrap routes and use non-production identities, databases, credentials, callbacks, recipients, and telemetry. Production additionally requires an immutable `LILOS_RELEASE`, HTTPS authentication endpoints, a telemetry export endpoint, PostgreSQL, and disabled internal routes.
+
+Production data and secrets must never flow into lower environments. Provider sandbox/test resources must remain separate from live resources. The production preflight validates required names without printing values; environment ownership, retention, capacity, and access approvals remain deployment sign-off items.

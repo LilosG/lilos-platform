@@ -1,0 +1,26 @@
+version: 1
+environment: production
+release: immutable
+services:
+  frontend:
+    health: /
+    depends_on: [api]
+  api:
+    health: /health/live
+    readiness: /health/ready
+    depends_on: [postgresql, authentication, telemetry]
+  worker:
+    readiness: heartbeat
+    depends_on: [postgresql, secret_store, telemetry]
+  scheduler:
+    readiness: heartbeat
+    depends_on: [postgresql, telemetry]
+gates:
+  route_traffic_only_when_ready: true
+  backup_before_migration: true
+  restore_evidence_required: true
+  rollback_evidence_required: true
+  launch_approval_required: true
+secrets:
+  source: external_secret_manager
+  committed_values_allowed: false
