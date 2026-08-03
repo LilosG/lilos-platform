@@ -1,0 +1,22 @@
+---
+interface Props {
+  label: string;
+  value: string | null;
+  unit?: string;
+  state: "valid" | "missing" | "partial" | "stale";
+  range: string;
+  freshness: string;
+}
+const { label, value, unit, state, range, freshness } = Astro.props;
+---
+
+<article
+  class="metric"
+  aria-labelledby={`metric-${label.replaceAll(" ", "-")}`}
+>
+  <p class="eyebrow">{label}</p>
+  <p id={`metric-${label.replaceAll(" ", "-")}`} class="metric__value">
+    {value ?? "Not available"}{value && unit ? <span>{unit}</span> : null}
+  </p>
+  <p class="metric__meta">{range} · {freshness} · <strong>{state}</strong></p>
+</article>

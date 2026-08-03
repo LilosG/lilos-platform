@@ -1,0 +1,59 @@
+---
+import {
+  navigation,
+  visibleNavigation,
+  type WorkspaceState,
+} from "../lib/platform";
+interface Props {
+  state: WorkspaceState;
+}
+const { state } = Astro.props;
+const visible = visibleNavigation(state);
+---
+
+<a class="skip-link" href="#main-content">Skip to main content</a>
+<div class="app-shell">
+  <aside class="sidebar" aria-label="Primary">
+    <a class="brand" href="#overview" aria-label="LILOs workspace home"
+      ><span>L</span><strong>LILOs</strong></a
+    >
+    <nav aria-label="Workspace navigation">
+      <ul>
+        {
+          navigation.map((item) => {
+            const allowed = visible.some((entry) => entry.key === item.key);
+            return (
+              <li>
+                {allowed ? (
+                  <a href={item.href}>{item.label}</a>
+                ) : (
+                  <span aria-disabled="true" title="Unavailable in this scope">
+                    {item.label}
+                  </span>
+                )}
+              </li>
+            );
+          })
+        }
+      </ul>
+    </nav>
+    <div class="sidebar__footer">
+      <span aria-hidden="true" class="avatar">OP</span><div>
+        <strong>Alex</strong><small>Signed in · {state.assurance}</small>
+      </div>
+    </div>
+  </aside>
+  <div class="workspace">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Active organization</p><strong
+          >{state.organizationName}</strong
+        >
+      </div><div class="topbar__actions">
+        <button type="button" aria-label="Open notifications"
+          >Notifications <span class="count">3</span></button
+        ><button type="button">Switch organization</button>
+      </div>
+    </header><main id="main-content"><slot /></main>
+  </div>
+</div>

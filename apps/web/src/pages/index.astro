@@ -1,38 +1,243 @@
 ---
-import { developmentPhase, platformName } from "../lib/platform";
+import AppShell from "../components/AppShell.astro";
+import MetricCard from "../components/MetricCard.astro";
+import StatusBadge from "../components/StatusBadge.astro";
+import type { WorkspaceState } from "../lib/platform";
 import "../styles/global.css";
+
+const state: WorkspaceState = {
+  organizationName: "Example Service Co.",
+  organizationStatus: "active",
+  assurance: "aal2",
+  permissions: new Set([
+    "organization.read",
+    "organization.members.manage",
+    "audit.read",
+    "gbp.read",
+    "reviews.read",
+    "leads.read",
+    "content.read",
+    "seo.read",
+    "insights.read",
+  ]),
+  entitlements: new Set([
+    "gbp",
+    "reviews",
+    "leads",
+    "content",
+    "seo",
+    "insights",
+  ]),
+  readyProducts: new Set(["gbp", "reviews", "seo", "insights"]),
+  runtimeBlocks: new Set(["content"]),
+};
 ---
 
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width" />
-    <meta
-      name="description"
-      content="The local development foundation for the LILOs Platform."
-    />
-    <title>{platformName}</title>
-  </head>
-  <body class="min-h-screen bg-slate-950 text-slate-100">
-    <main class="mx-auto flex min-h-screen max-w-3xl items-center px-6 py-16">
-      <section aria-labelledby="page-title" class="space-y-4">
-        <p
-          class="text-sm font-semibold tracking-widest text-cyan-300 uppercase"
-        >
-          {developmentPhase}
-        </p>
-        <h1
-          id="page-title"
-          class="text-4xl font-bold tracking-tight sm:text-6xl"
-        >
-          {platformName}
-        </h1>
-        <p class="max-w-2xl text-lg leading-8 text-slate-300">
-          The development-tooling baseline is active. Product functionality is
-          intentionally excluded from this phase.
-        </p>
+  <head
+    ><meta charset="UTF-8" /><meta
+      name="viewport"
+      content="width=device-width, initial-scale=1"
+    /><meta name="description" content="LILOs operational workspace" /><title>
+      LILOs · Operational workspace
+    </title></head
+  >
+  <body
+    ><AppShell state={state}>
+      <section id="overview" class="hero" aria-labelledby="page-title">
+        <div>
+          <p class="eyebrow">Monday, August 3</p><h1 id="page-title">
+            Good morning, Alex.
+          </h1><p>Here’s what needs attention across your organization.</p>
+        </div><div class="hero__actions">
+          <button type="button" class="button button--secondary"
+            >View approval inbox</button
+          ><button type="button" class="button">Create workflow</button>
+        </div>
       </section>
-    </main>
-  </body>
+      <section aria-labelledby="attention-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Priority queue</p><h2 id="attention-title">
+              Needs attention
+            </h2>
+          </div><a href="#activity"
+            >View all activity <span aria-hidden="true">→</span></a
+          >
+        </div><div class="attention-grid">
+          <article class="attention-card attention-card--urgent">
+            <p class="eyebrow">Approval · High risk</p><h3>
+              Holiday hours change
+            </h3><p>GBP · Downtown location</p><footer>
+              <StatusBadge status="blocked" label="AAL2 approval" /><button
+                type="button">Review</button
+              >
+            </footer>
+          </article>
+          <article class="attention-card">
+            <p class="eyebrow">Provider health</p><h3>Search data delayed</h3><p
+            >
+              Search Console · Latest data is partial
+            </p><footer>
+              <StatusBadge status="partial" label="Partial period" /><button
+                type="button">Inspect</button
+              >
+            </footer>
+          </article>
+          <article class="attention-card">
+            <p class="eyebrow">Readiness blocker</p><h3>
+              Content publishing paused
+            </h3><p>Runtime control blocks repository dispatch</p><footer>
+              <StatusBadge status="blocked" /><button type="button"
+                >Open controls</button
+              >
+            </footer>
+          </article>
+        </div>
+      </section>
+      <section id="insights" aria-labelledby="performance-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Validated metrics</p><h2 id="performance-title">
+              Performance snapshot
+            </h2>
+          </div><span>Jul 1–31 · Pacific time</span>
+        </div><div class="metric-grid">
+          <MetricCard
+            label="Organic clicks"
+            value="2,481"
+            state="valid"
+            range="Jul 1–31"
+            freshness="Updated 2 days ago"
+          /><MetricCard
+            label="GBP calls"
+            value="186"
+            state="partial"
+            range="Jul 1–31"
+            freshness="Partial through Jul 29"
+          /><MetricCard
+            label="Qualified leads"
+            value={null}
+            state="missing"
+            range="Jul 1–31"
+            freshness="CRM disconnected"
+          /><MetricCard
+            label="Review response"
+            value="94"
+            unit="%"
+            state="valid"
+            range="Jul 1–31"
+            freshness="Updated 1 hour ago"
+          />
+        </div><div class="chart-card">
+          <div>
+            <h3>Organic visibility</h3><p>
+              Clicks by week. Missing days are gaps, not zero.
+            </p>
+          </div><div
+            class="bars"
+            role="img"
+            aria-label="Organic clicks increased from 480 in week one to 690 in week four; week three is partial."
+          >
+            <i style="--bar: 48%"></i><i style="--bar: 56%"></i><i
+              class="partial"
+              style="--bar: 43%"></i><i style="--bar: 69%"></i>
+          </div><details>
+            <summary>View accessible data table</summary><table>
+              <caption>Organic clicks by week</caption><thead
+                ><tr><th>Period</th><th>Clicks</th><th>Quality</th></tr></thead
+              ><tbody
+                ><tr><td>Week 1</td><td>480</td><td>Valid</td></tr><tr
+                  ><td>Week 2</td><td>560</td><td>Valid</td></tr
+                ><tr><td>Week 3</td><td>430</td><td>Partial</td></tr><tr
+                  ><td>Week 4</td><td>690</td><td>Valid</td></tr
+                ></tbody
+              >
+            </table>
+          </details>
+        </div>
+      </section>
+      <section id="products" aria-labelledby="products-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Shared operations</p><h2 id="products-title">
+              Product readiness
+            </h2>
+          </div>
+        </div><div class="product-list">
+          {
+            [
+              ["Business Profile", "Google connected · 2 locations", "ready"],
+              ["Reviews", "1 restricted case requires human review", "ready"],
+              ["Leads", "SMS setup incomplete", "setup"],
+              ["Content", "Publishing runtime control active", "blocked"],
+              ["SEO", "Search Console partial through Jul 31", "degraded"],
+              ["Insights", "Reports ready to generate", "ready"],
+            ].map(([name, detail, status]) => (
+              <article>
+                <>
+                  <div>
+                    <>
+                      <h3>{name}</h3>
+                      <p>{detail}</p>
+                    </>
+                  </div>
+                  <StatusBadge
+                    status={
+                      status as "ready" | "blocked" | "setup" | "degraded"
+                    }
+                  />
+                  <a
+                    href={`#${name.toLowerCase().replaceAll(" ", "-")}`}
+                    aria-label={`Open ${name}`}
+                  >
+                    Open <span aria-hidden="true">→</span>
+                  </a>
+                </>
+              </article>
+            ))
+          }
+        </div>
+      </section>
+      <section id="seo" class="split">
+        <article>
+          <p class="eyebrow">SEO recommendation</p><h2>
+            Resolve duplicate canonical signals
+          </h2><p>
+            Evidence from crawl run #42 and Search Console property
+            sc-domain:example.test. Priority 78/100 from versioned relevance,
+            value, confidence, urgency, and effort inputs—not a ranking
+            prediction.
+          </p><button type="button" class="button">Review evidence</button>
+        </article><article id="activity">
+          <p class="eyebrow">Recent activity</p><h2>Verified history</h2><ol
+            class="timeline"
+          >
+            <li>
+              <strong>GBP post verified</strong><span
+                >Downtown · 18 minutes ago</span
+              >
+            </li><li>
+              <strong>Lead follow-up suppressed</strong><span
+                >Customer replied · 42 minutes ago</span
+              >
+            </li><li>
+              <strong>Report approved</strong><span
+                >July performance · 2 hours ago</span
+              >
+            </li>
+          </ol>
+        </article>
+      </section>
+      <section
+        id="administration"
+        class="sr-only"
+        aria-label="Administration availability"
+      >
+        Administration actions remain protected by server permissions and AAL
+        policies.
+      </section>
+    </AppShell></body
+  >
 </html>
