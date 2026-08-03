@@ -81,6 +81,7 @@ class NotificationDelivery(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             ["notification_events.organization_id", "notification_events.id"],
             ondelete="RESTRICT",
         ),
+        UniqueConstraint("organization_id", "id", name="uq_notification_deliveries_org_id"),
         UniqueConstraint(
             "event_id", "recipient_reference", "channel", name="uq_notification_delivery_recipient"
         ),

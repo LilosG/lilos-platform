@@ -47,12 +47,6 @@ from apps.api.app.execution.models import (
     WorkflowVersion,
 )
 from apps.api.app.industries.models import Industry
-from apps.api.app.integrations.models import (
-    IntegrationConnection,
-    OAuthAuthorizationIntent,
-    Provider,
-    ProviderResourceMapping,
-)
 from apps.api.app.insights.models import (
     InsightAnnotation,
     InsightGoal,
@@ -63,6 +57,12 @@ from apps.api.app.insights.models import (
     ReportDefinition,
     ReportDelivery,
     ReportRevision,
+)
+from apps.api.app.integrations.models import (
+    IntegrationConnection,
+    OAuthAuthorizationIntent,
+    Provider,
+    ProviderResourceMapping,
 )
 from apps.api.app.location_groups.models import LocationGroup, LocationGroupMembership
 from apps.api.app.locations.models import Location

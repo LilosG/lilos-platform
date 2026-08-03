@@ -1,4 +1,9 @@
+import asyncio
+
 import pytest
+from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import create_async_engine
 
 from apps.api.app.products.seo.service import (
     metric_value,
@@ -42,3 +47,70 @@ def test_score_is_deterministic_explainable_and_not_a_prediction() -> None:
 def test_missing_is_not_zero() -> None:
     assert metric_value(None, "valid") == {"value": None, "state": "missing"}
     assert metric_value(0, "valid") == {"value": 0, "state": "valid"}
+
+
+@pytest.mark.integration
+def test_database_rejects_cross_organization_website_child(
+    postgresql_test_url: str,
+) -> None:
+    async def scenario() -> None:
+        engine = create_async_engine(postgresql_test_url)
+        try:
+            async with engine.connect() as connection:
+                transaction = await connection.begin()
+                try:
+                    await connection.execute(
+                        text(
+                            """
+                            INSERT INTO organizations
+                                (id, name, slug, organization_type, status, timezone,
+                                 default_currency)
+                            VALUES
+                                ('13160000-0000-4000-8000-000000000001',
+                                 'SEO Isolation A', 'seo-isolation-a', 'test', 'active',
+                                 'UTC', 'USD'),
+                                ('13160000-0000-4000-8000-000000000002',
+                                 'SEO Isolation B', 'seo-isolation-b', 'test', 'active',
+                                 'UTC', 'USD')
+                            """
+                        )
+                    )
+                    await connection.execute(
+                        text(
+                            """
+                            INSERT INTO seo_websites
+                                (id, organization_id, key, name, canonical_origin,
+                                 status, ownership_status)
+                            VALUES
+                                ('13160000-0000-4000-8000-000000000003',
+                                 '13160000-0000-4000-8000-000000000001',
+                                 'isolation-site', 'Isolation Site',
+                                 'https://example.test', 'active', 'verified')
+                            """
+                        )
+                    )
+                    with pytest.raises(IntegrityError):
+                        async with connection.begin_nested():
+                            await connection.execute(
+                                text(
+                                    """
+                                    INSERT INTO seo_pages
+                                        (id, organization_id, website_id, normalized_url,
+                                         observed_url, normalization_reasons,
+                                         indexability, quality_status)
+                                    VALUES
+                                        ('13160000-0000-4000-8000-000000000004',
+                                         '13160000-0000-4000-8000-000000000002',
+                                         '13160000-0000-4000-8000-000000000003',
+                                         'https://example.test/',
+                                         'https://example.test/', '[]'::jsonb,
+                                         'indexable', 'valid')
+                                    """
+                                )
+                            )
+                finally:
+                    await transaction.rollback()
+        finally:
+            await engine.dispose()
+
+    asyncio.run(scenario())

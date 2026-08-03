@@ -39,6 +39,21 @@ TABLES = tuple(
 
 
 def upgrade() -> None:
+    op.execute(
+        """
+        DO $$ BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint
+                WHERE conname = 'uq_notification_deliveries_org_id'
+                  AND conrelid = 'notification_deliveries'::regclass
+            ) THEN
+                ALTER TABLE notification_deliveries
+                ADD CONSTRAINT uq_notification_deliveries_org_id
+                UNIQUE (organization_id, id);
+            END IF;
+        END $$
+        """
+    )
     for table in TABLES:
         table.create(bind=op.get_bind(), checkfirst=False)
     op.execute(
@@ -52,4 +67,7 @@ def upgrade() -> None:
 def downgrade() -> None:
     for table in reversed(TABLES):
         table.drop(bind=op.get_bind(), checkfirst=False)
+    op.execute(
+        "ALTER TABLE notification_deliveries DROP CONSTRAINT IF EXISTS uq_notification_deliveries_org_id"
+    )
     op.execute("DROP FUNCTION IF EXISTS prevent_report_revision_change()")

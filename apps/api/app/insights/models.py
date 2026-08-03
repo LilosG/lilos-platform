@@ -9,6 +9,7 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
     Integer,
     Numeric,
     String,
@@ -23,7 +24,10 @@ from apps.api.app.database.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 
 class InsightSource(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "insight_sources"
-    __table_args__ = (UniqueConstraint("organization_id", "key", name="uq_insight_source_org_key"),)
+    __table_args__ = (
+        UniqueConstraint("organization_id", "id", name="uq_insight_sources_org_id"),
+        UniqueConstraint("organization_id", "key", name="uq_insight_source_org_key"),
+    )
     organization_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
     )
@@ -58,6 +62,16 @@ class MetricDefinition(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 class MetricObservation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "metric_observations"
     __table_args__ = (
+        ForeignKeyConstraint(
+            ["organization_id", "location_id"],
+            ["locations.organization_id", "locations.id"],
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "source_id"],
+            ["insight_sources.organization_id", "insight_sources.id"],
+            ondelete="RESTRICT",
+        ),
         UniqueConstraint(
             "organization_id",
             "source_id",
@@ -76,9 +90,7 @@ class MetricObservation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         PGUUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
     )
     location_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
-    source_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("insight_sources.id", ondelete="RESTRICT"), nullable=False
-    )
+    source_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
     metric_definition_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
         ForeignKey("metric_definitions.id", ondelete="RESTRICT"),
@@ -96,6 +108,13 @@ class MetricObservation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
 class InsightGoal(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "insight_goals"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["organization_id", "location_id"],
+            ["locations.organization_id", "locations.id"],
+            ondelete="RESTRICT",
+        ),
+    )
     organization_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
     )
@@ -116,6 +135,13 @@ class InsightGoal(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
 class InsightAnnotation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "insight_annotations"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["organization_id", "location_id"],
+            ["locations.organization_id", "locations.id"],
+            ondelete="RESTRICT",
+        ),
+    )
     organization_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
     )
@@ -130,6 +156,7 @@ class InsightAnnotation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 class ReportDefinition(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "report_definitions"
     __table_args__ = (
+        UniqueConstraint("organization_id", "id", name="uq_report_definitions_org_id"),
         UniqueConstraint("organization_id", "key", name="uq_report_definition_org_key"),
     )
     organization_id: Mapped[UUID] = mapped_column(
@@ -147,17 +174,19 @@ class ReportDefinition(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 class ReportRevision(UUIDPrimaryKeyMixin, Base):
     __tablename__ = "report_revisions"
     __table_args__ = (
+        ForeignKeyConstraint(
+            ["organization_id", "report_definition_id"],
+            ["report_definitions.organization_id", "report_definitions.id"],
+            ondelete="RESTRICT",
+        ),
+        UniqueConstraint("organization_id", "id", name="uq_report_revisions_org_id"),
         UniqueConstraint("report_definition_id", "revision", name="uq_report_revision"),
         UniqueConstraint("snapshot_hash", name="uq_report_snapshot_hash"),
     )
     organization_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
     )
-    report_definition_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True),
-        ForeignKey("report_definitions.id", ondelete="RESTRICT"),
-        nullable=False,
-    )
+    report_definition_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
     revision: Mapped[int] = mapped_column(Integer, nullable=False)
     snapshot_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     metric_snapshot: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
@@ -173,6 +202,16 @@ class ReportRevision(UUIDPrimaryKeyMixin, Base):
 class ReportDelivery(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "report_deliveries"
     __table_args__ = (
+        ForeignKeyConstraint(
+            ["organization_id", "report_revision_id"],
+            ["report_revisions.organization_id", "report_revisions.id"],
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "notification_delivery_id"],
+            ["notification_deliveries.organization_id", "notification_deliveries.id"],
+            ondelete="RESTRICT",
+        ),
         UniqueConstraint(
             "organization_id", "idempotency_key", name="uq_report_delivery_idempotency"
         ),
@@ -180,12 +219,8 @@ class ReportDelivery(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     organization_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
     )
-    report_revision_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("report_revisions.id", ondelete="RESTRICT"), nullable=False
-    )
-    notification_delivery_id: Mapped[UUID | None] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("notification_deliveries.id", ondelete="RESTRICT")
-    )
+    report_revision_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    notification_delivery_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
     idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
     status: Mapped[str] = mapped_column(String(24), nullable=False)
     artifact_reference: Mapped[str | None] = mapped_column(String(1000))
@@ -193,6 +228,13 @@ class ReportDelivery(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
 class InsightRecord(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "insight_records"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["organization_id", "location_id"],
+            ["locations.organization_id", "locations.id"],
+            ondelete="RESTRICT",
+        ),
+    )
     organization_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
     )
