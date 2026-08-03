@@ -16,3 +16,9 @@ accepted, replayed, and unknown tokens use the same non-enumerating failure.
 The default lifetime is seven days and the maximum is thirty. Only one pending invitation per
 organization/email is allowed. Resend means cancel and create a new invitation; token rotation is
 not implemented. Production email delivery is deferred and no provider management API is used.
+
+Invitation read/cancel routes are organization-authorized; cancellation requires AAL2. Acceptance
+is always mounted, bearer-authenticated, and intentionally does not require existing membership.
+Because plaintext may only be returned in local/test until a production delivery channel exists,
+issuance remains on the guarded route and requires an authenticated inviter with
+`organization.invitations.manage` at AAL2. The inviter ID is derived from the verified principal.

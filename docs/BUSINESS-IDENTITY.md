@@ -55,12 +55,15 @@ it.
 Location groups are excluded. ADR 0007 limits them to administrative organization, selected-location
 scope, and future reporting; they currently have no business-identity effect.
 
-## Temporary routes and deferred security
+## Routes and authorization
 
 - `GET /internal/organizations/{organization_id}/business-identity`
 - `GET /internal/organizations/{organization_id}/locations/{location_id}/business-identity`
 
 These read-only routes are unregistered by default. Explicit enablement is accepted only in local
-or test; development, staging, and production reject it. They are temporary unauthenticated
-bootstrap surfaces, not production-safe APIs. Authentication, authorization, request tenant
-context, and PostgreSQL RLS remain later work.
+or test; development, staging, and production reject it. They remain local diagnostics.
+
+Production-capable equivalents live under `/api/v1/organizations/{organization_id}` and require
+`business_identity.read` at organization or location scope. They preserve the same typed,
+read-only, non-persisted behavior and wrong-owner location not-found equivalence. PostgreSQL RLS
+remains later work.

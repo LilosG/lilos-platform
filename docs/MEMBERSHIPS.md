@@ -18,3 +18,9 @@ as missing records.
 Direct local/test membership creation and first-owner bootstrap are temporary guarded operations.
 Production normally provisions membership through invitation acceptance; no hidden owner or
 superuser is created.
+
+Production-capable membership reads require `organization.members.manage`. Suspend, restore, and
+revoke additionally require server-fixed AAL2. Before suspending or revoking an active owner, the
+service locks the organization and qualifying owners and rejects the operation if it would remove
+the final active organization-scoped owner. This continuity safeguard grants no permission and
+does not bypass explicit denies.

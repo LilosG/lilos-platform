@@ -76,8 +76,15 @@ or entitlement. Stored profile email is used only for invitation matching; JWT e
 organization/role claims remain untrusted. Deactivation suppresses access without rewriting
 memberships.
 
-The authorization evaluator consumes only this verified immutable principal. It compares the
+The authorization evaluator and always-mounted `/api/v1` routes consume only this verified
+immutable principal. They compare the
 principal's platform-user ID to the server-constructed policy request and preserves the verified
-`aal1|aal2` value. JWT organization, role, permission, and entitlement claims remain ignored. An
+`aal1|aal2` value. JWT organization, role, permission, entitlement, and client-supplied assurance
+claims remain ignored. An
 authenticated principal without an effective active organization membership and applicable
 permission receives generic authorization denial, not organization access.
+
+User deactivation remains a guarded local/test administrative operation because no global
+platform-administrator permission exists. Its service nevertheless locks current active-owner
+relationships and rejects deactivation that would leave an active organization without an active
+organization-scoped owner.

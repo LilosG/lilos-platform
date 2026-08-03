@@ -3,10 +3,10 @@
 ## Scope
 
 The FastAPI application in `apps/api` is the HTTP boundary of the LILOs modular monolith. The
-current runtime exposes health, generated OpenAPI documentation, and conditionally registered
-temporary organization bootstrap routes. Product APIs, authentication, queues, and external
-providers are not implemented. The shared audit service is an internal transactional capability;
-there is no production audit-list or audit-write API.
+current runtime exposes health, generated OpenAPI documentation, always-mounted authenticated and
+authorized `/api/v1` platform routes, and conditionally registered local/test bootstrap routes.
+Product APIs, queues, and external providers are not implemented. The shared audit service is an
+internal transactional capability; there is no production audit-list or audit-write API.
 
 OpenAPI is available locally at `/openapi.json`, with Swagger UI at `/docs` and ReDoc at `/redoc`.
 
@@ -127,7 +127,7 @@ Current stable mappings are:
 | HTTP status | Code                      | Category         |
 | ----------- | ------------------------- | ---------------- |
 | 401         | `AUTHENTICATION_REQUIRED` | `authentication` |
-| 403         | `PERMISSION_DENIED`       | `authorization`  |
+| 403         | `AUTHORIZATION_DENIED`    | `authorization`  |
 | 404         | `RESOURCE_NOT_FOUND`      | `not_found`      |
 | 409         | `RESOURCE_CONFLICT`       | `conflict`       |
 | 422         | `VALIDATION_FAILED`       | `validation`     |
@@ -263,33 +263,22 @@ response bodies, query strings, credentials, and submitted validation values are
 default. Database failures log normalized codes and exception types without URLs or raw driver
 messages.
 
-## Temporary membership and access bootstrap routes
+## Authenticated and authorized application routes
 
-The local/test-only guard registers organization-scoped membership, invitation, role-assignment,
-permission-deny, fixed-catalog-read, and first-owner bootstrap routes. Invitation creation returns
-plaintext once with `Cache-Control: no-store` and `Pragma: no-cache`; it is absent from later reads,
-logs, and audit events. Acceptance requires the existing bearer-authenticated principal.
+The always-mounted `/api/v1` surface requires bearer authentication before organization data is
+read. It derives the platform user from the verified principal and fixes permission, organization
+or location scope, and minimum AAL in route code. Authentication alone grants no organization
+access. All responses are no-store; denial is generic `403 AUTHORIZATION_DENIED`; wrong-owner child
+IDs retain established not-found behavior. See the complete method-by-method matrix in
+`docs/PHASE-03-ROUTE-AUTHORIZATION-MATRIX.md`.
 
-The router is absent by default and rejected in development, staging, and production. These routes
-do not authorize existing APIs. JWT organization/role claims are ignored, and authentication alone
-grants no organization access. See `docs/MEMBERSHIPS.md`, `docs/INVITATIONS.md`, and
-`docs/AUTHORIZATION-MODEL.md`.
+## Remaining access bootstrap routes
 
-## Guarded authorization framework test routes
-
-The local/test-only guard registers five organization-scoped protected proof routes:
-
-- `GET /internal/organizations/{organization_id}/authorization-test/organization-read`
-- `GET /internal/organizations/{organization_id}/authorization-test/location-read/{location_id}`
-- `POST /internal/organizations/{organization_id}/authorization-test/organization-update`
-- `POST /internal/organizations/{organization_id}/authorization-test/location-update/{location_id}`
-- `POST /internal/organizations/{organization_id}/authorization-test/aal2`
-
-Permissions and minimum AAL are fixed in route code. Success returns only `authorized: true` and
-correlation metadata with `Cache-Control: no-store`. Authenticated denial returns generic `403
-AUTHORIZATION_DENIED`; wrong-owner location IDs retain ordinary location-not-found behavior. There
-is no arbitrary permission-check endpoint. The routes are unregistered by default and are not
-production-safe. Existing domain and bootstrap routes are not converted in this packet.
+The local/test guard retains only direct membership creation, first-owner establishment, and
+invitation issuance required for deterministic setup. Invitation issuance additionally requires a
+verified AAL2 principal with `organization.invitations.manage`; its one-time plaintext response is
+no-store/no-cache and never logged or audited. Acceptance is always mounted at
+`POST /api/v1/invitations/accept`. Proof-only authorization-test routes have been removed.
 
 Authorization security records add only a fixed permission key, scope category, validated
 organization ID when available, and actual/minimum assurance values. They exclude authorization

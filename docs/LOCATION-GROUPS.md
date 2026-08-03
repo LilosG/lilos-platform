@@ -73,7 +73,8 @@ contacts, customer data, credentials, and secrets.
 Temporary routes are under `/internal/organizations/{organization_id}/location-groups`. They are
 unregistered by default, may be enabled only in local/test, and are rejected in development,
 staging, and production. They are unauthenticated bootstrap surfaces and are not production-safe.
-Authentication, authorization, request scope, RLS, and reporting execution remain future work.
+Always-mounted application routes require `locations.read` for reads and
+`locations.groups.manage` for mutations. Reporting execution and RLS remain future work.
 
 Location groups have no authorization effect in the initial access model. No group-scoped
 assignment or deny exists, and membership changes alter no permission. Group authorization scope is

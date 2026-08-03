@@ -1,4 +1,4 @@
-"""Protected authorization-test route and non-disclosure tests."""
+"""Production-capable authorized route and non-disclosure tests."""
 
 import asyncio
 from collections.abc import Generator
@@ -79,7 +79,13 @@ def authorized_client(
             )
             profile = UserProfile(auth_user_id=uuid4(), status=UserStatus.ACTIVE, version=1)
             unassigned = UserProfile(auth_user_id=uuid4(), status=UserStatus.ACTIVE, version=1)
-            session.add_all([organization, other_organization, profile, unassigned])
+            invitee = UserProfile(
+                auth_user_id=uuid4(),
+                email="invited-user@example.invalid",
+                status=UserStatus.ACTIVE,
+                version=1,
+            )
+            session.add_all([organization, other_organization, profile, unassigned, invitee])
             await session.flush()
             location = Location(
                 organization_id=organization.id,
@@ -117,7 +123,7 @@ def authorized_client(
             )
             owner = await access.catalog.get_role_by_key(session, "organization_owner")
             assert owner is not None
-            await access.add_assignment(
+            assignment = await access.add_assignment(
                 session,
                 organization.id,
                 membership.id,
@@ -130,6 +136,10 @@ def authorized_client(
                 "other_location": other_location.id,
                 "unassigned_subject": unassigned.auth_user_id,
                 "assigned_subject": profile.auth_user_id,
+                "membership": membership.id,
+                "owner_role": owner.id,
+                "owner_assignment": assignment.id,
+                "invitee": invitee.id,
             }
             return claims(profile.auth_user_id, AssuranceLevel.AAL2), identifiers
 
@@ -148,12 +158,12 @@ def authorized_client(
         yield client, verifier, identifiers
 
 
-def path(ids: dict[str, UUID], suffix: str) -> str:
-    return f"/internal/organizations/{ids['organization']}/authorization-test/{suffix}"
+def organization_path(ids: dict[str, UUID], suffix: str = "") -> str:
+    return f"/api/v1/organizations/{ids['organization']}{suffix}"
 
 
 @pytest.mark.integration
-def test_all_five_fixed_policies_and_aal_contract(
+def test_real_routes_apply_fixed_permissions_aal_and_no_store(
     authorized_client: tuple[TestClient, FakeVerifier, dict[str, UUID]],
 ) -> None:
     client, verifier, ids = authorized_client
@@ -161,29 +171,86 @@ def test_all_five_fixed_policies_and_aal_contract(
         "Authorization": "Bearer fabricated.signed.token",
         CORRELATION_ID_HEADER: "authorization-route-check",
     }
-    cases = [
-        ("GET", path(ids, "organization-read")),
-        ("GET", path(ids, f"location-read/{ids['location']}")),
-        ("POST", path(ids, "organization-update")),
-        ("POST", path(ids, f"location-update/{ids['location']}")),
-        ("POST", path(ids, "aal2")),
-    ]
-    for method, target in cases:
-        response = client.request(method, target, headers=headers)
+    for target in (
+        organization_path(ids),
+        organization_path(ids, f"/locations/{ids['location']}"),
+        organization_path(ids, "/business-identity"),
+    ):
+        response = client.get(target, headers=headers)
         assert response.status_code == 200
         assert response.headers["Cache-Control"] == "no-store"
         assert response.headers[CORRELATION_ID_HEADER] == "authorization-route-check"
-        assert response.json()["data"] == {"authorized": True}
-        assert "role" not in response.text and "deny" not in response.text
 
     verifier.result = claims(ids["assigned_subject"], AssuranceLevel.AAL1)
-    aal2_denied = client.post(path(ids, "aal2"), headers=headers)
-    assert aal2_denied.status_code == 403
-    assert aal2_denied.json()["error"]["code"] == "AUTHORIZATION_DENIED"
-    assert aal2_denied.headers["Cache-Control"] == "no-store"
-    # A frontend-supplied assurance hint cannot change the fixed server policy.
-    still_denied = client.post(path(ids, "aal2") + "?minimum_assurance_level=aal1", headers=headers)
-    assert still_denied.status_code == 403
+    privilege_path = organization_path(ids, f"/memberships/{ids['membership']}/role-assignments")
+    denied = client.post(
+        privilege_path,
+        headers=headers,
+        json={"role_id": str(ids["owner_role"]), "scope_type": "organization"},
+    )
+    assert denied.status_code == 403
+    assert denied.json()["error"]["code"] == "AUTHORIZATION_DENIED"
+    assert denied.headers["Cache-Control"] == "no-store"
+    assert (
+        client.post(
+            privilege_path + "?minimum_assurance_level=aal1",
+            headers=headers,
+            json={"role_id": str(ids["owner_role"]), "scope_type": "organization"},
+        ).status_code
+        == 403
+    )
+
+    verifier.result = claims(ids["assigned_subject"], AssuranceLevel.AAL2)
+    duplicate = client.post(
+        privilege_path,
+        headers=headers,
+        json={"role_id": str(ids["owner_role"]), "scope_type": "organization"},
+    )
+    assert duplicate.status_code == 409
+
+    final_owner = client.delete(
+        organization_path(
+            ids,
+            f"/memberships/{ids['membership']}/role-assignments/{ids['owner_assignment']}",
+        ),
+        headers=headers,
+    )
+    assert final_owner.status_code == 409
+    assert final_owner.json()["error"]["code"] == "LAST_ACTIVE_OWNER_CONFLICT"
+
+    final_owner_membership = client.post(
+        organization_path(ids, f"/memberships/{ids['membership']}/suspend"),
+        headers=headers,
+        json={"expected_version": 1},
+    )
+    assert final_owner_membership.status_code == 409
+    assert final_owner_membership.json()["error"]["code"] == "LAST_ACTIVE_OWNER_CONFLICT"
+
+
+@pytest.mark.integration
+def test_guarded_invitation_issuance_requires_fixed_aal2_and_never_trusts_actor_input(
+    authorized_client: tuple[TestClient, FakeVerifier, dict[str, UUID]],
+) -> None:
+    client, verifier, ids = authorized_client
+    target = f"/internal/organizations/{ids['organization']}/invitations"
+    payload = {
+        "user_profile_id": str(ids["invitee"]),
+        "email": "invited-user@example.invalid",
+        "membership_type": "client",
+    }
+    headers = {"Authorization": "Bearer fabricated.token"}
+    verifier.result = claims(ids["assigned_subject"], AssuranceLevel.AAL1)
+    denied = client.post(target, headers=headers, json=payload)
+    assert denied.status_code == 403
+    assert denied.json()["error"]["code"] == "AUTHORIZATION_DENIED"
+
+    verifier.result = claims(ids["assigned_subject"], AssuranceLevel.AAL2)
+    issued = client.post(target, headers=headers, json=payload)
+    assert issued.status_code == 201
+    assert issued.headers["Cache-Control"] == "no-store"
+    assert issued.headers["Pragma"] == "no-cache"
+    assert len(issued.json()["data"]["invitation_token"]) >= 43
+    assert "invited_by_user_profile_id" not in payload
 
 
 @pytest.mark.integration
@@ -191,7 +258,7 @@ def test_authentication_separation_generic_denial_and_cross_tenant_not_found(
     authorized_client: tuple[TestClient, FakeVerifier, dict[str, UUID]],
 ) -> None:
     client, verifier, ids = authorized_client
-    target = path(ids, "organization-read")
+    target = organization_path(ids)
     missing = client.get(target)
     assert missing.status_code == 401
     assert missing.json()["error"]["code"] == "AUTHENTICATION_REQUIRED"
@@ -208,17 +275,21 @@ def test_authentication_separation_generic_denial_and_cross_tenant_not_found(
 
     verifier.result = claims(ids["assigned_subject"], AssuranceLevel.AAL2)
     cross_tenant = client.get(
-        path(ids, f"location-read/{ids['other_location']}"),
+        organization_path(ids, f"/locations/{ids['other_location']}"),
         headers={"Authorization": "Bearer fabricated.token"},
     )
     assert cross_tenant.status_code == 404
     assert cross_tenant.json()["error"]["code"] == "LOCATION_NOT_FOUND"
     assert "organization" not in cross_tenant.text.lower()
-    assert client.get("/internal/authorization-test/check").status_code == 404
 
 
-def test_authorization_test_routes_are_guarded_by_environment() -> None:
-    with TestClient(create_app(Settings(environment=EnvironmentName.TEST))) as client:
+def test_proof_routes_are_removed_and_production_routes_are_always_mounted() -> None:
+    verifier = FakeVerifier(claims(uuid4(), AssuranceLevel.AAL1))
+    verifier.result = TokenVerificationError()
+    with TestClient(
+        create_app(Settings(environment=EnvironmentName.TEST), authentication_verifier=verifier)
+    ) as client:
+        assert client.get(f"/api/v1/organizations/{uuid4()}").status_code == 401
         assert (
             client.get(
                 f"/internal/organizations/{uuid4()}/authorization-test/organization-read"
@@ -232,3 +303,33 @@ def test_authorization_test_routes_are_guarded_by_environment() -> None:
     ):
         with pytest.raises(ValueError, match="local or test"):
             Settings(environment=environment, internal_admin_routes_enabled=True)
+
+
+def test_every_production_route_authenticates_before_request_processing() -> None:
+    verifier = FakeVerifier(claims(uuid4(), AssuranceLevel.AAL1))
+    verifier.result = TokenVerificationError()
+    app = create_app(Settings(environment=EnvironmentName.TEST), authentication_verifier=verifier)
+    routes = {
+        path: operations
+        for path, operations in app.openapi()["paths"].items()
+        if path.startswith("/api/v1")
+    }
+    assert routes
+    with TestClient(app) as client:
+        for route_path, operations in routes.items():
+            target = route_path
+            for parameter in (
+                "organization_id",
+                "location_id",
+                "group_id",
+                "membership_id",
+                "invitation_id",
+                "assignment_id",
+                "deny_id",
+            ):
+                target = target.replace("{" + parameter + "}", str(uuid4()))
+            for method in operations:
+                response = client.request(method, target, json={})
+                assert response.status_code == 401, (method, route_path, response.text)
+                assert response.json()["error"]["code"] == "AUTHENTICATION_REQUIRED"
+                assert response.headers["Cache-Control"] == "no-store"

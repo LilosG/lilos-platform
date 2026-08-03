@@ -3,25 +3,49 @@
 ## Current task
 
 - Roadmap phase: Phase 3 — Authentication, Memberships and Authorization
-- Implementation packet: `PHASE-03-TASK-03`
-- Deliverable: Deterministic authorization evaluator and guarded protected proof routes
-- Status: Complete locally; commit, push, and hosted CI pending
+- Implementation packet: `PHASE-03-TASK-04`
+- Deliverable: Production route authorization enforcement and Phase 3 closure
+- Status: Complete
 - Date: 2026-08-03
-- Commit or pull request: Pending
+- Commit or pull request: This packet
 
 ## Implemented requirements
 
+- Added always-mounted bearer-authenticated `/api/v1` routes for supported organization, location,
+  profile, location-group, business-identity, membership, invitation, role-assignment, deny, and
+  catalog operations. Every route uses a fixed permission, scope, and AAL policy.
+- Added transaction-safe final-active-owner protection for assignment removal, membership
+  suspension/revocation, and user deactivation, including concurrent removal coverage.
+- Removed the proof-only authorization-test routes and reduced access-control bootstrap operations
+  to deterministic membership, first-owner, and local/test invitation setup.
+- Added the Phase 3 route matrix, acceptance record, ADR 0011, production-route security tests, and
+  closure documentation. No migration or dependency was added; head remains `20260802_0007`.
 - Added an immutable read-only authorization request and decision contract combining the verified
   principal, active organization/user/membership state, fixed permission catalog, organization or
   location scope, explicit deny precedence, and server-selected minimum AAL.
 - Added a deterministic fail-closed authorization service with narrow organization-scoped reads,
   additive role allows, no role/membership/JWT bypass, ordinary wrong-owner location not-found
   behavior, and minimized security logging without audit or decision persistence.
-- Added five fixed-policy guarded local/test proof routes. Existing Phase 2 and access-control
-  routes remain unconverted until the next Phase 3 packet.
+- The earlier five fixed-policy proof routes were replaced by the production-capable route surface.
 - Added focused contracts, state, role, scope, deny, MFA, isolation, failure, logging, and HTTP tests
   plus `docs/AUTHORIZATION-ENFORCEMENT.md`. No migration or dependency was added; head remains
   `20260802_0007`.
+
+## Phase 3 task 04 validation evidence
+
+- `npm run check` passed formatting across 201 files, ESLint, Ruff, Astro Check with no diagnostics,
+  strict mypy over 198 source files, Vitest, 194 non-database Python tests with 118 expected skips,
+  the frontend production build, and secret scanning.
+- The complete PostgreSQL-backed Python suite passed all 312 tests. Focused authentication,
+  authorization, and access-control suites passed 56 tests; focused organization, location,
+  profile, location-group, business-identity, audit, and database suites passed 193 tests.
+- PostgreSQL 17 upgraded cleanly from base to `20260802_0007`; both Alembic checks reported no
+  drift. Catalog inspection confirmed all Phase 2/3 tables, 55 grouped constraint categories, 18
+  access/user indexes, immutable subject/key/type triggers, append-only audit protection, and no
+  authorization-decision table.
+- A destructive disposable-database downgrade reached base with only `alembic_version` remaining;
+  re-upgrade restored head and a second no-drift result.
+- The existing upstream Starlette/httpx deprecation warning remains unchanged and unsuppressed.
 
 ## Phase 3 task 03 validation evidence
 
@@ -315,7 +339,7 @@ Authorization enforcement across existing routes remains deliberately deferred t
 
 - All product functionality and later-roadmap platform capabilities.
 - Business-domain schemas, RLS policies, seed data, and Supabase connectivity.
-- Authentication, authorization, memberships, permissions, and entitlements.
+- Product entitlements and PostgreSQL RLS.
 - Cross-level list/claim composition beyond separately attributable business-identity context.
 - Durable job execution, queues, schedule dispatch, retries, and workflow state.
 - Vercel, Hetzner, or other production infrastructure configuration.
@@ -331,18 +355,16 @@ Authorization enforcement across existing routes remains deliberately deferred t
   and locked dependency remains `httpx`; all tests pass.
 - The API intentionally has no product endpoints. Temporary organization bootstrap routes are
   absent unless explicitly enabled in local/test. PostgreSQL is its only readiness dependency.
-- Authentication and authorization enforcement are not implemented; this packet establishes only
-  their standard error-contract boundary.
+- Production first-owner provisioning, invitation email delivery, and global platform-user
+  administration remain deferred; no hidden platform administrator exists.
 - The audit repository has no production API and no speculative cross-tenant behavior. Future
   tenant and authorization packets must scope audit reads before exposure.
 - Database trigger enforcement is active now. Least-privilege production database roles that also
   revoke update, delete, truncate, trigger-management, and schema-owner privileges remain deployment
   work.
-- Organization isolation currently establishes the ownership record and record-specific data
-  access only. Authentication, membership, authorization, scoped request context, and PostgreSQL
-  RLS remain later packets; the temporary routes are not production-safe.
+- Organization isolation is enforced in the always-mounted application routes through verified
+  identity, active membership, fixed permissions, scope, and denies. PostgreSQL RLS remains later.
 
 ## Next eligible task
 
-- Phase 3 — Authentication, Memberships and Authorization, only when separately authorized.
-- Do not begin Phase 3 as part of this packet.
+- Phase 4 only when separately authorized. Phase 3 is complete.

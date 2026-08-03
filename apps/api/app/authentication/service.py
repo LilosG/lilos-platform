@@ -6,6 +6,7 @@ from uuid import UUID
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from apps.api.app.access_control.owner_continuity import OwnerContinuityService
 from apps.api.app.audit.contracts import AuditEventCreate
 from apps.api.app.audit.enums import AuditActorType, AuditResult
 from apps.api.app.audit.metadata import JsonValue
@@ -52,6 +53,7 @@ class AuthenticationService:
 class UserAdministrationService:
     repository: UserProfileRepository = field(default_factory=UserProfileRepository)
     audit_service: AuditEventService = field(default_factory=AuditEventService)
+    owner_continuity: OwnerContinuityService = field(default_factory=OwnerContinuityService)
 
     async def provision(
         self, session: AsyncSession, command: UserProfileCreate, *, correlation_id: str
@@ -101,6 +103,8 @@ class UserAdministrationService:
         }[action]
         if profile.status is not expected_status:
             raise UserLifecycleConflictError
+        if action is UserLifecycleAction.DEACTIVATE:
+            await self.owner_continuity.guard_user_deactivation(session, user_id)
         updated = await self.repository.transition_status(
             session,
             user_id=user_id,

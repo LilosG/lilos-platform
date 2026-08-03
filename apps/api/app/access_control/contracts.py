@@ -73,6 +73,21 @@ class InvitationCreate(BaseModel):
         return normalized
 
 
+class InvitationIssue(BaseModel):
+    """Local/test invitation command whose actor is derived from authentication."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    user_profile_id: UUID
+    email: Annotated[str, Field(min_length=3, max_length=320)]
+    membership_type: MembershipType
+    lifetime_days: Annotated[int, Field(ge=1, le=30)] = 7
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email(cls, value: str) -> str:
+        return InvitationCreate.normalize_email(value)
+
+
 class InvitationData(BaseModel):
     model_config = ConfigDict(from_attributes=True, extra="forbid")
     id: UUID

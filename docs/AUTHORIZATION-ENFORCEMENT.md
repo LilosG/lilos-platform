@@ -56,14 +56,17 @@ role/permission lists, deny details, and customer content. Evaluation creates no
 decision table, persisted snapshot, or cache. Operational log retention remains infrastructure
 policy.
 
-## Guarded proof routes
+## Enforced routes and continuity
 
-Five routes under `/internal/organizations/{organization_id}/authorization-test` prove fixed
-organization read, location read, organization update, location update, and AAL2 settings policies.
-They return only an authorized boolean and correlation metadata. They are unregistered by default,
-available only with the existing explicit local/test guard, and rejected in development, staging,
-and production. They are not a generic permission-query API or production administration surface.
+The always-mounted `/api/v1` surface applies the evaluator to supported organization, location,
+profile, location-group, business-identity, membership, invitation, assignment, deny, and catalog
+operations. The route-access matrix fixes every permission, organization/location scope, AAL, and
+not-found rule. Proof-only authorization-test routes have been removed.
 
-Broad enforcement across the existing Phase 2 and access-administration routes is deferred to the
-next approved Phase 3 packet. RLS, product entitlements, location-group scope, and frontend
-administration remain deferred.
+Privilege-changing membership, role, deny, and invitation operations require AAL2. A locked
+transactional guard prevents assignment removal, membership suspension/revocation, or user
+deactivation from leaving an active organization without an active organization-scoped owner.
+Owners retain no authorization or deny bypass. See ADR 0011 and
+`docs/PHASE-03-ROUTE-AUTHORIZATION-MATRIX.md`.
+
+RLS, product entitlements, location-group scope, and frontend administration remain deferred.

@@ -81,3 +81,8 @@ class ScopeValidationError(ApiError):
     category = ErrorCategory.VALIDATION
     code = "ACCESS_SCOPE_INVALID"
     public_message = "The requested authorization scope is invalid."
+
+
+class LastActiveOwnerConflictError(ConflictError):
+    code = "LAST_ACTIVE_OWNER_CONFLICT"
+    public_message = "The access change would violate organization continuity requirements."

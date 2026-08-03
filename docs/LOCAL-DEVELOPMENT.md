@@ -163,7 +163,8 @@ Run the authorization evaluator security suite against an isolated PostgreSQL te
 uv run pytest tests/python/authorization -q
 ```
 
-The five fixed authorization-test routes register under the same local/test-only internal guard.
-They require a valid bearer token, seeded access catalog, active platform user, active organization
-membership, and applicable role assignment. They are proof surfaces only; do not expose them on a
-shared network or treat them as a generic authorization API.
+The proof-only authorization-test routes were removed after the always-mounted `/api/v1` routes
+adopted the evaluator. Use the real application routes for authorization testing. Internal
+membership and first-owner operations remain guarded setup tools; local/test invitation issuance
+also requires a valid AAL2 bearer principal with the fixed invitation-management permission.
+Never expose the internal guard on a shared network.

@@ -36,8 +36,14 @@ def test_access_routes_are_unregistered_by_default() -> None:
 def test_access_routes_register_only_under_existing_safe_guard() -> None:
     settings = Settings(environment=EnvironmentName.TEST, internal_admin_routes_enabled=True)
     with TestClient(create_app(settings), raise_server_exceptions=False) as client:
-        assert client.get("/internal/roles").status_code != 404
-        assert client.post("/internal/invitations/accept", json={}).status_code != 404
+        assert (
+            client.post(f"/internal/organizations/{uuid4()}/memberships", json={}).status_code
+            != 404
+        )
+        assert (
+            client.post(f"/internal/organizations/{uuid4()}/bootstrap-owner", json={}).status_code
+            != 404
+        )
     for environment in (
         EnvironmentName.DEVELOPMENT,
         EnvironmentName.STAGING,

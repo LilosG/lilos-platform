@@ -27,6 +27,9 @@ uniqueness, deliberate deterministic-list indexes, and an immutable group-key tr
 configuration, permission, product, workflow, profile, hierarchy, or business-identity behavior.
 
 Revision `20260802_0006` adds the exact platform `user_profiles` identity mapping described below.
+Revision `20260802_0007` adds organization memberships, hash-only invitations, immutable system
+role/permission catalogs, scoped role assignments, and membership-specific denies. Phase 3 route
+enforcement and active-owner continuity require no additional table or migration.
 
 ## Configuration
 
@@ -101,7 +104,8 @@ Revision identifiers follow `YYYYMMDD_NNNN`. The deterministic initial revision 
 `20260801_0001`; the audit revision is `20260801_0002`; the organization revision is
 `20260802_0001`; the location revision is `20260802_0002`; and the industry revision is
 `20260802_0003`; the profile revision is `20260802_0004`; and the location-group revision is
-`20260802_0005`; and the platform-user revision is `20260802_0006`. Every future migration must
+`20260802_0005`; the platform-user revision is `20260802_0006`; and the access-domain revision is
+`20260802_0007`. Every future migration must
 document affected tables, constraints, indexes, data movement, compatibility, and rollback or
 forward-fix behavior.
 

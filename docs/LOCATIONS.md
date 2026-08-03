@@ -1,6 +1,9 @@
 # Locations
 
-Locations are organization-owned operating units. Every repository read and mutation requires `organization_id`; a cross-organization identifier is indistinguishable from a missing identifier. Authorization and PostgreSQL RLS are not implemented yet.
+Locations are organization-owned operating units. Every repository read and mutation requires
+`organization_id`; a cross-organization identifier is indistinguishable from a missing identifier.
+Always-mounted application routes enforce organization/location-scoped authorization; PostgreSQL
+RLS remains deferred.
 
 ## Schema and classifications
 
@@ -48,3 +51,7 @@ separate, and location groups are excluded. See `docs/BUSINESS-IDENTITY.md` and 
 Role assignments and explicit denies may target one organization-owned location. Composite foreign
 keys prevent cross-organization scope. Organization scope applies to all current/future locations;
 location scope applies only to that location. Permissions never bypass lifecycle restrictions.
+
+Production-capable location routes use `locations.read`, `locations.create`, `locations.update`,
+or `locations.lifecycle.manage` as documented in the Phase 3 route matrix. Closed and archived
+records remain readable when domain policy permits; authorization cannot reopen or mutate them.

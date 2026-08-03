@@ -366,7 +366,7 @@ def test_scoped_assignments_denies_and_database_tenant_constraints(
                 MembershipCreate(user_profile_id=user_id, membership_type=MembershipType.INTERNAL),
                 correlation_id="member",
             )
-            owner = await service.catalog.get_role_by_key(session, "organization_owner")
+            owner = await service.catalog.get_role_by_key(session, "organization_viewer")
             read = await service.catalog.get_permission_by_key(session, "organization.read")
             assert owner is not None and read is not None
             assignment = await service.add_assignment(

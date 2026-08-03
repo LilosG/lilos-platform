@@ -1,6 +1,6 @@
 # Authorization domain model
 
-This packet stores authorization inputs but does not enforce them across application routes.
+The access domain supplies authorization inputs to the enforced `/api/v1` route surface.
 Authentication alone still grants no organization access.
 
 ## Fixed catalogs
@@ -42,8 +42,12 @@ organization, active scoped membership, applicable catalog allow, absence of an 
 and the server-fixed AAL. It persists no decisions and emits minimized security logs rather than
 business audit events.
 
-Only the five guarded authorization-test routes use the evaluator in this packet. Existing Phase 2
-and access-administration routes are not broadly converted yet. No current JWT claim, membership
-type, internal route, or catalog record is an enforcement bypass. Custom roles, custom permissions,
-group scope, all-locations scope, RLS, product entitlements, and broad route enforcement remain
-deferred.
+The Phase 2 and approved access-administration operations listed in the Phase 3 route matrix use the
+evaluator. Proof-only routes are removed. No JWT claim, membership type, internal route, or catalog
+record is an enforcement bypass. Custom roles, custom permissions, group scope, all-locations
+scope, RLS, and product entitlements remain deferred.
+
+An active organization must retain one active organization-scoped owner after ownership is
+established. The service locks the organization and qualifying owner rows before owner assignment
+removal, owner membership suspension/revocation, or owner user deactivation. This continuity
+invariant creates no owner permission or deny bypass.

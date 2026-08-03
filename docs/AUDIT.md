@@ -136,3 +136,8 @@ catalog seed creation append immutable events in their caller-owned transactions
 only scoped identifiers, operation, status/version, and changed field names. It excludes invitation
 plaintext and hashes, full normalized email, JWTs, authorization headers, customer data, and
 secrets. Removing an assignment or deny never removes its audit evidence.
+
+Route authorization evaluations remain structured security logs rather than immutable business
+audit rows. The active-owner continuity guard is read-only unless the owning access/user mutation
+succeeds; the existing mutation and audit event still share one caller-owned transaction. A
+rejected final-owner operation creates neither a domain change nor a misleading success event.

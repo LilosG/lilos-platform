@@ -83,5 +83,7 @@ immutable audit evidence across a destructive disposable migration downgrade.
 
 The profile routes are temporary unauthenticated bootstrap surfaces. They remain unregistered by
 default, may be enabled only in local/test, and are rejected in development, staging, and
-production. Authentication, authorization, request organization context, and PostgreSQL RLS remain
-future work. These routes are not production-safe.
+production. They remain deterministic setup support and are not production-safe. Always-mounted
+application profile routes require `profiles.read` or `profiles.update`, use organization/location
+authorization scope, and then invoke the same lifecycle-enforcing services. PostgreSQL RLS remains
+future work.

@@ -42,6 +42,7 @@ from apps.api.app.access_control.models import (
     OrganizationInvitation,
     OrganizationMembership,
 )
+from apps.api.app.access_control.owner_continuity import OwnerContinuityService
 from apps.api.app.access_control.policy import (
     ADD_DENY_STATES,
     ADD_ROLE_STATES,
@@ -127,6 +128,7 @@ class AccessControlService:
     assignments: AssignmentRepository = field(default_factory=AssignmentRepository)
     denies: DenyRepository = field(default_factory=DenyRepository)
     audit: AuditEventService = field(default_factory=AuditEventService)
+    owner_continuity: OwnerContinuityService = field(default_factory=OwnerContinuityService)
 
     async def _audit(
         self,
@@ -231,6 +233,10 @@ class AccessControlService:
             and organization.status not in SUSPEND_REVOKE_STATES
         ):
             raise AccessParentStateError
+        if target in {MembershipStatus.SUSPENDED, MembershipStatus.REVOKED}:
+            await self.owner_continuity.guard_membership_change(
+                session, organization, membership_id
+            )
         updated = await self.memberships.transition(
             session,
             organization_id=organization_id,
@@ -624,6 +630,7 @@ class AccessControlService:
         organization = await lock_organization(session, organization_id)
         if organization.status not in REMOVE_ROLE_STATES:
             raise AccessParentStateError
+        await self.owner_continuity.guard_assignment_removal(session, organization, assignment_id)
         if await self.memberships.get(session, organization_id, membership_id, lock=True) is None:
             raise MembershipNotFoundError
         item = await self.assignments.remove(session, organization_id, membership_id, assignment_id)
