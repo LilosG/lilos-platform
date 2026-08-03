@@ -1,5 +1,9 @@
 # Locations
 
+Phase 4 optional location scopes use the existing composite organization/location ownership.
+Assignments and overrides do not change location ownership or lifecycle, and location groups remain
+irrelevant to configuration or authorization scope.
+
 Locations are organization-owned operating units. Every repository read and mutation requires
 `organization_id`; a cross-organization identifier is indistinguishable from a missing identifier.
 Always-mounted application routes enforce organization/location-scoped authorization; PostgreSQL

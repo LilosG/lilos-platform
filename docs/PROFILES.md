@@ -1,5 +1,9 @@
 # Controlled organization and location profiles
 
+Profile service lists remain narrative context and are not replaced by the Phase 4 service catalog.
+Readiness may require profile presence but never fabricates configuration or approved facts from
+profile prose.
+
 ## Purpose and separation
 
 Organization profiles hold shared business context. Location profiles hold context that is

@@ -1,5 +1,12 @@
 # Audit-event foundation
 
+## Phase 4 administration
+
+Catalog seeds and each service, fact, entitlement, configuration, policy, flag, runtime-control,
+onboarding, and offboarding mutation append minimized evidence in the caller-owned transaction.
+Metadata contains identifiers, operation, state/version, changed fields, and correlation ID—not
+governed values, profiles, secrets, provider payloads, or contact data. Read resolvers are unaudited.
+
 ## Purpose and boundary
 
 `audit_events` stores durable business and security evidence for future platform and product

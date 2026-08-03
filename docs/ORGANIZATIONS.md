@@ -1,5 +1,8 @@
 # Organization tenant foundation
 
+Phase 4 services, facts, entitlements, configuration, policies, flags, controls, onboarding, and
+offboarding remain organization-owned. These systems never replace the organization tenant boundary.
+
 ## Ownership boundary
 
 `organizations` is the highest-level technical tenant boundary. There is no separate `tenants`

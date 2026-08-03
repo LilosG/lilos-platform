@@ -1,5 +1,9 @@
 # Industry classification foundation
 
+Configuration definitions may provide governed industry defaults. Resolution uses the assigned
+industry after the platform baseline and before organization configuration; it never mutates the
+industry registry or silently assigns an industry.
+
 ## Scope
 
 `industries` is the global registry of reusable platform classification defaults. Each

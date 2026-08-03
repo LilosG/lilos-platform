@@ -1,5 +1,9 @@
 # Authorization evaluation framework
 
+Phase 4 routes reuse this evaluator with fixed server permissions and organization scope. Fact
+approval, entitlement transitions, configuration/policy activation, runtime-control mutation, and
+offboarding require AAL2. Same-organization location validation preserves not-found equivalence.
+
 ## Boundary and prerequisites
 
 Authentication and authorization are separate. A verified Supabase token maps to one active

@@ -2,12 +2,40 @@
 
 ## Current task
 
-- Roadmap phase: Phase 3 — Authentication, Memberships and Authorization
-- Implementation packet: `PHASE-03-TASK-04`
-- Deliverable: Production route authorization enforcement and Phase 3 closure
-- Status: Complete
+- Roadmap phase: Phase 4 — Shared Administration and Configuration
+- Implementation packet: `PHASE-04`
+- Deliverable: Shared operational configuration and Phase 4 closure
+- Status: Implementation and local validation complete; CI pending final commit
 - Date: 2026-08-03
-- Commit or pull request: This packet
+- Commit or pull request: This phase packet
+
+## Phase 4 implementation
+
+- Added governed service catalog/assignments, immutable-revision facts, product/configuration
+  catalogs, organization/location entitlements, and computed readiness.
+- Added effective-dated configuration with explicit merge/source trace, policy categories, feature
+  flags, restrictive runtime controls, evidence-based onboarding, and non-destructive offboarding.
+- Added 19 fixed permissions with conservative role mappings, sensitive-action AAL2, and protected
+  production routes. Entitlement, readiness, authorization, flags, and controls remain separate.
+- Added migration `20260803_0001`, explicit product/configuration seed, focused security/domain
+  tests, route matrix, domain documentation, and Phase 4 acceptance evidence.
+
+## Phase 4 validation evidence
+
+- `npm run check` passed Prettier, ESLint, Ruff formatting/linting over 218 Python files, Astro
+  Check with 0 diagnostics, strict mypy over 215 source files, Vitest (1 passed), the Python suite
+  (208 passed, 119 expected integration skips), the one-page production build, and secret scanning.
+- The focused PostgreSQL-backed Phase 4 suite passed all 15 tests. The focused authentication,
+  authorization, and access-control regression suites passed all 57 tests.
+- PostgreSQL 17 upgraded cleanly from base through `20260803_0001`; both Alembic checks reported no
+  drift. Catalog inspection confirmed 14 Phase 4 tables, 134 named constraints, 44 indexes, 22
+  governance triggers, restrictive foreign keys, and intact append-only audit protection.
+- The explicit seed created 7 products and 7 configuration definitions, then created none on its
+  second run. A controlled mismatch failed closed and rolled back without partial catalog or audit
+  writes. A direct cross-organization service assignment was rejected by the composite foreign key.
+- Downgrade to `20260802_0007` removed all 14 Phase 4 tables while preserving all 16 Phase 1–3
+  domain tables and their immutable/append-only triggers; re-upgrade restored head without drift.
+- The existing upstream Starlette/httpx deprecation warning remains unchanged and unsuppressed.
 
 ## Implemented requirements
 
@@ -339,7 +367,7 @@ Authorization enforcement across existing routes remains deliberately deferred t
 
 - All product functionality and later-roadmap platform capabilities.
 - Business-domain schemas, RLS policies, seed data, and Supabase connectivity.
-- Product entitlements and PostgreSQL RLS.
+- PostgreSQL RLS and billing-provider synchronization.
 - Cross-level list/claim composition beyond separately attributable business-identity context.
 - Durable job execution, queues, schedule dispatch, retries, and workflow state.
 - Vercel, Hetzner, or other production infrastructure configuration.
@@ -367,4 +395,4 @@ Authorization enforcement across existing routes remains deliberately deferred t
 
 ## Next eligible task
 
-- Phase 4 only when separately authorized. Phase 3 is complete.
+- Phase 5 only when separately authorized. Phase 4 is complete locally pending recorded CI evidence.

@@ -1,5 +1,13 @@
 # Authorization domain model
 
+## Phase 4 catalog extension
+
+Fixed permissions cover services, facts, products/entitlements, configuration, policies, flags,
+runtime controls, onboarding, and offboarding. Owner receives the catalog; admin retains the role-
+management exclusion; manager has bounded operational/read access; member/viewer have conservative
+shared reads. Exact AAL mapping is in `PHASE-04-ROUTE-AUTHORIZATION-MATRIX.md`. Entitlement,
+readiness, flags, and controls never grant authorization.
+
 The access domain supplies authorization inputs to the enforced `/api/v1` route surface.
 Authentication alone still grants no organization access.
 

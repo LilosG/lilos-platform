@@ -88,7 +88,10 @@ def test_catalog_seed_is_exact_idempotent_audited_and_mismatch_safe(
         seeder = AccessCatalogSeeder()
         async with access_session_factory.begin() as session:
             first = await seeder.seed(session, correlation_id="catalog-first")
-        assert (first.roles_created, first.permissions_created) == (5, 15)
+        assert (first.roles_created, first.permissions_created) == (
+            len(ROLE_CATALOG),
+            len(PERMISSION_CATALOG),
+        )
         assert first.mappings_created == sum(len(value) for value in ROLE_MAPPINGS.values())
         async with access_session_factory.begin() as session:
             second = await seeder.seed(session, correlation_id="catalog-second")

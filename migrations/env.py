@@ -16,6 +16,22 @@ from apps.api.app.access_control.models import (
     Role,
     RolePermission,
 )
+from apps.api.app.administration.models import (
+    BusinessFactRevision,
+    ConfigurationDefinition,
+    ConfigurationRevision,
+    FeatureFlagRevision,
+    OffboardingPlan,
+    OffboardingStep,
+    OnboardingChecklistItem,
+    PolicyRevision,
+    Product,
+    ProductEntitlement,
+    ProductEntitlementLocation,
+    RuntimeControlRevision,
+    ServiceAssignment,
+    ServiceDefinition,
+)
 from apps.api.app.audit.models import AuditEvent
 from apps.api.app.authentication.models import UserProfile
 from apps.api.app.config import Settings
@@ -46,6 +62,23 @@ assert Permission.metadata is target_metadata
 assert RolePermission.metadata is target_metadata
 assert MembershipRoleAssignment.metadata is target_metadata
 assert MembershipPermissionDeny.metadata is target_metadata
+for phase4_model in (
+    ServiceDefinition,
+    ServiceAssignment,
+    BusinessFactRevision,
+    Product,
+    ProductEntitlement,
+    ProductEntitlementLocation,
+    ConfigurationDefinition,
+    ConfigurationRevision,
+    PolicyRevision,
+    FeatureFlagRevision,
+    RuntimeControlRevision,
+    OnboardingChecklistItem,
+    OffboardingPlan,
+    OffboardingStep,
+):
+    assert phase4_model.metadata is target_metadata
 
 
 def configured_database_url() -> str:

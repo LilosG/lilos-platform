@@ -51,7 +51,7 @@ def test_industry_migration_compatibility_downgrade_and_reupgrade(
     command.upgrade(config, "head")
     assert (
         asyncio.run(scalar(postgresql_test_url, "SELECT version_num FROM alembic_version"))
-        == "20260802_0007"
+        == "20260803_0001"
     )
     assert (
         asyncio.run(

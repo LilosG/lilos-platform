@@ -1,5 +1,15 @@
 # PostgreSQL and migrations
 
+## Phase 4 shared administration
+
+Revision `20260803_0001` adds 14 shared-administration tables with restrictive ownership,
+controlled scope/state checks, positive revisions, effective-period checks, and governed
+immutability triggers. JSONB is limited to bounded facts, catalog requirements, registered
+configuration, and declarative policies; secrets and executable content fail validation.
+
+Run `npm run db:seed:administration` after access seeding. Downgrade to `20260802_0007` removes
+Phase 4 while retaining Phase 1–3 data, access catalogs, audit history, and append-only protection.
+
 ## Supported database
 
 PostgreSQL is the only supported persistence engine. The FastAPI application uses SQLAlchemy 2.x

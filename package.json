@@ -20,6 +20,7 @@
     "db:downgrade": "uv run alembic downgrade base",
     "db:seed:industries": "uv run python -m scripts.seed_industries",
     "db:seed:access": "uv run python -m scripts.seed_access_catalog",
+    "db:seed:administration": "uv run python -m scripts.seed_administration_catalog",
     "db:upgrade": "uv run alembic upgrade head",
     "dev:api": "uv run uvicorn apps.api.app.main:app --host 127.0.0.1 --port 8000 --reload",
     "dev:scheduler": "uv run python -m apps.scheduler",

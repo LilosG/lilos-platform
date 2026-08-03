@@ -5,10 +5,13 @@
 The FastAPI application in `apps/api` is the HTTP boundary of the LILOs modular monolith. The
 current runtime exposes health, generated OpenAPI documentation, always-mounted authenticated and
 authorized `/api/v1` platform routes, and conditionally registered local/test bootstrap routes.
-Product APIs, queues, and external providers are not implemented. The shared audit service is an
-internal transactional capability; there is no production audit-list or audit-write API.
+Phase 4 shared-administration APIs are implemented; product modules, queues, and external providers
+are not. The shared audit service remains an internal transactional capability.
 
 OpenAPI is available locally at `/openapi.json`, with Swagger UI at `/docs` and ReDoc at `/redoc`.
+
+The fixed-policy Phase 4 surface is documented in `PHASE-04-ROUTE-AUTHORIZATION-MATRIX.md`. It has
+no generic permission check, arbitrary schema/product creation, secret field, or cross-tenant list.
 
 ## Runtime settings
 

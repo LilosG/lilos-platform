@@ -1,5 +1,10 @@
 # Local development
 
+## Phase 4 catalogs
+
+After upgrade and access seeding, run `npm run db:seed:administration`. It needs no provider
+credentials or network, is a no-op for exact catalogs, and fails on mismatch.
+
 ## Scope
 
 This guide covers the local development baseline, FastAPI runtime contract, and PostgreSQL

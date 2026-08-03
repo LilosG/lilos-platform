@@ -11,6 +11,7 @@ from apps.api.app.database.runtime import DatabaseRuntime, create_database_runti
 from apps.api.app.errors import register_exception_handlers
 from apps.api.app.logging_config import configure_logging
 from apps.api.app.middleware import CorrelationIdMiddleware
+from apps.api.app.routes.administration import router as administration_router
 from apps.api.app.routes.api_v1 import router as api_v1_router
 from apps.api.app.routes.health import router as health_router
 from apps.api.app.routes.internal_access_control import router as internal_access_control_router
@@ -56,6 +57,7 @@ def create_app(
     register_exception_handlers(application)
     application.include_router(health_router)
     application.include_router(api_v1_router)
+    application.include_router(administration_router)
     if resolved_settings.internal_admin_routes_enabled:
         application.include_router(internal_industries_router)
         application.include_router(internal_organizations_router)

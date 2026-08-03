@@ -107,6 +107,115 @@ PERMISSION_CATALOG: dict[str, tuple[str, str, str, str]] = {
         "read",
     ),
     "audit.read": ("Read audit", "Read authorized audit records.", "audit", "read"),
+    "services.read": (
+        "Read services",
+        "Read governed service catalog and assignments.",
+        "services",
+        "read",
+    ),
+    "services.manage": (
+        "Manage services",
+        "Administer governed services and assignments.",
+        "services",
+        "manage",
+    ),
+    "business_facts.read": (
+        "Read business facts",
+        "Read governed business facts.",
+        "business_facts",
+        "read",
+    ),
+    "business_facts.propose": (
+        "Propose business facts",
+        "Create governed fact proposals.",
+        "business_facts",
+        "propose",
+    ),
+    "business_facts.approve": (
+        "Approve business facts",
+        "Approve or reject governed facts.",
+        "business_facts",
+        "approve",
+    ),
+    "products.read": (
+        "Read products",
+        "Read product registry, entitlement, and readiness state.",
+        "products",
+        "read",
+    ),
+    "products.entitlements.manage": (
+        "Manage entitlements",
+        "Administer product entitlements.",
+        "product_entitlements",
+        "manage",
+    ),
+    "configuration.read": (
+        "Read configuration",
+        "Read effective governed configuration.",
+        "configuration",
+        "read",
+    ),
+    "configuration.manage": (
+        "Manage configuration",
+        "Create and activate configuration revisions.",
+        "configuration",
+        "manage",
+    ),
+    "policies.read": ("Read policies", "Read governed effective policies.", "policies", "read"),
+    "policies.manage": (
+        "Manage policies",
+        "Create and activate policy revisions.",
+        "policies",
+        "manage",
+    ),
+    "feature_flags.read": (
+        "Read feature flags",
+        "Read resolved feature flags.",
+        "feature_flags",
+        "read",
+    ),
+    "feature_flags.manage": (
+        "Manage feature flags",
+        "Create governed feature-flag revisions.",
+        "feature_flags",
+        "manage",
+    ),
+    "runtime_controls.read": (
+        "Read runtime controls",
+        "Read resolved runtime controls.",
+        "runtime_controls",
+        "read",
+    ),
+    "runtime_controls.manage": (
+        "Manage runtime controls",
+        "Create restrictive runtime controls.",
+        "runtime_controls",
+        "manage",
+    ),
+    "onboarding.read": (
+        "Read onboarding",
+        "Read onboarding readiness and blockers.",
+        "onboarding",
+        "read",
+    ),
+    "onboarding.manage": (
+        "Manage onboarding",
+        "Administer onboarding requirements.",
+        "onboarding",
+        "manage",
+    ),
+    "offboarding.read": (
+        "Read offboarding",
+        "Read offboarding plans and blockers.",
+        "offboarding",
+        "read",
+    ),
+    "offboarding.manage": (
+        "Manage offboarding",
+        "Administer controlled offboarding plans.",
+        "offboarding",
+        "manage",
+    ),
 }
 
 ALL_PERMISSIONS = frozenset(PERMISSION_CATALOG)
@@ -127,13 +236,48 @@ ROLE_MAPPINGS: dict[str, frozenset[str]] = {
             "profiles.update",
             "business_identity.read",
             "audit.read",
+            "services.read",
+            "services.manage",
+            "business_facts.read",
+            "business_facts.propose",
+            "products.read",
+            "configuration.read",
+            "configuration.manage",
+            "policies.read",
+            "feature_flags.read",
+            "onboarding.read",
+            "onboarding.manage",
         }
     ),
     "organization_member": frozenset(
-        {"organization.read", "locations.read", "profiles.read", "business_identity.read"}
+        {
+            "organization.read",
+            "locations.read",
+            "profiles.read",
+            "business_identity.read",
+            "services.read",
+            "business_facts.read",
+            "products.read",
+            "configuration.read",
+            "policies.read",
+            "feature_flags.read",
+            "onboarding.read",
+        }
     ),
     "organization_viewer": frozenset(
-        {"organization.read", "locations.read", "profiles.read", "business_identity.read"}
+        {
+            "organization.read",
+            "locations.read",
+            "profiles.read",
+            "business_identity.read",
+            "services.read",
+            "business_facts.read",
+            "products.read",
+            "configuration.read",
+            "policies.read",
+            "feature_flags.read",
+            "onboarding.read",
+        }
     ),
 }
 
