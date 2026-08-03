@@ -109,14 +109,14 @@ jobs:
           uv run alembic upgrade head
 
       - name: Verify synthetic backup restore
-        env:
-          PGPASSWORD: lilos_test
         run: |
-          pg_dump -h 127.0.0.1 -U lilos_test -d lilos_test -Fc -f /tmp/lilos-test.backup
-          createdb -h 127.0.0.1 -U lilos_test lilos_restore_test
-          pg_restore -h 127.0.0.1 -U lilos_test -d lilos_restore_test /tmp/lilos-test.backup
+          PG_CONTAINER_ID=$(docker ps --filter "ancestor=postgres:17" --format "{{.ID}}")
+          test -n "$PG_CONTAINER_ID"
+          docker exec -e PGPASSWORD=lilos_test "$PG_CONTAINER_ID" pg_dump -h 127.0.0.1 -U lilos_test -d lilos_test -Fc -f /tmp/lilos-test.backup
+          docker exec -e PGPASSWORD=lilos_test "$PG_CONTAINER_ID" createdb -h 127.0.0.1 -U lilos_test lilos_restore_test
+          docker exec -e PGPASSWORD=lilos_test "$PG_CONTAINER_ID" pg_restore -h 127.0.0.1 -U lilos_test -d lilos_restore_test /tmp/lilos-test.backup
           uv run python scripts/verify_restored_database.py
-          dropdb -h 127.0.0.1 -U lilos_test lilos_restore_test
+          docker exec -e PGPASSWORD=lilos_test "$PG_CONTAINER_ID" dropdb -h 127.0.0.1 -U lilos_test lilos_restore_test
           uv run alembic check
           uv run alembic downgrade base
           uv run alembic upgrade head
