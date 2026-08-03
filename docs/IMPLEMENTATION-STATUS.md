@@ -401,6 +401,10 @@ Authorization enforcement across existing routes remains deliberately deferred t
 # Phase 5 completion
 # Phase 13 completion
 # Phase 14 completion
+# Phase 15 completion
+
+Phase 15 establishes definition-driven observations, goals, annotations, immutable report snapshots, tracked delivery, and evidence-bearing insights at migration `20260803_0012`. Missing data and partial periods remain explicit.
+
 
 Phase 14 completes the capability-governed GBP model at migration `20260803_0011`, including categories, special hours, grouped changes, media rights, posts, scheduling state, and suspension cases. Unsupported provider surfaces remain unavailable.
 

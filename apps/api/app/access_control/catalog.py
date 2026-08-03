@@ -372,6 +372,9 @@ PERMISSION_CATALOG: dict[str, tuple[str, str, str, str]] = {
     "seo.recommend": ("Recommend SEO", "Create evidence-backed SEO recommendations.", "seo", "recommend"),
     "seo.approve": ("Approve SEO", "Approve governed SEO recommendations.", "seo", "approve"),
     "seo.execute": ("Execute SEO", "Create governed SEO implementation requests.", "seo", "execute"),
+    "insights.read": ("Read insights", "Read scoped metrics and reports.", "insights", "read"),
+    "insights.manage": ("Manage insights", "Manage scoped goals and reports.", "insights", "manage"),
+    "insights.publish": ("Publish reports", "Approve and deliver immutable reports.", "insights", "publish"),
     "content.rollback": (
         "Rollback content",
         "Create and verify controlled rollback revisions.",
@@ -441,6 +444,8 @@ ROLE_MAPPINGS: dict[str, frozenset[str]] = {
             "content.edit",
             "seo.read",
             "seo.recommend",
+            "insights.read",
+            "insights.manage",
         }
     ),
     "organization_member": frozenset(
@@ -466,6 +471,7 @@ ROLE_MAPPINGS: dict[str, frozenset[str]] = {
             "leads.read",
             "content.read",
             "seo.read",
+            "insights.read",
         }
     ),
     "organization_viewer": frozenset(
@@ -491,6 +497,7 @@ ROLE_MAPPINGS: dict[str, frozenset[str]] = {
             "leads.read",
             "content.read",
             "seo.read",
+            "insights.read",
         }
     ),
 }

@@ -53,6 +53,17 @@ from apps.api.app.integrations.models import (
     Provider,
     ProviderResourceMapping,
 )
+from apps.api.app.insights.models import (
+    InsightAnnotation,
+    InsightGoal,
+    InsightRecord,
+    InsightSource,
+    MetricDefinition,
+    MetricObservation,
+    ReportDefinition,
+    ReportDelivery,
+    ReportRevision,
+)
 from apps.api.app.location_groups.models import LocationGroup, LocationGroupMembership
 from apps.api.app.locations.models import Location
 from apps.api.app.notifications.models import (
@@ -222,6 +233,18 @@ for gbp_operation_model in (
     GBPSuspensionCase,
 ):
     assert gbp_operation_model.metadata is target_metadata
+for insight_model in (
+    InsightSource,
+    MetricDefinition,
+    MetricObservation,
+    InsightGoal,
+    InsightAnnotation,
+    ReportDefinition,
+    ReportRevision,
+    ReportDelivery,
+    InsightRecord,
+):
+    assert insight_model.metadata is target_metadata
 for gbp_model in (
     GBPAccount,
     GBPLocation,
