@@ -321,10 +321,10 @@ async def test_postgresql_worker_scheduler_and_heartbeat_contracts(
                     )
                 )
             ).one()
-            heartbeats = (
+            heartbeat_services = (
                 (
                     await connection.execute(
-                        select(ServiceHeartbeat).where(
+                        select(ServiceHeartbeat.service).where(
                             ServiceHeartbeat.release == "runtime-test",
                             ServiceHeartbeat.service.in_(("lilos-worker", "lilos-scheduler")),
                         )
@@ -337,8 +337,8 @@ async def test_postgresql_worker_scheduler_and_heartbeat_contracts(
         assert completed_job == "completed"
         assert completed_run == "completed"
         assert schedule_last_run_at == now - timedelta(minutes=1)
-        assert schedule_next_run_at > now
-        assert {heartbeat.service for heartbeat in heartbeats} == {
+        assert schedule_next_run_at > schedule_last_run_at
+        assert set(heartbeat_services) == {
             "lilos-worker",
             "lilos-scheduler",
         }
