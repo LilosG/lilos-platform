@@ -1,26 +1,25 @@
-import json
+from collections.abc import Awaitable, Callable
 
-from _pytest.capture import CaptureFixture
+import pytest
 
-from apps.scheduler.__main__ import main as scheduler_main
-from apps.worker.__main__ import main as worker_main
-
-
-def test_worker_exits_safely_when_idle(capsys: CaptureFixture[str]) -> None:
-    assert worker_main() == 0
-    output = json.loads(capsys.readouterr().out)
-    assert output == {
-        "service": "lilos-worker",
-        "status": "idle",
-        "reason": "No job execution is configured in Roadmap Phase 0.",
-    }
+from apps.scheduler import __main__ as scheduler_entrypoint
+from apps.worker import __main__ as worker_entrypoint
 
 
-def test_scheduler_exits_safely_when_idle(capsys: CaptureFixture[str]) -> None:
-    assert scheduler_main() == 0
-    output = json.loads(capsys.readouterr().out)
-    assert output == {
-        "service": "lilos-scheduler",
-        "status": "idle",
-        "reason": "No schedule dispatch is configured in Roadmap Phase 0.",
-    }
+def _exit_runner(exit_code: int) -> Callable[[str, Callable[..., Awaitable[None]]], Awaitable[int]]:
+    async def run(_service: str, _runner: Callable[..., Awaitable[None]]) -> int:
+        return exit_code
+
+    return run
+
+
+def test_worker_entrypoint_returns_runtime_exit_status(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(worker_entrypoint, "process_main", _exit_runner(0))
+    assert worker_entrypoint.main() == 0
+
+
+def test_scheduler_entrypoint_returns_fail_closed_status(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(scheduler_entrypoint, "process_main", _exit_runner(1))
+    assert scheduler_entrypoint.main() == 1

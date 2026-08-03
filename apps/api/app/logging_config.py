@@ -15,18 +15,21 @@ APPLICATION_LOGGER_NAME = "lilos"
 class JsonFormatter(logging.Formatter):
     """Serialize application log records as one JSON object per line."""
 
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings, service_name: str = "lilos-api") -> None:
         super().__init__()
         self.environment = settings.environment.value
         self.version = settings.api_version
+        self.release = settings.release
+        self.service_name = service_name
 
     def format(self, record: logging.LogRecord) -> str:
         payload: dict[str, Any] = {
             "timestamp": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
             "severity": record.levelname,
             "environment": self.environment,
-            "service": "lilos-api",
+            "service": self.service_name,
             "deployment_version": self.version,
+            "release": self.release,
             "event_name": getattr(record, "event_name", record.getMessage()),
             "message": record.getMessage(),
             "correlation_id": getattr(
@@ -49,6 +52,10 @@ class JsonFormatter(logging.Formatter):
             "permission_key",
             "resource_scope",
             "minimum_assurance_level",
+            "job_id",
+            "workflow_run_id",
+            "operation",
+            "retry_count",
         ):
             value = getattr(record, field_name, None)
             if value is not None:
@@ -56,12 +63,12 @@ class JsonFormatter(logging.Formatter):
         return json.dumps(redact(payload), separators=(",", ":"), ensure_ascii=True)
 
 
-def configure_logging(settings: Settings) -> None:
+def configure_logging(settings: Settings, service_name: str = "lilos-api") -> None:
     """Configure the LILOs application logger without changing third-party loggers."""
     logger = logging.getLogger(APPLICATION_LOGGER_NAME)
     logger.handlers.clear()
     handler = logging.StreamHandler()
-    handler.setFormatter(JsonFormatter(settings))
+    handler.setFormatter(JsonFormatter(settings, service_name))
     logger.addHandler(handler)
     logger.setLevel(settings.log_level.value)
     logger.propagate = False

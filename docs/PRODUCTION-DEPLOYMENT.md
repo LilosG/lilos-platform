@@ -15,4 +15,19 @@ This procedure has not been executed against production because accounts, values
 
 Link the repository-root `render.yaml` only after Render workspace access and all `sync: false` values are approved. The Blueprint uses the repo root as Docker context, one portable backend Dockerfile, Oregon region, CI-gated automatic deploys, no disks, and no Render datastore or workflow products. The API pre-deploy command upgrades Alembic and runs only the established idempotent industry, access, and administration catalog seeds using the dedicated migration URL. Workers never run that command.
 
-Render injects `PORT`; the API command binds it on `0.0.0.0`. Readiness, not liveness, gates traffic. The worker and scheduler use their existing Python module entrypoints and receive SIGTERM through `tini`. Before Blueprint creation, confirm those entrypoints' production execution behavior against the durable workflow acceptance criteria; repository preparation does not claim a running Render deployment.
+Render injects `PORT`; the API command binds it on `0.0.0.0`. Readiness, not liveness, gates traffic.
+The worker and scheduler use `python -m apps.worker` and `python -m apps.scheduler`, respectively,
+and receive SIGTERM through `tini`. Before enabling traffic, confirm each service writes a `running`
+heartbeat with the expected immutable release and instance, remains active through multiple idle
+polls, and changes to `stopping` on controlled termination. Submit only a deterministic no-side-
+effect workflow for the first worker exercise, verify claim/attempt/result state, and verify no
+second claim occurs after termination is requested. Create one controlled due schedule, verify one
+idempotent run/job is created, and verify `last_run_at` and the timezone-aware `next_run_at` advance
+atomically. A database outage must produce bounded safe errors and a non-zero process exit; do not
+mask it with a keepalive restart loop inside the container.
+
+The worker's internal 270-second cycle bound leaves 30 seconds inside Render's shutdown limit for
+final heartbeat and pool disposal. The scheduler uses a 45-second bound, leaving 15 seconds. If a
+worker is forcibly stopped, do not mutate its claim manually: the PostgreSQL lease makes it eligible
+for safe recovery after expiry. Unsupported job types and workflow versions fail closed and remain
+visible; no unregistered product or provider action is executed.

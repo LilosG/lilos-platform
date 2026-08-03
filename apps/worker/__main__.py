@@ -1,20 +1,13 @@
-"""Safe worker entrypoint for the Phase 0 process baseline."""
+"""Production durable-worker process entrypoint."""
 
-import json
+import asyncio
+
+from apps.api.app.execution.runtime import process_main, run_worker
 
 
 def main() -> int:
-    """Report the intentionally idle state and exit successfully."""
-    print(
-        json.dumps(
-            {
-                "service": "lilos-worker",
-                "status": "idle",
-                "reason": "No job execution is configured in Roadmap Phase 0.",
-            }
-        )
-    )
-    return 0
+    """Run until a termination signal or a fail-closed runtime failure."""
+    return asyncio.run(process_main("lilos-worker", run_worker))
 
 
 if __name__ == "__main__":

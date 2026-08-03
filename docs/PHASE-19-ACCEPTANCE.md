@@ -16,3 +16,13 @@ Exact external blockers:
 Therefore production infrastructure is not provisioned, migrations are not run against production, smoke/pilot/rollback tests are not executed there, monitoring/alerts/backups are not active there, Section 27 is unsigned, and no production-launch claim is made. Phase 20 remains prohibited.
 
 Repository preparation now includes a current-schema Render Blueprint and portable backend Dockerfile. The Blueprint intentionally excludes Vercel, Render Postgres, Render Key Value, Render Workflows, cron services, and persistent disks. This resolves the runtime-vendor decision only; it does not resolve the external blockers above or complete Phase 19.
+
+The former Phase 0 worker/scheduler entrypoint limitation is resolved in repository code. The worker
+now consumes the Phase 5 PostgreSQL claim/attempt/lease/retry contract continuously, renews active
+leases, maintains Phase 17 heartbeats, and drains cooperatively within the approved Render shutdown
+window. The scheduler continuously dispatches the existing durable schedules with row locking,
+timezone-aware next occurrences, and schedule-occurrence idempotency. Both fail closed on invalid
+configuration or sustained database failure, emit bounded structured operational events, and use no
+additional queue or scheduling product. Focused unit and PostgreSQL-backed tests are release gates;
+this is implementation evidence only and does not claim a Render deployment, production heartbeat,
+pilot, rollback, approval, or launch.

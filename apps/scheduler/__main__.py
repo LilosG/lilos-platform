@@ -1,20 +1,13 @@
-"""Safe scheduler entrypoint for the Phase 0 process baseline."""
+"""Production durable-scheduler process entrypoint."""
 
-import json
+import asyncio
+
+from apps.api.app.execution.runtime import process_main, run_scheduler
 
 
 def main() -> int:
-    """Report the intentionally idle state and exit successfully."""
-    print(
-        json.dumps(
-            {
-                "service": "lilos-scheduler",
-                "status": "idle",
-                "reason": "No schedule dispatch is configured in Roadmap Phase 0.",
-            }
-        )
-    )
-    return 0
+    """Run until a termination signal or a fail-closed runtime failure."""
+    return asyncio.run(process_main("lilos-scheduler", run_scheduler))
 
 
 if __name__ == "__main__":

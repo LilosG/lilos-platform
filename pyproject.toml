@@ -6,6 +6,7 @@ requires-python = ">=3.12,<3.15"
 dependencies = [
     "alembic>=1.18,<2",
     "asyncpg>=0.31,<1",
+    "croniter>=6.0,<7",
     "fastapi>=0.116,<1",
     "httpx>=0.28,<1",
     "pyjwt[crypto]>=2.10,<3",
@@ -23,6 +24,7 @@ dev = [
     "pyyaml>=6.0,<7",
     "ruff>=0.12,<1",
     "types-pyyaml>=6.0,<7",
+    "types-croniter>=6.0,<7",
 ]
 
 [tool.uv]

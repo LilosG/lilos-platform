@@ -110,8 +110,10 @@ npm run dev:worker
 npm run dev:scheduler
 ```
 
-Both processes report that they are intentionally idle and exit successfully. Durable jobs and
-schedules belong to a later roadmap phase.
+Durable jobs and schedules use the configured PostgreSQL database. Both processes validate
+configuration and connectivity, write service heartbeats, poll continuously with bounded idle
+backoff, and stop on SIGINT/SIGTERM.
+Without `LILOS_DATABASE_URL` they fail closed with a non-zero exit instead of remaining alive.
 
 ## Validation
 
