@@ -37,10 +37,10 @@ services:
       exec python -m uvicorn apps.api.app.main:app
       --host 0.0.0.0 --port "${PORT:-10000}"'
     preDeployCommand: >-
-      uv run alembic upgrade head &&
-      LILOS_DATABASE_URL="$LILOS_MIGRATION_DATABASE_URL" uv run python -m scripts.seed_industries &&
-      LILOS_DATABASE_URL="$LILOS_MIGRATION_DATABASE_URL" uv run python -m scripts.seed_access_catalog &&
-      LILOS_DATABASE_URL="$LILOS_MIGRATION_DATABASE_URL" uv run python -m scripts.seed_administration_catalog
+      alembic upgrade head &&
+      LILOS_DATABASE_URL="$LILOS_MIGRATION_DATABASE_URL" python -m scripts.seed_industries &&
+      LILOS_DATABASE_URL="$LILOS_MIGRATION_DATABASE_URL" python -m scripts.seed_access_catalog &&
+      LILOS_DATABASE_URL="$LILOS_MIGRATION_DATABASE_URL" python -m scripts.seed_administration_catalog
     healthCheckPath: /health/ready
     maxShutdownDelaySeconds: 30
     numInstances: 1
