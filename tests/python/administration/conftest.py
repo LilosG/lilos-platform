@@ -1,6 +1,7 @@
 """Isolated PostgreSQL fixture for Phase 4 administration tests."""
 
 import asyncio
+import logging
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -11,6 +12,22 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.pool import NullPool
 
 ROOT = Path(__file__).resolve().parents[3]
+
+
+@pytest.fixture(autouse=True)
+def preserve_application_logger_state() -> Iterator[None]:
+    """Prevent Alembic fileConfig from disabling loggers used by later suites."""
+    manager = logging.Logger.manager.loggerDict
+    existing = {
+        name: value.disabled
+        for name, value in manager.items()
+        if name == "lilos" or name.startswith("lilos.")
+        if isinstance(value, logging.Logger)
+    }
+    yield
+    for name, value in manager.items():
+        if (name == "lilos" or name.startswith("lilos.")) and isinstance(value, logging.Logger):
+            value.disabled = existing.get(name, False)
 
 
 @pytest.fixture

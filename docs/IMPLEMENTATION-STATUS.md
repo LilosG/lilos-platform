@@ -25,6 +25,8 @@
 - `npm run check` passed Prettier, ESLint, Ruff formatting/linting over 218 Python files, Astro
   Check with 0 diagnostics, strict mypy over 215 source files, Vitest (1 passed), the Python suite
   (208 passed, 119 expected integration skips), the one-page production build, and secret scanning.
+- The complete PostgreSQL-backed Python suite passed all 327 tests after the final CI-regression
+  fixture and migration-expectation corrections.
 - The focused PostgreSQL-backed Phase 4 suite passed all 15 tests. The focused authentication,
   authorization, and access-control regression suites passed all 57 tests.
 - PostgreSQL 17 upgraded cleanly from base through `20260803_0001`; both Alembic checks reported no
