@@ -63,6 +63,14 @@ from apps.api.app.notifications.models import (
 )
 from apps.api.app.organizations.models import Organization
 from apps.api.app.profiles.models import LocationProfile, OrganizationProfile
+from apps.api.app.synchronization.models import (
+    ProviderStateSnapshot,
+    SyncChangeIntent,
+    SyncCheckpoint,
+    SyncConflict,
+    SyncDefinition,
+    SyncRun,
+)
 
 config = context.config
 
@@ -128,6 +136,15 @@ for integration_model in (
     ProviderResourceMapping,
 ):
     assert integration_model.metadata is target_metadata
+for sync_model in (
+    SyncDefinition,
+    SyncRun,
+    SyncCheckpoint,
+    ProviderStateSnapshot,
+    SyncChangeIntent,
+    SyncConflict,
+):
+    assert sync_model.metadata is target_metadata
 
 
 def configured_database_url() -> str:

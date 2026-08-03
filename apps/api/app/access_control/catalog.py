@@ -267,6 +267,24 @@ PERMISSION_CATALOG: dict[str, tuple[str, str, str, str]] = {
         "integrations",
         "manage",
     ),
+    "synchronization.read": (
+        "Read synchronization",
+        "Read synchronization state and conflicts.",
+        "synchronization",
+        "read",
+    ),
+    "synchronization.execute": (
+        "Execute synchronization",
+        "Persist governed synchronization intent.",
+        "synchronization",
+        "execute",
+    ),
+    "synchronization.manage": (
+        "Manage synchronization",
+        "Resolve or retry synchronization.",
+        "synchronization",
+        "manage",
+    ),
 }
 
 ALL_PERMISSIONS = frozenset(PERMISSION_CATALOG)
@@ -306,6 +324,8 @@ ROLE_MAPPINGS: dict[str, frozenset[str]] = {
             "notifications.send",
             "integrations.read",
             "integrations.connect",
+            "synchronization.read",
+            "synchronization.execute",
         }
     ),
     "organization_member": frozenset(
@@ -325,6 +345,7 @@ ROLE_MAPPINGS: dict[str, frozenset[str]] = {
             "schedules.read",
             "notifications.read",
             "integrations.read",
+            "synchronization.read",
         }
     ),
     "organization_viewer": frozenset(
@@ -344,6 +365,7 @@ ROLE_MAPPINGS: dict[str, frozenset[str]] = {
             "schedules.read",
             "notifications.read",
             "integrations.read",
+            "synchronization.read",
         }
     ),
 }

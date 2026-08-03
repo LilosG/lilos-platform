@@ -400,6 +400,8 @@ Authorization enforcement across existing routes remains deliberately deferred t
 - Phase 5 only when separately authorized. Phase 4 is complete locally pending recorded CI evidence.
 # Phase 5 completion
 
+Phase 8 is complete at migration `20260803_0005`: shared synchronization definitions, durable runs/checkpoints, observed-state snapshots, proposed change intents, verification, conflicts, and deterministic normalization/diffing are established. Phases 5–8 foundation milestone is complete; Phase 9 has not begun.
+
 Phase 7 is complete at migration `20260803_0004`: provider registry, organization-owned connections, hash-only OAuth state, secret-store references, capability/health metadata, and external resource mappings are established.
 
 Phase 6 is complete at migration `20260803_0003`: governed templates, notification events, recipient deliveries, preferences, attempts, deduplication, and Phase 5 job integration are established without a production provider.
