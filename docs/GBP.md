@@ -1,0 +1,5 @@
+# Google Business Profile Vertical Slice
+
+Phase 9 uses Google Account Management v1 for account discovery and Business Information v1 for location discovery/read/write. The production adapter requests only `business.manage`, follows no redirects, exposes no token, and limits the initial write surface to business description and regular hours with explicit field masks. Google project approval, enabled APIs, configured OAuth client values, and real merchant consent are operational prerequisites; CI uses a deterministic adapter because Google provides no sandbox.
+
+Discovered resources remain untrusted until explicitly mapped to a same-organization LILOs location. Write enablement requires confirmed mapping. Snapshots distinguish full/partial observations and retain timestamps. Proposed immutable revisions reference approved facts and a base snapshot. Approval is revision-specific; publication persists intent before worker dispatch; completion requires provider reread and exact verification. Ambiguous results reconcile and are never blindly retried.

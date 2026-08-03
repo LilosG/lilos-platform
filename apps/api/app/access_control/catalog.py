@@ -285,6 +285,23 @@ PERMISSION_CATALOG: dict[str, tuple[str, str, str, str]] = {
         "synchronization",
         "manage",
     ),
+    "gbp.read": ("Read GBP", "Read mapped GBP profile state.", "gbp", "read"),
+    "gbp.connect": ("Connect GBP", "Confirm GBP location mappings.", "gbp", "connect"),
+    "gbp.sync": ("Synchronize GBP", "Run governed GBP synchronization.", "gbp", "sync"),
+    "gbp.propose": ("Propose GBP change", "Create grounded GBP profile changes.", "gbp", "propose"),
+    "gbp.approve": (
+        "Approve GBP change",
+        "Approve current GBP profile revisions.",
+        "gbp",
+        "approve",
+    ),
+    "gbp.publish": ("Publish GBP change", "Dispatch approved GBP changes.", "gbp", "publish"),
+    "gbp.diagnostics": (
+        "Read GBP diagnostics",
+        "Read GBP operational diagnostics.",
+        "gbp",
+        "diagnostics",
+    ),
 }
 
 ALL_PERMISSIONS = frozenset(PERMISSION_CATALOG)
@@ -326,6 +343,11 @@ ROLE_MAPPINGS: dict[str, frozenset[str]] = {
             "integrations.connect",
             "synchronization.read",
             "synchronization.execute",
+            "gbp.read",
+            "gbp.connect",
+            "gbp.sync",
+            "gbp.propose",
+            "gbp.diagnostics",
         }
     ),
     "organization_member": frozenset(
@@ -346,6 +368,7 @@ ROLE_MAPPINGS: dict[str, frozenset[str]] = {
             "notifications.read",
             "integrations.read",
             "synchronization.read",
+            "gbp.read",
         }
     ),
     "organization_viewer": frozenset(
@@ -366,6 +389,7 @@ ROLE_MAPPINGS: dict[str, frozenset[str]] = {
             "notifications.read",
             "integrations.read",
             "synchronization.read",
+            "gbp.read",
         }
     ),
 }

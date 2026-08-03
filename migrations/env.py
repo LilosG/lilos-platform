@@ -62,6 +62,13 @@ from apps.api.app.notifications.models import (
     NotificationTemplate,
 )
 from apps.api.app.organizations.models import Organization
+from apps.api.app.products.gbp.models import (
+    GBPAccount,
+    GBPLocation,
+    GBPProfileChangeRevision,
+    GBPProfileSnapshot,
+    GBPPublication,
+)
 from apps.api.app.profiles.models import LocationProfile, OrganizationProfile
 from apps.api.app.synchronization.models import (
     ProviderStateSnapshot,
@@ -145,6 +152,14 @@ for sync_model in (
     SyncConflict,
 ):
     assert sync_model.metadata is target_metadata
+for gbp_model in (
+    GBPAccount,
+    GBPLocation,
+    GBPProfileSnapshot,
+    GBPProfileChangeRevision,
+    GBPPublication,
+):
+    assert gbp_model.metadata is target_metadata
 
 
 def configured_database_url() -> str:
