@@ -36,11 +36,7 @@ services:
       /bin/sh -c 'export LILOS_RELEASE="${RENDER_GIT_COMMIT:-render-unknown}" &&
       exec python -m uvicorn apps.api.app.main:app
       --host 0.0.0.0 --port "${PORT:-10000}"'
-    preDeployCommand: >-
-      /bin/sh -c 'alembic upgrade head &&
-      LILOS_DATABASE_URL="$LILOS_MIGRATION_DATABASE_URL" python -m scripts.seed_industries &&
-      LILOS_DATABASE_URL="$LILOS_MIGRATION_DATABASE_URL" python -m scripts.seed_access_catalog &&
-      LILOS_DATABASE_URL="$LILOS_MIGRATION_DATABASE_URL" python -m scripts.seed_administration_catalog'
+    preDeployCommand: sh scripts/render_predeploy.sh
     healthCheckPath: /health/ready
     maxShutdownDelaySeconds: 30
     numInstances: 1

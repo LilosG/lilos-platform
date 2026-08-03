@@ -107,13 +107,22 @@ def validate_blueprint(path: Path = BLUEPRINT) -> tuple[str, ...]:
     if "0.0.0.0" not in api_command or "${PORT:-10000}" not in api_command:
         errors.append("lilos-api:bind")
     predeploy = str(api.get("preDeployCommand", ""))
+    predeploy_policy_text = predeploy
+
+    if predeploy == "sh scripts/render_predeploy.sh":
+        predeploy_script = ROOT / "scripts" / "render_predeploy.sh"
+        if not predeploy_script.is_file():
+            errors.append("lilos-api:predeploy-script-missing")
+        else:
+            predeploy_policy_text = predeploy_script.read_text(encoding="utf-8")
+
     for command in (
         "alembic upgrade head",
         "scripts.seed_industries",
         "scripts.seed_access_catalog",
         "scripts.seed_administration_catalog",
     ):
-        if command not in predeploy:
+        if command not in predeploy_policy_text:
             errors.append(f"lilos-api:predeploy:{command}")
 
     serialized = path.read_text(encoding="utf-8").lower()
