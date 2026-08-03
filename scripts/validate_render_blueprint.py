@@ -109,7 +109,7 @@ def validate_blueprint(path: Path = BLUEPRINT) -> tuple[str, ...]:
     predeploy = str(api.get("preDeployCommand", ""))
     predeploy_policy_text = predeploy
 
-    if predeploy == "sh scripts/render_predeploy.sh":
+    if predeploy == "sh /app/scripts/render_predeploy.sh":
         predeploy_script = ROOT / "scripts" / "render_predeploy.sh"
         if not predeploy_script.is_file():
             errors.append("lilos-api:predeploy-script-missing")

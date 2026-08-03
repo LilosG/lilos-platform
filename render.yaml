@@ -36,7 +36,7 @@ services:
       /bin/sh -c 'export LILOS_RELEASE="${RENDER_GIT_COMMIT:-render-unknown}" &&
       exec python -m uvicorn apps.api.app.main:app
       --host 0.0.0.0 --port "${PORT:-10000}"'
-    preDeployCommand: sh scripts/render_predeploy.sh
+    preDeployCommand: sh /app/scripts/render_predeploy.sh
     healthCheckPath: /health/ready
     maxShutdownDelaySeconds: 30
     numInstances: 1
