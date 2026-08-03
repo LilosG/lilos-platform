@@ -63,6 +63,14 @@ from apps.api.app.notifications.models import (
     NotificationTemplate,
 )
 from apps.api.app.organizations.models import Organization
+from apps.api.app.products.content.models import (
+    ContentBrief,
+    ContentItem,
+    ContentOpportunity,
+    ContentPublication,
+    ContentRevision,
+    PublishingTarget,
+)
 from apps.api.app.products.gbp.models import (
     GBPAccount,
     GBPLocation,
@@ -199,6 +207,15 @@ for leads_model in (
     CRMLeadMapping,
 ):
     assert leads_model.metadata is target_metadata
+for content_model in (
+    ContentOpportunity,
+    PublishingTarget,
+    ContentItem,
+    ContentBrief,
+    ContentRevision,
+    ContentPublication,
+):
+    assert content_model.metadata is target_metadata
 
 
 def configured_database_url() -> str:

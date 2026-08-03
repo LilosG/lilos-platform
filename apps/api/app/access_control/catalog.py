@@ -347,6 +347,38 @@ PERMISSION_CATALOG: dict[str, tuple[str, str, str, str]] = {
         "leads",
         "manage_consent",
     ),
+    "content.read": ("Read content", "Read governed content records.", "content", "read"),
+    "content.create": (
+        "Create content",
+        "Create opportunities, briefs, and drafts.",
+        "content",
+        "create",
+    ),
+    "content.edit": ("Edit content", "Create immutable content revisions.", "content", "edit"),
+    "content.approve": (
+        "Approve content",
+        "Approve current content revisions.",
+        "content",
+        "approve",
+    ),
+    "content.publish": (
+        "Publish content",
+        "Reserve controlled repository publication.",
+        "content",
+        "publish",
+    ),
+    "content.rollback": (
+        "Rollback content",
+        "Create and verify controlled rollback revisions.",
+        "content",
+        "rollback",
+    ),
+    "content.manage_targets": (
+        "Manage content targets",
+        "Administer repository publishing targets.",
+        "content",
+        "manage_targets",
+    ),
 }
 
 ALL_PERMISSIONS = frozenset(PERMISSION_CATALOG)
@@ -399,6 +431,9 @@ ROLE_MAPPINGS: dict[str, frozenset[str]] = {
             "leads.read",
             "leads.respond",
             "leads.assign",
+            "content.read",
+            "content.create",
+            "content.edit",
         }
     ),
     "organization_member": frozenset(
@@ -422,6 +457,7 @@ ROLE_MAPPINGS: dict[str, frozenset[str]] = {
             "gbp.read",
             "reviews.read",
             "leads.read",
+            "content.read",
         }
     ),
     "organization_viewer": frozenset(
@@ -445,6 +481,7 @@ ROLE_MAPPINGS: dict[str, frozenset[str]] = {
             "gbp.read",
             "reviews.read",
             "leads.read",
+            "content.read",
         }
     ),
 }

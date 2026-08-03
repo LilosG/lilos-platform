@@ -400,6 +400,8 @@ Authorization enforcement across existing routes remains deliberately deferred t
 - Phase 5 only when separately authorized. Phase 4 is complete locally pending recorded CI evidence.
 # Phase 5 completion
 
+Phase 12 is complete at migration `20260803_0009`: evidence-backed content planning, structured briefs, shared-AI/manual immutable revisions, grounding and claim validation, editorial/client approval, allowlisted GitHub/Astro publication intent, build/deployment verification states, reconciliation, and rollback lineage are established. Phases 9–12 milestone is complete; Phase 13 has not begun.
+
 Phase 11 is complete at migration `20260803_0008`: verified lead sources, deduplicated evidence, tenant-RLS-protected lead data, explicit channel/purpose consent, withdrawal suppression, routing state, durable communications, speed-to-lead events, and CRM conflict mappings are established.
 
 Phase 10 is complete at migration `20260803_0007`: shared AI task/execution governance and review ingestion, immutable revisions, deterministic risk triage, grounded drafting, approval, restricted escalation, publication intent, and verification/reconciliation are established.
