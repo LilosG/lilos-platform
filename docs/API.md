@@ -274,3 +274,23 @@ The router is absent by default and rejected in development, staging, and produc
 do not authorize existing APIs. JWT organization/role claims are ignored, and authentication alone
 grants no organization access. See `docs/MEMBERSHIPS.md`, `docs/INVITATIONS.md`, and
 `docs/AUTHORIZATION-MODEL.md`.
+
+## Guarded authorization framework test routes
+
+The local/test-only guard registers five organization-scoped protected proof routes:
+
+- `GET /internal/organizations/{organization_id}/authorization-test/organization-read`
+- `GET /internal/organizations/{organization_id}/authorization-test/location-read/{location_id}`
+- `POST /internal/organizations/{organization_id}/authorization-test/organization-update`
+- `POST /internal/organizations/{organization_id}/authorization-test/location-update/{location_id}`
+- `POST /internal/organizations/{organization_id}/authorization-test/aal2`
+
+Permissions and minimum AAL are fixed in route code. Success returns only `authorized: true` and
+correlation metadata with `Cache-Control: no-store`. Authenticated denial returns generic `403
+AUTHORIZATION_DENIED`; wrong-owner location IDs retain ordinary location-not-found behavior. There
+is no arbitrary permission-check endpoint. The routes are unregistered by default and are not
+production-safe. Existing domain and bootstrap routes are not converted in this packet.
+
+Authorization security records add only a fixed permission key, scope category, validated
+organization ID when available, and actual/minimum assurance values. They exclude authorization
+headers, tokens, email, role lists, permission lists, and deny details.

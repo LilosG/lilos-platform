@@ -75,3 +75,9 @@ user before invitation acceptance, but gains no organization scope, membership, 
 or entitlement. Stored profile email is used only for invitation matching; JWT email and
 organization/role claims remain untrusted. Deactivation suppresses access without rewriting
 memberships.
+
+The authorization evaluator consumes only this verified immutable principal. It compares the
+principal's platform-user ID to the server-constructed policy request and preserves the verified
+`aal1|aal2` value. JWT organization, role, permission, and entitlement claims remain ignored. An
+authenticated principal without an effective active organization membership and applicable
+permission receives generic authorization denial, not organization access.

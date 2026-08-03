@@ -44,6 +44,10 @@ class JsonFormatter(logging.Formatter):
             "exception_type",
             "platform_user_id",
             "assurance_level",
+            "organization_id",
+            "permission_key",
+            "resource_scope",
+            "minimum_assurance_level",
         ):
             value = getattr(record, field_name, None)
             if value is not None:

@@ -3,14 +3,38 @@
 ## Current task
 
 - Roadmap phase: Phase 3 — Authentication, Memberships and Authorization
-- Implementation packet: `PHASE-03-TASK-02`
-- Deliverable: Organization memberships, invitations, fixed roles/permissions, scoped assignments,
-  and explicit denies
+- Implementation packet: `PHASE-03-TASK-03`
+- Deliverable: Deterministic authorization evaluator and guarded protected proof routes
 - Status: Complete locally; commit, push, and hosted CI pending
-- Date: 2026-08-02
+- Date: 2026-08-03
 - Commit or pull request: Pending
 
 ## Implemented requirements
+
+- Added an immutable read-only authorization request and decision contract combining the verified
+  principal, active organization/user/membership state, fixed permission catalog, organization or
+  location scope, explicit deny precedence, and server-selected minimum AAL.
+- Added a deterministic fail-closed authorization service with narrow organization-scoped reads,
+  additive role allows, no role/membership/JWT bypass, ordinary wrong-owner location not-found
+  behavior, and minimized security logging without audit or decision persistence.
+- Added five fixed-policy guarded local/test proof routes. Existing Phase 2 and access-control
+  routes remain unconverted until the next Phase 3 packet.
+- Added focused contracts, state, role, scope, deny, MFA, isolation, failure, logging, and HTTP tests
+  plus `docs/AUTHORIZATION-ENFORCEMENT.md`. No migration or dependency was added; head remains
+  `20260802_0007`.
+
+## Phase 3 task 03 validation evidence
+
+- `uv run pytest tests/python/authorization -q` passed all 11 focused tests against PostgreSQL 17.
+- Authentication and Task 02 access-control regressions passed all 42 tests. The complete
+  PostgreSQL-backed Python suite passed all 308 tests with only the unchanged upstream
+  Starlette/httpx deprecation warning.
+- `npm run check` passed Prettier, Ruff formatting/linting over 199 files, ESLint, Astro Check with
+  no diagnostics, strict mypy over 196 source files, Vitest, non-database pytest (193 passed/115
+  skipped), the one-page Astro production build, and secret scanning.
+- A clean PostgreSQL 17 base-to-head upgrade reached `20260802_0007`; Alembic check reported no
+  drift. Catalog inspection found no authorization/decision table and retained all nine immutable
+  and append-only triggers. A full downgrade to base, re-upgrade, and second Alembic check passed.
 
 - Added organization-scoped permanent memberships and secure hash-only invitations with controlled,
   versioned lifecycles and atomic minimized audit events.

@@ -156,3 +156,14 @@ After upgrading, run `npm run db:seed:access` to establish the fixed role/permis
 creates no membership or owner. Temporary access bootstrap routes require
 `LILOS_INTERNAL_ADMIN_ROUTES_ENABLED=true` with `LILOS_ENV=local` or `test`. Treat one-time
 invitation plaintext as a secret: never log or commit it.
+
+Run the authorization evaluator security suite against an isolated PostgreSQL test database with:
+
+```sh
+uv run pytest tests/python/authorization -q
+```
+
+The five fixed authorization-test routes register under the same local/test-only internal guard.
+They require a valid bearer token, seeded access catalog, active platform user, active organization
+membership, and applicable role assignment. They are proof surfaces only; do not expose them on a
+shared network or treat them as a generic authorization API.

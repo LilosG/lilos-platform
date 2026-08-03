@@ -36,6 +36,14 @@ applicable allow, with no role or administrator bypass. Deny and assignment remo
 association row and append immutable audit evidence. Closed/archived resources remain readable
 where their domain policy permits, while permissions never bypass lifecycle restrictions.
 
-PHASE-03-TASK-03 will implement effective evaluation and route enforcement. No current JWT claim,
-membership type, internal route, or catalog record is itself an enforcement bypass. Custom roles,
-custom permissions, group scope, all-locations scope, RLS, and product entitlements are deferred.
+PHASE-03-TASK-03 adds the read-only evaluator described in
+`docs/AUTHORIZATION-ENFORCEMENT.md`. It requires an active authenticated principal, active
+organization, active scoped membership, applicable catalog allow, absence of an applicable deny,
+and the server-fixed AAL. It persists no decisions and emits minimized security logs rather than
+business audit events.
+
+Only the five guarded authorization-test routes use the evaluator in this packet. Existing Phase 2
+and access-administration routes are not broadly converted yet. No current JWT claim, membership
+type, internal route, or catalog record is an enforcement bypass. Custom roles, custom permissions,
+group scope, all-locations scope, RLS, product entitlements, and broad route enforcement remain
+deferred.

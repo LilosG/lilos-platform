@@ -205,6 +205,26 @@ class CatalogRepository:
         rows = await session.execute(select(RolePermission.role_id, RolePermission.permission_id))
         return set(rows.tuples())
 
+    async def get_roles_by_ids(self, session: AsyncSession, role_ids: set[UUID]) -> list[Role]:
+        """Resolve only roles referenced by one membership's applicable assignments."""
+        if not role_ids:
+            return []
+        return list(await session.scalars(select(Role).where(Role.id.in_(role_ids))))
+
+    async def role_ids_for_permission(
+        self, session: AsyncSession, permission_id: UUID, role_ids: set[UUID]
+    ) -> set[UUID]:
+        """Resolve fixed-catalog allows for one permission and bounded role set."""
+        if not role_ids:
+            return set()
+        rows = await session.scalars(
+            select(RolePermission.role_id).where(
+                RolePermission.permission_id == permission_id,
+                RolePermission.role_id.in_(role_ids),
+            )
+        )
+        return set(rows)
+
     async def seed_add(self, session: AsyncSession, *items: object) -> None:
         session.add_all(items)
         await session.flush()
