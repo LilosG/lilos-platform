@@ -70,6 +70,16 @@ from apps.api.app.products.gbp.models import (
     GBPProfileSnapshot,
     GBPPublication,
 )
+from apps.api.app.products.leads.models import (
+    CRMLeadMapping,
+    Lead,
+    LeadCommunication,
+    LeadConsent,
+    LeadSource,
+    LeadStatusHistory,
+    LeadSubmission,
+    LeadSuppression,
+)
 from apps.api.app.products.reviews.models import (
     Review,
     ReviewEscalation,
@@ -178,6 +188,17 @@ for reviews_model in (
     ReviewEscalation,
 ):
     assert reviews_model.metadata is target_metadata
+for leads_model in (
+    LeadSource,
+    Lead,
+    LeadSubmission,
+    LeadConsent,
+    LeadSuppression,
+    LeadStatusHistory,
+    LeadCommunication,
+    CRMLeadMapping,
+):
+    assert leads_model.metadata is target_metadata
 
 
 def configured_database_url() -> str:

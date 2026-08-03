@@ -400,6 +400,8 @@ Authorization enforcement across existing routes remains deliberately deferred t
 - Phase 5 only when separately authorized. Phase 4 is complete locally pending recorded CI evidence.
 # Phase 5 completion
 
+Phase 11 is complete at migration `20260803_0008`: verified lead sources, deduplicated evidence, tenant-RLS-protected lead data, explicit channel/purpose consent, withdrawal suppression, routing state, durable communications, speed-to-lead events, and CRM conflict mappings are established.
+
 Phase 10 is complete at migration `20260803_0007`: shared AI task/execution governance and review ingestion, immutable revisions, deterministic risk triage, grounded drafting, approval, restricted escalation, publication intent, and verification/reconciliation are established.
 
 Phase 9 is complete at migration `20260803_0006`: the first GBP vertical slice provides secure Google adapter contracts, discovery identities, explicit location mapping, normalized snapshots, evidence-based health, grounded immutable changes, approval state, durable publication intent, verification, and reconciliation boundaries. Live Google validation awaits approved credentials.

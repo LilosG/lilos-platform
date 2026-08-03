@@ -327,6 +327,26 @@ PERMISSION_CATALOG: dict[str, tuple[str, str, str, str]] = {
         "reviews",
         "escalate",
     ),
+    "leads.read": ("Read leads", "Read authorized lead records.", "leads", "read"),
+    "leads.respond": (
+        "Respond to leads",
+        "Plan consent-eligible lead communication.",
+        "leads",
+        "respond",
+    ),
+    "leads.assign": ("Assign leads", "Route and assign leads.", "leads", "assign"),
+    "leads.manage_sources": (
+        "Manage lead sources",
+        "Administer verified lead intake sources.",
+        "leads",
+        "manage_sources",
+    ),
+    "leads.manage_consent": (
+        "Manage lead consent",
+        "Record consent and suppression evidence.",
+        "leads",
+        "manage_consent",
+    ),
 }
 
 ALL_PERMISSIONS = frozenset(PERMISSION_CATALOG)
@@ -376,6 +396,9 @@ ROLE_MAPPINGS: dict[str, frozenset[str]] = {
             "reviews.read",
             "reviews.generate_response",
             "reviews.escalate",
+            "leads.read",
+            "leads.respond",
+            "leads.assign",
         }
     ),
     "organization_member": frozenset(
@@ -398,6 +421,7 @@ ROLE_MAPPINGS: dict[str, frozenset[str]] = {
             "synchronization.read",
             "gbp.read",
             "reviews.read",
+            "leads.read",
         }
     ),
     "organization_viewer": frozenset(
@@ -420,6 +444,7 @@ ROLE_MAPPINGS: dict[str, frozenset[str]] = {
             "synchronization.read",
             "gbp.read",
             "reviews.read",
+            "leads.read",
         }
     ),
 }
