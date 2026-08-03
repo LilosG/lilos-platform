@@ -31,7 +31,8 @@ services:
     dockerContext: .
     dockerfilePath: ./infrastructure/docker/backend.Dockerfile
     dockerCommand: >-
-      /bin/sh -c 'exec python -m uvicorn apps.api.app.main:app
+      /bin/sh -c 'export LILOS_RELEASE="${RENDER_GIT_COMMIT:-render-unknown}" &&
+      exec python -m uvicorn apps.api.app.main:app
       --host 0.0.0.0 --port "${PORT:-10000}"'
     preDeployCommand: >-
       uv run alembic upgrade head &&
@@ -43,11 +44,6 @@ services:
     numInstances: 1
     envVars:
       - fromGroup: lilos-production-runtime
-      - key: LILOS_RELEASE
-        fromService:
-          type: web
-          name: lilos-api
-          envVarKey: RENDER_GIT_COMMIT
       - key: LILOS_DATABASE_URL
         sync: false
       - key: LILOS_MIGRATION_DATABASE_URL
@@ -67,16 +63,13 @@ services:
     autoDeployTrigger: checksPass
     dockerContext: .
     dockerfilePath: ./infrastructure/docker/backend.Dockerfile
-    dockerCommand: python -m apps.worker
+    dockerCommand: >-
+      /bin/sh -c 'export LILOS_RELEASE="${RENDER_GIT_COMMIT:-render-unknown}" &&
+      exec python -m apps.worker'
     maxShutdownDelaySeconds: 300
     numInstances: 1
     envVars:
       - fromGroup: lilos-production-runtime
-      - key: LILOS_RELEASE
-        fromService:
-          type: worker
-          name: lilos-worker
-          envVarKey: RENDER_GIT_COMMIT
       - key: LILOS_DATABASE_URL
         sync: false
       - key: LILOS_SUPABASE_AUTH_ISSUER
@@ -94,16 +87,13 @@ services:
     autoDeployTrigger: checksPass
     dockerContext: .
     dockerfilePath: ./infrastructure/docker/backend.Dockerfile
-    dockerCommand: python -m apps.scheduler
+    dockerCommand: >-
+      /bin/sh -c 'export LILOS_RELEASE="${RENDER_GIT_COMMIT:-render-unknown}" &&
+      exec python -m apps.scheduler'
     maxShutdownDelaySeconds: 60
     numInstances: 1
     envVars:
       - fromGroup: lilos-production-runtime
-      - key: LILOS_RELEASE
-        fromService:
-          type: worker
-          name: lilos-scheduler
-          envVarKey: RENDER_GIT_COMMIT
       - key: LILOS_DATABASE_URL
         sync: false
       - key: LILOS_SUPABASE_AUTH_ISSUER
