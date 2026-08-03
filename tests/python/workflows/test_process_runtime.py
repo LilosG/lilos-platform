@@ -306,17 +306,20 @@ async def test_postgresql_worker_scheduler_and_heartbeat_contracts(
         worker = WorkerBackend(settings, options, runtime)
         await worker.startup()
         renewals = 0
+        lease_renewed = asyncio.Event()
         original_renew = worker.execution.renew_lease
 
         async def counted_renew(*args: Any, **kwargs: Any) -> bool:
             nonlocal renewals
+            renewed = await original_renew(*args, **kwargs)
             renewals += 1
-            return await original_renew(*args, **kwargs)
+            lease_renewed.set()
+            return renewed
 
         original_execute = worker._execute
 
         async def delayed_execute(job: Job) -> JobOutcome:
-            await asyncio.sleep(0.03)
+            await asyncio.wait_for(lease_renewed.wait(), timeout=2)
             return await original_execute(job)
 
         monkeypatch.setattr(worker.execution, "renew_lease", counted_renew)
