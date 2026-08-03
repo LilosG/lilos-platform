@@ -266,13 +266,14 @@ async def test_postgresql_worker_scheduler_and_heartbeat_contracts(
                          payload, available_at)
                     VALUES
                         (:job_id, :organization_id, :run_id, 'workflow.execute', 'queued', :job_key,
-                         jsonb_build_object('run_id', CAST(:run_id AS text)), :now)
+                         jsonb_build_object('run_id', :run_id_text), :now)
                     """
                 ),
                 {
                     "job_id": job_id,
                     "organization_id": organization_id,
                     "run_id": run_id,
+                    "run_id_text": str(run_id),
                     "job_key": f"runtime-job-{job_id}",
                     "now": now,
                 },
