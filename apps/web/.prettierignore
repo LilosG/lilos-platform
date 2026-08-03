@@ -1,3 +1,5 @@
 .astro/
 coverage/
 dist/
+.playwright-output/
+playwright-report/

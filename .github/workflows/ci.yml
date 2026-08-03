@@ -26,6 +26,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Install browser runtime
+        run: npx playwright install --with-deps chromium
+
       - name: Check formatting
         run: npm run format:check:web
 
@@ -40,6 +43,12 @@ jobs:
 
       - name: Build
         run: npm run build:web
+
+      - name: Browser and accessibility tests
+        run: npm run check:browser
+
+      - name: Dependency audit
+        run: npm audit --audit-level=high
 
   python:
     name: Python validation
@@ -61,6 +70,7 @@ jobs:
     env:
       LILOS_MIGRATION_DATABASE_URL: postgresql+asyncpg://lilos_test:lilos_test@127.0.0.1:5432/lilos_test
       LILOS_TEST_DATABASE_URL: postgresql+asyncpg://lilos_test:lilos_test@127.0.0.1:5432/lilos_test
+      LILOS_RESTORE_DATABASE_URL: postgresql+asyncpg://lilos_test:lilos_test@127.0.0.1:5432/lilos_restore_test
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -91,12 +101,28 @@ jobs:
       - name: Test
         run: uv run pytest
 
+      - name: Dependency audit
+        run: uv run pip-audit
+
       - name: Validate migrations
         run: |
           uv run alembic upgrade head
+
+      - name: Verify synthetic backup restore
+        env:
+          PGPASSWORD: lilos_test
+        run: |
+          pg_dump -h 127.0.0.1 -U lilos_test -d lilos_test -Fc -f /tmp/lilos-test.backup
+          createdb -h 127.0.0.1 -U lilos_test lilos_restore_test
+          pg_restore -h 127.0.0.1 -U lilos_test -d lilos_restore_test /tmp/lilos-test.backup
+          uv run python scripts/verify_restored_database.py
+          dropdb -h 127.0.0.1 -U lilos_test lilos_restore_test
           uv run alembic check
           uv run alembic downgrade base
           uv run alembic upgrade head
 
       - name: Verify environment example
         run: uv run python scripts/check_secrets.py
+
+      - name: Verify release acceptance package
+        run: uv run python scripts/release_gate.py

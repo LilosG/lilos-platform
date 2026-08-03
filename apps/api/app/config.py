@@ -90,15 +90,6 @@ class Settings(BaseSettings):
         return self
 
     @model_validator(mode="after")
-    def validate_production_observability(self) -> "Settings":
-        if self.environment is EnvironmentName.PRODUCTION:
-            if self.release == "development":
-                raise ValueError("production requires an immutable release identifier")
-            if self.telemetry_export_endpoint is None:
-                raise ValueError("production requires a telemetry export endpoint")
-        return self
-
-    @model_validator(mode="after")
     def reject_unsafe_internal_admin_routes(self) -> "Settings":
         """Allow temporary bootstrap routes only in explicitly enabled local or test runtimes."""
         if self.internal_admin_routes_enabled and self.environment not in {
@@ -108,6 +99,15 @@ class Settings(BaseSettings):
             raise ValueError(
                 "Internal administrative routes may be enabled only in local or test environments"
             )
+        return self
+
+    @model_validator(mode="after")
+    def validate_production_observability(self) -> "Settings":
+        if self.environment is EnvironmentName.PRODUCTION:
+            if self.release == "development":
+                raise ValueError("production requires an immutable release identifier")
+            if self.telemetry_export_endpoint is None:
+                raise ValueError("production requires a telemetry export endpoint")
         return self
 
     def application_database_url(self) -> str | None:

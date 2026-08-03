@@ -434,3 +434,6 @@ Phase 5 is complete at migration `20260803_0002`: shared workflow definitions an
 # Phase 17 — Observability and Operational Hardening
 
 Implemented at migration `20260803_0013`: bounded/redacted telemetry, safe metric labels, trace propagation, deterministic alerts, incident/SLO/heartbeat persistence, dashboards, alert catalog, diagnostics policy, and production incident runbooks. External telemetry activation is a Phase 19 dependency.
+# Phase 18 — Testing, Security, and Reliability Hardening
+
+Implemented release-blocking dependency, browser/accessibility, synthetic restore, migration, secret, acceptance-package, redaction, and regression gates. Production load/soak, live monitoring, manual accessibility, provider sandbox, and geographic recovery evidence remain external launch dependencies.

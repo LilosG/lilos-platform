@@ -16,9 +16,13 @@
 }
 html {
   scroll-behavior: smooth;
+  max-width: 100%;
+  overflow-x: hidden;
 }
 body {
   margin: 0;
+  max-width: 100%;
+  overflow-x: hidden;
 }
 button,
 a {
@@ -396,7 +400,8 @@ td {
   }
   .sidebar nav ul {
     display: flex;
-    overflow: auto;
+    flex-wrap: wrap;
+    overflow: visible;
   }
   .sidebar__footer {
     display: none;
@@ -444,6 +449,11 @@ td {
   }
   .product-list article {
     grid-template-columns: 1fr auto;
+    min-width: 0;
+  }
+  .product-list article > * {
+    min-width: 0;
+    overflow-wrap: anywhere;
   }
   .product-list a {
     grid-column: 1/-1;
