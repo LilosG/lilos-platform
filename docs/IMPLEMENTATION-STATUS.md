@@ -8,7 +8,7 @@ deployment and launch remain blocked on the exact external access, environment, 
 backup, pilot, contact, and approval dependencies recorded in `PHASE-19-ACCEPTANCE.md`. No
 production deployment or launch is claimed.
 
-## Phase 19 verified infrastructure state (2026-08-04)
+## Phase 19 verified infrastructure state (2026-08-04, superseded — see next section)
 
 A re-verification of actual account/CLI access (rather than the prior recorded blocker list) found
 Render, Vercel, and production PostgreSQL are live and already connected to this repository:
@@ -33,6 +33,34 @@ Render, Vercel, and production PostgreSQL are live and already connected to this
   a designated canonical domain, a monitoring/backup destination, a pilot organization, and named
   approvers remain unavailable to this session. See `PHASE-19-ACCEPTANCE.md` for the exact,
   re-verified blocker list and the immediate next actions each one gates.
+
+No production-launch claim is made; Phase 20 remains prohibited.
+
+## Phase 19 production pilot verification (2026-08-04, commit `449dc399f2f0cb66bed1bc3ef752e144b392a9bd`)
+
+This pass resolves several items the prior section above listed as blocked. Full detail and
+evidence are in `PHASE-19-ACCEPTANCE.md`; summary:
+
+- **Resolved this pass**: Render interactive CLI access (`render whoami`, `render services`,
+  `render logs` now work); `LILOS_WEB_ORIGINS` CORS configuration (live preflight confirms the
+  Vercel origin is allowed and an unrelated origin is rejected); Vercel's
+  `PUBLIC_LILOS_SUPABASE_URL`/`PUBLIC_LILOS_SUPABASE_ANON_KEY` (confirmed present, values not
+  read); the production Supabase issuer/JWKS configuration; and a successful pilot sign-in and
+  `GET /api/v1/me` call (reported by the operator, consistent with all independently-verified
+  prerequisites).
+- **Pilot organization and owner provisioned**: organization "LILOs Growth"
+  (`36beb4d7-a1db-40b4-81bb-d98380f87dbf`, type `internal`), owner user profile
+  (`a79e82aa-4c9e-4bb0-a13a-5cd873663fa0`) mapped to Supabase auth user
+  `a44081bb-95c8-4463-be31-a83291b5239d`, reported by the operator. This session did not run the
+  provisioning script and has no database access to independently confirm these rows.
+- **Worker/scheduler**: confirmed stable (single clean start on the current release, zero error
+  logs, no restarts over the observed window) via `render logs`, but sustained heartbeat renewal
+  in the database is not independently confirmed — heartbeats write to a database table, not
+  stdout, and this session has no database read access.
+- **Still blocked, in priority order**: (1) worker/scheduler database-level heartbeat
+  verification, (2) monitoring/telemetry destination verification and on-call contacts, (3)
+  backup/PITR destination and restore verification, (4) canonical production domain decision, (5)
+  named launch approvers and Section 27 sign-off.
 
 No production-launch claim is made; Phase 20 remains prohibited.
 
