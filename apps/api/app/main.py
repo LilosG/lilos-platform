@@ -15,6 +15,7 @@ from apps.api.app.middleware import CorrelationIdMiddleware
 from apps.api.app.routes.administration import router as administration_router
 from apps.api.app.routes.api_v1 import router as api_v1_router
 from apps.api.app.routes.content import router as content_router
+from apps.api.app.routes.gbp import organization_router as gbp_organization_router
 from apps.api.app.routes.gbp import router as gbp_router
 from apps.api.app.routes.health import router as health_router
 from apps.api.app.routes.internal_access_control import router as internal_access_control_router
@@ -73,6 +74,7 @@ def create_app(
     application.include_router(api_v1_router)
     application.include_router(administration_router)
     application.include_router(gbp_router)
+    application.include_router(gbp_organization_router)
     application.include_router(reviews_router)
     application.include_router(leads_router)
     application.include_router(content_router)

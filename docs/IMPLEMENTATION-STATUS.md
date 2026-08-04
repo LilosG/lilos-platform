@@ -1,5 +1,21 @@
 # LILOs implementation status
 
+## Phase 9 — Google Business Profile vertical slice, reconciliation and correction (2026-08-04)
+
+The prior "Phase 9 status: complete" claim was inaccurate — see `docs/PHASE-09-ACCEPTANCE.md` for
+the full reconciliation. Corrected this pass: every GBP mutation now writes a real audit event
+(previously none did); added tenant-scoped, permission-checked read routes for account discovery,
+location discovery, change detail, publication history, and audit history — all reusing existing
+shared services, no new migration; added a real protected `/gbp` frontend route showing truthful
+readiness (including the platform's own existing `INTEGRATION_FOUNDATION_DEFERRED` blocked state),
+real (currently empty) discovery data, and an explicit "not available in this release" panel for
+Phase 14-scoped capabilities (categories/hours/attributes/services/products/media/posts — those
+belong to roadmap Phase 14, not Phase 9). 11 new backend integration tests plus a new Playwright
+case were added; full repository validation was run. "Connect Google" and any live provider write
+remain genuinely blocked on external Google OAuth client credentials, a secret-encryption key for
+a real `SecretStore`, and a registered workflow job handler — see `PHASE-09-ACCEPTANCE.md` for the
+exact blocker record. Phases 10 (Reviews) and 11 (Leads) were not started this pass.
+
 ## Phase 19 production preparation
 
 The vendor-neutral deployment contract, production preflight, inventories, release and recovery

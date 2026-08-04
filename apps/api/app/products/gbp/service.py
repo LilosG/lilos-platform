@@ -3,15 +3,21 @@
 import hashlib
 import json
 from datetime import UTC, datetime
-from typing import TypedDict
+from typing import TypedDict, cast
 from uuid import UUID, uuid4
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from apps.api.app.audit.contracts import AuditEventCreate
+from apps.api.app.audit.enums import AuditActorType, AuditResult
+from apps.api.app.audit.metadata import JsonValue
+from apps.api.app.audit.repository import AuditEventRepository
+from apps.api.app.audit.service import AuditEventService
 from apps.api.app.products.gbp.adapter import SUPPORTED_WRITE_FIELDS
 from apps.api.app.products.gbp.contracts import MappingConfirm, ProfileChangeCreate, PublishRequest
 from apps.api.app.products.gbp.models import (
+    GBPAccount,
     GBPLocation,
     GBPProfileChangeRevision,
     GBPProfileSnapshot,
@@ -69,6 +75,43 @@ def profile_health(profile: dict[str, object], observed_at: datetime) -> Profile
 
 
 class GBPService:
+    def __init__(self) -> None:
+        self.audit = AuditEventService()
+        self.audit_repository = AuditEventRepository()
+
+    async def _audit(
+        self,
+        session: AsyncSession,
+        *,
+        event: str,
+        organization_id: UUID,
+        location_id: UUID | None,
+        actor_id: UUID | None,
+        resource_type: str,
+        resource_id: UUID,
+        correlation_id: str,
+        summary: str,
+        metadata: dict[str, object],
+    ) -> None:
+        await self.audit.record(
+            session,
+            AuditEventCreate(
+                event_type=event,
+                action=event,
+                result=AuditResult.SUCCEEDED,
+                actor_type=AuditActorType.USER if actor_id else AuditActorType.SYSTEM,
+                actor_id=actor_id,
+                organization_id=organization_id,
+                location_id=location_id,
+                product_key="gbp",
+                resource_type=resource_type,
+                resource_id=resource_id,
+                correlation_id=correlation_id,
+                summary=summary,
+                metadata=cast(dict[str, JsonValue], metadata),
+            ),
+        )
+
     async def confirm_mapping(
         self,
         session: AsyncSession,
@@ -76,6 +119,8 @@ class GBPService:
         gbp_location_id: UUID,
         command: MappingConfirm,
         user_id: UUID,
+        *,
+        correlation_id: str,
     ) -> GBPLocation:
         item = await session.scalar(
             select(GBPLocation)
@@ -92,6 +137,18 @@ class GBPService:
         item.confirmed_by_user_id = user_id
         item.confirmed_at = datetime.now(UTC)
         await session.flush()
+        await self._audit(
+            session,
+            event="gbp.location.mapping_confirmed",
+            organization_id=organization_id,
+            location_id=command.location_id,
+            actor_id=user_id,
+            resource_type="gbp_location",
+            resource_id=item.id,
+            correlation_id=correlation_id,
+            summary="GBP location mapping confirmed.",
+            metadata={"write_enabled": item.write_enabled},
+        )
         return item
 
     async def store_snapshot(
@@ -133,6 +190,9 @@ class GBPService:
         location_id: UUID,
         gbp_location_id: UUID,
         command: ProfileChangeCreate,
+        *,
+        actor_id: UUID,
+        correlation_id: str,
     ) -> GBPProfileChangeRevision:
         fields = set(command.desired_fields)
         if not fields or not fields <= SUPPORTED_WRITE_FIELDS:
@@ -168,6 +228,18 @@ class GBPService:
         )
         session.add(item)
         await session.flush()
+        await self._audit(
+            session,
+            event="gbp.change.proposed",
+            organization_id=organization_id,
+            location_id=location_id,
+            actor_id=actor_id,
+            resource_type="gbp_profile_change_revision",
+            resource_id=item.id,
+            correlation_id=correlation_id,
+            summary="GBP profile change proposed.",
+            metadata={"risk_level": item.risk_level, "fields": sorted(fields)},
+        )
         return item
 
     async def decide(
@@ -177,6 +249,8 @@ class GBPService:
         revision_id: UUID,
         user_id: UUID,
         approve: bool,
+        *,
+        correlation_id: str,
     ) -> GBPProfileChangeRevision:
         item = await session.scalar(
             select(GBPProfileChangeRevision)
@@ -192,6 +266,18 @@ class GBPService:
         item.approved_by_user_id = user_id if approve else None
         item.approved_at = datetime.now(UTC) if approve else None
         await session.flush()
+        await self._audit(
+            session,
+            event=f"gbp.change.{item.status}",
+            organization_id=organization_id,
+            location_id=item.location_id,
+            actor_id=user_id,
+            resource_type="gbp_profile_change_revision",
+            resource_id=item.id,
+            correlation_id=correlation_id,
+            summary=f"GBP profile change {item.status}.",
+            metadata={"status": item.status},
+        )
         return item
 
     async def reserve_publication(
@@ -201,6 +287,9 @@ class GBPService:
         location_id: UUID,
         revision_id: UUID,
         command: PublishRequest,
+        *,
+        actor_id: UUID,
+        correlation_id: str,
     ) -> GBPPublication:
         existing = await session.scalar(
             select(GBPPublication).where(
@@ -231,4 +320,90 @@ class GBPService:
         )
         session.add(item)
         await session.flush()
+        await self._audit(
+            session,
+            event="gbp.publication.reserved",
+            organization_id=organization_id,
+            location_id=location_id,
+            actor_id=actor_id,
+            resource_type="gbp_publication",
+            resource_id=item.id,
+            correlation_id=correlation_id,
+            summary="GBP publication reserved for dispatch.",
+            metadata={"status": item.status, "change_revision_id": str(revision.id)},
+        )
         return item
+
+    async def list_accounts(self, session: AsyncSession, organization_id: UUID) -> list[GBPAccount]:
+        return list(
+            await session.scalars(
+                select(GBPAccount)
+                .where(GBPAccount.organization_id == organization_id)
+                .order_by(GBPAccount.discovered_at.desc())
+            )
+        )
+
+    async def list_locations(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        *,
+        mapping_status: str | None = None,
+    ) -> list[GBPLocation]:
+        statement = select(GBPLocation).where(GBPLocation.organization_id == organization_id)
+        if mapping_status is not None:
+            statement = statement.where(GBPLocation.mapping_status == mapping_status)
+        return list(
+            await session.scalars(statement.order_by(GBPLocation.last_discovered_at.desc()))
+        )
+
+    async def get_revision(
+        self, session: AsyncSession, organization_id: UUID, revision_id: UUID
+    ) -> GBPProfileChangeRevision:
+        item = await session.scalar(
+            select(GBPProfileChangeRevision).where(
+                GBPProfileChangeRevision.organization_id == organization_id,
+                GBPProfileChangeRevision.id == revision_id,
+            )
+        )
+        if not item:
+            raise LookupError("GBP change revision not found")
+        return item
+
+    async def list_publications(
+        self, session: AsyncSession, organization_id: UUID, location_id: UUID
+    ) -> list[GBPPublication]:
+        return list(
+            await session.scalars(
+                select(GBPPublication)
+                .where(
+                    GBPPublication.organization_id == organization_id,
+                    GBPPublication.location_id == location_id,
+                )
+                .order_by(GBPPublication.created_at.desc())
+            )
+        )
+
+    async def resource_history(
+        self,
+        session: AsyncSession,
+        *,
+        resource_type: str,
+        resource_id: UUID,
+        limit: int = 50,
+    ) -> list[dict[str, object]]:
+        events = await self.audit_repository.list_for_resource(
+            session, resource_type=resource_type, resource_id=resource_id, limit=limit
+        )
+        return [
+            {
+                "id": str(event.id),
+                "event_type": event.event_type,
+                "action": event.action,
+                "result": event.result,
+                "occurred_at": event.occurred_at,
+                "summary": event.summary,
+                "actor_type": event.actor_type,
+            }
+            for event in events
+        ]

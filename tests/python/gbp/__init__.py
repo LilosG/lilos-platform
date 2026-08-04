@@ -1,0 +1,1 @@
+"""GBP-domain tests."""

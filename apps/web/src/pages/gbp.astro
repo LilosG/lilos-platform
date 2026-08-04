@@ -1,0 +1,348 @@
+---
+import AppShell from "../components/AppShell.astro";
+import StatusBadge from "../components/StatusBadge.astro";
+import "../styles/global.css";
+---
+
+<!doctype html>
+<html lang="en">
+  <head
+    ><meta charset="UTF-8" /><meta
+      name="viewport"
+      content="width=device-width, initial-scale=1"
+    /><meta
+      name="description"
+      content="LILOs Business Profile workspace"
+    /><title>Business Profile · LILOs</title></head
+  >
+  <body
+    ><AppShell>
+      <div id="boot-not-configured" role="status">
+        <h1>This deployment is not configured</h1><p>
+          No Supabase or API connection is configured for this build.
+        </p>
+      </div>
+
+      <div id="boot-loading" role="status" aria-live="polite" hidden>
+        <p>Loading Business Profile…</p>
+      </div>
+
+      <div id="boot-error" role="alert" hidden></div>
+
+      <div id="workspace-empty" role="status" hidden>
+        <h1>No organization access yet</h1><p>
+          Your account is not a member of any organization. Ask an administrator
+          to invite you.
+        </p>
+      </div>
+
+      <div id="gbp-content" hidden>
+        <section id="overview" aria-labelledby="page-title">
+          <p class="eyebrow">Business Profile</p><h1 id="page-title">
+            Google Business Profile
+          </h1>
+        </section>
+
+        <section aria-labelledby="readiness-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Product readiness</p><h2 id="readiness-title">
+                Setup status
+              </h2>
+            </div>
+          </div><div class="attention-card" id="readiness-panel">
+            <p>Checking readiness…</p>
+          </div>
+        </section>
+
+        <section aria-labelledby="accounts-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Google connection</p><h2 id="accounts-title">
+                Discovered accounts
+              </h2>
+            </div>
+          </div><ul class="product-list" id="accounts-list"></ul>
+        </section>
+
+        <section aria-labelledby="locations-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Mapping</p><h2 id="locations-title">
+                Google Business locations
+              </h2>
+            </div>
+          </div><ul class="product-list" id="locations-list"></ul>
+        </section>
+
+        <section aria-labelledby="unavailable-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Not yet available</p><h2
+                id="unavailable-title"
+              >
+                Categories, hours, attributes, services, products, media, and
+                posts
+              </h2>
+            </div>
+          </div><div class="attention-card">
+            <StatusBadge
+              status="missing"
+              label="Not available in this release"
+            /><p>
+              These Google Business Profile capabilities are Roadmap Phase 14
+              scope and have no backing API yet in this release. This section
+              intentionally shows no simulated data.
+            </p>
+          </div>
+        </section>
+      </div>
+    </AppShell>
+    <script>
+      import {
+        fetchGBPAccounts,
+        fetchGBPLocations,
+        type GBPAccountSummary,
+        type GBPLocationSummary,
+      } from "../lib/gbp";
+      import {
+        fetchMyOrganizations,
+        fetchPrincipal,
+        fetchProductReadiness,
+      } from "../lib/workspace";
+      import { selectDefaultOrganization } from "../lib/dashboard-logic";
+      import { getCurrentSession, signOut } from "../lib/session";
+      import { readPublicConfig } from "../lib/config";
+      import type { ApiOutcome } from "../lib/api-client";
+
+      const regions = {
+        notConfigured: document.getElementById("boot-not-configured")!,
+        loading: document.getElementById("boot-loading")!,
+        error: document.getElementById("boot-error")!,
+        empty: document.getElementById("workspace-empty")!,
+        content: document.getElementById("gbp-content")!,
+      };
+
+      function showOnly(region: HTMLElement): void {
+        for (const key of Object.keys(regions) as (keyof typeof regions)[]) {
+          regions[key].hidden = regions[key] !== region;
+        }
+      }
+
+      function describeFailure(outcome: ApiOutcome<unknown>): string {
+        switch (outcome.kind) {
+          case "forbidden":
+            return "You do not have permission to view Business Profile for this organization.";
+          case "not-found":
+            return "The requested resource could not be found.";
+          case "disconnected":
+            return "Could not reach the platform API.";
+          case "unauthenticated":
+            return "Your session has expired. Sign in again.";
+          case "not-configured":
+            return "This deployment is not configured.";
+          case "error":
+            return outcome.message;
+          case "ok":
+            return "";
+        }
+      }
+
+      function goToLogin(): void {
+        const next = encodeURIComponent(window.location.pathname);
+        window.location.assign(`/login?next=${next}`);
+      }
+
+      function wireSignOut(): void {
+        document
+          .getElementById("sign-out-button")
+          ?.addEventListener("click", async () => {
+            await signOut();
+            goToLogin();
+          });
+      }
+
+      function renderReadiness(
+        outcome: Awaited<ReturnType<typeof fetchProductReadiness>>,
+      ): void {
+        const panel = document.getElementById("readiness-panel")!;
+        panel.replaceChildren();
+        if (outcome.kind !== "ok") {
+          const message = document.createElement("p");
+          message.textContent = describeFailure(outcome);
+          panel.append(message);
+          return;
+        }
+        const state = outcome.data.readiness_state;
+        const label = state === "not_entitled" ? "setup" : state;
+        const badge = document.createElement("span");
+        badge.className = `status status--${label}`;
+        const dot = document.createElement("span");
+        dot.setAttribute("aria-hidden", "true");
+        dot.className = "status__dot";
+        badge.append(dot, document.createTextNode(label));
+        panel.append(badge);
+        for (const finding of outcome.data.blocking_requirements) {
+          const reason = document.createElement("p");
+          reason.textContent = finding.remediation;
+          panel.append(reason);
+        }
+        if (
+          outcome.data.blocking_requirements.length === 0 &&
+          state === "ready"
+        ) {
+          const ready = document.createElement("p");
+          ready.textContent = "Business Profile is ready to use.";
+          panel.append(ready);
+        }
+      }
+
+      function renderAccounts(accounts: GBPAccountSummary[]): void {
+        const list = document.getElementById("accounts-list")!;
+        list.replaceChildren();
+        if (accounts.length === 0) {
+          const empty = document.createElement("li");
+          empty.textContent =
+            "No Google accounts discovered yet. Connecting Google is not yet available in this release.";
+          list.append(empty);
+          return;
+        }
+        for (const account of accounts) {
+          const item = document.createElement("li");
+          const info = document.createElement("div");
+          const name = document.createElement("h3");
+          name.textContent = account.display_name;
+          const meta = document.createElement("p");
+          meta.textContent = account.account_type ?? "Account";
+          info.append(name, meta);
+          const badge = document.createElement("span");
+          badge.className = `status status--${account.status === "selected" ? "ready" : "setup"}`;
+          const dot = document.createElement("span");
+          dot.setAttribute("aria-hidden", "true");
+          dot.className = "status__dot";
+          badge.append(dot, document.createTextNode(account.status));
+          item.append(info, badge);
+          list.append(item);
+        }
+      }
+
+      function renderLocations(locations: GBPLocationSummary[]): void {
+        const list = document.getElementById("locations-list")!;
+        list.replaceChildren();
+        if (locations.length === 0) {
+          const empty = document.createElement("li");
+          empty.textContent =
+            "No Google Business locations discovered yet. Discovery requires a connected Google account.";
+          list.append(empty);
+          return;
+        }
+        for (const location of locations) {
+          const item = document.createElement("li");
+          const info = document.createElement("div");
+          const name = document.createElement("h3");
+          name.textContent = location.business_name;
+          const meta = document.createElement("p");
+          meta.textContent = location.last_synced_at
+            ? `Last synced ${location.last_synced_at}`
+            : "Not yet synced";
+          info.append(name, meta);
+          const badgeStatus =
+            location.mapping_status === "confirmed"
+              ? "ready"
+              : location.mapping_status === "conflicted" ||
+                  location.mapping_status === "disconnected"
+                ? "blocked"
+                : "setup";
+          const badge = document.createElement("span");
+          badge.className = `status status--${badgeStatus}`;
+          const dot = document.createElement("span");
+          dot.setAttribute("aria-hidden", "true");
+          dot.className = "status__dot";
+          badge.append(dot, document.createTextNode(location.mapping_status));
+          item.append(info, badge);
+          list.append(item);
+        }
+      }
+
+      async function boot(): Promise<void> {
+        if (!readPublicConfig()) {
+          showOnly(regions.notConfigured);
+          return;
+        }
+        showOnly(regions.loading);
+
+        const session = await getCurrentSession();
+        if (session.status !== "signed-in") {
+          goToLogin();
+          return;
+        }
+
+        const principal = await fetchPrincipal();
+        if (principal.kind === "unauthenticated") {
+          goToLogin();
+          return;
+        }
+        if (principal.kind !== "ok") {
+          regions.error.textContent = describeFailure(principal);
+          showOnly(regions.error);
+          return;
+        }
+        document.getElementById("current-user-label")!.textContent =
+          principal.data.auth_user_id;
+        document.getElementById("current-user-initial")!.textContent =
+          principal.data.auth_user_id.slice(0, 1).toUpperCase();
+        document.getElementById("current-assurance-label")!.textContent =
+          principal.data.assurance_level;
+        const signOutButton = document.getElementById("sign-out-button")!;
+        signOutButton.hidden = false;
+        wireSignOut();
+
+        const organizations = await fetchMyOrganizations();
+        if (organizations.kind === "unauthenticated") {
+          goToLogin();
+          return;
+        }
+        if (organizations.kind !== "ok") {
+          regions.error.textContent = describeFailure(organizations);
+          showOnly(regions.error);
+          return;
+        }
+        if (organizations.data.length === 0) {
+          showOnly(regions.empty);
+          return;
+        }
+        const organization = selectDefaultOrganization(organizations.data);
+        if (!organization) {
+          showOnly(regions.empty);
+          return;
+        }
+        document.getElementById("active-organization-name")!.textContent =
+          organization.organization_name;
+
+        const [readiness, accounts, locations] = await Promise.all([
+          fetchProductReadiness(organization.organization_id, "gbp"),
+          fetchGBPAccounts(organization.organization_id),
+          fetchGBPLocations(organization.organization_id),
+        ]);
+
+        renderReadiness(readiness);
+        renderAccounts(accounts.kind === "ok" ? accounts.data : []);
+        renderLocations(locations.kind === "ok" ? locations.data : []);
+        if (accounts.kind !== "ok" && accounts.kind !== "not-found") {
+          const note = document.createElement("p");
+          note.textContent = `Accounts unavailable: ${describeFailure(accounts)}`;
+          document.getElementById("accounts-list")!.before(note);
+        }
+        if (locations.kind !== "ok" && locations.kind !== "not-found") {
+          const note = document.createElement("p");
+          note.textContent = `Locations unavailable: ${describeFailure(locations)}`;
+          document.getElementById("locations-list")!.before(note);
+        }
+
+        showOnly(regions.content);
+      }
+
+      void boot();
+    </script>
+  </body>
+</html>
