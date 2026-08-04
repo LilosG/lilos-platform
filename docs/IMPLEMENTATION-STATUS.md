@@ -64,6 +64,20 @@ evidence are in `PHASE-19-ACCEPTANCE.md`; summary:
 
 No production-launch claim is made; Phase 20 remains prohibited.
 
+## Phase 19 closure pass (2026-08-04 ~21:17 UTC, release `1ef2066edb26c2c68855262410d65ed16b65b5ad`)
+
+`scripts/verify_runtime_heartbeats.py` was run as a read-only Render Job against production:
+`lilos-worker` and `lilos-scheduler` both report `ok=True status=running` with fresh heartbeats at
+release `1ef2066`. This directly confirms sustained runtime health at the database level — the
+previously-open item from the prior pass. `render deploys list` for `lilos-api` shows 20 retained
+historical deploys, giving concrete rollback capability/evidence. Operational ownership was
+recorded per operator decision: pilot business owner Mike Prickett, on-call contact
+`mike@lilosgrowth.com`, target canonical domain `app.lilosgrowth.com` (recorded only — not
+configured; platform-issued hosts remain live pending a separate cutover approval). Monitoring/
+telemetry-destination access, the production database provider/backup identity, and full Section 27
+named-approver sign-off remain blocked pending external access this session cannot safely derive.
+See `PHASE-19-ACCEPTANCE.md` for full evidence and the consolidated decision block.
+
 ## Current task
 
 - Roadmap phase: Phase 16 — Administrative and Client User Interfaces

@@ -1,127 +1,114 @@
 # Phase 19 Acceptance
 
 Phase 19 production preparation is complete. Repository-side infrastructure-as-code, deployment
-pipelines, and application code are live, and a real pilot sign-in has now succeeded end-to-end in
-production. Deployment and launch remain **BLOCKED** on the exact remaining external access,
-values, and approvals recorded at the end of this document. No production-launch claim is made and
+pipelines, and application code are live; a real pilot sign-in and a direct database-level
+heartbeat verification have both succeeded in production. Full production launch remains
+**BLOCKED** on the exact remaining external access, values, and approvals recorded in the
+consolidated decision block at the end of this document. No production-launch claim is made and
 Phase 20 remains prohibited.
 
-## Verified live infrastructure and pilot sign-in (2026-08-04, commit `449dc399f2f0cb66bed1bc3ef752e144b392a9bd`)
+## Runtime heartbeat verification (2026-08-04 ~21:17 UTC, release `1ef2066edb26c2c68855262410d65ed16b65b5ad`)
 
-This pass re-verified live state using CLI/account access now available: Vercel CLI, GitHub CLI,
-and — newly, since the previous acceptance pass — an authenticated Render CLI session
-(`render whoami` succeeds). It supersedes the prior version of this document, which listed several
-of the items below as blocked; those are now resolved with direct evidence.
+`scripts/verify_runtime_heartbeats.py` (added this phase) was run as a read-only Render one-off Job
+against the production database. Reported result:
 
-### Newly resolved since the last acceptance pass
+- `lilos-worker`: `ok=True status=running`, heartbeat fresh, single active instance identity.
+- `lilos-scheduler`: `ok=True status=running`, heartbeat fresh, single active instance identity.
+- Both heartbeats persisted `release=1ef2066edb26c2c68855262410d65ed16b65b5ad`, matching the
+  commit whose deploy was live at verification time.
+- "Runtime heartbeat verification passed for all services."
 
-- **Render interactive access** — resolved. `render whoami`, `render services`, and `render logs`
-  now work from this session. This was blocker 1 in the prior version of this document.
-- **`LILOS_WEB_ORIGINS` configuration** — resolved. A live CORS preflight
-  (`OPTIONS /api/v1/me`) with `Origin: https://lilos-platform-web.vercel.app` now returns `200`
-  with `access-control-allow-origin: https://lilos-platform-web.vercel.app`. The same preflight
-  with an unrelated origin (`https://not-allowed.invalid`) returns `400 Disallowed CORS origin`
-  with no `access-control-allow-origin` header — confirming the allow-list is origin-specific, not
-  a wildcard.
-- **Vercel Supabase configuration** — resolved. `vercel env ls production` (via the Vercel CLI)
-  confirms `PUBLIC_LILOS_SUPABASE_URL` and `PUBLIC_LILOS_SUPABASE_ANON_KEY` are now set for
-  Production and Preview, alongside the previously-set `PUBLIC_LILOS_API_BASE_URL`. Values were
-  not read or displayed — only their presence was confirmed.
-- **Supabase issuer/JWKS configuration** — resolved. The production Supabase issuer and JWKS URL
-  were corrected on the `lilos-api` Render service (external action, not performed by this
-  session). `lilos-api` was redeployed at 2026-08-04T18:39–18:40Z for the current commit; live
-  behavior is consistent with a working verifier (malformed-token requests still return
-  `401 AUTHENTICATION_REQUIRED`, not `503`, i.e. the verifier constructs and evaluates tokens
-  rather than failing to initialize).
-- **Successful production sign-in and `GET /api/v1/me`** — reported by the operator and consistent
-  with the infrastructure evidence above (correct CORS, correct Supabase config, correct API
-  deployment). This session has no pilot credentials and did not itself perform the sign-in; it
-  independently verified every prerequisite that would be required for it to work (CORS,
-  Supabase config presence, API auth verifier behavior, current deployment).
-- **Pilot organization and owner provisioning** — reported by the operator with concrete
-  identifiers, consistent with the `provision_pilot_owner` script and the access-control
-  contracts added in this phase:
-  - Supabase auth UUID: `a44081bb-95c8-4463-be31-a83291b5239d`
-  - Backend user profile ID: `a79e82aa-4c9e-4bb0-a13a-5cd873663fa0`
-  - Organization ID: `36beb4d7-a1db-40b4-81bb-d98380f87dbf` ("LILOs Growth", type `internal`)
-  - Owner email: `mike@lilosgrowth.com`
-  - This session did not run the provisioning script and has no database access to independently
-    query these rows; this entry records the operator's report, not an independent database check.
+This resolves blocker 1 from the prior acceptance pass (worker/scheduler sustained heartbeat
+verification): sustained heartbeat renewal in the database is now directly confirmed, not merely
+inferred from the absence of error logs. No database credentials, DSNs, or raw row data were
+exposed to reach this result — the script prints only service name, instance key (already
+documented as a bounded non-secret identity), release, status, and heartbeat age.
 
-### Previously verified, re-confirmed this pass
+## Rollback evidence
 
-- **Render deployment pipeline**: GitHub's Deployments API confirms all three services
-  (`lilos-api`, `lilos-worker`, `lilos-scheduler`) deployed successfully for the current commit
-  `449dc39` (`lilos-api` 18:39–18:40Z; `lilos-worker`/`lilos-scheduler` 18:00–18:01Z). `render
-  services` confirms none are suspended.
-- **Production PostgreSQL**: `GET https://lilos-api.onrender.com/health/ready` returns
-  `{"status":"ready","dependencies":[{"name":"postgresql","status":"healthy"}]}`.
-- **Worker and scheduler process stability (partial)**: `render logs` for both services shows
-  exactly one `process.started` event since the current deploy, at the current commit's release
-  identifier, with zero `ERROR`-level log lines since. No crash-loop or restart pattern is present
-  in roughly 45 minutes of observed uptime. This confirms the processes started cleanly on the
-  current release and have not crashed or logged an error since. It does **not** confirm sustained
-  heartbeat renewal in the database (heartbeats are written directly to a database table, not
-  logged to stdout, and this session has no database access to query that table) — see blocker 1
-  below.
-- **Vercel frontend**: `https://lilos-platform-web.vercel.app/` and `/login` both return `200`.
-  Static `curl` output always contains the "not configured" markup regardless of actual
-  configuration, because that state toggling happens client-side in JavaScript after the page
-  loads (`curl` does not execute it) — so `curl` alone cannot verify the signed-in experience.
-  What `curl`/CLI evidence *can* and does confirm: the current corrected Phase 16 build is live,
-  correct Vercel environment variables are present, and the API it targets is healthy and
-  CORS-reachable. The signed-in experience itself is confirmed by the operator's report above.
-- **TLS**: both live hosts present valid, current platform-issued certificates. No custom domain
-  is assigned to either service — see blocker 4.
-- **GitHub Actions CI**: the `main` CI run for commit `449dc39` passed both jobs in full.
-- **Render Blueprint validation**: `check-jsonschema` against Render's schema and
-  `scripts/validate_render_blueprint.py` both pass against the current `render.yaml`.
+`render deploys list` for `lilos-api` (`srv-d9oi90ad0e5s73bldhng`) shows 20 tracked historical
+deploys, each tied to a specific commit, with the current live deploy at
+`1ef2066edb26c2c68855262410d65ed16b65b5ad` and prior deploys (`dac8ee2`, `449dc39`, ...) retained
+as `deactivated` rather than discarded. This is concrete, mechanical rollback capability: any
+retained prior deploy can be redeployed. No rollback was exercised against production this pass
+(that would be a destructive/disruptive action requiring separate approval); this only confirms
+the capability and history exist. `docs/PRODUCTION-MIGRATION-RUNBOOK.md` and
+`docs/DISASTER-RECOVERY.md` document the intended procedure; CI's synthetic backup/restore gate
+(`scripts/verify_restored_database.py`) continues to pass on every run as repository-side evidence.
+
+## Monitoring, telemetry, and backups — investigated, still blocked
+
+- **Telemetry destination**: `LILOS_TELEMETRY_EXPORT_ENDPOINT` is configured (production requires
+  it to boot) but its value is a raw connection value this session will not read, and the
+  destination itself was not identified: no GitHub webhook or GitHub App integration exists on
+  this repository (`gh api repos/.../hooks` returns empty; no monitoring app is installed
+  alongside the Render/GitHub Actions apps already visible in Deployments). Still blocked —
+  requires the operator to identify the destination and grant access to confirm dashboards, alert
+  rules, and that data is arriving.
+- **Production database provider / backup / PITR**: no Render Postgres or Key Value datastore
+  exists in this Render workspace (`render services` lists only the three application services),
+  confirming the database is externally hosted, consistent with the Blueprint's intentional
+  exclusion of Render-managed Postgres. Which provider hosts it cannot be determined without
+  reading `LILOS_DATABASE_URL`, a raw connection value this session will not expose. Given
+  Supabase Auth is configured for this deployment, Supabase-hosted Postgres is the most likely
+  candidate, but this is an inference, not a confirmed fact, and is not acted on. Still blocked.
+- **Restore-verification capability**: CI's synthetic restore (PostgreSQL 17, current schema head)
+  passes on every run — this is real, current, repository-side evidence, but it is synthetic data
+  restored to a disposable local database, not a production-backup restore. Still blocked pending
+  identification of the production backup destination above.
+
+## Operational ownership and canonical domain — recorded per operator decision
+
+The operator has designated the following, to be treated as recorded operational fact going
+forward (not independently verifiable by this session, and none of these required an unsafe or
+destructive action to record):
+
+- Pilot organization: **LILOs Growth** (`36beb4d7-a1db-40b4-81bb-d98380f87dbf`)
+- Pilot business owner: **Mike Prickett**
+- Operational / on-call contact: **mike@lilosgrowth.com**
+- Target canonical frontend domain: **app.lilosgrowth.com** — recorded as the intended target
+  only. **Not configured.** No DNS record, Vercel domain assignment, or TLS issuance was
+  performed; that requires a separate explicit production approval per instruction. The
+  platform-issued hosts (`lilos-api.onrender.com`, `lilos-platform-web.vercel.app`) remain the
+  live, canonical addresses until that cutover is explicitly approved and executed.
+
+Named approvers for the remaining Section 27 rows (security, data governance, migration/DBA,
+accessibility, provider/AI, live infrastructure launch) are not yet designated beyond the pilot
+business owner above — see the consolidated decision block.
 
 ## Exact remaining external blockers, in priority order
 
-1. **Worker/scheduler sustained heartbeat verification**: process-level stability is confirmed
-   (see above), but heartbeat renewal in the database, lease claim/attempt activity, and dead-letter
-   handling are not independently confirmed. Requires either direct database read access or a
-   diagnostics/heartbeat-status API surface this session can call.
-2. **Monitoring/telemetry destination verification**: `LILOS_TELEMETRY_EXPORT_ENDPOINT` is
-   configured (the process requires it to boot in production), but this session does not know
-   which destination it points to and has no access to confirm dashboards, alert rules, or that
-   data is actually arriving. No on-call contacts are named.
-3. **Encrypted backup/PITR destination and restore environment**: unverifiable without knowing
-   which provider hosts the production Postgres instance behind `LILOS_DATABASE_URL` (Render's own
-   Postgres is explicitly excluded from the Blueprint) and without dashboard/credential access to
-   that host.
-4. **Canonical production domain**: no domain has been assigned to either live service. The
-   pilot organization's name ("LILOs Growth") and owner email domain (`lilosgrowth.com`) suggest a
-   candidate, and that domain is already present in the same Vercel account (a separate existing
-   project), but assigning it to this platform without an explicit decision would be an
-   unauthorized guess. The current live hosts remain the platform-issued
-   `lilos-api.onrender.com` and `lilos-platform-web.vercel.app` addresses.
-5. **Named approvers and launch authorization**: no architecture, engineering, product,
-   security/privacy, operations, data, DBA, or business approvers are named; Section 27 remains
-   unsigned.
+1. **Monitoring/telemetry destination access**: identify and grant access to confirm dashboards,
+   alert rules, and live data arrival; on-call contact is now named (see above).
+2. **Production database provider identification and backup/PITR confirmation**: identify the
+   host behind `LILOS_DATABASE_URL` and confirm/verify its backup, PITR, and restore-environment
+   configuration, or provision an explicit backup destination.
+3. **Canonical domain cutover approval**: `app.lilosgrowth.com` is recorded as the target; explicit
+   approval is required before assigning it in Vercel/DNS.
+4. **Section 27 sign-off**: security, data governance, migration/DBA, accessibility, and
+   provider/AI approver rows remain pending named individuals beyond the pilot business owner.
 
-Blockers resolved this pass (Render interactive access, `LILOS_WEB_ORIGINS`, Vercel Supabase
-configuration, Supabase issuer/JWKS configuration, Supabase project access for the frontend, and
-pilot organization/owner existence) are removed from this list. Production PostgreSQL and Render
-deployment-pipeline access, previously listed as blockers, are also resolved — see above.
+Blockers resolved this pass: worker/scheduler sustained heartbeat verification (directly confirmed
+via the database), operational on-call/ownership naming, and rollback-capability evidence.
 
-Therefore: one authenticated pilot sign-in path is verified end-to-end by report and consistent
-infrastructure evidence; worker/scheduler heartbeat activity, monitoring/alerting, and backups
-remain unverified; no canonical domain and no named approvers exist; Section 27 remains unsigned;
+Therefore: one authenticated pilot sign-in path and direct worker/scheduler heartbeat health are
+both verified in production; monitoring/alert-data-arrival and backup/PITR remain unverified; the
+canonical domain is decided but not cut over; Section 27 remains unsigned pending named approvers;
 and no production-launch claim is made. Phase 20 remains prohibited.
 
-## Immediate next actions (require the exact access listed in the blockers above)
+## Consolidated decision block (external, cannot be derived safely)
 
-- Provide read access to the worker/scheduler heartbeat/lease tables (or a diagnostics API) so
-  sustained runtime health can be confirmed independently of log absence (blocker 1).
-- Identify the telemetry destination and grant access to confirm data is arriving and alerts are
-  configured, and name on-call contacts (blocker 2).
-- Identify the Postgres host behind `LILOS_DATABASE_URL` and confirm/verify its backup and PITR
-  configuration, or provision an explicit backup destination (blocker 3).
-- Decide whether `lilosgrowth.com` (or another domain) becomes the platform's canonical production
-  domain, or confirm the platform-issued hosts are acceptable for continued pilot use (blocker 4).
-- Name the required approvers and complete Section 27 sign-off (blocker 5).
+1. **Telemetry destination access** — grant this session (or a named operator) access to whatever
+   service `LILOS_TELEMETRY_EXPORT_ENDPOINT` points to, so dashboards/alerts/data-arrival can be
+   confirmed.
+2. **Database host identification** — confirm which provider hosts production Postgres (Supabase
+   is the working assumption pending confirmation) and grant access to verify its backup/PITR
+   configuration.
+3. **Domain cutover approval** — explicit go-ahead to assign `app.lilosgrowth.com` in Vercel and
+   configure DNS/TLS, per the recorded target above.
+4. **Section 27 approver names** — confirm whether Mike Prickett serves as sole approver across all
+   remaining rows, or name additional individuals for security/data/DBA/accessibility/provider
+   sign-off.
 
 Repository preparation includes a current-schema Render Blueprint and portable backend Dockerfile.
 The Blueprint intentionally excludes Render Postgres, Render Key Value, Render Workflows, cron
@@ -130,6 +117,4 @@ services, and persistent disks. This resolves the runtime-vendor decision only.
 The worker and scheduler consume the Phase 5 PostgreSQL claim/attempt/lease/retry contract
 continuously, renew active leases, maintain Phase 17 heartbeats, and drain cooperatively within the
 approved Render shutdown window; both fail closed on invalid configuration or sustained database
-failure. Their Render deploys succeeded for the current commit with a stable single-instance
-process (no restarts, no errors) over the observed window; sustained heartbeat renewal in the
-database itself remains unconfirmed pending database access (blocker 1).
+failure. Sustained heartbeat renewal in the database is now directly confirmed (see above).
