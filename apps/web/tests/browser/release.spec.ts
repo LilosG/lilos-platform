@@ -79,3 +79,19 @@ test("unconfigured Business Profile page shows a truthful not-configured state, 
     ),
   ).toEqual([]);
 });
+
+test("unconfigured Reviews page shows a truthful not-configured state, not fabricated review data", async ({
+  page,
+}) => {
+  await page.goto("/reviews");
+  await expect(
+    page.getByRole("heading", { name: "This deployment is not configured" }),
+  ).toBeVisible();
+  await expect(page.getByText("5★ review", { exact: false })).toHaveCount(0);
+  const results = await new AxeBuilder({ page }).analyze();
+  expect(
+    results.violations.filter((item) =>
+      ["serious", "critical"].includes(item.impact ?? ""),
+    ),
+  ).toEqual([]);
+});

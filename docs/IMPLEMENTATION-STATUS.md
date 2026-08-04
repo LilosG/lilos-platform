@@ -1,5 +1,21 @@
 # LILOs implementation status
 
+## Phase 10 — Reviews vertical slice, reconciliation and correction (2026-08-04)
+
+The prior "Phase 10 status: complete" claim was inaccurate — see `docs/PHASE-10-ACCEPTANCE.md` for
+the full reconciliation. Corrected this pass: every review ingestion, draft, approval, and
+publication reservation now writes a real audit event; restricted-case creation and response
+publication raise real notifications; a new AI-assisted drafting path was added through the
+existing `AIGateway`/`DeterministicAIProvider`, always requiring human review; list, detail,
+summary, response-history, and audit-history read routes were added with tenant-scoped pagination,
+filtering, search, and permission checks; a typed errors module replaced bare exceptions that
+previously fell through to unhandled 500s; and a real protected `/reviews` frontend route was added
+with truthful readiness, inbox, detail/response composer, and audit history — no fixture data, no
+dead buttons. All new capability reuses existing shared services (audit, notifications, AI routing,
+entitlements, authorization); no new migration was required. Live provider dispatch of a published
+response remains genuinely blocked on the same external Google credentials recorded in
+`PHASE-09-ACCEPTANCE.md`. Phase 11 (Leads) was not started this pass.
+
 ## Phase 9 — Google Business Profile vertical slice, reconciliation and correction (2026-08-04)
 
 The prior "Phase 9 status: complete" claim was inaccurate — see `docs/PHASE-09-ACCEPTANCE.md` for

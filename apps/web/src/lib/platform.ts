@@ -14,7 +14,7 @@ export type NavigationItem = {
 export const navigation: readonly NavigationItem[] = [
   { key: "overview", label: "Overview", href: "#overview" },
   { key: "gbp", label: "Business Profile", href: "/gbp" },
-  { key: "reviews", label: "Reviews", href: "#products" },
+  { key: "reviews", label: "Reviews", href: "/reviews" },
   { key: "leads", label: "Leads", href: "#products" },
   { key: "content", label: "Content", href: "#products" },
   { key: "seo", label: "SEO", href: "#products" },

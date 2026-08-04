@@ -3,6 +3,7 @@ from uuid import uuid4
 import pytest
 
 from apps.api.app.ai.gateway import AIGateway, AIGatewayRequest, DeterministicAIProvider
+from apps.api.app.products.reviews.errors import UnsafeDraftError
 from apps.api.app.products.reviews.service import classify, review_hash, validate_draft
 
 
@@ -21,7 +22,7 @@ def test_rating_and_sentiment_are_separate() -> None:
 
 
 def test_unsafe_liability_draft_fails() -> None:
-    with pytest.raises(ValueError):
+    with pytest.raises(UnsafeDraftError):
         validate_draft("We admit liability and guarantee compensation")
 
 

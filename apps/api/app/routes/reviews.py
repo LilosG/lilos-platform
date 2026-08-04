@@ -4,7 +4,6 @@ from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request, Response, status
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.app.access_control.enums import ScopeType
@@ -14,8 +13,9 @@ from apps.api.app.authorization.contracts import AuthorizationDecision
 from apps.api.app.authorization.dependencies import require_authorization
 from apps.api.app.database.session import get_database_session
 from apps.api.app.errors import request_correlation_id
-from apps.api.app.products.reviews.contracts import DraftCreate, PublishResponse
-from apps.api.app.products.reviews.models import Review
+from apps.api.app.products.reviews.contracts import AIDraftCreate, DraftCreate, PublishResponse
+from apps.api.app.products.reviews.errors import ReviewNotFoundError
+from apps.api.app.products.reviews.models import Review, ReviewRevision
 from apps.api.app.products.reviews.service import ReviewService
 
 router = APIRouter(
@@ -39,6 +39,23 @@ def policy(key: str, aal2: bool = False) -> Any:
     )
 
 
+def meta(request: Request) -> dict[str, object]:
+    return {"correlation_id": request_correlation_id(request)}
+
+
+def review_row(item: Review) -> dict[str, object]:
+    return {
+        "id": str(item.id),
+        "rating": float(item.rating) if item.rating is not None else None,
+        "status": item.status,
+        "sentiment": item.sentiment,
+        "risk_level": item.risk_level,
+        "provider": item.provider,
+        "review_created_at": item.review_created_at,
+        "current_revision_number": item.current_revision_number,
+    }
+
+
 @router.get("", dependencies=[Depends(no_store)])
 async def list_reviews(
     request: Request,
@@ -46,28 +63,143 @@ async def list_reviews(
     location_id: UUID,
     session: Session,
     _: Annotated[AuthorizationDecision, policy("reviews.read")],
+    status_filter: str | None = None,
+    rating_min: float | None = None,
+    rating_max: float | None = None,
+    search: str | None = None,
+    sort: str = "recent",
+    limit: int = 50,
+    offset: int = 0,
 ) -> dict[str, object]:
-    items = (
-        await session.scalars(
-            select(Review)
-            .where(Review.organization_id == organization_id, Review.location_id == location_id)
-            .order_by(Review.review_created_at.desc())
-            .limit(100)
-        )
-    ).all()
+    items, has_more = await service.list_reviews(
+        session,
+        organization_id,
+        location_id,
+        status_filter=status_filter,
+        rating_min=rating_min,
+        rating_max=rating_max,
+        search=search,
+        sort=sort,
+        limit=limit,
+        offset=offset,
+    )
+    return {
+        "data": [review_row(item) for item in items],
+        "pagination": {
+            "limit": limit,
+            "offset": offset,
+            "next_offset": offset + limit if has_more else None,
+            "has_more": has_more,
+        },
+        "meta": meta(request),
+    }
+
+
+@router.get("/summary", dependencies=[Depends(no_store)])
+async def summary(
+    request: Request,
+    organization_id: UUID,
+    location_id: UUID,
+    session: Session,
+    _: Annotated[AuthorizationDecision, policy("reviews.read")],
+) -> dict[str, object]:
+    return {
+        "data": await service.summary(session, organization_id, location_id),
+        "meta": meta(request),
+    }
+
+
+@router.get("/{review_id}", dependencies=[Depends(no_store)])
+async def get_review(
+    request: Request,
+    organization_id: UUID,
+    location_id: UUID,
+    review_id: UUID,
+    session: Session,
+    _: Annotated[AuthorizationDecision, policy("reviews.read")],
+) -> dict[str, object]:
+    review, revisions = await service.get(session, organization_id, review_id)
+    if review.location_id != location_id:
+        raise ReviewNotFoundError
+    return {
+        "data": {
+            **review_row(review),
+            "revisions": [_revision_row(revision) for revision in revisions],
+        },
+        "meta": meta(request),
+    }
+
+
+def _revision_row(revision: ReviewRevision) -> dict[str, object]:
+    return {
+        "id": str(revision.id),
+        "revision_number": revision.revision_number,
+        "rating": float(revision.rating) if revision.rating is not None else None,
+        "title": revision.title,
+        "body": revision.body,
+        "captured_at": revision.captured_at,
+        "change_summary": revision.change_summary,
+    }
+
+
+@router.get("/{review_id}/responses", dependencies=[Depends(no_store)])
+async def list_responses(
+    request: Request,
+    organization_id: UUID,
+    location_id: UUID,
+    review_id: UUID,
+    session: Session,
+    _: Annotated[AuthorizationDecision, policy("reviews.read")],
+) -> dict[str, object]:
+    items = await service.list_responses(session, organization_id, review_id)
     return {
         "data": [
             {
-                "id": str(x.id),
-                "rating": float(x.rating) if x.rating is not None else None,
-                "status": x.status,
-                "sentiment": x.sentiment,
-                "risk_level": x.risk_level,
+                "id": str(item.id),
+                "revision_number": item.revision_number,
+                "response_text": item.response_text,
+                "status": item.status,
+                "generated_by_type": item.generated_by_type,
+                "approved_at": item.approved_at,
+                "published_at": item.published_at,
             }
-            for x in items
+            for item in items
+            if item.location_id == location_id
         ],
-        "meta": {"correlation_id": request_correlation_id(request)},
+        "meta": meta(request),
     }
+
+
+@router.get("/{review_id}/audit", dependencies=[Depends(no_store)])
+async def review_audit(
+    request: Request,
+    organization_id: UUID,
+    location_id: UUID,
+    review_id: UUID,
+    session: Session,
+    _: Annotated[AuthorizationDecision, policy("audit.read")],
+) -> dict[str, object]:
+    review, _revisions = await service.get(session, organization_id, review_id)
+    if review.location_id != location_id:
+        raise ReviewNotFoundError
+    history = await service.resource_history(session, resource_type="review", resource_id=review_id)
+    return {"data": history, "meta": meta(request)}
+
+
+@router.get("/responses/{response_id}/audit", dependencies=[Depends(no_store)])
+async def response_audit(
+    request: Request,
+    organization_id: UUID,
+    location_id: UUID,
+    response_id: UUID,
+    session: Session,
+    _: Annotated[AuthorizationDecision, policy("audit.read")],
+) -> dict[str, object]:
+    del location_id
+    history = await service.resource_history(
+        session, resource_type="review_response_revision", resource_id=response_id
+    )
+    return {"data": history, "meta": meta(request)}
 
 
 @router.post(
@@ -80,7 +212,7 @@ async def draft(
     review_id: UUID,
     command: DraftCreate,
     session: Session,
-    _principal: Authenticated,
+    principal: Authenticated,
     _: Annotated[AuthorizationDecision, policy("reviews.generate_response")],
 ) -> dict[str, object]:
     item = await service.draft(
@@ -92,11 +224,53 @@ async def draft(
         text=command.response_text,
         generated_by_type=command.generated_by_type,
         fact_ids=command.approved_fact_revision_ids,
+        actor_id=principal.platform_user_id,
+        correlation_id=request_correlation_id(request),
         ai_execution_id=command.ai_execution_id,
     )
     return {
         "data": {"id": str(item.id), "revision": item.revision_number, "status": item.status},
-        "meta": {"correlation_id": request_correlation_id(request)},
+        "meta": meta(request),
+    }
+
+
+@router.post(
+    "/{review_id}/responses/ai-draft",
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(no_store)],
+)
+async def ai_draft(
+    request: Request,
+    organization_id: UUID,
+    location_id: UUID,
+    review_id: UUID,
+    command: AIDraftCreate,
+    session: Session,
+    principal: Authenticated,
+    _: Annotated[AuthorizationDecision, policy("reviews.generate_response")],
+) -> dict[str, object]:
+    item, execution = await service.generate_ai_draft(
+        session,
+        organization_id=organization_id,
+        location_id=location_id,
+        review_id=review_id,
+        review_revision_id=command.review_revision_id,
+        fact_ids=command.approved_fact_revision_ids,
+        idempotency_key=command.idempotency_key,
+        actor_id=principal.platform_user_id,
+        correlation_id=request_correlation_id(request),
+    )
+    return {
+        "data": {
+            "id": str(item.id),
+            "revision": item.revision_number,
+            "status": item.status,
+            "response_text": item.response_text,
+            "ai_execution_id": str(execution.id),
+            "requires_human_review": execution.requires_human_review,
+            "provider": execution.provider_key,
+        },
+        "meta": meta(request),
     }
 
 
@@ -111,10 +285,17 @@ async def approve(
     principal: Authenticated,
     _: Annotated[AuthorizationDecision, policy("reviews.approve_response", True)],
 ) -> dict[str, object]:
-    item = await service.approve(session, organization_id, response_id, principal.platform_user_id)
+    del location_id, review_id
+    item = await service.approve(
+        session,
+        organization_id,
+        response_id,
+        principal.platform_user_id,
+        correlation_id=request_correlation_id(request),
+    )
     return {
         "data": {"id": str(item.id), "status": item.status},
-        "meta": {"correlation_id": request_correlation_id(request)},
+        "meta": meta(request),
     }
 
 
@@ -131,13 +312,19 @@ async def publish(
     response_id: UUID,
     command: PublishResponse,
     session: Session,
-    _principal: Authenticated,
+    principal: Authenticated,
     _: Annotated[AuthorizationDecision, policy("reviews.publish_response", True)],
 ) -> dict[str, object]:
+    del location_id, review_id
     item = await service.reserve_publication(
-        session, organization_id, response_id, command.idempotency_key
+        session,
+        organization_id,
+        response_id,
+        command.idempotency_key,
+        actor_id=principal.platform_user_id,
+        correlation_id=request_correlation_id(request),
     )
     return {
         "data": {"id": str(item.id), "status": item.status},
-        "meta": {"correlation_id": request_correlation_id(request)},
+        "meta": meta(request),
     }

@@ -12,12 +12,29 @@ export type ApiOutcome<T> =
 
 type ErrorEnvelope = { error?: { code?: string; message?: string } };
 
+export type ApiRequestOptions = {
+  method?: "GET" | "POST" | "PUT" | "DELETE";
+  body?: unknown;
+};
+
 /**
  * Authenticated GET against the LILOs API. Never fabricates a result: a missing
  * configuration, missing session, network failure, or non-2xx response each map
  * to a distinct outcome the caller must render truthfully.
  */
-export async function apiGet<T>(path: string): Promise<ApiOutcome<T>> {
+export function apiGet<T>(path: string): Promise<ApiOutcome<T>> {
+  return apiRequest<T>(path);
+}
+
+/**
+ * Authenticated request (GET/POST/PUT/DELETE) against the LILOs API, sharing
+ * the exact same truthful-outcome classification as `apiGet`. State-changing
+ * callers pass `method` and an optional JSON-serializable `body`.
+ */
+export async function apiRequest<T>(
+  path: string,
+  options: ApiRequestOptions = {},
+): Promise<ApiOutcome<T>> {
   const config = readPublicConfig();
   if (!config) {
     return { kind: "not-configured" };
@@ -26,10 +43,19 @@ export async function apiGet<T>(path: string): Promise<ApiOutcome<T>> {
   if (!token) {
     return { kind: "unauthenticated" };
   }
+  const method = options.method ?? "GET";
   let response: Response;
   try {
     response = await fetch(`${config.apiBaseUrl}${path}`, {
-      headers: { Authorization: `Bearer ${token}` },
+      method,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        ...(options.body !== undefined
+          ? { "Content-Type": "application/json" }
+          : {}),
+      },
+      body:
+        options.body !== undefined ? JSON.stringify(options.body) : undefined,
     });
   } catch {
     return { kind: "disconnected" };

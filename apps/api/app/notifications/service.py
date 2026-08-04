@@ -19,6 +19,7 @@ class NotificationService:
         idempotency_key: str,
         context: dict[str, object],
         priority: str = "normal",
+        location_id: UUID | None = None,
     ) -> NotificationEvent:
         existing = await session.scalar(
             select(NotificationEvent).where(
@@ -30,6 +31,7 @@ class NotificationService:
             return existing
         event = NotificationEvent(
             organization_id=organization_id,
+            location_id=location_id,
             template_id=template_id,
             event_type=event_type,
             idempotency_key=idempotency_key,

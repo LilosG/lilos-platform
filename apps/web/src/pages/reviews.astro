@@ -1,0 +1,687 @@
+---
+import AppShell from "../components/AppShell.astro";
+import "../styles/global.css";
+---
+
+<!doctype html>
+<html lang="en">
+  <head
+    ><meta charset="UTF-8" /><meta
+      name="viewport"
+      content="width=device-width, initial-scale=1"
+    /><meta name="description" content="LILOs Reviews workspace" /><title>
+      Reviews · LILOs
+    </title></head
+  >
+  <body
+    ><AppShell>
+      <div id="boot-not-configured" role="status">
+        <h1>This deployment is not configured</h1><p>
+          No Supabase or API connection is configured for this build.
+        </p>
+      </div>
+
+      <div id="boot-loading" role="status" aria-live="polite" hidden>
+        <p>Loading Reviews…</p>
+      </div>
+
+      <div id="boot-error" role="alert" hidden></div>
+
+      <div id="workspace-empty" role="status" hidden>
+        <h1>No organization access yet</h1><p>
+          Your account is not a member of any organization. Ask an administrator
+          to invite you.
+        </p>
+      </div>
+
+      <div id="no-locations" role="status" hidden>
+        <h1>No locations yet</h1><p>
+          This organization has no locations. Reviews are scoped per location.
+        </p>
+      </div>
+
+      <div id="reviews-content" hidden>
+        <section id="overview" aria-labelledby="page-title">
+          <p class="eyebrow">Reviews</p><h1 id="page-title">Reviews</h1>
+        </section>
+
+        <section aria-labelledby="readiness-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Product readiness</p><h2 id="readiness-title">
+                Setup status
+              </h2>
+            </div><label class="sr-only" for="location-select">Location</label
+            ><select id="location-select"></select>
+          </div><div class="attention-card" id="readiness-panel">
+            <p>Checking readiness…</p>
+          </div>
+        </section>
+
+        <section aria-labelledby="summary-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Insights</p><h2 id="summary-title">
+                Review summary
+              </h2>
+            </div>
+          </div><div class="metric-grid" id="summary-panel"></div>
+        </section>
+
+        <section aria-labelledby="inbox-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Inbox</p><h2 id="inbox-title">Reviews</h2>
+            </div><form id="filter-form">
+              <label class="sr-only" for="status-filter">Status</label><select
+                id="status-filter"
+              >
+                <option value="">All statuses</option><option value="new"
+                  >New</option
+                ><option value="classified">Classified</option><option
+                  value="escalated">Escalated</option
+                ><option value="responded">Responded</option>
+              </select><label class="sr-only" for="search-input">Search</label
+              ><input
+                id="search-input"
+                type="search"
+                placeholder="Search review text"
+              /><button type="submit" class="button button--secondary"
+                >Apply</button
+              >
+            </form>
+          </div><ul class="product-list" id="reviews-list"></ul>
+        </section>
+
+        <section id="detail-section" aria-labelledby="detail-title" hidden>
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow" id="detail-eyebrow">Review detail</p><h2
+                id="detail-title"
+              >
+                Selected review
+              </h2>
+            </div>
+          </div><div class="split">
+            <article>
+              <p class="eyebrow">Provider content</p><div id="detail-body">
+              </div><h3>Compose a response</h3><label for="response-text"
+                >Response text</label
+              ><textarea id="response-text" rows="4" maxlength="5000"
+              ></textarea><div class="hero__actions">
+                <button type="button" class="button" id="manual-draft-button"
+                  >Save manual draft</button
+                ><button
+                  type="button"
+                  class="button button--secondary"
+                  id="ai-draft-button">Generate AI-assisted draft</button
+                >
+              </div><p id="draft-status" role="status" aria-live="polite"></p>
+            </article><article id="activity">
+              <p class="eyebrow">Response history</p><ol
+                class="timeline"
+                id="response-history"
+              >
+              </ol><p class="eyebrow">Audit history</p><ol
+                class="timeline"
+                id="audit-history"
+              >
+              </ol>
+            </article>
+          </div>
+        </section>
+      </div>
+    </AppShell>
+    <script>
+      import {
+        fetchMyOrganizations,
+        fetchPrincipal,
+        fetchProductReadiness,
+        fetchLocations,
+        type LocationSummary,
+      } from "../lib/workspace";
+      import {
+        approveResponse,
+        draftResponse,
+        fetchReviewAudit,
+        fetchReviewDetail,
+        fetchReviewResponses,
+        fetchReviewSummary,
+        fetchReviews,
+        generateAIDraft,
+        publishResponse,
+        type ReviewResponse,
+        type ReviewSummary,
+      } from "../lib/reviews";
+      import { selectDefaultOrganization } from "../lib/dashboard-logic";
+      import { getCurrentSession, signOut } from "../lib/session";
+      import { readPublicConfig } from "../lib/config";
+      import type { ApiOutcome } from "../lib/api-client";
+
+      const regions = {
+        notConfigured: document.getElementById("boot-not-configured")!,
+        loading: document.getElementById("boot-loading")!,
+        error: document.getElementById("boot-error")!,
+        empty: document.getElementById("workspace-empty")!,
+        noLocations: document.getElementById("no-locations")!,
+        content: document.getElementById("reviews-content")!,
+      };
+
+      let organizationId = "";
+      let currentLocationId = "";
+      let selectedReviewId: string | null = null;
+      let selectedRevisionId: string | null = null;
+
+      function showOnly(region: HTMLElement): void {
+        for (const key of Object.keys(regions) as (keyof typeof regions)[]) {
+          regions[key].hidden = regions[key] !== region;
+        }
+      }
+
+      function describeFailure(outcome: ApiOutcome<unknown>): string {
+        switch (outcome.kind) {
+          case "forbidden":
+            return "You do not have permission to view Reviews for this organization.";
+          case "not-found":
+            return "The requested resource could not be found.";
+          case "disconnected":
+            return "Could not reach the platform API.";
+          case "unauthenticated":
+            return "Your session has expired. Sign in again.";
+          case "not-configured":
+            return "This deployment is not configured.";
+          case "error":
+            return outcome.message;
+          case "ok":
+            return "";
+        }
+      }
+
+      function goToLogin(): void {
+        const next = encodeURIComponent(window.location.pathname);
+        window.location.assign(`/login?next=${next}`);
+      }
+
+      function wireSignOut(): void {
+        document
+          .getElementById("sign-out-button")
+          ?.addEventListener("click", async () => {
+            await signOut();
+            goToLogin();
+          });
+      }
+
+      function badge(status: string, label = status): HTMLSpanElement {
+        const el = document.createElement("span");
+        el.className = `status status--${status}`;
+        const dot = document.createElement("span");
+        dot.setAttribute("aria-hidden", "true");
+        dot.className = "status__dot";
+        el.append(dot, document.createTextNode(label));
+        return el;
+      }
+
+      function readinessBadgeStatus(reviewStatus: string): string {
+        if (["responded"].includes(reviewStatus)) return "ready";
+        if (
+          ["escalated", "publication_failed", "disputed"].includes(reviewStatus)
+        )
+          return "blocked";
+        if (
+          ["awaiting_approval", "approved", "publishing", "drafting"].includes(
+            reviewStatus,
+          )
+        )
+          return "setup";
+        return "missing";
+      }
+
+      async function renderReadiness(): Promise<void> {
+        const panel = document.getElementById("readiness-panel")!;
+        panel.replaceChildren();
+        const outcome = await fetchProductReadiness(organizationId, "reviews");
+        if (outcome.kind !== "ok") {
+          const message = document.createElement("p");
+          message.textContent = describeFailure(outcome);
+          panel.append(message);
+          return;
+        }
+        const state = outcome.data.readiness_state;
+        const label = state === "not_entitled" ? "setup" : state;
+        panel.append(badge(label));
+        for (const finding of outcome.data.blocking_requirements) {
+          const reason = document.createElement("p");
+          reason.textContent = finding.remediation;
+          panel.append(reason);
+        }
+        if (
+          outcome.data.blocking_requirements.length === 0 &&
+          state === "ready"
+        ) {
+          const ready = document.createElement("p");
+          ready.textContent = "Reviews is ready to use.";
+          panel.append(ready);
+        }
+      }
+
+      async function renderSummary(): Promise<void> {
+        const panel = document.getElementById("summary-panel")!;
+        panel.replaceChildren();
+        const outcome = await fetchReviewSummary(
+          organizationId,
+          currentLocationId,
+        );
+        if (outcome.kind !== "ok") {
+          const article = document.createElement("article");
+          article.className = "metric";
+          const message = document.createElement("p");
+          message.textContent = describeFailure(outcome);
+          article.append(message);
+          panel.append(article);
+          return;
+        }
+        const metrics: Array<[string, string]> = [
+          [
+            "Average rating",
+            outcome.data.average_rating !== null
+              ? outcome.data.average_rating.toFixed(1)
+              : "Not available",
+          ],
+          ["Open restricted cases", String(outcome.data.open_restricted_cases)],
+          ...Object.entries(outcome.data.by_status).map(
+            ([status, count]) =>
+              [`Status: ${status}`, String(count)] as [string, string],
+          ),
+        ];
+        for (const [label, value] of metrics) {
+          const article = document.createElement("article");
+          article.className = "metric";
+          const eyebrow = document.createElement("p");
+          eyebrow.className = "eyebrow";
+          eyebrow.textContent = label;
+          const valueEl = document.createElement("p");
+          valueEl.className = "metric__value";
+          valueEl.textContent = value;
+          article.append(eyebrow, valueEl);
+          panel.append(article);
+        }
+      }
+
+      async function renderReviewList(): Promise<void> {
+        const list = document.getElementById("reviews-list")!;
+        list.replaceChildren();
+        const statusFilter = (
+          document.getElementById("status-filter") as HTMLSelectElement
+        ).value;
+        const search = (
+          document.getElementById("search-input") as HTMLInputElement
+        ).value.trim();
+        const outcome = await fetchReviews(organizationId, currentLocationId, {
+          statusFilter: statusFilter || undefined,
+          search: search || undefined,
+        });
+        if (outcome.kind !== "ok") {
+          const item = document.createElement("li");
+          item.textContent = describeFailure(outcome);
+          list.append(item);
+          return;
+        }
+        if (outcome.data.length === 0) {
+          const item = document.createElement("li");
+          item.textContent = "No reviews yet for this location.";
+          list.append(item);
+          return;
+        }
+        for (const review of outcome.data) {
+          list.append(reviewRow(review));
+        }
+      }
+
+      function reviewRow(review: ReviewSummary): HTMLLIElement {
+        const item = document.createElement("li");
+        const info = document.createElement("div");
+        const title = document.createElement("h3");
+        title.textContent =
+          review.rating !== null
+            ? `${review.rating.toFixed(1)}★ review`
+            : "Review (no rating)";
+        const meta = document.createElement("p");
+        meta.textContent = `${review.provider} · ${review.sentiment} sentiment · ${new Date(
+          review.review_created_at,
+        ).toLocaleDateString()}`;
+        info.append(title, meta);
+        const actions = document.createElement("div");
+        actions.append(
+          badge(readinessBadgeStatus(review.status), review.status),
+        );
+        const openButton = document.createElement("button");
+        openButton.type = "button";
+        openButton.className = "button button--secondary";
+        openButton.textContent = "Open";
+        openButton.addEventListener("click", () => void openReview(review.id));
+        actions.append(openButton);
+        item.append(info, actions);
+        return item;
+      }
+
+      async function openReview(reviewId: string): Promise<void> {
+        selectedReviewId = reviewId;
+        const detailSection = document.getElementById("detail-section")!;
+        detailSection.hidden = false;
+        const bodyPanel = document.getElementById("detail-body")!;
+        bodyPanel.replaceChildren(document.createTextNode("Loading…"));
+
+        const detail = await fetchReviewDetail(
+          organizationId,
+          currentLocationId,
+          reviewId,
+        );
+        if (detail.kind !== "ok") {
+          bodyPanel.replaceChildren(
+            document.createTextNode(describeFailure(detail)),
+          );
+          return;
+        }
+        const latest = detail.data.revisions[0];
+        selectedRevisionId = latest?.id ?? null;
+        bodyPanel.replaceChildren();
+        const rating = document.createElement("p");
+        rating.textContent =
+          latest?.rating !== null && latest?.rating !== undefined
+            ? `Rating: ${latest.rating}`
+            : "Rating: not provided";
+        const text = document.createElement("p");
+        text.textContent = latest?.body ?? "No review text provided.";
+        bodyPanel.append(rating, text);
+
+        await Promise.all([
+          renderResponseHistory(reviewId),
+          renderAuditHistory(reviewId),
+        ]);
+      }
+
+      async function renderResponseHistory(reviewId: string): Promise<void> {
+        const list = document.getElementById("response-history")!;
+        list.replaceChildren();
+        const outcome = await fetchReviewResponses(
+          organizationId,
+          currentLocationId,
+          reviewId,
+        );
+        if (outcome.kind !== "ok") {
+          const item = document.createElement("li");
+          item.textContent = describeFailure(outcome);
+          list.append(item);
+          return;
+        }
+        if (outcome.data.length === 0) {
+          const item = document.createElement("li");
+          item.textContent = "No response drafted yet.";
+          list.append(item);
+          return;
+        }
+        for (const response of outcome.data) {
+          list.append(responseRow(reviewId, response));
+        }
+      }
+
+      function responseRow(
+        reviewId: string,
+        response: ReviewResponse,
+      ): HTMLLIElement {
+        const item = document.createElement("li");
+        const strong = document.createElement("strong");
+        strong.textContent = `Revision ${response.revision_number} (${response.generated_by_type}) — ${response.status}`;
+        const span = document.createElement("span");
+        span.textContent = response.response_text;
+        item.append(strong, span);
+        if (response.status === "awaiting_approval") {
+          const approveButton = document.createElement("button");
+          approveButton.type = "button";
+          approveButton.textContent = "Approve";
+          approveButton.addEventListener("click", async () => {
+            const result = await approveResponse(
+              organizationId,
+              currentLocationId,
+              reviewId,
+              response.id,
+            );
+            setDraftStatus(
+              result.kind === "ok"
+                ? "Response approved."
+                : describeFailure(result),
+            );
+            await renderResponseHistory(reviewId);
+          });
+          item.append(approveButton);
+        }
+        if (response.status === "approved") {
+          const publishButton = document.createElement("button");
+          publishButton.type = "button";
+          publishButton.textContent = "Publish";
+          publishButton.addEventListener("click", async () => {
+            const result = await publishResponse(
+              organizationId,
+              currentLocationId,
+              reviewId,
+              response.id,
+              `web-publish-${response.id}-${Date.now()}`,
+            );
+            setDraftStatus(
+              result.kind === "ok"
+                ? "Publication reserved. Live provider dispatch is not yet configured."
+                : describeFailure(result),
+            );
+            await renderResponseHistory(reviewId);
+          });
+          item.append(publishButton);
+        }
+        return item;
+      }
+
+      async function renderAuditHistory(reviewId: string): Promise<void> {
+        const list = document.getElementById("audit-history")!;
+        list.replaceChildren();
+        const outcome = await fetchReviewAudit(
+          organizationId,
+          currentLocationId,
+          reviewId,
+        );
+        if (outcome.kind !== "ok") {
+          const item = document.createElement("li");
+          item.textContent = describeFailure(outcome);
+          list.append(item);
+          return;
+        }
+        if (outcome.data.length === 0) {
+          const item = document.createElement("li");
+          item.textContent = "No audit history yet.";
+          list.append(item);
+          return;
+        }
+        for (const event of outcome.data) {
+          const item = document.createElement("li");
+          const strong = document.createElement("strong");
+          strong.textContent = event.summary;
+          const span = document.createElement("span");
+          span.textContent = `${event.event_type} · ${new Date(event.occurred_at).toLocaleString()}`;
+          item.append(strong, span);
+          list.append(item);
+        }
+      }
+
+      function setDraftStatus(message: string): void {
+        document.getElementById("draft-status")!.textContent = message;
+      }
+
+      function wireComposer(): void {
+        document
+          .getElementById("manual-draft-button")
+          ?.addEventListener("click", async () => {
+            if (!selectedReviewId || !selectedRevisionId) {
+              setDraftStatus("Open a review first.");
+              return;
+            }
+            const text = (
+              document.getElementById("response-text") as HTMLTextAreaElement
+            ).value;
+            const result = await draftResponse(
+              organizationId,
+              currentLocationId,
+              selectedReviewId,
+              {
+                review_revision_id: selectedRevisionId,
+                response_text: text,
+                generated_by_type: "user",
+                approved_fact_revision_ids: [],
+              },
+            );
+            setDraftStatus(
+              result.kind === "ok"
+                ? "Manual draft saved."
+                : describeFailure(result),
+            );
+            if (result.kind === "ok")
+              await renderResponseHistory(selectedReviewId);
+          });
+
+        document
+          .getElementById("ai-draft-button")
+          ?.addEventListener("click", async () => {
+            if (!selectedReviewId || !selectedRevisionId) {
+              setDraftStatus("Open a review first.");
+              return;
+            }
+            setDraftStatus("Generating AI-assisted draft…");
+            const result = await generateAIDraft(
+              organizationId,
+              currentLocationId,
+              selectedReviewId,
+              {
+                review_revision_id: selectedRevisionId,
+                approved_fact_revision_ids: [],
+                idempotency_key: `web-ai-draft-${selectedReviewId}-${Date.now()}`,
+              },
+            );
+            if (result.kind === "ok") {
+              (
+                document.getElementById("response-text") as HTMLTextAreaElement
+              ).value = result.data.response_text;
+              setDraftStatus(
+                "AI-assisted draft generated (deterministic safe-fallback provider; requires human review before approval).",
+              );
+              await renderResponseHistory(selectedReviewId);
+            } else {
+              setDraftStatus(describeFailure(result));
+            }
+          });
+      }
+
+      function wireFilters(): void {
+        document
+          .getElementById("filter-form")
+          ?.addEventListener("submit", (event) => {
+            event.preventDefault();
+            void renderReviewList();
+          });
+      }
+
+      async function loadLocation(locationId: string): Promise<void> {
+        currentLocationId = locationId;
+        document.getElementById("detail-section")!.hidden = true;
+        selectedReviewId = null;
+        await Promise.all([renderSummary(), renderReviewList()]);
+      }
+
+      function populateLocationSelect(locations: LocationSummary[]): void {
+        const select = document.getElementById(
+          "location-select",
+        ) as HTMLSelectElement;
+        select.replaceChildren();
+        for (const location of locations) {
+          const option = document.createElement("option");
+          option.value = location.id;
+          option.textContent = location.name;
+          select.append(option);
+        }
+        select.addEventListener(
+          "change",
+          () => void loadLocation(select.value),
+        );
+      }
+
+      async function boot(): Promise<void> {
+        if (!readPublicConfig()) {
+          showOnly(regions.notConfigured);
+          return;
+        }
+        showOnly(regions.loading);
+
+        const session = await getCurrentSession();
+        if (session.status !== "signed-in") {
+          goToLogin();
+          return;
+        }
+
+        const principal = await fetchPrincipal();
+        if (principal.kind === "unauthenticated") {
+          goToLogin();
+          return;
+        }
+        if (principal.kind !== "ok") {
+          regions.error.textContent = describeFailure(principal);
+          showOnly(regions.error);
+          return;
+        }
+        document.getElementById("current-user-label")!.textContent =
+          principal.data.auth_user_id;
+        document.getElementById("current-user-initial")!.textContent =
+          principal.data.auth_user_id.slice(0, 1).toUpperCase();
+        document.getElementById("current-assurance-label")!.textContent =
+          principal.data.assurance_level;
+        const signOutButton = document.getElementById("sign-out-button")!;
+        signOutButton.hidden = false;
+        wireSignOut();
+
+        const organizations = await fetchMyOrganizations();
+        if (organizations.kind === "unauthenticated") {
+          goToLogin();
+          return;
+        }
+        if (organizations.kind !== "ok") {
+          regions.error.textContent = describeFailure(organizations);
+          showOnly(regions.error);
+          return;
+        }
+        if (organizations.data.length === 0) {
+          showOnly(regions.empty);
+          return;
+        }
+        const organization = selectDefaultOrganization(organizations.data);
+        if (!organization) {
+          showOnly(regions.empty);
+          return;
+        }
+        organizationId = organization.organization_id;
+        document.getElementById("active-organization-name")!.textContent =
+          organization.organization_name;
+
+        await renderReadiness();
+
+        const locations = await fetchLocations(organizationId);
+        if (locations.kind !== "ok" || locations.data.length === 0) {
+          showOnly(regions.noLocations);
+          return;
+        }
+        populateLocationSelect(locations.data);
+        wireComposer();
+        wireFilters();
+        await loadLocation(locations.data[0].id);
+
+        showOnly(regions.content);
+      }
+
+      void boot();
+    </script>
+  </body>
+</html>

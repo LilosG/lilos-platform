@@ -1,13 +1,33 @@
 """Deterministic review ingestion, risk, drafting, approval, and publication intent."""
 
 import hashlib
-from datetime import datetime
-from typing import TypedDict
+from datetime import UTC, datetime
+from typing import TypedDict, cast
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import Select, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from apps.api.app.ai.gateway import AIGateway, AIGatewayRequest, DeterministicAIProvider
+from apps.api.app.ai.models import AIExecution, AITaskDefinition
+from apps.api.app.audit.contracts import AuditEventCreate
+from apps.api.app.audit.enums import AuditActorType, AuditResult
+from apps.api.app.audit.metadata import JsonValue
+from apps.api.app.audit.repository import AuditEventRepository
+from apps.api.app.audit.service import AuditEventService
+from apps.api.app.notifications.models import NotificationTemplate
+from apps.api.app.notifications.service import NotificationService
+from apps.api.app.products.reviews.errors import (
+    GroundingRequiredError,
+    InvalidReviewQueryError,
+    ResponseNotApprovalEligibleError,
+    ResponseNotPublishEligibleError,
+    RestrictedReviewCannotAutoPublishError,
+    ReviewChangedAfterDraftError,
+    ReviewNotFoundError,
+    ReviewRevisionNotFoundError,
+    UnsafeDraftError,
+)
 from apps.api.app.products.reviews.models import (
     Review,
     ReviewEscalation,
@@ -28,6 +48,14 @@ PROHIBITED_DRAFT_TERMS = (
     "we guarantee compensation",
     "the reviewer is lying",
 )
+AI_TASK_KEY = "reviews.response_draft"
+NOTIFICATION_TEMPLATES = {
+    "reviews.restricted_case_created": (
+        "in_app",
+        "A review requires human review before any response.",
+    ),
+    "reviews.response.published": ("in_app", "A review response was reserved for publication."),
+}
 
 
 class ReviewClassification(TypedDict):
@@ -62,10 +90,90 @@ def classify(body: str | None, rating: float | None) -> ReviewClassification:
 def validate_draft(text: str) -> None:
     normalized = text.casefold()
     if not text.strip() or any(term in normalized for term in PROHIBITED_DRAFT_TERMS):
-        raise ValueError("unsafe review response draft")
+        raise UnsafeDraftError
 
 
 class ReviewService:
+    def __init__(self) -> None:
+        self.audit = AuditEventService()
+        self.audit_repository = AuditEventRepository()
+        self.notifications = NotificationService()
+        self.ai_gateway = AIGateway(DeterministicAIProvider())
+
+    async def _audit(
+        self,
+        session: AsyncSession,
+        *,
+        event: str,
+        organization_id: UUID,
+        location_id: UUID | None,
+        actor_id: UUID | None,
+        resource_type: str,
+        resource_id: UUID,
+        correlation_id: str,
+        summary: str,
+        metadata: dict[str, object],
+    ) -> None:
+        await self.audit.record(
+            session,
+            AuditEventCreate(
+                event_type=event,
+                action=event,
+                result=AuditResult.SUCCEEDED,
+                actor_type=AuditActorType.USER if actor_id else AuditActorType.SYSTEM,
+                actor_id=actor_id,
+                organization_id=organization_id,
+                location_id=location_id,
+                product_key="reviews",
+                resource_type=resource_type,
+                resource_id=resource_id,
+                correlation_id=correlation_id,
+                summary=summary,
+                metadata=cast(dict[str, JsonValue], metadata),
+            ),
+        )
+
+    async def _notify(
+        self,
+        session: AsyncSession,
+        *,
+        organization_id: UUID,
+        location_id: UUID | None,
+        event_type: str,
+        idempotency_key: str,
+        context: dict[str, object],
+        priority: str = "normal",
+    ) -> None:
+        channel, body = NOTIFICATION_TEMPLATES[event_type]
+        template = await session.scalar(
+            select(NotificationTemplate).where(
+                NotificationTemplate.organization_id == organization_id,
+                NotificationTemplate.key == event_type,
+                NotificationTemplate.status == "active",
+            )
+        )
+        if template is None:
+            template = NotificationTemplate(
+                organization_id=organization_id,
+                key=event_type,
+                version=1,
+                channel=channel,
+                body_template=body,
+                status="active",
+            )
+            session.add(template)
+            await session.flush()
+        await self.notifications.create_event(
+            session,
+            organization_id=organization_id,
+            template_id=template.id,
+            event_type=event_type,
+            idempotency_key=idempotency_key,
+            context=context,
+            priority=priority,
+            location_id=location_id,
+        )
+
     async def ingest(
         self,
         session: AsyncSession,
@@ -80,6 +188,7 @@ class ReviewService:
         body: str | None,
         created_at: datetime,
         updated_at: datetime | None,
+        correlation_id: str,
     ) -> tuple[Review, ReviewRevision, bool]:
         digest = review_hash(rating, title, body)
         review = await session.scalar(
@@ -161,7 +270,32 @@ class ReviewService:
                     safe_reason="Deterministic restricted-risk candidate.",
                 )
             )
+            await self._notify(
+                session,
+                organization_id=organization_id,
+                location_id=location_id,
+                event_type="reviews.restricted_case_created",
+                idempotency_key=f"reviews.restricted.{review.id}.{revision.revision_number}",
+                context={"review_id": str(review.id), "risk_types": result["risks"]},
+                priority="high",
+            )
         await session.flush()
+        await self._audit(
+            session,
+            event="reviews.review.ingested",
+            organization_id=organization_id,
+            location_id=location_id,
+            actor_id=None,
+            resource_type="review",
+            resource_id=review.id,
+            correlation_id=correlation_id,
+            summary="Review ingested and classified.",
+            metadata={
+                "status": review.status,
+                "risk_level": review.risk_level,
+                "revision_number": revision.revision_number,
+            },
+        )
         return review, revision, True
 
     async def draft(
@@ -175,16 +309,18 @@ class ReviewService:
         text: str,
         generated_by_type: str,
         fact_ids: list[UUID],
+        actor_id: UUID | None,
+        correlation_id: str,
         ai_execution_id: UUID | None = None,
     ) -> ReviewResponseRevision:
         validate_draft(text)
         if not fact_ids:
-            raise ValueError("approved business facts required")
+            raise GroundingRequiredError
         review = await session.scalar(
             select(Review).where(Review.organization_id == organization_id, Review.id == review_id)
         )
         if not review:
-            raise LookupError("review not found")
+            raise ReviewNotFoundError
         status = "awaiting_approval"
         last = await session.scalar(
             select(ReviewResponseRevision.revision_number)
@@ -207,10 +343,145 @@ class ReviewService:
         )
         session.add(item)
         await session.flush()
+        await self._audit(
+            session,
+            event="reviews.response.drafted",
+            organization_id=organization_id,
+            location_id=location_id,
+            actor_id=actor_id,
+            resource_type="review_response_revision",
+            resource_id=item.id,
+            correlation_id=correlation_id,
+            summary=f"Review response drafted ({generated_by_type}).",
+            metadata={"generated_by_type": generated_by_type, "revision": item.revision_number},
+        )
         return item
 
+    async def generate_ai_draft(
+        self,
+        session: AsyncSession,
+        *,
+        organization_id: UUID,
+        location_id: UUID,
+        review_id: UUID,
+        review_revision_id: UUID,
+        fact_ids: list[UUID],
+        idempotency_key: str,
+        actor_id: UUID | None,
+        correlation_id: str,
+    ) -> tuple[ReviewResponseRevision, AIExecution]:
+        """Generate a response draft through the shared AI Gateway.
+
+        Uses the gateway's deterministic, always-safe fallback provider — a real,
+        governed execution path, not a live large-language-model integration. No
+        external AI provider credential exists yet; when one is configured, only
+        the registered provider swaps, this call path does not change.
+        """
+        if not fact_ids:
+            raise GroundingRequiredError
+        revision = await session.scalar(
+            select(ReviewRevision).where(
+                ReviewRevision.organization_id == organization_id,
+                ReviewRevision.id == review_revision_id,
+                ReviewRevision.review_id == review_id,
+            )
+        )
+        if not revision:
+            raise ReviewRevisionNotFoundError
+
+        task = await session.scalar(
+            select(AITaskDefinition).where(
+                AITaskDefinition.key == AI_TASK_KEY, AITaskDefinition.status == "active"
+            )
+        )
+        if task is None:
+            task = AITaskDefinition(
+                key=AI_TASK_KEY,
+                version=1,
+                owning_product="reviews",
+                purpose="Draft a grounded, policy-compliant review response for human approval.",
+                input_schema={"rating": "number", "body": "string"},
+                output_schema={"draft": "string"},
+                risk_level="medium",
+                maximum_cost_microunits=0,
+                maximum_latency_ms=5_000,
+                requires_human_review=True,
+                retention_policy_key="reviews.ai_draft.default",
+                status="active",
+            )
+            session.add(task)
+            await session.flush()
+
+        existing_execution = await session.scalar(
+            select(AIExecution).where(
+                AIExecution.organization_id == organization_id,
+                AIExecution.idempotency_key == idempotency_key,
+            )
+        )
+        if existing_execution is None:
+            fallback = (
+                "Thank you for sharing your experience. We take all feedback seriously and "
+                "would like to make this right."
+            )
+            request = AIGatewayRequest(
+                organization_id=organization_id,
+                location_id=location_id,
+                task_key=AI_TASK_KEY,
+                input_document={
+                    "rating": float(revision.rating) if revision.rating is not None else None,
+                    "manual_fallback": fallback,
+                },
+                input_references=(revision.id,),
+                approved_fact_revision_ids=tuple(fact_ids),
+                maximum_cost_microunits=task.maximum_cost_microunits,
+                maximum_latency_ms=task.maximum_latency_ms,
+            )
+            output = await self.ai_gateway.execute(request)
+            execution = AIExecution(
+                organization_id=organization_id,
+                location_id=location_id,
+                task_definition_id=task.id,
+                idempotency_key=idempotency_key,
+                status="completed",
+                provider_key=str(output.get("provider")),
+                model_key=str(output.get("model")),
+                input_references=[str(revision.id)],
+                approved_fact_revision_ids=[str(x) for x in fact_ids],
+                output_document=output,
+                output_hash=hashlib.sha256(str(output.get("draft", "")).encode()).hexdigest(),
+                requires_human_review=bool(output.get("requires_human_review", True)),
+                completed_at=datetime.now(UTC),
+            )
+            session.add(execution)
+            await session.flush()
+            draft_text = str(output.get("draft", ""))
+        else:
+            execution = existing_execution
+            draft_text = str((execution.output_document or {}).get("draft", ""))
+
+        response = await self.draft(
+            session,
+            organization_id=organization_id,
+            location_id=location_id,
+            review_id=review_id,
+            review_revision_id=review_revision_id,
+            text=draft_text,
+            generated_by_type="ai",
+            fact_ids=fact_ids,
+            actor_id=actor_id,
+            correlation_id=correlation_id,
+            ai_execution_id=execution.id,
+        )
+        return response, execution
+
     async def approve(
-        self, session: AsyncSession, organization_id: UUID, response_id: UUID, user_id: UUID
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        response_id: UUID,
+        user_id: UUID,
+        *,
+        correlation_id: str,
     ) -> ReviewResponseRevision:
         item = await session.scalar(
             select(ReviewResponseRevision)
@@ -221,7 +492,7 @@ class ReviewService:
             .with_for_update()
         )
         if not item or item.status != "awaiting_approval":
-            raise ValueError("current response is not approval eligible")
+            raise ResponseNotApprovalEligibleError
         review = await session.scalar(select(Review).where(Review.id == item.review_id))
         if not review or review.current_revision_number != (
             await session.scalar(
@@ -230,15 +501,34 @@ class ReviewService:
                 )
             )
         ):
-            raise ValueError("review changed after draft")
+            raise ReviewChangedAfterDraftError
         item.status = "approved"
         item.approved_by_user_id = user_id
-        item.approved_at = datetime.now().astimezone()
+        item.approved_at = datetime.now(UTC)
         await session.flush()
+        await self._audit(
+            session,
+            event="reviews.response.approved",
+            organization_id=organization_id,
+            location_id=item.location_id,
+            actor_id=user_id,
+            resource_type="review_response_revision",
+            resource_id=item.id,
+            correlation_id=correlation_id,
+            summary="Review response approved.",
+            metadata={"revision": item.revision_number},
+        )
         return item
 
     async def reserve_publication(
-        self, session: AsyncSession, organization_id: UUID, response_id: UUID, idempotency_key: str
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        response_id: UUID,
+        idempotency_key: str,
+        *,
+        actor_id: UUID | None,
+        correlation_id: str,
     ) -> ReviewResponseRevision:
         item = await session.scalar(
             select(ReviewResponseRevision)
@@ -249,11 +539,170 @@ class ReviewService:
             .with_for_update()
         )
         if not item or item.status != "approved":
-            raise ValueError("approved response required")
+            raise ResponseNotPublishEligibleError
         review = await session.scalar(select(Review).where(Review.id == item.review_id))
         if review and review.status == "escalated":
-            raise ValueError("restricted review cannot auto-publish")
+            raise RestrictedReviewCannotAutoPublishError
         item.status = "publishing"
         item.idempotency_key = idempotency_key
         await session.flush()
+        await self._audit(
+            session,
+            event="reviews.response.publication_reserved",
+            organization_id=organization_id,
+            location_id=item.location_id,
+            actor_id=actor_id,
+            resource_type="review_response_revision",
+            resource_id=item.id,
+            correlation_id=correlation_id,
+            summary="Review response publication reserved.",
+            metadata={"revision": item.revision_number},
+        )
+        await self._notify(
+            session,
+            organization_id=organization_id,
+            location_id=item.location_id,
+            event_type="reviews.response.published",
+            idempotency_key=f"reviews.published.{item.id}",
+            context={"review_id": str(item.review_id), "response_id": str(item.id)},
+        )
         return item
+
+    async def get(
+        self, session: AsyncSession, organization_id: UUID, review_id: UUID
+    ) -> tuple[Review, list[ReviewRevision]]:
+        review = await session.scalar(
+            select(Review).where(Review.organization_id == organization_id, Review.id == review_id)
+        )
+        if not review:
+            raise ReviewNotFoundError
+        revisions = list(
+            await session.scalars(
+                select(ReviewRevision)
+                .where(ReviewRevision.review_id == review_id)
+                .order_by(ReviewRevision.revision_number.desc())
+            )
+        )
+        return review, revisions
+
+    async def list_reviews(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        location_id: UUID,
+        *,
+        status_filter: str | None = None,
+        rating_min: float | None = None,
+        rating_max: float | None = None,
+        search: str | None = None,
+        sort: str = "recent",
+        limit: int = 50,
+        offset: int = 0,
+    ) -> tuple[list[Review], bool]:
+        if not 1 <= limit <= 100:
+            raise InvalidReviewQueryError
+        if offset < 0:
+            raise InvalidReviewQueryError
+        statement: Select[tuple[Review]] = select(Review).where(
+            Review.organization_id == organization_id, Review.location_id == location_id
+        )
+        if status_filter is not None:
+            statement = statement.where(Review.status == status_filter)
+        if rating_min is not None:
+            statement = statement.where(Review.rating >= rating_min)
+        if rating_max is not None:
+            statement = statement.where(Review.rating <= rating_max)
+        if search:
+            pattern = f"%{search.casefold()}%"
+            statement = statement.where(
+                Review.id.in_(
+                    select(ReviewRevision.review_id).where(
+                        ReviewRevision.review_id == Review.id,
+                        or_(
+                            func.lower(ReviewRevision.body).like(pattern),
+                            func.lower(ReviewRevision.title).like(pattern),
+                        ),
+                    )
+                )
+            )
+        statement = statement.order_by(
+            Review.rating.asc()
+            if sort == "rating_asc"
+            else Review.rating.desc()
+            if sort == "rating_desc"
+            else Review.review_created_at.desc()
+        )
+        rows = list(await session.scalars(statement.limit(limit + 1).offset(offset)))
+        has_more = len(rows) > limit
+        return rows[:limit], has_more
+
+    async def list_responses(
+        self, session: AsyncSession, organization_id: UUID, review_id: UUID
+    ) -> list[ReviewResponseRevision]:
+        return list(
+            await session.scalars(
+                select(ReviewResponseRevision)
+                .where(
+                    ReviewResponseRevision.organization_id == organization_id,
+                    ReviewResponseRevision.review_id == review_id,
+                )
+                .order_by(ReviewResponseRevision.revision_number.desc())
+            )
+        )
+
+    async def summary(
+        self, session: AsyncSession, organization_id: UUID, location_id: UUID
+    ) -> dict[str, object]:
+        rows = (
+            await session.execute(
+                select(Review.status, func.count())
+                .where(Review.organization_id == organization_id, Review.location_id == location_id)
+                .group_by(Review.status)
+            )
+        ).all()
+        average_rating = await session.scalar(
+            select(func.avg(Review.rating)).where(
+                Review.organization_id == organization_id,
+                Review.location_id == location_id,
+                Review.rating.is_not(None),
+            )
+        )
+        restricted = await session.scalar(
+            select(func.count())
+            .select_from(ReviewEscalation)
+            .join(Review, Review.id == ReviewEscalation.review_id)
+            .where(
+                Review.organization_id == organization_id,
+                Review.location_id == location_id,
+                ReviewEscalation.status == "open",
+            )
+        )
+        return {
+            "by_status": {status: count for status, count in rows},
+            "average_rating": float(average_rating) if average_rating is not None else None,
+            "open_restricted_cases": int(restricted or 0),
+        }
+
+    async def resource_history(
+        self,
+        session: AsyncSession,
+        *,
+        resource_type: str,
+        resource_id: UUID,
+        limit: int = 50,
+    ) -> list[dict[str, object]]:
+        events = await self.audit_repository.list_for_resource(
+            session, resource_type=resource_type, resource_id=resource_id, limit=limit
+        )
+        return [
+            {
+                "id": str(event.id),
+                "event_type": event.event_type,
+                "action": event.action,
+                "result": event.result,
+                "occurred_at": event.occurred_at,
+                "summary": event.summary,
+                "actor_type": event.actor_type,
+            }
+            for event in events
+        ]

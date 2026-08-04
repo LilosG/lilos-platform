@@ -16,3 +16,10 @@ class DraftCreate(BaseModel):
 class PublishResponse(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
     idempotency_key: str = Field(min_length=8, max_length=128)
+
+
+class AIDraftCreate(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    review_revision_id: UUID
+    approved_fact_revision_ids: list[UUID] = Field(min_length=1, max_length=50)
+    idempotency_key: str = Field(min_length=8, max_length=128)
