@@ -57,6 +57,24 @@ class MembershipRepository:
             ),
         )
 
+    async def list_by_user(
+        self, session: AsyncSession, user_profile_id: UUID
+    ) -> list[OrganizationMembership]:
+        """Return every membership owned by the given user, across organizations.
+
+        Self-scoped by ``user_profile_id`` only; callers must derive that value
+        from the authenticated principal, never from client input.
+        """
+        return list(
+            (
+                await session.scalars(
+                    select(OrganizationMembership)
+                    .where(OrganizationMembership.user_profile_id == user_profile_id)
+                    .order_by(OrganizationMembership.created_at.asc(), OrganizationMembership.id)
+                )
+            ).all()
+        )
+
     async def transition(
         self,
         session: AsyncSession,

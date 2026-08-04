@@ -1,11 +1,23 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
-test("workspace has no serious accessibility violations", async ({ page }) => {
+// This build runs with no PUBLIC_LILOS_* configuration, so the workspace must
+// show the truthful "not configured" state rather than fabricated content.
+
+test("unconfigured workspace shows a truthful not-configured state, not fabricated content", async ({
+  page,
+}) => {
   await page.goto("/");
   await expect(
-    page.getByRole("heading", { name: "Good morning, Alex." }),
+    page.getByRole("heading", { name: "This deployment is not configured" }),
   ).toBeVisible();
+  await expect(page.getByText("Good morning", { exact: false })).toHaveCount(0);
+});
+
+test("workspace has no serious accessibility violations in the not-configured state", async ({
+  page,
+}) => {
+  await page.goto("/");
   const results = await new AxeBuilder({ page }).analyze();
   expect(
     results.violations.filter((item) =>
@@ -24,18 +36,6 @@ test("keyboard skip navigation reaches main content", async ({ page }) => {
   await expect(page.locator("main")).toBeFocused();
 });
 
-test("status and metrics remain semantic without color or fabricated zero", async ({
-  page,
-}) => {
-  await page.goto("/");
-  await expect(page.getByText("Not available", { exact: true })).toBeVisible();
-  await page.getByText("View accessible data table", { exact: true }).click();
-  await expect(
-    page.getByRole("table", { name: "Organic clicks by week" }),
-  ).toBeVisible();
-  await expect(page.getByText("degraded", { exact: true })).toBeVisible();
-});
-
 test("mobile viewport does not create horizontal document overflow", async ({
   page,
 }) => {
@@ -45,4 +45,19 @@ test("mobile viewport does not create horizontal document overflow", async ({
     scroll: document.documentElement.scrollWidth,
   }));
   expect(widths.scroll).toBeLessThanOrEqual(widths.client + 1);
+});
+
+test("unconfigured login page shows a truthful not-configured state", async ({
+  page,
+}) => {
+  await page.goto("/login");
+  await expect(
+    page.getByText("This deployment is not configured for sign-in."),
+  ).toBeVisible();
+  const results = await new AxeBuilder({ page }).analyze();
+  expect(
+    results.violations.filter((item) =>
+      ["serious", "critical"].includes(item.impact ?? ""),
+    ),
+  ).toEqual([]);
 });

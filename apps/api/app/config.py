@@ -59,6 +59,7 @@ class Settings(BaseSettings):
     test_database_url: PostgresDsn | None = None
     database_connect_timeout_seconds: Annotated[float, Field(gt=0, le=30)] = 5.0
     internal_admin_routes_enabled: bool = False
+    web_origins: Annotated[str, Field(max_length=2_048)] = ""
     supabase_auth_issuer: HttpUrl | None = None
     supabase_auth_audience: Annotated[str, Field(min_length=1, max_length=128)] = "authenticated"
     supabase_auth_jwks_url: HttpUrl | None = None
@@ -68,6 +69,16 @@ class Settings(BaseSettings):
     supabase_auth_clock_skew_seconds: Annotated[int, Field(ge=0, le=300)] = 60
     supabase_auth_max_token_bytes: Annotated[int, Field(ge=1_024, le=65_536)] = 16_384
     service_name: ClassVar[str] = "lilos-api"
+
+    @field_validator("web_origins")
+    @classmethod
+    def validate_web_origins(cls, value: str) -> str:
+        origins = tuple(item.strip() for item in value.split(",") if item.strip())
+        for origin in origins:
+            parsed = HttpUrl(origin)
+            if parsed.path not in (None, "", "/") or parsed.query or parsed.fragment:
+                raise ValueError("LILOS_WEB_ORIGINS entries must be bare origins, not URLs")
+        return ",".join(dict.fromkeys(origins))
 
     @field_validator("supabase_auth_allowed_algorithms")
     @classmethod
@@ -102,6 +113,14 @@ class Settings(BaseSettings):
         return self
 
     @model_validator(mode="after")
+    def validate_production_web_origins(self) -> "Settings":
+        if self.environment is EnvironmentName.PRODUCTION:
+            for origin in self.allowed_web_origins():
+                if not origin.startswith("https://"):
+                    raise ValueError("LILOS_WEB_ORIGINS entries must use HTTPS in production")
+        return self
+
+    @model_validator(mode="after")
     def validate_production_observability(self) -> "Settings":
         if self.environment is EnvironmentName.PRODUCTION:
             if self.release == "development":
@@ -121,6 +140,9 @@ class Settings(BaseSettings):
     def integration_test_database_url(self) -> str | None:
         """Return the isolated PostgreSQL URL reserved for integration tests."""
         return _normalize_postgresql_url(self.test_database_url)
+
+    def allowed_web_origins(self) -> tuple[str, ...]:
+        return tuple(origin for origin in self.web_origins.split(",") if origin)
 
     def authentication_algorithms(self) -> tuple[str, ...]:
         return tuple(self.supabase_auth_allowed_algorithms.split(","))

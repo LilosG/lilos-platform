@@ -18,6 +18,8 @@ from apps.api.app.access_control.contracts import (
     MembershipData,
     MembershipLifecycleCommand,
     MembershipResponse,
+    MyOrganizationData,
+    MyOrganizationsResponse,
     PermissionData,
     PermissionDenyCreate,
     RoleAssignmentCreate,
@@ -26,6 +28,7 @@ from apps.api.app.access_control.contracts import (
 from apps.api.app.access_control.enums import MembershipStatus, ScopeType
 from apps.api.app.access_control.repository import CatalogRepository
 from apps.api.app.access_control.service import AccessControlService
+from apps.api.app.authentication.contracts import AuthenticatedPrincipalResponse
 from apps.api.app.authentication.dependencies import Authenticated, get_authenticated_principal
 from apps.api.app.authentication.enums import AssuranceLevel
 from apps.api.app.authorization.contracts import AuthorizationDecision
@@ -108,6 +111,43 @@ DatabaseSession = Annotated[AsyncSession, Depends(get_database_session)]
 
 def meta(request: Request) -> ResponseMeta:
     return ResponseMeta(correlation_id=request_correlation_id(request))
+
+
+@router.get("/me", response_model=AuthenticatedPrincipalResponse)
+async def get_current_principal(
+    request: Request,
+    principal: Authenticated,
+) -> AuthenticatedPrincipalResponse:
+    return AuthenticatedPrincipalResponse(data=principal, meta=meta(request))
+
+
+@router.get("/me/organizations", response_model=MyOrganizationsResponse)
+async def list_my_organizations(
+    request: Request,
+    principal: Authenticated,
+    session: DatabaseSession,
+) -> MyOrganizationsResponse:
+    """List the organizations the authenticated caller belongs to.
+
+    Scoped entirely by the verified principal; no client-supplied identifier
+    can widen this beyond the caller's own memberships.
+    """
+    pairs = await access_service.list_my_organizations(session, principal.platform_user_id)
+    return MyOrganizationsResponse(
+        data=[
+            MyOrganizationData(
+                organization_id=organization.id,
+                organization_name=organization.name,
+                organization_slug=organization.slug,
+                organization_status=organization.status.value,
+                membership_id=membership.id,
+                membership_status=membership.status,
+                membership_type=membership.membership_type,
+            )
+            for membership, organization in pairs
+        ],
+        meta=meta(request),
+    )
 
 
 def organization_policy(permission: str, *, aal2: bool = False) -> Any:

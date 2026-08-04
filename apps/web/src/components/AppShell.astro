@@ -1,14 +1,5 @@
 ---
-import {
-  navigation,
-  visibleNavigation,
-  type WorkspaceState,
-} from "../lib/platform";
-interface Props {
-  state: WorkspaceState;
-}
-const { state } = Astro.props;
-const visible = visibleNavigation(state);
+import { navigation } from "../lib/platform";
 ---
 
 <a class="skip-link" href="#main-content">Skip to main content</a>
@@ -20,26 +11,20 @@ const visible = visibleNavigation(state);
     <nav aria-label="Workspace navigation">
       <ul>
         {
-          navigation.map((item) => {
-            const allowed = visible.some((entry) => entry.key === item.key);
-            return (
-              <li>
-                {allowed ? (
-                  <a href={item.href}>{item.label}</a>
-                ) : (
-                  <span aria-disabled="true" title="Unavailable in this scope">
-                    {item.label}
-                  </span>
-                )}
-              </li>
-            );
-          })
+          navigation.map((item) => (
+            <li>
+              <a href={item.href}>{item.label}</a>
+            </li>
+          ))
         }
       </ul>
     </nav>
     <div class="sidebar__footer">
-      <span aria-hidden="true" class="avatar">OP</span><div>
-        <strong>Alex</strong><small>Signed in · {state.assurance}</small>
+      <span aria-hidden="true" class="avatar" id="current-user-initial">·</span
+      ><div>
+        <strong id="current-user-label">Loading…</strong><small
+          >Assurance · <span id="current-assurance-label">unknown</span></small
+        >
       </div>
     </div>
   </aside>
@@ -47,12 +32,17 @@ const visible = visibleNavigation(state);
     <header class="topbar">
       <div>
         <p class="eyebrow">Active organization</p><strong
-          >{state.organizationName}</strong
+          id="active-organization-name">Loading…</strong
         >
       </div><div class="topbar__actions">
-        <button type="button" aria-label="Open notifications"
-          >Notifications <span class="count">3</span></button
-        ><button type="button">Switch organization</button>
+        <label class="sr-only" for="organization-switcher"
+          >Switch organization</label
+        ><select
+          id="organization-switcher"
+          class="button button--secondary"
+          hidden></select><button type="button" id="sign-out-button" hidden
+          >Sign out</button
+        >
       </div>
     </header><main id="main-content" tabindex="-1"><slot /></main>
   </div>

@@ -10,12 +10,113 @@ production deployment or launch is claimed.
 
 ## Current task
 
-- Roadmap phase: Phase 4 — Shared Administration and Configuration
-- Implementation packet: `PHASE-04`
-- Deliverable: Shared operational configuration and Phase 4 closure
-- Status: Implementation and local validation complete; CI pending final commit
-- Date: 2026-08-03
+- Roadmap phase: Phase 16 — Administrative and Client User Interfaces
+- Implementation packet: `PHASE-16-CORRECTION`
+- Deliverable: Replace the static demo shell with a real operational application
+  foundation (authentication, organization/location context, API integration,
+  protected routes, truthful states)
+- Status: Implementation and local validation complete
+- Date: 2026-08-04
 - Commit or pull request: This phase packet
+
+The "Phase 4" entry previously recorded in this position was stale: Phases 5–18 are
+recorded as implemented elsewhere in this document (through migration
+`20260803_0013`), so this document's own history shows Phase 4 closure is no longer
+the active task. This packet does not resume Phase 4 or Phase 5 work.
+
+## Phase 16 correction packet (`PHASE-16-CORRECTION`)
+
+Verification against the Phase 16 roadmap deliverables and exit criteria found the
+existing frontend (`apps/web/src/pages/index.astro`) was a fully static demo: a
+hardcoded organization, permission set, entitlements, readiness, metrics, and
+activity feed, with no authentication, no API calls, and no protected routes. The
+navigation-visibility logic also fabricated authorization state client-side rather
+than deferring to the server. This violated the Master Build Prompt's prohibition
+on placeholder implementations presented as finished and on hiding/inventing
+authorization outcomes in the frontend.
+
+### Implemented
+
+- **Backend (minimal, self-scoped, no migration; classified as a blocking existing
+  defect required to complete this task):**
+  - `MembershipRepository.list_by_user` (`apps/api/app/access_control/repository.py`)
+    and `AccessControlService.list_my_organizations`
+    (`apps/api/app/access_control/service.py`) resolve every organization a caller
+    belongs to, scoped strictly by the verified principal's `platform_user_id`.
+  - Always-mounted `GET /api/v1/me` and `GET /api/v1/me/organizations`
+    (`apps/api/app/routes/api_v1.py`) give a signed-in user a production-safe way
+    to discover their own identity and organization memberships — previously the
+    only such endpoint (`/internal/auth/me`) was gated behind
+    `internal_admin_routes_enabled` (local/test only).
+  - `Settings.web_origins` / `allowed_web_origins()` (`apps/api/app/config.py`) and
+    conditional `CORSMiddleware` mounting (`apps/api/app/main.py`) let a
+    browser-hosted frontend call the API cross-origin; disabled by default, HTTPS
+    required in production, validated as bare origins (no path/query/fragment).
+- **Frontend (`apps/web/src`):**
+  - `lib/config.ts`, `lib/supabase-client.ts`, `lib/session.ts`, `lib/api-client.ts`,
+    `lib/workspace.ts`, `lib/dashboard-logic.ts` — real Supabase email/password
+    session handling and a typed API client whose every outcome
+    (`not-configured` / `unauthenticated` / `forbidden` / `not-found` /
+    `disconnected` / `error` / `ok`) is rendered as a distinct, truthful UI state.
+  - `pages/login.astro` — real sign-in form; redirects to the workspace once
+    signed in; shows an explicit "not configured" state instead of a broken form
+    when deployment configuration is absent.
+  - `pages/index.astro` — client-side boot sequence: redirects unauthenticated
+    visitors to `/login`, fetches the real principal, real organization
+    memberships (explicit empty state if none), real locations, and real
+    per-product readiness (`GET .../products/{key}/readiness`) for all six
+    product keys. An organization switcher is populated from real data when a
+    caller belongs to more than one organization.
+  - `components/AppShell.astro` — navigation is now a static, always-rendered
+    list; the previous permission-Set-based filtering (which fabricated
+    authorization state in the client) is removed. Org name, user identity,
+    assurance level, and sign-out are populated from real data at runtime.
+  - Metrics, activity history, and SEO recommendations have no backing read API
+    in this release (Insights/audit routes are not mounted) and are shown as an
+    explicit "not available in this release" panel — no simulated data.
+
+### Architecture and decisions
+
+- The frontend remains a static Astro build (no SSR adapter added); all
+  authentication and data gating is client-side JavaScript. The backend remains
+  the sole authorization authority — every real data render is the direct
+  result of a real, separately-authorized API response, never a client-inferred
+  permission.
+- Email/password sign-in was used rather than magic-link/OAuth to avoid adding a
+  callback-route flow out of scope for this correction.
+- No SSR, no new database migration, no per-product detail screens, and no
+  Insights/activity/SEO panels were added — each is either genuinely out of
+  Phase 16's roadmap scope or has no backing API yet; deferred rather than
+  simulated.
+
+### Tests and validation
+
+- Backend: `uv run ruff format --check`, `uv run ruff check`, `uv run mypy` all
+  passed with zero findings introduced by this change (one pre-existing,
+  unrelated `ruff` finding in `scripts/validate_render_blueprint.py` was left
+  untouched, out of scope). `uv run pytest` — 396 passed against an ephemeral
+  PostgreSQL 17 instance, including new focused self-scope isolation tests
+  (`tests/python/access_control/test_self_scope_api.py`) and CORS configuration
+  tests (`tests/python/api/test_config.py`).
+- Frontend: `npx prettier --check .`, `npx eslint .`, `npx astro check` (0
+  errors/warnings/hints), `npx vitest run` (18 passed, including new
+  `config.test.ts`, `api-client.test.ts`, `dashboard-logic.test.ts`), `npx astro
+  build` (2 static pages), and `npx playwright test` (10 passed across desktop
+  and mobile viewports) all passed. The Playwright suite and a manual
+  `astro preview` fetch confirmed the unconfigured build renders the truthful
+  "This deployment is not configured" state rather than any fabricated content.
+- Live Supabase/API click-through (real sign-in, real organization switch) was
+  not exercised — no Supabase project or reachable API deployment exists for
+  this repository yet, consistent with the Phase 19 external blockers already
+  recorded in `PHASE-19-ACCEPTANCE.md`. This is a known limitation, not a claim
+  of full end-to-end verification.
+
+### Deferred / excluded scope
+
+- OAuth/magic-link sign-in, SSR adapter, per-product detail screens, and any
+  Insights/activity/SEO backing API remain out of scope for this packet.
+- Production CORS origins, Supabase project provisioning, and API deployment
+  remain external Phase 19 blockers.
 
 ## Phase 4 implementation
 

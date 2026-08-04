@@ -1,0 +1,106 @@
+---
+import "../styles/global.css";
+---
+
+<!doctype html>
+<html lang="en">
+  <head
+    ><meta charset="UTF-8" /><meta
+      name="viewport"
+      content="width=device-width, initial-scale=1"
+    /><meta
+      name="description"
+      content="Sign in to the LILOs operational workspace"
+    /><title>Sign in · LILOs</title></head
+  >
+  <body>
+    <main class="auth-page">
+      <section aria-labelledby="login-title" class="auth-card">
+        <p class="eyebrow">LILOs</p><h1 id="login-title">Sign in</h1>
+
+        <div id="login-not-configured" hidden role="status">
+          <p>
+            This deployment is not configured for sign-in. Contact your
+            administrator.
+          </p>
+        </div>
+
+        <form id="login-form">
+          <label for="email">Email</label><input
+            type="email"
+            id="email"
+            name="email"
+            autocomplete="username"
+            required
+          /><label for="password">Password</label><input
+            type="password"
+            id="password"
+            name="password"
+            autocomplete="current-password"
+            required
+          /><button type="submit" class="button" id="login-submit"
+            >Sign in</button
+          >
+        </form>
+
+        <p id="login-error" role="alert" aria-live="assertive" hidden></p>
+        <p id="login-pending" role="status" aria-live="polite" hidden>
+          Signing in…
+        </p>
+      </section>
+    </main>
+    <script>
+      import { getCurrentSession, signInWithPassword } from "../lib/session";
+      import { readPublicConfig } from "../lib/config";
+
+      const notConfigured = document.getElementById("login-not-configured")!;
+      const form = document.getElementById("login-form") as HTMLFormElement;
+      const errorMessage = document.getElementById("login-error")!;
+      const pending = document.getElementById("login-pending")!;
+      const submit = document.getElementById(
+        "login-submit",
+      ) as HTMLButtonElement;
+
+      function redirectTarget(): string {
+        const params = new URLSearchParams(window.location.search);
+        const next = params.get("next");
+        return next && next.startsWith("/") ? next : "/";
+      }
+
+      async function boot() {
+        if (!readPublicConfig()) {
+          notConfigured.hidden = false;
+          form.hidden = true;
+          return;
+        }
+        const session = await getCurrentSession();
+        if (session.status === "signed-in") {
+          window.location.replace(redirectTarget());
+        }
+      }
+
+      form?.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        errorMessage.hidden = true;
+        pending.hidden = false;
+        submit.disabled = true;
+        const email = (document.getElementById("email") as HTMLInputElement)
+          .value;
+        const password = (
+          document.getElementById("password") as HTMLInputElement
+        ).value;
+        const result = await signInWithPassword(email, password);
+        pending.hidden = true;
+        submit.disabled = false;
+        if (!result.ok) {
+          errorMessage.textContent = result.message;
+          errorMessage.hidden = false;
+          return;
+        }
+        window.location.assign(redirectTarget());
+      });
+
+      void boot();
+    </script>
+  </body>
+</html>

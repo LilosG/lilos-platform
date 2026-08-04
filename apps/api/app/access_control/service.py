@@ -208,6 +208,28 @@ class AccessControlService:
             raise MembershipNotFoundError
         return membership
 
+    async def list_my_organizations(
+        self, session: AsyncSession, user_profile_id: UUID
+    ) -> list[tuple[OrganizationMembership, Organization]]:
+        """Resolve every organization the caller belongs to, self-scoped only."""
+        memberships = await self.memberships.list_by_user(session, user_profile_id)
+        if not memberships:
+            return []
+        organization_ids = {membership.organization_id for membership in memberships}
+        organizations = {
+            organization.id: organization
+            for organization in (
+                await session.scalars(
+                    select(Organization).where(Organization.id.in_(organization_ids))
+                )
+            ).all()
+        }
+        return [
+            (membership, organizations[membership.organization_id])
+            for membership in memberships
+            if membership.organization_id in organizations
+        ]
+
     async def transition_membership(
         self,
         session: AsyncSession,

@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pytest
+from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from apps.api.app.config import EnvironmentName, LogLevel, Settings
@@ -90,3 +91,64 @@ def test_authentication_defaults_and_https_configuration() -> None:
 def test_unsafe_authentication_configuration_is_rejected(values: dict[str, object]) -> None:
     with pytest.raises(ValidationError):
         Settings.model_validate({"environment": EnvironmentName.TEST, **values})
+
+
+def test_web_origins_default_to_disabled_cors() -> None:
+    settings = Settings(environment=EnvironmentName.TEST)
+    assert settings.allowed_web_origins() == ()
+
+    app = create_app(settings)
+    with TestClient(app) as client:
+        response = client.get("/health/live", headers={"Origin": "https://unconfigured.invalid"})
+        assert "access-control-allow-origin" not in {key.lower() for key in response.headers}
+
+
+def test_configured_web_origin_enables_cors_for_that_origin_only() -> None:
+    settings = Settings(
+        environment=EnvironmentName.TEST,
+        web_origins="https://app.lilos.invalid,https://admin.lilos.invalid",
+    )
+    assert settings.allowed_web_origins() == (
+        "https://app.lilos.invalid",
+        "https://admin.lilos.invalid",
+    )
+
+    with TestClient(create_app(settings)) as client:
+        allowed = client.options(
+            "/health/live",
+            headers={
+                "Origin": "https://app.lilos.invalid",
+                "Access-Control-Request-Method": "GET",
+            },
+        )
+        assert allowed.headers["access-control-allow-origin"] == "https://app.lilos.invalid"
+
+        blocked = client.options(
+            "/health/live",
+            headers={
+                "Origin": "https://not-allowed.invalid",
+                "Access-Control-Request-Method": "GET",
+            },
+        )
+        assert "access-control-allow-origin" not in {key.lower() for key in blocked.headers}
+
+
+@pytest.mark.parametrize(
+    "web_origins",
+    ["not-a-url", "https://app.lilos.invalid/path", "https://app.lilos.invalid?query=1"],
+)
+def test_malformed_web_origins_are_rejected(web_origins: str) -> None:
+    with pytest.raises(ValidationError):
+        Settings.model_validate({"environment": EnvironmentName.TEST, "web_origins": web_origins})
+
+
+def test_production_requires_https_web_origins() -> None:
+    with pytest.raises(ValidationError, match="HTTPS"):
+        Settings.model_validate(
+            {
+                "environment": EnvironmentName.PRODUCTION,
+                "release": "release-test",
+                "telemetry_export_endpoint": "https://telemetry.invalid",
+                "web_origins": "http://insecure.invalid",
+            }
+        )

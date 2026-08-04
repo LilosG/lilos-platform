@@ -4,6 +4,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from apps.api.app.authentication.verifier import TokenVerifier
 from apps.api.app.config import Settings, get_settings
@@ -57,6 +58,15 @@ def create_app(
     application.state.settings = resolved_settings
     application.state.database = resolved_database
     application.state.authentication_verifier = authentication_verifier
+    origins = resolved_settings.allowed_web_origins()
+    if origins:
+        application.add_middleware(
+            CORSMiddleware,
+            allow_origins=list(origins),
+            allow_credentials=False,
+            allow_methods=["GET", "POST", "PUT", "DELETE"],
+            allow_headers=["Authorization", "Content-Type"],
+        )
     application.add_middleware(CorrelationIdMiddleware)
     register_exception_handlers(application)
     application.include_router(health_router)

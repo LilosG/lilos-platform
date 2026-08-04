@@ -204,3 +204,21 @@ class BootstrapOwnerCreate(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     user_profile_id: UUID
     membership_type: MembershipType
+
+
+class MyOrganizationData(BaseModel):
+    """Self-scoped organization-membership summary for the authenticated caller."""
+
+    model_config = ConfigDict(extra="forbid")
+    organization_id: UUID
+    organization_name: str
+    organization_slug: str
+    organization_status: str
+    membership_id: UUID
+    membership_status: MembershipStatus
+    membership_type: MembershipType
+
+
+class MyOrganizationsResponse(BaseModel):
+    data: list[MyOrganizationData]
+    meta: ResponseMeta

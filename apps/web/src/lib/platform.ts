@@ -1,104 +1,43 @@
 export const platformName = "LILOs";
-export const developmentPhase = "Operational workspace";
-
-export type WorkspaceState = {
-  organizationName: string;
-  organizationStatus: "active" | "onboarding" | "paused";
-  assurance: "aal1" | "aal2";
-  permissions: ReadonlySet<string>;
-  entitlements: ReadonlySet<string>;
-  readyProducts: ReadonlySet<string>;
-  runtimeBlocks: ReadonlySet<string>;
-};
 
 export type NavigationItem = {
   key: string;
   label: string;
-  permission: string;
-  product?: string;
   href: string;
 };
 
+/**
+ * Navigation is always rendered. Authorization is enforced server-side on every
+ * request a section makes; the client never precomputes visibility from a
+ * permission set it cannot legitimately hold before the user picks a section.
+ */
 export const navigation: readonly NavigationItem[] = [
-  {
-    key: "overview",
-    label: "Overview",
-    permission: "organization.read",
-    href: "#overview",
-  },
-  {
-    key: "gbp",
-    label: "Business Profile",
-    permission: "gbp.read",
-    product: "gbp",
-    href: "#products",
-  },
-  {
-    key: "reviews",
-    label: "Reviews",
-    permission: "reviews.read",
-    product: "reviews",
-    href: "#products",
-  },
-  {
-    key: "leads",
-    label: "Leads",
-    permission: "leads.read",
-    product: "leads",
-    href: "#products",
-  },
-  {
-    key: "content",
-    label: "Content",
-    permission: "content.read",
-    product: "content",
-    href: "#products",
-  },
-  {
-    key: "seo",
-    label: "SEO",
-    permission: "seo.read",
-    product: "seo",
-    href: "#seo",
-  },
-  {
-    key: "insights",
-    label: "Insights",
-    permission: "insights.read",
-    product: "insights",
-    href: "#insights",
-  },
-  {
-    key: "admin",
-    label: "Administration",
-    permission: "organization.members.manage",
-    href: "#administration",
-  },
-  { key: "audit", label: "Audit", permission: "audit.read", href: "#activity" },
+  { key: "overview", label: "Overview", href: "#overview" },
+  { key: "gbp", label: "Business Profile", href: "#products" },
+  { key: "reviews", label: "Reviews", href: "#products" },
+  { key: "leads", label: "Leads", href: "#products" },
+  { key: "content", label: "Content", href: "#products" },
+  { key: "seo", label: "SEO", href: "#products" },
+  { key: "insights", label: "Insights", href: "#products" },
+  { key: "admin", label: "Administration", href: "#administration" },
 ];
 
-export function visibleNavigation(state: WorkspaceState): NavigationItem[] {
-  return navigation.filter(
-    (item) =>
-      state.permissions.has(item.permission) &&
-      (!item.product || state.entitlements.has(item.product)),
-  );
-}
+export type ReadinessOutcomeStatus = "ready" | "blocked" | "not_entitled";
 
-export function productState(
-  state: WorkspaceState,
-  product: string,
-): "blocked" | "setup" | "ready" {
-  if (state.runtimeBlocks.has(product) || state.organizationStatus === "paused")
-    return "blocked";
-  if (!state.entitlements.has(product) || !state.readyProducts.has(product))
-    return "setup";
-  return "ready";
+export function readinessLabel(status: ReadinessOutcomeStatus): string {
+  switch (status) {
+    case "ready":
+      return "ready";
+    case "blocked":
+      return "blocked";
+    case "not_entitled":
+      return "setup";
+  }
 }
 
 export function requiresStepUp(
-  state: WorkspaceState,
+  assurance: "aal1" | "aal2",
   minimum: "aal1" | "aal2",
 ): boolean {
-  return minimum === "aal2" && state.assurance !== "aal2";
+  return minimum === "aal2" && assurance !== "aal2";
 }

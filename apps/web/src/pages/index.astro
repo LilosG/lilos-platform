@@ -1,36 +1,7 @@
 ---
 import AppShell from "../components/AppShell.astro";
-import MetricCard from "../components/MetricCard.astro";
 import StatusBadge from "../components/StatusBadge.astro";
-import type { WorkspaceState } from "../lib/platform";
 import "../styles/global.css";
-
-const state: WorkspaceState = {
-  organizationName: "Example Service Co.",
-  organizationStatus: "active",
-  assurance: "aal2",
-  permissions: new Set([
-    "organization.read",
-    "organization.members.manage",
-    "audit.read",
-    "gbp.read",
-    "reviews.read",
-    "leads.read",
-    "content.read",
-    "seo.read",
-    "insights.read",
-  ]),
-  entitlements: new Set([
-    "gbp",
-    "reviews",
-    "leads",
-    "content",
-    "seo",
-    "insights",
-  ]),
-  readyProducts: new Set(["gbp", "reviews", "seo", "insights"]),
-  runtimeBlocks: new Set(["content"]),
-};
 ---
 
 <!doctype html>
@@ -44,200 +15,302 @@ const state: WorkspaceState = {
     </title></head
   >
   <body
-    ><AppShell state={state}>
-      <section id="overview" class="hero" aria-labelledby="page-title">
-        <div>
-          <p class="eyebrow">Monday, August 3</p><h1 id="page-title">
-            Good morning, Alex.
-          </h1><p>Here’s what needs attention across your organization.</p>
-        </div><div class="hero__actions">
-          <button type="button" class="button button--secondary"
-            >View approval inbox</button
-          ><button type="button" class="button">Create workflow</button>
-        </div>
-      </section>
-      <section aria-labelledby="attention-title">
-        <div class="section-heading">
-          <div>
-            <p class="eyebrow">Priority queue</p><h2 id="attention-title">
-              Needs attention
-            </h2>
-          </div><a href="#activity"
-            >View all activity <span aria-hidden="true">→</span></a
+    ><AppShell>
+      <div id="boot-not-configured" role="status">
+        <h1>This deployment is not configured</h1><p>
+          No Supabase or API connection is configured for this build. Set
+          <code>PUBLIC_LILOS_SUPABASE_URL</code>,
+          <code>PUBLIC_LILOS_SUPABASE_ANON_KEY</code>, and
+          <code>PUBLIC_LILOS_API_BASE_URL</code> to enable sign-in.
+        </p>
+      </div>
+
+      <div id="boot-loading" role="status" aria-live="polite" hidden>
+        <p>Loading your workspace…</p>
+      </div>
+
+      <div id="boot-error" role="alert" hidden></div>
+
+      <div id="workspace-empty" role="status" hidden>
+        <h1>No organization access yet</h1><p>
+          Your account is not a member of any organization. Ask an administrator
+          to invite you.
+        </p><button type="button" class="button" id="empty-sign-out"
+          >Sign out</button
+        >
+      </div>
+
+      <div id="workspace-content" hidden>
+        <section id="overview" aria-labelledby="page-title">
+          <p class="eyebrow" id="active-organization-status"></p><h1
+            id="page-title"
           >
-        </div><div class="attention-grid">
-          <article class="attention-card attention-card--urgent">
-            <p class="eyebrow">Approval · High risk</p><h3>
-              Holiday hours change
-            </h3><p>GBP · Downtown location</p><footer>
-              <StatusBadge status="blocked" label="AAL2 approval" /><button
-                type="button">Review</button
-              >
-            </footer>
-          </article>
-          <article class="attention-card">
-            <p class="eyebrow">Provider health</p><h3>Search data delayed</h3><p
-            >
-              Search Console · Latest data is partial
-            </p><footer>
-              <StatusBadge status="partial" label="Partial period" /><button
-                type="button">Inspect</button
-              >
-            </footer>
-          </article>
-          <article class="attention-card">
-            <p class="eyebrow">Readiness blocker</p><h3>
-              Content publishing paused
-            </h3><p>Runtime control blocks repository dispatch</p><footer>
-              <StatusBadge status="blocked" /><button type="button"
-                >Open controls</button
-              >
-            </footer>
-          </article>
-        </div>
-      </section>
-      <section id="insights" aria-labelledby="performance-title">
-        <div class="section-heading">
-          <div>
-            <p class="eyebrow">Validated metrics</p><h2 id="performance-title">
-              Performance snapshot
-            </h2>
-          </div><span>Jul 1–31 · Pacific time</span>
-        </div><div class="metric-grid">
-          <MetricCard
-            label="Organic clicks"
-            value="2,481"
-            state="valid"
-            range="Jul 1–31"
-            freshness="Updated 2 days ago"
-          /><MetricCard
-            label="GBP calls"
-            value="186"
-            state="partial"
-            range="Jul 1–31"
-            freshness="Partial through Jul 29"
-          /><MetricCard
-            label="Qualified leads"
-            value={null}
-            state="missing"
-            range="Jul 1–31"
-            freshness="CRM disconnected"
-          /><MetricCard
-            label="Review response"
-            value="94"
-            unit="%"
-            state="valid"
-            range="Jul 1–31"
-            freshness="Updated 1 hour ago"
-          />
-        </div><div class="chart-card">
-          <div>
-            <h3>Organic visibility</h3><p>
-              Clicks by week. Missing days are gaps, not zero.
+            Workspace overview
+          </h1>
+        </section>
+
+        <section aria-labelledby="products-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Shared operations</p><h2 id="products-title">
+                Product readiness
+              </h2>
+            </div>
+          </div><ul class="product-list" id="products-list"></ul>
+        </section>
+
+        <section aria-labelledby="locations-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Organization</p><h2 id="locations-title">
+                Locations
+              </h2>
+            </div>
+          </div><ul class="product-list" id="locations-list"></ul>
+        </section>
+
+        <section aria-labelledby="unavailable-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Reporting</p><h2 id="unavailable-title">
+                Metrics, activity, and recommendations
+              </h2>
+            </div>
+          </div><div class="attention-card">
+            <StatusBadge
+              status="missing"
+              label="Not available in this release"
+            /><p>
+              Insights, activity history, and SEO recommendations have no
+              backing API yet. This section intentionally shows no simulated
+              data.
             </p>
-          </div><div
-            class="bars"
-            role="img"
-            aria-label="Organic clicks increased from 480 in week one to 690 in week four; week three is partial."
-          >
-            <i style="--bar: 48%"></i><i style="--bar: 56%"></i><i
-              class="partial"
-              style="--bar: 43%"></i><i style="--bar: 69%"></i>
-          </div><details>
-            <summary>View accessible data table</summary><table>
-              <caption>Organic clicks by week</caption><thead
-                ><tr><th>Period</th><th>Clicks</th><th>Quality</th></tr></thead
-              ><tbody
-                ><tr><td>Week 1</td><td>480</td><td>Valid</td></tr><tr
-                  ><td>Week 2</td><td>560</td><td>Valid</td></tr
-                ><tr><td>Week 3</td><td>430</td><td>Partial</td></tr><tr
-                  ><td>Week 4</td><td>690</td><td>Valid</td></tr
-                ></tbody
-              >
-            </table>
-          </details>
-        </div>
-      </section>
-      <section id="products" aria-labelledby="products-title">
-        <div class="section-heading">
-          <div>
-            <p class="eyebrow">Shared operations</p><h2 id="products-title">
-              Product readiness
-            </h2>
           </div>
-        </div><div class="product-list">
-          {
-            [
-              ["Business Profile", "Google connected · 2 locations", "ready"],
-              ["Reviews", "1 restricted case requires human review", "ready"],
-              ["Leads", "SMS setup incomplete", "setup"],
-              ["Content", "Publishing runtime control active", "blocked"],
-              ["SEO", "Search Console partial through Jul 31", "degraded"],
-              ["Insights", "Reports ready to generate", "ready"],
-            ].map(([name, detail, status]) => (
-              <article>
-                <>
-                  <div>
-                    <>
-                      <h3>{name}</h3>
-                      <p>{detail}</p>
-                    </>
-                  </div>
-                  <StatusBadge
-                    status={
-                      status as "ready" | "blocked" | "setup" | "degraded"
-                    }
-                  />
-                  <a
-                    href={`#${name.toLowerCase().replaceAll(" ", "-")}`}
-                    aria-label={`Open ${name}`}
-                  >
-                    Open <span aria-hidden="true">→</span>
-                  </a>
-                </>
-              </article>
-            ))
-          }
-        </div>
-      </section>
-      <section id="seo" class="split">
-        <article>
-          <p class="eyebrow">SEO recommendation</p><h2>
-            Resolve duplicate canonical signals
-          </h2><p>
-            Evidence from crawl run #42 and Search Console property
-            sc-domain:example.test. Priority 78/100 from versioned relevance,
-            value, confidence, urgency, and effort inputs—not a ranking
-            prediction.
-          </p><button type="button" class="button">Review evidence</button>
-        </article><article id="activity">
-          <p class="eyebrow">Recent activity</p><h2>Verified history</h2><ol
-            class="timeline"
-          >
-            <li>
-              <strong>GBP post verified</strong><span
-                >Downtown · 18 minutes ago</span
-              >
-            </li><li>
-              <strong>Lead follow-up suppressed</strong><span
-                >Customer replied · 42 minutes ago</span
-              >
-            </li><li>
-              <strong>Report approved</strong><span
-                >July performance · 2 hours ago</span
-              >
-            </li>
-          </ol>
-        </article>
-      </section>
-      <section
-        id="administration"
-        class="sr-only"
-        aria-label="Administration availability"
-      >
-        Administration actions remain protected by server permissions and AAL
-        policies.
-      </section>
-    </AppShell></body
-  >
+        </section>
+
+        <section
+          id="administration"
+          class="sr-only"
+          aria-label="Administration availability"
+        >
+          Administration actions remain protected by server permissions and AAL
+          policies.
+        </section>
+      </div>
+    </AppShell>
+    <script>
+      import {
+        fetchLocations,
+        fetchMyOrganizations,
+        fetchPrincipal,
+        fetchProductReadiness,
+        PRODUCT_KEYS,
+        PRODUCT_LABELS,
+        type LocationSummary,
+        type MyOrganization,
+      } from "../lib/workspace";
+      import {
+        selectDefaultOrganization,
+        summarizeReadiness,
+      } from "../lib/dashboard-logic";
+      import { getCurrentSession, signOut } from "../lib/session";
+      import { readPublicConfig } from "../lib/config";
+      import type { ApiOutcome } from "../lib/api-client";
+
+      const regions = {
+        notConfigured: document.getElementById("boot-not-configured")!,
+        loading: document.getElementById("boot-loading")!,
+        error: document.getElementById("boot-error")!,
+        empty: document.getElementById("workspace-empty")!,
+        content: document.getElementById("workspace-content")!,
+      };
+
+      function showOnly(region: HTMLElement): void {
+        for (const key of Object.keys(regions) as (keyof typeof regions)[]) {
+          regions[key].hidden = regions[key] !== region;
+        }
+      }
+
+      function describeFailure(outcome: ApiOutcome<unknown>): string {
+        switch (outcome.kind) {
+          case "forbidden":
+            return "You do not have permission to view this workspace.";
+          case "not-found":
+            return "The requested resource could not be found.";
+          case "disconnected":
+            return "Could not reach the platform API.";
+          case "unauthenticated":
+            return "Your session has expired. Sign in again.";
+          case "not-configured":
+            return "This deployment is not configured.";
+          case "error":
+            return outcome.message;
+          case "ok":
+            return "";
+        }
+      }
+
+      function goToLogin(): void {
+        const next = encodeURIComponent(window.location.pathname);
+        window.location.assign(`/login?next=${next}`);
+      }
+
+      function wireSignOut(button: HTMLElement | null): void {
+        button?.addEventListener("click", async () => {
+          await signOut();
+          goToLogin();
+        });
+      }
+
+      function renderLocations(locations: LocationSummary[]): void {
+        const list = document.getElementById("locations-list")!;
+        list.replaceChildren();
+        if (locations.length === 0) {
+          const empty = document.createElement("li");
+          empty.textContent = "No locations yet.";
+          list.append(empty);
+          return;
+        }
+        for (const location of locations) {
+          const item = document.createElement("li");
+          const summary = document.createElement("div");
+          const name = document.createElement("h3");
+          name.textContent = location.name;
+          const status = document.createElement("p");
+          status.textContent = location.is_primary
+            ? `${location.status} · primary`
+            : location.status;
+          summary.append(name, status);
+          item.append(summary);
+          list.append(item);
+        }
+      }
+
+      async function renderProductReadiness(
+        organizationId: string,
+      ): Promise<void> {
+        const list = document.getElementById("products-list")!;
+        list.replaceChildren();
+        const results = await Promise.all(
+          PRODUCT_KEYS.map((key) => fetchProductReadiness(organizationId, key)),
+        );
+        PRODUCT_KEYS.forEach((key, index) => {
+          const readinessOutcome = summarizeReadiness(results[index]);
+          const item = document.createElement("li");
+          const info = document.createElement("div");
+          const name = document.createElement("h3");
+          name.textContent = PRODUCT_LABELS[key];
+          const detail = document.createElement("p");
+          detail.textContent = readinessOutcome.detail;
+          info.append(name, detail);
+          const badge = document.createElement("span");
+          badge.className = `status status--${readinessOutcome.status}`;
+          const dot = document.createElement("span");
+          dot.setAttribute("aria-hidden", "true");
+          dot.className = "status__dot";
+          badge.append(dot, document.createTextNode(readinessOutcome.status));
+          item.append(info, badge);
+          list.append(item);
+        });
+      }
+
+      async function loadOrganization(
+        organization: MyOrganization,
+      ): Promise<void> {
+        document.getElementById("active-organization-name")!.textContent =
+          organization.organization_name;
+        document.getElementById("active-organization-status")!.textContent =
+          `${organization.organization_status} · ${organization.membership_type}`;
+
+        const locations = await fetchLocations(organization.organization_id);
+        if (locations.kind === "ok") {
+          renderLocations(locations.data);
+        } else {
+          renderLocations([]);
+        }
+        await renderProductReadiness(organization.organization_id);
+      }
+
+      function populateSwitcher(organizations: MyOrganization[]): void {
+        const select = document.getElementById(
+          "organization-switcher",
+        ) as HTMLSelectElement;
+        select.replaceChildren();
+        for (const organization of organizations) {
+          const option = document.createElement("option");
+          option.value = organization.organization_id;
+          option.textContent = organization.organization_name;
+          select.append(option);
+        }
+        select.hidden = organizations.length <= 1;
+        select.addEventListener("change", () => {
+          const chosen = organizations.find(
+            (item) => item.organization_id === select.value,
+          );
+          if (chosen) void loadOrganization(chosen);
+        });
+      }
+
+      async function boot(): Promise<void> {
+        if (!readPublicConfig()) {
+          showOnly(regions.notConfigured);
+          return;
+        }
+        showOnly(regions.loading);
+
+        const session = await getCurrentSession();
+        if (session.status !== "signed-in") {
+          goToLogin();
+          return;
+        }
+
+        const principal = await fetchPrincipal();
+        if (principal.kind === "unauthenticated") {
+          goToLogin();
+          return;
+        }
+        if (principal.kind !== "ok") {
+          regions.error.textContent = describeFailure(principal);
+          showOnly(regions.error);
+          return;
+        }
+        document.getElementById("current-user-label")!.textContent =
+          principal.data.auth_user_id;
+        document.getElementById("current-user-initial")!.textContent =
+          principal.data.auth_user_id.slice(0, 1).toUpperCase();
+        document.getElementById("current-assurance-label")!.textContent =
+          principal.data.assurance_level;
+
+        const signOutButton = document.getElementById("sign-out-button")!;
+        signOutButton.hidden = false;
+        wireSignOut(signOutButton);
+        wireSignOut(document.getElementById("empty-sign-out"));
+
+        const organizations = await fetchMyOrganizations();
+        if (organizations.kind === "unauthenticated") {
+          goToLogin();
+          return;
+        }
+        if (organizations.kind !== "ok") {
+          regions.error.textContent = describeFailure(organizations);
+          showOnly(regions.error);
+          return;
+        }
+        if (organizations.data.length === 0) {
+          showOnly(regions.empty);
+          return;
+        }
+
+        populateSwitcher(organizations.data);
+
+        const initial = selectDefaultOrganization(organizations.data);
+        if (initial) {
+          await loadOrganization(initial);
+        }
+        showOnly(regions.content);
+      }
+
+      void boot();
+    </script>
+  </body>
 </html>

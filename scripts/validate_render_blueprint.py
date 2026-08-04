@@ -103,7 +103,6 @@ def validate_blueprint(path: Path = BLUEPRINT) -> tuple[str, ...]:
             errors.append(f"{name}:predeploy")
 
     api = by_name.get("lilos-api", {})
-    api_command = str(api.get("dockerCommand", ""))
     api_start_script = ROOT / "scripts" / "render_start_api.sh"
     if not api_start_script.is_file():
         errors.append("lilos-api:start-script-missing")
