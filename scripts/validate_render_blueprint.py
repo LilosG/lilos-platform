@@ -23,6 +23,7 @@ SECRET_POLICY = {
         "LILOS_SUPABASE_AUTH_ISSUER",
         "LILOS_SUPABASE_AUTH_JWKS_URL",
         "LILOS_TELEMETRY_EXPORT_ENDPOINT",
+        "LILOS_WEB_ORIGINS",
     },
     "lilos-worker": {
         "LILOS_DATABASE_URL",

@@ -49,6 +49,8 @@ services:
         sync: false
       - key: LILOS_TELEMETRY_EXPORT_ENDPOINT
         sync: false
+      - key: LILOS_WEB_ORIGINS
+        sync: false
 
   - name: lilos-worker
     type: worker

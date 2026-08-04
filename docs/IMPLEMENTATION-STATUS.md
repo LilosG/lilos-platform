@@ -8,6 +8,34 @@ deployment and launch remain blocked on the exact external access, environment, 
 backup, pilot, contact, and approval dependencies recorded in `PHASE-19-ACCEPTANCE.md`. No
 production deployment or launch is claimed.
 
+## Phase 19 verified infrastructure state (2026-08-04)
+
+A re-verification of actual account/CLI access (rather than the prior recorded blocker list) found
+Render, Vercel, and production PostgreSQL are live and already connected to this repository:
+
+- Render's GitHub App integration auto-deploys `lilos-api`, `lilos-worker`, and `lilos-scheduler`
+  on push; all three deployed successfully for commit `16ff8ba` (verified via the GitHub
+  Deployments API — `state: success` for each). `https://lilos-api.onrender.com/health/ready`
+  reports PostgreSQL healthy, and the API's `preDeployCommand` runs `alembic upgrade head` (fail-fast)
+  and the explicit catalog seeds before every deploy, so the production database is migrated to
+  head and seeded.
+- The `lilos-platform-web` Vercel project was found serving the pre-Phase-16 fabricated demo shell
+  in production (`https://lilos-platform-web.vercel.app`) — a live, client-visible defect. This
+  session redeployed the corrected Phase 16 build via `vercel deploy --prod`; the live site now
+  correctly shows the truthful "not configured" state. `PUBLIC_LILOS_API_BASE_URL` was set on
+  Vercel to the live Render API URL; `PUBLIC_LILOS_SUPABASE_URL`/`PUBLIC_LILOS_SUPABASE_ANON_KEY`
+  remain unset (no Supabase access available).
+- CORS is not yet enabled on the live API (`LILOS_WEB_ORIGINS` was not previously part of the
+  Render Blueprint). `render.yaml` and `scripts/validate_render_blueprint.py` were updated in the
+  working tree (not committed) to declare it; the actual origin value still needs to be set in the
+  Render dashboard, which this session cannot reach.
+- Render interactive CLI/dashboard access, direct PostgreSQL credentials, Supabase project access,
+  a designated canonical domain, a monitoring/backup destination, a pilot organization, and named
+  approvers remain unavailable to this session. See `PHASE-19-ACCEPTANCE.md` for the exact,
+  re-verified blocker list and the immediate next actions each one gates.
+
+No production-launch claim is made; Phase 20 remains prohibited.
+
 ## Current task
 
 - Roadmap phase: Phase 16 — Administrative and Client User Interfaces
