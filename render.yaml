@@ -32,10 +32,7 @@ services:
     autoDeployTrigger: checksPass
     dockerContext: .
     dockerfilePath: ./infrastructure/docker/backend.Dockerfile
-    dockerCommand: >-
-      /bin/sh -c 'export LILOS_RELEASE="${RENDER_GIT_COMMIT:-render-unknown}" &&
-      exec python -m uvicorn apps.api.app.main:app
-      --host 0.0.0.0 --port "${PORT:-10000}"'
+    dockerCommand: sh /app/scripts/render_start_api.sh
     preDeployCommand: sh /app/scripts/render_predeploy.sh
     healthCheckPath: /health/ready
     maxShutdownDelaySeconds: 30
@@ -61,9 +58,7 @@ services:
     autoDeployTrigger: checksPass
     dockerContext: .
     dockerfilePath: ./infrastructure/docker/backend.Dockerfile
-    dockerCommand: >-
-      /bin/sh -c 'export LILOS_RELEASE="${RENDER_GIT_COMMIT:-render-unknown}" &&
-      exec python -m apps.worker'
+    dockerCommand: sh /app/scripts/render_start_worker.sh
     maxShutdownDelaySeconds: 300
     numInstances: 1
     envVars:
@@ -85,9 +80,7 @@ services:
     autoDeployTrigger: checksPass
     dockerContext: .
     dockerfilePath: ./infrastructure/docker/backend.Dockerfile
-    dockerCommand: >-
-      /bin/sh -c 'export LILOS_RELEASE="${RENDER_GIT_COMMIT:-render-unknown}" &&
-      exec python -m apps.scheduler'
+    dockerCommand: sh /app/scripts/render_start_scheduler.sh
     maxShutdownDelaySeconds: 60
     numInstances: 1
     envVars:

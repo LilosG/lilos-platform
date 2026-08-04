@@ -10,9 +10,9 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 BLUEPRINT = ROOT / "render.yaml"
 SERVICE_POLICY = {
-    "lilos-api": ("web", "/health/ready", "uvicorn", 30),
-    "lilos-worker": ("worker", None, "python -m apps.worker", 300),
-    "lilos-scheduler": ("worker", None, "python -m apps.scheduler", 60),
+    "lilos-api": ("web", "/health/ready", "/app/scripts/render_start_api.sh", 30),
+    "lilos-worker": ("worker", None, "/app/scripts/render_start_worker.sh", 300),
+    "lilos-scheduler": ("worker", None, "/app/scripts/render_start_scheduler.sh", 60),
 }
 DOCKERFILE = "./infrastructure/docker/backend.Dockerfile"
 SHARED_GROUP = "lilos-production-runtime"
@@ -104,8 +104,17 @@ def validate_blueprint(path: Path = BLUEPRINT) -> tuple[str, ...]:
 
     api = by_name.get("lilos-api", {})
     api_command = str(api.get("dockerCommand", ""))
-    if "0.0.0.0" not in api_command or "${PORT:-10000}" not in api_command:
-        errors.append("lilos-api:bind")
+    api_start_script = ROOT / "scripts" / "render_start_api.sh"
+    if not api_start_script.is_file():
+        errors.append("lilos-api:start-script-missing")
+    else:
+        api_start_text = api_start_script.read_text(encoding="utf-8")
+        if (
+            "0.0.0.0" not in api_start_text
+            or "${PORT:-10000}" not in api_start_text
+            or "python -m uvicorn" not in api_start_text
+        ):
+            errors.append("lilos-api:bind")
     predeploy = str(api.get("preDeployCommand", ""))
     predeploy_policy_text = predeploy
 
