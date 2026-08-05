@@ -209,6 +209,7 @@ import "../styles/global.css";
       import { selectDefaultOrganization } from "../lib/dashboard-logic";
       import { getCurrentSession, signOut } from "../lib/session";
       import { readPublicConfig } from "../lib/config";
+      import { startWorkflowRun } from "../lib/workflows";
       import type { ApiOutcome } from "../lib/api-client";
 
       const regions = {
@@ -670,13 +671,25 @@ import "../styles/global.css";
           );
           return;
         }
+        setActionStatus("Starting publication workflow…");
+        const workflowStart = await startWorkflowRun(
+          organizationId,
+          "content.publish",
+          {
+            idempotencyKey: `web-publish-start-${revisionId}-${Date.now()}`,
+          },
+        );
+        if (workflowStart.kind !== "ok") {
+          setActionStatus(describeFailure(workflowStart));
+          return;
+        }
         const result = await reservePublication(
           organizationId,
           itemId,
           revisionId,
           {
             publishingTargetId: targetId,
-            workflowRunId: crypto.randomUUID(),
+            workflowRunId: workflowStart.data.workflow_run_id,
             targetPath,
             idempotencyKey: `web-publish-${revisionId}-${Date.now()}`,
           },

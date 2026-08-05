@@ -156,7 +156,7 @@ def seo_client(
             await session.flush()
 
             workflow_definition = WorkflowDefinition(
-                key="seo.crawl", name="Crawl SEO website", owner="seo"
+                key="seo.crawl_or_analysis", name="Crawl or analyze SEO website", owner="seo"
             )
             session.add(workflow_definition)
             await session.flush()
@@ -185,6 +185,19 @@ def seo_client(
             )
             session.add(workflow_run)
             await session.flush()
+            workflow_run_2 = WorkflowRun(
+                organization_id=organization.id,
+                location_id=location.id,
+                workflow_version_id=workflow_version.id,
+                product_key="seo",
+                trigger_type="manual",
+                idempotency_key="seo-test-workflow-run-002",
+                request_hash="deterministic-request-hash-2",
+                input_document={},
+                correlation_id="seo-test-workflow",
+            )
+            session.add(workflow_run_2)
+            await session.flush()
 
             identifiers = {
                 "organization": organization.id,
@@ -193,6 +206,7 @@ def seo_client(
                 "assigned_subject": profile.auth_user_id,
                 "connection": connection.id,
                 "workflow_run": workflow_run.id,
+                "workflow_run_2": workflow_run_2.id,
             }
             return claims(profile.auth_user_id), identifiers
 
@@ -328,7 +342,7 @@ def test_recommendation_approval_execution_and_outcome_flow(
         f"{base}/recommendations/{revision_id}/tasks",
         headers=HEADERS,
         json={
-            "workflow_run_id": str(ids["workflow_run"]),
+            "workflow_run_id": str(ids["workflow_run_2"]),
             "target_type": "page_title",
             "target_reference": "https://example.test/broken",
         },

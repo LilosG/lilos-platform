@@ -216,6 +216,7 @@ import "../styles/global.css";
       import { selectDefaultOrganization } from "../lib/dashboard-logic";
       import { getCurrentSession, signOut } from "../lib/session";
       import { readPublicConfig } from "../lib/config";
+      import { startWorkflowRun } from "../lib/workflows";
       import type { ApiOutcome } from "../lib/api-client";
 
       let organizationId = "";
@@ -609,11 +610,24 @@ import "../styles/global.css";
           publishButton.textContent = "Reserve publication";
           publishButton.addEventListener("click", async () => {
             if (!selectedPlatformLocationId) return;
+            setOperationsStatus("Starting publication workflow…");
+            const workflowStart = await startWorkflowRun(
+              organizationId,
+              "gbp.publish_post",
+              {
+                locationId: selectedPlatformLocationId,
+                idempotencyKey: `web-post-publish-start-${post.id}-${Date.now()}`,
+              },
+            );
+            if (workflowStart.kind !== "ok") {
+              setOperationsStatus(describeFailure(workflowStart));
+              return;
+            }
             const result = await publishPost(
               organizationId,
               selectedPlatformLocationId,
               post.id,
-              crypto.randomUUID(),
+              workflowStart.data.workflow_run_id,
             );
             setOperationsStatus(
               result.kind === "ok"

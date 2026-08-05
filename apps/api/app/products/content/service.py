@@ -16,6 +16,7 @@ from apps.api.app.audit.enums import AuditActorType, AuditResult
 from apps.api.app.audit.metadata import JsonValue
 from apps.api.app.audit.repository import AuditEventRepository
 from apps.api.app.audit.service import AuditEventService
+from apps.api.app.execution.service import ExecutionService
 from apps.api.app.integrations.models import IntegrationConnection
 from apps.api.app.notifications.models import NotificationTemplate
 from apps.api.app.notifications.service import NotificationService
@@ -88,6 +89,7 @@ class ContentService:
         self.audit_repository = AuditEventRepository()
         self.notifications = NotificationService()
         self.ai_gateway = AIGateway(DeterministicAIProvider())
+        self.execution = ExecutionService()
 
     async def _audit(
         self,
@@ -731,13 +733,16 @@ class ContentService:
         )
         if not connection:
             raise ContentTargetNotConfiguredError
+        workflow_run = await self.execution.resolve_for_consumption(
+            session, organization_id, command.workflow_run_id, "content.publish"
+        )
         path = validate_target_path(command.target_path, target.allowed_path_prefix)
         publication = ContentPublication(
             organization_id=organization_id,
             content_item_id=item_id,
             content_revision_id=revision.id,
             publishing_target_id=target.id,
-            workflow_run_id=command.workflow_run_id,
+            workflow_run_id=workflow_run.id,
             idempotency_key=command.idempotency_key,
             status="reserved",
             target_path=path,

@@ -33,6 +33,7 @@ from apps.api.app.routes.internal_user_profiles import router as internal_user_p
 from apps.api.app.routes.leads import router as leads_router
 from apps.api.app.routes.reviews import router as reviews_router
 from apps.api.app.routes.seo import router as seo_router
+from apps.api.app.routes.workflows import router as workflows_router
 
 
 def create_app(
@@ -79,6 +80,7 @@ def create_app(
     application.include_router(gbp_operations_router)
     application.include_router(gbp_organization_router)
     application.include_router(reviews_router)
+    application.include_router(workflows_router)
     application.include_router(leads_router)
     application.include_router(content_router)
     application.include_router(seo_router)

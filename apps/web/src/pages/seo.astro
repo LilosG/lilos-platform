@@ -211,6 +211,7 @@ import "../styles/global.css";
       import { selectDefaultOrganization } from "../lib/dashboard-logic";
       import { getCurrentSession, signOut } from "../lib/session";
       import { readPublicConfig } from "../lib/config";
+      import { startWorkflowRun } from "../lib/workflows";
       import type { ApiOutcome } from "../lib/api-client";
 
       const regions = {
@@ -497,9 +498,21 @@ import "../styles/global.css";
                   .map((path) => path.trim())
                   .filter(Boolean)
               : ["/"];
+            setActionStatus("Starting crawl workflow…");
+            const workflowStart = await startWorkflowRun(
+              organizationId,
+              "seo.crawl_or_analysis",
+              {
+                idempotencyKey: `web-crawl-start-${selectedWebsiteId}-${Date.now()}`,
+              },
+            );
+            if (workflowStart.kind !== "ok") {
+              setActionStatus(describeFailure(workflowStart));
+              return;
+            }
             setActionStatus("Running crawl…");
             const result = await runCrawl(organizationId, selectedWebsiteId, {
-              workflowRunId: crypto.randomUUID(),
+              workflowRunId: workflowStart.data.workflow_run_id,
               seedPaths,
               maxPages: Math.min(seedPaths.length, 20),
               idempotencyKey: `web-crawl-${selectedWebsiteId}-${Date.now()}`,
@@ -686,8 +699,19 @@ import "../styles/global.css";
           taskButton.type = "button";
           taskButton.textContent = "Create implementation task";
           taskButton.addEventListener("click", async () => {
+            const workflowStart = await startWorkflowRun(
+              organizationId,
+              "seo.crawl_or_analysis",
+              {
+                idempotencyKey: `web-task-start-${recommendation.id}-${Date.now()}`,
+              },
+            );
+            if (workflowStart.kind !== "ok") {
+              setActionStatus(describeFailure(workflowStart));
+              return;
+            }
             await createImplementationTask(organizationId, recommendation.id, {
-              workflowRunId: crypto.randomUUID(),
+              workflowRunId: workflowStart.data.workflow_run_id,
               targetType: "page",
               targetReference: recommendation.proposed_action,
             });

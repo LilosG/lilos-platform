@@ -19,6 +19,7 @@ from apps.api.app.audit.enums import AuditActorType, AuditResult
 from apps.api.app.audit.metadata import JsonValue
 from apps.api.app.audit.repository import AuditEventRepository
 from apps.api.app.audit.service import AuditEventService
+from apps.api.app.execution.service import ExecutionService
 from apps.api.app.integrations.models import IntegrationConnection
 from apps.api.app.locations.models import Location
 from apps.api.app.notifications.models import NotificationTemplate
@@ -197,6 +198,7 @@ class SEOService:
         self.audit = AuditEventService()
         self.audit_repository = AuditEventRepository()
         self.notifications = NotificationService()
+        self.execution = ExecutionService()
         self._http_client_factory = http_client_factory
 
     async def _audit(
@@ -422,6 +424,9 @@ class SEOService:
             )
             return existing_run, opportunities
 
+        workflow_run = await self.execution.resolve_for_consumption(
+            session, organization_id, workflow_run_id, "seo.crawl_or_analysis"
+        )
         website = await self.get_website(session, organization_id, website_id)
         allowed_host = urlsplit(normalize_url(website.canonical_origin).value).hostname
         allowed_hosts = frozenset({allowed_host} if allowed_host else set())
@@ -512,7 +517,7 @@ class SEOService:
         crawl_run = SEOCrawlRun(
             organization_id=organization_id,
             website_id=website.id,
-            workflow_run_id=workflow_run_id,
+            workflow_run_id=workflow_run.id,
             idempotency_key=command.idempotency_key,
             status="completed",
             max_pages=command.max_pages,
@@ -523,6 +528,8 @@ class SEOService:
             completed_at=datetime.now(UTC),
         )
         session.add(crawl_run)
+        workflow_run.status = "completed"
+        workflow_run.completed_at = datetime.now(UTC)
         await session.flush()
         await self._audit(
             session,
@@ -720,10 +727,13 @@ class SEOService:
         )
         if not revision:
             raise SEORecommendationNotFoundError
+        workflow_run = await self.execution.resolve_for_consumption(
+            session, organization_id, command.workflow_run_id, "seo.crawl_or_analysis"
+        )
         task = SEOImplementationTask(
             organization_id=organization_id,
             recommendation_revision_id=revision.id,
-            workflow_run_id=command.workflow_run_id,
+            workflow_run_id=workflow_run.id,
             target_type=command.target_type,
             target_reference=command.target_reference,
             status="pending",

@@ -14,6 +14,7 @@ from apps.api.app.audit.enums import AuditActorType, AuditResult
 from apps.api.app.audit.metadata import JsonValue
 from apps.api.app.audit.repository import AuditEventRepository
 from apps.api.app.audit.service import AuditEventService
+from apps.api.app.execution.service import ExecutionService
 from apps.api.app.products.gbp.adapter import SUPPORTED_WRITE_FIELDS
 from apps.api.app.products.gbp.contracts import MappingConfirm, ProfileChangeCreate, PublishRequest
 from apps.api.app.products.gbp.models import (
@@ -78,6 +79,7 @@ class GBPService:
     def __init__(self) -> None:
         self.audit = AuditEventService()
         self.audit_repository = AuditEventRepository()
+        self.execution = ExecutionService()
 
     async def _audit(
         self,
@@ -309,11 +311,14 @@ class GBPService:
         )
         if not revision:
             raise ValueError("current approved revision required")
+        workflow_run = await self.execution.resolve_for_consumption(
+            session, organization_id, command.workflow_run_id, "gbp.publish_change"
+        )
         item = GBPPublication(
             organization_id=organization_id,
             location_id=location_id,
             change_revision_id=revision.id,
-            workflow_run_id=command.workflow_run_id,
+            workflow_run_id=workflow_run.id,
             idempotency_key=command.idempotency_key,
             status="reserved",
             update_mask=sorted(revision.desired_fields),

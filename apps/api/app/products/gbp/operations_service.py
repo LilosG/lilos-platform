@@ -14,6 +14,7 @@ from apps.api.app.audit.enums import AuditActorType, AuditResult
 from apps.api.app.audit.metadata import JsonValue
 from apps.api.app.audit.repository import AuditEventRepository
 from apps.api.app.audit.service import AuditEventService
+from apps.api.app.execution.service import ExecutionService
 from apps.api.app.notifications.models import NotificationTemplate
 from apps.api.app.notifications.service import NotificationService
 from apps.api.app.products.gbp.models import GBPLocation, GBPProfileSnapshot
@@ -84,6 +85,7 @@ class GBPOperationsService:
         self.audit = AuditEventService()
         self.audit_repository = AuditEventRepository()
         self.notifications = NotificationService()
+        self.execution = ExecutionService()
 
     async def _audit(
         self,
@@ -640,10 +642,13 @@ class GBPOperationsService:
         location = await self._get_gbp_location(session, organization_id, revision.gbp_location_id)
         if not location.write_enabled or location.mapping_status != "confirmed":
             raise GBPLocationNotWriteEnabledError
+        workflow_run = await self.execution.resolve_for_consumption(
+            session, organization_id, workflow_run_id, "gbp.publish_post"
+        )
         publication = GBPPostPublication(
             organization_id=organization_id,
             post_revision_id=revision.id,
-            workflow_run_id=workflow_run_id,
+            workflow_run_id=workflow_run.id,
             idempotency_key=idempotency_key,
             status="reserved",
         )
