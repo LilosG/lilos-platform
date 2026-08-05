@@ -1,6 +1,5 @@
 ---
 import AppShell from "../components/AppShell.astro";
-import StatusBadge from "../components/StatusBadge.astro";
 import "../styles/global.css";
 ---
 
@@ -75,25 +74,108 @@ import "../styles/global.css";
           </div><ul class="product-list" id="locations-list"></ul>
         </section>
 
-        <section aria-labelledby="unavailable-title">
+        <section
+          id="operations-section"
+          aria-labelledby="operations-title"
+          hidden
+        >
           <div class="section-heading">
             <div>
-              <p class="eyebrow">Not yet available</p><h2
-                id="unavailable-title"
-              >
-                Categories, hours, attributes, services, products, media, and
-                posts
+              <p class="eyebrow">Operations</p><h2 id="operations-title">
+                Categories, hours, media, posts, and suspension
               </h2>
             </div>
-          </div><div class="attention-card">
-            <StatusBadge
-              status="missing"
-              label="Not available in this release"
-            /><p>
-              These Google Business Profile capabilities are Roadmap Phase 14
-              scope and have no backing API yet in this release. This section
-              intentionally shows no simulated data.
-            </p>
+          </div><div class="split">
+            <article>
+              <p class="eyebrow">Completeness</p><div id="completeness-body">
+              </div><h3>Propose a change</h3><label
+                class="sr-only"
+                for="change-capability-key">Capability key</label
+              ><input
+                id="change-capability-key"
+                type="text"
+                placeholder="capability key (e.g. categories)"
+              /><label class="sr-only" for="change-field">Field</label><input
+                id="change-field"
+                type="text"
+                placeholder="field name"
+              /><label class="sr-only" for="change-value">Value</label><input
+                id="change-value"
+                type="text"
+                placeholder="new value"
+              /><button type="button" class="button" id="propose-change-button"
+                >Propose change</button
+              ><h3>Propose special hours</h3><label
+                class="sr-only"
+                for="special-hours-date">Service date</label
+              ><input id="special-hours-date" type="date" /><label
+                class="sr-only"
+                for="special-hours-opens">Opens</label
+              ><input
+                id="special-hours-opens"
+                type="time"
+                value="09:00"
+              /><label class="sr-only" for="special-hours-closes">Closes</label
+              ><input
+                id="special-hours-closes"
+                type="time"
+                value="17:00"
+              /><button type="button" class="button" id="propose-hours-button"
+                >Propose special hours</button
+              ><h3>Propose media</h3><label
+                class="sr-only"
+                for="media-reference">Media URL</label
+              ><input
+                id="media-reference"
+                type="text"
+                placeholder="https://example.com/photo.jpg"
+              /><button type="button" class="button" id="propose-media-button"
+                >Propose media</button
+              ><h3>Draft a post</h3><label class="sr-only" for="post-content"
+                >Post content</label
+              ><textarea id="post-content" rows="3"></textarea><button
+                type="button"
+                class="button"
+                id="create-post-button">Draft post</button
+              ><h3>Report suspension</h3><label
+                class="sr-only"
+                for="suspension-status">Provider status</label
+              ><input
+                id="suspension-status"
+                type="text"
+                placeholder="e.g. SUSPENDED"
+              /><button
+                type="button"
+                class="button button--secondary"
+                id="report-suspension-button">Report suspension case</button
+              ><p id="operations-status" role="status" aria-live="polite"></p>
+            </article><article id="operations-activity">
+              <p class="eyebrow">Change sets</p><ol
+                class="timeline"
+                id="change-sets-list"
+              >
+              </ol><p class="eyebrow">Special hours</p><ol
+                class="timeline"
+                id="special-hours-list"
+              >
+              </ol><p class="eyebrow">Media</p><ol
+                class="timeline"
+                id="media-list"
+              >
+              </ol><p class="eyebrow">Posts</p><ol
+                class="timeline"
+                id="posts-list"
+              >
+              </ol><p class="eyebrow">Suspension cases</p><ol
+                class="timeline"
+                id="suspension-cases-list"
+              >
+              </ol><p class="eyebrow">Audit history</p><ol
+                class="timeline"
+                id="operations-audit-list"
+              >
+              </ol>
+            </article>
           </div>
         </section>
       </div>
@@ -106,6 +188,27 @@ import "../styles/global.css";
         type GBPLocationSummary,
       } from "../lib/gbp";
       import {
+        createPostRevision,
+        decideChangeSet,
+        decidePostRevision,
+        decideSpecialHours,
+        fetchChangeSets,
+        fetchCompleteness,
+        fetchMedia,
+        fetchOperationsAudit,
+        fetchPostRevisions,
+        fetchSpecialHours,
+        fetchSuspensionCases,
+        proposeChangeSet,
+        proposeMedia,
+        proposeSpecialHours,
+        publishPost,
+        reportSuspensionCase,
+        type ChangeSet,
+        type GBPPostRevisionItem,
+        type SpecialHours,
+      } from "../lib/gbp-operations";
+      import {
         fetchMyOrganizations,
         fetchPrincipal,
         fetchProductReadiness,
@@ -114,6 +217,10 @@ import "../styles/global.css";
       import { getCurrentSession, signOut } from "../lib/session";
       import { readPublicConfig } from "../lib/config";
       import type { ApiOutcome } from "../lib/api-client";
+
+      let organizationId = "";
+      let selectedPlatformLocationId: string | null = null;
+      let selectedGbpLocationId: string | null = null;
 
       const regions = {
         notConfigured: document.getElementById("boot-not-configured")!,
@@ -260,8 +367,478 @@ import "../styles/global.css";
           dot.className = "status__dot";
           badge.append(dot, document.createTextNode(location.mapping_status));
           item.append(info, badge);
+          if (location.mapping_status === "confirmed" && location.location_id) {
+            const openButton = document.createElement("button");
+            openButton.type = "button";
+            openButton.className = "button button--secondary";
+            openButton.textContent = "Open operations";
+            openButton.addEventListener(
+              "click",
+              () => void openOperations(location.location_id!, location.id),
+            );
+            item.append(openButton);
+          }
           list.append(item);
         }
+      }
+
+      function setOperationsStatus(message: string): void {
+        document.getElementById("operations-status")!.textContent = message;
+      }
+
+      async function openOperations(
+        platformLocationId: string,
+        gbpLocationId: string,
+      ): Promise<void> {
+        selectedPlatformLocationId = platformLocationId;
+        selectedGbpLocationId = gbpLocationId;
+        document.getElementById("operations-section")!.hidden = false;
+        await Promise.all([
+          renderCompleteness(),
+          renderChangeSets(),
+          renderSpecialHours(),
+          renderMedia(),
+          renderPosts(),
+          renderSuspensionCases(),
+          renderOperationsAudit(),
+        ]);
+      }
+
+      async function renderCompleteness(): Promise<void> {
+        if (!selectedPlatformLocationId || !selectedGbpLocationId) return;
+        const panel = document.getElementById("completeness-body")!;
+        panel.replaceChildren();
+        const outcome = await fetchCompleteness(
+          organizationId,
+          selectedPlatformLocationId,
+          selectedGbpLocationId,
+        );
+        if (outcome.kind !== "ok") {
+          panel.append(document.createTextNode(describeFailure(outcome)));
+          return;
+        }
+        const summary = document.createElement("p");
+        summary.textContent = outcome.data.complete
+          ? "All supported fields are known."
+          : `Missing: ${outcome.data.unknown.join(", ") || "none"}`;
+        panel.append(summary);
+      }
+
+      async function renderChangeSets(): Promise<void> {
+        if (!selectedPlatformLocationId || !selectedGbpLocationId) return;
+        const list = document.getElementById("change-sets-list")!;
+        list.replaceChildren();
+        const outcome = await fetchChangeSets(
+          organizationId,
+          selectedPlatformLocationId,
+          selectedGbpLocationId,
+        );
+        if (outcome.kind !== "ok") {
+          const item = document.createElement("li");
+          item.textContent = describeFailure(outcome);
+          list.append(item);
+          return;
+        }
+        if (outcome.data.length === 0) {
+          const item = document.createElement("li");
+          item.textContent = "No change sets proposed yet.";
+          list.append(item);
+          return;
+        }
+        for (const changeSet of outcome.data) {
+          list.append(changeSetRow(changeSet));
+        }
+      }
+
+      function changeSetRow(changeSet: ChangeSet): HTMLLIElement {
+        const item = document.createElement("li");
+        const strong = document.createElement("strong");
+        strong.textContent = `Revision ${changeSet.revision} — ${changeSet.status}`;
+        const span = document.createElement("span");
+        span.textContent = JSON.stringify(changeSet.field_changes);
+        item.append(strong, span);
+        if (changeSet.status === "awaiting_approval") {
+          const approveButton = document.createElement("button");
+          approveButton.type = "button";
+          approveButton.textContent = "Approve";
+          approveButton.addEventListener("click", async () => {
+            if (!selectedPlatformLocationId) return;
+            await decideChangeSet(
+              organizationId,
+              selectedPlatformLocationId,
+              changeSet.id,
+              true,
+            );
+            await renderChangeSets();
+          });
+          item.append(approveButton);
+        }
+        return item;
+      }
+
+      async function renderSpecialHours(): Promise<void> {
+        if (!selectedPlatformLocationId || !selectedGbpLocationId) return;
+        const list = document.getElementById("special-hours-list")!;
+        list.replaceChildren();
+        const outcome = await fetchSpecialHours(
+          organizationId,
+          selectedPlatformLocationId,
+          selectedGbpLocationId,
+        );
+        if (outcome.kind !== "ok") {
+          const item = document.createElement("li");
+          item.textContent = describeFailure(outcome);
+          list.append(item);
+          return;
+        }
+        if (outcome.data.length === 0) {
+          const item = document.createElement("li");
+          item.textContent = "No special hours proposed yet.";
+          list.append(item);
+          return;
+        }
+        for (const hours of outcome.data) {
+          list.append(specialHoursRow(hours));
+        }
+      }
+
+      function specialHoursRow(hours: SpecialHours): HTMLLIElement {
+        const item = document.createElement("li");
+        const strong = document.createElement("strong");
+        strong.textContent = `${hours.service_date} — ${hours.status}`;
+        item.append(strong);
+        if (hours.status === "awaiting_approval") {
+          const approveButton = document.createElement("button");
+          approveButton.type = "button";
+          approveButton.textContent = "Approve";
+          approveButton.addEventListener("click", async () => {
+            if (!selectedPlatformLocationId) return;
+            await decideSpecialHours(
+              organizationId,
+              selectedPlatformLocationId,
+              hours.id,
+              true,
+            );
+            await renderSpecialHours();
+          });
+          item.append(approveButton);
+        }
+        return item;
+      }
+
+      async function renderMedia(): Promise<void> {
+        if (!selectedPlatformLocationId || !selectedGbpLocationId) return;
+        const list = document.getElementById("media-list")!;
+        list.replaceChildren();
+        const outcome = await fetchMedia(
+          organizationId,
+          selectedPlatformLocationId,
+          selectedGbpLocationId,
+        );
+        if (outcome.kind !== "ok") {
+          const item = document.createElement("li");
+          item.textContent = describeFailure(outcome);
+          list.append(item);
+          return;
+        }
+        if (outcome.data.length === 0) {
+          const item = document.createElement("li");
+          item.textContent = "No media proposed yet.";
+          list.append(item);
+          return;
+        }
+        for (const media of outcome.data) {
+          const item = document.createElement("li");
+          const strong = document.createElement("strong");
+          strong.textContent = `${media.media_type} — ${media.status}`;
+          item.append(strong);
+          list.append(item);
+        }
+      }
+
+      async function renderPosts(): Promise<void> {
+        if (!selectedPlatformLocationId || !selectedGbpLocationId) return;
+        const list = document.getElementById("posts-list")!;
+        list.replaceChildren();
+        const outcome = await fetchPostRevisions(
+          organizationId,
+          selectedPlatformLocationId,
+          selectedGbpLocationId,
+        );
+        if (outcome.kind !== "ok") {
+          const item = document.createElement("li");
+          item.textContent = describeFailure(outcome);
+          list.append(item);
+          return;
+        }
+        if (outcome.data.length === 0) {
+          const item = document.createElement("li");
+          item.textContent = "No posts drafted yet.";
+          list.append(item);
+          return;
+        }
+        for (const post of outcome.data) {
+          list.append(postRow(post));
+        }
+      }
+
+      function postRow(post: GBPPostRevisionItem): HTMLLIElement {
+        const item = document.createElement("li");
+        const strong = document.createElement("strong");
+        strong.textContent = `${post.content} — ${post.status}`;
+        item.append(strong);
+        if (post.status === "awaiting_approval") {
+          const approveButton = document.createElement("button");
+          approveButton.type = "button";
+          approveButton.textContent = "Approve";
+          approveButton.addEventListener("click", async () => {
+            if (!selectedPlatformLocationId) return;
+            await decidePostRevision(
+              organizationId,
+              selectedPlatformLocationId,
+              post.id,
+              true,
+            );
+            await renderPosts();
+          });
+          item.append(approveButton);
+        }
+        if (post.status === "approved") {
+          const publishButton = document.createElement("button");
+          publishButton.type = "button";
+          publishButton.textContent = "Reserve publication";
+          publishButton.addEventListener("click", async () => {
+            if (!selectedPlatformLocationId) return;
+            const result = await publishPost(
+              organizationId,
+              selectedPlatformLocationId,
+              post.id,
+              crypto.randomUUID(),
+            );
+            setOperationsStatus(
+              result.kind === "ok"
+                ? "Post publication reserved. Live dispatch is not yet configured."
+                : describeFailure(result),
+            );
+            await renderPosts();
+          });
+          item.append(publishButton);
+        }
+        return item;
+      }
+
+      async function renderSuspensionCases(): Promise<void> {
+        if (!selectedPlatformLocationId || !selectedGbpLocationId) return;
+        const list = document.getElementById("suspension-cases-list")!;
+        list.replaceChildren();
+        const outcome = await fetchSuspensionCases(
+          organizationId,
+          selectedPlatformLocationId,
+          selectedGbpLocationId,
+        );
+        if (outcome.kind !== "ok") {
+          const item = document.createElement("li");
+          item.textContent = describeFailure(outcome);
+          list.append(item);
+          return;
+        }
+        if (outcome.data.length === 0) {
+          const item = document.createElement("li");
+          item.textContent = "No suspension cases reported.";
+          list.append(item);
+          return;
+        }
+        for (const suspensionCase of outcome.data) {
+          const item = document.createElement("li");
+          const strong = document.createElement("strong");
+          strong.textContent = `${suspensionCase.provider_status} — ${suspensionCase.status}`;
+          item.append(strong);
+          list.append(item);
+        }
+      }
+
+      async function renderOperationsAudit(): Promise<void> {
+        if (!selectedPlatformLocationId || !selectedGbpLocationId) return;
+        const list = document.getElementById("operations-audit-list")!;
+        list.replaceChildren();
+        const outcome = await fetchOperationsAudit(
+          organizationId,
+          selectedPlatformLocationId,
+          selectedGbpLocationId,
+        );
+        if (outcome.kind !== "ok") {
+          const item = document.createElement("li");
+          item.textContent = describeFailure(outcome);
+          list.append(item);
+          return;
+        }
+        if (outcome.data.length === 0) {
+          const item = document.createElement("li");
+          item.textContent = "No audit history yet.";
+          list.append(item);
+          return;
+        }
+        for (const event of outcome.data) {
+          const item = document.createElement("li");
+          const strong = document.createElement("strong");
+          strong.textContent = event.summary;
+          const span = document.createElement("span");
+          span.textContent = `${event.event_type} · ${new Date(event.occurred_at).toLocaleString()}`;
+          item.append(strong, span);
+          list.append(item);
+        }
+      }
+
+      function wireOperationsComposer(): void {
+        document
+          .getElementById("propose-change-button")
+          ?.addEventListener("click", async () => {
+            if (!selectedPlatformLocationId || !selectedGbpLocationId) return;
+            const capabilityKey = (
+              document.getElementById(
+                "change-capability-key",
+              ) as HTMLInputElement
+            ).value.trim();
+            const field = (
+              document.getElementById("change-field") as HTMLInputElement
+            ).value.trim();
+            const value = (
+              document.getElementById("change-value") as HTMLInputElement
+            ).value.trim();
+            if (!capabilityKey || !field || !value) {
+              setOperationsStatus(
+                "Enter a capability key, field, and value first.",
+              );
+              return;
+            }
+            const result = await proposeChangeSet(
+              organizationId,
+              selectedPlatformLocationId,
+              selectedGbpLocationId,
+              {
+                capabilityKey,
+                field,
+                value,
+                idempotencyKey: `web-change-${Date.now()}`,
+              },
+            );
+            setOperationsStatus(
+              result.kind === "ok"
+                ? "Change proposed."
+                : describeFailure(result),
+            );
+            if (result.kind === "ok") await renderChangeSets();
+          });
+
+        document
+          .getElementById("propose-hours-button")
+          ?.addEventListener("click", async () => {
+            if (!selectedPlatformLocationId || !selectedGbpLocationId) return;
+            const serviceDate = (
+              document.getElementById("special-hours-date") as HTMLInputElement
+            ).value;
+            const opens = (
+              document.getElementById("special-hours-opens") as HTMLInputElement
+            ).value;
+            const closes = (
+              document.getElementById(
+                "special-hours-closes",
+              ) as HTMLInputElement
+            ).value;
+            if (!serviceDate) {
+              setOperationsStatus("Select a service date first.");
+              return;
+            }
+            const result = await proposeSpecialHours(
+              organizationId,
+              selectedPlatformLocationId,
+              selectedGbpLocationId,
+              { serviceDate, opens: `${opens}:00`, closes: `${closes}:00` },
+            );
+            setOperationsStatus(
+              result.kind === "ok"
+                ? "Special hours proposed."
+                : describeFailure(result),
+            );
+            if (result.kind === "ok") await renderSpecialHours();
+          });
+
+        document
+          .getElementById("propose-media-button")
+          ?.addEventListener("click", async () => {
+            if (!selectedPlatformLocationId || !selectedGbpLocationId) return;
+            const reference = (
+              document.getElementById("media-reference") as HTMLInputElement
+            ).value.trim();
+            if (!reference) {
+              setOperationsStatus("Enter a media URL first.");
+              return;
+            }
+            const result = await proposeMedia(
+              organizationId,
+              selectedPlatformLocationId,
+              selectedGbpLocationId,
+              {
+                mediaType: "photo",
+                sourceReference: reference,
+                rightsAuthority: "Business owner upload",
+              },
+            );
+            setOperationsStatus(
+              result.kind === "ok"
+                ? "Media proposed."
+                : describeFailure(result),
+            );
+            if (result.kind === "ok") await renderMedia();
+          });
+
+        document
+          .getElementById("create-post-button")
+          ?.addEventListener("click", async () => {
+            if (!selectedPlatformLocationId || !selectedGbpLocationId) return;
+            const content = (
+              document.getElementById("post-content") as HTMLTextAreaElement
+            ).value;
+            if (!content.trim()) {
+              setOperationsStatus("Enter post content first.");
+              return;
+            }
+            const result = await createPostRevision(
+              organizationId,
+              selectedPlatformLocationId,
+              selectedGbpLocationId,
+              { postType: "standard", content },
+            );
+            setOperationsStatus(
+              result.kind === "ok" ? "Post drafted." : describeFailure(result),
+            );
+            if (result.kind === "ok") await renderPosts();
+          });
+
+        document
+          .getElementById("report-suspension-button")
+          ?.addEventListener("click", async () => {
+            if (!selectedPlatformLocationId || !selectedGbpLocationId) return;
+            const status = (
+              document.getElementById("suspension-status") as HTMLInputElement
+            ).value.trim();
+            if (!status) {
+              setOperationsStatus("Enter a provider status first.");
+              return;
+            }
+            const result = await reportSuspensionCase(
+              organizationId,
+              selectedPlatformLocationId,
+              selectedGbpLocationId,
+              { providerStatus: status },
+            );
+            setOperationsStatus(
+              result.kind === "ok"
+                ? "Suspension case reported."
+                : describeFailure(result),
+            );
+            if (result.kind === "ok") await renderSuspensionCases();
+          });
       }
 
       async function boot(): Promise<void> {
@@ -318,6 +895,8 @@ import "../styles/global.css";
         }
         document.getElementById("active-organization-name")!.textContent =
           organization.organization_name;
+        organizationId = organization.organization_id;
+        wireOperationsComposer();
 
         const [readiness, accounts, locations] = await Promise.all([
           fetchProductReadiness(organization.organization_id, "gbp"),

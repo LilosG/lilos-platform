@@ -1,5 +1,27 @@
 # LILOs implementation status
 
+## Phase 14 — Remaining Business Profile capabilities, reconciliation and correction (2026-08-05)
+
+The prior "Phase 14 status: complete" claim covered only the domain model
+and pure deterministic functions — there was no service layer, API, or
+frontend for categories, hours, media, posts, capability snapshots,
+completeness/conflicts reporting, or suspension cases. This pass built the
+full application surface: a new `GBPOperationsService` adds capability
+snapshot recording, governed per-field change-set proposal/approval
+(failing closed on unavailable capabilities), special-hours proposal/
+approval (rejecting overlapping periods), media proposal, post drafting/
+approval/publication-reservation (requiring a confirmed write-enabled
+location), suspension-case reporting, and completeness/conflicts
+reporting. Every action writes a real audit event and, where relevant, a
+real notification. Bare exceptions from the pure capability/hours
+functions are now caught and re-raised as typed API errors. Tenant-scoped
+routes were added under `.../gbp/operations`; the existing `/gbp` frontend
+route gained a real Operations panel for confirmed locations — no fixture
+data, no dead buttons. Live provider capability discovery, change
+dispatch, media upload, post publication, and suspension detection remain
+blocked on the same external Google OAuth credentials recorded in
+`PHASE-09-ACCEPTANCE.md`, not requested again this pass.
+
 ## Phase 13 — SEO vertical slice, reconciliation and correction (2026-08-05)
 
 The prior "Phase 13 status: complete" claim covered only the domain model
