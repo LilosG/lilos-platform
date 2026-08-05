@@ -19,6 +19,8 @@ from apps.api.app.routes.gbp import organization_router as gbp_organization_rout
 from apps.api.app.routes.gbp import router as gbp_router
 from apps.api.app.routes.gbp_operations import router as gbp_operations_router
 from apps.api.app.routes.health import router as health_router
+from apps.api.app.routes.integrations import callback_router as integrations_callback_router
+from apps.api.app.routes.integrations import router as integrations_router
 from apps.api.app.routes.internal_access_control import router as internal_access_control_router
 from apps.api.app.routes.internal_authentication import router as internal_authentication_router
 from apps.api.app.routes.internal_business_identity import (
@@ -86,6 +88,8 @@ def create_app(
     application.include_router(content_router)
     application.include_router(seo_router)
     application.include_router(platform_administration_router)
+    application.include_router(integrations_router)
+    application.include_router(integrations_callback_router)
     if resolved_settings.internal_admin_routes_enabled:
         application.include_router(internal_industries_router)
         application.include_router(internal_organizations_router)

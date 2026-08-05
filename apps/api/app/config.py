@@ -4,6 +4,7 @@ from enum import StrEnum
 from functools import lru_cache
 from typing import Annotated, ClassVar
 
+from cryptography.fernet import Fernet
 from pydantic import Field, HttpUrl, PostgresDsn, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -68,6 +69,11 @@ class Settings(BaseSettings):
     supabase_auth_jwks_stale_seconds: Annotated[int, Field(ge=60, le=86_400)] = 3_600
     supabase_auth_clock_skew_seconds: Annotated[int, Field(ge=0, le=300)] = 60
     supabase_auth_max_token_bytes: Annotated[int, Field(ge=1_024, le=65_536)] = 16_384
+    google_oauth_client_id: Annotated[str, Field(min_length=1, max_length=255)] | None = None
+    google_oauth_client_secret: Annotated[str, Field(min_length=1, max_length=255)] | None = None
+    google_oauth_redirect_uri: HttpUrl | None = None
+    secret_encryption_key: Annotated[str, Field(min_length=1, max_length=255)] | None = None
+    secret_encryption_key_version: Annotated[int, Field(ge=1)] = 1
     service_name: ClassVar[str] = "lilos-api"
 
     @field_validator("web_origins")
@@ -128,6 +134,19 @@ class Settings(BaseSettings):
             if self.telemetry_export_endpoint is None:
                 raise ValueError("production requires a telemetry export endpoint")
         return self
+
+    @field_validator("secret_encryption_key")
+    @classmethod
+    def validate_secret_encryption_key(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        try:
+            Fernet(value.encode("utf-8"))
+        except ValueError as exc:
+            raise ValueError(
+                "LILOS_SECRET_ENCRYPTION_KEY must be a base64 urlsafe 32-byte Fernet key"
+            ) from exc
+        return value
 
     def application_database_url(self) -> str | None:
         """Return the application URL using SQLAlchemy's asyncpg dialect."""

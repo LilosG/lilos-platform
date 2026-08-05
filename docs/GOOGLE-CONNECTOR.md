@@ -1,3 +1,5 @@
 # Google Business Profile Connector
 
 Endpoints: `mybusinessaccountmanagement.googleapis.com/v1/accounts` and `mybusinessbusinessinformation.googleapis.com/v1`. The adapter supports account/location discovery, masked profile reads, and masked PATCH for `profile.description` and `regularHours`. OAuth uses the Phase 7 hash-only, expiring, one-time, exact-redirect and secret-reference boundary. Access/refresh tokens are retrieved only inside the adapter execution boundary and are never returned, logged, audited, or stored in product tables.
+
+The connection lifecycle (`apps/api/app/integrations/connection_service.py`, routes in `apps/api/app/routes/integrations.py`) is implemented and tested against `httpx.MockTransport`: `POST /api/v1/organizations/{organization_id}/integrations/google/connect`, the fixed `GET /api/v1/integrations/google/callback`, `GET .../status`, and `POST .../disconnect` (best-effort Google token revocation). Discovery — actually calling `GoogleBusinessProfileAdapter.list_accounts`/`list_locations` and populating `GBPAccount`/`GBPLocation` — is not yet wired to this connection; a connected token exists but nothing yet uses it.

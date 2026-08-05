@@ -66,3 +66,44 @@ class OAuthIntentService:
         item.consumed_at = now
         await session.flush()
         return item
+
+    async def find_by_state(
+        self, session: AsyncSession, state: str
+    ) -> OAuthAuthorizationIntent | None:
+        """Read-only lookup by state hash alone, before the caller's organization is known.
+
+        A provider redirect carries only `state`, not the organization it belongs to.
+        This resolves the intent (and therefore its `organization_id`) so the caller can
+        then invoke `consume`/`fail` with that organization, which re-validates
+        everything (hash, status, expiry, exact redirect URI) under a row lock. This
+        method itself takes no lock and makes no state change.
+        """
+        digest = hashlib.sha256(state.encode()).hexdigest()
+        item: OAuthAuthorizationIntent | None = await session.scalar(
+            select(OAuthAuthorizationIntent).where(OAuthAuthorizationIntent.state_hash == digest)
+        )
+        return item
+
+    async def fail(
+        self, session: AsyncSession, organization_id: UUID, state: str
+    ) -> OAuthAuthorizationIntent | None:
+        """Mark a pending intent failed, e.g. after a provider-side denial or error.
+
+        Returns `None` if no matching pending intent exists, rather than raising --
+        the caller has already redirected the user away from Google and must still
+        render a truthful failure state even when the intent can no longer be found.
+        """
+        digest = hashlib.sha256(state.encode()).hexdigest()
+        item = await session.scalar(
+            select(OAuthAuthorizationIntent)
+            .where(
+                OAuthAuthorizationIntent.organization_id == organization_id,
+                OAuthAuthorizationIntent.state_hash == digest,
+            )
+            .with_for_update()
+        )
+        if item is None or item.status != "pending":
+            return None
+        item.status = "failed"
+        await session.flush()
+        return item

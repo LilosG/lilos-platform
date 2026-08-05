@@ -1,5 +1,111 @@
 # LILOs implementation status
 
+## Google Business Profile OAuth connection foundation (2026-08-05)
+
+This packet completes the code-level work behind `PHASE-09-ACCEPTANCE.md`'s remaining
+blockers (2) and (3) for the pilot GBP connection — a single-provider implementation
+using the currently-approved Google Cloud project as a temporary pilot OAuth client. It
+does not create Google Cloud credentials, configure Render/Vercel/Supabase, perform a
+real pilot authorization, or begin Search Console/Analytics/Places integration, GBP
+account/location discovery, or GBP provider writes — all explicitly out of scope for
+this pass. Dual-client migration to a future dedicated LILOs Google Cloud project
+remains a deliberate, separate, later reconnect workflow, not attempted here.
+
+**Reconciled from the prior uncommitted state:**
+
+- `cryptography` was pinned to `>=44.0,<45`, silently downgrading the already-resolved
+  transitive version (`pyjwt[crypto]` resolves `50.0.0`) by several major versions.
+  Widened to `>=44.0,<51`; `uv.lock` now resolves `50.0.0` again.
+- `apps/api/app/integrations/secrets.py`'s `ProviderSecret` model had no migration.
+  Added `migrations/versions/20260805_0001_provider_secrets.py`.
+- Added `key_version` to `ProviderSecret` and `Settings.secret_encryption_key_version`
+  (default `1`). `FernetSecretStore` stamps the active version on every write and
+  refuses to decrypt a row stamped with a different version. Rotation itself (a keyring
+  supporting simultaneous retired/active keys, plus a re-encryption script) is not
+  implemented this pass — see `docs/OAUTH-AND-SECRETS.md` for the documented procedure
+  a future packet must follow.
+- `apps/api/app/integrations/connection_service.py` had a duplicate/unused `hashlib`
+  import (ruff `F401`/`F811`), a nonsensical no-op expression in
+  `recover_organization_id` (`self.intents.__class__ and _state_hash(state)`, always
+  evaluating the right-hand side), and lazily created the `google_business_profile`
+  `Provider` row inside request handling instead of through this codebase's explicit,
+  idempotent, audited seed convention. All three fixed: state-hash lookup was
+  consolidated into `OAuthIntentService.find_by_state`/`fail` (removing the need for a
+  private hash helper in `connection_service.py` entirely), and provider registration
+  now happens only via `apps/api/app/integrations/provider_seed.py`
+  (`scripts/seed_integration_providers.py` / `npm run db:seed:integration-providers`);
+  an unseeded provider now fails closed with the same `IntegrationNotConfiguredError` an
+  unconfigured OAuth client produces.
+- Google token revocation on disconnect, and a `gbp.connection.failed` audit event on
+  token-exchange failure, were both missing; both added.
+
+**New this pass, reusing the existing Phase 7/8 Integration Framework without
+duplicating it (`OAuthAuthorizationIntent`, `IntegrationConnection`, `Provider`,
+`ProviderResourceMapping`, `OAuthIntentService`, the `SecretStore` Protocol all
+already existed on `main`):**
+
+- Always-mounted routes: `POST /api/v1/organizations/{organization_id}/integrations/google/connect`,
+  `GET .../status`, `POST .../disconnect` (all gated by the existing `gbp.connect`
+  fixed permission at organization scope, AAL1, plus an effective-`gbp`-entitlement
+  check reusing `AdministrationService`'s existing entitlement repository — deliberately
+  narrower than the full product readiness engine, which also evaluates business
+  facts, configuration, approval policy, runtime controls, and onboarding, none of
+  which bear on whether an OAuth authorization can begin), and the fixed,
+  unauthenticated, organization-agnostic `GET /api/v1/integrations/google/callback` —
+  the exact URL that must be registered with Google. Tenant identity is recovered
+  entirely from the already-validated, hashed, one-time `state` parameter, never from
+  the callback URL.
+- The callback redirects the browser back to `/gbp?connected=1` or
+  `/gbp?connected=0&reason=...`, using the first configured `LILOS_WEB_ORIGINS` entry as
+  the frontend origin (no dedicated frontend-base-URL setting was added, consistent
+  with the exact four-variable environment contract below).
+- Google token revocation (`POST https://oauth2.googleapis.com/revoke`) on disconnect,
+  best-effort and non-blocking; `reconnect_required` on a failed refresh; audit events
+  for started/connected/failed/reconnect-required/disconnected, all via the existing
+  `AuditEventService` — no duplicate audit infrastructure.
+- A real, protected "Google connection" panel on the existing `/gbp` frontend route:
+  Connect/Reconnect/Disconnect (with an inline two-step confirmation, no native
+  dialog), a truthful connected/pending/degraded/reconnect-required/disconnected status
+  display, a post-callback success/failure banner, a permission-denied state, and a
+  missing-configuration state (`INTEGRATION_NOT_CONFIGURED`) — no fixture data, no dead
+  buttons.
+- `apps/api/app/integrations/connection_service.py`'s Google HTTP calls (token
+  exchange, refresh, revoke) go through an injectable `http_client_factory`, exactly
+  mirroring the existing SEO crawler's pattern — tests exercise the real code path
+  against `httpx.MockTransport`, never the network.
+
+**Deferred, explicitly out of scope for this packet:** GBP account/location discovery
+(the existing, committed `GoogleBusinessProfileAdapter` is real but nothing yet calls it
+to populate `GBPAccount`/`GBPLocation`), GBP provider writes/dispatch (no workflow step
+handler exists for `gbp.publish_change`/`gbp.publish_post` — this is a cross-product gap
+predating this packet, not introduced by it), Search Console/Analytics/Places
+integration, and migration to a future dedicated LILOs Google Cloud OAuth client. The
+shared product-readiness `INTEGRATION_FOUNDATION_DEFERRED` finding for `gbp` is
+deliberately left unchanged: it reflects that GBP still cannot do discovery or writes
+regardless of OAuth connection state, which remains true after this packet.
+
+**Environment contract (values not entered, per instruction):** `LILOS_GOOGLE_OAUTH_CLIENT_ID`,
+`LILOS_GOOGLE_OAUTH_CLIENT_SECRET`, `LILOS_GOOGLE_OAUTH_REDIRECT_URI`,
+`LILOS_SECRET_ENCRYPTION_KEY` — added to `render.yaml` as `sync: false` on `lilos-api`
+only (no code path today performs refresh or dispatch from the worker or scheduler);
+`scripts/validate_render_blueprint.py`'s `SECRET_POLICY` allow-list and
+`docs/SECRETS-INVENTORY.md` updated to match. Nothing was added to Vercel, Supabase,
+GitHub Actions, or any frontend-public variable.
+
+**Validation:** `ruff format --check`, `ruff check`, and `mypy` all pass with zero
+findings on every file touched this pass. 25 new deterministic backend tests (no real
+Google credentials) — provider-seed idempotency/conflict, `FernetSecretStore`
+round-trip/key-version-mismatch/missing-key/malformed-reference, the full
+begin→complete→refresh→disconnect connection lifecycle against `httpx.MockTransport`,
+provider-denial and reused-state failure paths, and route-level authorization/
+entitlement/status/callback-redirect behavior against a real PostgreSQL-backed test
+app — all pass. `uv run pytest` (full suite), `alembic upgrade head`/`check`, Prettier,
+ESLint, `astro check`, Vitest, the production build, and `scripts/check_secrets.py`
+were all re-run; see the accompanying report for exact totals. No commit was made as
+part of this packet; the operator must create the Google Cloud OAuth client and
+configure the four environment variables above before any real connection can be
+attempted.
+
 ## Platform administration, reconciliation and correction (2026-08-05)
 
 This pass resolved the "no hidden platform administrator exists" limitation recorded

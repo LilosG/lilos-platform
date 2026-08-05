@@ -112,6 +112,24 @@ explicitly forbids). The truthful, currently-correct behavior — GBP reports `b
 remediation, and the frontend shows a real, empty, honestly-labeled discovery state — is preserved
 and was independently verified, not assumed.
 
+### Update (2026-08-05): connection foundation implemented, (1) still genuinely blocked
+
+Blocker (2) is now implemented in code: `apps/api/app/integrations/secrets.py`'s
+`FernetSecretStore` is a real, migrated, tested `SecretStore` implementation, and
+`apps/api/app/routes/integrations.py` adds the full connect/status/disconnect/callback
+route surface, a real frontend "Google connection" panel, token refresh, and
+best-effort revocation on disconnect — see
+`docs/IMPLEMENTATION-STATUS.md`'s "Google Business Profile OAuth connection foundation"
+entry for the complete record. Blocker (1) remains genuinely unresolved: no Google
+Cloud OAuth client ID/secret exists yet, and this pass did not create one, enter one in
+Render, or attempt a real pilot authorization — the operator must do so using the
+currently-approved Google Cloud project as a temporary pilot client, per the exact
+callback route and environment-variable contract now implemented. Blocker (3) (a
+registered workflow job handler for dispatching/verifying/reconciling a GBP provider
+write) remains unresolved and out of scope for this pass, as does GBP account/location
+discovery — the connection can be established and hold a valid, refreshable token, but
+nothing yet uses that token to call Google's account/location/write APIs.
+
 ## Deferred (Roadmap Phase 14, not Phase 9)
 
 Categories, services, products, hours, special hours, attributes, description, photos, posts,

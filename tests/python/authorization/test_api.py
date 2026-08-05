@@ -305,6 +305,18 @@ def test_proof_routes_are_removed_and_production_routes_are_always_mounted() -> 
             Settings(environment=environment, internal_admin_routes_enabled=True)
 
 
+UNAUTHENTICATED_PRODUCTION_ROUTES = frozenset(
+    {
+        # The Google OAuth redirect carries no bearer token -- it is a full
+        # browser navigation Google issues directly, not an API call this
+        # platform's own frontend makes. Tenant identity is recovered entirely
+        # from the already-validated, hashed, one-time `state` parameter; see
+        # `test_google_oauth_callback_is_deliberately_unauthenticated_but_fails_closed`.
+        ("get", "/api/v1/integrations/google/callback"),
+    }
+)
+
+
 def test_every_production_route_authenticates_before_request_processing() -> None:
     verifier = FakeVerifier(claims(uuid4(), AssuranceLevel.AAL1))
     verifier.result = TokenVerificationError()
@@ -329,7 +341,34 @@ def test_every_production_route_authenticates_before_request_processing() -> Non
             ):
                 target = target.replace("{" + parameter + "}", str(uuid4()))
             for method in operations:
+                if (method, route_path) in UNAUTHENTICATED_PRODUCTION_ROUTES:
+                    continue
                 response = client.request(method, target, json={})
                 assert response.status_code == 401, (method, route_path, response.text)
                 assert response.json()["error"]["code"] == "AUTHENTICATION_REQUIRED"
                 assert response.headers["Cache-Control"] == "no-store"
+
+
+@pytest.mark.integration
+def test_google_oauth_callback_is_deliberately_unauthenticated_but_fails_closed(
+    postgresql_test_url: str,
+) -> None:
+    """The callback is reachable without auth, but an invalid `state` is still rejected."""
+    app = create_app(
+        Settings.model_validate(
+            {
+                "environment": EnvironmentName.TEST,
+                "database_url": postgresql_test_url,
+                "web_origins": "https://app.example.invalid",
+            }
+        )
+    )
+    with TestClient(app, raise_server_exceptions=False) as client:
+        response = client.get(
+            "/api/v1/integrations/google/callback",
+            params={"state": "not-a-real-state"},
+            follow_redirects=False,
+        )
+        assert response.status_code == 302
+        assert "connected=0" in response.headers["location"]
+        assert "reason=invalid_state" in response.headers["location"]

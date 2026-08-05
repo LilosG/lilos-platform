@@ -161,6 +161,7 @@ def test_audit_migration_upgrades_downgrades_and_restores_head(
             "product_entitlements",
             "products",
             "provider_resource_mappings",
+            "provider_secrets",
             "provider_state_snapshots",
             "publishing_targets",
             "report_definitions",

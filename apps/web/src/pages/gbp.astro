@@ -54,6 +54,20 @@ import "../styles/global.css";
           </div>
         </section>
 
+        <section aria-labelledby="connection-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Google connection</p><h2 id="connection-title">
+                Connect Google Business Profile
+              </h2>
+            </div>
+          </div>
+          <div id="connection-callback-banner"></div>
+          <div class="attention-card" id="connection-panel">
+            <p>Checking connection…</p>
+          </div>
+        </section>
+
         <section aria-labelledby="accounts-title">
           <div class="section-heading">
             <div>
@@ -187,6 +201,11 @@ import "../styles/global.css";
         type GBPAccountSummary,
         type GBPLocationSummary,
       } from "../lib/gbp";
+      import {
+        beginConnection,
+        disconnectConnection,
+        fetchConnectionStatus,
+      } from "../lib/gbp-connection";
       import {
         createPostRevision,
         decideChangeSet,
@@ -323,6 +342,182 @@ import "../styles/global.css";
           const ready = document.createElement("p");
           ready.textContent = "Business Profile is ready to use.";
           panel.append(ready);
+        }
+      }
+
+      function statusBadge(label: string, kind: string): HTMLSpanElement {
+        const badge = document.createElement("span");
+        badge.className = `status status--${kind}`;
+        const dot = document.createElement("span");
+        dot.setAttribute("aria-hidden", "true");
+        dot.className = "status__dot";
+        badge.append(dot, document.createTextNode(label));
+        return badge;
+      }
+
+      function renderCallbackBanner(): void {
+        const banner = document.getElementById("connection-callback-banner")!;
+        banner.replaceChildren();
+        const params = new URLSearchParams(window.location.search);
+        const connected = params.get("connected");
+        if (connected === null) return;
+        if (connected === "1") {
+          const success = document.createElement("div");
+          success.className = "alert alert--success";
+          const text = document.createElement("p");
+          text.textContent = "Google Business Profile connected.";
+          success.append(text);
+          banner.append(success);
+        } else {
+          const reason = params.get("reason") ?? "error";
+          banner.append(
+            errorAlert(`Google Business Profile connection failed: ${reason}.`),
+          );
+        }
+        params.delete("connected");
+        params.delete("reason");
+        const query = params.toString();
+        window.history.replaceState(
+          {},
+          "",
+          `${window.location.pathname}${query ? `?${query}` : ""}`,
+        );
+      }
+
+      async function beginOrReconnect(): Promise<void> {
+        const panel = document.getElementById("connection-panel")!;
+        panel.replaceChildren(document.createTextNode("Connecting…"));
+        const outcome = await beginConnection(organizationId);
+        if (outcome.kind !== "ok") {
+          panel.replaceChildren(errorAlert(describeFailure(outcome)));
+          return;
+        }
+        window.location.assign(outcome.data.authorization_url);
+      }
+
+      function confirmDisconnect(
+        panel: HTMLElement,
+        trigger: HTMLButtonElement,
+      ): void {
+        trigger.hidden = true;
+        const prompt = document.createElement("div");
+        const message = document.createElement("p");
+        message.textContent =
+          "Disconnect this Google Business Profile connection?";
+        const confirmButton = document.createElement("button");
+        confirmButton.type = "button";
+        confirmButton.className = "button button--secondary";
+        confirmButton.textContent = "Confirm disconnect";
+        confirmButton.addEventListener("click", () => void performDisconnect());
+        const cancelButton = document.createElement("button");
+        cancelButton.type = "button";
+        cancelButton.className = "button";
+        cancelButton.textContent = "Cancel";
+        cancelButton.addEventListener("click", () => {
+          prompt.remove();
+          trigger.hidden = false;
+        });
+        prompt.append(message, confirmButton, cancelButton);
+        panel.append(prompt);
+      }
+
+      async function performDisconnect(): Promise<void> {
+        const outcome = await disconnectConnection(organizationId);
+        if (outcome.kind !== "ok") {
+          document
+            .getElementById("connection-panel")!
+            .append(errorAlert(describeFailure(outcome)));
+          return;
+        }
+        renderConnection(await fetchConnectionStatus(organizationId));
+      }
+
+      function renderConnection(
+        outcome: Awaited<ReturnType<typeof fetchConnectionStatus>>,
+      ): void {
+        const panel = document.getElementById("connection-panel")!;
+        panel.replaceChildren();
+
+        if (outcome.kind === "forbidden") {
+          panel.append(
+            errorAlert(
+              "You do not have permission to manage the Google connection for this organization.",
+            ),
+          );
+          return;
+        }
+        if (
+          outcome.kind === "error" &&
+          outcome.code === "INTEGRATION_NOT_CONFIGURED"
+        ) {
+          panel.append(
+            emptyState(
+              "Google connection is not configured",
+              "This deployment has not been configured with Google OAuth credentials yet.",
+            ),
+          );
+          return;
+        }
+        if (outcome.kind !== "ok") {
+          panel.append(errorAlert(describeFailure(outcome)));
+          return;
+        }
+
+        const connectionState = outcome.data;
+        if (
+          connectionState === null ||
+          connectionState.status === "disconnected"
+        ) {
+          const connectButton = document.createElement("button");
+          connectButton.type = "button";
+          connectButton.className = "button";
+          connectButton.textContent = "Connect Google";
+          connectButton.addEventListener(
+            "click",
+            () => void beginOrReconnect(),
+          );
+          panel.append(connectButton);
+          return;
+        }
+
+        const badgeKind =
+          connectionState.status === "connected"
+            ? "ready"
+            : connectionState.status === "reconnect_required"
+              ? "blocked"
+              : "setup";
+        panel.append(statusBadge(connectionState.status, badgeKind));
+
+        if (connectionState.last_verified_at) {
+          const verified = document.createElement("p");
+          verified.textContent = `Last verified ${connectionState.last_verified_at}`;
+          panel.append(verified);
+        }
+
+        if (connectionState.status === "reconnect_required") {
+          const reconnectButton = document.createElement("button");
+          reconnectButton.type = "button";
+          reconnectButton.className = "button";
+          reconnectButton.textContent = "Reconnect Google";
+          reconnectButton.addEventListener(
+            "click",
+            () => void beginOrReconnect(),
+          );
+          panel.append(reconnectButton);
+        }
+
+        if (
+          connectionState.status === "connected" ||
+          connectionState.status === "degraded"
+        ) {
+          const disconnectButton = document.createElement("button");
+          disconnectButton.type = "button";
+          disconnectButton.className = "button button--secondary";
+          disconnectButton.textContent = "Disconnect";
+          disconnectButton.addEventListener("click", () =>
+            confirmDisconnect(panel, disconnectButton),
+          );
+          panel.append(disconnectButton);
         }
       }
 
@@ -940,14 +1135,17 @@ import "../styles/global.css";
           organization.organization_name;
         organizationId = organization.organization_id;
         wireOperationsComposer();
+        renderCallbackBanner();
 
-        const [readiness, accounts, locations] = await Promise.all([
+        const [readiness, connection, accounts, locations] = await Promise.all([
           fetchProductReadiness(organization.organization_id, "gbp"),
+          fetchConnectionStatus(organization.organization_id),
           fetchGBPAccounts(organization.organization_id),
           fetchGBPLocations(organization.organization_id),
         ]);
 
         renderReadiness(readiness);
+        renderConnection(connection);
         renderAccounts(accounts.kind === "ok" ? accounts.data : []);
         renderLocations(locations.kind === "ok" ? locations.data : []);
         if (accounts.kind !== "ok" && accounts.kind !== "not-found") {
