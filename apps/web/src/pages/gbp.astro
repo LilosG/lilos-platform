@@ -26,7 +26,7 @@ import "../styles/global.css";
         <p>Loading Business Profile…</p>
       </div>
 
-      <div id="boot-error" role="alert" hidden></div>
+      <div id="boot-error" class="alert alert--error" role="alert" hidden></div>
 
       <div id="workspace-empty" role="status" hidden>
         <h1>No organization access yet</h1><p>
@@ -270,15 +270,36 @@ import "../styles/global.css";
           });
       }
 
+      function errorAlert(message: string): HTMLDivElement {
+        const alert = document.createElement("div");
+        alert.className = "alert alert--error";
+        const text = document.createElement("p");
+        text.textContent = message;
+        alert.append(text);
+        return alert;
+      }
+
+      function emptyState(
+        heading: string,
+        description: string,
+      ): HTMLDivElement {
+        const wrap = document.createElement("div");
+        wrap.className = "empty-state";
+        const title = document.createElement("h3");
+        title.textContent = heading;
+        const body = document.createElement("p");
+        body.textContent = description;
+        wrap.append(title, body);
+        return wrap;
+      }
+
       function renderReadiness(
         outcome: Awaited<ReturnType<typeof fetchProductReadiness>>,
       ): void {
         const panel = document.getElementById("readiness-panel")!;
         panel.replaceChildren();
         if (outcome.kind !== "ok") {
-          const message = document.createElement("p");
-          message.textContent = describeFailure(outcome);
-          panel.append(message);
+          panel.append(errorAlert(describeFailure(outcome)));
           return;
         }
         const state = outcome.data.readiness_state;
@@ -310,8 +331,12 @@ import "../styles/global.css";
         list.replaceChildren();
         if (accounts.length === 0) {
           const empty = document.createElement("li");
-          empty.textContent =
-            "No Google accounts discovered yet. Connecting Google is not yet available in this release.";
+          empty.append(
+            emptyState(
+              "No Google accounts connected",
+              "Connecting a Google account is not yet available in this release, so no accounts can be discovered.",
+            ),
+          );
           list.append(empty);
           return;
         }
@@ -339,8 +364,12 @@ import "../styles/global.css";
         list.replaceChildren();
         if (locations.length === 0) {
           const empty = document.createElement("li");
-          empty.textContent =
-            "No Google Business locations discovered yet. Discovery requires a connected Google account.";
+          empty.append(
+            emptyState(
+              "No Google Business locations yet",
+              "Location discovery requires a connected Google account. Once an account is connected, its locations will appear here for mapping.",
+            ),
+          );
           list.append(empty);
           return;
         }
@@ -922,14 +951,20 @@ import "../styles/global.css";
         renderAccounts(accounts.kind === "ok" ? accounts.data : []);
         renderLocations(locations.kind === "ok" ? locations.data : []);
         if (accounts.kind !== "ok" && accounts.kind !== "not-found") {
-          const note = document.createElement("p");
-          note.textContent = `Accounts unavailable: ${describeFailure(accounts)}`;
-          document.getElementById("accounts-list")!.before(note);
+          document
+            .getElementById("accounts-list")!
+            .before(
+              errorAlert(`Accounts unavailable: ${describeFailure(accounts)}`),
+            );
         }
         if (locations.kind !== "ok" && locations.kind !== "not-found") {
-          const note = document.createElement("p");
-          note.textContent = `Locations unavailable: ${describeFailure(locations)}`;
-          document.getElementById("locations-list")!.before(note);
+          document
+            .getElementById("locations-list")!
+            .before(
+              errorAlert(
+                `Locations unavailable: ${describeFailure(locations)}`,
+              ),
+            );
         }
 
         showOnly(regions.content);

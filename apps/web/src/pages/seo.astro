@@ -25,7 +25,7 @@ import "../styles/global.css";
         <p>Loading SEO…</p>
       </div>
 
-      <div id="boot-error" role="alert" hidden></div>
+      <div id="boot-error" class="alert alert--error" role="alert" hidden></div>
 
       <div id="workspace-empty" role="status" hidden>
         <h1>No organization access yet</h1><p>
@@ -276,6 +276,29 @@ import "../styles/global.css";
         return el;
       }
 
+      function errorAlert(message: string): HTMLDivElement {
+        const alert = document.createElement("div");
+        alert.className = "alert alert--error";
+        const text = document.createElement("p");
+        text.textContent = message;
+        alert.append(text);
+        return alert;
+      }
+
+      function emptyState(
+        heading: string,
+        description: string,
+      ): HTMLDivElement {
+        const wrap = document.createElement("div");
+        wrap.className = "empty-state";
+        const title = document.createElement("h3");
+        title.textContent = heading;
+        const body = document.createElement("p");
+        body.textContent = description;
+        wrap.append(title, body);
+        return wrap;
+      }
+
       function statusBadgeKind(status: string): string {
         if (["approved", "verified", "active"].includes(status)) return "ready";
         if (["rejected"].includes(status)) return "blocked";
@@ -288,9 +311,7 @@ import "../styles/global.css";
         panel.replaceChildren();
         const outcome = await fetchProductReadiness(organizationId, "seo");
         if (outcome.kind !== "ok") {
-          const message = document.createElement("p");
-          message.textContent = describeFailure(outcome);
-          panel.append(message);
+          panel.append(errorAlert(describeFailure(outcome)));
           return;
         }
         const state = outcome.data.readiness_state;
@@ -316,12 +337,7 @@ import "../styles/global.css";
         panel.replaceChildren();
         const outcome = await fetchSEOSummary(organizationId);
         if (outcome.kind !== "ok") {
-          const article = document.createElement("article");
-          article.className = "metric";
-          const message = document.createElement("p");
-          message.textContent = describeFailure(outcome);
-          article.append(message);
-          panel.append(article);
+          panel.append(errorAlert(describeFailure(outcome)));
           return;
         }
         const metrics: Array<[string, string]> = [
@@ -351,13 +367,18 @@ import "../styles/global.css";
         const outcome = await fetchWebsites(organizationId);
         if (outcome.kind !== "ok") {
           const item = document.createElement("li");
-          item.textContent = describeFailure(outcome);
+          item.append(errorAlert(describeFailure(outcome)));
           list.append(item);
           return;
         }
         if (outcome.data.length === 0) {
           const item = document.createElement("li");
-          item.textContent = "No confirmed websites yet.";
+          item.append(
+            emptyState(
+              "No confirmed websites yet",
+              "Add your first website using the form above to start tracking Search Console data, landing-page gaps, and crawl results.",
+            ),
+          );
           list.append(item);
           return;
         }

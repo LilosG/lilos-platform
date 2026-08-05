@@ -1,0 +1,1 @@
+"""Platform-administration route tests."""

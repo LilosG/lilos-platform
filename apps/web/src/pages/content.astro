@@ -25,7 +25,7 @@ import "../styles/global.css";
         <p>Loading Content…</p>
       </div>
 
-      <div id="boot-error" role="alert" hidden></div>
+      <div id="boot-error" class="alert alert--error" role="alert" hidden></div>
 
       <div id="workspace-empty" role="status" hidden>
         <h1>No organization access yet</h1><p>
@@ -147,20 +147,18 @@ import "../styles/global.css";
                   id="ai-draft-button">Generate AI-assisted draft</button
                 >
               </div><p id="action-status" role="status" aria-live="polite">
-              </p><h3>Publish</h3><label class="sr-only" for="target-select"
+              </p><h3>Publish</h3><label for="target-select"
                 >Publishing target</label
-              ><select id="target-select"></select><label
-                class="sr-only"
-                for="target-path">Target path</label
+              ><select id="target-select"></select><label for="target-path"
+                >Target path</label
               ><input
                 id="target-path"
                 type="text"
                 placeholder="src/content/blog/example.md"
-              /><button
-                type="button"
-                class="button button--secondary"
-                id="publish-button">Reserve publication</button
-              >
+              /><p class="field-hint">
+                Choose a target and path here, then use "Reserve publication for
+                this revision" on an approved draft revision below.
+              </p>
             </article><article id="activity">
               <p class="eyebrow">Revisions</p><ol
                 class="timeline"
@@ -273,6 +271,29 @@ import "../styles/global.css";
         return el;
       }
 
+      function errorAlert(message: string): HTMLDivElement {
+        const alert = document.createElement("div");
+        alert.className = "alert alert--error";
+        const text = document.createElement("p");
+        text.textContent = message;
+        alert.append(text);
+        return alert;
+      }
+
+      function emptyState(
+        heading: string,
+        description: string,
+      ): HTMLDivElement {
+        const wrap = document.createElement("div");
+        wrap.className = "empty-state";
+        const title = document.createElement("h3");
+        title.textContent = heading;
+        const body = document.createElement("p");
+        body.textContent = description;
+        wrap.append(title, body);
+        return wrap;
+      }
+
       function statusBadgeKind(status: string): string {
         if (status === "published" || status === "approved") return "ready";
         if (status === "failed" || status === "reconciliation_required")
@@ -286,9 +307,7 @@ import "../styles/global.css";
         panel.replaceChildren();
         const outcome = await fetchProductReadiness(organizationId, "content");
         if (outcome.kind !== "ok") {
-          const message = document.createElement("p");
-          message.textContent = describeFailure(outcome);
-          panel.append(message);
+          panel.append(errorAlert(describeFailure(outcome)));
           return;
         }
         const state = outcome.data.readiness_state;
@@ -314,12 +333,7 @@ import "../styles/global.css";
         panel.replaceChildren();
         const outcome = await fetchContentSummary(organizationId);
         if (outcome.kind !== "ok") {
-          const article = document.createElement("article");
-          article.className = "metric";
-          const message = document.createElement("p");
-          message.textContent = describeFailure(outcome);
-          article.append(message);
-          panel.append(article);
+          panel.append(errorAlert(describeFailure(outcome)));
           return;
         }
         const metrics: Array<[string, string]> = [
@@ -460,13 +474,18 @@ import "../styles/global.css";
         });
         if (outcome.kind !== "ok") {
           const item = document.createElement("li");
-          item.textContent = describeFailure(outcome);
+          item.append(errorAlert(describeFailure(outcome)));
           list.append(item);
           return;
         }
         if (outcome.data.length === 0) {
           const item = document.createElement("li");
-          item.textContent = "No content items yet.";
+          item.append(
+            emptyState(
+              "No content items yet",
+              "This organization has no content items in its pipeline yet.",
+            ),
+          );
           list.append(item);
           return;
         }
@@ -808,20 +827,12 @@ import "../styles/global.css";
                 document.getElementById("revision-body") as HTMLTextAreaElement
               ).value = result.data.body;
               setActionStatus(
-                "AI-assisted draft generated (deterministic safe-fallback provider; requires human review).",
+                "AI-assisted draft generated using a placeholder writing assistant. Review it carefully before approving.",
               );
               await renderRevisions(selectedItemId);
             } else {
               setActionStatus(describeFailure(result));
             }
-          });
-
-        document
-          .getElementById("publish-button")
-          ?.addEventListener("click", () => {
-            setActionStatus(
-              "Select an approved revision above and use its publish action.",
-            );
           });
       }
 

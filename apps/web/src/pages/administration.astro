@@ -39,28 +39,261 @@ import "../styles/global.css";
         <section id="overview" aria-labelledby="page-title">
           <p class="eyebrow">Administration</p><h1 id="page-title">
             Administration
-          </h1>
+          </h1><p>
+            Manage client organizations, locations, and product access for this
+            workspace.
+          </p>
         </section>
 
-        <section aria-labelledby="products-title">
+        <section
+          id="platform-admin-section"
+          aria-labelledby="clients-title"
+          hidden
+        >
           <div class="section-heading">
             <div>
-              <p class="eyebrow">Products</p><h2 id="products-title">
-                Product catalog and readiness
+              <p class="eyebrow">Client organizations</p><h2 id="clients-title">
+                Onboard and manage clients
               </h2>
             </div>
-          </div><ul class="product-list" id="products-list"></ul>
+          </div>
+          <div id="platform-admin-alert"></div>
+          <ul class="product-list" id="clients-list"></ul>
+
+          <div id="client-detail" hidden style="margin-top: 1.5rem;">
+            <div class="attention-card" id="client-detail-body"></div>
+            <h4 style="margin-top: 1.5rem;">Add a location</h4>
+            <form
+              id="create-location-form"
+              class="form-grid"
+              style="margin-top: 1rem;"
+            >
+              <div class="field">
+                <label for="loc-name">Location name</label><input
+                  id="loc-name"
+                  name="name"
+                  type="text"
+                  required
+                />
+              </div>
+              <div class="field">
+                <label for="loc-slug">Slug</label><input
+                  id="loc-slug"
+                  name="slug"
+                  type="text"
+                  required
+                  pattern="[a-z][a-z0-9-]*"
+                />
+              </div>
+              <div class="field field--full">
+                <label>Location type</label>
+                <div class="radio-group">
+                  <label
+                    ><input
+                      type="radio"
+                      name="location_type"
+                      value="physical"
+                      checked
+                    /> Physical</label
+                  ><label
+                    ><input
+                      type="radio"
+                      name="location_type"
+                      value="service_area"
+                    />
+                    Service area</label
+                  ><label
+                    ><input type="radio" name="location_type" value="hybrid" /> Hybrid</label
+                  ><label
+                    ><input type="radio" name="location_type" value="virtual" /> Virtual</label
+                  >
+                </div>
+              </div>
+              <div class="field">
+                <label for="loc-timezone">Timezone</label><input
+                  id="loc-timezone"
+                  name="timezone"
+                  type="text"
+                  required
+                  value="America/Los_Angeles"
+                />
+              </div>
+              <div class="field">
+                <label for="loc-country">Country code</label><input
+                  id="loc-country"
+                  name="country_code"
+                  type="text"
+                  required
+                  value="US"
+                  maxlength="2"
+                  style="text-transform: uppercase;"
+                />
+              </div>
+              <div class="field field--full">
+                <label for="loc-address">Street address</label><input
+                  id="loc-address"
+                  name="address_line_1"
+                  type="text"
+                  placeholder="123 Main St"
+                />
+              </div>
+              <div class="field">
+                <label for="loc-city">City</label><input
+                  id="loc-city"
+                  name="city"
+                  type="text"
+                />
+              </div>
+              <div class="field">
+                <label for="loc-region">State / region</label><input
+                  id="loc-region"
+                  name="region"
+                  type="text"
+                />
+              </div>
+              <div class="field">
+                <label for="loc-postal">Postal code</label><input
+                  id="loc-postal"
+                  name="postal_code"
+                  type="text"
+                />
+              </div>
+              <div class="field">
+                <label for="loc-phone">Phone</label><input
+                  id="loc-phone"
+                  name="phone"
+                  type="tel"
+                />
+              </div>
+              <div class="field field--full">
+                <label for="loc-service-area"
+                  >Service area description (service-area or hybrid only)</label
+                ><input
+                  id="loc-service-area"
+                  name="service_area_description"
+                  type="text"
+                />
+              </div>
+              <div class="field field--full">
+                <label
+                  ><input id="loc-primary" name="is_primary" type="checkbox" /> Mark
+                  as primary location</label
+                >
+              </div>
+              <div class="field--full form-actions">
+                <button type="submit" class="button" id="create-location-submit"
+                  >Add location</button
+                >
+              </div>
+            </form>
+          </div>
+
+          <h3 style="margin-top: 2rem;">Create a client organization</h3>
+          <form
+            id="create-org-form"
+            class="form-grid"
+            style="margin-top: 1rem;"
+          >
+            <div class="field">
+              <label for="org-name">Organization name</label><input
+                id="org-name"
+                name="name"
+                type="text"
+                required
+                placeholder="Acme Home Services"
+              />
+            </div>
+            <div class="field">
+              <label for="org-slug">Slug</label><input
+                id="org-slug"
+                name="slug"
+                type="text"
+                required
+                pattern="[a-z][a-z0-9-]*"
+                placeholder="acme-home-services"
+              /><span class="field-hint"
+                >Lowercase letters, numbers, and hyphens only.</span
+              >
+            </div>
+            <div class="field">
+              <label for="org-type">Organization type</label><select
+                id="org-type"
+                name="organization_type"
+              >
+                <option value="client" selected>Client</option>
+                <option value="partner">Partner</option>
+                <option value="demo">Demo</option>
+                <option value="internal">Internal</option>
+                <option value="test">Test</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="org-industry">Industry</label><select
+                id="org-industry"
+                name="industry_id"
+              >
+                <option value="">Loading industries…</option>
+              </select><span class="field-hint"
+                >Required for client, partner, and demo organizations.</span
+              >
+            </div>
+            <div class="field">
+              <label for="org-timezone">Timezone</label><input
+                id="org-timezone"
+                name="timezone"
+                type="text"
+                required
+                value="America/Los_Angeles"
+              /><span class="field-hint">IANA timezone identifier.</span>
+            </div>
+            <div class="field">
+              <label for="org-currency">Default currency</label><input
+                id="org-currency"
+                name="default_currency"
+                type="text"
+                required
+                value="USD"
+                maxlength="3"
+                style="text-transform: uppercase;"
+              />
+            </div>
+            <div class="field field--full">
+              <label for="org-website">Website (optional)</label><input
+                id="org-website"
+                name="website_url"
+                type="url"
+                placeholder="https://example.com"
+              />
+            </div>
+            <div class="field--full form-actions">
+              <button type="submit" class="button" id="create-org-submit"
+                >Create organization</button
+              >
+            </div>
+          </form>
         </section>
 
-        <section aria-labelledby="services-title">
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow">Services</p><h2 id="services-title">
-                Service catalog
-              </h2>
-            </div>
-          </div><ul class="product-list" id="services-list"></ul>
-        </section>
+        <div id="org-scoped-sections">
+          <section aria-labelledby="products-title">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Products</p><h2 id="products-title">
+                  Product catalog and readiness
+                </h2>
+              </div>
+            </div><ul class="product-list" id="products-list"></ul>
+          </section>
+
+          <section aria-labelledby="services-title">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Services</p><h2 id="services-title">
+                  Service catalog
+                </h2>
+              </div>
+            </div><ul class="product-list" id="services-list"></ul>
+          </section>
+        </div>
       </div>
     </AppShell>
     <script>
@@ -74,11 +307,25 @@ import "../styles/global.css";
         fetchPrincipal,
         fetchProductReadiness,
         PRODUCT_KEYS,
+        type PrincipalSummary,
       } from "../lib/workspace";
       import { selectDefaultOrganization } from "../lib/dashboard-logic";
       import { getCurrentSession, signOut } from "../lib/session";
       import { readPublicConfig } from "../lib/config";
       import type { ApiOutcome } from "../lib/api-client";
+      import {
+        fetchIndustries,
+        fetchOrganizations as fetchAdminOrganizations,
+        createOrganization,
+        startOnboarding,
+        activateOrganization,
+        fetchOrganizationLocations,
+        createLocation,
+        activateLocation,
+        bootstrapOwner,
+        type AdminOrganization,
+        type AdminLocation,
+      } from "../lib/platform-admin";
 
       const regions = {
         notConfigured: document.getElementById("boot-not-configured")!,
@@ -234,6 +481,314 @@ import "../styles/global.css";
         }
       }
 
+      let currentPrincipal: PrincipalSummary | null = null;
+      let selectedClientOrganization: AdminOrganization | null = null;
+
+      function platformAlert(kind: "error" | "success", message: string): void {
+        const container = document.getElementById("platform-admin-alert")!;
+        container.replaceChildren();
+        const alert = document.createElement("div");
+        alert.className = `alert alert--${kind}`;
+        alert.setAttribute("role", kind === "error" ? "alert" : "status");
+        const p = document.createElement("p");
+        p.textContent = message;
+        alert.append(p);
+        container.append(alert);
+      }
+
+      async function renderClientDetail(
+        organization: AdminOrganization,
+      ): Promise<void> {
+        selectedClientOrganization = organization;
+        const detail = document.getElementById("client-detail")!;
+        const body = document.getElementById("client-detail-body")!;
+        detail.hidden = false;
+        body.replaceChildren();
+
+        const title = document.createElement("h3");
+        title.textContent = organization.name;
+        const meta = document.createElement("p");
+        meta.textContent = `${organization.slug} · ${organization.organization_type} · status: ${organization.status}`;
+        body.append(title, meta);
+
+        const actions = document.createElement("div");
+        actions.className = "hero__actions";
+        if (
+          organization.status === "prospect" ||
+          organization.status === "onboarding"
+        ) {
+          const activateButton = document.createElement("button");
+          activateButton.type = "button";
+          activateButton.className = "button button--secondary button--sm";
+          activateButton.textContent = "Activate organization";
+          activateButton.addEventListener("click", async () => {
+            let current = organization;
+            if (current.status === "prospect") {
+              const started = await startOnboarding(
+                current.id,
+                current.version,
+              );
+              if (started.kind !== "ok") {
+                platformAlert("error", describeFailure(started));
+                return;
+              }
+              current = started.data;
+            }
+            const activated = await activateOrganization(
+              current.id,
+              current.version,
+            );
+            if (activated.kind !== "ok") {
+              platformAlert("error", describeFailure(activated));
+              return;
+            }
+            platformAlert("success", `${activated.data.name} is now active.`);
+            await renderClientsList();
+            await renderClientDetail(activated.data);
+          });
+          actions.append(activateButton);
+        }
+        if (currentPrincipal) {
+          const ownerButton = document.createElement("button");
+          ownerButton.type = "button";
+          ownerButton.className = "button button--secondary button--sm";
+          ownerButton.textContent = "Add me as workspace owner";
+          ownerButton.title =
+            "Grants you the owner role in this client's workspace so you can assign products and manage it.";
+          ownerButton.addEventListener("click", async () => {
+            const result = await bootstrapOwner(organization.id, {
+              auth_user_id: currentPrincipal!.auth_user_id,
+            });
+            if (result.kind !== "ok") {
+              platformAlert("error", describeFailure(result));
+              return;
+            }
+            platformAlert(
+              "success",
+              result.data.owner_role_assignment_created
+                ? "You are now the owner of this client's workspace."
+                : "You already have owner access to this client's workspace.",
+            );
+          });
+          actions.append(ownerButton);
+        }
+        body.append(actions);
+
+        const locationsHeading = document.createElement("h4");
+        locationsHeading.textContent = "Locations";
+        locationsHeading.style.marginTop = "1.5rem";
+        const locationsList = document.createElement("ul");
+        locationsList.className = "product-list";
+        body.append(locationsHeading, locationsList);
+
+        const locations = await fetchOrganizationLocations(organization.id);
+        if (locations.kind !== "ok") {
+          const item = document.createElement("li");
+          item.textContent = describeFailure(locations);
+          locationsList.append(item);
+        } else if (locations.data.length === 0) {
+          const empty = document.createElement("div");
+          empty.className = "empty-state";
+          empty.innerHTML =
+            "<h3>No locations yet</h3><p>Add this client's first location using the form below.</p>";
+          locationsList.replaceWith(empty);
+        } else {
+          for (const location of locations.data) {
+            locationsList.append(renderLocationRow(organization, location));
+          }
+        }
+      }
+
+      function renderLocationRow(
+        organization: AdminOrganization,
+        location: AdminLocation,
+      ): HTMLLIElement {
+        const item = document.createElement("li");
+        const info = document.createElement("div");
+        const title = document.createElement("h3");
+        title.textContent =
+          location.name + (location.is_primary ? " (primary)" : "");
+        const meta = document.createElement("p");
+        meta.textContent = `${location.location_type} · ${location.status}`;
+        info.append(title, meta);
+        const actionsCell = document.createElement("div");
+        if (location.status === "setup_required") {
+          const activateButton = document.createElement("button");
+          activateButton.type = "button";
+          activateButton.className = "button button--secondary button--sm";
+          activateButton.textContent = "Activate";
+          activateButton.addEventListener("click", async () => {
+            const activated = await activateLocation(
+              organization.id,
+              location.id,
+              location.version,
+            );
+            if (activated.kind !== "ok") {
+              platformAlert("error", describeFailure(activated));
+              return;
+            }
+            platformAlert("success", `${activated.data.name} is now active.`);
+            await renderClientDetail(organization);
+          });
+          actionsCell.append(activateButton);
+        } else {
+          actionsCell.append(
+            badge(location.status === "active" ? "ready" : "setup"),
+          );
+        }
+        item.append(info, actionsCell);
+        return item;
+      }
+
+      async function renderClientsList(): Promise<void> {
+        const list = document.getElementById("clients-list")!;
+        list.replaceChildren();
+        const outcome = await fetchAdminOrganizations();
+        if (outcome.kind !== "ok") {
+          return;
+        }
+        if (outcome.data.length === 0) {
+          const empty = document.createElement("div");
+          empty.className = "empty-state";
+          empty.innerHTML =
+            "<h3>No client organizations yet</h3><p>Create the first one using the form below.</p>";
+          list.append(empty);
+          return;
+        }
+        for (const organization of outcome.data) {
+          const item = document.createElement("li");
+          const info = document.createElement("div");
+          const title = document.createElement("h3");
+          title.textContent = organization.name;
+          const meta = document.createElement("p");
+          meta.textContent = `${organization.slug} · ${organization.organization_type}`;
+          info.append(title, meta);
+          const actionsCell = document.createElement("div");
+          actionsCell.append(
+            badge(
+              organization.status === "active" ? "ready" : "setup",
+              organization.status,
+            ),
+          );
+          const manageButton = document.createElement("button");
+          manageButton.type = "button";
+          manageButton.className = "button button--secondary button--sm";
+          manageButton.textContent = "Manage";
+          manageButton.style.marginLeft = "0.6rem";
+          manageButton.addEventListener("click", () => {
+            void renderClientDetail(organization);
+          });
+          actionsCell.append(manageButton);
+          item.append(info, actionsCell);
+          list.append(item);
+        }
+      }
+
+      async function populateIndustries(): Promise<void> {
+        const select = document.getElementById(
+          "org-industry",
+        ) as HTMLSelectElement;
+        const industries = await fetchIndustries();
+        if (industries.kind !== "ok") {
+          select.innerHTML = '<option value="">Unavailable</option>';
+          return;
+        }
+        select.innerHTML =
+          '<option value="">No industry (internal/test organizations only)</option>' +
+          industries.data
+            .map(
+              (industry) =>
+                `<option value="${industry.id}">${industry.name}</option>`,
+            )
+            .join("");
+      }
+
+      function wireCreateOrganizationForm(): void {
+        const form = document.getElementById(
+          "create-org-form",
+        ) as HTMLFormElement;
+        form.addEventListener("submit", async (event) => {
+          event.preventDefault();
+          const data = new FormData(form);
+          const industryId = String(data.get("industry_id") ?? "");
+          const outcome = await createOrganization({
+            name: String(data.get("name") ?? ""),
+            slug: String(data.get("slug") ?? ""),
+            organization_type: data.get(
+              "organization_type",
+            ) as AdminOrganization["organization_type"],
+            timezone: String(data.get("timezone") ?? ""),
+            default_currency: String(
+              data.get("default_currency") ?? "",
+            ).toUpperCase(),
+            industry_id: industryId || null,
+            website_url: String(data.get("website_url") ?? "") || null,
+          });
+          if (outcome.kind !== "ok") {
+            platformAlert("error", describeFailure(outcome));
+            return;
+          }
+          platformAlert("success", `${outcome.data.name} was created.`);
+          form.reset();
+          await renderClientsList();
+          await renderClientDetail(outcome.data);
+        });
+      }
+
+      function wireCreateLocationForm(): void {
+        const form = document.getElementById(
+          "create-location-form",
+        ) as HTMLFormElement;
+        form.addEventListener("submit", async (event) => {
+          event.preventDefault();
+          if (!selectedClientOrganization) {
+            platformAlert(
+              "error",
+              "Select a client organization to manage first.",
+            );
+            return;
+          }
+          const data = new FormData(form);
+          const outcome = await createLocation(selectedClientOrganization.id, {
+            name: String(data.get("name") ?? ""),
+            slug: String(data.get("slug") ?? ""),
+            location_type: data.get(
+              "location_type",
+            ) as AdminLocation["location_type"],
+            timezone: String(data.get("timezone") ?? ""),
+            country_code: String(data.get("country_code") ?? "").toUpperCase(),
+            address_line_1: String(data.get("address_line_1") ?? "") || null,
+            city: String(data.get("city") ?? "") || null,
+            region: String(data.get("region") ?? "") || null,
+            postal_code: String(data.get("postal_code") ?? "") || null,
+            phone: String(data.get("phone") ?? "") || null,
+            service_area_description:
+              String(data.get("service_area_description") ?? "") || null,
+            is_primary: data.get("is_primary") === "on",
+          });
+          if (outcome.kind !== "ok") {
+            platformAlert("error", describeFailure(outcome));
+            return;
+          }
+          platformAlert("success", `${outcome.data.name} was added.`);
+          form.reset();
+          await renderClientDetail(selectedClientOrganization);
+        });
+      }
+
+      async function renderPlatformAdmin(): Promise<boolean> {
+        const probe = await fetchAdminOrganizations();
+        if (probe.kind !== "ok") {
+          return false;
+        }
+        document.getElementById("platform-admin-section")!.hidden = false;
+        await populateIndustries();
+        wireCreateOrganizationForm();
+        wireCreateLocationForm();
+        await renderClientsList();
+        return true;
+      }
+
       async function boot(): Promise<void> {
         if (!readPublicConfig()) {
           showOnly(regions.notConfigured);
@@ -266,6 +821,8 @@ import "../styles/global.css";
         const signOutButton = document.getElementById("sign-out-button")!;
         signOutButton.hidden = false;
         wireSignOut();
+        currentPrincipal = principal.data;
+        const isPlatformAdmin = await renderPlatformAdmin();
 
         const organizations = await fetchMyOrganizations();
         if (organizations.kind === "unauthenticated") {
@@ -277,12 +834,18 @@ import "../styles/global.css";
           showOnly(regions.error);
           return;
         }
-        if (organizations.data.length === 0) {
-          showOnly(regions.empty);
-          return;
-        }
-        const organization = selectDefaultOrganization(organizations.data);
+        const organization =
+          organizations.data.length > 0
+            ? selectDefaultOrganization(organizations.data)
+            : null;
         if (!organization) {
+          if (isPlatformAdmin) {
+            document.getElementById("org-scoped-sections")!.hidden = true;
+            document.getElementById("active-organization-name")!.textContent =
+              "No personal workspace yet";
+            showOnly(regions.content);
+            return;
+          }
           showOnly(regions.empty);
           return;
         }

@@ -25,7 +25,7 @@ import "../styles/global.css";
         <p>Loading Reviews…</p>
       </div>
 
-      <div id="boot-error" role="alert" hidden></div>
+      <div id="boot-error" class="alert alert--error" role="alert" hidden></div>
 
       <div id="workspace-empty" role="status" hidden>
         <h1>No organization access yet</h1><p>
@@ -221,6 +221,29 @@ import "../styles/global.css";
         return el;
       }
 
+      function errorAlert(message: string): HTMLDivElement {
+        const alert = document.createElement("div");
+        alert.className = "alert alert--error";
+        const text = document.createElement("p");
+        text.textContent = message;
+        alert.append(text);
+        return alert;
+      }
+
+      function emptyState(
+        heading: string,
+        description: string,
+      ): HTMLDivElement {
+        const wrap = document.createElement("div");
+        wrap.className = "empty-state";
+        const title = document.createElement("h3");
+        title.textContent = heading;
+        const body = document.createElement("p");
+        body.textContent = description;
+        wrap.append(title, body);
+        return wrap;
+      }
+
       function readinessBadgeStatus(reviewStatus: string): string {
         if (["responded"].includes(reviewStatus)) return "ready";
         if (
@@ -241,9 +264,7 @@ import "../styles/global.css";
         panel.replaceChildren();
         const outcome = await fetchProductReadiness(organizationId, "reviews");
         if (outcome.kind !== "ok") {
-          const message = document.createElement("p");
-          message.textContent = describeFailure(outcome);
-          panel.append(message);
+          panel.append(errorAlert(describeFailure(outcome)));
           return;
         }
         const state = outcome.data.readiness_state;
@@ -272,12 +293,7 @@ import "../styles/global.css";
           currentLocationId,
         );
         if (outcome.kind !== "ok") {
-          const article = document.createElement("article");
-          article.className = "metric";
-          const message = document.createElement("p");
-          message.textContent = describeFailure(outcome);
-          article.append(message);
-          panel.append(article);
+          panel.append(errorAlert(describeFailure(outcome)));
           return;
         }
         const metrics: Array<[string, string]> = [
@@ -322,13 +338,18 @@ import "../styles/global.css";
         });
         if (outcome.kind !== "ok") {
           const item = document.createElement("li");
-          item.textContent = describeFailure(outcome);
+          item.append(errorAlert(describeFailure(outcome)));
           list.append(item);
           return;
         }
         if (outcome.data.length === 0) {
           const item = document.createElement("li");
-          item.textContent = "No reviews yet for this location.";
+          item.append(
+            emptyState(
+              "No reviews yet",
+              "This location has no reviews on record yet. New reviews will appear here once they come in from connected providers.",
+            ),
+          );
           list.append(item);
           return;
         }
@@ -568,7 +589,7 @@ import "../styles/global.css";
                 document.getElementById("response-text") as HTMLTextAreaElement
               ).value = result.data.response_text;
               setDraftStatus(
-                "AI-assisted draft generated (deterministic safe-fallback provider; requires human review before approval).",
+                "AI-assisted draft generated using a placeholder writing assistant. Review it carefully before approving.",
               );
               await renderResponseHistory(selectedReviewId);
             } else {

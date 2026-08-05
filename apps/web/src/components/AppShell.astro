@@ -1,5 +1,10 @@
 ---
 import { navigation } from "../lib/platform";
+
+const currentPath = Astro.url.pathname;
+function isActive(href: string): boolean {
+  return href === "/" ? currentPath === "/" : currentPath.startsWith(href);
+}
 ---
 
 <a class="skip-link" href="#main-content">Skip to main content</a>
@@ -13,7 +18,12 @@ import { navigation } from "../lib/platform";
         {
           navigation.map((item) => (
             <li>
-              <a href={item.href}>{item.label}</a>
+              <a
+                href={item.href}
+                aria-current={isActive(item.href) ? "page" : undefined}
+              >
+                {item.label}
+              </a>
             </li>
           ))
         }

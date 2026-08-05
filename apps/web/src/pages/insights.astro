@@ -1,6 +1,5 @@
 ---
 import AppShell from "../components/AppShell.astro";
-import StatusBadge from "../components/StatusBadge.astro";
 import "../styles/global.css";
 ---
 
@@ -26,7 +25,7 @@ import "../styles/global.css";
         <p>Loading Insights…</p>
       </div>
 
-      <div id="boot-error" role="alert" hidden></div>
+      <div id="boot-error" class="alert alert--error" role="alert" hidden></div>
 
       <div id="workspace-empty" role="status" hidden>
         <h1>No organization access yet</h1><p>
@@ -40,34 +39,58 @@ import "../styles/global.css";
           <p class="eyebrow">Insights</p><h1 id="page-title">Insights</h1>
         </section>
 
-        <section aria-labelledby="unavailable-title">
+        <section aria-labelledby="readiness-title">
           <div class="section-heading">
             <div>
-              <p class="eyebrow">Not yet available</p><h2
-                id="unavailable-title"
-              >
-                Cross-product reporting
+              <p class="eyebrow">Product readiness</p><h2 id="readiness-title">
+                Setup status
               </h2>
             </div>
-          </div><div class="attention-card">
-            <StatusBadge
-              status="missing"
-              label="Not available in this release"
-            /><p>
-              Cross-product Insights reporting has no backing application
-              surface in this release. This section intentionally shows no
-              simulated data.
-            </p>
+          </div><div class="attention-card" id="readiness-panel">
+            <p>Checking readiness…</p>
           </div>
+        </section>
+
+        <section aria-labelledby="sources-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Data sources</p><h2 id="sources-title">
+                What insights will draw on
+              </h2><p>
+                Insights is a cross-product reporting view. It has no simulated
+                data or preview charts — it will populate once the products
+                below are connected and have activity history. Complete setup on
+                each product's page to unlock reporting.
+              </p>
+            </div>
+          </div><ul class="product-list" id="sources-list"></ul>
         </section>
       </div>
     </AppShell>
     <script>
-      import { fetchMyOrganizations, fetchPrincipal } from "../lib/workspace";
+      import {
+        fetchMyOrganizations,
+        fetchPrincipal,
+        fetchProductReadiness,
+        PRODUCT_LABELS,
+        type ProductKey,
+      } from "../lib/workspace";
       import { selectDefaultOrganization } from "../lib/dashboard-logic";
       import { getCurrentSession, signOut } from "../lib/session";
       import { readPublicConfig } from "../lib/config";
       import type { ApiOutcome } from "../lib/api-client";
+
+      // Products whose activity feeds this cross-product reporting view.
+      // Insights itself is deliberately excluded from its own source list.
+      const SOURCE_PRODUCTS: { key: ProductKey; href: string }[] = [
+        { key: "gbp", href: "/gbp" },
+        { key: "reviews", href: "/reviews" },
+        { key: "leads", href: "/leads" },
+        { key: "content", href: "/content" },
+        { key: "seo", href: "/seo" },
+      ];
+
+      let organizationId = "";
 
       const regions = {
         notConfigured: document.getElementById("boot-not-configured")!,
@@ -114,6 +137,93 @@ import "../styles/global.css";
             await signOut();
             goToLogin();
           });
+      }
+
+      function badge(status: string, label = status): HTMLSpanElement {
+        const el = document.createElement("span");
+        el.className = `status status--${status}`;
+        const dot = document.createElement("span");
+        dot.setAttribute("aria-hidden", "true");
+        dot.className = "status__dot";
+        el.append(dot, document.createTextNode(label));
+        return el;
+      }
+
+      function errorAlert(message: string): HTMLDivElement {
+        const alert = document.createElement("div");
+        alert.className = "alert alert--error";
+        const text = document.createElement("p");
+        text.textContent = message;
+        alert.append(text);
+        return alert;
+      }
+
+      async function renderReadiness(): Promise<void> {
+        const panel = document.getElementById("readiness-panel")!;
+        panel.replaceChildren();
+        const outcome = await fetchProductReadiness(organizationId, "insights");
+        if (outcome.kind !== "ok") {
+          panel.append(errorAlert(describeFailure(outcome)));
+          return;
+        }
+        const state = outcome.data.readiness_state;
+        const label = state === "not_entitled" ? "setup" : state;
+        panel.append(badge(label));
+        for (const finding of outcome.data.blocking_requirements) {
+          const reason = document.createElement("p");
+          reason.textContent = finding.remediation;
+          panel.append(reason);
+        }
+        if (
+          outcome.data.blocking_requirements.length === 0 &&
+          state === "ready"
+        ) {
+          const ready = document.createElement("p");
+          ready.textContent = "Insights is ready to use.";
+          panel.append(ready);
+        }
+      }
+
+      async function renderSources(): Promise<void> {
+        const list = document.getElementById("sources-list")!;
+        list.replaceChildren();
+        const results = await Promise.all(
+          SOURCE_PRODUCTS.map((source) =>
+            fetchProductReadiness(organizationId, source.key),
+          ),
+        );
+        SOURCE_PRODUCTS.forEach((source, index) => {
+          const outcome = results[index];
+          const item = document.createElement("li");
+          const info = document.createElement("div");
+          const name = document.createElement("h3");
+          name.textContent = PRODUCT_LABELS[source.key];
+          const meta = document.createElement("p");
+          const actions = document.createElement("div");
+
+          if (outcome.kind !== "ok") {
+            meta.textContent = describeFailure(outcome);
+            actions.append(badge("missing", "unavailable"));
+          } else {
+            const state = outcome.data.readiness_state;
+            const label = state === "not_entitled" ? "setup" : state;
+            const blocking = outcome.data.blocking_requirements[0];
+            meta.textContent =
+              state === "ready"
+                ? "Connected and ready."
+                : (blocking?.remediation ?? "Setup required.");
+            actions.append(badge(label));
+          }
+
+          info.append(name, meta);
+          const link = document.createElement("a");
+          link.href = source.href;
+          link.className = "button button--secondary button--sm";
+          link.textContent = `Open ${PRODUCT_LABELS[source.key]}`;
+          actions.append(link);
+          item.append(info, actions);
+          list.append(item);
+        });
       }
 
       async function boot(): Promise<void> {
@@ -170,6 +280,9 @@ import "../styles/global.css";
         }
         document.getElementById("active-organization-name")!.textContent =
           organization.organization_name;
+        organizationId = organization.organization_id;
+
+        await Promise.all([renderReadiness(), renderSources()]);
 
         showOnly(regions.content);
       }

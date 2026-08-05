@@ -112,6 +112,7 @@ def test_baseline_migration_upgrades_downgrades_and_upgrades_again(
         "organization_profiles",
         "organizations",
         "permissions",
+        "platform_administrators",
         "policy_revisions",
         "product_entitlement_locations",
         "product_entitlements",
@@ -155,7 +156,7 @@ def test_baseline_migration_upgrades_downgrades_and_upgrades_again(
         "workflow_steps",
         "workflow_versions",
     ]
-    assert revisions_at_head == ["20260804_0001"]
+    assert revisions_at_head == ["20260804_0002"]
 
     command.downgrade(config, "base")
     tables_at_base, revisions_at_base = asyncio.run(database_state(postgresql_test_url))
@@ -235,6 +236,7 @@ def test_baseline_migration_upgrades_downgrades_and_upgrades_again(
         "organization_profiles",
         "organizations",
         "permissions",
+        "platform_administrators",
         "policy_revisions",
         "product_entitlement_locations",
         "product_entitlements",
@@ -278,4 +280,4 @@ def test_baseline_migration_upgrades_downgrades_and_upgrades_again(
         "workflow_steps",
         "workflow_versions",
     ]
-    assert revisions_at_final_head == ["20260804_0001"]
+    assert revisions_at_final_head == ["20260804_0002"]

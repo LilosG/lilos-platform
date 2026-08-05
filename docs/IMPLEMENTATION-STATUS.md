@@ -1,5 +1,63 @@
 # LILOs implementation status
 
+## Platform administration, reconciliation and correction (2026-08-05)
+
+This pass resolved the "no hidden platform administrator exists" limitation recorded
+below under Phase 1 (`Known limitations`). Migration `20260804_0002` adds an additive
+`platform_administrators` table — a revocable, cross-organization grant with no
+relationship to `organization_memberships`, `roles`, or role assignments; a partial
+unique index enforces at most one active grant per user. `require_platform_administrator`
+(`apps/api/app/platform_admin/dependencies.py`) is a narrow, fail-closed authorization
+primitive independent of the existing per-organization RBAC engine. Always-mounted
+routes under `/api/v1/platform` (`apps/api/app/routes/platform_administration.py`) let a
+platform administrator create/list/get organizations, drive their lifecycle transitions,
+list active industries, create/list/activate locations, and idempotently bootstrap an
+organization's first owner — the same sequence `scripts/provision_pilot_owner.py` already
+performed by hand, now available from the UI. Every write reuses the existing
+organization/location/access-control services verbatim, so audit events and invariants
+are unchanged. A new protected `administration.astro` "Client organizations" panel
+(`apps/web/src/lib/platform-admin.ts`) probes the real API and only reveals
+platform-admin controls on a genuine 200 — never a client-inferred permission. AppShell
+gained real active-nav-item indication, and a design-token/CSS polish pass (error alert
+and empty-state patterns, expanded color/shadow/radius tokens) was applied consistently
+across all six product pages.
+
+Three defects were found and fixed during reconciliation, all now covered by green
+tests: `Settings.validate_secret_encryption_key` crashed the entire application on
+startup whenever `LILOS_SECRET_ENCRYPTION_KEY` was unset (its own default) — now
+short-circuits on `None`; `tests/python/database/test_migrations.py` and
+`tests/python/audit/test_migration.py` had exhaustive table-list assertions that were
+never updated for the new table; and the frontend's `BootstrapOwnerResult` type/read
+(`owner_assignment_created`) didn't match the backend contract's actual field
+(`owner_role_assignment_created`). A fourth issue — a new `validate_production_google_oauth`
+model validator that unconditionally required Google OAuth credentials in every
+production deployment — was removed rather than fixed, because nothing in this release
+consumes those settings (see below); it was breaking pre-existing, unrelated production
+configuration tests.
+
+**Deferred, not part of this packet:** `apps/api/app/integrations/connection_service.py`,
+`secrets.py`, `errors.py`, `contracts.py`, and the `google_oauth_*`/
+`secret_encryption_key` fields on `Settings` are real, typed, in-progress work toward
+resolving the Phase 9/14 "blocked on Google OAuth credentials" item (a full GBP OAuth
+connect/callback/refresh/disconnect service backed by Fernet-encrypted secret storage).
+They were found already present in the working tree, untouched by this packet, and left
+that way: the new `ProviderSecret` model has no migration, `connection_service.py` fails
+`ruff format`/`ruff check` (unused/redefined `hashlib` import), and none of it is mounted
+in `main.py` or exercised by any test. It is not currently live — Alembic autogenerate
+detects no drift only because nothing imports the module, so `provider_secrets` is not
+yet registered against `Base.metadata`. Finishing it (route, migration, tests, lint
+cleanup) is separate, explicitly-scoped follow-up work, not resumed here.
+
+**Validation:** `uv run ruff format --check`, `uv run ruff check`, and `uv run mypy`
+(354 source files) all pass with zero findings outside the deferred integrations files
+noted above. `uv run pytest` — 445 passed against an ephemeral PostgreSQL 17 instance,
+including the fixed platform-administration and migration-table-list suites.
+`uv run alembic upgrade head` / `alembic check` — clean, no drift. Frontend: `prettier
+--check`, `eslint`, `astro check` (0/0/0), `vitest run` (19 passed), `astro build` (9
+static pages), and `playwright test` (42 passed) all pass. `uv run python
+scripts/check_secrets.py` and `git diff --check` both pass. No commit was made as part
+of this reconciliation pass.
+
 ## Phase 14 — Remaining Business Profile capabilities, reconciliation and correction (2026-08-05)
 
 The prior "Phase 14 status: complete" claim covered only the domain model

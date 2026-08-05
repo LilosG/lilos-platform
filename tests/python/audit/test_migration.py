@@ -155,6 +155,7 @@ def test_audit_migration_upgrades_downgrades_and_restores_head(
             "organization_profiles",
             "organizations",
             "permissions",
+            "platform_administrators",
             "policy_revisions",
             "product_entitlement_locations",
             "product_entitlements",
