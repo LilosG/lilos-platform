@@ -7,8 +7,10 @@ from apps.api.app.config import Settings
 from apps.api.app.database.runtime import create_database_runtime
 from apps.api.app.integrations.models import Provider
 from apps.api.app.integrations.provider_seed import ProviderCatalogSeeder
+from apps.api.app.locations.models import Location
+from apps.api.app.organizations.models import Organization
 
-assert AuditEvent.metadata is Provider.metadata
+assert AuditEvent.metadata is Provider.metadata is Location.metadata is Organization.metadata
 
 
 async def seed() -> None:
