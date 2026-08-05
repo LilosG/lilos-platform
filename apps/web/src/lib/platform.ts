@@ -17,7 +17,7 @@ export const navigation: readonly NavigationItem[] = [
   { key: "reviews", label: "Reviews", href: "/reviews" },
   { key: "leads", label: "Leads", href: "/leads" },
   { key: "content", label: "Content", href: "/content" },
-  { key: "seo", label: "SEO", href: "#products" },
+  { key: "seo", label: "SEO", href: "/seo" },
   { key: "insights", label: "Insights", href: "#products" },
   { key: "admin", label: "Administration", href: "#administration" },
 ];

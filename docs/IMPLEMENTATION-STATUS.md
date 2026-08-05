@@ -1,5 +1,25 @@
 # LILOs implementation status
 
+## Phase 13 — SEO vertical slice, reconciliation and correction (2026-08-05)
+
+The prior "Phase 13 status: complete" claim covered only the domain model
+and pure deterministic functions — there was no service layer, API, or
+frontend at all. This pass built the full application surface: a new
+`SEOService` adds website confirmation, Search Console property mapping
+(gated on a real connected integration), a real bounded same-host crawler
+using `httpx` with SSRF-safe host allowlisting that extracts technical/
+on-page signals and deterministically generates opportunities, local
+landing-page gap detection, recommendation approval, implementation-task
+tracking with verification, and outcome recording. Every action writes a
+real audit event and, where relevant, a real notification. Tenant-scoped
+read routes were added for the full domain; a typed errors module replaced
+bare exceptions; a real protected `/seo` frontend route was added with
+truthful readiness, website confirmation, crawl triggering, an opportunity
+queue, and recommendation/implementation controls — no fixture data, no
+dead buttons. Live Search Console query/page metric sync remains blocked on
+real OAuth credentials, not configured this pass; crawling and on-page
+analysis need no such credentials and are fully real.
+
 ## Phase 12 — Content vertical slice, reconciliation and correction (2026-08-05)
 
 The prior "Phase 12 status: complete" claim covered the domain model and a

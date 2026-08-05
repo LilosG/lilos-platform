@@ -31,6 +31,7 @@ from apps.api.app.routes.internal_profiles import router as internal_profiles_ro
 from apps.api.app.routes.internal_user_profiles import router as internal_user_profiles_router
 from apps.api.app.routes.leads import router as leads_router
 from apps.api.app.routes.reviews import router as reviews_router
+from apps.api.app.routes.seo import router as seo_router
 
 
 def create_app(
@@ -78,6 +79,7 @@ def create_app(
     application.include_router(reviews_router)
     application.include_router(leads_router)
     application.include_router(content_router)
+    application.include_router(seo_router)
     if resolved_settings.internal_admin_routes_enabled:
         application.include_router(internal_industries_router)
         application.include_router(internal_organizations_router)
