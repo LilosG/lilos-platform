@@ -23,7 +23,7 @@ async def verify(database_url: str) -> None:
     try:
         async with engine.connect() as connection:
             revision = await connection.scalar(text("SELECT version_num FROM alembic_version"))
-            if revision != "20260804_0002":
+            if revision != "20260805_0001":
                 raise RuntimeError("restored database migration head mismatch")
             table_rows = await connection.execute(
                 text("SELECT tablename FROM pg_tables WHERE schemaname='public'")
@@ -48,7 +48,7 @@ def main() -> int:
     if not database_url or "test" not in database_url.casefold():
         raise RuntimeError("LILOS_RESTORE_DATABASE_URL must identify a synthetic test database")
     asyncio.run(verify(database_url))
-    print("synthetic restore verified at 20260804_0002")
+    print("synthetic restore verified at 20260805_0001")
     return 0
 
 
