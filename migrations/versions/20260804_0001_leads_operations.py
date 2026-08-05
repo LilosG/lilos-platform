@@ -25,11 +25,11 @@ TABLES = tuple(cast(Table, m.__table__) for m in (LeadNote, LeadTask))
 def upgrade() -> None:
     for table in TABLES:
         table.create(bind=op.get_bind(), checkfirst=False)
-    for table in ("lead_notes", "lead_tasks"):
-        op.execute(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY")
-        op.execute(f"ALTER TABLE {table} FORCE ROW LEVEL SECURITY")
+    for table_name in ("lead_notes", "lead_tasks"):
+        op.execute(f"ALTER TABLE {table_name} ENABLE ROW LEVEL SECURITY")
+        op.execute(f"ALTER TABLE {table_name} FORCE ROW LEVEL SECURITY")
         op.execute(
-            f"CREATE POLICY {table}_tenant_isolation ON {table} USING (organization_id = NULLIF(current_setting('lilos.organization_id', true), '')::uuid) WITH CHECK (organization_id = NULLIF(current_setting('lilos.organization_id', true), '')::uuid)"
+            f"CREATE POLICY {table_name}_tenant_isolation ON {table_name} USING (organization_id = NULLIF(current_setting('lilos.organization_id', true), '')::uuid) WITH CHECK (organization_id = NULLIF(current_setting('lilos.organization_id', true), '')::uuid)"
         )
 
 

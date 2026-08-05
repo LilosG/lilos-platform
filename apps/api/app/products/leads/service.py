@@ -406,9 +406,7 @@ class LeadService:
         )
         return item
 
-    async def _load_lead(
-        self, session: AsyncSession, organization_id: UUID, lead_id: UUID
-    ) -> Lead:
+    async def _load_lead(self, session: AsyncSession, organization_id: UUID, lead_id: UUID) -> Lead:
         lead = await session.scalar(
             select(Lead)
             .where(Lead.organization_id == organization_id, Lead.id == lead_id)
@@ -716,9 +714,7 @@ class LeadService:
         )
         return task
 
-    async def get(
-        self, session: AsyncSession, organization_id: UUID, lead_id: UUID
-    ) -> Lead:
+    async def get(self, session: AsyncSession, organization_id: UUID, lead_id: UUID) -> Lead:
         await set_tenant(session, organization_id)
         lead = await session.scalar(
             select(Lead).where(Lead.organization_id == organization_id, Lead.id == lead_id)
@@ -818,9 +814,7 @@ class LeadService:
         )
         avg_seconds = await session.scalar(
             select(
-                func.avg(
-                    func.extract("epoch", Lead.first_human_contact_at - Lead.received_at)
-                )
+                func.avg(func.extract("epoch", Lead.first_human_contact_at - Lead.received_at))
             ).where(
                 Lead.organization_id == organization_id,
                 Lead.first_human_contact_at.is_not(None),

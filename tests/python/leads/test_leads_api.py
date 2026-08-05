@@ -492,7 +492,5 @@ def test_cross_tenant_lead_detail_is_not_found(
 ) -> None:
     client, ids = leads_client
     other_org = ids["other_organization"]
-    response = client.get(
-        f"/api/v1/organizations/{other_org}/leads/{uuid4()}", headers=HEADERS
-    )
+    response = client.get(f"/api/v1/organizations/{other_org}/leads/{uuid4()}", headers=HEADERS)
     assert response.status_code in (403, 404)
