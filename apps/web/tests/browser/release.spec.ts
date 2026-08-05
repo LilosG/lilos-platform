@@ -149,3 +149,84 @@ test("unconfigured SEO page shows a truthful not-configured state, not fabricate
     ),
   ).toEqual([]);
 });
+
+test("unconfigured Insights page shows a truthful not-configured state", async ({
+  page,
+}) => {
+  await page.goto("/insights");
+  await expect(
+    page.getByRole("heading", { name: "This deployment is not configured" }),
+  ).toBeVisible();
+  const results = await new AxeBuilder({ page }).analyze();
+  expect(
+    results.violations.filter((item) =>
+      ["serious", "critical"].includes(item.impact ?? ""),
+    ),
+  ).toEqual([]);
+});
+
+test("unconfigured Administration page shows a truthful not-configured state, not fabricated product data", async ({
+  page,
+}) => {
+  await page.goto("/administration");
+  await expect(
+    page.getByRole("heading", { name: "This deployment is not configured" }),
+  ).toBeVisible();
+  await expect(page.locator("#administration-content")).toBeHidden();
+  await expect(page.locator("#products-list li")).toHaveCount(0);
+  const results = await new AxeBuilder({ page }).analyze();
+  expect(
+    results.violations.filter((item) =>
+      ["serious", "critical"].includes(item.impact ?? ""),
+    ),
+  ).toEqual([]);
+});
+
+// This is the release-blocking regression this suite exists to catch: a
+// deployment target (Vercel, a stale build, a broken route config) that
+// serves the real overview shell but 404s on the actual product routes.
+// Every route the sidebar can navigate to must resolve with a real HTTP
+// 200 and a real heading — never a platform-level "not found" response.
+const PROTECTED_ROUTES: ReadonlyArray<{ path: string; heading: string }> = [
+  { path: "/", heading: "This deployment is not configured" },
+  { path: "/gbp", heading: "This deployment is not configured" },
+  { path: "/reviews", heading: "This deployment is not configured" },
+  { path: "/leads", heading: "This deployment is not configured" },
+  { path: "/content", heading: "This deployment is not configured" },
+  { path: "/seo", heading: "This deployment is not configured" },
+  { path: "/insights", heading: "This deployment is not configured" },
+  { path: "/administration", heading: "This deployment is not configured" },
+];
+
+for (const route of PROTECTED_ROUTES) {
+  test(`direct navigation to ${route.path} returns a real page, not a platform 404`, async ({
+    page,
+  }) => {
+    const response = await page.goto(route.path);
+    expect(response, `no response received for ${route.path}`).not.toBeNull();
+    expect(
+      response?.status(),
+      `${route.path} returned ${response?.status()} instead of 200`,
+    ).toBe(200);
+    await expect(
+      page.getByRole("heading", { name: route.heading }),
+    ).toBeVisible();
+  });
+}
+
+test("every sidebar navigation link is a real path, never a hash fragment", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const hrefs = await page
+    .locator(".sidebar nav a")
+    .evaluateAll((links) => links.map((link) => link.getAttribute("href")));
+  expect(hrefs.length).toBeGreaterThan(0);
+  for (const href of hrefs) {
+    expect(
+      href,
+      "sidebar link must not be a hash-fragment placeholder",
+    ).not.toMatch(/^#/);
+    expect(href, "sidebar link must be a real absolute path").toMatch(/^\//);
+  }
+});

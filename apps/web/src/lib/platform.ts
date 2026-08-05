@@ -12,14 +12,14 @@ export type NavigationItem = {
  * permission set it cannot legitimately hold before the user picks a section.
  */
 export const navigation: readonly NavigationItem[] = [
-  { key: "overview", label: "Overview", href: "#overview" },
+  { key: "overview", label: "Overview", href: "/" },
   { key: "gbp", label: "Business Profile", href: "/gbp" },
   { key: "reviews", label: "Reviews", href: "/reviews" },
   { key: "leads", label: "Leads", href: "/leads" },
   { key: "content", label: "Content", href: "/content" },
   { key: "seo", label: "SEO", href: "/seo" },
-  { key: "insights", label: "Insights", href: "#products" },
-  { key: "admin", label: "Administration", href: "#administration" },
+  { key: "insights", label: "Insights", href: "/insights" },
+  { key: "admin", label: "Administration", href: "/administration" },
 ];
 
 export type ReadinessOutcomeStatus = "ready" | "blocked" | "not_entitled";

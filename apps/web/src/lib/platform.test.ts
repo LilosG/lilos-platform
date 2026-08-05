@@ -14,6 +14,13 @@ describe("navigation", () => {
       "admin",
     ]);
   });
+
+  it("only links to real routes: no hash-fragment placeholders", () => {
+    for (const item of navigation) {
+      expect(item.href.startsWith("#")).toBe(false);
+      expect(item.href.startsWith("/")).toBe(true);
+    }
+  });
 });
 
 describe("readinessLabel", () => {

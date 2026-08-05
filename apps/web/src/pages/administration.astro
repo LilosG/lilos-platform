@@ -1,0 +1,301 @@
+---
+import AppShell from "../components/AppShell.astro";
+import "../styles/global.css";
+---
+
+<!doctype html>
+<html lang="en">
+  <head
+    ><meta charset="UTF-8" /><meta
+      name="viewport"
+      content="width=device-width, initial-scale=1"
+    /><meta name="description" content="LILOs Administration workspace" /><title
+    >
+      Administration · LILOs
+    </title></head
+  >
+  <body
+    ><AppShell>
+      <div id="boot-not-configured" role="status">
+        <h1>This deployment is not configured</h1><p>
+          No Supabase or API connection is configured for this build.
+        </p>
+      </div>
+
+      <div id="boot-loading" role="status" aria-live="polite" hidden>
+        <p>Loading Administration…</p>
+      </div>
+
+      <div id="boot-error" role="alert" hidden></div>
+
+      <div id="workspace-empty" role="status" hidden>
+        <h1>No organization access yet</h1><p>
+          Your account is not a member of any organization. Ask an administrator
+          to invite you.
+        </p>
+      </div>
+
+      <div id="administration-content" hidden>
+        <section id="overview" aria-labelledby="page-title">
+          <p class="eyebrow">Administration</p><h1 id="page-title">
+            Administration
+          </h1>
+        </section>
+
+        <section aria-labelledby="products-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Products</p><h2 id="products-title">
+                Product catalog and readiness
+              </h2>
+            </div>
+          </div><ul class="product-list" id="products-list"></ul>
+        </section>
+
+        <section aria-labelledby="services-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Services</p><h2 id="services-title">
+                Service catalog
+              </h2>
+            </div>
+          </div><ul class="product-list" id="services-list"></ul>
+        </section>
+      </div>
+    </AppShell>
+    <script>
+      import {
+        fetchProducts,
+        fetchServices,
+        type AdministeredProduct,
+      } from "../lib/administration";
+      import {
+        fetchMyOrganizations,
+        fetchPrincipal,
+        fetchProductReadiness,
+        PRODUCT_KEYS,
+      } from "../lib/workspace";
+      import { selectDefaultOrganization } from "../lib/dashboard-logic";
+      import { getCurrentSession, signOut } from "../lib/session";
+      import { readPublicConfig } from "../lib/config";
+      import type { ApiOutcome } from "../lib/api-client";
+
+      const regions = {
+        notConfigured: document.getElementById("boot-not-configured")!,
+        loading: document.getElementById("boot-loading")!,
+        error: document.getElementById("boot-error")!,
+        empty: document.getElementById("workspace-empty")!,
+        content: document.getElementById("administration-content")!,
+      };
+
+      let organizationId = "";
+
+      function showOnly(region: HTMLElement): void {
+        for (const key of Object.keys(regions) as (keyof typeof regions)[]) {
+          regions[key].hidden = regions[key] !== region;
+        }
+      }
+
+      function describeFailure(outcome: ApiOutcome<unknown>): string {
+        switch (outcome.kind) {
+          case "forbidden":
+            return "You do not have permission to view Administration for this organization.";
+          case "not-found":
+            return "The requested resource could not be found.";
+          case "disconnected":
+            return "Could not reach the platform API.";
+          case "unauthenticated":
+            return "Your session has expired. Sign in again.";
+          case "not-configured":
+            return "This deployment is not configured.";
+          case "error":
+            return outcome.message;
+          case "ok":
+            return "";
+        }
+      }
+
+      function goToLogin(): void {
+        const next = encodeURIComponent(window.location.pathname);
+        window.location.assign(`/login?next=${next}`);
+      }
+
+      function wireSignOut(): void {
+        document
+          .getElementById("sign-out-button")
+          ?.addEventListener("click", async () => {
+            await signOut();
+            goToLogin();
+          });
+      }
+
+      function badge(status: string, label = status): HTMLSpanElement {
+        const el = document.createElement("span");
+        el.className = `status status--${status}`;
+        const dot = document.createElement("span");
+        dot.setAttribute("aria-hidden", "true");
+        dot.className = "status__dot";
+        el.append(dot, document.createTextNode(label));
+        return el;
+      }
+
+      async function renderProducts(): Promise<void> {
+        const list = document.getElementById("products-list")!;
+        list.replaceChildren();
+        const outcome = await fetchProducts(organizationId);
+        if (outcome.kind !== "ok") {
+          const item = document.createElement("li");
+          item.textContent = describeFailure(outcome);
+          list.append(item);
+          return;
+        }
+        if (outcome.data.length === 0) {
+          const item = document.createElement("li");
+          item.textContent = "No products are registered yet.";
+          list.append(item);
+          return;
+        }
+        const byKey = new Map(
+          outcome.data.map((product) => [product.key, product]),
+        );
+        for (const key of PRODUCT_KEYS) {
+          const product = byKey.get(key);
+          list.append(await productRow(key, product));
+        }
+        for (const product of outcome.data) {
+          if (
+            !PRODUCT_KEYS.includes(product.key as (typeof PRODUCT_KEYS)[number])
+          ) {
+            list.append(await productRow(product.key, product));
+          }
+        }
+      }
+
+      async function productRow(
+        key: string,
+        product: AdministeredProduct | undefined,
+      ): Promise<HTMLLIElement> {
+        const item = document.createElement("li");
+        const info = document.createElement("div");
+        const title = document.createElement("h3");
+        title.textContent = product?.name ?? key;
+        const meta = document.createElement("p");
+        meta.textContent =
+          product?.description ?? "Not registered for this deployment.";
+        info.append(title, meta);
+        const actions = document.createElement("div");
+        const readiness = await fetchProductReadiness(
+          organizationId,
+          key as Parameters<typeof fetchProductReadiness>[1],
+        );
+        if (readiness.kind === "ok") {
+          const label =
+            readiness.data.readiness_state === "not_entitled"
+              ? "setup"
+              : readiness.data.readiness_state;
+          actions.append(badge(label));
+        } else {
+          actions.append(badge("blocked", describeFailure(readiness)));
+        }
+        item.append(info, actions);
+        return item;
+      }
+
+      async function renderServices(): Promise<void> {
+        const list = document.getElementById("services-list")!;
+        list.replaceChildren();
+        const outcome = await fetchServices(organizationId);
+        if (outcome.kind !== "ok") {
+          const item = document.createElement("li");
+          item.textContent = describeFailure(outcome);
+          list.append(item);
+          return;
+        }
+        if (outcome.data.length === 0) {
+          const item = document.createElement("li");
+          item.textContent = "No services are configured yet.";
+          list.append(item);
+          return;
+        }
+        for (const service of outcome.data) {
+          const item = document.createElement("li");
+          const info = document.createElement("div");
+          const title = document.createElement("h3");
+          title.textContent = service.name;
+          info.append(title);
+          item.append(
+            info,
+            badge(
+              service.status === "active" ? "ready" : "setup",
+              service.status,
+            ),
+          );
+          list.append(item);
+        }
+      }
+
+      async function boot(): Promise<void> {
+        if (!readPublicConfig()) {
+          showOnly(regions.notConfigured);
+          return;
+        }
+        showOnly(regions.loading);
+
+        const session = await getCurrentSession();
+        if (session.status !== "signed-in") {
+          goToLogin();
+          return;
+        }
+
+        const principal = await fetchPrincipal();
+        if (principal.kind === "unauthenticated") {
+          goToLogin();
+          return;
+        }
+        if (principal.kind !== "ok") {
+          regions.error.textContent = describeFailure(principal);
+          showOnly(regions.error);
+          return;
+        }
+        document.getElementById("current-user-label")!.textContent =
+          principal.data.auth_user_id;
+        document.getElementById("current-user-initial")!.textContent =
+          principal.data.auth_user_id.slice(0, 1).toUpperCase();
+        document.getElementById("current-assurance-label")!.textContent =
+          principal.data.assurance_level;
+        const signOutButton = document.getElementById("sign-out-button")!;
+        signOutButton.hidden = false;
+        wireSignOut();
+
+        const organizations = await fetchMyOrganizations();
+        if (organizations.kind === "unauthenticated") {
+          goToLogin();
+          return;
+        }
+        if (organizations.kind !== "ok") {
+          regions.error.textContent = describeFailure(organizations);
+          showOnly(regions.error);
+          return;
+        }
+        if (organizations.data.length === 0) {
+          showOnly(regions.empty);
+          return;
+        }
+        const organization = selectDefaultOrganization(organizations.data);
+        if (!organization) {
+          showOnly(regions.empty);
+          return;
+        }
+        organizationId = organization.organization_id;
+        document.getElementById("active-organization-name")!.textContent =
+          organization.organization_name;
+
+        await Promise.all([renderProducts(), renderServices()]);
+
+        showOnly(regions.content);
+      }
+
+      void boot();
+    </script>
+  </body>
+</html>

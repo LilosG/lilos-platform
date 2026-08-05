@@ -1,0 +1,180 @@
+---
+import AppShell from "../components/AppShell.astro";
+import StatusBadge from "../components/StatusBadge.astro";
+import "../styles/global.css";
+---
+
+<!doctype html>
+<html lang="en">
+  <head
+    ><meta charset="UTF-8" /><meta
+      name="viewport"
+      content="width=device-width, initial-scale=1"
+    /><meta name="description" content="LILOs Insights workspace" /><title>
+      Insights · LILOs
+    </title></head
+  >
+  <body
+    ><AppShell>
+      <div id="boot-not-configured" role="status">
+        <h1>This deployment is not configured</h1><p>
+          No Supabase or API connection is configured for this build.
+        </p>
+      </div>
+
+      <div id="boot-loading" role="status" aria-live="polite" hidden>
+        <p>Loading Insights…</p>
+      </div>
+
+      <div id="boot-error" role="alert" hidden></div>
+
+      <div id="workspace-empty" role="status" hidden>
+        <h1>No organization access yet</h1><p>
+          Your account is not a member of any organization. Ask an administrator
+          to invite you.
+        </p>
+      </div>
+
+      <div id="insights-content" hidden>
+        <section id="overview" aria-labelledby="page-title">
+          <p class="eyebrow">Insights</p><h1 id="page-title">Insights</h1>
+        </section>
+
+        <section aria-labelledby="unavailable-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Not yet available</p><h2
+                id="unavailable-title"
+              >
+                Cross-product reporting
+              </h2>
+            </div>
+          </div><div class="attention-card">
+            <StatusBadge
+              status="missing"
+              label="Not available in this release"
+            /><p>
+              Cross-product Insights reporting has no backing application
+              surface in this release. This section intentionally shows no
+              simulated data.
+            </p>
+          </div>
+        </section>
+      </div>
+    </AppShell>
+    <script>
+      import { fetchMyOrganizations, fetchPrincipal } from "../lib/workspace";
+      import { selectDefaultOrganization } from "../lib/dashboard-logic";
+      import { getCurrentSession, signOut } from "../lib/session";
+      import { readPublicConfig } from "../lib/config";
+      import type { ApiOutcome } from "../lib/api-client";
+
+      const regions = {
+        notConfigured: document.getElementById("boot-not-configured")!,
+        loading: document.getElementById("boot-loading")!,
+        error: document.getElementById("boot-error")!,
+        empty: document.getElementById("workspace-empty")!,
+        content: document.getElementById("insights-content")!,
+      };
+
+      function showOnly(region: HTMLElement): void {
+        for (const key of Object.keys(regions) as (keyof typeof regions)[]) {
+          regions[key].hidden = regions[key] !== region;
+        }
+      }
+
+      function describeFailure(outcome: ApiOutcome<unknown>): string {
+        switch (outcome.kind) {
+          case "forbidden":
+            return "You do not have permission to view Insights for this organization.";
+          case "not-found":
+            return "The requested resource could not be found.";
+          case "disconnected":
+            return "Could not reach the platform API.";
+          case "unauthenticated":
+            return "Your session has expired. Sign in again.";
+          case "not-configured":
+            return "This deployment is not configured.";
+          case "error":
+            return outcome.message;
+          case "ok":
+            return "";
+        }
+      }
+
+      function goToLogin(): void {
+        const next = encodeURIComponent(window.location.pathname);
+        window.location.assign(`/login?next=${next}`);
+      }
+
+      function wireSignOut(): void {
+        document
+          .getElementById("sign-out-button")
+          ?.addEventListener("click", async () => {
+            await signOut();
+            goToLogin();
+          });
+      }
+
+      async function boot(): Promise<void> {
+        if (!readPublicConfig()) {
+          showOnly(regions.notConfigured);
+          return;
+        }
+        showOnly(regions.loading);
+
+        const session = await getCurrentSession();
+        if (session.status !== "signed-in") {
+          goToLogin();
+          return;
+        }
+
+        const principal = await fetchPrincipal();
+        if (principal.kind === "unauthenticated") {
+          goToLogin();
+          return;
+        }
+        if (principal.kind !== "ok") {
+          regions.error.textContent = describeFailure(principal);
+          showOnly(regions.error);
+          return;
+        }
+        document.getElementById("current-user-label")!.textContent =
+          principal.data.auth_user_id;
+        document.getElementById("current-user-initial")!.textContent =
+          principal.data.auth_user_id.slice(0, 1).toUpperCase();
+        document.getElementById("current-assurance-label")!.textContent =
+          principal.data.assurance_level;
+        const signOutButton = document.getElementById("sign-out-button")!;
+        signOutButton.hidden = false;
+        wireSignOut();
+
+        const organizations = await fetchMyOrganizations();
+        if (organizations.kind === "unauthenticated") {
+          goToLogin();
+          return;
+        }
+        if (organizations.kind !== "ok") {
+          regions.error.textContent = describeFailure(organizations);
+          showOnly(regions.error);
+          return;
+        }
+        if (organizations.data.length === 0) {
+          showOnly(regions.empty);
+          return;
+        }
+        const organization = selectDefaultOrganization(organizations.data);
+        if (!organization) {
+          showOnly(regions.empty);
+          return;
+        }
+        document.getElementById("active-organization-name")!.textContent =
+          organization.organization_name;
+
+        showOnly(regions.content);
+      }
+
+      void boot();
+    </script>
+  </body>
+</html>
