@@ -1,5 +1,24 @@
 # LILOs implementation status
 
+## Phase 12 — Content vertical slice, reconciliation and correction (2026-08-05)
+
+The prior "Phase 12 status: complete" claim covered the domain model and a
+publish-reservation stub only — see `docs/PHASE-12-ACCEPTANCE.md` for the
+full reconciliation. Corrected this pass: every opportunity, item, brief,
+revision, and publication action now writes a real audit event; revisions
+entering review raise real notifications; a new AI-assisted drafting path
+drives content generation through the existing AI Gateway, always requiring
+editorial and client review; publication reservation now verifies the
+target's connection is actually connected; tenant-scoped read routes for
+opportunities, items, briefs, revisions, publications, targets, summary,
+and audit history were added; a typed errors module replaced bare
+exceptions; and a real protected `/content` frontend route was added with
+truthful readiness, an opportunity queue, a content pipeline, and a detail
+view with brief creation, manual/AI drafting, approval, and publication
+reservation — no fixture data, no dead buttons. Live GitHub branch/PR/build/
+deploy dispatch remains blocked on a real per-organization repository
+connection, not configured this pass.
+
 ## Phase 11 — Leads vertical slice, reconciliation and correction (2026-08-04)
 
 The prior "Phase 11 status: complete" claim was inaccurate — see
