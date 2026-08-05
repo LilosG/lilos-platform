@@ -4,21 +4,61 @@ import hashlib
 import json
 import re
 from datetime import UTC, datetime
+from typing import cast
 from uuid import UUID
 
-from sqlalchemy import select, text, update
+from sqlalchemy import Select, func, or_, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from apps.api.app.audit.contracts import AuditEventCreate
+from apps.api.app.audit.enums import AuditActorType, AuditResult
+from apps.api.app.audit.metadata import JsonValue
+from apps.api.app.audit.repository import AuditEventRepository
+from apps.api.app.audit.service import AuditEventService
+from apps.api.app.notifications.models import NotificationTemplate
+from apps.api.app.notifications.service import NotificationService
 from apps.api.app.products.leads.contracts import CommunicationCreate, ConsentRecord, LeadIntake
+from apps.api.app.products.leads.errors import (
+    InvalidLeadQueryError,
+    InvalidLeadTransitionError,
+    LeadNotFoundError,
+    LeadSourceNotFoundError,
+    LeadTaskNotFoundError,
+)
 from apps.api.app.products.leads.models import (
     Lead,
     LeadCommunication,
     LeadConsent,
+    LeadNote,
     LeadSource,
     LeadStatusHistory,
     LeadSubmission,
     LeadSuppression,
+    LeadTask,
 )
+
+TERMINAL_STATUSES = {
+    "converted",
+    "disqualified",
+    "lost",
+    "spam",
+    "duplicate",
+    "cancelled",
+    "archived",
+}
+FIRST_CONTACT_STATUSES = {"contact_attempted", "contacted"}
+NOTIFICATION_TEMPLATES = {
+    "leads.lead.assigned": ("in_app", "A lead was assigned to you."),
+    "leads.lead.converted": ("in_app", "A lead was marked as converted."),
+}
+
+
+def can_transition(from_status: str, to_status: str) -> bool:
+    if from_status == to_status:
+        return False
+    if from_status in TERMINAL_STATUSES:
+        return to_status == "archived"
+    return True
 
 
 def normalize_email(value: str | None) -> str | None:
@@ -48,8 +88,92 @@ async def set_tenant(session: AsyncSession, organization_id: UUID) -> None:
 
 
 class LeadService:
+    def __init__(self) -> None:
+        self.audit = AuditEventService()
+        self.audit_repository = AuditEventRepository()
+        self.notifications = NotificationService()
+
+    async def _audit(
+        self,
+        session: AsyncSession,
+        *,
+        event: str,
+        organization_id: UUID,
+        location_id: UUID | None,
+        actor_id: UUID | None,
+        resource_type: str,
+        resource_id: UUID,
+        correlation_id: str,
+        summary: str,
+        metadata: dict[str, object],
+    ) -> None:
+        await self.audit.record(
+            session,
+            AuditEventCreate(
+                event_type=event,
+                action=event,
+                result=AuditResult.SUCCEEDED,
+                actor_type=AuditActorType.USER if actor_id else AuditActorType.SYSTEM,
+                actor_id=actor_id,
+                organization_id=organization_id,
+                location_id=location_id,
+                product_key="leads",
+                resource_type=resource_type,
+                resource_id=resource_id,
+                correlation_id=correlation_id,
+                summary=summary,
+                metadata=cast(dict[str, JsonValue], metadata),
+            ),
+        )
+
+    async def _notify(
+        self,
+        session: AsyncSession,
+        *,
+        organization_id: UUID,
+        location_id: UUID | None,
+        event_type: str,
+        idempotency_key: str,
+        context: dict[str, object],
+        priority: str = "normal",
+    ) -> None:
+        channel, body = NOTIFICATION_TEMPLATES[event_type]
+        template = await session.scalar(
+            select(NotificationTemplate).where(
+                NotificationTemplate.organization_id == organization_id,
+                NotificationTemplate.key == event_type,
+                NotificationTemplate.status == "active",
+            )
+        )
+        if template is None:
+            template = NotificationTemplate(
+                organization_id=organization_id,
+                key=event_type,
+                version=1,
+                channel=channel,
+                body_template=body,
+                status="active",
+            )
+            session.add(template)
+            await session.flush()
+        await self.notifications.create_event(
+            session,
+            organization_id=organization_id,
+            template_id=template.id,
+            event_type=event_type,
+            idempotency_key=idempotency_key,
+            context=context,
+            priority=priority,
+            location_id=location_id,
+        )
+
     async def intake(
-        self, session: AsyncSession, organization_id: UUID, command: LeadIntake
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        command: LeadIntake,
+        *,
+        correlation_id: str,
     ) -> tuple[Lead, LeadSubmission, bool]:
         await set_tenant(session, organization_id)
         source = await session.scalar(
@@ -60,7 +184,7 @@ class LeadService:
             )
         )
         if not source:
-            raise LookupError("approved lead source not found")
+            raise LeadSourceNotFoundError
         existing = await session.scalar(
             select(LeadSubmission).where(
                 LeadSubmission.organization_id == organization_id,
@@ -131,17 +255,35 @@ class LeadService:
             ]
         )
         await session.flush()
+        await self._audit(
+            session,
+            event="leads.lead.intaken",
+            organization_id=organization_id,
+            location_id=lead.location_id,
+            actor_id=None,
+            resource_type="lead",
+            resource_id=lead.id,
+            correlation_id=correlation_id,
+            summary="Lead intaken from approved source.",
+            metadata={"status": lead.status, "source_id": str(source.id)},
+        )
         return lead, submission, True
 
     async def record_consent(
-        self, session: AsyncSession, organization_id: UUID, lead_id: UUID, command: ConsentRecord
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        lead_id: UUID,
+        command: ConsentRecord,
+        *,
+        correlation_id: str,
     ) -> LeadConsent:
         await set_tenant(session, organization_id)
         lead = await session.scalar(
             select(Lead).where(Lead.organization_id == organization_id, Lead.id == lead_id)
         )
         if not lead:
-            raise LookupError("lead not found")
+            raise LeadNotFoundError
         withdrawn = datetime.now(UTC) if command.status == "withdrawn" else None
         item = LeadConsent(
             organization_id=organization_id,
@@ -178,6 +320,18 @@ class LeadService:
                 .values(status="cancelled")
             )
         await session.flush()
+        await self._audit(
+            session,
+            event="leads.consent.recorded",
+            organization_id=organization_id,
+            location_id=lead.location_id,
+            actor_id=None,
+            resource_type="lead",
+            resource_id=lead_id,
+            correlation_id=correlation_id,
+            summary=f"Consent {command.status} recorded for {command.channel}.",
+            metadata={"channel": command.channel, "status": command.status},
+        )
         return item
 
     async def plan_communication(
@@ -186,6 +340,8 @@ class LeadService:
         organization_id: UUID,
         lead_id: UUID,
         command: CommunicationCreate,
+        *,
+        correlation_id: str,
     ) -> LeadCommunication:
         await set_tenant(session, organization_id)
         existing = await session.scalar(
@@ -196,6 +352,11 @@ class LeadService:
         )
         if existing:
             return existing
+        lead = await session.scalar(
+            select(Lead).where(Lead.organization_id == organization_id, Lead.id == lead_id)
+        )
+        if not lead:
+            raise LeadNotFoundError
         suppressed = await session.scalar(
             select(LeadSuppression.id).where(
                 LeadSuppression.organization_id == organization_id,
@@ -220,6 +381,7 @@ class LeadService:
         )
         item = LeadCommunication(
             organization_id=organization_id,
+            location_id=lead.location_id,
             lead_id=lead_id,
             direction="outbound",
             channel=command.channel,
@@ -230,4 +392,496 @@ class LeadService:
         )
         session.add(item)
         await session.flush()
+        await self._audit(
+            session,
+            event="leads.communication.planned",
+            organization_id=organization_id,
+            location_id=lead.location_id,
+            actor_id=None,
+            resource_type="lead",
+            resource_id=lead_id,
+            correlation_id=correlation_id,
+            summary=f"Communication {item.status} on {command.channel}.",
+            metadata={"channel": command.channel, "status": item.status},
+        )
         return item
+
+    async def _load_lead(
+        self, session: AsyncSession, organization_id: UUID, lead_id: UUID
+    ) -> Lead:
+        lead = await session.scalar(
+            select(Lead)
+            .where(Lead.organization_id == organization_id, Lead.id == lead_id)
+            .with_for_update()
+        )
+        if not lead:
+            raise LeadNotFoundError
+        return lead
+
+    async def transition_status(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        lead_id: UUID,
+        to_status: str,
+        *,
+        actor_id: UUID | None,
+        correlation_id: str,
+        safe_reason: str | None = None,
+    ) -> Lead:
+        await set_tenant(session, organization_id)
+        lead = await self._load_lead(session, organization_id, lead_id)
+        if not can_transition(lead.status, to_status):
+            raise InvalidLeadTransitionError
+        from_status = lead.status
+        lead.status = to_status
+        now = datetime.now(UTC)
+        if to_status == "acknowledged" and lead.acknowledged_at is None:
+            lead.acknowledged_at = now
+        if to_status in FIRST_CONTACT_STATUSES and lead.first_human_contact_at is None:
+            lead.first_human_contact_at = now
+        if to_status == "converted":
+            lead.converted_at = now
+        session.add(
+            LeadStatusHistory(
+                organization_id=organization_id,
+                lead_id=lead_id,
+                from_status=from_status,
+                to_status=to_status,
+                actor_type="user" if actor_id else "system",
+                actor_id=actor_id,
+                safe_reason=safe_reason,
+            )
+        )
+        await session.flush()
+        await self._audit(
+            session,
+            event="leads.lead.status_changed",
+            organization_id=organization_id,
+            location_id=lead.location_id,
+            actor_id=actor_id,
+            resource_type="lead",
+            resource_id=lead.id,
+            correlation_id=correlation_id,
+            summary=f"Lead status changed {from_status} -> {to_status}.",
+            metadata={"from_status": from_status, "to_status": to_status},
+        )
+        if to_status == "converted":
+            await self._notify(
+                session,
+                organization_id=organization_id,
+                location_id=lead.location_id,
+                event_type="leads.lead.converted",
+                idempotency_key=f"leads.converted.{lead.id}",
+                context={"lead_id": str(lead.id)},
+            )
+        return lead
+
+    async def assign(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        lead_id: UUID,
+        assignee_user_id: UUID,
+        *,
+        actor_id: UUID | None,
+        correlation_id: str,
+    ) -> Lead:
+        await set_tenant(session, organization_id)
+        lead = await self._load_lead(session, organization_id, lead_id)
+        lead.assigned_to_user_id = assignee_user_id
+        if lead.status in {"new", "unassigned", "validating"}:
+            previous_status = lead.status
+            lead.status = "assigned"
+            session.add(
+                LeadStatusHistory(
+                    organization_id=organization_id,
+                    lead_id=lead_id,
+                    from_status=previous_status,
+                    to_status="assigned",
+                    actor_type="user" if actor_id else "system",
+                    actor_id=actor_id,
+                    safe_reason="Lead assigned",
+                )
+            )
+        await session.flush()
+        await self._audit(
+            session,
+            event="leads.lead.assigned",
+            organization_id=organization_id,
+            location_id=lead.location_id,
+            actor_id=actor_id,
+            resource_type="lead",
+            resource_id=lead.id,
+            correlation_id=correlation_id,
+            summary="Lead assigned.",
+            metadata={"assigned_to_user_id": str(assignee_user_id)},
+        )
+        await self._notify(
+            session,
+            organization_id=organization_id,
+            location_id=lead.location_id,
+            event_type="leads.lead.assigned",
+            idempotency_key=f"leads.assigned.{lead.id}.{assignee_user_id}",
+            context={"lead_id": str(lead.id), "assigned_to_user_id": str(assignee_user_id)},
+            priority="high",
+        )
+        return lead
+
+    async def record_conversion(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        lead_id: UUID,
+        *,
+        converted_value_cents: int | None,
+        actor_id: UUID | None,
+        correlation_id: str,
+    ) -> Lead:
+        lead = await self.transition_status(
+            session,
+            organization_id,
+            lead_id,
+            "converted",
+            actor_id=actor_id,
+            correlation_id=correlation_id,
+            safe_reason="Lead converted",
+        )
+        lead.converted_value_cents = converted_value_cents
+        await session.flush()
+        return lead
+
+    async def record_loss(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        lead_id: UUID,
+        *,
+        to_status: str,
+        loss_reason: str,
+        actor_id: UUID | None,
+        correlation_id: str,
+    ) -> Lead:
+        lead = await self.transition_status(
+            session,
+            organization_id,
+            lead_id,
+            to_status,
+            actor_id=actor_id,
+            correlation_id=correlation_id,
+            safe_reason=loss_reason,
+        )
+        lead.loss_reason = loss_reason
+        await session.flush()
+        return lead
+
+    async def add_note(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        lead_id: UUID,
+        *,
+        author_id: UUID | None,
+        body: str,
+        correlation_id: str,
+    ) -> LeadNote:
+        await set_tenant(session, organization_id)
+        lead = await session.scalar(
+            select(Lead).where(Lead.organization_id == organization_id, Lead.id == lead_id)
+        )
+        if not lead:
+            raise LeadNotFoundError
+        note = LeadNote(
+            organization_id=organization_id, lead_id=lead_id, author_user_id=author_id, body=body
+        )
+        session.add(note)
+        await session.flush()
+        await self._audit(
+            session,
+            event="leads.note.added",
+            organization_id=organization_id,
+            location_id=lead.location_id,
+            actor_id=author_id,
+            resource_type="lead",
+            resource_id=lead_id,
+            correlation_id=correlation_id,
+            summary="Note added to lead.",
+            metadata={"note_id": str(note.id)},
+        )
+        return note
+
+    async def list_notes(
+        self, session: AsyncSession, organization_id: UUID, lead_id: UUID
+    ) -> list[LeadNote]:
+        return list(
+            await session.scalars(
+                select(LeadNote)
+                .where(LeadNote.organization_id == organization_id, LeadNote.lead_id == lead_id)
+                .order_by(LeadNote.created_at.desc())
+            )
+        )
+
+    async def create_task(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        lead_id: UUID,
+        *,
+        title: str,
+        description: str | None,
+        due_at: datetime | None,
+        assigned_to_user_id: UUID | None,
+        actor_id: UUID | None,
+        correlation_id: str,
+    ) -> LeadTask:
+        await set_tenant(session, organization_id)
+        lead = await session.scalar(
+            select(Lead).where(Lead.organization_id == organization_id, Lead.id == lead_id)
+        )
+        if not lead:
+            raise LeadNotFoundError
+        task = LeadTask(
+            organization_id=organization_id,
+            lead_id=lead_id,
+            title=title,
+            description=description,
+            due_at=due_at,
+            assigned_to_user_id=assigned_to_user_id,
+            status="open",
+        )
+        session.add(task)
+        await session.flush()
+        await self._audit(
+            session,
+            event="leads.task.created",
+            organization_id=organization_id,
+            location_id=lead.location_id,
+            actor_id=actor_id,
+            resource_type="lead",
+            resource_id=lead_id,
+            correlation_id=correlation_id,
+            summary=f"Follow-up task created: {title}.",
+            metadata={"task_id": str(task.id)},
+        )
+        return task
+
+    async def list_tasks(
+        self, session: AsyncSession, organization_id: UUID, lead_id: UUID
+    ) -> list[LeadTask]:
+        return list(
+            await session.scalars(
+                select(LeadTask)
+                .where(LeadTask.organization_id == organization_id, LeadTask.lead_id == lead_id)
+                .order_by(LeadTask.due_at.asc().nulls_last())
+            )
+        )
+
+    async def complete_task(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        lead_id: UUID,
+        task_id: UUID,
+        *,
+        actor_id: UUID | None,
+        correlation_id: str,
+    ) -> LeadTask:
+        await set_tenant(session, organization_id)
+        task = await session.scalar(
+            select(LeadTask)
+            .where(
+                LeadTask.organization_id == organization_id,
+                LeadTask.lead_id == lead_id,
+                LeadTask.id == task_id,
+            )
+            .with_for_update()
+        )
+        if not task:
+            raise LeadTaskNotFoundError
+        task.status = "completed"
+        task.completed_at = datetime.now(UTC)
+        await session.flush()
+        lead = await session.get(Lead, lead_id)
+        await self._audit(
+            session,
+            event="leads.task.completed",
+            organization_id=organization_id,
+            location_id=lead.location_id if lead else None,
+            actor_id=actor_id,
+            resource_type="lead",
+            resource_id=lead_id,
+            correlation_id=correlation_id,
+            summary=f"Follow-up task completed: {task.title}.",
+            metadata={"task_id": str(task.id)},
+        )
+        return task
+
+    async def get(
+        self, session: AsyncSession, organization_id: UUID, lead_id: UUID
+    ) -> Lead:
+        await set_tenant(session, organization_id)
+        lead = await session.scalar(
+            select(Lead).where(Lead.organization_id == organization_id, Lead.id == lead_id)
+        )
+        if not lead:
+            raise LeadNotFoundError
+        return lead
+
+    async def list_leads(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        *,
+        status_filter: str | None = None,
+        urgency_filter: str | None = None,
+        assigned_to_user_id: UUID | None = None,
+        location_id: UUID | None = None,
+        search: str | None = None,
+        sort: str = "recent",
+        limit: int = 50,
+        offset: int = 0,
+    ) -> tuple[list[Lead], bool]:
+        await set_tenant(session, organization_id)
+        if not 1 <= limit <= 100:
+            raise InvalidLeadQueryError
+        if offset < 0:
+            raise InvalidLeadQueryError
+        statement: Select[tuple[Lead]] = select(Lead).where(Lead.organization_id == organization_id)
+        if status_filter is not None:
+            statement = statement.where(Lead.status == status_filter)
+        if urgency_filter is not None:
+            statement = statement.where(Lead.urgency == urgency_filter)
+        if assigned_to_user_id is not None:
+            statement = statement.where(Lead.assigned_to_user_id == assigned_to_user_id)
+        if location_id is not None:
+            statement = statement.where(Lead.location_id == location_id)
+        if search:
+            pattern = f"%{search.casefold()}%"
+            statement = statement.where(
+                or_(
+                    func.lower(Lead.first_name).like(pattern),
+                    func.lower(Lead.last_name).like(pattern),
+                    func.lower(Lead.normalized_email).like(pattern),
+                    func.lower(Lead.message).like(pattern),
+                )
+            )
+        statement = statement.order_by(
+            Lead.received_at.asc() if sort == "oldest" else Lead.received_at.desc()
+        )
+        rows = list(await session.scalars(statement.limit(limit + 1).offset(offset)))
+        has_more = len(rows) > limit
+        return rows[:limit], has_more
+
+    async def list_communications(
+        self, session: AsyncSession, organization_id: UUID, lead_id: UUID
+    ) -> list[LeadCommunication]:
+        return list(
+            await session.scalars(
+                select(LeadCommunication)
+                .where(
+                    LeadCommunication.organization_id == organization_id,
+                    LeadCommunication.lead_id == lead_id,
+                )
+                .order_by(LeadCommunication.created_at.desc())
+            )
+        )
+
+    async def list_consents(
+        self, session: AsyncSession, organization_id: UUID, lead_id: UUID
+    ) -> list[LeadConsent]:
+        return list(
+            await session.scalars(
+                select(LeadConsent)
+                .where(
+                    LeadConsent.organization_id == organization_id,
+                    LeadConsent.lead_id == lead_id,
+                )
+                .order_by(LeadConsent.captured_at.desc())
+            )
+        )
+
+    async def summary(self, session: AsyncSession, organization_id: UUID) -> dict[str, object]:
+        await set_tenant(session, organization_id)
+        rows = (
+            await session.execute(
+                select(Lead.status, func.count())
+                .where(Lead.organization_id == organization_id)
+                .group_by(Lead.status)
+            )
+        ).all()
+        open_urgent = await session.scalar(
+            select(func.count()).where(
+                Lead.organization_id == organization_id,
+                Lead.urgency.in_(("urgent", "emergency")),
+                Lead.status.notin_(tuple(TERMINAL_STATUSES)),
+            )
+        )
+        avg_seconds = await session.scalar(
+            select(
+                func.avg(
+                    func.extract("epoch", Lead.first_human_contact_at - Lead.received_at)
+                )
+            ).where(
+                Lead.organization_id == organization_id,
+                Lead.first_human_contact_at.is_not(None),
+            )
+        )
+        return {
+            "by_status": {status: count for status, count in rows},
+            "open_urgent_count": int(open_urgent or 0),
+            "average_speed_to_lead_seconds": (
+                float(avg_seconds) if avg_seconds is not None else None
+            ),
+        }
+
+    async def source_performance(
+        self, session: AsyncSession, organization_id: UUID
+    ) -> list[dict[str, object]]:
+        await set_tenant(session, organization_id)
+        rows = (
+            await session.execute(
+                select(
+                    LeadSource.id,
+                    LeadSource.name,
+                    func.count(Lead.id),
+                    func.count(Lead.id).filter(Lead.status == "converted"),
+                )
+                .select_from(LeadSource)
+                .join(Lead, Lead.source_id == LeadSource.id, isouter=True)
+                .where(LeadSource.organization_id == organization_id)
+                .group_by(LeadSource.id, LeadSource.name)
+            )
+        ).all()
+        return [
+            {
+                "source_id": str(source_id),
+                "name": name,
+                "lead_count": int(lead_count or 0),
+                "converted_count": int(converted_count or 0),
+            }
+            for source_id, name, lead_count, converted_count in rows
+        ]
+
+    async def resource_history(
+        self,
+        session: AsyncSession,
+        *,
+        resource_type: str,
+        resource_id: UUID,
+        limit: int = 50,
+    ) -> list[dict[str, object]]:
+        events = await self.audit_repository.list_for_resource(
+            session, resource_type=resource_type, resource_id=resource_id, limit=limit
+        )
+        return [
+            {
+                "id": str(event.id),
+                "event_type": event.event_type,
+                "action": event.action,
+                "result": event.result,
+                "occurred_at": event.occurred_at,
+                "summary": event.summary,
+                "actor_type": event.actor_type,
+            }
+            for event in events
+        ]

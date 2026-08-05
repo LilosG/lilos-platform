@@ -82,10 +82,12 @@ def test_baseline_migration_upgrades_downgrades_and_upgrades_again(
         "jobs",
         "lead_communications",
         "lead_consents",
+        "lead_notes",
         "lead_sources",
         "lead_status_history",
         "lead_submissions",
         "lead_suppressions",
+        "lead_tasks",
         "leads",
         "location_group_memberships",
         "location_groups",
@@ -153,7 +155,7 @@ def test_baseline_migration_upgrades_downgrades_and_upgrades_again(
         "workflow_steps",
         "workflow_versions",
     ]
-    assert revisions_at_head == ["20260803_0013"]
+    assert revisions_at_head == ["20260804_0001"]
 
     command.downgrade(config, "base")
     tables_at_base, revisions_at_base = asyncio.run(database_state(postgresql_test_url))
@@ -203,10 +205,12 @@ def test_baseline_migration_upgrades_downgrades_and_upgrades_again(
         "jobs",
         "lead_communications",
         "lead_consents",
+        "lead_notes",
         "lead_sources",
         "lead_status_history",
         "lead_submissions",
         "lead_suppressions",
+        "lead_tasks",
         "leads",
         "location_group_memberships",
         "location_groups",
@@ -274,4 +278,4 @@ def test_baseline_migration_upgrades_downgrades_and_upgrades_again(
         "workflow_steps",
         "workflow_versions",
     ]
-    assert revisions_at_final_head == ["20260803_0013"]
+    assert revisions_at_final_head == ["20260804_0001"]

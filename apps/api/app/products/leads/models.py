@@ -100,6 +100,8 @@ class Lead(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     first_delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     first_human_contact_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     converted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    converted_value_cents: Mapped[int | None] = mapped_column(Integer)
+    loss_reason: Mapped[str | None] = mapped_column(String(500))
     version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
 
 
@@ -284,3 +286,49 @@ class CRMLeadMapping(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     last_provider_hash: Mapped[str | None] = mapped_column(String(64))
     sync_status: Mapped[str] = mapped_column(String(24), nullable=False)
     conflict_document: Mapped[dict[str, object] | None] = mapped_column(JSONB)
+
+
+class LeadNote(UUIDPrimaryKeyMixin, Base):
+    __tablename__ = "lead_notes"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["organization_id", "lead_id"],
+            ["leads.organization_id", "leads.id"],
+            ondelete="RESTRICT",
+        ),
+    )
+    organization_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    )
+    lead_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    author_user_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("user_profiles.id", ondelete="RESTRICT")
+    )
+    body: Mapped[str] = mapped_column(String(5000), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class LeadTask(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "lead_tasks"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["organization_id", "lead_id"],
+            ["leads.organization_id", "leads.id"],
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint("status IN ('open','completed','cancelled')", name="status"),
+    )
+    organization_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    )
+    lead_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[str | None] = mapped_column(String(5000))
+    due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    assigned_to_user_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("user_profiles.id", ondelete="RESTRICT")
+    )
+    status: Mapped[str] = mapped_column(String(16), nullable=False, server_default="open")
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

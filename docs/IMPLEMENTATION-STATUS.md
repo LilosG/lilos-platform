@@ -1,5 +1,26 @@
 # LILOs implementation status
 
+## Phase 11 — Leads vertical slice, reconciliation and correction (2026-08-04)
+
+The prior "Phase 11 status: complete" claim was inaccurate — see
+`docs/PHASE-11-ACCEPTANCE.md` for the full reconciliation. Corrected this
+pass: migration `20260804_0001` adds lead notes and follow-up tasks (forced
+tenant RLS) plus conversion-value and loss-reason fields on leads; every
+intake, consent, communication, assignment, status change, note, and task
+now writes a real audit event; assignment and conversion raise real
+notifications; a status-transition guard rejects invalid moves out of
+terminal states; list/detail/summary/source-performance read routes and
+assignment/status/conversion/loss/note/task write routes were added, with
+list responses kept free of contact identity and the detail route carrying
+full contact identity under the same permission and tenant scope; a typed
+errors module replaced bare exceptions that previously fell through to
+unhandled 500s; and a real protected `/leads` frontend route was added with
+truthful readiness, inbox, detail/lifecycle controls, notes, tasks, and
+audit history — no fabricated leads or CRM state, no dead buttons. All new
+capability reuses existing shared services (audit, notifications, workflow,
+entitlements, authorization); live email/SMS dispatch and CRM sync remain
+blocked on external provider credentials not configured this pass.
+
 ## Phase 10 — Reviews vertical slice, reconciliation and correction (2026-08-04)
 
 The prior "Phase 10 status: complete" claim was inaccurate — see `docs/PHASE-10-ACCEPTANCE.md` for

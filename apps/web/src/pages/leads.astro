@@ -1,0 +1,906 @@
+---
+import AppShell from "../components/AppShell.astro";
+import "../styles/global.css";
+---
+
+<!doctype html>
+<html lang="en">
+  <head
+    ><meta charset="UTF-8" /><meta
+      name="viewport"
+      content="width=device-width, initial-scale=1"
+    /><meta name="description" content="LILOs Leads workspace" /><title>
+      Leads · LILOs
+    </title></head
+  >
+  <body
+    ><AppShell>
+      <div id="boot-not-configured" role="status">
+        <h1>This deployment is not configured</h1><p>
+          No Supabase or API connection is configured for this build.
+        </p>
+      </div>
+
+      <div id="boot-loading" role="status" aria-live="polite" hidden>
+        <p>Loading Leads…</p>
+      </div>
+
+      <div id="boot-error" role="alert" hidden></div>
+
+      <div id="workspace-empty" role="status" hidden>
+        <h1>No organization access yet</h1><p>
+          Your account is not a member of any organization. Ask an administrator
+          to invite you.
+        </p>
+      </div>
+
+      <div id="leads-content" hidden>
+        <section id="overview" aria-labelledby="page-title">
+          <p class="eyebrow">Leads</p><h1 id="page-title">Leads</h1>
+        </section>
+
+        <section aria-labelledby="readiness-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Product readiness</p><h2 id="readiness-title">
+                Setup status
+              </h2>
+            </div>
+          </div><div class="attention-card" id="readiness-panel">
+            <p>Checking readiness…</p>
+          </div>
+        </section>
+
+        <section aria-labelledby="summary-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Insights</p><h2 id="summary-title">
+                Lead summary
+              </h2>
+            </div>
+          </div><div class="metric-grid" id="summary-panel"></div>
+        </section>
+
+        <section aria-labelledby="sources-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Sources</p><h2 id="sources-title">
+                Source performance
+              </h2>
+            </div>
+          </div><ul class="product-list" id="sources-list"></ul>
+        </section>
+
+        <section aria-labelledby="inbox-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Inbox</p><h2 id="inbox-title">Leads</h2>
+            </div><form id="filter-form">
+              <label class="sr-only" for="status-filter">Status</label><select
+                id="status-filter"
+              >
+                <option value="">All statuses</option><option value="new"
+                  >New</option
+                ><option value="assigned">Assigned</option><option
+                  value="contacted">Contacted</option
+                ><option value="qualified">Qualified</option><option
+                  value="converted">Converted</option
+                ><option value="lost">Lost</option>
+              </select><label class="sr-only" for="urgency-filter"
+                >Urgency</label
+              ><select id="urgency-filter">
+                <option value="">All urgency</option><option value="routine"
+                  >Routine</option
+                ><option value="same_day">Same day</option><option
+                  value="urgent">Urgent</option
+                ><option value="emergency">Emergency</option>
+              </select><label class="sr-only" for="search-input">Search</label
+              ><input
+                id="search-input"
+                type="search"
+                placeholder="Search name, email, message"
+              /><button type="submit" class="button button--secondary"
+                >Apply</button
+              >
+            </form>
+          </div><ul class="product-list" id="leads-list"></ul>
+        </section>
+
+        <section id="detail-section" aria-labelledby="detail-title" hidden>
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Lead detail</p><h2 id="detail-title">
+                Selected lead
+              </h2>
+            </div>
+          </div><div class="split">
+            <article>
+              <p class="eyebrow">Contact</p><div id="detail-body"></div><h3>
+                Lifecycle
+              </h3><div class="hero__actions">
+                <label class="sr-only" for="status-select">Status</label><select
+                  id="status-select"
+                >
+                  <option value="new">New</option><option value="validating"
+                    >Validating</option
+                  ><option value="unassigned">Unassigned</option><option
+                    value="assigned">Assigned</option
+                  ><option value="acknowledged">Acknowledged</option><option
+                    value="contact_attempted">Contact attempted</option
+                  ><option value="contacted">Contacted</option><option
+                    value="qualifying">Qualifying</option
+                  ><option value="qualified">Qualified</option><option
+                    value="appointment_requested">Appointment requested</option
+                  ><option value="appointment_scheduled"
+                    >Appointment scheduled</option
+                  ><option value="nurture">Nurture</option><option
+                    value="unresponsive">Unresponsive</option
+                  ><option value="archived">Archived</option>
+                </select><button
+                  type="button"
+                  class="button button--secondary"
+                  id="status-button">Change status</button
+                >
+              </div><div class="hero__actions">
+                <label class="sr-only" for="assignee-input"
+                  >Assign to user ID</label
+                ><input
+                  id="assignee-input"
+                  type="text"
+                  placeholder="Assignee user ID"
+                /><button type="button" class="button" id="assign-button"
+                  >Assign</button
+                >
+              </div><div class="hero__actions">
+                <label class="sr-only" for="conversion-value"
+                  >Converted value (cents)</label
+                ><input
+                  id="conversion-value"
+                  type="number"
+                  min="0"
+                  placeholder="Converted value (cents, optional)"
+                /><button
+                  type="button"
+                  class="button button--secondary"
+                  id="convert-button">Mark converted</button
+                >
+              </div><div class="hero__actions">
+                <label class="sr-only" for="loss-reason">Loss reason</label
+                ><input
+                  id="loss-reason"
+                  type="text"
+                  placeholder="Loss reason"
+                /><button
+                  type="button"
+                  class="button button--secondary"
+                  id="loss-button">Mark lost</button
+                >
+              </div><p id="action-status" role="status" aria-live="polite">
+              </p><h3>Add note</h3><label class="sr-only" for="note-text"
+                >Note</label
+              ><textarea id="note-text" rows="3" maxlength="5000"
+              ></textarea><button type="button" class="button" id="note-button"
+                >Save note</button
+              ><h3>Follow-up task</h3><label class="sr-only" for="task-title"
+                >Task title</label
+              ><input id="task-title" type="text" placeholder="Task title" />
+              <button type="button" class="button" id="task-button"
+                >Create task</button
+              >
+            </article><article id="activity">
+              <p class="eyebrow">Notes</p><ol class="timeline" id="notes-list">
+              </ol><p class="eyebrow">Follow-up tasks</p><ol
+                class="timeline"
+                id="tasks-list"
+              >
+              </ol><p class="eyebrow">Communications</p><ol
+                class="timeline"
+                id="communications-list"
+              >
+              </ol><p class="eyebrow">Audit history</p><ol
+                class="timeline"
+                id="audit-history"
+              >
+              </ol>
+            </article>
+          </div>
+        </section>
+      </div>
+    </AppShell>
+    <script>
+      import {
+        fetchMyOrganizations,
+        fetchPrincipal,
+        fetchProductReadiness,
+      } from "../lib/workspace";
+      import {
+        addLeadNote,
+        assignLead,
+        completeLeadTask,
+        convertLead,
+        createLeadTask,
+        fetchLead,
+        fetchLeadAudit,
+        fetchLeadCommunications,
+        fetchLeadNotes,
+        fetchLeadSummary,
+        fetchLeadTasks,
+        fetchLeads,
+        fetchSourcePerformance,
+        recordLeadLoss,
+        transitionLeadStatus,
+        type LeadDetail,
+        type LeadSummary,
+        type LeadTask,
+      } from "../lib/leads";
+      import { selectDefaultOrganization } from "../lib/dashboard-logic";
+      import { getCurrentSession, signOut } from "../lib/session";
+      import { readPublicConfig } from "../lib/config";
+      import type { ApiOutcome } from "../lib/api-client";
+
+      const regions = {
+        notConfigured: document.getElementById("boot-not-configured")!,
+        loading: document.getElementById("boot-loading")!,
+        error: document.getElementById("boot-error")!,
+        empty: document.getElementById("workspace-empty")!,
+        content: document.getElementById("leads-content")!,
+      };
+
+      let organizationId = "";
+      let selectedLeadId: string | null = null;
+
+      function showOnly(region: HTMLElement): void {
+        for (const key of Object.keys(regions) as (keyof typeof regions)[]) {
+          regions[key].hidden = regions[key] !== region;
+        }
+      }
+
+      function describeFailure(outcome: ApiOutcome<unknown>): string {
+        switch (outcome.kind) {
+          case "forbidden":
+            return "You do not have permission to view Leads for this organization.";
+          case "not-found":
+            return "The requested resource could not be found.";
+          case "disconnected":
+            return "Could not reach the platform API.";
+          case "unauthenticated":
+            return "Your session has expired. Sign in again.";
+          case "not-configured":
+            return "This deployment is not configured.";
+          case "error":
+            return outcome.message;
+          case "ok":
+            return "";
+        }
+      }
+
+      function goToLogin(): void {
+        const next = encodeURIComponent(window.location.pathname);
+        window.location.assign(`/login?next=${next}`);
+      }
+
+      function wireSignOut(): void {
+        document
+          .getElementById("sign-out-button")
+          ?.addEventListener("click", async () => {
+            await signOut();
+            goToLogin();
+          });
+      }
+
+      function badge(status: string, label = status): HTMLSpanElement {
+        const el = document.createElement("span");
+        el.className = `status status--${status}`;
+        const dot = document.createElement("span");
+        dot.setAttribute("aria-hidden", "true");
+        dot.className = "status__dot";
+        el.append(dot, document.createTextNode(label));
+        return el;
+      }
+
+      function statusBadgeKind(status: string): string {
+        if (status === "converted") return "ready";
+        if (["lost", "disqualified", "spam", "cancelled"].includes(status))
+          return "blocked";
+        if (status === "new" || status === "unassigned") return "missing";
+        return "setup";
+      }
+
+      async function renderReadiness(): Promise<void> {
+        const panel = document.getElementById("readiness-panel")!;
+        panel.replaceChildren();
+        const outcome = await fetchProductReadiness(organizationId, "leads");
+        if (outcome.kind !== "ok") {
+          const message = document.createElement("p");
+          message.textContent = describeFailure(outcome);
+          panel.append(message);
+          return;
+        }
+        const state = outcome.data.readiness_state;
+        const label = state === "not_entitled" ? "setup" : state;
+        panel.append(badge(label));
+        for (const finding of outcome.data.blocking_requirements) {
+          const reason = document.createElement("p");
+          reason.textContent = finding.remediation;
+          panel.append(reason);
+        }
+        if (
+          outcome.data.blocking_requirements.length === 0 &&
+          state === "ready"
+        ) {
+          const ready = document.createElement("p");
+          ready.textContent = "Leads is ready to use.";
+          panel.append(ready);
+        }
+      }
+
+      async function renderSummary(): Promise<void> {
+        const panel = document.getElementById("summary-panel")!;
+        panel.replaceChildren();
+        const outcome = await fetchLeadSummary(organizationId);
+        if (outcome.kind !== "ok") {
+          const article = document.createElement("article");
+          article.className = "metric";
+          const message = document.createElement("p");
+          message.textContent = describeFailure(outcome);
+          article.append(message);
+          panel.append(article);
+          return;
+        }
+        const metrics: Array<[string, string]> = [
+          [
+            "Average speed to lead",
+            outcome.data.average_speed_to_lead_seconds !== null
+              ? `${Math.round(outcome.data.average_speed_to_lead_seconds / 60)} min`
+              : "Not available",
+          ],
+          ["Open urgent leads", String(outcome.data.open_urgent_count)],
+          ...Object.entries(outcome.data.by_status).map(
+            ([status, count]) =>
+              [`Status: ${status}`, String(count)] as [string, string],
+          ),
+        ];
+        for (const [label, value] of metrics) {
+          const article = document.createElement("article");
+          article.className = "metric";
+          const eyebrow = document.createElement("p");
+          eyebrow.className = "eyebrow";
+          eyebrow.textContent = label;
+          const valueEl = document.createElement("p");
+          valueEl.className = "metric__value";
+          valueEl.textContent = value;
+          article.append(eyebrow, valueEl);
+          panel.append(article);
+        }
+      }
+
+      async function renderSources(): Promise<void> {
+        const list = document.getElementById("sources-list")!;
+        list.replaceChildren();
+        const outcome = await fetchSourcePerformance(organizationId);
+        if (outcome.kind !== "ok") {
+          const item = document.createElement("li");
+          item.textContent = describeFailure(outcome);
+          list.append(item);
+          return;
+        }
+        if (outcome.data.length === 0) {
+          const item = document.createElement("li");
+          item.textContent = "No lead sources configured yet.";
+          list.append(item);
+          return;
+        }
+        for (const source of outcome.data) {
+          const item = document.createElement("li");
+          const info = document.createElement("div");
+          const name = document.createElement("h3");
+          name.textContent = source.name;
+          const meta = document.createElement("p");
+          meta.textContent = `${source.lead_count} leads · ${source.converted_count} converted`;
+          info.append(name, meta);
+          item.append(info);
+          list.append(item);
+        }
+      }
+
+      async function renderLeadsList(): Promise<void> {
+        const list = document.getElementById("leads-list")!;
+        list.replaceChildren();
+        const statusFilter = (
+          document.getElementById("status-filter") as HTMLSelectElement
+        ).value;
+        const urgencyFilter = (
+          document.getElementById("urgency-filter") as HTMLSelectElement
+        ).value;
+        const search = (
+          document.getElementById("search-input") as HTMLInputElement
+        ).value.trim();
+        const outcome = await fetchLeads(organizationId, {
+          statusFilter: statusFilter || undefined,
+          urgencyFilter: urgencyFilter || undefined,
+          search: search || undefined,
+        });
+        if (outcome.kind !== "ok") {
+          const item = document.createElement("li");
+          item.textContent = describeFailure(outcome);
+          list.append(item);
+          return;
+        }
+        if (outcome.data.length === 0) {
+          const item = document.createElement("li");
+          item.textContent = "No leads yet for this organization.";
+          list.append(item);
+          return;
+        }
+        for (const lead of outcome.data) {
+          list.append(leadRow(lead));
+        }
+      }
+
+      function leadRow(lead: LeadSummary): HTMLLIElement {
+        const item = document.createElement("li");
+        const info = document.createElement("div");
+        const title = document.createElement("h3");
+        title.textContent = `Lead ${lead.id.slice(0, 8)}`;
+        const meta = document.createElement("p");
+        meta.textContent = `${lead.urgency} urgency · received ${new Date(
+          lead.received_at,
+        ).toLocaleString()}`;
+        info.append(title, meta);
+        const actions = document.createElement("div");
+        actions.append(badge(statusBadgeKind(lead.status), lead.status));
+        const openButton = document.createElement("button");
+        openButton.type = "button";
+        openButton.className = "button button--secondary";
+        openButton.textContent = "Open";
+        openButton.addEventListener("click", () => void openLead(lead.id));
+        actions.append(openButton);
+        item.append(info, actions);
+        return item;
+      }
+
+      async function openLead(leadId: string): Promise<void> {
+        selectedLeadId = leadId;
+        const detailSection = document.getElementById("detail-section")!;
+        detailSection.hidden = false;
+        const bodyPanel = document.getElementById("detail-body")!;
+        bodyPanel.replaceChildren(document.createTextNode("Loading…"));
+
+        const detail = await fetchLead(organizationId, leadId);
+        if (detail.kind !== "ok") {
+          bodyPanel.replaceChildren(
+            document.createTextNode(describeFailure(detail)),
+          );
+          return;
+        }
+        renderDetailBody(detail.data);
+        await Promise.all([
+          renderNotes(leadId),
+          renderTasks(leadId),
+          renderCommunications(leadId),
+          renderAuditHistory(leadId),
+        ]);
+      }
+
+      function renderDetailBody(lead: LeadDetail): void {
+        const bodyPanel = document.getElementById("detail-body")!;
+        bodyPanel.replaceChildren();
+        const name = document.createElement("p");
+        const fullName = [lead.first_name, lead.last_name]
+          .filter(Boolean)
+          .join(" ");
+        name.textContent = fullName || "No name provided";
+        const contact = document.createElement("p");
+        contact.textContent =
+          [lead.normalized_email, lead.normalized_phone]
+            .filter(Boolean)
+            .join(" · ") || "No contact info provided";
+        const message = document.createElement("p");
+        message.textContent = lead.message ?? "No message provided.";
+        const status = document.createElement("p");
+        status.append(badge(statusBadgeKind(lead.status), lead.status));
+        bodyPanel.append(name, contact, message, status);
+        (document.getElementById("status-select") as HTMLSelectElement).value =
+          [
+            "new",
+            "validating",
+            "unassigned",
+            "assigned",
+            "acknowledged",
+            "contact_attempted",
+            "contacted",
+            "qualifying",
+            "qualified",
+            "appointment_requested",
+            "appointment_scheduled",
+            "nurture",
+            "unresponsive",
+            "archived",
+          ].includes(lead.status)
+            ? lead.status
+            : "new";
+      }
+
+      async function renderNotes(leadId: string): Promise<void> {
+        const list = document.getElementById("notes-list")!;
+        list.replaceChildren();
+        const outcome = await fetchLeadNotes(organizationId, leadId);
+        if (outcome.kind !== "ok") {
+          const item = document.createElement("li");
+          item.textContent = describeFailure(outcome);
+          list.append(item);
+          return;
+        }
+        if (outcome.data.length === 0) {
+          const item = document.createElement("li");
+          item.textContent = "No notes yet.";
+          list.append(item);
+          return;
+        }
+        for (const note of outcome.data) {
+          const item = document.createElement("li");
+          const strong = document.createElement("strong");
+          strong.textContent = new Date(note.created_at).toLocaleString();
+          const span = document.createElement("span");
+          span.textContent = note.body;
+          item.append(strong, span);
+          list.append(item);
+        }
+      }
+
+      async function renderTasks(leadId: string): Promise<void> {
+        const list = document.getElementById("tasks-list")!;
+        list.replaceChildren();
+        const outcome = await fetchLeadTasks(organizationId, leadId);
+        if (outcome.kind !== "ok") {
+          const item = document.createElement("li");
+          item.textContent = describeFailure(outcome);
+          list.append(item);
+          return;
+        }
+        if (outcome.data.length === 0) {
+          const item = document.createElement("li");
+          item.textContent = "No follow-up tasks yet.";
+          list.append(item);
+          return;
+        }
+        for (const task of outcome.data) {
+          list.append(taskRow(leadId, task));
+        }
+      }
+
+      function taskRow(leadId: string, task: LeadTask): HTMLLIElement {
+        const item = document.createElement("li");
+        const strong = document.createElement("strong");
+        strong.textContent = `${task.title} (${task.status})`;
+        const span = document.createElement("span");
+        span.textContent = task.due_at
+          ? `Due ${new Date(task.due_at).toLocaleString()}`
+          : "";
+        item.append(strong, span);
+        if (task.status === "open") {
+          const completeButton = document.createElement("button");
+          completeButton.type = "button";
+          completeButton.textContent = "Complete";
+          completeButton.addEventListener("click", async () => {
+            const result = await completeLeadTask(
+              organizationId,
+              leadId,
+              task.id,
+            );
+            setActionStatus(
+              result.kind === "ok"
+                ? "Task completed."
+                : describeFailure(result),
+            );
+            await renderTasks(leadId);
+          });
+          item.append(completeButton);
+        }
+        return item;
+      }
+
+      async function renderCommunications(leadId: string): Promise<void> {
+        const list = document.getElementById("communications-list")!;
+        list.replaceChildren();
+        const outcome = await fetchLeadCommunications(organizationId, leadId);
+        if (outcome.kind !== "ok") {
+          const item = document.createElement("li");
+          item.textContent = describeFailure(outcome);
+          list.append(item);
+          return;
+        }
+        if (outcome.data.length === 0) {
+          const item = document.createElement("li");
+          item.textContent = "No communications yet.";
+          list.append(item);
+          return;
+        }
+        for (const comm of outcome.data) {
+          const item = document.createElement("li");
+          const strong = document.createElement("strong");
+          strong.textContent = `${comm.channel} (${comm.status})`;
+          const span = document.createElement("span");
+          span.textContent = comm.message_reference;
+          item.append(strong, span);
+          list.append(item);
+        }
+      }
+
+      async function renderAuditHistory(leadId: string): Promise<void> {
+        const list = document.getElementById("audit-history")!;
+        list.replaceChildren();
+        const outcome = await fetchLeadAudit(organizationId, leadId);
+        if (outcome.kind !== "ok") {
+          const item = document.createElement("li");
+          item.textContent = describeFailure(outcome);
+          list.append(item);
+          return;
+        }
+        if (outcome.data.length === 0) {
+          const item = document.createElement("li");
+          item.textContent = "No audit history yet.";
+          list.append(item);
+          return;
+        }
+        for (const event of outcome.data) {
+          const item = document.createElement("li");
+          const strong = document.createElement("strong");
+          strong.textContent = event.summary;
+          const span = document.createElement("span");
+          span.textContent = `${event.event_type} · ${new Date(event.occurred_at).toLocaleString()}`;
+          item.append(strong, span);
+          list.append(item);
+        }
+      }
+
+      function setActionStatus(message: string): void {
+        document.getElementById("action-status")!.textContent = message;
+      }
+
+      function wireDetailActions(): void {
+        document
+          .getElementById("assign-button")
+          ?.addEventListener("click", async () => {
+            if (!selectedLeadId) return;
+            const assignee = (
+              document.getElementById("assignee-input") as HTMLInputElement
+            ).value.trim();
+            if (!assignee) {
+              setActionStatus("Enter an assignee user ID first.");
+              return;
+            }
+            const result = await assignLead(
+              organizationId,
+              selectedLeadId,
+              assignee,
+            );
+            setActionStatus(
+              result.kind === "ok" ? "Lead assigned." : describeFailure(result),
+            );
+            if (result.kind === "ok") {
+              renderDetailBody(result.data);
+              await renderAuditHistory(selectedLeadId);
+            }
+          });
+
+        document
+          .getElementById("status-button")
+          ?.addEventListener("click", async () => {
+            if (!selectedLeadId) return;
+            const toStatus = (
+              document.getElementById("status-select") as HTMLSelectElement
+            ).value;
+            const result = await transitionLeadStatus(
+              organizationId,
+              selectedLeadId,
+              toStatus,
+            );
+            setActionStatus(
+              result.kind === "ok"
+                ? "Status updated."
+                : describeFailure(result),
+            );
+            if (result.kind === "ok") {
+              renderDetailBody(result.data);
+              await renderAuditHistory(selectedLeadId);
+            }
+          });
+
+        document
+          .getElementById("convert-button")
+          ?.addEventListener("click", async () => {
+            if (!selectedLeadId) return;
+            const raw = (
+              document.getElementById("conversion-value") as HTMLInputElement
+            ).value;
+            const value = raw ? Number.parseInt(raw, 10) : null;
+            const result = await convertLead(
+              organizationId,
+              selectedLeadId,
+              value,
+            );
+            setActionStatus(
+              result.kind === "ok"
+                ? "Lead marked converted."
+                : describeFailure(result),
+            );
+            if (result.kind === "ok") {
+              renderDetailBody(result.data);
+              await Promise.all([
+                renderAuditHistory(selectedLeadId),
+                renderSummary(),
+              ]);
+            }
+          });
+
+        document
+          .getElementById("loss-button")
+          ?.addEventListener("click", async () => {
+            if (!selectedLeadId) return;
+            const reason = (
+              document.getElementById("loss-reason") as HTMLInputElement
+            ).value.trim();
+            if (!reason) {
+              setActionStatus("Enter a loss reason first.");
+              return;
+            }
+            const result = await recordLeadLoss(
+              organizationId,
+              selectedLeadId,
+              "lost",
+              reason,
+            );
+            setActionStatus(
+              result.kind === "ok"
+                ? "Lead marked lost."
+                : describeFailure(result),
+            );
+            if (result.kind === "ok") {
+              renderDetailBody(result.data);
+              await renderAuditHistory(selectedLeadId);
+            }
+          });
+
+        document
+          .getElementById("note-button")
+          ?.addEventListener("click", async () => {
+            if (!selectedLeadId) return;
+            const text = (
+              document.getElementById("note-text") as HTMLTextAreaElement
+            ).value.trim();
+            if (!text) {
+              setActionStatus("Enter a note first.");
+              return;
+            }
+            const result = await addLeadNote(
+              organizationId,
+              selectedLeadId,
+              text,
+            );
+            setActionStatus(
+              result.kind === "ok" ? "Note saved." : describeFailure(result),
+            );
+            if (result.kind === "ok") {
+              (
+                document.getElementById("note-text") as HTMLTextAreaElement
+              ).value = "";
+              await Promise.all([
+                renderNotes(selectedLeadId),
+                renderAuditHistory(selectedLeadId),
+              ]);
+            }
+          });
+
+        document
+          .getElementById("task-button")
+          ?.addEventListener("click", async () => {
+            if (!selectedLeadId) return;
+            const title = (
+              document.getElementById("task-title") as HTMLInputElement
+            ).value.trim();
+            if (!title) {
+              setActionStatus("Enter a task title first.");
+              return;
+            }
+            const result = await createLeadTask(
+              organizationId,
+              selectedLeadId,
+              { title },
+            );
+            setActionStatus(
+              result.kind === "ok" ? "Task created." : describeFailure(result),
+            );
+            if (result.kind === "ok") {
+              (
+                document.getElementById("task-title") as HTMLInputElement
+              ).value = "";
+              await Promise.all([
+                renderTasks(selectedLeadId),
+                renderAuditHistory(selectedLeadId),
+              ]);
+            }
+          });
+      }
+
+      function wireFilters(): void {
+        document
+          .getElementById("filter-form")
+          ?.addEventListener("submit", (event) => {
+            event.preventDefault();
+            void renderLeadsList();
+          });
+      }
+
+      async function boot(): Promise<void> {
+        if (!readPublicConfig()) {
+          showOnly(regions.notConfigured);
+          return;
+        }
+        showOnly(regions.loading);
+
+        const session = await getCurrentSession();
+        if (session.status !== "signed-in") {
+          goToLogin();
+          return;
+        }
+
+        const principal = await fetchPrincipal();
+        if (principal.kind === "unauthenticated") {
+          goToLogin();
+          return;
+        }
+        if (principal.kind !== "ok") {
+          regions.error.textContent = describeFailure(principal);
+          showOnly(regions.error);
+          return;
+        }
+        document.getElementById("current-user-label")!.textContent =
+          principal.data.auth_user_id;
+        document.getElementById("current-user-initial")!.textContent =
+          principal.data.auth_user_id.slice(0, 1).toUpperCase();
+        document.getElementById("current-assurance-label")!.textContent =
+          principal.data.assurance_level;
+        const signOutButton = document.getElementById("sign-out-button")!;
+        signOutButton.hidden = false;
+        wireSignOut();
+
+        const organizations = await fetchMyOrganizations();
+        if (organizations.kind === "unauthenticated") {
+          goToLogin();
+          return;
+        }
+        if (organizations.kind !== "ok") {
+          regions.error.textContent = describeFailure(organizations);
+          showOnly(regions.error);
+          return;
+        }
+        if (organizations.data.length === 0) {
+          showOnly(regions.empty);
+          return;
+        }
+        const organization = selectDefaultOrganization(organizations.data);
+        if (!organization) {
+          showOnly(regions.empty);
+          return;
+        }
+        organizationId = organization.organization_id;
+        document.getElementById("active-organization-name")!.textContent =
+          organization.organization_name;
+
+        wireDetailActions();
+        wireFilters();
+        await renderReadiness();
+        await Promise.all([
+          renderSummary(),
+          renderSources(),
+          renderLeadsList(),
+        ]);
+
+        showOnly(regions.content);
+      }
+
+      void boot();
+    </script>
+  </body>
+</html>

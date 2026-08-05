@@ -95,3 +95,21 @@ test("unconfigured Reviews page shows a truthful not-configured state, not fabri
     ),
   ).toEqual([]);
 });
+
+test("unconfigured Leads page shows a truthful not-configured state, not fabricated lead data", async ({
+  page,
+}) => {
+  await page.goto("/leads");
+  await expect(
+    page.getByRole("heading", { name: "This deployment is not configured" }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("urgency · received", { exact: false }),
+  ).toHaveCount(0);
+  const results = await new AxeBuilder({ page }).analyze();
+  expect(
+    results.violations.filter((item) =>
+      ["serious", "critical"].includes(item.impact ?? ""),
+    ),
+  ).toEqual([]);
+});

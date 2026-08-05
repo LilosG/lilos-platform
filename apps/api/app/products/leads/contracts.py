@@ -46,3 +46,53 @@ class CommunicationCreate(BaseModel):
     message_reference: str = Field(min_length=1, max_length=500)
     workflow_run_id: UUID
     idempotency_key: str = Field(min_length=8, max_length=128)
+
+
+class LeadAssignment(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    assigned_to_user_id: UUID
+
+
+class LeadStatusTransition(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    to_status: Literal[
+        "new",
+        "validating",
+        "unassigned",
+        "assigned",
+        "acknowledged",
+        "contact_attempted",
+        "contacted",
+        "qualifying",
+        "qualified",
+        "appointment_requested",
+        "appointment_scheduled",
+        "nurture",
+        "unresponsive",
+        "archived",
+    ]
+    safe_reason: str | None = Field(default=None, max_length=500)
+
+
+class LeadConversion(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    converted_value_cents: int | None = Field(default=None, ge=0)
+
+
+class LeadLoss(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    to_status: Literal["lost", "disqualified", "spam", "cancelled"]
+    loss_reason: str = Field(min_length=1, max_length=500)
+
+
+class LeadNoteCreate(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    body: str = Field(min_length=1, max_length=5000)
+
+
+class LeadTaskCreate(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    title: str = Field(min_length=1, max_length=200)
+    description: str | None = Field(default=None, max_length=5000)
+    due_at: datetime | None = None
+    assigned_to_user_id: UUID | None = None
