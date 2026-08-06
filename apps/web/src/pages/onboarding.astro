@@ -964,7 +964,8 @@ import "../styles/global.css";
           list.append(item);
           return;
         }
-        if (outcome.data.length === 0) {
+        const locations = Array.isArray(outcome.data) ? outcome.data : (outcome.data?.locations || outcome.data?.items || []);
+        if (locations.length === 0) {
           const empty = document.createElement("div");
           empty.className = "empty-state";
           empty.innerHTML =
@@ -972,7 +973,7 @@ import "../styles/global.css";
           list.append(empty);
           return;
         }
-        for (const location of outcome.data) {
+        for (const location of locations) {
           const item = document.createElement("li");
           const info = document.createElement("div");
           const title = document.createElement("h3");
@@ -1039,7 +1040,8 @@ import "../styles/global.css";
           list.append(item);
           return;
         }
-        if (outcome.data.length === 0) {
+        const domains = Array.isArray(outcome.data) ? outcome.data : (outcome.data?.domains || outcome.data?.items || []);
+        if (domains.length === 0) {
           const empty = document.createElement("div");
           empty.className = "empty-state";
           empty.innerHTML =
@@ -1047,7 +1049,7 @@ import "../styles/global.css";
           list.append(empty);
           return;
         }
-        for (const domain of outcome.data) {
+        for (const domain of domains) {
           const item = document.createElement("li");
           const info = document.createElement("div");
           const title = document.createElement("h3");
