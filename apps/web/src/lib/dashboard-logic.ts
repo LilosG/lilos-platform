@@ -6,11 +6,36 @@ import type { MyOrganization, ProductReadiness } from "./workspace";
 export function selectDefaultOrganization(
   organizations: readonly MyOrganization[],
 ): MyOrganization | null {
-  return (
+  if (!organizations.length) return null;
+
+  if (typeof window !== "undefined") {
+    const urlOrgId = new URLSearchParams(window.location.search).get("org");
+    const storedOrgId = localStorage.getItem("selected_org_id");
+    const targetId = urlOrgId || storedOrgId;
+
+    if (targetId) {
+      const matched = organizations.find(
+        (item) => (item.organization_id || item.id) === targetId
+      );
+      if (matched) {
+        const matchedId = matched.organization_id || matched.id;
+        localStorage.setItem("selected_org_id", matchedId);
+        return matched;
+      }
+    }
+  }
+
+  const defaultOrg =
     organizations.find((item) => item.membership_status === "active") ??
     organizations[0] ??
-    null
-  );
+    null;
+
+  if (defaultOrg && typeof window !== "undefined") {
+    const defaultId = defaultOrg.organization_id || defaultOrg.id;
+    if (defaultId) localStorage.setItem("selected_org_id", defaultId);
+  }
+
+  return defaultOrg;
 }
 
 export type ReadinessSummary = {

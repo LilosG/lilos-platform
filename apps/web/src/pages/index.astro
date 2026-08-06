@@ -217,6 +217,15 @@ import "../styles/global.css";
       async function loadOrganization(
         organization: MyOrganization,
       ): Promise<void> {
+        const activeId = organization.organization_id || organization.id;
+        if (activeId && typeof window !== "undefined") {
+          localStorage.setItem("selected_org_id", activeId);
+          const url = new URL(window.location.href);
+          if (url.searchParams.get("org") !== activeId) {
+            url.searchParams.set("org", activeId);
+            window.history.replaceState({}, "", url.toString());
+          }
+        }
         document.getElementById("active-organization-name")!.textContent =
           organization.organization_name;
         document.getElementById("active-organization-status")!.textContent =
