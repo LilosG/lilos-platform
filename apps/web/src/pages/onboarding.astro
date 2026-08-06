@@ -844,8 +844,7 @@ import "../styles/global.css";
         const outcome = await fetchIndustries();
         const options =
           outcome.kind === "ok"
-            ? outcome.data
-                .map(
+            ? (Array.isArray(outcome.data) ? outcome.data : (outcome.data?.industries || [])).map(
                   (industry: Industry) =>
                     `<option value="${industry.id}">${industry.name}</option>`,
                 )
