@@ -12,10 +12,11 @@ vi.mock("./config", () => ({
 }));
 vi.mock("./session", () => ({
   getAccessToken: vi.fn(),
+  refreshAccessToken: vi.fn(),
 }));
 
 import { readPublicConfig } from "./config";
-import { getAccessToken } from "./session";
+import { getAccessToken, refreshAccessToken } from "./session";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -75,6 +76,52 @@ describe("apiGet", () => {
 
     expect(outcome).toEqual({ kind: "disconnected" });
     vi.useRealTimers();
+  });
+
+  it("recovers from a stale token by refreshing and retrying once, instead of reporting a real sign-out", async () => {
+    // Regression: production logs showed genuine authenticated AAL2
+    // sessions getting a 401 on the industries/organizations calls (a
+    // locally-held token stale relative to the server, e.g. right after an
+    // MFA step-up) that was previously reported straight through as
+    // "unauthenticated" -- indistinguishable from an actual sign-out.
+    vi.mocked(readPublicConfig).mockReturnValue(config);
+    vi.mocked(getAccessToken).mockResolvedValue("stale-token");
+    vi.mocked(refreshAccessToken).mockResolvedValue("fresh-token");
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation((_input, init) => {
+        const headers = new Headers((init as RequestInit).headers);
+        if (headers.get("Authorization") === "Bearer stale-token") {
+          return Promise.resolve(new Response(null, { status: 401 }));
+        }
+        return Promise.resolve(
+          new Response(JSON.stringify({ data: { ok: true } }), {
+            status: 200,
+          }),
+        );
+      });
+
+    const outcome = await apiGet<{ ok: boolean }>(
+      "/api/v1/platform/industries",
+    );
+
+    expect(outcome).toEqual({ kind: "ok", data: { ok: true } });
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(refreshAccessToken).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports unauthenticated (not an infinite retry) when refreshing does not recover a valid session", async () => {
+    vi.mocked(readPublicConfig).mockReturnValue(config);
+    vi.mocked(getAccessToken).mockResolvedValue("stale-token");
+    vi.mocked(refreshAccessToken).mockResolvedValue(null);
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(null, { status: 401 }));
+
+    const outcome = await apiGet("/api/v1/platform/industries");
+
+    expect(outcome).toEqual({ kind: "unauthenticated" });
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 
   it("classifies 401/403/404 as distinct truthful states", async () => {
