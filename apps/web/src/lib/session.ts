@@ -51,7 +51,31 @@ export async function getAccessToken(): Promise<string | null> {
     return null;
   }
   const { data } = await client.auth.getSession();
-  return data.session?.access_token ?? null;
+  if (!data.session) {
+    return null;
+  }
+  return data.session.access_token;
+}
+
+/**
+ * Forces a real round-trip session refresh (a new access token from
+ * Supabase using the refresh token) and returns it, or null if there is no
+ * configured client, no session to refresh, or the refresh itself fails
+ * (e.g. the refresh token was already rotated by another tab/request).
+ * Used to recover from a stale-token race — a request that returns 401 even
+ * though the caller believes it is signed in — by getting the current
+ * server-confirmed token rather than trusting local, possibly-stale state.
+ */
+export async function refreshAccessToken(): Promise<string | null> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return null;
+  }
+  const { data, error } = await client.auth.refreshSession();
+  if (error || !data.session) {
+    return null;
+  }
+  return data.session.access_token;
 }
 
 // --- Multi-factor authentication (step-up to AAL2) ---
@@ -240,6 +264,22 @@ export async function verifyTotpCode(
   });
   if (error) {
     return { ok: false, message: error.message };
+  }
+  // Force a real round-trip session refresh so the elevated AAL2 session is
+  // fully server-confirmed and settled in both this client's in-memory
+  // state and persisted storage before the caller proceeds to navigate to
+  // an AAL2-protected route. challengeAndVerify already updates the local
+  // session, but a caller navigating immediately afterward previously had
+  // no guarantee that update had actually landed everywhere it needed to
+  // before the next page's first protected request fired.
+  const { data: refreshed, error: refreshError } =
+    await client.auth.refreshSession();
+  if (refreshError || !refreshed.session) {
+    return {
+      ok: false,
+      message:
+        "Verified, but could not confirm the elevated session. Try again.",
+    };
   }
   const { data: levels } =
     await client.auth.mfa.getAuthenticatorAssuranceLevel();

@@ -1,4 +1,4 @@
-import { getAccessToken } from "./session";
+import { getAccessToken, refreshAccessToken } from "./session";
 import { readPublicConfig } from "./config";
 
 export type ApiErrorDetail = { field?: string; code?: string; message: string };
@@ -49,6 +49,13 @@ export function apiGet<T>(path: string): Promise<ApiOutcome<T>> {
  * Authenticated request (GET/POST/PUT/DELETE) against the LILOs API, sharing
  * the exact same truthful-outcome classification as `apiGet`. State-changing
  * callers pass `method` and an optional JSON-serializable `body`.
+ *
+ * A 401 is retried exactly once against a forcibly-refreshed token before
+ * being reported as `unauthenticated`: a locally-held token can be stale
+ * relative to the server (e.g. immediately after an MFA step-up, or after
+ * another tab/request rotated the refresh token) even though the caller is
+ * genuinely still signed in, and the previous behavior reported that
+ * transient staleness as a real sign-out.
  */
 export async function apiRequest<T>(
   path: string,
@@ -62,6 +69,30 @@ export async function apiRequest<T>(
   if (!token) {
     return { kind: "unauthenticated" };
   }
+
+  const first = await attemptRequest<T>(
+    config.apiBaseUrl,
+    path,
+    options,
+    token,
+  );
+  if (first.kind !== "unauthenticated") {
+    return first;
+  }
+
+  const refreshedToken = await refreshAccessToken();
+  if (!refreshedToken || refreshedToken === token) {
+    return first;
+  }
+  return attemptRequest<T>(config.apiBaseUrl, path, options, refreshedToken);
+}
+
+async function attemptRequest<T>(
+  apiBaseUrl: string,
+  path: string,
+  options: ApiRequestOptions,
+  token: string,
+): Promise<ApiOutcome<T>> {
   const method = options.method ?? "GET";
   let response: Response;
   const timeoutController = new AbortController();
@@ -70,7 +101,7 @@ export async function apiRequest<T>(
     REQUEST_TIMEOUT_MS,
   );
   try {
-    response = await fetch(`${config.apiBaseUrl}${path}`, {
+    response = await fetch(`${apiBaseUrl}${path}`, {
       method,
       headers: {
         Authorization: `Bearer ${token}`,
