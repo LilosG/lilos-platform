@@ -47,7 +47,7 @@ import "../styles/global.css";
             Scan this QR code with an authenticator app (e.g. 1Password, Google
             Authenticator, Authy), or enter the code manually.
           </p>
-          <div id="mfa-qr-container" aria-hidden="true"></div>
+          <div id="mfa-qr-container"></div>
           <p>
             Manual entry code: <code id="mfa-secret"></code>
           </p>
@@ -80,10 +80,12 @@ import "../styles/global.css";
     <script>
       import {
         enrollTotpFactor,
+        findUnverifiedTotpFactorIds,
         findVerifiedTotpFactor,
         getAssuranceLevels,
         getCurrentSession,
         hasReachedAal2,
+        unenrollFactor,
         verifyTotpCode,
       } from "../lib/session";
       import { fetchMyPlatformAdministratorStatus } from "../lib/workspace";
@@ -219,14 +221,33 @@ import "../styles/global.css";
           return;
         }
 
+        // Remove any stale unverified factor left over from a previous
+        // abandoned or broken enrollment before issuing a fresh one, so the
+        // caller never re-shows an already-exposed, unusable factor.
+        const stale = await findUnverifiedTotpFactorIds();
+        if (stale.ok) {
+          for (const factorId of stale.data) {
+            await unenrollFactor(factorId);
+          }
+        }
+
         const enrollment = await enrollTotpFactor();
         if (!enrollment.ok) {
           regions.error.textContent = enrollment.message;
           showOnly(regions.error);
           return;
         }
-        document.getElementById("mfa-qr-container")!.innerHTML =
-          enrollment.data.qrCodeSvg;
+        const qrContainer = document.getElementById("mfa-qr-container")!;
+        qrContainer.replaceChildren();
+        const qrImage = document.createElement("img");
+        // Supabase issues a data URI (`data:image/svg+xml;...`) here, not
+        // HTML markup — it must be assigned as an <img> src, never injected
+        // via innerHTML (which would render the raw string, not an image).
+        qrImage.src = enrollment.data.qrCodeSvg;
+        qrImage.width = 200;
+        qrImage.height = 200;
+        qrImage.alt = "QR code for authenticator app enrollment";
+        qrContainer.append(qrImage);
         document.getElementById("mfa-secret")!.textContent =
           enrollment.data.secret;
         await beginChallenge(enrollment.data.factorId, true);

@@ -133,15 +133,69 @@ export async function findVerifiedTotpFactor(): Promise<
   };
 }
 
+/** Returns factor IDs of any unverified TOTP factors left over from an abandoned enrollment. */
+export async function findUnverifiedTotpFactorIds(): Promise<
+  MfaOutcome<string[]>
+> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return {
+      ok: false,
+      message: "Sign-in is not configured for this deployment.",
+    };
+  }
+  const { data, error } = await client.auth.mfa.listFactors();
+  if (error) {
+    return { ok: false, message: error.message };
+  }
+  // Supabase's `totp` field is typed (and populated) as verified-only
+  // factors; unverified ones only appear in `all`, alongside other factor
+  // types, so both must be checked here.
+  return {
+    ok: true,
+    data: data.all
+      .filter(
+        (item) => item.factor_type === "totp" && item.status === "unverified",
+      )
+      .map((item) => item.id),
+  };
+}
+
+/** Removes a factor (typically a stale unverified one) so a fresh enrollment can be issued. */
+export async function unenrollFactor(
+  factorId: string,
+): Promise<MfaOutcome<null>> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return {
+      ok: false,
+      message: "Sign-in is not configured for this deployment.",
+    };
+  }
+  const { error } = await client.auth.mfa.unenroll({ factorId });
+  if (error) {
+    return { ok: false, message: error.message };
+  }
+  return { ok: true, data: null };
+}
+
 export type TotpEnrollment = {
   factorId: string;
-  /** SVG data URI — render directly as the QR code, do not persist or log. */
+  /** Data URI (`data:image/svg+xml;...`) — set as an `<img>` `src`, never
+   * injected as `innerHTML`: it is a URI string, not HTML markup, and
+   * rendering it as innerHTML displays the raw string instead of an image. */
   qrCodeSvg: string;
   /** Manual-entry fallback for the same secret the QR code encodes. */
   secret: string;
 };
 
-/** Starts TOTP enrollment. The returned factor is unverified until `verifyTotpCode` succeeds. */
+/**
+ * Starts a fresh TOTP enrollment. Callers should first unenroll any stale
+ * unverified factor via `findUnverifiedTotpFactorIds`/`unenrollFactor` — an
+ * abandoned enrollment (e.g. from a broken QR render) otherwise lingers as
+ * an unusable, exposed unverified factor rather than being replaced.
+ * The returned factor is itself unverified until `verifyTotpCode` succeeds.
+ */
 export async function enrollTotpFactor(): Promise<MfaOutcome<TotpEnrollment>> {
   const client = getSupabaseClient();
   if (!client) {

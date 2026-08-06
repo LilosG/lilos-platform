@@ -7,9 +7,11 @@ vi.mock("./supabase-client", () => ({
 import { getSupabaseClient } from "./supabase-client";
 import {
   enrollTotpFactor,
+  findUnverifiedTotpFactorIds,
   findVerifiedTotpFactor,
   getAssuranceLevels,
   hasReachedAal2,
+  unenrollFactor,
   verifyTotpCode,
 } from "./session";
 
@@ -92,6 +94,52 @@ describe("findVerifiedTotpFactor", () => {
     );
     const result = await findVerifiedTotpFactor();
     expect(result).toEqual({ ok: true, data: null });
+  });
+});
+
+describe("findUnverifiedTotpFactorIds and unenrollFactor", () => {
+  it("finds a stale unverified factor left over from an abandoned enrollment and removes it before a fresh one is issued", async () => {
+    // Regression: a broken QR render previously left an exposed, unusable
+    // unverified factor enrolled with no way to detect or clear it before
+    // retrying, so a caller was stuck re-showing (or duplicating) that
+    // stale factor instead of a working fresh enrollment.
+    const unenroll = vi
+      .fn()
+      .mockResolvedValue({ data: { id: "stale-1" }, error: null });
+    vi.mocked(getSupabaseClient).mockReturnValue(
+      fakeClient({
+        listFactors: vi.fn().mockResolvedValue({
+          data: {
+            all: [
+              {
+                id: "stale-1",
+                factor_type: "totp",
+                status: "unverified",
+                friendly_name: null,
+              },
+              {
+                id: "verified-1",
+                factor_type: "totp",
+                status: "verified",
+                friendly_name: null,
+              },
+            ],
+            totp: [
+              { id: "verified-1", status: "verified", friendly_name: null },
+            ],
+          },
+          error: null,
+        }),
+        unenroll,
+      }),
+    );
+
+    const staleIds = await findUnverifiedTotpFactorIds();
+    expect(staleIds).toEqual({ ok: true, data: ["stale-1"] });
+
+    const result = await unenrollFactor("stale-1");
+    expect(result).toEqual({ ok: true, data: null });
+    expect(unenroll).toHaveBeenCalledWith({ factorId: "stale-1" });
   });
 });
 
