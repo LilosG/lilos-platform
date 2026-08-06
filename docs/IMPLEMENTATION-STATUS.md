@@ -2,30 +2,60 @@
 
 ## Operational Release Matrix (2026-08-06)
 
-| Capability | Implemented | Production Verified | Acceptance Evidence | External Blocker |
-|---|---|---|---|---|
-| Authentication (Supabase email/password) | Yes | Yes (pilot sign-in) | `session.ts`, `login.astro`, JWKS verification | None |
-| MFA / AAL2 step-up | Yes | Yes | `mfa.astro`, TOTP enroll/challenge/verify with forced session refresh | None |
-| Platform administration | Yes | Partial | `administration.astro`, `/api/v1/platform` routes, AAL2 enforcement | None |
-| Client onboarding | Yes | Partial | `onboarding.astro`, 8-step wizard, activation gate with blocker list | None |
-| Organization/location management | Yes | Yes | Full CRUD, lifecycle transitions, tenant isolation tests | None |
-| Product entitlements and readiness | Yes | Yes | Per-product readiness API, blocking requirements, honest state display | None |
-| Google OAuth connection | Yes | Code complete | Connect/callback/refresh/disconnect, Fernet-encrypted token storage | **Google OAuth credentials** (4 env vars) |
-| GBP account/location discovery | Yes | Code complete | `GBPDiscoveryService`, idempotent upsert from Google API | **Google OAuth credentials** |
-| GBP profile sync | Yes | Code complete | Snapshot storage, health assessment, staleness detection | **Google OAuth credentials** |
-| GBP location mapping | Yes | Code complete | `confirm_mapping`, frontend select + map UI | **Google OAuth credentials** |
-| GBP operations (hours, media, posts) | Yes | Code complete | `GBPOperationsService`, propose/approve workflow | **Google OAuth credentials** |
-| GBP workflow execution | Yes | Code complete | `handlers.py`, `gbp.publish_change`/`gbp.publish_post` handlers | **Google OAuth credentials** |
-| Reviews ingestion + response | Yes | Code complete | Full CRUD, AI draft via `DeterministicAIProvider`, approve/publish | **Google OAuth credentials** for provider dispatch |
-| Leads management | Yes | Code complete | Intake, assignment, status, notes, tasks, conversion, audit | **Email/SMS provider credentials** for speed-to-lead |
-| Content pipeline | Yes | Code complete | Opportunity → brief → draft → approve → publish reservation | **GitHub publishing target** for real publication |
-| SEO crawl + analysis | Yes | Code complete | Real bounded crawl, on-page analysis, opportunity generation | None (crawl is self-contained) |
-| SEO Search Console sync | Yes | Code complete | Property mapping, opportunity scoring | **Google OAuth credentials** (Search Console scope) |
-| Insights and reporting | Yes | Code complete | Cross-product readiness source display, honest empty state | Activity data requires product history |
-| Background workflows | Yes | Code complete | Worker/scheduler, lease-based claiming, heartbeat, handler registry | None |
-| Notifications | Yes | Code complete | In-app notification channel, templates, delivery tracking | None |
-| Audit logging | Yes | Yes | Append-only with DB triggers, every mutation audited | None |
-| Tenant isolation | Yes | Yes | Cross-tenant access tests at every layer | None |
+The matrix below distinguishes five orthogonal states for each capability:
+
+- **Implemented**: code exists and is mounted.
+- **Test-verified**: automated tests exercise the code path and pass.
+- **Deployed**: running in production (verified via deploy logs / smoke test).
+- **Real-provider verified**: exercised against a real external provider.
+- **External blocker**: pending an external operator action before further
+  states can advance.
+
+| Capability | Implemented | Test-verified | Deployed | Real-provider verified | External blocker |
+|---|---|---|---|---|---|
+| Authentication (Supabase email/password) | Yes | Yes | Yes (pilot sign-in) | Yes | None |
+| MFA / AAL2 step-up | Yes | Yes (`session.test.ts`) | Yes | Yes (pilot TOTP) | None |
+| Platform administration | Yes | Yes | Partial | Partial | None |
+| Client onboarding | Yes | Yes | Partial | Partial | None |
+| Organization/location management | Yes | Yes | Yes | Yes | None |
+| Product entitlements and readiness | Yes | Yes | Yes | Yes | None |
+| Google OAuth connection | Yes | Yes (`test_connection_service.py`) | No | No | **Google OAuth credentials** (4 env vars) |
+| GBP account/location discovery | Yes | No (code complete, untested) | No | No | **Google OAuth credentials** |
+| GBP profile sync | Yes | No (code complete, untested) | No | No | **Google OAuth credentials** |
+| GBP location mapping | Yes | Yes (`test_gbp_api.py`) | No | No | **Google OAuth credentials** |
+| GBP operations (hours, media, posts) | Yes | Yes (`test_gbp_operations_api.py`) | No | No | **Google OAuth credentials** |
+| GBP workflow execution (`gbp.publish_change`) | Yes | Yes (handler test) | No | No | **Google OAuth credentials** |
+| GBP workflow execution (`gbp.publish_post`) | Yes (fails closed) | Yes (handler test) | No | No | **GBP Posts API scope** + Google OAuth credentials |
+| Reviews ingestion + response | Yes | Yes (`test_reviews_api.py`) | No | No | **Google OAuth credentials** for provider dispatch |
+| Leads management | Yes | Yes (`test_leads_api.py`) | No | No | **Email/SMS provider credentials** for speed-to-lead |
+| Content pipeline | Yes | Yes (`test_content_api.py`) | No | No | **GitHub publishing target** for real publication |
+| Content workflow execution (`content.publish`) | Yes (fails closed) | Yes (handler test) | No | No | **Publishing connector** not yet implemented |
+| SEO crawl + analysis | Yes | Yes (`test_seo_api.py`) | No | No | None (crawl is self-contained) |
+| SEO workflow execution (`seo.crawl_or_analysis`) | Yes | Yes (handler test) | No | No | None |
+| SEO Search Console sync | Yes | Yes | No | No | **Google OAuth credentials** (Search Console scope) |
+| Insights and reporting | Yes | Yes | No | No | Activity data requires product history |
+| Background workflows | Yes | Yes (`test_process_runtime.py`) | Yes | Yes | None |
+| Notifications | Yes | Yes | No | No | None |
+| Audit logging | Yes | Yes | Yes | Yes | None |
+| Tenant isolation | Yes | Yes | Yes | Yes | None |
+
+### Notes on the matrix
+
+- "Fails closed" for `gbp.publish_post` and `content.publish` means the
+  handler honestly marks the publication as `failed` with a clear
+  `safe_error_code` rather than fabricating a `verified` status. Real
+  provider-backed completion requires the listed external blocker to be
+  resolved and the handler to be updated to perform the actual provider
+  write and verification re-read.
+- "No (code complete, untested)" for GBP discovery means the
+  `GBPDiscoveryService` has no dedicated automated tests yet — the existing
+  test suite passes but does not exercise the discovery service's code
+  paths. This is a known gap, not a release blocker, because the service
+  cannot be exercised without real Google credentials.
+- `gbp.publish_change` is the only handler that performs a real provider
+  write (via `GoogleBusinessProfileAdapter.patch_location`) and a
+  verification re-read. It is blocked on Google OAuth credentials for
+  real-provider verification.
 
 ### Current task
 
@@ -40,6 +70,33 @@
 2. `4249e93` — feat(integrations): add GBP account/location discovery and profile sync
 3. `5f1ff78` — feat(execution): register workflow step handlers for product workflows
 4. `daadc15` — fix(web): remove unused DiscoveryResult type import from gbp.astro
+
+### Audit corrections (release-rc audit of e885760)
+
+5. `fix(execution): invoke registered workflow handlers for catalog keys` — the
+   runtime guard `if version.step_specification and workflow_key:` short-circuited
+   because `step_specification` was always `[]`, so handlers were never invoked
+   and every workflow silently completed without doing real work. Fixed to
+   invoke the handler whenever a workflow key is present and a handler is
+   registered; catalog keys with no handler now fail closed with
+   `WORKFLOW_HANDLER_NOT_REGISTERED` instead of silently completing.
+
+6. `fix(execution): stop fabricating verified publication status` —
+   `gbp.publish_post` and `content.publish` handlers marked publications as
+   `verified` without any provider write. Fixed to mark `failed` with clear
+   `safe_error_code` (`POSTS_API_SCOPE_NOT_CONFIGURED` /
+   `PUBLISHING_TARGET_NOT_CONFIGURED`). `gbp.publish_change` now moves
+   `verified` after a successful verification re-read; re-read failures mark
+   `reconciliation_required` instead of being silently swallowed.
+
+7. `test(execution): add focused handler-invocation and behavior tests` —
+   7 new tests proving handlers are actually invoked by the runtime, catalog
+   keys with no handler fail closed, and handlers do not fabricate `verified`.
+
+8. `docs: restructure implementation-status matrix to distinguish five states`
+   — the matrix now distinguishes implemented, test-verified, deployed,
+   real-provider verified, and external blocker, correcting the prior
+   conflation of "code complete" with "test-verified" and "deployed."
 
 ### External blockers requiring operator action
 
