@@ -37,9 +37,11 @@ from apps.api.app.integrations.connection_service import GBPConnectionService
 from apps.api.app.integrations.errors import (
     IntegrationNotConfiguredError,
     IntegrationNotFoundError,
+    IntegrationReconnectRequiredError,
     IntegrationStateInvalidError,
     IntegrationTokenExchangeFailedError,
 )
+from apps.api.app.products.gbp.discovery_service import GBPDiscoveryService
 from apps.api.app.routes.health import settings_from_request
 from apps.api.app.schemas import ResponseMeta
 
@@ -50,6 +52,7 @@ router = APIRouter(
 )
 callback_router = APIRouter(prefix="/api/v1/integrations/google", tags=["integrations"])
 service = GBPConnectionService()
+discovery = GBPDiscoveryService()
 administration = AdministrationService()
 Session = Annotated[AsyncSession, Depends(get_database_session)]
 GBPConnect = Annotated[
@@ -178,6 +181,86 @@ async def disconnect(
     )
     return {
         "data": {"status": connection.status},
+        "meta": ResponseMeta(correlation_id=request_correlation_id(request)).model_dump(),
+    }
+
+
+@router.post(
+    "/discover",
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(no_store)],
+    summary="Discover GBP accounts, locations, and sync initial profiles",
+)
+async def discover(
+    request: Request,
+    organization_id: UUID,
+    session: Session,
+    principal: Authenticated,
+    _: GBPConnect,
+) -> dict[str, object]:
+    settings = settings_from_request(request)
+    try:
+        result = await discovery.discover_and_sync(
+            session,
+            settings,
+            organization_id,
+            actor_id=principal.platform_user_id,
+            correlation_id=request_correlation_id(request),
+        )
+    except IntegrationReconnectRequiredError:
+        return {
+            "data": None,
+            "error": {
+                "code": "RECONNECT_REQUIRED",
+                "message": "Google access token expired. Reconnect your Google account.",
+            },
+            "meta": ResponseMeta(correlation_id=request_correlation_id(request)).model_dump(),
+        }
+    return {
+        "data": result,
+        "meta": ResponseMeta(correlation_id=request_correlation_id(request)).model_dump(),
+    }
+
+
+@router.post(
+    "/locations/{gbp_location_id}/sync",
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(no_store)],
+    summary="Sync the profile snapshot for a GBP location",
+)
+async def sync_profile(
+    request: Request,
+    organization_id: UUID,
+    gbp_location_id: UUID,
+    session: Session,
+    principal: Authenticated,
+    _: GBPConnect,
+) -> dict[str, object]:
+    settings = settings_from_request(request)
+    try:
+        snapshot = await discovery.sync_profile(
+            session,
+            settings,
+            organization_id,
+            gbp_location_id,
+            actor_id=principal.platform_user_id,
+            correlation_id=request_correlation_id(request),
+        )
+    except IntegrationReconnectRequiredError:
+        return {
+            "data": None,
+            "error": {
+                "code": "RECONNECT_REQUIRED",
+                "message": "Google access token expired. Reconnect your Google account.",
+            },
+            "meta": ResponseMeta(correlation_id=request_correlation_id(request)).model_dump(),
+        }
+    return {
+        "data": {
+            "snapshot_id": str(snapshot.id),
+            "content_hash": snapshot.content_hash,
+            "observed_at": snapshot.observed_at.isoformat(),
+        },
         "meta": ResponseMeta(correlation_id=request_correlation_id(request)).model_dump(),
     }
 
