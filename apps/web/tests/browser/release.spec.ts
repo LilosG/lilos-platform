@@ -62,6 +62,21 @@ test("unconfigured login page shows a truthful not-configured state", async ({
   ).toEqual([]);
 });
 
+test("unconfigured MFA step-up page shows a truthful not-configured state", async ({
+  page,
+}) => {
+  await page.goto("/mfa");
+  await expect(
+    page.getByText("This deployment is not configured for sign-in."),
+  ).toBeVisible();
+  const results = await new AxeBuilder({ page }).analyze();
+  expect(
+    results.violations.filter((item) =>
+      ["serious", "critical"].includes(item.impact ?? ""),
+    ),
+  ).toEqual([]);
+});
+
 test("unconfigured Business Profile page shows a truthful not-configured state, not fabricated GBP data", async ({
   page,
 }) => {

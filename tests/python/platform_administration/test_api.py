@@ -400,3 +400,103 @@ def test_platform_administrator_lists_only_active_industries(
     keys = {item["key"] for item in items}
     assert "general_local_business" in keys
     assert "legacy_industry" not in keys
+
+
+@pytest.mark.integration
+def test_platform_administrator_aal1_session_denied_gated_route(
+    platform_administration_client: tuple[TestClient, FakeVerifier, dict[str, UUID]],
+) -> None:
+    """A real active grant is not enough at AAL1 -- the exact bug being fixed."""
+    client, verifier, ids = platform_administration_client
+    verifier.result = claims(ids["admin_subject"], assurance=AssuranceLevel.AAL1)
+
+    response = client.get("/api/v1/platform/organizations", headers=HEADERS)
+    assert response.status_code == 403, response.text
+    assert response.json()["error"]["code"] == "AUTHORIZATION_DENIED"
+
+
+@pytest.mark.integration
+def test_platform_administrator_aal2_session_allowed_gated_route(
+    platform_administration_client: tuple[TestClient, FakeVerifier, dict[str, UUID]],
+) -> None:
+    client, verifier, ids = platform_administration_client
+    verifier.result = claims(ids["admin_subject"], assurance=AssuranceLevel.AAL2)
+
+    response = client.get("/api/v1/platform/organizations", headers=HEADERS)
+    assert response.status_code == 200, response.text
+
+
+@pytest.mark.integration
+def test_self_status_distinguishes_not_admin_needs_step_up_and_active(
+    platform_administration_client: tuple[TestClient, FakeVerifier, dict[str, UUID]],
+) -> None:
+    client, verifier, ids = platform_administration_client
+
+    # Signed in, holds a grant, but session is only AAL1: needs step-up.
+    verifier.result = claims(ids["admin_subject"], assurance=AssuranceLevel.AAL1)
+    needs_step_up = client.get("/api/v1/me/platform-administrator", headers=HEADERS)
+    assert needs_step_up.status_code == 200, needs_step_up.text
+    data = needs_step_up.json()["data"]
+    assert set(data.keys()) == {
+        "is_platform_administrator",
+        "meets_required_assurance",
+        "required_assurance_level",
+    }
+    assert data == {
+        "is_platform_administrator": True,
+        "meets_required_assurance": False,
+        "required_assurance_level": "aal2",
+    }
+
+    # Same account, now AAL2: fully authorized.
+    verifier.result = claims(ids["admin_subject"], assurance=AssuranceLevel.AAL2)
+    active = client.get("/api/v1/me/platform-administrator", headers=HEADERS)
+    assert active.status_code == 200, active.text
+    assert active.json()["data"] == {
+        "is_platform_administrator": True,
+        "meets_required_assurance": True,
+        "required_assurance_level": "aal2",
+    }
+
+    # Signed in, no grant at all, even at AAL2: not a platform administrator.
+    verifier.result = claims(ids["non_admin_subject"], assurance=AssuranceLevel.AAL2)
+    not_admin = client.get("/api/v1/me/platform-administrator", headers=HEADERS)
+    assert not_admin.status_code == 200, not_admin.text
+    assert not_admin.json()["data"] == {
+        "is_platform_administrator": False,
+        "meets_required_assurance": True,
+        "required_assurance_level": "aal2",
+    }
+
+    # A revoked grant reads identically to never having had one.
+    verifier.result = claims(ids["revoked_admin_subject"], assurance=AssuranceLevel.AAL2)
+    revoked = client.get("/api/v1/me/platform-administrator", headers=HEADERS)
+    assert revoked.status_code == 200, revoked.text
+    assert revoked.json()["data"]["is_platform_administrator"] is False
+
+
+@pytest.mark.integration
+def test_self_status_response_carries_no_secret_or_token(
+    platform_administration_client: tuple[TestClient, FakeVerifier, dict[str, UUID]],
+) -> None:
+    client, verifier, ids = platform_administration_client
+    verifier.result = claims(ids["admin_subject"], assurance=AssuranceLevel.AAL1)
+
+    response = client.get("/api/v1/me/platform-administrator", headers=HEADERS)
+    assert response.status_code == 200, response.text
+    body = response.text.lower()
+    for forbidden in ("token", "secret", "totp", "authorization", "bearer"):
+        assert forbidden not in body
+
+    assert response.headers["cache-control"] == "no-store"
+
+
+@pytest.mark.integration
+def test_self_status_requires_authentication(
+    platform_administration_client: tuple[TestClient, FakeVerifier, dict[str, UUID]],
+) -> None:
+    client, _verifier, _ids = platform_administration_client
+
+    response = client.get("/api/v1/me/platform-administrator")
+    assert response.status_code == 401, response.text
+    assert response.json()["error"]["code"] == "AUTHENTICATION_REQUIRED"

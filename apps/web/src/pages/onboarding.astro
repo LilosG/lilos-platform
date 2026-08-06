@@ -635,7 +635,11 @@ import "../styles/global.css";
         fetchInvitations,
         type PolicyRevision,
       } from "../lib/administration";
-      import { fetchPrincipal, type PrincipalSummary } from "../lib/workspace";
+      import {
+        fetchMyPlatformAdministratorStatus,
+        fetchPrincipal,
+        type PrincipalSummary,
+      } from "../lib/workspace";
       import { getCurrentSession, signOut } from "../lib/session";
       import { readPublicConfig } from "../lib/config";
       import type { ApiOutcome } from "../lib/api-client";
@@ -1709,9 +1713,23 @@ import "../styles/global.css";
         wireSignOut();
         currentPrincipal = principal.data;
 
-        const probe = await fetchOrganizations();
-        if (probe.kind !== "ok") {
+        const adminStatus = await fetchMyPlatformAdministratorStatus();
+        if (adminStatus.kind === "unauthenticated") {
+          goToLogin();
+          return;
+        }
+        if (
+          adminStatus.kind !== "ok" ||
+          !adminStatus.data.is_platform_administrator
+        ) {
           showOnly(regions.notAdmin);
+          return;
+        }
+        if (!adminStatus.data.meets_required_assurance) {
+          const next = encodeURIComponent(
+            window.location.pathname + window.location.search,
+          );
+          window.location.assign(`/mfa?next=${next}`);
           return;
         }
 

@@ -307,6 +307,7 @@ import "../styles/global.css";
       } from "../lib/administration";
       import {
         fetchMyOrganizations,
+        fetchMyPlatformAdministratorStatus,
         fetchPrincipal,
         fetchProductReadiness,
         PRODUCT_KEYS,
@@ -830,6 +831,20 @@ import "../styles/global.css";
         signOutButton.hidden = false;
         wireSignOut();
         currentPrincipal = principal.data;
+
+        const adminStatus = await fetchMyPlatformAdministratorStatus();
+        if (
+          adminStatus.kind === "ok" &&
+          adminStatus.data.is_platform_administrator &&
+          !adminStatus.data.meets_required_assurance
+        ) {
+          const next = encodeURIComponent(
+            window.location.pathname + window.location.search,
+          );
+          window.location.assign(`/mfa?next=${next}`);
+          return;
+        }
+
         const isPlatformAdmin = await renderPlatformAdmin();
 
         const organizations = await fetchMyOrganizations();

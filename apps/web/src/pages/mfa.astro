@@ -1,0 +1,241 @@
+---
+import "../styles/global.css";
+---
+
+<!doctype html>
+<html lang="en">
+  <head
+    ><meta charset="UTF-8" /><meta
+      name="viewport"
+      content="width=device-width, initial-scale=1"
+    /><meta
+      name="description"
+      content="Step up to platform-administrator access"
+    /><title>Verify it's you · LILOs</title></head
+  >
+  <body>
+    <main class="auth-page">
+      <section aria-labelledby="mfa-title" class="auth-card">
+        <p class="eyebrow">LILOs</p><h1 id="mfa-title">Verify it's you</h1>
+
+        <div id="mfa-not-configured" hidden role="status">
+          <p>
+            This deployment is not configured for sign-in. Contact your
+            administrator.
+          </p>
+        </div>
+
+        <div id="mfa-loading" role="status" aria-live="polite">
+          <p>Checking your access…</p>
+        </div>
+
+        <div id="mfa-error" role="alert" aria-live="assertive" hidden></div>
+
+        <div id="mfa-not-admin" role="status" hidden>
+          <h2>Not a platform administrator</h2>
+          <p>
+            Your account does not hold platform-administrator access. Ask an
+            existing platform administrator to grant it if you believe this is
+            wrong.
+          </p>
+        </div>
+
+        <div id="mfa-enroll" hidden>
+          <h2>Set up an authenticator app</h2>
+          <p>
+            Platform-administrator access requires a second verification step.
+            Scan this QR code with an authenticator app (e.g. 1Password, Google
+            Authenticator, Authy), or enter the code manually.
+          </p>
+          <div id="mfa-qr-container" aria-hidden="true"></div>
+          <p>
+            Manual entry code: <code id="mfa-secret"></code>
+          </p>
+        </div>
+
+        <div id="mfa-challenge" hidden>
+          <h2 id="mfa-challenge-title">Enter your authenticator code</h2>
+          <form id="mfa-verify-form">
+            <label for="mfa-code">6-digit code</label><input
+              type="text"
+              id="mfa-code"
+              name="code"
+              inputmode="numeric"
+              pattern="[0-9]{6}"
+              maxlength="6"
+              autocomplete="one-time-code"
+              required
+            /><button type="submit" class="button" id="mfa-verify-submit"
+              >Verify</button
+            >
+          </form>
+          <p id="mfa-verify-error" role="alert" aria-live="assertive" hidden>
+          </p>
+          <p id="mfa-verify-pending" role="status" aria-live="polite" hidden>
+            Verifying…
+          </p>
+        </div>
+      </section>
+    </main>
+    <script>
+      import {
+        enrollTotpFactor,
+        findVerifiedTotpFactor,
+        getAssuranceLevels,
+        getCurrentSession,
+        verifyTotpCode,
+      } from "../lib/session";
+      import { fetchMyPlatformAdministratorStatus } from "../lib/workspace";
+      import { readPublicConfig } from "../lib/config";
+
+      const regions = {
+        notConfigured: document.getElementById("mfa-not-configured")!,
+        loading: document.getElementById("mfa-loading")!,
+        error: document.getElementById("mfa-error")!,
+        notAdmin: document.getElementById("mfa-not-admin")!,
+        enroll: document.getElementById("mfa-enroll")!,
+        challenge: document.getElementById("mfa-challenge")!,
+      };
+
+      function showOnly(...visible: HTMLElement[]): void {
+        for (const key of Object.keys(regions) as (keyof typeof regions)[]) {
+          regions[key].hidden = !visible.includes(regions[key]);
+        }
+      }
+
+      function redirectTarget(): string {
+        const params = new URLSearchParams(window.location.search);
+        const next = params.get("next");
+        return next && next.startsWith("/") ? next : "/";
+      }
+
+      function goToLogin(): void {
+        const next = encodeURIComponent(
+          window.location.pathname + window.location.search,
+        );
+        window.location.assign(`/login?next=${next}`);
+      }
+
+      let activeFactorId: string | null = null;
+
+      async function beginChallenge(
+        factorId: string,
+        isFreshEnrollment: boolean,
+      ): Promise<void> {
+        activeFactorId = factorId;
+        document.getElementById("mfa-challenge-title")!.textContent =
+          isFreshEnrollment
+            ? "Enter the code from your authenticator app"
+            : "Enter your authenticator code";
+        showOnly(
+          isFreshEnrollment ? regions.enroll : regions.challenge,
+          regions.challenge,
+        );
+      }
+
+      function wireVerifyForm(): void {
+        const form = document.getElementById(
+          "mfa-verify-form",
+        ) as HTMLFormElement;
+        const errorMessage = document.getElementById("mfa-verify-error")!;
+        const pending = document.getElementById("mfa-verify-pending")!;
+        const submit = document.getElementById(
+          "mfa-verify-submit",
+        ) as HTMLButtonElement;
+
+        form.addEventListener("submit", async (event) => {
+          event.preventDefault();
+          if (!activeFactorId) return;
+          errorMessage.hidden = true;
+          pending.hidden = false;
+          submit.disabled = true;
+          const code = (
+            document.getElementById("mfa-code") as HTMLInputElement
+          ).value.trim();
+          const result = await verifyTotpCode(activeFactorId, code);
+          pending.hidden = true;
+          submit.disabled = false;
+          if (!result.ok) {
+            errorMessage.textContent = result.message;
+            errorMessage.hidden = false;
+            (document.getElementById("mfa-code") as HTMLInputElement).value =
+              "";
+            return;
+          }
+          window.location.assign(redirectTarget());
+        });
+      }
+
+      async function boot(): Promise<void> {
+        if (!readPublicConfig()) {
+          showOnly(regions.notConfigured);
+          return;
+        }
+        showOnly(regions.loading);
+
+        const session = await getCurrentSession();
+        if (session.status !== "signed-in") {
+          goToLogin();
+          return;
+        }
+
+        const status = await fetchMyPlatformAdministratorStatus();
+        if (status.kind === "unauthenticated") {
+          goToLogin();
+          return;
+        }
+        if (status.kind !== "ok") {
+          regions.error.textContent =
+            status.kind === "error"
+              ? status.message
+              : "Could not check your access.";
+          showOnly(regions.error);
+          return;
+        }
+        if (!status.data.is_platform_administrator) {
+          showOnly(regions.notAdmin);
+          return;
+        }
+        if (status.data.meets_required_assurance) {
+          window.location.replace(redirectTarget());
+          return;
+        }
+
+        const levels = await getAssuranceLevels();
+        if (levels.ok && levels.data.currentLevel === levels.data.nextLevel) {
+          // Supabase itself already reports no further step-up is possible or
+          // needed for this session — resolve by returning to the target and
+          // letting the real gated request be the source of truth.
+          window.location.replace(redirectTarget());
+          return;
+        }
+
+        const existing = await findVerifiedTotpFactor();
+        if (!existing.ok) {
+          regions.error.textContent = existing.message;
+          showOnly(regions.error);
+          return;
+        }
+        if (existing.data) {
+          await beginChallenge(existing.data.factorId, false);
+          return;
+        }
+
+        const enrollment = await enrollTotpFactor();
+        if (!enrollment.ok) {
+          regions.error.textContent = enrollment.message;
+          showOnly(regions.error);
+          return;
+        }
+        document.getElementById("mfa-qr-container")!.innerHTML =
+          enrollment.data.qrCodeSvg;
+        document.getElementById("mfa-secret")!.textContent =
+          enrollment.data.secret;
+        await beginChallenge(enrollment.data.factorId, true);
+      }
+
+      wireVerifyForm();
+      void boot();
+    </script>
+  </body>
+</html>

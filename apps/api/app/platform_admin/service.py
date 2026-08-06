@@ -13,11 +13,14 @@ from apps.api.app.audit.contracts import AuditEventCreate
 from apps.api.app.audit.enums import AuditActorType, AuditResult
 from apps.api.app.audit.service import AuditEventService
 from apps.api.app.authentication.contracts import UserProfileCreate
+from apps.api.app.authentication.enums import AssuranceLevel
 from apps.api.app.authentication.repository import UserProfileRepository
 from apps.api.app.authentication.service import UserAdministrationService
+from apps.api.app.authorization.service import assurance_satisfies
 from apps.api.app.organizations.service import OrganizationService
 from apps.api.app.platform_admin.contracts import (
     PlatformAdministratorGrantResult,
+    PlatformAdministratorSelfStatus,
     PlatformOwnerBootstrapResult,
 )
 from apps.api.app.platform_admin.models import PlatformAdministrator
@@ -163,4 +166,31 @@ class PlatformAdministrationService:
         )
         return PlatformAdministratorGrantResult(
             user_profile_id=profile.id, grant_id=grant.id, grant_created=True
+        )
+
+    async def self_status(
+        self,
+        session: AsyncSession,
+        *,
+        user_profile_id: UUID,
+        assurance_level: AssuranceLevel,
+    ) -> PlatformAdministratorSelfStatus:
+        """Self-scoped read: does the caller hold a grant, and does their
+        current session already meet the assurance level
+        ``require_platform_administrator`` will enforce?
+
+        Reuses the identical repository lookup that dependency uses — this
+        never re-derives or duplicates that check, it only also reports it
+        back to the caller about themselves, at whatever assurance level
+        their current session happens to carry (grant existence is checked
+        independently of assurance, exactly as the dependency's own lookup
+        is).
+        """
+        grant = await self.platform_administrators.get_active_by_user_profile_id(
+            session, user_profile_id
+        )
+        return PlatformAdministratorSelfStatus(
+            is_platform_administrator=grant is not None,
+            meets_required_assurance=assurance_satisfies(assurance_level, AssuranceLevel.AAL2),
+            required_assurance_level=AssuranceLevel.AAL2.value,
         )

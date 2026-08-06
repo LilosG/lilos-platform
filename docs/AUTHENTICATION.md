@@ -62,6 +62,29 @@ Security logs contain stable result/reason codes, correlation ID, and only bound
 context. They exclude authorization headers, tokens, claims, email, provider payloads, signing
 material, OTPs, MFA secrets, and recovery data. Operational log retention is not implemented here.
 
+## Platform-administrator step-up (AAL2)
+
+`require_platform_administrator` (`apps.api.app.platform_admin.dependencies`) always requires
+`aal2`, independent of and additive to per-organization RBAC — unchanged by the flow below. A
+principal's own standing is self-disclosed (never another account's) via
+`GET /api/v1/me/platform-administrator`
+(`PlatformAdministrationService.self_status`, reusing the same
+`PlatformAdministratorRepository.get_active_by_user_profile_id` lookup the dependency itself uses):
+`is_platform_administrator` and `meets_required_assurance` are reported independently, so the
+frontend can render the three post-authentication states distinctly — signed in but no grant;
+grant held but session is only `aal1`; fully authorized — rather than one undifferentiated 403.
+
+The frontend step-up flow (`apps/web/src/pages/mfa.astro`, `apps/web/src/lib/session.ts`) wraps the
+existing Supabase MFA API directly (`auth.mfa.listFactors/enroll/challengeAndVerify/
+getAuthenticatorAssuranceLevel`) — no separate MFA implementation. `/administration` and
+`/onboarding` redirect a grant-holding `aal1` session to `/mfa?next=<original path>`; that page
+reuses a caller's already-verified TOTP factor if one exists, or enrolls a new one (rendering the
+Supabase-issued QR/secret once, never persisted or logged), then `challengeAndVerify`s the entered
+code, which elevates the live Supabase session to `aal2` and is picked up automatically on the next
+API call (no separate manual refresh step) before returning to `next`. Verification codes, TOTP
+secrets, and access tokens are never included in any logged or returned value beyond that one
+enrollment response.
+
 ## Local and test use
 
 When the existing internal-route guard is explicitly enabled in local/test, bootstrap routes can

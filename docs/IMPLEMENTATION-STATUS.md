@@ -1,5 +1,29 @@
 # LILOs implementation status
 
+## Production access correction — platform-administrator MFA step-up (2026-08-06)
+
+Production showed `mike@lilosgrowth.com` (real, active `PlatformAdministrator` grant, confirmed in
+the prior packet) blocked from `/administration` and `/onboarding` with an undifferentiated
+"Platform administrator access required" — the account's session was `aal1`, and
+`require_platform_administrator` correctly requires `aal2` (unchanged, not weakened), but there was
+no frontend flow to step up to `aal2` at all, and no way to distinguish "no grant" from "grant, but
+needs MFA" in the UI.
+
+Added: `GET /api/v1/me/platform-administrator` (self-scoped disclosure only, reusing the exact
+grant lookup the dependency itself uses — see `docs/AUTHENTICATION.md`); `apps/web/src/pages/mfa.astro`
+wrapping the existing Supabase MFA API (enroll-or-reuse TOTP, `challengeAndVerify`, automatic
+session elevation, return to the original `next` page); `/administration` and `/onboarding` now
+redirect a grant-holding `aal1` session to `/mfa?next=...` instead of showing a dead end.
+
+**Validation:** `ruff format --check`, `ruff check`, `mypy` (389 files) clean. `pytest` — 488 passed,
+including new focused AAL1-denial/AAL2-success/non-admin/revoked-grant/redaction/authentication-
+required tests for the new self-status endpoint. Frontend: `prettier --check`, `eslint`,
+`astro check` (0/0/0, 43 files), `vitest run` (35 passed across 8 files, including new
+`session.test.ts` covering TOTP enroll/challenge/verify and asserting no code/token ever appears in
+a returned value, and `workspace.test.ts` asserting the self-status call only ever targets the
+caller's own endpoint), `astro build` (11 pages incl. `/mfa`), `playwright test` (46 passed). No
+authorization check was weakened; `require_platform_administrator` still hard-requires `aal2`.
+
 ## Release 1 Closure Batch 1 — Client onboarding and administration (2026-08-05)
 
 A platform administrator can now onboard and activate a real client organization entirely through

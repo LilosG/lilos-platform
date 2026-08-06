@@ -85,6 +85,11 @@ from apps.api.app.organizations.contracts import (
 )
 from apps.api.app.organizations.enums import OrganizationLifecycleAction
 from apps.api.app.organizations.service import OrganizationService
+from apps.api.app.platform_admin.contracts import (
+    PlatformAdministratorSelfStatus,
+    PlatformAdministratorSelfStatusResponse,
+)
+from apps.api.app.platform_admin.service import PlatformAdministrationService
 from apps.api.app.profiles.contracts import (
     LocationProfileCreate,
     LocationProfileData,
@@ -120,6 +125,7 @@ identity_service = BusinessIdentityService()
 access_service = AccessControlService()
 catalog_repository = CatalogRepository()
 domain_service = OrganizationDomainService()
+platform_admin_service = PlatformAdministrationService()
 
 DatabaseSession = Annotated[AsyncSession, Depends(get_database_session)]
 
@@ -163,6 +169,27 @@ async def list_my_organizations(
         ],
         meta=meta(request),
     )
+
+
+@router.get("/me/platform-administrator", response_model=PlatformAdministratorSelfStatusResponse)
+async def get_my_platform_administrator_status(
+    request: Request,
+    principal: Authenticated,
+    session: DatabaseSession,
+) -> PlatformAdministratorSelfStatusResponse:
+    """Self-scoped: does the caller hold an active platform-administrator grant.
+
+    Distinct from the fail-closed, non-disclosing 403
+    ``require_platform_administrator`` returns to protect other tenants' data
+    — this only ever discloses the caller's own standing, exactly as
+    ``/api/v1/me`` already discloses their own identity and assurance level.
+    """
+    status_data: PlatformAdministratorSelfStatus = await platform_admin_service.self_status(
+        session,
+        user_profile_id=principal.platform_user_id,
+        assurance_level=principal.assurance_level,
+    )
+    return PlatformAdministratorSelfStatusResponse(data=status_data, meta=meta(request))
 
 
 def organization_policy(permission: str, *, aal2: bool = False) -> Any:

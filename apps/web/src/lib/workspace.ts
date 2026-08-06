@@ -66,6 +66,26 @@ export function fetchMyOrganizations(): Promise<ApiOutcome<MyOrganization[]>> {
   return apiGet<MyOrganization[]>("/api/v1/me/organizations");
 }
 
+export type PlatformAdministratorSelfStatus = {
+  is_platform_administrator: boolean;
+  meets_required_assurance: boolean;
+  required_assurance_level: string;
+};
+
+/**
+ * Self-scoped only: whether the caller themselves holds a platform-admin
+ * grant and whether their current session meets its assurance requirement.
+ * Never usable to probe another account — always resolved from the caller's
+ * own verified principal server-side.
+ */
+export function fetchMyPlatformAdministratorStatus(): Promise<
+  ApiOutcome<PlatformAdministratorSelfStatus>
+> {
+  return apiGet<PlatformAdministratorSelfStatus>(
+    "/api/v1/me/platform-administrator",
+  );
+}
+
 export function fetchLocations(
   organizationId: string,
 ): Promise<ApiOutcome<LocationSummary[]>> {
