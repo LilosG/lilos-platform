@@ -662,15 +662,56 @@ import "../styles/global.css";
         }
       }
 
+      // ---------- Boot diagnostics ----------
+      //
+      // Every boot() run gets its own correlation ID, and every stage it
+      // passes through is logged with that ID via console.info — safe,
+      // structured, and never including a token, secret, or code. This is
+      // what lets a failure be tied to a specific attempt (and, via the
+      // timestamp/route, to the matching backend request in server logs)
+      // instead of only ever seeing one undifferentiated "loading error".
+
+      let bootInFlight = false;
+      let bootCorrelationId = "";
+      let currentBootStage = "start";
+
+      function newCorrelationId(): string {
+        if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+          return crypto.randomUUID();
+        }
+        return `boot-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      }
+
+      function logStage(
+        stage: string,
+        detail: Record<string, unknown> = {},
+      ): void {
+        currentBootStage = stage;
+        console.info("[onboarding:boot]", {
+          correlationId: bootCorrelationId,
+          stage,
+          ...detail,
+        });
+      }
+
       /**
        * Renders an operator-safe failure with a Retry control and guarantees
        * the page leaves the "Loading…" state — the one path every boot
        * failure (a timed-out/failed request, or any unexpected exception)
-       * must reach, so onboarding can never hang indefinitely.
+       * must reach, so onboarding can never hang indefinitely. Always names
+       * the specific stage that failed and carries the boot correlation ID,
+       * never a generic undifferentiated message.
        */
-      function showBootError(message: string): void {
-        document.getElementById("boot-error-message")!.textContent = message;
+      function showBootError(stage: string, message: string): void {
+        document.getElementById("boot-error-message")!.textContent =
+          `${message} (stage: ${stage}, ref: ${bootCorrelationId})`;
         showOnly(regions.error);
+      }
+
+      function setRetryEnabled(enabled: boolean): void {
+        (
+          document.getElementById("boot-error-retry") as HTMLButtonElement
+        ).disabled = !enabled;
       }
 
       function wireBootErrorRetry(): void {
@@ -783,23 +824,23 @@ import "../styles/global.css";
 
       // ---------- Step 0: picker / create ----------
 
-      async function populateOrgPicker(): Promise<boolean> {
+      async function populateOrgPicker(): Promise<ApiOutcome<unknown>> {
         const select = document.getElementById(
           "org-picker",
         ) as HTMLSelectElement;
         const outcome = await fetchOrganizations();
         select.innerHTML = '<option value="">Select a client…</option>';
-        if (outcome.kind !== "ok") return false;
+        if (outcome.kind !== "ok") return outcome;
         for (const organization of outcome.data) {
           const option = document.createElement("option");
           option.value = organization.id;
           option.textContent = `${organization.name} (${organization.status})`;
           select.append(option);
         }
-        return true;
+        return outcome;
       }
 
-      async function populateIndustrySelects(): Promise<boolean> {
+      async function populateIndustrySelects(): Promise<ApiOutcome<unknown>> {
         const outcome = await fetchIndustries();
         const options =
           outcome.kind === "ok"
@@ -820,7 +861,7 @@ import "../styles/global.css";
         ) as HTMLSelectElement;
         assignSelect.innerHTML =
           '<option value="">Select an industry…</option>' + options;
-        return outcome.kind === "ok";
+        return outcome;
       }
 
       function wireCreateOrgForm(): void {
@@ -1242,7 +1283,7 @@ import "../styles/global.css";
         const productsOutcome = await fetchProducts(organizationId);
         const productsByKey = new Map(
           productsOutcome.kind === "ok"
-            ? productsOutcome.data.map((product) => [product.key, product])
+            ? (Array.isArray(productsOutcome?.data) ? productsOutcome.data : []).map((product) => [product.key, product])
             : [],
         );
         const statuses = state?.products ?? [];
@@ -1706,43 +1747,70 @@ import "../styles/global.css";
       }
 
       /**
-       * Top-level boot entry point. Wraps `runBoot` so that any failure —
-       * a request that times out or fails, or any other unexpected
-       * exception — always resolves to a rendered, operator-safe error
-       * state with a Retry control, never leaves the page stuck on
-       * "Loading…" indefinitely.
+       * Top-level boot entry point.
+       *
+       * - Runs exactly once at a time: a second call while one is already
+       *   in flight (e.g. a double Retry click) is ignored rather than
+       *   starting an overlapping run.
+       * - Wraps `runBoot` so that any *unexpected* exception still resolves
+       *   to a rendered, operator-safe error naming the stage it happened
+       *   in, never leaving the page stuck on "Loading…". Known, expected
+       *   failures (a request returning a non-ok outcome) are handled
+       *   explicitly inside `runBoot` itself and never reach this catch —
+       *   it is a last resort, not the primary error-reporting path.
        */
       async function boot(): Promise<void> {
+        if (bootInFlight) {
+          console.info("[onboarding:boot] skipped: already in flight", {
+            correlationId: bootCorrelationId,
+          });
+          return;
+        }
+        bootInFlight = true;
+        bootCorrelationId = newCorrelationId();
+        setRetryEnabled(false);
+        logStage("start");
         try {
           await runBoot();
         } catch (error) {
-          console.error("onboarding boot failed", error);
+          console.error("[onboarding:boot] unexpected exception", {
+            correlationId: bootCorrelationId,
+            stage: currentBootStage,
+            error,
+          });
           showBootError(
-            "Something went wrong while loading the onboarding workspace. Try again.",
+            currentBootStage,
+            "Something unexpected went wrong while loading the onboarding workspace.",
           );
+        } finally {
+          bootInFlight = false;
+          setRetryEnabled(true);
         }
       }
 
       async function runBoot(): Promise<void> {
+        logStage("config");
         if (!readPublicConfig()) {
           showOnly(regions.notConfigured);
           return;
         }
         showOnly(regions.loading);
 
+        logStage("session");
         const session = await getCurrentSession();
         if (session.status !== "signed-in") {
           goToLogin();
           return;
         }
 
+        logStage("principal");
         const principal = await fetchPrincipal();
         if (principal.kind === "unauthenticated") {
           goToLogin();
           return;
         }
         if (principal.kind !== "ok") {
-          showBootError(describeFailure(principal));
+          showBootError("principal", describeFailure(principal));
           return;
         }
         document.getElementById("current-user-label")!.textContent =
@@ -1755,19 +1823,22 @@ import "../styles/global.css";
         wireSignOut();
         currentPrincipal = principal.data;
 
+        logStage("admin-status", { assurance: principal.data.assurance_level });
         const adminStatus = await fetchMyPlatformAdministratorStatus();
         if (adminStatus.kind === "unauthenticated") {
           goToLogin();
           return;
         }
-        if (
-          adminStatus.kind !== "ok" ||
-          !adminStatus.data.is_platform_administrator
-        ) {
+        if (adminStatus.kind !== "ok") {
+          showBootError("admin-status", describeFailure(adminStatus));
+          return;
+        }
+        if (!adminStatus.data.is_platform_administrator) {
           showOnly(regions.notAdmin);
           return;
         }
         if (!adminStatus.data.meets_required_assurance) {
+          logStage("redirect-to-mfa");
           const next = encodeURIComponent(
             window.location.pathname + window.location.search,
           );
@@ -1778,31 +1849,53 @@ import "../styles/global.css";
         document.getElementById("active-organization-name")!.textContent =
           "Client onboarding";
 
-        const industriesOk = await populateIndustrySelects();
+        logStage("industries");
+        const industriesOutcome = await populateIndustrySelects();
         wireStaticForms();
-        const organizationsOk = await populateOrgPicker();
 
-        if (!industriesOk || !organizationsOk) {
-          const failed = [
-            !industriesOk && "industries",
-            !organizationsOk && "client organizations",
-          ]
-            .filter(Boolean)
-            .join(" and ");
+        logStage("organizations");
+        const organizationsOutcome = await populateOrgPicker();
+
+        // apiRequest already retries a 401 once against a freshly-refreshed
+        // token before ever reporting "unauthenticated" — by the time it
+        // surfaces here, the session is genuinely no longer valid (not a
+        // transient staleness), so the truthful response is a real sign-in,
+        // not a generic error.
+        if (
+          industriesOutcome.kind === "unauthenticated" ||
+          organizationsOutcome.kind === "unauthenticated"
+        ) {
+          logStage("session-lost-mid-boot");
+          goToLogin();
+          return;
+        }
+        if (industriesOutcome.kind !== "ok") {
           showBootError(
-            `Could not load ${failed} for onboarding. Check your connection and try again.`,
+            "industries",
+            `Could not load industries: ${describeFailure(industriesOutcome)}`,
+          );
+          return;
+        }
+        if (organizationsOutcome.kind !== "ok") {
+          showBootError(
+            "organizations",
+            `Could not load client organizations: ${describeFailure(organizationsOutcome)}`,
           );
           return;
         }
 
+        logStage("content-render");
         showOnly(regions.content);
 
         const requestedOrgId = new URLSearchParams(window.location.search).get(
           "org",
         );
         if (requestedOrgId) {
+          logStage("resume-organization", { organizationId: requestedOrgId });
           await loadOrganization(requestedOrgId);
         }
+
+        logStage("complete");
       }
 
       wireBootErrorRetry();
