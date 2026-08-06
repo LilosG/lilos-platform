@@ -86,3 +86,11 @@ class ScopeValidationError(ApiError):
 class LastActiveOwnerConflictError(ConflictError):
     code = "LAST_ACTIVE_OWNER_CONFLICT"
     public_message = "The access change would violate organization continuity requirements."
+
+
+class UserAccountNotFoundError(NotFoundError):
+    code = "USER_ACCOUNT_NOT_FOUND"
+    public_message = (
+        "No account exists yet for that email. Ask the person to sign in once at the "
+        "application's login page to create their account, then try again."
+    )

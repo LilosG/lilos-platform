@@ -92,6 +92,7 @@ describe("apiGet", () => {
       status: 409,
       code: "CONFLICT",
       message: "Stale version.",
+      details: [],
     });
   });
 });

@@ -112,18 +112,19 @@ def platform_administration_client(
         yield client, verifier, identifiers
 
 
-def _create_organization(client: TestClient, *, slug: str) -> dict[str, object]:
-    response = client.post(
-        "/api/v1/platform/organizations",
-        headers=HEADERS,
-        json={
-            "name": "Platform Admin Test Org",
-            "slug": slug,
-            "organization_type": "test",
-            "timezone": "UTC",
-            "default_currency": "USD",
-        },
-    )
+def _create_organization(
+    client: TestClient, *, slug: str, industry_id: UUID | None = None
+) -> dict[str, object]:
+    body = {
+        "name": "Platform Admin Test Org",
+        "slug": slug,
+        "organization_type": "test",
+        "timezone": "UTC",
+        "default_currency": "USD",
+    }
+    if industry_id is not None:
+        body["industry_id"] = str(industry_id)
+    response = client.post("/api/v1/platform/organizations", headers=HEADERS, json=body)
     assert response.status_code == 201, response.text
     return dict(response.json()["data"])
 
@@ -235,7 +236,9 @@ def test_platform_administrator_creates_organization_and_location_and_bootstraps
     client, verifier, ids = platform_administration_client
     verifier.result = claims(ids["admin_subject"])
 
-    organization = _create_organization(client, slug="platform-admin-flow-org")
+    organization = _create_organization(
+        client, slug="platform-admin-flow-org", industry_id=ids["active_industry"]
+    )
     organization_id = organization["id"]
     assert organization["status"] == "prospect"
 
@@ -247,13 +250,17 @@ def test_platform_administrator_creates_organization_and_location_and_bootstraps
     assert onboarding.status_code == 200, onboarding.text
     assert onboarding.json()["data"]["status"] == "onboarding"
 
-    activated = client.post(
+    # Activation must fail closed while onboarding is incomplete: no profile,
+    # no location, no domain, no industry, and no active member yet.
+    premature_activation = client.post(
         f"/api/v1/platform/organizations/{organization_id}/activate",
         headers=HEADERS,
         json={"expected_version": 2},
     )
-    assert activated.status_code == 200, activated.text
-    assert activated.json()["data"]["status"] == "active"
+    assert premature_activation.status_code == 409, premature_activation.text
+    premature_body = premature_activation.json()
+    assert premature_body["error"]["code"] == "ONBOARDING_INCOMPLETE"
+    assert premature_body["error"]["details"], premature_body
 
     get_org = client.get(f"/api/v1/platform/organizations/{organization_id}", headers=HEADERS)
     assert get_org.status_code == 200
@@ -276,11 +283,13 @@ def test_platform_administrator_creates_organization_and_location_and_bootstraps
             "region": "CA",
             "postal_code": "00000",
             "country_code": "US",
+            "is_primary": True,
         },
     )
     assert location_response.status_code == 201, location_response.text
     location = location_response.json()["data"]
     assert location["status"] == "setup_required"
+    assert location["is_primary"] is True
 
     list_locations = client.get(
         f"/api/v1/platform/organizations/{organization_id}/locations", headers=HEADERS
@@ -288,13 +297,10 @@ def test_platform_administrator_creates_organization_and_location_and_bootstraps
     assert list_locations.status_code == 200
     assert any(item["id"] == location["id"] for item in list_locations.json()["data"]["items"])
 
-    location_activated = client.post(
-        f"/api/v1/platform/organizations/{organization_id}/locations/{location['id']}/activate",
-        headers=HEADERS,
-        json={"expected_version": 1},
-    )
-    assert location_activated.status_code == 200, location_activated.text
-    assert location_activated.json()["data"]["status"] == "active"
+    # A location may remain "setup_required" while the organization is still
+    # onboarding — activating a location requires an already-active parent
+    # organization, so that transition happens after organization activation
+    # below, not here.
 
     owner_auth_user_id = str(uuid4())
     first_bootstrap = client.post(
@@ -320,6 +326,65 @@ def test_platform_administrator_creates_organization_and_location_and_bootstraps
     assert second_data["owner_role_assignment_created"] is False
     assert second_data["user_profile_id"] == first_data["user_profile_id"]
     assert second_data["membership_id"] == first_data["membership_id"]
+
+    # Organization profile and domain setup happen through the platform-admin
+    # routes too: the standard RBAC-protected `/api/v1/organizations/...`
+    # equivalents require an already-ACTIVE organization (by design — see
+    # `AuthorizationService._evaluate`'s `ORGANIZATION_NOT_EFFECTIVE` gate),
+    # so they are unreachable before activation. This mirrors the existing
+    # dual-entry-point pattern already used for locations.
+    profile_created = client.post(
+        f"/api/v1/platform/organizations/{organization_id}/profile",
+        headers=HEADERS,
+        json={},
+    )
+    assert profile_created.status_code == 201, profile_created.text
+
+    domain_created = client.post(
+        f"/api/v1/platform/organizations/{organization_id}/domains",
+        headers=HEADERS,
+        json={"domain": "example-client.com", "is_primary": True},
+    )
+    assert domain_created.status_code == 201, domain_created.text
+
+    activated = client.post(
+        f"/api/v1/platform/organizations/{organization_id}/activate",
+        headers=HEADERS,
+        json={"expected_version": 2},
+    )
+    assert activated.status_code == 200, activated.text
+    assert activated.json()["data"]["status"] == "active"
+
+    location_activated = client.post(
+        f"/api/v1/platform/organizations/{organization_id}/locations/{location['id']}/activate",
+        headers=HEADERS,
+        json={"expected_version": 1},
+    )
+    assert location_activated.status_code == 200, location_activated.text
+    assert location_activated.json()["data"]["status"] == "active"
+
+
+@pytest.mark.integration
+def test_platform_administrator_assigns_industry_before_activation(
+    platform_administration_client: tuple[TestClient, FakeVerifier, dict[str, UUID]],
+) -> None:
+    client, verifier, ids = platform_administration_client
+    verifier.result = claims(ids["admin_subject"])
+
+    organization = _create_organization(client, slug="platform-admin-industry-org")
+    organization_id = organization["id"]
+    assert organization["industry_id"] is None
+
+    assigned = client.post(
+        f"/api/v1/platform/organizations/{organization_id}/industry",
+        headers=HEADERS,
+        json={"industry_id": str(ids["active_industry"]), "expected_version": 1},
+    )
+    assert assigned.status_code == 200, assigned.text
+    assert assigned.json()["data"]["industry_id"] == str(ids["active_industry"])
+
+    get_org = client.get(f"/api/v1/platform/organizations/{organization_id}", headers=HEADERS)
+    assert get_org.json()["data"]["industry_id"] == str(ids["active_industry"])
 
 
 @pytest.mark.integration

@@ -1,6 +1,8 @@
 import { getAccessToken } from "./session";
 import { readPublicConfig } from "./config";
 
+export type ApiErrorDetail = { field?: string; code?: string; message: string };
+
 export type ApiOutcome<T> =
   | { kind: "ok"; data: T }
   | { kind: "not-configured" }
@@ -8,9 +10,17 @@ export type ApiOutcome<T> =
   | { kind: "forbidden" }
   | { kind: "not-found" }
   | { kind: "disconnected" }
-  | { kind: "error"; status: number; code: string; message: string };
+  | {
+      kind: "error";
+      status: number;
+      code: string;
+      message: string;
+      details: ApiErrorDetail[];
+    };
 
-type ErrorEnvelope = { error?: { code?: string; message?: string } };
+type ErrorEnvelope = {
+  error?: { code?: string; message?: string; details?: ApiErrorDetail[] };
+};
 
 export type ApiRequestOptions = {
   method?: "GET" | "POST" | "PUT" | "DELETE";
@@ -76,6 +86,7 @@ export async function apiRequest<T>(
       status: response.status,
       code: envelope?.error?.code ?? "UNKNOWN_ERROR",
       message: envelope?.error?.message ?? "The request failed.",
+      details: envelope?.error?.details ?? [],
     };
   }
   const body = await safeJson<{ data: T }>(response);
@@ -85,6 +96,7 @@ export async function apiRequest<T>(
       status: response.status,
       code: "INVALID_RESPONSE",
       message: "The response could not be read.",
+      details: [],
     };
   }
   return { kind: "ok", data: body.data };

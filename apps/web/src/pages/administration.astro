@@ -56,6 +56,9 @@ import "../styles/global.css";
                 Onboard and manage clients
               </h2>
             </div>
+            <a href="/onboarding" class="button button--secondary button--sm"
+              >Open guided onboarding</a
+            >
           </div>
           <div id="platform-admin-alert"></div>
           <ul class="product-list" id="clients-list"></ul>
@@ -513,6 +516,11 @@ import "../styles/global.css";
 
         const actions = document.createElement("div");
         actions.className = "hero__actions";
+        const onboardingLink = document.createElement("a");
+        onboardingLink.href = `/onboarding?org=${organization.id}`;
+        onboardingLink.className = "button button--secondary button--sm";
+        onboardingLink.textContent = "Continue in guided onboarding";
+        actions.append(onboardingLink);
         if (
           organization.status === "prospect" ||
           organization.status === "onboarding"

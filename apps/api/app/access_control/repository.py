@@ -19,6 +19,8 @@ from apps.api.app.access_control.models import (
 )
 from apps.api.app.database.base import utc_now
 
+MAX_ACCESS_LIST_LIMIT = 100
+
 
 class MembershipRepository:
     async def add(
@@ -114,6 +116,28 @@ class MembershipRepository:
         )
         return cast(OrganizationMembership | None, await session.scalar(statement))
 
+    async def list_by_organization(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        *,
+        limit: int,
+        offset: int,
+    ) -> tuple[list[OrganizationMembership], bool]:
+        if not 1 <= limit <= MAX_ACCESS_LIST_LIMIT:
+            raise ValueError(f"Membership list limit must be 1-{MAX_ACCESS_LIST_LIMIT}")
+        if offset < 0:
+            raise ValueError("Membership list offset must not be negative")
+        result = await session.scalars(
+            select(OrganizationMembership)
+            .where(OrganizationMembership.organization_id == organization_id)
+            .order_by(OrganizationMembership.created_at.asc(), OrganizationMembership.id.asc())
+            .offset(offset)
+            .limit(limit + 1)
+        )
+        items = list(result)
+        return items[:limit], len(items) > limit
+
 
 class InvitationRepository:
     async def add(
@@ -164,6 +188,28 @@ class InvitationRepository:
                 )
             ),
         )
+
+    async def list_by_organization(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        *,
+        limit: int,
+        offset: int,
+    ) -> tuple[list[OrganizationInvitation], bool]:
+        if not 1 <= limit <= MAX_ACCESS_LIST_LIMIT:
+            raise ValueError(f"Invitation list limit must be 1-{MAX_ACCESS_LIST_LIMIT}")
+        if offset < 0:
+            raise ValueError("Invitation list offset must not be negative")
+        result = await session.scalars(
+            select(OrganizationInvitation)
+            .where(OrganizationInvitation.organization_id == organization_id)
+            .order_by(OrganizationInvitation.created_at.asc(), OrganizationInvitation.id.asc())
+            .offset(offset)
+            .limit(limit + 1)
+        )
+        items = list(result)
+        return items[:limit], len(items) > limit
 
     async def transition(
         self,

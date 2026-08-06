@@ -22,6 +22,55 @@ class MembershipCreate(BaseModel):
     membership_type: MembershipType
 
 
+def _normalize_lookup_email(value: str) -> str:
+    normalized = value.strip().casefold()
+    local, separator, domain = normalized.rpartition("@")
+    if (
+        normalized.count("@") != 1
+        or not separator
+        or not local
+        or "." not in domain
+        or any(character.isspace() for character in normalized)
+    ):
+        raise ValueError("email must use bounded email syntax")
+    return normalized
+
+
+class MembershipCreateByEmail(BaseModel):
+    """Onboarding-facing command resolving a member by email, never a raw UUID."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    email: Annotated[str, Field(min_length=3, max_length=320)]
+    membership_type: MembershipType
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email(cls, value: str) -> str:
+        return _normalize_lookup_email(value)
+
+
+class InvitationCreateByEmail(BaseModel):
+    """Onboarding-facing command resolving the invitee by email, never a raw UUID."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    email: Annotated[str, Field(min_length=3, max_length=320)]
+    membership_type: MembershipType
+    lifetime_days: Annotated[int, Field(ge=1, le=30)] = 7
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email(cls, value: str) -> str:
+        return _normalize_lookup_email(value)
+
+
+class AccessPagination(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    limit: int
+    offset: int
+    next_offset: int | None
+    has_more: bool
+
+
 class MembershipLifecycleCommand(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     expected_version: Annotated[int, Field(ge=1)]
@@ -221,4 +270,18 @@ class MyOrganizationData(BaseModel):
 
 class MyOrganizationsResponse(BaseModel):
     data: list[MyOrganizationData]
+    meta: ResponseMeta
+
+
+class MembershipListResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    data: list[MembershipData]
+    pagination: AccessPagination
+    meta: ResponseMeta
+
+
+class InvitationListResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    data: list[InvitationData]
+    pagination: AccessPagination
     meta: ResponseMeta

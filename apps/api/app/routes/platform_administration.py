@@ -15,13 +15,21 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request, Response, status
+from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.app.administration.contracts import DataResponse
 from apps.api.app.authentication.contracts import UserProfileCreate
 from apps.api.app.authentication.dependencies import get_authenticated_principal
 from apps.api.app.database.session import get_database_session
-from apps.api.app.errors import request_correlation_id
+from apps.api.app.domains.contracts import (
+    OrganizationDomainArchive,
+    OrganizationDomainCreate,
+    OrganizationDomainData,
+    OrganizationDomainSetPrimary,
+)
+from apps.api.app.domains.service import OrganizationDomainService
+from apps.api.app.errors import error_response, request_correlation_id
 from apps.api.app.industries.contracts import IndustryData
 from apps.api.app.industries.enums import IndustryStatus
 from apps.api.app.industries.repository import MAX_INDUSTRY_LIST_LIMIT
@@ -29,16 +37,22 @@ from apps.api.app.industries.service import IndustryService
 from apps.api.app.locations.contracts import LocationCreate, LocationData, LocationTransition
 from apps.api.app.locations.enums import LocationLifecycleAction
 from apps.api.app.locations.service import LocationService
+from apps.api.app.onboarding.contracts import OnboardingStateResponse
+from apps.api.app.onboarding.service import OnboardingOrchestrationService
 from apps.api.app.organizations.contracts import (
     OrganizationCreate,
     OrganizationData,
+    OrganizationIndustryAssignment,
     OrganizationTransition,
 )
 from apps.api.app.organizations.enums import OrganizationLifecycleAction
 from apps.api.app.organizations.service import OrganizationService
 from apps.api.app.platform_admin.dependencies import require_platform_administrator
 from apps.api.app.platform_admin.service import PlatformAdministrationService
-from apps.api.app.schemas import ResponseMeta
+from apps.api.app.profiles.contracts import OrganizationProfileCreate, OrganizationProfileData
+from apps.api.app.profiles.errors import OrganizationProfileNotFoundError
+from apps.api.app.profiles.service import OrganizationProfileService
+from apps.api.app.schemas import ErrorCategory, ErrorDetail, ResponseMeta
 
 
 async def no_store(response: Response) -> None:
@@ -63,6 +77,9 @@ organizations = OrganizationService()
 locations = LocationService()
 industries = IndustryService()
 platform_administration = PlatformAdministrationService()
+onboarding_service = OnboardingOrchestrationService()
+organization_profiles = OrganizationProfileService()
+organization_domains = OrganizationDomainService()
 DatabaseSession = Annotated[AsyncSession, Depends(get_database_session)]
 
 
@@ -174,15 +191,52 @@ async def start_onboarding(
     "/organizations/{organization_id}/activate",
     response_model=DataResponse,
     summary="Activate an organization",
+    responses={409: {"description": "Onboarding is not yet complete; see error.blockers"}},
 )
 async def activate_organization(
     request: Request,
     organization_id: UUID,
     command: OrganizationTransition,
     session: DatabaseSession,
-) -> DataResponse:
+) -> DataResponse | JSONResponse:
+    """Activate an organization, failing closed if onboarding is incomplete.
+
+    The frontend never decides activation eligibility itself: this route
+    recomputes the authoritative ``OnboardingState`` server-side on every
+    call and rejects the transition (409, with the exact blocker list) unless
+    ``activation_eligible`` is true.
+    """
+    state = await onboarding_service.get_state(session, organization_id)
+    if not state.activation_eligible:
+        return error_response(
+            request,
+            status_code=status.HTTP_409_CONFLICT,
+            code="ONBOARDING_INCOMPLETE",
+            message="This organization cannot be activated until onboarding is complete.",
+            category=ErrorCategory.CONFLICT,
+            details=[
+                ErrorDetail(field="blocker", code="ONBOARDING_BLOCKER", message=blocker)
+                for blocker in state.blockers
+            ],
+        )
     return await _transition_organization(
         request, organization_id, command, session, OrganizationLifecycleAction.ACTIVATE
+    )
+
+
+@router.get(
+    "/organizations/{organization_id}/onboarding-state",
+    response_model=OnboardingStateResponse,
+    summary="Get the consolidated client-onboarding readiness state",
+)
+async def get_onboarding_state(
+    request: Request,
+    organization_id: UUID,
+    session: DatabaseSession,
+) -> OnboardingStateResponse:
+    state = await onboarding_service.get_state(session, organization_id)
+    return OnboardingStateResponse(
+        data=state, meta=ResponseMeta(correlation_id=request_correlation_id(request))
     )
 
 
@@ -282,6 +336,139 @@ async def activate_location(
         correlation_id=request_correlation_id(request),
     )
     return response(request, LocationData.model_validate(location))
+
+
+@router.post(
+    "/organizations/{organization_id}/industry",
+    response_model=DataResponse,
+    summary="Assign the organization's industry during onboarding",
+)
+async def set_organization_industry(
+    request: Request,
+    organization_id: UUID,
+    command: OrganizationIndustryAssignment,
+    session: DatabaseSession,
+) -> DataResponse:
+    organization = await organizations.set_industry(
+        session,
+        organization_id,
+        industry_id=command.industry_id,
+        expected_version=command.expected_version,
+        correlation_id=request_correlation_id(request),
+    )
+    return response(request, OrganizationData.model_validate(organization))
+
+
+@router.post(
+    "/organizations/{organization_id}/profile",
+    response_model=DataResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create the organization profile during onboarding",
+)
+async def create_organization_profile(
+    request: Request,
+    organization_id: UUID,
+    command: OrganizationProfileCreate,
+    session: DatabaseSession,
+) -> DataResponse:
+    profile = await organization_profiles.create(
+        session, organization_id, command, correlation_id=request_correlation_id(request)
+    )
+    return response(request, OrganizationProfileData.model_validate(profile))
+
+
+@router.get(
+    "/organizations/{organization_id}/profile",
+    response_model=DataResponse,
+    summary="Get the organization profile",
+    responses={404: {"description": "No profile has been created yet"}},
+)
+async def get_organization_profile(
+    request: Request,
+    organization_id: UUID,
+    session: DatabaseSession,
+) -> DataResponse:
+    try:
+        profile = await organization_profiles.get(session, organization_id)
+    except OrganizationProfileNotFoundError:
+        return response(request, None)
+    return response(request, OrganizationProfileData.model_validate(profile))
+
+
+@router.post(
+    "/organizations/{organization_id}/domains",
+    response_model=DataResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Add an approved domain during onboarding",
+)
+async def create_organization_domain(
+    request: Request,
+    organization_id: UUID,
+    command: OrganizationDomainCreate,
+    session: DatabaseSession,
+) -> DataResponse:
+    domain = await organization_domains.create(
+        session, organization_id, command, correlation_id=request_correlation_id(request)
+    )
+    return response(request, OrganizationDomainData.model_validate(domain))
+
+
+@router.get(
+    "/organizations/{organization_id}/domains",
+    response_model=DataResponse,
+    summary="List approved domains",
+)
+async def list_organization_domains(
+    request: Request,
+    organization_id: UUID,
+    session: DatabaseSession,
+) -> DataResponse:
+    domains = await organization_domains.list(session, organization_id)
+    return response(request, [OrganizationDomainData.model_validate(item) for item in domains])
+
+
+@router.post(
+    "/organizations/{organization_id}/domains/{domain_id}/set-primary",
+    response_model=DataResponse,
+    summary="Mark a domain as the primary domain",
+)
+async def set_primary_organization_domain(
+    request: Request,
+    organization_id: UUID,
+    domain_id: UUID,
+    command: OrganizationDomainSetPrimary,
+    session: DatabaseSession,
+) -> DataResponse:
+    domain = await organization_domains.set_primary(
+        session,
+        organization_id,
+        domain_id,
+        expected_version=command.expected_version,
+        correlation_id=request_correlation_id(request),
+    )
+    return response(request, OrganizationDomainData.model_validate(domain))
+
+
+@router.post(
+    "/organizations/{organization_id}/domains/{domain_id}/archive",
+    response_model=DataResponse,
+    summary="Archive a domain",
+)
+async def archive_organization_domain(
+    request: Request,
+    organization_id: UUID,
+    domain_id: UUID,
+    command: OrganizationDomainArchive,
+    session: DatabaseSession,
+) -> DataResponse:
+    domain = await organization_domains.archive(
+        session,
+        organization_id,
+        domain_id,
+        expected_version=command.expected_version,
+        correlation_id=request_correlation_id(request),
+    )
+    return response(request, OrganizationDomainData.model_validate(domain))
 
 
 @router.post(

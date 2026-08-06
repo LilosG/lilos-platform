@@ -196,6 +196,7 @@ const PROTECTED_ROUTES: ReadonlyArray<{ path: string; heading: string }> = [
   { path: "/seo", heading: "This deployment is not configured" },
   { path: "/insights", heading: "This deployment is not configured" },
   { path: "/administration", heading: "This deployment is not configured" },
+  { path: "/onboarding", heading: "This deployment is not configured" },
 ];
 
 for (const route of PROTECTED_ROUTES) {

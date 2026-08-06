@@ -9,14 +9,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.app.access_control.contracts import (
     AccessMutationResponse,
+    AccessPagination,
     AssignmentData,
     CatalogResponse,
     DenyData,
     InvitationAccept,
+    InvitationCreateByEmail,
     InvitationData,
+    InvitationListResponse,
     InvitationResponse,
+    MembershipCreateByEmail,
     MembershipData,
     MembershipLifecycleCommand,
+    MembershipListResponse,
     MembershipResponse,
     MyOrganizationData,
     MyOrganizationsResponse,
@@ -39,6 +44,15 @@ from apps.api.app.business_identity.contracts import (
 )
 from apps.api.app.business_identity.service import BusinessIdentityService
 from apps.api.app.database.session import get_database_session
+from apps.api.app.domains.contracts import (
+    OrganizationDomainArchive,
+    OrganizationDomainCreate,
+    OrganizationDomainData,
+    OrganizationDomainListResponse,
+    OrganizationDomainResponse,
+    OrganizationDomainSetPrimary,
+)
+from apps.api.app.domains.service import OrganizationDomainService
 from apps.api.app.errors import error_response, request_correlation_id
 from apps.api.app.location_groups.contracts import (
     LocationGroupArchive,
@@ -105,6 +119,7 @@ group_service = LocationGroupService()
 identity_service = BusinessIdentityService()
 access_service = AccessControlService()
 catalog_repository = CatalogRepository()
+domain_service = OrganizationDomainService()
 
 DatabaseSession = Annotated[AsyncSession, Depends(get_database_session)]
 
@@ -323,6 +338,85 @@ location_transition_route("pause", LocationLifecycleAction.PAUSE)
 location_transition_route("close-temporarily", LocationLifecycleAction.CLOSE_TEMPORARILY)
 location_transition_route("close-permanently", LocationLifecycleAction.CLOSE_PERMANENTLY)
 location_transition_route("archive", LocationLifecycleAction.ARCHIVE)
+
+
+@organizations.post(
+    "/domains", response_model=OrganizationDomainResponse, status_code=status.HTTP_201_CREATED
+)
+async def create_domain(
+    request: Request,
+    organization_id: UUID,
+    command: OrganizationDomainCreate,
+    session: DatabaseSession,
+    _authorization: Annotated[
+        AuthorizationDecision, organization_policy("organization.settings.manage")
+    ],
+) -> OrganizationDomainResponse:
+    item = await domain_service.create(
+        session, organization_id, command, correlation_id=request_correlation_id(request)
+    )
+    return OrganizationDomainResponse(
+        data=OrganizationDomainData.model_validate(item), meta=meta(request)
+    )
+
+
+@organizations.get("/domains", response_model=OrganizationDomainListResponse)
+async def list_domains(
+    request: Request,
+    organization_id: UUID,
+    session: DatabaseSession,
+    _authorization: Annotated[AuthorizationDecision, organization_policy("organization.read")],
+) -> OrganizationDomainListResponse:
+    items = await domain_service.list(session, organization_id)
+    return OrganizationDomainListResponse(
+        data=[OrganizationDomainData.model_validate(item) for item in items], meta=meta(request)
+    )
+
+
+@organizations.post("/domains/{domain_id}/set-primary", response_model=OrganizationDomainResponse)
+async def set_primary_domain(
+    request: Request,
+    organization_id: UUID,
+    domain_id: UUID,
+    command: OrganizationDomainSetPrimary,
+    session: DatabaseSession,
+    _authorization: Annotated[
+        AuthorizationDecision, organization_policy("organization.settings.manage")
+    ],
+) -> OrganizationDomainResponse:
+    item = await domain_service.set_primary(
+        session,
+        organization_id,
+        domain_id,
+        expected_version=command.expected_version,
+        correlation_id=request_correlation_id(request),
+    )
+    return OrganizationDomainResponse(
+        data=OrganizationDomainData.model_validate(item), meta=meta(request)
+    )
+
+
+@organizations.post("/domains/{domain_id}/archive", response_model=OrganizationDomainResponse)
+async def archive_domain(
+    request: Request,
+    organization_id: UUID,
+    domain_id: UUID,
+    command: OrganizationDomainArchive,
+    session: DatabaseSession,
+    _authorization: Annotated[
+        AuthorizationDecision, organization_policy("organization.settings.manage")
+    ],
+) -> OrganizationDomainResponse:
+    item = await domain_service.archive(
+        session,
+        organization_id,
+        domain_id,
+        expected_version=command.expected_version,
+        correlation_id=request_correlation_id(request),
+    )
+    return OrganizationDomainResponse(
+        data=OrganizationDomainData.model_validate(item), meta=meta(request)
+    )
 
 
 def organization_profile_response(request: Request, item: object) -> OrganizationProfileResponse:
@@ -646,6 +740,54 @@ async def remove_group_membership(
     return group_membership_response(request, item)
 
 
+@access.post("/memberships", response_model=MembershipResponse, status_code=status.HTTP_201_CREATED)
+async def create_membership(
+    request: Request,
+    organization_id: UUID,
+    command: MembershipCreateByEmail,
+    session: DatabaseSession,
+    _authorization: Annotated[
+        AuthorizationDecision,
+        organization_policy("organization.members.manage", aal2=True),
+    ],
+) -> MembershipResponse:
+    """Add an existing platform user (resolved by email) as an active member."""
+    item = await access_service.create_membership_by_email(
+        session,
+        organization_id,
+        email=command.email,
+        membership_type=command.membership_type,
+        correlation_id=request_correlation_id(request),
+    )
+    return MembershipResponse(data=MembershipData.model_validate(item), meta=meta(request))
+
+
+@access.get("/memberships", response_model=MembershipListResponse)
+async def list_memberships(
+    request: Request,
+    organization_id: UUID,
+    session: DatabaseSession,
+    _authorization: Annotated[
+        AuthorizationDecision, organization_policy("organization.members.manage")
+    ],
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> MembershipListResponse:
+    items, has_more = await access_service.list_memberships(
+        session, organization_id, limit=limit, offset=offset
+    )
+    return MembershipListResponse(
+        data=[MembershipData.model_validate(item) for item in items],
+        pagination=AccessPagination(
+            limit=limit,
+            offset=offset,
+            next_offset=offset + limit if has_more else None,
+            has_more=has_more,
+        ),
+        meta=meta(request),
+    )
+
+
 @access.get("/memberships/{membership_id}", response_model=MembershipResponse)
 async def get_membership(
     request: Request,
@@ -691,6 +833,61 @@ def membership_transition_route(path: str, target: MembershipStatus) -> None:
 membership_transition_route("suspend", MembershipStatus.SUSPENDED)
 membership_transition_route("restore", MembershipStatus.ACTIVE)
 membership_transition_route("revoke", MembershipStatus.REVOKED)
+
+
+@access.post("/invitations", response_model=InvitationResponse, status_code=status.HTTP_201_CREATED)
+async def create_invitation(
+    request: Request,
+    organization_id: UUID,
+    command: InvitationCreateByEmail,
+    session: DatabaseSession,
+    principal: Authenticated,
+    _authorization: Annotated[
+        AuthorizationDecision,
+        organization_policy("organization.invitations.manage", aal2=True),
+    ],
+) -> InvitationResponse:
+    """Invite an existing platform user (resolved by email) to this organization.
+
+    The invitation remains pending until the invitee, already signed in with
+    the matching email, accepts it via ``POST /api/v1/invitations/accept``.
+    """
+    invitation, _token = await access_service.create_invitation_by_email(
+        session,
+        organization_id,
+        email=command.email,
+        membership_type=command.membership_type,
+        invited_by_user_profile_id=principal.platform_user_id,
+        lifetime_days=command.lifetime_days,
+        correlation_id=request_correlation_id(request),
+    )
+    return InvitationResponse(data=InvitationData.model_validate(invitation), meta=meta(request))
+
+
+@access.get("/invitations", response_model=InvitationListResponse)
+async def list_invitations(
+    request: Request,
+    organization_id: UUID,
+    session: DatabaseSession,
+    _authorization: Annotated[
+        AuthorizationDecision, organization_policy("organization.invitations.manage")
+    ],
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> InvitationListResponse:
+    items, has_more = await access_service.list_invitations(
+        session, organization_id, limit=limit, offset=offset
+    )
+    return InvitationListResponse(
+        data=[InvitationData.model_validate(item) for item in items],
+        pagination=AccessPagination(
+            limit=limit,
+            offset=offset,
+            next_offset=offset + limit if has_more else None,
+            has_more=has_more,
+        ),
+        meta=meta(request),
+    )
 
 
 @access.get("/invitations/{invitation_id}", response_model=InvitationResponse)

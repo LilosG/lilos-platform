@@ -1,0 +1,1738 @@
+---
+import AppShell from "../components/AppShell.astro";
+import "../styles/global.css";
+---
+
+<!doctype html>
+<html lang="en">
+  <head
+    ><meta charset="UTF-8" /><meta
+      name="viewport"
+      content="width=device-width, initial-scale=1"
+    /><meta
+      name="description"
+      content="Guided client onboarding workspace"
+    /><title>Client Onboarding · LILOs</title></head
+  >
+  <body
+    ><AppShell>
+      <div id="boot-not-configured" role="status">
+        <h1>This deployment is not configured</h1><p>
+          No Supabase or API connection is configured for this build.
+        </p>
+      </div>
+
+      <div id="boot-loading" role="status" aria-live="polite" hidden>
+        <p>Loading Client Onboarding…</p>
+      </div>
+
+      <div id="boot-error" role="alert" hidden></div>
+
+      <div id="not-platform-admin" role="status" hidden>
+        <h1>Platform administrator access required</h1><p>
+          Client onboarding is only available to signed-in platform
+          administrators. Ask an existing platform administrator to grant you
+          access.
+        </p>
+      </div>
+
+      <div id="onboarding-content" hidden>
+        <section aria-labelledby="page-title">
+          <p class="eyebrow">Client onboarding</p><h1 id="page-title">
+            Onboard a new client
+          </h1><p>
+            Create the client organization, complete required setup, and
+            activate the account — all from this workspace. Nothing here
+            requires shell access, manual database changes, or a
+            manually-entered ID.
+          </p>
+        </section>
+
+        <section aria-labelledby="picker-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Step 0</p><h2 id="picker-title">
+                Choose a client
+              </h2>
+            </div>
+          </div>
+          <div id="picker-alert"></div>
+          <div class="field field--full">
+            <label for="org-picker">Resume an existing onboarding</label>
+            <select id="org-picker">
+              <option value="">Select a client…</option>
+            </select>
+          </div>
+          <h3 style="margin-top: 1.5rem;">Or start a new client</h3>
+          <form
+            id="create-org-form"
+            class="form-grid"
+            style="margin-top: 1rem;"
+          >
+            <div class="field">
+              <label for="org-name">Organization name</label><input
+                id="org-name"
+                name="name"
+                type="text"
+                required
+                placeholder="Acme Home Services"
+              />
+            </div>
+            <div class="field">
+              <label for="org-slug">Slug</label><input
+                id="org-slug"
+                name="slug"
+                type="text"
+                required
+                pattern="[a-z][a-z0-9-]*"
+                placeholder="acme-home-services"
+              /><span class="field-hint"
+                >Lowercase letters, numbers, and hyphens only.</span
+              >
+            </div>
+            <div class="field">
+              <label for="org-type">Organization type</label><select
+                id="org-type"
+                name="organization_type"
+              >
+                <option value="client" selected>Client</option>
+                <option value="partner">Partner</option>
+                <option value="demo">Demo</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="org-industry-create">Industry</label><select
+                id="org-industry-create"
+                name="industry_id"
+              >
+                <option value="">Loading industries…</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="org-timezone">Timezone</label><input
+                id="org-timezone"
+                name="timezone"
+                type="text"
+                required
+                value="America/Los_Angeles"
+              />
+            </div>
+            <div class="field">
+              <label for="org-currency">Default currency</label><input
+                id="org-currency"
+                name="default_currency"
+                type="text"
+                required
+                value="USD"
+                maxlength="3"
+                style="text-transform: uppercase;"
+              />
+            </div>
+            <div class="field--full form-actions">
+              <button type="submit" class="button" id="create-org-submit"
+                >Start onboarding this client</button
+              >
+            </div>
+          </form>
+        </section>
+
+        <div id="client-workspace" hidden>
+          <section aria-labelledby="progress-title">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow" id="workspace-org-name">Client</p><h2
+                  id="progress-title"
+                >
+                  Onboarding progress
+                </h2>
+              </div>
+              <span id="workspace-status-badge"></span>
+            </div>
+            <div
+              class="progress-bar"
+              role="progressbar"
+              aria-valuemin="0"
+              aria-valuemax="100"
+              id="progress-bar"
+            >
+              <div
+                class="progress-bar__fill"
+                id="progress-bar-fill"
+                style="width: 0%"
+              >
+              </div>
+            </div>
+            <p id="progress-label">0% complete</p>
+            <p id="progress-updated" class="field-hint"></p>
+          </section>
+
+          <section aria-labelledby="checklist-title">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Checklist</p><h2 id="checklist-title">
+                  Onboarding steps
+                </h2>
+              </div>
+            </div>
+            <ul class="checklist" id="checklist-list"></ul>
+          </section>
+
+          <section id="section-profile" aria-labelledby="profile-title">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Step 1</p><h2 id="profile-title">
+                  Organization profile
+                </h2>
+              </div>
+            </div>
+            <div id="profile-alert"></div>
+            <div id="profile-status" class="empty-state" hidden></div>
+            <form id="profile-form" class="form-grid" hidden>
+              <div class="field field--full">
+                <label for="profile-brand-name">Brand name</label><input
+                  id="profile-brand-name"
+                  name="brand_name"
+                  type="text"
+                />
+              </div>
+              <div class="field field--full">
+                <label for="profile-description">Business description</label
+                ><textarea
+                  id="profile-description"
+                  name="business_description"
+                  rows="3"></textarea>
+              </div>
+              <div class="field--full form-actions">
+                <button type="submit" class="button" id="profile-submit"
+                  >Save profile</button
+                >
+              </div>
+            </form>
+          </section>
+
+          <section id="section-locations" aria-labelledby="locations-title">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Step 2</p><h2 id="locations-title">
+                  Locations
+                </h2>
+              </div>
+            </div>
+            <div id="locations-alert"></div>
+            <ul class="product-list" id="locations-list"></ul>
+            <h3 style="margin-top: 1.5rem;">Add a location</h3>
+            <form
+              id="create-location-form"
+              class="form-grid"
+              style="margin-top: 1rem;"
+            >
+              <div class="field">
+                <label for="loc-name">Location name</label><input
+                  id="loc-name"
+                  name="name"
+                  type="text"
+                  required
+                />
+              </div>
+              <div class="field">
+                <label for="loc-slug">Slug</label><input
+                  id="loc-slug"
+                  name="slug"
+                  type="text"
+                  required
+                  pattern="[a-z][a-z0-9-]*"
+                />
+              </div>
+              <div class="field field--full">
+                <label>Location type</label>
+                <div class="radio-group">
+                  <label
+                    ><input
+                      type="radio"
+                      name="location_type"
+                      value="physical"
+                      checked
+                    /> Physical</label
+                  ><label
+                    ><input
+                      type="radio"
+                      name="location_type"
+                      value="service_area"
+                    /> Service area</label
+                  ><label
+                    ><input type="radio" name="location_type" value="hybrid" /> Hybrid</label
+                  ><label
+                    ><input type="radio" name="location_type" value="virtual" /> Virtual</label
+                  >
+                </div>
+              </div>
+              <div class="field">
+                <label for="loc-timezone">Timezone</label><input
+                  id="loc-timezone"
+                  name="timezone"
+                  type="text"
+                  required
+                  value="America/Los_Angeles"
+                />
+              </div>
+              <div class="field">
+                <label for="loc-country">Country code</label><input
+                  id="loc-country"
+                  name="country_code"
+                  type="text"
+                  required
+                  value="US"
+                  maxlength="2"
+                  style="text-transform: uppercase;"
+                />
+              </div>
+              <div class="field field--full">
+                <label for="loc-address">Street address</label><input
+                  id="loc-address"
+                  name="address_line_1"
+                  type="text"
+                  placeholder="123 Main St"
+                />
+              </div>
+              <div class="field">
+                <label for="loc-city">City</label><input
+                  id="loc-city"
+                  name="city"
+                  type="text"
+                />
+              </div>
+              <div class="field">
+                <label for="loc-region">State / region</label><input
+                  id="loc-region"
+                  name="region"
+                  type="text"
+                />
+              </div>
+              <div class="field">
+                <label for="loc-postal">Postal code</label><input
+                  id="loc-postal"
+                  name="postal_code"
+                  type="text"
+                />
+              </div>
+              <div class="field field--full">
+                <label for="loc-service-area"
+                  >Service area description (service-area or hybrid only)</label
+                ><input
+                  id="loc-service-area"
+                  name="service_area_description"
+                  type="text"
+                />
+              </div>
+              <div class="field field--full">
+                <label
+                  ><input id="loc-primary" name="is_primary" type="checkbox" /> Mark
+                  as the primary location</label
+                >
+              </div>
+              <div class="field--full form-actions">
+                <button type="submit" class="button" id="create-location-submit"
+                  >Add location</button
+                >
+              </div>
+            </form>
+          </section>
+
+          <section id="section-domain" aria-labelledby="domain-title">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Step 3</p><h2 id="domain-title">
+                  Website and domain
+                </h2>
+              </div>
+            </div>
+            <div id="domain-alert"></div>
+            <ul class="product-list" id="domains-list"></ul>
+            <form
+              id="create-domain-form"
+              class="form-grid"
+              style="margin-top: 1rem;"
+            >
+              <div class="field">
+                <label for="domain-value">Domain</label><input
+                  id="domain-value"
+                  name="domain"
+                  type="text"
+                  required
+                  placeholder="example.com"
+                />
+              </div>
+              <div class="field">
+                <label
+                  ><input
+                    id="domain-primary"
+                    name="is_primary"
+                    type="checkbox"
+                    checked
+                  /> Mark as primary domain</label
+                >
+              </div>
+              <div class="field--full form-actions">
+                <button type="submit" class="button" id="create-domain-submit"
+                  >Add domain</button
+                >
+              </div>
+            </form>
+          </section>
+
+          <section id="section-industry" aria-labelledby="industry-title">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Step 4</p><h2 id="industry-title">
+                  Industry
+                </h2>
+              </div>
+            </div>
+            <div id="industry-alert"></div>
+            <form id="assign-industry-form" class="form-grid">
+              <div class="field field--full">
+                <label for="industry-select">Industry</label><select
+                  id="industry-select"
+                  name="industry_id"
+                >
+                  <option value="">Loading industries…</option>
+                </select>
+              </div>
+              <div class="field--full form-actions">
+                <button type="submit" class="button" id="assign-industry-submit"
+                  >Assign industry</button
+                >
+              </div>
+            </form>
+          </section>
+
+          <section id="section-users" aria-labelledby="users-title">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Step 5</p><h2 id="users-title">
+                  Users and access
+                </h2>
+              </div>
+            </div>
+            <div id="users-alert"></div>
+            <p id="users-help" class="field-hint"></p>
+            <button
+              type="button"
+              class="button button--secondary"
+              id="bootstrap-owner-button">Add me as workspace owner</button
+            >
+            <h3 style="margin-top: 1.5rem;">Members</h3>
+            <ul class="product-list" id="members-list"></ul>
+            <h3 style="margin-top: 1.5rem;">Pending invitations</h3>
+            <ul class="product-list" id="invitations-list"></ul>
+            <h3 style="margin-top: 1.5rem;">Add or invite a user</h3>
+            <form
+              id="add-user-form"
+              class="form-grid"
+              style="margin-top: 1rem;"
+            >
+              <div class="field">
+                <label for="user-email">Email</label><input
+                  id="user-email"
+                  name="email"
+                  type="email"
+                  required
+                  placeholder="owner@client.example"
+                />
+              </div>
+              <div class="field">
+                <label for="user-membership-type">Membership type</label><select
+                  id="user-membership-type"
+                  name="membership_type"
+                >
+                  <option value="client" selected>Client</option>
+                  <option value="internal">Internal</option>
+                  <option value="partner">Partner</option>
+                </select>
+              </div>
+              <div class="field--full form-actions">
+                <button
+                  type="submit"
+                  class="button button--secondary"
+                  id="add-existing-user-submit"
+                  formnovalidate
+                  data-action="add"
+                  >Add existing user (activates immediately)</button
+                ><button
+                  type="submit"
+                  class="button"
+                  id="invite-user-submit"
+                  formnovalidate
+                  data-action="invite"
+                  >Invite user (pending until accepted)</button
+                >
+              </div>
+            </form>
+          </section>
+
+          <section id="section-products" aria-labelledby="products-title">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Step 6</p><h2 id="products-title">
+                  Products
+                </h2>
+              </div>
+            </div>
+            <p id="products-help" class="field-hint"></p>
+            <ul class="product-list" id="onboarding-products-list"></ul>
+          </section>
+
+          <section id="section-policies" aria-labelledby="policies-title">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Step 7</p><h2 id="policies-title">
+                  Approval and notification policies
+                </h2>
+              </div>
+            </div>
+            <p id="policies-help" class="field-hint"></p>
+            <h3>Approval policies</h3>
+            <ul class="product-list" id="approval-policies-list"></ul>
+            <form
+              id="create-approval-policy-form"
+              class="form-grid"
+              style="margin-top: 1rem;"
+            >
+              <div class="field">
+                <label for="approval-policy-key">Policy key</label><input
+                  id="approval-policy-key"
+                  name="policy_key"
+                  type="text"
+                  required
+                  placeholder="content.publish_approval"
+                />
+              </div>
+              <div class="field">
+                <label for="approval-min-approvals">Minimum approvals</label
+                ><input
+                  id="approval-min-approvals"
+                  name="minimum_approvals"
+                  type="number"
+                  min="1"
+                  value="1"
+                  required
+                />
+              </div>
+              <div class="field field--full">
+                <label
+                  ><input
+                    id="approval-self-approval"
+                    name="self_approval_allowed"
+                    type="checkbox"
+                  /> Allow self-approval</label
+                >
+              </div>
+              <div class="field--full form-actions">
+                <button
+                  type="submit"
+                  class="button"
+                  id="create-approval-policy-submit"
+                  >Create approval policy</button
+                >
+              </div>
+            </form>
+            <h3 style="margin-top: 1.5rem;">Notification policies</h3>
+            <ul class="product-list" id="notification-policies-list"></ul>
+            <form
+              id="create-notification-policy-form"
+              class="form-grid"
+              style="margin-top: 1rem;"
+            >
+              <div class="field field--full">
+                <label for="notification-policy-key">Policy key</label><input
+                  id="notification-policy-key"
+                  name="policy_key"
+                  type="text"
+                  required
+                  placeholder="client.default_notifications"
+                />
+              </div>
+              <div class="field--full form-actions">
+                <button
+                  type="submit"
+                  class="button"
+                  id="create-notification-policy-submit"
+                  >Create notification policy</button
+                >
+              </div>
+            </form>
+          </section>
+
+          <section aria-labelledby="readiness-title">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Final step</p><h2 id="readiness-title">
+                  Readiness and activation
+                </h2>
+              </div>
+            </div>
+            <div id="readiness-alert"></div>
+            <div id="blockers-panel"></div>
+            <div id="warnings-panel"></div>
+            <div
+              id="activation-confirm"
+              hidden
+              class="attention-card attention-card--urgent"
+            >
+              <h3>Confirm activation</h3>
+              <p id="activation-consequence-text"></p>
+              <footer>
+                <button
+                  type="button"
+                  class="button button--secondary"
+                  id="activation-cancel">Cancel</button
+                ><button
+                  type="button"
+                  class="button"
+                  id="activation-confirm-button"
+                  >Yes, activate this organization</button
+                >
+              </footer>
+            </div>
+            <button type="button" class="button" id="activate-button" disabled
+              >Activate organization</button
+            >
+          </section>
+        </div>
+      </div>
+    </AppShell>
+    <script>
+      import {
+        fetchIndustries,
+        fetchOrganizations,
+        fetchOrganization,
+        createOrganization,
+        startOnboarding,
+        assignIndustry,
+        fetchOrganizationLocations,
+        createLocation,
+        fetchOrganizationProfile,
+        createOrganizationProfile,
+        fetchOrganizationDomains,
+        createOrganizationDomain,
+        setPrimaryOrganizationDomain,
+        bootstrapOwner,
+        fetchOnboardingState,
+        activateOrganization,
+        type AdminOrganization,
+        type AdminLocation,
+        type Industry,
+        type OnboardingState,
+      } from "../lib/platform-admin";
+      import {
+        fetchProducts,
+        fetchEffectivePolicies,
+        createPolicy,
+        approvePolicy,
+        addExistingUser,
+        inviteUser,
+        fetchMemberships,
+        fetchInvitations,
+        type PolicyRevision,
+      } from "../lib/administration";
+      import { fetchPrincipal, type PrincipalSummary } from "../lib/workspace";
+      import { getCurrentSession, signOut } from "../lib/session";
+      import { readPublicConfig } from "../lib/config";
+      import type { ApiOutcome } from "../lib/api-client";
+
+      const regions = {
+        notConfigured: document.getElementById("boot-not-configured")!,
+        loading: document.getElementById("boot-loading")!,
+        error: document.getElementById("boot-error")!,
+        notAdmin: document.getElementById("not-platform-admin")!,
+        content: document.getElementById("onboarding-content")!,
+      };
+
+      function showOnly(region: HTMLElement): void {
+        for (const key of Object.keys(regions) as (keyof typeof regions)[]) {
+          regions[key].hidden = regions[key] !== region;
+        }
+      }
+
+      function describeFailure(outcome: ApiOutcome<unknown>): string {
+        switch (outcome.kind) {
+          case "forbidden":
+            return "You do not have permission to perform this action.";
+          case "not-found":
+            return "The requested resource could not be found.";
+          case "disconnected":
+            return "Could not reach the platform API.";
+          case "unauthenticated":
+            return "Your session has expired. Sign in again.";
+          case "not-configured":
+            return "This deployment is not configured.";
+          case "error":
+            return outcome.message;
+          case "ok":
+            return "";
+        }
+      }
+
+      function goToLogin(): void {
+        const next = encodeURIComponent(
+          window.location.pathname + window.location.search,
+        );
+        window.location.assign(`/login?next=${next}`);
+      }
+
+      function wireSignOut(): void {
+        document
+          .getElementById("sign-out-button")
+          ?.addEventListener("click", async () => {
+            await signOut();
+            goToLogin();
+          });
+      }
+
+      function badge(status: string, label = status): HTMLSpanElement {
+        const el = document.createElement("span");
+        el.className = `status status--${status}`;
+        const dot = document.createElement("span");
+        dot.setAttribute("aria-hidden", "true");
+        dot.className = "status__dot";
+        el.append(dot, document.createTextNode(label));
+        return el;
+      }
+
+      function alertInto(
+        containerId: string,
+        kind: "error" | "success" | "info",
+        message: string,
+      ): void {
+        const container = document.getElementById(containerId)!;
+        container.replaceChildren();
+        const alert = document.createElement("div");
+        alert.className = `alert alert--${kind}`;
+        alert.setAttribute("role", kind === "error" ? "alert" : "status");
+        const p = document.createElement("p");
+        p.textContent = message;
+        alert.append(p);
+        container.append(alert);
+      }
+
+      let currentPrincipal: PrincipalSummary | null = null;
+      let currentOrganization: AdminOrganization | null = null;
+
+      function setOrgQueryParam(organizationId: string): void {
+        const url = new URL(window.location.href);
+        url.searchParams.set("org", organizationId);
+        window.history.replaceState(null, "", url.toString());
+      }
+
+      function orgIsActive(): boolean {
+        return currentOrganization?.status === "active";
+      }
+
+      function lockPostActivationSection(
+        sectionId: string,
+        helpId: string,
+        message: string,
+      ): void {
+        const help = document.getElementById(helpId);
+        if (help) help.textContent = message;
+        const section = document.getElementById(sectionId);
+        if (!section) return;
+        for (const control of section.querySelectorAll(
+          "button, input, select, textarea",
+        )) {
+          (control as HTMLButtonElement | HTMLInputElement).disabled = true;
+        }
+      }
+
+      function unlockSection(sectionId: string): void {
+        const section = document.getElementById(sectionId);
+        if (!section) return;
+        for (const control of section.querySelectorAll(
+          "button, input, select, textarea",
+        )) {
+          (control as HTMLButtonElement | HTMLInputElement).disabled = false;
+        }
+      }
+
+      // ---------- Step 0: picker / create ----------
+
+      async function populateOrgPicker(): Promise<void> {
+        const select = document.getElementById(
+          "org-picker",
+        ) as HTMLSelectElement;
+        const outcome = await fetchOrganizations();
+        select.innerHTML = '<option value="">Select a client…</option>';
+        if (outcome.kind !== "ok") return;
+        for (const organization of outcome.data) {
+          const option = document.createElement("option");
+          option.value = organization.id;
+          option.textContent = `${organization.name} (${organization.status})`;
+          select.append(option);
+        }
+      }
+
+      async function populateIndustrySelects(): Promise<void> {
+        const outcome = await fetchIndustries();
+        const options =
+          outcome.kind === "ok"
+            ? outcome.data
+                .map(
+                  (industry: Industry) =>
+                    `<option value="${industry.id}">${industry.name}</option>`,
+                )
+                .join("")
+            : "";
+        const createSelect = document.getElementById(
+          "org-industry-create",
+        ) as HTMLSelectElement;
+        createSelect.innerHTML =
+          '<option value="">No industry yet</option>' + options;
+        const assignSelect = document.getElementById(
+          "industry-select",
+        ) as HTMLSelectElement;
+        assignSelect.innerHTML =
+          '<option value="">Select an industry…</option>' + options;
+      }
+
+      function wireCreateOrgForm(): void {
+        const form = document.getElementById(
+          "create-org-form",
+        ) as HTMLFormElement;
+        form.addEventListener("submit", async (event) => {
+          event.preventDefault();
+          const data = new FormData(form);
+          const industryId = String(data.get("industry_id") ?? "");
+          const outcome = await createOrganization({
+            name: String(data.get("name") ?? ""),
+            slug: String(data.get("slug") ?? ""),
+            organization_type: data.get(
+              "organization_type",
+            ) as AdminOrganization["organization_type"],
+            timezone: String(data.get("timezone") ?? ""),
+            default_currency: String(
+              data.get("default_currency") ?? "",
+            ).toUpperCase(),
+            industry_id: industryId || null,
+          });
+          if (outcome.kind !== "ok") {
+            alertInto("picker-alert", "error", describeFailure(outcome));
+            return;
+          }
+          alertInto(
+            "picker-alert",
+            "success",
+            `${outcome.data.name} created. Continuing onboarding…`,
+          );
+          form.reset();
+          await populateOrgPicker();
+          await loadOrganization(outcome.data.id);
+        });
+      }
+
+      function wireOrgPicker(): void {
+        const select = document.getElementById(
+          "org-picker",
+        ) as HTMLSelectElement;
+        select.addEventListener("change", async () => {
+          if (select.value) await loadOrganization(select.value);
+        });
+      }
+
+      // ---------- Step 1: profile ----------
+
+      async function renderProfile(organizationId: string): Promise<void> {
+        const outcome = await fetchOrganizationProfile(organizationId);
+        const statusBox = document.getElementById("profile-status")!;
+        const form = document.getElementById("profile-form") as HTMLFormElement;
+        if (outcome.kind !== "ok") {
+          statusBox.hidden = false;
+          form.hidden = true;
+          statusBox.innerHTML = `<h3>Could not load profile</h3><p>${describeFailure(outcome)}</p>`;
+          return;
+        }
+        statusBox.hidden = true;
+        form.hidden = false;
+        (form.elements.namedItem("brand_name") as HTMLInputElement).value =
+          outcome.data?.brand_name ?? "";
+        (
+          form.elements.namedItem("business_description") as HTMLTextAreaElement
+        ).value = outcome.data?.business_description ?? "";
+      }
+
+      function wireProfileForm(): void {
+        const form = document.getElementById("profile-form") as HTMLFormElement;
+        form.addEventListener("submit", async (event) => {
+          event.preventDefault();
+          if (!currentOrganization) return;
+          const data = new FormData(form);
+          const outcome = await createOrganizationProfile(
+            currentOrganization.id,
+            {
+              brand_name: String(data.get("brand_name") ?? "") || null,
+              business_description:
+                String(data.get("business_description") ?? "") || null,
+            },
+          );
+          if (outcome.kind !== "ok") {
+            alertInto("profile-alert", "error", describeFailure(outcome));
+            return;
+          }
+          alertInto("profile-alert", "success", "Profile saved.");
+          await refreshWorkspace();
+        });
+      }
+
+      // ---------- Step 2: locations ----------
+
+      async function renderLocations(organizationId: string): Promise<void> {
+        const list = document.getElementById("locations-list")!;
+        list.replaceChildren();
+        const outcome = await fetchOrganizationLocations(organizationId);
+        if (outcome.kind !== "ok") {
+          const item = document.createElement("li");
+          item.textContent = describeFailure(outcome);
+          list.append(item);
+          return;
+        }
+        if (outcome.data.length === 0) {
+          const empty = document.createElement("div");
+          empty.className = "empty-state";
+          empty.innerHTML =
+            "<h3>No locations yet</h3><p>Add this client's first location using the form below.</p>";
+          list.append(empty);
+          return;
+        }
+        for (const location of outcome.data) {
+          const item = document.createElement("li");
+          const info = document.createElement("div");
+          const title = document.createElement("h3");
+          title.textContent =
+            location.name + (location.is_primary ? " (primary)" : "");
+          const meta = document.createElement("p");
+          meta.textContent = `${location.location_type} · ${location.status}`;
+          info.append(title, meta);
+          item.append(
+            info,
+            badge(location.status === "active" ? "ready" : "setup"),
+          );
+          list.append(item);
+        }
+      }
+
+      function wireCreateLocationForm(): void {
+        const form = document.getElementById(
+          "create-location-form",
+        ) as HTMLFormElement;
+        form.addEventListener("submit", async (event) => {
+          event.preventDefault();
+          if (!currentOrganization) return;
+          const data = new FormData(form);
+          const outcome = await createLocation(currentOrganization.id, {
+            name: String(data.get("name") ?? ""),
+            slug: String(data.get("slug") ?? ""),
+            location_type: data.get(
+              "location_type",
+            ) as AdminLocation["location_type"],
+            timezone: String(data.get("timezone") ?? ""),
+            country_code: String(data.get("country_code") ?? "").toUpperCase(),
+            address_line_1: String(data.get("address_line_1") ?? "") || null,
+            city: String(data.get("city") ?? "") || null,
+            region: String(data.get("region") ?? "") || null,
+            postal_code: String(data.get("postal_code") ?? "") || null,
+            service_area_description:
+              String(data.get("service_area_description") ?? "") || null,
+            is_primary: data.get("is_primary") === "on",
+          });
+          if (outcome.kind !== "ok") {
+            alertInto("locations-alert", "error", describeFailure(outcome));
+            return;
+          }
+          alertInto(
+            "locations-alert",
+            "success",
+            `${outcome.data.name} added.`,
+          );
+          form.reset();
+          await refreshWorkspace();
+        });
+      }
+
+      // ---------- Step 3: domain ----------
+
+      async function renderDomains(organizationId: string): Promise<void> {
+        const list = document.getElementById("domains-list")!;
+        list.replaceChildren();
+        const outcome = await fetchOrganizationDomains(organizationId);
+        if (outcome.kind !== "ok") {
+          const item = document.createElement("li");
+          item.textContent = describeFailure(outcome);
+          list.append(item);
+          return;
+        }
+        if (outcome.data.length === 0) {
+          const empty = document.createElement("div");
+          empty.className = "empty-state";
+          empty.innerHTML =
+            "<h3>No domains yet</h3><p>Add the client's primary website domain below.</p>";
+          list.append(empty);
+          return;
+        }
+        for (const domain of outcome.data) {
+          const item = document.createElement("li");
+          const info = document.createElement("div");
+          const title = document.createElement("h3");
+          title.textContent =
+            domain.domain + (domain.is_primary ? " (primary)" : "");
+          info.append(title);
+          const actions = document.createElement("div");
+          if (!domain.is_primary && domain.status === "active") {
+            const setPrimaryButton = document.createElement("button");
+            setPrimaryButton.type = "button";
+            setPrimaryButton.className = "button button--secondary button--sm";
+            setPrimaryButton.textContent = "Make primary";
+            setPrimaryButton.addEventListener("click", async () => {
+              const result = await setPrimaryOrganizationDomain(
+                organizationId,
+                domain.id,
+                domain.version,
+              );
+              if (result.kind !== "ok") {
+                alertInto("domain-alert", "error", describeFailure(result));
+                return;
+              }
+              await refreshWorkspace();
+            });
+            actions.append(setPrimaryButton);
+          } else {
+            actions.append(
+              badge(domain.is_primary ? "ready" : "setup", domain.status),
+            );
+          }
+          item.append(info, actions);
+          list.append(item);
+        }
+      }
+
+      function wireCreateDomainForm(): void {
+        const form = document.getElementById(
+          "create-domain-form",
+        ) as HTMLFormElement;
+        form.addEventListener("submit", async (event) => {
+          event.preventDefault();
+          if (!currentOrganization) return;
+          const data = new FormData(form);
+          const outcome = await createOrganizationDomain(
+            currentOrganization.id,
+            String(data.get("domain") ?? ""),
+            data.get("is_primary") === "on",
+          );
+          if (outcome.kind !== "ok") {
+            alertInto("domain-alert", "error", describeFailure(outcome));
+            return;
+          }
+          alertInto("domain-alert", "success", `${outcome.data.domain} added.`);
+          form.reset();
+          (form.elements.namedItem("is_primary") as HTMLInputElement).checked =
+            true;
+          await refreshWorkspace();
+        });
+      }
+
+      // ---------- Step 4: industry ----------
+
+      function wireIndustryForm(): void {
+        const form = document.getElementById(
+          "assign-industry-form",
+        ) as HTMLFormElement;
+        form.addEventListener("submit", async (event) => {
+          event.preventDefault();
+          if (!currentOrganization) return;
+          const data = new FormData(form);
+          const industryId = String(data.get("industry_id") ?? "");
+          if (!industryId) {
+            alertInto("industry-alert", "error", "Select an industry first.");
+            return;
+          }
+          const outcome = await assignIndustry(
+            currentOrganization.id,
+            industryId,
+            currentOrganization.version,
+          );
+          if (outcome.kind !== "ok") {
+            alertInto("industry-alert", "error", describeFailure(outcome));
+            return;
+          }
+          alertInto("industry-alert", "success", "Industry assigned.");
+          await refreshWorkspace();
+        });
+      }
+
+      // ---------- Step 5: users ----------
+
+      async function renderUsers(organizationId: string): Promise<void> {
+        const membersList = document.getElementById("members-list")!;
+        const invitationsList = document.getElementById("invitations-list")!;
+        membersList.replaceChildren();
+        invitationsList.replaceChildren();
+
+        const members = await fetchMemberships(organizationId);
+        if (members.kind === "ok" && members.data.length > 0) {
+          for (const member of members.data) {
+            const item = document.createElement("li");
+            const info = document.createElement("div");
+            const title = document.createElement("h3");
+            title.textContent = member.membership_type;
+            info.append(title);
+            item.append(
+              info,
+              badge(
+                member.status === "active" ? "ready" : "setup",
+                member.status,
+              ),
+            );
+            membersList.append(item);
+          }
+        } else {
+          const empty = document.createElement("div");
+          empty.className = "empty-state";
+          empty.innerHTML = "<h3>No members yet</h3><p>Add a user below.</p>";
+          membersList.append(empty);
+        }
+
+        const invitations = await fetchInvitations(organizationId);
+        if (invitations.kind === "ok" && invitations.data.length > 0) {
+          for (const invitation of invitations.data) {
+            const item = document.createElement("li");
+            const info = document.createElement("div");
+            const title = document.createElement("h3");
+            title.textContent = invitation.normalized_email;
+            info.append(title);
+            item.append(
+              info,
+              badge(
+                invitation.status === "pending" ? "setup" : "ready",
+                invitation.status,
+              ),
+            );
+            invitationsList.append(item);
+          }
+        } else {
+          const empty = document.createElement("div");
+          empty.className = "empty-state";
+          empty.innerHTML = "<h3>No pending invitations</h3><p></p>";
+          invitationsList.append(empty);
+        }
+      }
+
+      function wireBootstrapOwnerButton(): void {
+        document
+          .getElementById("bootstrap-owner-button")!
+          .addEventListener("click", async () => {
+            if (!currentOrganization || !currentPrincipal) return;
+            const result = await bootstrapOwner(currentOrganization.id, {
+              auth_user_id: currentPrincipal.auth_user_id,
+            });
+            if (result.kind !== "ok") {
+              alertInto("users-alert", "error", describeFailure(result));
+              return;
+            }
+            alertInto(
+              "users-alert",
+              "success",
+              result.data.owner_role_assignment_created
+                ? "You are now the owner of this client's workspace."
+                : "You already have owner access to this client's workspace.",
+            );
+            await refreshWorkspace();
+          });
+      }
+
+      function wireAddUserForm(): void {
+        const form = document.getElementById(
+          "add-user-form",
+        ) as HTMLFormElement;
+        let action: "add" | "invite" = "add";
+        document
+          .getElementById("add-existing-user-submit")!
+          .addEventListener("click", () => {
+            action = "add";
+          });
+        document
+          .getElementById("invite-user-submit")!
+          .addEventListener("click", () => {
+            action = "invite";
+          });
+        form.addEventListener("submit", async (event) => {
+          event.preventDefault();
+          if (!currentOrganization) return;
+          const data = new FormData(form);
+          const email = String(data.get("email") ?? "");
+          const membershipType = data.get("membership_type") as
+            "client" | "internal" | "partner";
+          const outcome =
+            action === "add"
+              ? await addExistingUser(
+                  currentOrganization.id,
+                  email,
+                  membershipType,
+                )
+              : await inviteUser(currentOrganization.id, email, membershipType);
+          if (outcome.kind !== "ok") {
+            if (
+              outcome.kind === "error" &&
+              outcome.code === "USER_ACCOUNT_NOT_FOUND"
+            ) {
+              alertInto(
+                "users-alert",
+                "error",
+                `${outcome.message} Once they've signed in once at this app's login page, they'll appear here.`,
+              );
+            } else {
+              alertInto("users-alert", "error", describeFailure(outcome));
+            }
+            return;
+          }
+          alertInto(
+            "users-alert",
+            "success",
+            action === "add" ? `${email} added.` : `${email} invited.`,
+          );
+          form.reset();
+          await refreshWorkspace();
+        });
+      }
+
+      // ---------- Step 6: products ----------
+
+      async function renderProducts(
+        organizationId: string,
+        state: OnboardingState | null,
+      ): Promise<void> {
+        const list = document.getElementById("onboarding-products-list")!;
+        list.replaceChildren();
+        const productsOutcome = await fetchProducts(organizationId);
+        const productsByKey = new Map(
+          productsOutcome.kind === "ok"
+            ? productsOutcome.data.map((product) => [product.key, product])
+            : [],
+        );
+        const statuses = state?.products ?? [];
+        if (statuses.length === 0) {
+          const empty = document.createElement("div");
+          empty.className = "empty-state";
+          empty.innerHTML =
+            "<h3>Products load after the client is selected</h3><p></p>";
+          list.append(empty);
+          return;
+        }
+        for (const productStatus of statuses) {
+          const item = document.createElement("li");
+          const info = document.createElement("div");
+          const title = document.createElement("h3");
+          title.textContent =
+            productsByKey.get(productStatus.product_key)?.name ??
+            productStatus.product_name;
+          const meta = document.createElement("p");
+          if (!productStatus.selected) {
+            meta.textContent = "Not enabled for this client yet.";
+          } else if (productStatus.external_integration_pending) {
+            meta.textContent =
+              "Enabled — blocked on an external integration not yet available in this release (does not block organization activation).";
+          } else if (productStatus.blocking_findings.length > 0) {
+            meta.textContent = productStatus.blocking_findings[0];
+          } else if (productStatus.ready) {
+            meta.textContent = "Ready.";
+          } else {
+            meta.textContent =
+              productStatus.next_action ?? "Setup in progress.";
+          }
+          info.append(title, meta);
+          const statusLabel = !productStatus.selected
+            ? "setup"
+            : productStatus.ready
+              ? "ready"
+              : productStatus.external_integration_pending
+                ? "degraded"
+                : "blocked";
+          item.append(info, badge(statusLabel));
+          list.append(item);
+        }
+      }
+
+      // ---------- Step 7: policies ----------
+
+      function policyRow(
+        policy: PolicyRevision,
+        organizationId: string,
+        onApproved: () => void,
+      ): HTMLLIElement {
+        const item = document.createElement("li");
+        const info = document.createElement("div");
+        const title = document.createElement("h3");
+        title.textContent = policy.policy_key;
+        info.append(title);
+        const actions = document.createElement("div");
+        if (policy.status === "pending_approval" || policy.status === "draft") {
+          const approveButton = document.createElement("button");
+          approveButton.type = "button";
+          approveButton.className = "button button--secondary button--sm";
+          approveButton.textContent = "Approve";
+          approveButton.addEventListener("click", async () => {
+            const result = await approvePolicy(organizationId, policy.id);
+            if (result.kind !== "ok") {
+              alertInto("policies-alert", "error", describeFailure(result));
+              return;
+            }
+            onApproved();
+          });
+          actions.append(approveButton);
+        } else {
+          actions.append(
+            badge(
+              policy.status === "active" ? "ready" : "setup",
+              policy.status,
+            ),
+          );
+        }
+        item.append(info, actions);
+        return item;
+      }
+
+      async function renderPolicies(organizationId: string): Promise<void> {
+        const approvalList = document.getElementById("approval-policies-list")!;
+        const notificationList = document.getElementById(
+          "notification-policies-list",
+        )!;
+        approvalList.replaceChildren();
+        notificationList.replaceChildren();
+
+        const approvals = await fetchEffectivePolicies(
+          organizationId,
+          "approval",
+        );
+        if (approvals.kind === "ok" && approvals.data.length > 0) {
+          for (const policy of approvals.data) {
+            approvalList.append(
+              policyRow(policy, organizationId, () => void refreshWorkspace()),
+            );
+          }
+        } else {
+          const empty = document.createElement("div");
+          empty.className = "empty-state";
+          empty.innerHTML = "<h3>No approval policy yet</h3><p></p>";
+          approvalList.append(empty);
+        }
+
+        const notifications = await fetchEffectivePolicies(
+          organizationId,
+          "notification",
+        );
+        if (notifications.kind === "ok" && notifications.data.length > 0) {
+          for (const policy of notifications.data) {
+            notificationList.append(
+              policyRow(policy, organizationId, () => void refreshWorkspace()),
+            );
+          }
+        } else {
+          const empty = document.createElement("div");
+          empty.className = "empty-state";
+          empty.innerHTML = "<h3>No notification policy yet</h3><p></p>";
+          notificationList.append(empty);
+        }
+      }
+
+      function wireCreateApprovalPolicyForm(): void {
+        const form = document.getElementById(
+          "create-approval-policy-form",
+        ) as HTMLFormElement;
+        form.addEventListener("submit", async (event) => {
+          event.preventDefault();
+          if (!currentOrganization) return;
+          const data = new FormData(form);
+          const outcome = await createPolicy(
+            currentOrganization.id,
+            String(data.get("policy_key") ?? ""),
+            "approval",
+            "organization",
+            {
+              action_type: "generic",
+              required_approver_permission: "organization.settings.manage",
+              minimum_approvals: Number(data.get("minimum_approvals") ?? 1),
+              self_approval_allowed: data.get("self_approval_allowed") === "on",
+              material_edit_invalidates: true,
+            },
+            "Configured during client onboarding.",
+          );
+          if (outcome.kind !== "ok") {
+            alertInto("policies-alert", "error", describeFailure(outcome));
+            return;
+          }
+          alertInto("policies-alert", "success", "Approval policy created.");
+          form.reset();
+          await refreshWorkspace();
+        });
+      }
+
+      function wireCreateNotificationPolicyForm(): void {
+        const form = document.getElementById(
+          "create-notification-policy-form",
+        ) as HTMLFormElement;
+        form.addEventListener("submit", async (event) => {
+          event.preventDefault();
+          if (!currentOrganization) return;
+          const data = new FormData(form);
+          const outcome = await createPolicy(
+            currentOrganization.id,
+            String(data.get("policy_key") ?? ""),
+            "notification",
+            "organization",
+            { mandatory_channels: ["email"], quiet_hours_allowed: true },
+            "Configured during client onboarding.",
+          );
+          if (outcome.kind !== "ok") {
+            alertInto("policies-alert", "error", describeFailure(outcome));
+            return;
+          }
+          alertInto(
+            "policies-alert",
+            "success",
+            "Notification policy created.",
+          );
+          form.reset();
+          await refreshWorkspace();
+        });
+      }
+
+      // ---------- Readiness + activation ----------
+
+      const STEP_SECTION_IDS: Partial<
+        Record<OnboardingState["steps"][number]["key"], string>
+      > = {
+        organization_profile: "section-profile",
+        locations: "section-locations",
+        primary_location: "section-locations",
+        website_domain: "section-domain",
+        industry: "section-industry",
+        users: "section-users",
+      };
+
+      function renderChecklist(state: OnboardingState): void {
+        const list = document.getElementById("checklist-list")!;
+        list.replaceChildren();
+        for (const step of state.steps) {
+          const item = document.createElement("li");
+          if (!step.blocking) item.classList.add("checklist__item--optional");
+          const info = document.createElement("div");
+          info.className = "checklist__info";
+          const title = document.createElement("h3");
+          title.textContent = step.label + (step.blocking ? "" : " (optional)");
+          const detail = document.createElement("p");
+          detail.textContent = step.next_action ?? step.detail;
+          info.append(title, detail);
+          const actionsCell = document.createElement("div");
+          actionsCell.className = "checklist__actions";
+          const statusKey =
+            step.state === "complete"
+              ? "ready"
+              : step.blocking
+                ? "blocked"
+                : "setup";
+          actionsCell.append(badge(statusKey, step.state.replace("_", " ")));
+          const targetSectionId = STEP_SECTION_IDS[step.key];
+          if (step.state !== "complete" && targetSectionId) {
+            const jumpButton = document.createElement("a");
+            jumpButton.href = `#${targetSectionId}`;
+            jumpButton.className = "button button--secondary button--sm";
+            jumpButton.textContent = "Resolve";
+            actionsCell.append(jumpButton);
+          }
+          item.append(info, actionsCell);
+          list.append(item);
+        }
+      }
+
+      function renderReadiness(state: OnboardingState): void {
+        const fill = document.getElementById("progress-bar-fill")!;
+        const progressBar = document.getElementById("progress-bar")!;
+        fill.style.width = `${state.progress_percent}%`;
+        progressBar.setAttribute(
+          "aria-valuenow",
+          String(state.progress_percent),
+        );
+        document.getElementById("progress-label")!.textContent =
+          `${state.progress_percent}% complete`;
+        document.getElementById("progress-updated")!.textContent =
+          `Last evaluated ${new Date(state.evaluated_at).toLocaleString()}`;
+
+        const blockersPanel = document.getElementById("blockers-panel")!;
+        blockersPanel.replaceChildren();
+        if (state.blockers.length > 0) {
+          const box = document.createElement("div");
+          box.className = "alert alert--error";
+          box.setAttribute("role", "alert");
+          const heading = document.createElement("p");
+          heading.textContent =
+            "Activation is blocked until these are resolved:";
+          const list = document.createElement("ul");
+          for (const blocker of state.blockers) {
+            const li = document.createElement("li");
+            li.textContent = blocker;
+            list.append(li);
+          }
+          box.append(heading, list);
+          blockersPanel.append(box);
+        }
+
+        const warningsPanel = document.getElementById("warnings-panel")!;
+        warningsPanel.replaceChildren();
+        if (state.warnings.length > 0) {
+          const box = document.createElement("div");
+          box.className = "alert alert--warning";
+          box.setAttribute("role", "status");
+          const heading = document.createElement("p");
+          heading.textContent = "Non-blocking, worth reviewing:";
+          const list = document.createElement("ul");
+          for (const warning of state.warnings) {
+            const li = document.createElement("li");
+            li.textContent = warning;
+            list.append(li);
+          }
+          box.append(heading, list);
+          warningsPanel.append(box);
+        }
+
+        const activateButton = document.getElementById(
+          "activate-button",
+        ) as HTMLButtonElement;
+        if (state.organization_status === "active") {
+          activateButton.hidden = true;
+        } else {
+          activateButton.hidden = false;
+          activateButton.disabled = !state.activation_eligible;
+          activateButton.title = state.activation_eligible
+            ? ""
+            : "Resolve every blocker above before activating.";
+        }
+      }
+
+      function wireActivation(): void {
+        const activateButton = document.getElementById(
+          "activate-button",
+        ) as HTMLButtonElement;
+        const confirmPanel = document.getElementById("activation-confirm")!;
+        const cancelButton = document.getElementById("activation-cancel")!;
+        const confirmButton = document.getElementById(
+          "activation-confirm-button",
+        )!;
+
+        activateButton.addEventListener("click", () => {
+          if (!currentOrganization) return;
+          document.getElementById("activation-consequence-text")!.textContent =
+            `Activating ${currentOrganization.name} makes it a live client: its members can begin ` +
+            "configuring products, and it will appear as an active client across the platform. This does not delete any data and can be followed by pause/offboarding later if needed.";
+          confirmPanel.hidden = false;
+          activateButton.hidden = true;
+        });
+        cancelButton.addEventListener("click", () => {
+          confirmPanel.hidden = true;
+          activateButton.hidden = false;
+        });
+        confirmButton.addEventListener("click", async () => {
+          if (!currentOrganization) return;
+          const result = await activateOrganization(
+            currentOrganization.id,
+            currentOrganization.version,
+          );
+          confirmPanel.hidden = true;
+          if (result.kind !== "ok") {
+            if (
+              result.kind === "error" &&
+              result.code === "ONBOARDING_INCOMPLETE"
+            ) {
+              alertInto(
+                "readiness-alert",
+                "error",
+                "Onboarding is not complete yet. See the blockers listed above.",
+              );
+            } else {
+              alertInto("readiness-alert", "error", describeFailure(result));
+            }
+            await refreshWorkspace();
+            return;
+          }
+          alertInto(
+            "readiness-alert",
+            "success",
+            `${result.data.name} is now active.`,
+          );
+          await refreshWorkspace();
+        });
+      }
+
+      // ---------- Orchestration ----------
+
+      async function refreshWorkspace(): Promise<void> {
+        if (!currentOrganization) return;
+        const organizationId = currentOrganization.id;
+
+        const refreshed = await fetchOrganization(organizationId);
+        if (refreshed.kind === "ok") currentOrganization = refreshed.data;
+
+        document.getElementById("workspace-org-name")!.textContent =
+          currentOrganization.name;
+        const statusBadge = document.getElementById("workspace-status-badge")!;
+        statusBadge.replaceChildren();
+        statusBadge.append(
+          badge(
+            currentOrganization.status === "active" ? "ready" : "setup",
+            currentOrganization.status,
+          ),
+        );
+
+        await Promise.all([
+          renderProfile(organizationId),
+          renderLocations(organizationId),
+          renderDomains(organizationId),
+        ]);
+
+        const stateOutcome = await fetchOnboardingState(organizationId);
+        const state = stateOutcome.kind === "ok" ? stateOutcome.data : null;
+        if (state) {
+          renderChecklist(state);
+          renderReadiness(state);
+        }
+
+        await renderUsers(organizationId);
+        await renderProducts(organizationId, state);
+
+        if (orgIsActive()) {
+          unlockSection("section-users");
+          unlockSection("section-policies");
+          document.getElementById("users-help")!.textContent = "";
+          document.getElementById("policies-help")!.textContent = "";
+          document.getElementById("products-help")!.textContent = "";
+          await renderPolicies(organizationId);
+        } else {
+          document.getElementById("users-help")!.textContent =
+            "You can bootstrap yourself as the workspace owner now. Adding or inviting additional users beyond that requires the organization to be active first.";
+          lockPostActivationSection(
+            "section-users",
+            "users-help",
+            document.getElementById("users-help")!.textContent!,
+          );
+          // Owner-bootstrap remains usable before activation.
+          (
+            document.getElementById(
+              "bootstrap-owner-button",
+            ) as HTMLButtonElement
+          ).disabled = false;
+          document.getElementById("policies-help")!.textContent =
+            "Policies can be created once this organization is active.";
+          lockPostActivationSection(
+            "section-policies",
+            "policies-help",
+            document.getElementById("policies-help")!.textContent!,
+          );
+          document.getElementById("products-help")!.textContent =
+            "Product entitlements can be created once this organization is active.";
+        }
+      }
+
+      async function loadOrganization(organizationId: string): Promise<void> {
+        const outcome = await fetchOrganization(organizationId);
+        if (outcome.kind !== "ok") {
+          alertInto("picker-alert", "error", describeFailure(outcome));
+          return;
+        }
+        currentOrganization = outcome.data;
+        if (currentOrganization.status === "prospect") {
+          const started = await startOnboarding(
+            currentOrganization.id,
+            currentOrganization.version,
+          );
+          if (started.kind === "ok") currentOrganization = started.data;
+        }
+        setOrgQueryParam(organizationId);
+        (document.getElementById("org-picker") as HTMLSelectElement).value =
+          organizationId;
+        document.getElementById("client-workspace")!.hidden = false;
+        await refreshWorkspace();
+        document
+          .getElementById("client-workspace")!
+          .scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+
+      function wireStaticForms(): void {
+        wireCreateOrgForm();
+        wireOrgPicker();
+        wireProfileForm();
+        wireCreateLocationForm();
+        wireCreateDomainForm();
+        wireIndustryForm();
+        wireBootstrapOwnerButton();
+        wireAddUserForm();
+        wireCreateApprovalPolicyForm();
+        wireCreateNotificationPolicyForm();
+        wireActivation();
+      }
+
+      async function boot(): Promise<void> {
+        if (!readPublicConfig()) {
+          showOnly(regions.notConfigured);
+          return;
+        }
+        showOnly(regions.loading);
+
+        const session = await getCurrentSession();
+        if (session.status !== "signed-in") {
+          goToLogin();
+          return;
+        }
+
+        const principal = await fetchPrincipal();
+        if (principal.kind === "unauthenticated") {
+          goToLogin();
+          return;
+        }
+        if (principal.kind !== "ok") {
+          regions.error.textContent = describeFailure(principal);
+          showOnly(regions.error);
+          return;
+        }
+        document.getElementById("current-user-label")!.textContent =
+          principal.data.auth_user_id;
+        document.getElementById("current-user-initial")!.textContent =
+          principal.data.auth_user_id.slice(0, 1).toUpperCase();
+        document.getElementById("current-assurance-label")!.textContent =
+          principal.data.assurance_level;
+        document.getElementById("sign-out-button")!.hidden = false;
+        wireSignOut();
+        currentPrincipal = principal.data;
+
+        const probe = await fetchOrganizations();
+        if (probe.kind !== "ok") {
+          showOnly(regions.notAdmin);
+          return;
+        }
+
+        document.getElementById("active-organization-name")!.textContent =
+          "Client onboarding";
+
+        await populateIndustrySelects();
+        wireStaticForms();
+        await populateOrgPicker();
+
+        showOnly(regions.content);
+
+        const requestedOrgId = new URLSearchParams(window.location.search).get(
+          "org",
+        );
+        if (requestedOrgId) {
+          await loadOrganization(requestedOrgId);
+        }
+      }
+
+      void boot();
+    </script>
+  </body>
+</html>

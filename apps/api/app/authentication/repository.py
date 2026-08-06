@@ -30,6 +30,20 @@ class UserProfileRepository:
             ),
         )
 
+    async def get_by_email(self, session: AsyncSession, email: str) -> UserProfile | None:
+        """Look up an active platform user by normalized email.
+
+        Only finds users who have already authenticated at least once (a
+        ``UserProfile`` is provisioned on first sign-in, never created ahead
+        of an account). Used to resolve "add existing user" / "invite" by
+        email in organization onboarding without exposing raw identifiers.
+        """
+        normalized = email.strip().casefold()
+        return cast(
+            UserProfile | None,
+            await session.scalar(select(UserProfile).where(UserProfile.email == normalized)),
+        )
+
     async def transition_status(
         self,
         session: AsyncSession,

@@ -99,6 +99,7 @@ describe("summarizeReadiness", () => {
         status: 500,
         code: "X",
         message: "Server error.",
+        details: [],
       }),
     ).toEqual({ status: "missing", detail: "Server error." });
   });

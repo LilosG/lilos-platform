@@ -1,5 +1,76 @@
 # LILOs implementation status
 
+## Release 1 Closure Batch 1 — Client onboarding and administration (2026-08-05)
+
+A platform administrator can now onboard and activate a real client organization entirely through
+the production web application at `/onboarding`, reusing existing organization, location, profile,
+industry, administration (services/business-facts/entitlements/policies/onboarding-checklist), and
+access-control services without duplicating any of their logic. Full detail, architecture rationale,
+and the pre/post-activation two-phase design are recorded in `docs/ONBOARDING.md`.
+
+**New this pass:**
+
+- `apps/api/app/domains/` — organization approved-domain registry (`OrganizationDomain`: primary +
+  additional domains, one active primary enforced by a partial unique index), migration
+  `20260805_0002`. Routes on both the always-mounted platform-administrator router (pre-activation)
+  and the standard RBAC-protected organization router (post-activation), reusing one
+  `OrganizationDomainService`.
+- `apps/api/app/onboarding/` — `OnboardingOrchestrationService`, a pure read-model composing
+  existing services into one `OnboardingState` (steps, per-product selection/readiness, blockers,
+  warnings, progress percentage). `GET /api/v1/platform/organizations/{id}/onboarding-state`.
+- Activation now fails closed: `POST /api/v1/platform/organizations/{id}/activate` recomputes
+  `OnboardingState` server-side and rejects with `409 ONBOARDING_INCOMPLETE` (exact blockers in
+  `error.details`) unless every blocking requirement is met. Previously this route performed the
+  raw lifecycle transition with no onboarding-completeness check at all.
+- New platform-administrator (pre-activation) routes reusing existing services verbatim:
+  `POST/GET .../profile`, `POST/GET/set-primary/archive .../domains`, `POST .../industry` (industry
+  could previously only be set at organization-creation time).
+- New always-mounted, RBAC-protected (post-activation) access-control routes closing a real
+  production gap — previously there was no way to invite or add a user to an organization outside
+  `internal_admin_routes_enabled` (local/test only) except the single owner-bootstrap route:
+  `POST/GET .../memberships`, `POST/GET .../invitations`, both resolving the target user by email
+  (`AccessControlService.find_user_by_email` / `create_membership_by_email` /
+  `create_invitation_by_email`) rather than a client-supplied UUID. A `UserProfile` only exists once
+  someone has actually signed in once (no Supabase admin credential is available in this codebase to
+  pre-provision one), so inviting an unknown email returns a truthful `USER_ACCOUNT_NOT_FOUND`
+  explanation directing the operator to have that person sign in first, rather than a fabricated
+  "invited" success state.
+- `apps/web/src/pages/onboarding.astro` — a new guided onboarding workspace: client picker/creation,
+  a live progress bar and step checklist (each item deep-links to the section that resolves it),
+  and dedicated sections for profile, locations, domain, industry, users/invitations, products
+  (entitlement/readiness state, clearly distinguished from "connected"), and approval/notification
+  policies, ending in a readiness/blockers summary and a two-step-confirmed activation control.
+  Sections that require the organization to already be active are shown disabled with an honest
+  explanation rather than hidden or faked. Follows the existing five-region boot pattern, `badge()`/
+  `empty-state`/`alert` conventions, and the typed `ApiOutcome<T>` contract exactly; linked from both
+  the sidebar navigation and the existing `administration.astro` client-detail view.
+- `apps/web/src/lib/api-client.ts`'s `error` outcome now carries `details: ApiErrorDetail[]` (used
+  to surface the exact activation blockers) — additive, and every existing call site/test updated.
+
+**Explicitly deferred to Batch 2+ (not part of this batch, consistent with the closure-batch
+scope):** GBP/Search Console/GA4/website-crawling discovery, review ingestion, content publishing
+connectors, insights aggregation, lead automation, billing, and any new AI infrastructure — none of
+these were touched. Within onboarding itself: inviting a person by email before they have ever
+signed in (would require a Supabase admin credential this codebase does not have — represented
+truthfully via `USER_ACCOUNT_NOT_FOUND` rather than implemented as a fake "email sent" flow); a
+richer service-catalog assignment UI beyond the existing read view (service assignment is optional
+and non-blocking, not part of activation eligibility); and DNS/ownership verification of added
+domains (out of scope per the batch instructions — domains are recorded and validated for format
+only, not verified).
+
+**Validation:** `uv run ruff format --check`, `uv run ruff check`, `uv run mypy` (196 source files)
+all pass with zero findings. `uv run pytest` — 479 passed against an ephemeral PostgreSQL 17
+instance (one unrelated, pre-existing timing-sensitive test —
+`test_process_continues_with_bounded_idle_backoff_and_heartbeat` — is flaky under load and passes in
+isolation; confirmed unrelated by reverting all changes and reproducing the same flake on `main`).
+`uv run alembic upgrade head` / `alembic check` — clean, no drift, head `20260805_0002`. Frontend:
+`npx prettier --check`, `npx eslint`, `npx astro check` (0/0/0 across 42 files), `npx vitest run` (19
+passed; the one pre-existing unrelated Playwright-config failure in the same vitest run reproduces
+identically on unmodified `main`), `npx astro build` (10 static pages, including the new
+`/onboarding` route), and `npx playwright test` (44 passed, desktop + mobile) all pass. `uv run
+python scripts/check_secrets.py` and `git diff --check` both pass. No new environment variable or
+secret was introduced; `render.yaml` and `scripts/validate_render_blueprint.py` were left unchanged.
+
 ## Google Business Profile OAuth connection foundation (2026-08-05)
 
 This packet completes the code-level work behind `PHASE-09-ACCEPTANCE.md`'s remaining

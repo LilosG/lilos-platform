@@ -90,6 +90,75 @@ export type BootstrapOwnerResult = {
   owner_role_assignment_created: boolean;
 };
 
+export type OrganizationProfile = {
+  organization_id: string;
+  brand_name: string | null;
+  business_description: string | null;
+  version: number;
+};
+
+export type CreateOrganizationProfileInput = {
+  brand_name?: string | null;
+  brand_summary?: string | null;
+  business_description?: string | null;
+  value_proposition?: string | null;
+  target_customer?: string | null;
+  default_call_to_action?: string | null;
+};
+
+export type OrganizationDomain = {
+  id: string;
+  organization_id: string;
+  domain: string;
+  is_primary: boolean;
+  status: "active" | "archived";
+  version: number;
+};
+
+export type OnboardingStepKey =
+  | "organization_profile"
+  | "locations"
+  | "primary_location"
+  | "website_domain"
+  | "industry"
+  | "services"
+  | "users";
+
+export type OnboardingStep = {
+  key: OnboardingStepKey;
+  label: string;
+  state: "complete" | "incomplete" | "optional_incomplete";
+  blocking: boolean;
+  detail: string;
+  next_action: string | null;
+};
+
+export type OnboardingProductStatus = {
+  product_key: string;
+  product_name: string;
+  selected: boolean;
+  entitlement_status: string | null;
+  readiness_state: "ready" | "blocked" | "not_entitled" | null;
+  ready: boolean;
+  blocking_findings: string[];
+  external_integration_pending: boolean;
+  next_action: string | null;
+};
+
+export type OnboardingState = {
+  organization_id: string;
+  organization_name: string;
+  organization_status: OrganizationStatus;
+  organization_version: number;
+  steps: OnboardingStep[];
+  products: OnboardingProductStatus[];
+  blockers: string[];
+  warnings: string[];
+  progress_percent: number;
+  activation_eligible: boolean;
+  evaluated_at: string;
+};
+
 const base = "/api/v1/platform";
 
 export function fetchIndustries(): Promise<ApiOutcome<Industry[]>> {
@@ -98,6 +167,12 @@ export function fetchIndustries(): Promise<ApiOutcome<Industry[]>> {
 
 export function fetchOrganizations(): Promise<ApiOutcome<AdminOrganization[]>> {
   return apiGet<AdminOrganization[]>(`${base}/organizations`);
+}
+
+export function fetchOrganization(
+  organizationId: string,
+): Promise<ApiOutcome<AdminOrganization>> {
+  return apiGet<AdminOrganization>(`${base}/organizations/${organizationId}`);
 }
 
 export function createOrganization(
@@ -174,5 +249,86 @@ export function bootstrapOwner(
       method: "POST",
       body: command,
     },
+  );
+}
+
+export function assignIndustry(
+  organizationId: string,
+  industryId: string,
+  expectedVersion: number,
+): Promise<ApiOutcome<AdminOrganization>> {
+  return apiRequest<AdminOrganization>(
+    `${base}/organizations/${organizationId}/industry`,
+    {
+      method: "POST",
+      body: { industry_id: industryId, expected_version: expectedVersion },
+    },
+  );
+}
+
+export function fetchOrganizationProfile(
+  organizationId: string,
+): Promise<ApiOutcome<OrganizationProfile | null>> {
+  return apiGet<OrganizationProfile | null>(
+    `${base}/organizations/${organizationId}/profile`,
+  );
+}
+
+export function createOrganizationProfile(
+  organizationId: string,
+  command: CreateOrganizationProfileInput,
+): Promise<ApiOutcome<OrganizationProfile>> {
+  return apiRequest<OrganizationProfile>(
+    `${base}/organizations/${organizationId}/profile`,
+    { method: "POST", body: command },
+  );
+}
+
+export function fetchOrganizationDomains(
+  organizationId: string,
+): Promise<ApiOutcome<OrganizationDomain[]>> {
+  return apiGet<OrganizationDomain[]>(
+    `${base}/organizations/${organizationId}/domains`,
+  );
+}
+
+export function createOrganizationDomain(
+  organizationId: string,
+  domain: string,
+  isPrimary: boolean,
+): Promise<ApiOutcome<OrganizationDomain>> {
+  return apiRequest<OrganizationDomain>(
+    `${base}/organizations/${organizationId}/domains`,
+    { method: "POST", body: { domain, is_primary: isPrimary } },
+  );
+}
+
+export function setPrimaryOrganizationDomain(
+  organizationId: string,
+  domainId: string,
+  expectedVersion: number,
+): Promise<ApiOutcome<OrganizationDomain>> {
+  return apiRequest<OrganizationDomain>(
+    `${base}/organizations/${organizationId}/domains/${domainId}/set-primary`,
+    { method: "POST", body: { expected_version: expectedVersion } },
+  );
+}
+
+export function archiveOrganizationDomain(
+  organizationId: string,
+  domainId: string,
+  expectedVersion: number,
+): Promise<ApiOutcome<OrganizationDomain>> {
+  return apiRequest<OrganizationDomain>(
+    `${base}/organizations/${organizationId}/domains/${domainId}/archive`,
+    { method: "POST", body: { expected_version: expectedVersion } },
+  );
+}
+
+export function fetchOnboardingState(
+  organizationId: string,
+): Promise<ApiOutcome<OnboardingState>> {
+  return apiGet<OnboardingState>(
+    `${base}/organizations/${organizationId}/onboarding-state`,
   );
 }

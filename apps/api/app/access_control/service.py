@@ -18,7 +18,12 @@ from apps.api.app.access_control.contracts import (
     PermissionDenyCreate,
     RoleAssignmentCreate,
 )
-from apps.api.app.access_control.enums import InvitationStatus, MembershipStatus, ScopeType
+from apps.api.app.access_control.enums import (
+    InvitationStatus,
+    MembershipStatus,
+    MembershipType,
+    ScopeType,
+)
 from apps.api.app.access_control.errors import (
     AccessParentStateError,
     AssignmentConflictError,
@@ -35,6 +40,7 @@ from apps.api.app.access_control.errors import (
     MembershipNotFoundError,
     MembershipVersionConflictError,
     ScopeValidationError,
+    UserAccountNotFoundError,
 )
 from apps.api.app.access_control.models import (
     MembershipPermissionDeny,
@@ -67,6 +73,7 @@ from apps.api.app.audit.service import AuditEventService
 from apps.api.app.authentication.contracts import AuthenticatedPrincipal
 from apps.api.app.authentication.enums import UserStatus
 from apps.api.app.authentication.models import UserProfile
+from apps.api.app.authentication.repository import UserProfileRepository
 from apps.api.app.database.base import utc_now
 from apps.api.app.locations.models import Location
 from apps.api.app.organizations.models import Organization
@@ -129,6 +136,45 @@ class AccessControlService:
     denies: DenyRepository = field(default_factory=DenyRepository)
     audit: AuditEventService = field(default_factory=AuditEventService)
     owner_continuity: OwnerContinuityService = field(default_factory=OwnerContinuityService)
+    user_profiles: UserProfileRepository = field(default_factory=UserProfileRepository)
+
+    async def find_user_by_email(self, session: AsyncSession, email: str) -> UserProfile:
+        """Resolve an existing platform user by email for onboarding add/invite flows.
+
+        Only ever finds users who have already signed in at least once; there
+        is no server-side path to fabricate an identity for someone who has
+        not yet authenticated (no Supabase admin credential is available to
+        this codebase). Callers must present ``UserAccountNotFoundError`` as
+        "ask them to sign in first, then try again" rather than a raw 404.
+        """
+        profile = await self.user_profiles.get_by_email(session, email)
+        if profile is None:
+            raise UserAccountNotFoundError
+        return profile
+
+    async def list_memberships(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        *,
+        limit: int,
+        offset: int,
+    ) -> tuple[list[OrganizationMembership], bool]:
+        return await self.memberships.list_by_organization(
+            session, organization_id, limit=limit, offset=offset
+        )
+
+    async def list_invitations(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        *,
+        limit: int,
+        offset: int,
+    ) -> tuple[list[OrganizationInvitation], bool]:
+        return await self.invitations.list_by_organization(
+            session, organization_id, limit=limit, offset=offset
+        )
 
     async def _audit(
         self,
@@ -199,6 +245,28 @@ class AccessControlService:
             },
         )
         return membership
+
+    async def create_membership_by_email(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        *,
+        email: str,
+        membership_type: MembershipType,
+        correlation_id: str,
+    ) -> OrganizationMembership:
+        """Add an existing platform user (resolved by email) as an active member.
+
+        Composes ``find_user_by_email`` with ``create_membership`` verbatim;
+        adds no new membership-creation logic of its own.
+        """
+        profile = await self.find_user_by_email(session, email)
+        return await self.create_membership(
+            session,
+            organization_id,
+            MembershipCreate(user_profile_id=profile.id, membership_type=membership_type),
+            correlation_id=correlation_id,
+        )
 
     async def get_membership(
         self, session: AsyncSession, organization_id: UUID, membership_id: UUID
@@ -370,6 +438,38 @@ class AccessControlService:
             },
         )
         return invitation, token
+
+    async def create_invitation_by_email(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        *,
+        email: str,
+        membership_type: MembershipType,
+        invited_by_user_profile_id: UUID,
+        lifetime_days: int = 7,
+        correlation_id: str,
+    ) -> tuple[OrganizationInvitation, str]:
+        """Invite an existing platform user (resolved by email) to this organization.
+
+        Composes ``find_user_by_email`` with ``create_invitation`` verbatim.
+        Raises ``UserAccountNotFoundError`` if nobody has authenticated yet
+        with that email — this codebase has no credential to pre-provision an
+        identity for someone who has never signed in.
+        """
+        profile = await self.find_user_by_email(session, email)
+        return await self.create_invitation(
+            session,
+            organization_id,
+            InvitationCreate(
+                user_profile_id=profile.id,
+                email=email,
+                membership_type=membership_type,
+                invited_by_user_profile_id=invited_by_user_profile_id,
+                lifetime_days=lifetime_days,
+            ),
+            correlation_id=correlation_id,
+        )
 
     async def get_invitation(
         self, session: AsyncSession, organization_id: UUID, invitation_id: UUID

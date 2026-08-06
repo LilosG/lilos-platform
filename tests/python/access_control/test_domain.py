@@ -30,6 +30,7 @@ from apps.api.app.access_control.errors import (
     MembershipLifecycleConflictError,
     MembershipNotFoundError,
     MembershipVersionConflictError,
+    UserAccountNotFoundError,
 )
 from apps.api.app.access_control.models import (
     MembershipPermissionDeny,
@@ -419,5 +420,97 @@ def test_scoped_assignments_denies_and_database_tenant_constraints(
                 len(value) for value in ROLE_MAPPINGS.values()
             )
             assert org_a_id != org_b_id
+
+    asyncio.run(exercise())
+
+
+@pytest.mark.integration
+def test_email_lookup_membership_invitation_and_organization_listing(
+    access_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async def exercise() -> None:
+        service = AccessControlService()
+        async with access_session_factory.begin() as session:
+            org = organization("access-email-lookup")
+            existing_user = user("existing@example.invalid")
+            inviter = user("inviter@example.invalid")
+            session.add_all([org, existing_user, inviter])
+            await session.flush()
+            org_id, existing_user_id, inviter_id = org.id, existing_user.id, inviter.id
+
+        # Unknown email cannot be resolved — no account exists yet.
+        async with access_session_factory.begin() as session:
+            with pytest.raises(UserAccountNotFoundError):
+                await service.find_user_by_email(session, "nobody@example.invalid")
+
+        # Email lookup is case-insensitive.
+        async with access_session_factory.begin() as session:
+            found = await service.find_user_by_email(session, "  Existing@Example.Invalid  ")
+            assert found.id == existing_user_id
+
+        async with access_session_factory.begin() as session:
+            membership = await service.create_membership_by_email(
+                session,
+                org_id,
+                email="existing@example.invalid",
+                membership_type=MembershipType.CLIENT,
+                correlation_id="member-by-email",
+            )
+            assert membership.user_profile_id == existing_user_id
+            assert membership.status is MembershipStatus.ACTIVE
+
+        # Duplicate membership for the same user is rejected.
+        async with access_session_factory.begin() as session:
+            with pytest.raises(MembershipConflictError):
+                await service.create_membership_by_email(
+                    session,
+                    org_id,
+                    email="existing@example.invalid",
+                    membership_type=MembershipType.CLIENT,
+                    correlation_id="member-by-email-dup",
+                )
+
+        async with access_session_factory.begin() as session:
+            second_org = organization("access-email-lookup-invite")
+            invitee = user("invitee@example.invalid")
+            session.add_all([second_org, invitee])
+            await session.flush()
+            second_org_id = second_org.id
+
+        async with access_session_factory.begin() as session:
+            invitation, token = await service.create_invitation_by_email(
+                session,
+                second_org_id,
+                email="invitee@example.invalid",
+                membership_type=MembershipType.CLIENT,
+                invited_by_user_profile_id=inviter_id,
+                correlation_id="invite-by-email",
+            )
+            assert invitation.normalized_email == "invitee@example.invalid"
+            assert token
+
+        async with access_session_factory.begin() as session:
+            with pytest.raises(UserAccountNotFoundError):
+                await service.create_invitation_by_email(
+                    session,
+                    second_org_id,
+                    email="never-signed-in@example.invalid",
+                    membership_type=MembershipType.CLIENT,
+                    invited_by_user_profile_id=inviter_id,
+                    correlation_id="invite-unknown",
+                )
+
+        async with access_session_factory() as session:
+            memberships, has_more = await service.list_memberships(
+                session, org_id, limit=50, offset=0
+            )
+            assert len(memberships) == 1
+            assert has_more is False
+
+            invitations, invitations_has_more = await service.list_invitations(
+                session, second_org_id, limit=50, offset=0
+            )
+            assert len(invitations) == 1
+            assert invitations_has_more is False
 
     asyncio.run(exercise())
