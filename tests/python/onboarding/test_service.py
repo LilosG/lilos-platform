@@ -4,6 +4,7 @@ import asyncio
 from uuid import uuid4
 
 import pytest
+from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from apps.api.app.access_control.enums import MembershipStatus, MembershipType
@@ -118,7 +119,7 @@ def test_onboarding_state_progresses_to_activation_eligible(
             await session.flush()
             industry_id = industry.id
             await session.execute(
-                Organization.__table__.update()
+                update(Organization)
                 .where(Organization.id == organization_id)
                 .values(industry_id=industry_id)
             )
