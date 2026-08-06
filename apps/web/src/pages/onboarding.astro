@@ -845,7 +845,7 @@ import "../styles/global.css";
         const outcome = await fetchIndustries();
         const options =
           outcome.kind === "ok"
-            ? (Array.isArray(outcome.data) ? outcome.data : (outcome.data?.industries || [])).map(
+            ? (Array.isArray(outcome.data) ? outcome.data : (outcome.data?.industries || outcome.data?.items || [])).map(
                   (industry: Industry) =>
                     `<option value="${industry.id}">${industry.name}</option>`,
                 )
@@ -882,7 +882,7 @@ import "../styles/global.css";
             default_currency: String(
               data.get("default_currency") ?? "",
             ).toUpperCase(),
-            industry_id: industryId || null,
+            industry_id: (industryId && industryId.trim() !== "") ? industryId : null,
           });
           if (outcome.kind !== "ok") {
             alertInto("picker-alert", "error", describeFailure(outcome));
