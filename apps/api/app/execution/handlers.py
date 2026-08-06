@@ -166,18 +166,28 @@ async def _handle_gbp_publish_change(
         )
         return JobOutcome(result="retryable_failure", safe_error="PROVIDER_WRITE_FAILED")
 
-    publication.status = "verified"
-    publication.verified_at = datetime.now(UTC)
-    publication.provider_operation_reference = location_name
-
     from apps.api.app.products.gbp.service import GBPService
 
     gbp_svc = GBPService()
     try:
         raw = await adapter.get_location(token, location_name)
         await gbp_svc.store_snapshot(session, gbp_location, raw, partial=False)
-    except Exception:
-        pass
+    except Exception as exc:
+        publication.status = "reconciliation_required"
+        publication.safe_error_code = "VERIFICATION_REREAD_FAILED"
+        logger.warning(
+            "GBP publish verification re-read failed",
+            extra={
+                "event_name": "gbp.publish.verification_failed",
+                "publication_id": str(publication.id),
+                "error": str(exc)[:200],
+            },
+        )
+        return JobOutcome(result="retryable_failure", safe_error="VERIFICATION_REREAD_FAILED")
+
+    publication.status = "verified"
+    publication.verified_at = datetime.now(UTC)
+    publication.provider_operation_reference = location_name
 
     return JobOutcome(
         result="succeeded",
@@ -198,11 +208,16 @@ async def _handle_gbp_publish_post(
     input_document: dict[str, Any],
     correlation_id: str,
 ) -> JobOutcome:
-    """Publish an approved GBP post.
+    """Publish an approved GBP post via the GBP Posts API.
 
-    Currently marks the post as published without a real provider write
-    (GBP Posts API requires additional scopes not yet configured).
-    The publication is verified as reserved before marking dispatched/verified.
+    The GBP Posts API requires scopes beyond the currently-configured
+    ``business.manage`` and a dedicated adapter method that does not yet
+    exist.  Rather than fabricating a ``verified`` publication status, this
+    handler fails closed: the publication is marked ``failed`` with a clear
+    ``safe_error_code`` so operators see the real blocker.  Once the Posts
+    API scope and adapter method are added, this handler should be updated
+    to perform the real provider write and verification re-read, mirroring
+    ``_handle_gbp_publish_change``.
     """
     from sqlalchemy import select
 
@@ -221,15 +236,8 @@ async def _handle_gbp_publish_post(
     if publication is None:
         return JobOutcome(result="permanent_failure", safe_error="PUBLICATION_NOT_FOUND")
 
-    from datetime import UTC, datetime
-
-    publication.status = "verified"
-    publication.verified_at = datetime.now(UTC)
-
-    return JobOutcome(
-        result="succeeded",
-        result_reference=f"post-publication:{publication.id}",
-    )
+    publication.status = "failed"
+    return JobOutcome(result="permanent_failure", safe_error="POSTS_API_SCOPE_NOT_CONFIGURED")
 
 
 # ---------------------------------------------------------------------------
@@ -303,12 +311,16 @@ async def _handle_content_publish(
     input_document: dict[str, Any],
     correlation_id: str,
 ) -> JobOutcome:
-    """Mark a content publication as dispatched.
+    """Publish governed content to a configured publishing target.
 
-    Real publication to GitHub/CMS targets requires a configured publishing
-    connector.  This handler marks the publication record as dispatched
-    and verified when no external target is configured, or when the target
-    connection is not available.
+    Real publication to GitHub/CMS targets requires a configured
+    per-organization publishing-target connection and a provider adapter
+    that does not yet exist in this codebase.  Rather than fabricating a
+    ``verified`` publication status, this handler fails closed: the
+    publication is marked ``failed`` with a clear ``safe_error_code`` so
+    operators see the real blocker.  Once a publishing connector and
+    adapter are added, this handler should perform the real provider write
+    and verification, mirroring ``_handle_gbp_publish_change``.
     """
     from sqlalchemy import select
 
@@ -327,15 +339,9 @@ async def _handle_content_publish(
     if publication is None:
         return JobOutcome(result="permanent_failure", safe_error="PUBLICATION_NOT_FOUND")
 
-    from datetime import UTC, datetime
-
-    publication.status = "verified"
-    publication.verified_at = datetime.now(UTC)
-
-    return JobOutcome(
-        result="succeeded",
-        result_reference=f"content-publication:{publication.id}",
-    )
+    publication.status = "failed"
+    publication.safe_error_code = "PUBLISHING_TARGET_NOT_CONFIGURED"
+    return JobOutcome(result="permanent_failure", safe_error="PUBLISHING_TARGET_NOT_CONFIGURED")
 
 
 # ---------------------------------------------------------------------------
