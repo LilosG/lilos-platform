@@ -1,6 +1,68 @@
 # LILOs implementation status
 
-## Production access correction — platform-administrator MFA step-up (2026-08-06)
+## Operational Release Matrix (2026-08-06)
+
+| Capability | Implemented | Production Verified | Acceptance Evidence | External Blocker |
+|---|---|---|---|---|
+| Authentication (Supabase email/password) | Yes | Yes (pilot sign-in) | `session.ts`, `login.astro`, JWKS verification | None |
+| MFA / AAL2 step-up | Yes | Yes | `mfa.astro`, TOTP enroll/challenge/verify with forced session refresh | None |
+| Platform administration | Yes | Partial | `administration.astro`, `/api/v1/platform` routes, AAL2 enforcement | None |
+| Client onboarding | Yes | Partial | `onboarding.astro`, 8-step wizard, activation gate with blocker list | None |
+| Organization/location management | Yes | Yes | Full CRUD, lifecycle transitions, tenant isolation tests | None |
+| Product entitlements and readiness | Yes | Yes | Per-product readiness API, blocking requirements, honest state display | None |
+| Google OAuth connection | Yes | Code complete | Connect/callback/refresh/disconnect, Fernet-encrypted token storage | **Google OAuth credentials** (4 env vars) |
+| GBP account/location discovery | Yes | Code complete | `GBPDiscoveryService`, idempotent upsert from Google API | **Google OAuth credentials** |
+| GBP profile sync | Yes | Code complete | Snapshot storage, health assessment, staleness detection | **Google OAuth credentials** |
+| GBP location mapping | Yes | Code complete | `confirm_mapping`, frontend select + map UI | **Google OAuth credentials** |
+| GBP operations (hours, media, posts) | Yes | Code complete | `GBPOperationsService`, propose/approve workflow | **Google OAuth credentials** |
+| GBP workflow execution | Yes | Code complete | `handlers.py`, `gbp.publish_change`/`gbp.publish_post` handlers | **Google OAuth credentials** |
+| Reviews ingestion + response | Yes | Code complete | Full CRUD, AI draft via `DeterministicAIProvider`, approve/publish | **Google OAuth credentials** for provider dispatch |
+| Leads management | Yes | Code complete | Intake, assignment, status, notes, tasks, conversion, audit | **Email/SMS provider credentials** for speed-to-lead |
+| Content pipeline | Yes | Code complete | Opportunity → brief → draft → approve → publish reservation | **GitHub publishing target** for real publication |
+| SEO crawl + analysis | Yes | Code complete | Real bounded crawl, on-page analysis, opportunity generation | None (crawl is self-contained) |
+| SEO Search Console sync | Yes | Code complete | Property mapping, opportunity scoring | **Google OAuth credentials** (Search Console scope) |
+| Insights and reporting | Yes | Code complete | Cross-product readiness source display, honest empty state | Activity data requires product history |
+| Background workflows | Yes | Code complete | Worker/scheduler, lease-based claiming, heartbeat, handler registry | None |
+| Notifications | Yes | Code complete | In-app notification channel, templates, delivery tracking | None |
+| Audit logging | Yes | Yes | Append-only with DB triggers, every mutation audited | None |
+| Tenant isolation | Yes | Yes | Cross-tenant access tests at every layer | None |
+
+### Current task
+
+- Roadmap phase: Phase 19 — Production Deployment and Launch (operational closure)
+- Status: Implementation complete, awaiting external production credentials
+- Date: 2026-08-06
+- Branch: `release/operational-closure-2026-08-06`
+
+### Commits this session
+
+1. `1bcf685` — fix(web): reconcile MFA/session stabilization and fix pre-existing TypeScript errors
+2. `4249e93` — feat(integrations): add GBP account/location discovery and profile sync
+3. `5f1ff78` — feat(execution): register workflow step handlers for product workflows
+4. `daadc15` — fix(web): remove unused DiscoveryResult type import from gbp.astro
+
+### External blockers requiring operator action
+
+1. **Google OAuth credentials** — `LILOS_GOOGLE_OAUTH_CLIENT_ID`, `LILOS_GOOGLE_OAUTH_CLIENT_SECRET`, `LILOS_GOOGLE_OAUTH_REDIRECT_URI`, `LILOS_SECRET_ENCRYPTION_KEY` must be configured in the Render dashboard before any real Google connection can be attempted.
+2. **Monitoring/telemetry destination** — `LILOS_TELEMETRY_EXPORT_ENDPOINT` needs a verified destination.
+3. **Database backup/PITR verification** — External database provider backup status needs confirmation.
+4. **Canonical domain cutover** — `app.lilosgrowth.com` needs DNS/TLS configuration.
+5. **Section 27 sign-off** — Named launch approvers required.
+
+### Validation results (2026-08-06)
+
+- `ruff format --check`: 563 files clean
+- `ruff check`: all passed
+- `mypy apps/api`: 198 source files, 0 issues
+- `pytest`: 275 passed, 213 integration skips
+- `prettier --check`: all matched files clean
+- `eslint`: 0 problems
+- `astro check`: 0/0/0 (45 files)
+- `vitest run`: 37 passed (6 files)
+- `astro build`: 11 pages built
+- `playwright test`: 46 passed (desktop + mobile)
+- `check_secrets.py`: no secrets found
+- `git diff --check`: clean
 
 Production showed `mike@lilosgrowth.com` (real, active `PlatformAdministrator` grant, confirmed in
 the prior packet) blocked from `/administration` and `/onboarding` with an undifferentiated
