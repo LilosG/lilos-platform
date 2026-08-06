@@ -15,3 +15,13 @@ class PlatformOwnerBootstrapResult(BaseModel):
     membership_id: UUID
     membership_created: bool
     owner_role_assignment_created: bool
+
+
+class PlatformAdministratorGrantResult(BaseModel):
+    """Idempotent platform-administrator grant outcome."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    user_profile_id: UUID
+    grant_id: UUID
+    grant_created: bool

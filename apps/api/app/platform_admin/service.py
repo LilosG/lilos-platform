@@ -7,13 +7,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.app.access_control.contracts import MembershipCreate, RoleAssignmentCreate
 from apps.api.app.access_control.enums import MembershipType, ScopeType
-from apps.api.app.access_control.errors import CatalogConflictError
+from apps.api.app.access_control.errors import CatalogConflictError, UserAccountNotFoundError
 from apps.api.app.access_control.service import AccessControlService
+from apps.api.app.audit.contracts import AuditEventCreate
+from apps.api.app.audit.enums import AuditActorType, AuditResult
+from apps.api.app.audit.service import AuditEventService
 from apps.api.app.authentication.contracts import UserProfileCreate
 from apps.api.app.authentication.repository import UserProfileRepository
 from apps.api.app.authentication.service import UserAdministrationService
 from apps.api.app.organizations.service import OrganizationService
-from apps.api.app.platform_admin.contracts import PlatformOwnerBootstrapResult
+from apps.api.app.platform_admin.contracts import (
+    PlatformAdministratorGrantResult,
+    PlatformOwnerBootstrapResult,
+)
+from apps.api.app.platform_admin.models import PlatformAdministrator
+from apps.api.app.platform_admin.repository import PlatformAdministratorRepository
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,6 +34,10 @@ class PlatformAdministrationService:
     )
     organizations: OrganizationService = field(default_factory=OrganizationService)
     access: AccessControlService = field(default_factory=AccessControlService)
+    platform_administrators: PlatformAdministratorRepository = field(
+        default_factory=PlatformAdministratorRepository
+    )
+    audit: AuditEventService = field(default_factory=AuditEventService)
 
     async def bootstrap_owner(
         self,
@@ -87,4 +99,68 @@ class PlatformAdministrationService:
             membership_id=membership.id,
             membership_created=membership_created,
             owner_role_assignment_created=assignment_created,
+        )
+
+    async def grant_administrator(
+        self,
+        session: AsyncSession,
+        *,
+        email: str,
+        granted_by_user_profile_id: UUID | None,
+        reason: str,
+        source: str,
+        correlation_id: str,
+    ) -> PlatformAdministratorGrantResult:
+        """Idempotently grant the narrow, cross-organization platform-administrator role.
+
+        Resolves the target by email against an *existing* ``UserProfile``
+        (created only on that person's own first real sign-in) — never
+        creates or fabricates an identity, and never accepts a raw UUID from
+        a caller. Additive to the per-organization RBAC engine used
+        everywhere else: this grants no membership, role, or organization
+        access on its own. Re-invoking for an already-active grant returns
+        the existing grant untouched and writes no duplicate audit event.
+        """
+        profile = await self.user_profiles.get_by_email(session, email)
+        if profile is None:
+            raise UserAccountNotFoundError
+
+        existing = await self.platform_administrators.get_active_by_user_profile_id(
+            session, profile.id
+        )
+        if existing is not None:
+            return PlatformAdministratorGrantResult(
+                user_profile_id=profile.id, grant_id=existing.id, grant_created=False
+            )
+
+        grant = PlatformAdministrator(
+            user_profile_id=profile.id,
+            granted_by_user_profile_id=granted_by_user_profile_id,
+        )
+        await self.platform_administrators.add(session, grant)
+        await self.audit.record(
+            session,
+            AuditEventCreate(
+                event_type="platform.administrator.granted",
+                action="platform_administrator.grant",
+                result=AuditResult.SUCCEEDED,
+                actor_type=AuditActorType.USER
+                if granted_by_user_profile_id
+                else AuditActorType.SYSTEM,
+                actor_id=granted_by_user_profile_id,
+                resource_type="platform_administrator",
+                resource_id=grant.id,
+                correlation_id=correlation_id,
+                summary="Platform administrator grant created.",
+                metadata={
+                    "grant_id": str(grant.id),
+                    "user_profile_id": str(profile.id),
+                    "source": source,
+                    "reason": reason,
+                    "operation": "granted",
+                },
+            ),
+        )
+        return PlatformAdministratorGrantResult(
+            user_profile_id=profile.id, grant_id=grant.id, grant_created=True
         )
