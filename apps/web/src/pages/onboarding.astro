@@ -831,7 +831,8 @@ import "../styles/global.css";
         const outcome = await fetchOrganizations();
         select.innerHTML = '<option value="">Select a client…</option>';
         if (outcome.kind !== "ok") return outcome;
-        for (const organization of outcome.data) {
+        const orgs = Array.isArray(outcome.data) ? outcome.data : (outcome.data?.organizations || []);
+        for (const organization of orgs) {
           const option = document.createElement("option");
           option.value = organization.id;
           option.textContent = `${organization.name} (${organization.status})`;
