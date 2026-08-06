@@ -28,6 +28,15 @@ export type ApiRequestOptions = {
 };
 
 /**
+ * Every request is bounded: a stalled connection (accepted but never
+ * responded to — no network error is ever raised for this by `fetch`) must
+ * still resolve to a truthful outcome rather than leaving a caller's `await`
+ * pending indefinitely, which previously left pages stuck on "Loading…"
+ * forever with no way to recover short of a full page reload.
+ */
+const REQUEST_TIMEOUT_MS = 15_000;
+
+/**
  * Authenticated GET against the LILOs API. Never fabricates a result: a missing
  * configuration, missing session, network failure, or non-2xx response each map
  * to a distinct outcome the caller must render truthfully.
@@ -55,6 +64,11 @@ export async function apiRequest<T>(
   }
   const method = options.method ?? "GET";
   let response: Response;
+  const timeoutController = new AbortController();
+  const timeoutId = setTimeout(
+    () => timeoutController.abort(),
+    REQUEST_TIMEOUT_MS,
+  );
   try {
     response = await fetch(`${config.apiBaseUrl}${path}`, {
       method,
@@ -66,9 +80,15 @@ export async function apiRequest<T>(
       },
       body:
         options.body !== undefined ? JSON.stringify(options.body) : undefined,
+      signal: timeoutController.signal,
     });
   } catch {
+    // Covers both a genuine network failure and a timed-out (aborted)
+    // request — either way the caller could not complete the request and
+    // must render that truthfully rather than hang.
     return { kind: "disconnected" };
+  } finally {
+    clearTimeout(timeoutId);
   }
   if (response.status === 401) {
     return { kind: "unauthenticated" };

@@ -26,7 +26,11 @@ import "../styles/global.css";
         <p>Loading Client Onboarding…</p>
       </div>
 
-      <div id="boot-error" role="alert" hidden></div>
+      <div id="boot-error" role="alert" hidden>
+        <p id="boot-error-message"></p>
+        <button type="button" class="button" id="boot-error-retry">Retry</button
+        >
+      </div>
 
       <div id="not-platform-admin" role="status" hidden>
         <h1>Platform administrator access required</h1><p>
@@ -658,6 +662,25 @@ import "../styles/global.css";
         }
       }
 
+      /**
+       * Renders an operator-safe failure with a Retry control and guarantees
+       * the page leaves the "Loading…" state — the one path every boot
+       * failure (a timed-out/failed request, or any unexpected exception)
+       * must reach, so onboarding can never hang indefinitely.
+       */
+      function showBootError(message: string): void {
+        document.getElementById("boot-error-message")!.textContent = message;
+        showOnly(regions.error);
+      }
+
+      function wireBootErrorRetry(): void {
+        document
+          .getElementById("boot-error-retry")!
+          .addEventListener("click", () => {
+            void boot();
+          });
+      }
+
       function describeFailure(outcome: ApiOutcome<unknown>): string {
         switch (outcome.kind) {
           case "forbidden":
@@ -760,22 +783,23 @@ import "../styles/global.css";
 
       // ---------- Step 0: picker / create ----------
 
-      async function populateOrgPicker(): Promise<void> {
+      async function populateOrgPicker(): Promise<boolean> {
         const select = document.getElementById(
           "org-picker",
         ) as HTMLSelectElement;
         const outcome = await fetchOrganizations();
         select.innerHTML = '<option value="">Select a client…</option>';
-        if (outcome.kind !== "ok") return;
+        if (outcome.kind !== "ok") return false;
         for (const organization of outcome.data) {
           const option = document.createElement("option");
           option.value = organization.id;
           option.textContent = `${organization.name} (${organization.status})`;
           select.append(option);
         }
+        return true;
       }
 
-      async function populateIndustrySelects(): Promise<void> {
+      async function populateIndustrySelects(): Promise<boolean> {
         const outcome = await fetchIndustries();
         const options =
           outcome.kind === "ok"
@@ -796,6 +820,7 @@ import "../styles/global.css";
         ) as HTMLSelectElement;
         assignSelect.innerHTML =
           '<option value="">Select an industry…</option>' + options;
+        return outcome.kind === "ok";
       }
 
       function wireCreateOrgForm(): void {
@@ -1680,7 +1705,25 @@ import "../styles/global.css";
         wireActivation();
       }
 
+      /**
+       * Top-level boot entry point. Wraps `runBoot` so that any failure —
+       * a request that times out or fails, or any other unexpected
+       * exception — always resolves to a rendered, operator-safe error
+       * state with a Retry control, never leaves the page stuck on
+       * "Loading…" indefinitely.
+       */
       async function boot(): Promise<void> {
+        try {
+          await runBoot();
+        } catch (error) {
+          console.error("onboarding boot failed", error);
+          showBootError(
+            "Something went wrong while loading the onboarding workspace. Try again.",
+          );
+        }
+      }
+
+      async function runBoot(): Promise<void> {
         if (!readPublicConfig()) {
           showOnly(regions.notConfigured);
           return;
@@ -1699,8 +1742,7 @@ import "../styles/global.css";
           return;
         }
         if (principal.kind !== "ok") {
-          regions.error.textContent = describeFailure(principal);
-          showOnly(regions.error);
+          showBootError(describeFailure(principal));
           return;
         }
         document.getElementById("current-user-label")!.textContent =
@@ -1736,9 +1778,22 @@ import "../styles/global.css";
         document.getElementById("active-organization-name")!.textContent =
           "Client onboarding";
 
-        await populateIndustrySelects();
+        const industriesOk = await populateIndustrySelects();
         wireStaticForms();
-        await populateOrgPicker();
+        const organizationsOk = await populateOrgPicker();
+
+        if (!industriesOk || !organizationsOk) {
+          const failed = [
+            !industriesOk && "industries",
+            !organizationsOk && "client organizations",
+          ]
+            .filter(Boolean)
+            .join(" and ");
+          showBootError(
+            `Could not load ${failed} for onboarding. Check your connection and try again.`,
+          );
+          return;
+        }
 
         showOnly(regions.content);
 
@@ -1750,6 +1805,7 @@ import "../styles/global.css";
         }
       }
 
+      wireBootErrorRetry();
       void boot();
     </script>
   </body>
