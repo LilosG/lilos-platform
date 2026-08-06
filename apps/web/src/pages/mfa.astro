@@ -83,6 +83,7 @@ import "../styles/global.css";
         findVerifiedTotpFactor,
         getAssuranceLevels,
         getCurrentSession,
+        hasReachedAal2,
         verifyTotpCode,
       } from "../lib/session";
       import { fetchMyPlatformAdministratorStatus } from "../lib/workspace";
@@ -202,10 +203,7 @@ import "../styles/global.css";
         }
 
         const levels = await getAssuranceLevels();
-        if (levels.ok && levels.data.currentLevel === levels.data.nextLevel) {
-          // Supabase itself already reports no further step-up is possible or
-          // needed for this session — resolve by returning to the target and
-          // letting the real gated request be the source of truth.
+        if (levels.ok && hasReachedAal2(levels.data.currentLevel)) {
           window.location.replace(redirectTarget());
           return;
         }

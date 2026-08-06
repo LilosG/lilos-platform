@@ -9,6 +9,7 @@ import {
   enrollTotpFactor,
   findVerifiedTotpFactor,
   getAssuranceLevels,
+  hasReachedAal2,
   verifyTotpCode,
 } from "./session";
 
@@ -44,6 +45,18 @@ describe("getAssuranceLevels", () => {
       ok: true,
       data: { currentLevel: "aal1", nextLevel: "aal2" },
     });
+  });
+});
+
+describe("hasReachedAal2", () => {
+  it("returns false for aal1/aal1 (no factor enrolled yet) instead of treating it as step-up complete", () => {
+    // Regression: this is exactly the shape Supabase returns for a signed-in
+    // session with no MFA factor enrolled -- currentLevel and nextLevel are
+    // both "aal1" because there is no further level to step up to yet.
+    // Comparing currentLevel to nextLevel previously treated that as "no
+    // step-up needed" and sent the still-AAL1 session straight back to the
+    // AAL2-protected route, producing an infinite /onboarding <-> /mfa loop.
+    expect(hasReachedAal2("aal1")).toBe(false);
   });
 });
 

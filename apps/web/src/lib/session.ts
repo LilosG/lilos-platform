@@ -90,6 +90,20 @@ export async function getAssuranceLevels(): Promise<
   };
 }
 
+/**
+ * Whether a session has actually reached AAL2 and may safely be returned to
+ * an AAL2-protected route. Deliberately checks only `currentLevel`: an
+ * `aal1` session with no MFA factor enrolled yet reports
+ * `currentLevel === nextLevel === "aal1"` (there is no further level to step
+ * up to until a factor exists), so comparing `currentLevel` to `nextLevel`
+ * incorrectly treated that as "no step-up needed" and sent an AAL1 session
+ * straight back to the AAL2-protected route — producing an infinite
+ * /onboarding <-> /mfa redirect loop.
+ */
+export function hasReachedAal2(currentLevel: string | null): boolean {
+  return currentLevel === "aal2";
+}
+
 export type VerifiedTotpFactor = {
   factorId: string;
   friendlyName: string | null;
