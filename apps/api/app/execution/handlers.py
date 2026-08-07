@@ -390,9 +390,7 @@ async def _handle_reviews_publish_response(
         return JobOutcome(result="permanent_failure", safe_error="RESPONSE_NOT_PUBLISHING")
 
     response.status = "failed"
-    return JobOutcome(
-        result="permanent_failure", safe_error="REVIEW_REPLY_API_NOT_CONFIGURED"
-    )
+    return JobOutcome(result="permanent_failure", safe_error="REVIEW_REPLY_API_NOT_CONFIGURED")
 
 
 # ---------------------------------------------------------------------------
