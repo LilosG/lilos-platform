@@ -626,6 +626,8 @@ import "../styles/global.css";
         type AdminOrganization,
         type AdminLocation,
         type Industry,
+        type IndustriesResponse,
+        type PaginatedOrganizations,
         type OnboardingState,
       } from "../lib/platform-admin";
       import {
@@ -825,7 +827,7 @@ import "../styles/global.css";
       // ---------- Step 0: picker / create ----------
 
       async function populateOrgPicker(): Promise<
-        ApiOutcome<AdminOrganization[]>
+        ApiOutcome<PaginatedOrganizations>
       > {
         const select = document.getElementById(
           "org-picker",
@@ -833,7 +835,7 @@ import "../styles/global.css";
         const outcome = await fetchOrganizations();
         select.innerHTML = '<option value="">Select a client…</option>';
         if (outcome.kind !== "ok") return outcome;
-        for (const organization of outcome.data) {
+        for (const organization of outcome.data.items) {
           const option = document.createElement("option");
           option.value = organization.id;
           option.textContent = `${organization.name} (${organization.status})`;
@@ -843,12 +845,12 @@ import "../styles/global.css";
       }
 
       async function populateIndustrySelects(): Promise<
-        ApiOutcome<Industry[]>
+        ApiOutcome<IndustriesResponse>
       > {
         const outcome = await fetchIndustries();
         const options =
           outcome.kind === "ok"
-            ? outcome.data
+            ? outcome.data.items
                 .map(
                   (industry: Industry) =>
                     `<option value="${industry.id}">${industry.name}</option>`,
@@ -969,7 +971,7 @@ import "../styles/global.css";
           list.append(item);
           return;
         }
-        const locations = outcome.data;
+        const locations = outcome.data.items;
         if (locations.length === 0) {
           const empty = document.createElement("div");
           empty.className = "empty-state";
