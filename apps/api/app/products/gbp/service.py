@@ -325,6 +325,10 @@ class GBPService:
         )
         session.add(item)
         await session.flush()
+        workflow_run.input_document = {
+            **(workflow_run.input_document or {}),
+            "publication_id": str(item.id),
+        }
         await self._audit(
             session,
             event="gbp.publication.reserved",
