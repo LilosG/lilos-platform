@@ -77,6 +77,18 @@ import "../styles/global.css";
             <p>Checking Search Console mapping…</p>
           </div>
         </section>
+
+        <section aria-labelledby="ga4-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Google Analytics</p><h2 id="ga4-title">
+                Analytics property
+              </h2>
+            </div>
+          </div><div class="attention-card" id="ga4-panel">
+            <p>Checking Analytics mapping…</p>
+          </div>
+        </section>
       </div>
     </AppShell>
   </body>
@@ -106,6 +118,12 @@ import "../styles/global.css";
     syncSearchConsole,
     fetchSearchConsoleSummary,
   } from "../lib/search-console";
+  import {
+    discoverAnalytics,
+    mapAnalytics,
+    syncAnalytics,
+    fetchAnalyticsSummary,
+  } from "../lib/analytics";
   import { selectDefaultOrganization } from "../lib/dashboard-logic";
   import { getCurrentSession } from "../lib/session";
 
@@ -528,6 +546,156 @@ import "../styles/global.css";
     panel.append(list);
   }
 
+  async function renderAnalytics(): Promise<void> {
+    const panel = document.getElementById("ga4-panel")!;
+    panel.replaceChildren();
+    const status = await fetchConnectionStatus(organizationId);
+    const connected =
+      status.kind === "ok" &&
+      (status.data as GBPConnectionStatus | null)?.status === "connected";
+    const scopeGranted =
+      connected &&
+      (status.data as GBPConnectionStatus | null)?.services?.analytics;
+
+    if (!connected) {
+      panel.append(
+        badge("missing", "Google not connected"),
+        document.createTextNode(
+          " Connect Google above before mapping Analytics.",
+        ),
+      );
+      return;
+    }
+    if (!scopeGranted) {
+      panel.append(
+        badge("setup", "Scope required"),
+        document.createTextNode(
+          " Analytics access is not authorized for this Google connection.",
+        ),
+      );
+      panel.append(
+        actionButton("Authorize Analytics", async () => {
+          const r = await connectGoogle(organizationId, ["gbp", "analytics"]);
+          if (r.kind === "ok") window.location.assign(r.data.authorization_url);
+          else alert(describeFailure(r));
+        }),
+      );
+      return;
+    }
+
+    const summary = await fetchAnalyticsSummary(organizationId);
+    if (summary.kind !== "ok") {
+      panel.append(document.createTextNode(describeFailure(summary)));
+      return;
+    }
+    if (summary.data.properties.length === 0) {
+      panel.append(
+        badge("missing", "Not mapped"),
+        document.createTextNode(
+          " Discover your GA4 properties and select one.",
+        ),
+      );
+      panel.append(
+        actionButton("Discover properties", async () => {
+          await runAnalyticsDiscovery();
+        }),
+      );
+      return;
+    }
+    const list = document.createElement("ul");
+    list.className = "product-list";
+    for (const prop of summary.data.properties) {
+      const row = document.createElement("li");
+      const info = document.createElement("div");
+      info.className = "product-list__info";
+      const name = document.createElement("strong");
+      name.textContent = prop.display_name;
+      info.append(name, badge("connected", prop.freshness_status));
+      if (prop.last_synced_at) {
+        info.append(
+          document.createTextNode(
+            ` Last synced ${new Date(prop.last_synced_at).toLocaleString()}`,
+          ),
+        );
+      }
+      row.append(info);
+      row.append(
+        actionButton("Sync", async () => {
+          const r = await syncAnalytics(organizationId, prop.id);
+          if (r.kind !== "ok") alert(describeFailure(r));
+          await renderAnalytics();
+        }),
+      );
+      list.append(row);
+    }
+    panel.append(list);
+    const metrics = summary.data.metrics;
+    const metricKeys = Object.keys(metrics);
+    if (metricKeys.length > 0) {
+      const perf = document.createElement("p");
+      perf.className = "field-hint";
+      perf.textContent = `Synced GA4 metrics: ${metricKeys
+        .map((k) => `${k.replace("ga4.", "")}=${metrics[k]}`)
+        .join(", ")}.`;
+      panel.append(perf);
+    }
+  }
+
+  async function runAnalyticsDiscovery(): Promise<void> {
+    const panel = document.getElementById("ga4-panel")!;
+    const discovery = await discoverAnalytics(organizationId);
+    if (discovery.kind !== "ok") {
+      alert(describeFailure(discovery));
+      return;
+    }
+    panel.replaceChildren();
+    if (discovery.data.properties.length === 0) {
+      panel.append(
+        badge("missing", "No properties"),
+        document.createTextNode(
+          " No GA4 properties are accessible to this Google account.",
+        ),
+      );
+      return;
+    }
+    const list = document.createElement("ul");
+    list.className = "product-list";
+    for (const prop of discovery.data.properties) {
+      const isRecommended =
+        discovery.data.recommended?.external_property_id ===
+        prop.external_property_id;
+      const row = document.createElement("li");
+      const info = document.createElement("div");
+      info.className = "product-list__info";
+      const name = document.createElement("strong");
+      name.textContent = prop.display_name;
+      info.append(name);
+      if (isRecommended) {
+        info.append(badge("connected", "Recommended"));
+      }
+      info.append(
+        document.createTextNode(` (${prop.account_display_name || "GA4"})`),
+      );
+      row.append(info);
+      row.append(
+        actionButton("Map", async () => {
+          const r = await mapAnalytics(organizationId, {
+            external_property_id: prop.external_property_id,
+            property_number: prop.property_number,
+            display_name: prop.display_name,
+          });
+          if (r.kind !== "ok") {
+            alert(describeFailure(r));
+            return;
+          }
+          await renderAnalytics();
+        }),
+      );
+      list.append(row);
+    }
+    panel.append(list);
+  }
+
   async function loadOrganization(org: MyOrganization): Promise<void> {
     organizationId = org.organization_id;
     document.getElementById("active-organization-name")!.textContent =
@@ -540,7 +708,12 @@ import "../styles/global.css";
       `${window.location.pathname}?${params.toString()}`,
     );
     localStorage.setItem("selected_org_id", organizationId);
-    await Promise.all([renderGoogle(), renderGitHub(), renderSearchConsole()]);
+    await Promise.all([
+      renderGoogle(),
+      renderGitHub(),
+      renderSearchConsole(),
+      renderAnalytics(),
+    ]);
     showOnly(regions.content);
   }
 

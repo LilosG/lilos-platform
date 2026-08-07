@@ -134,6 +134,7 @@ from apps.api.app.products.seo.models import (
     SEOWebsite,
 )
 from apps.api.app.profiles.models import LocationProfile, OrganizationProfile
+from apps.api.app.products.analytics.models import AnalyticsProperty
 from apps.api.app.synchronization.models import (
     ProviderStateSnapshot,
     SyncChangeIntent,
