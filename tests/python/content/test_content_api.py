@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest
+from cryptography.fernet import Fernet
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from starlette.testclient import TestClient
 
@@ -189,7 +190,11 @@ def content_client(
     verified, identifiers = asyncio.run(populate())
     verifier = FakeVerifier(verified)
     settings = Settings.model_validate(
-        {"environment": EnvironmentName.TEST, "database_url": postgresql_test_url}
+        {
+            "environment": EnvironmentName.TEST,
+            "database_url": postgresql_test_url,
+            "secret_encryption_key": Fernet.generate_key().decode("utf-8"),
+        }
     )
     with TestClient(
         create_app(settings, authentication_verifier=verifier), raise_server_exceptions=False
@@ -434,3 +439,82 @@ def test_cross_tenant_item_detail_is_not_found(
     other_org = ids["other_organization"]
     response = client.get(f"/api/v1/organizations/{other_org}/content/{uuid4()}", headers=HEADERS)
     assert response.status_code in (403, 404)
+
+
+@pytest.mark.integration
+def test_operator_can_configure_github_connection_and_publishing_target_in_app(
+    content_client: tuple[TestClient, dict[str, UUID]],
+) -> None:
+    """A production operator can configure a GitHub publishing target through the
+    application API — no manual SQL. The GitHub access token (external credential)
+    is registered as a connection, then a target is configured referencing it.
+    """
+    client, ids = content_client
+    org = ids["organization"]
+    base = f"/api/v1/organizations/{org}/content"
+
+    connections = client.get(f"{base}/connections", headers=HEADERS)
+    assert connections.status_code == 200
+    pre_count = len(connections.json()["data"])
+
+    connection = client.post(
+        f"{base}/connections",
+        headers=HEADERS,
+        json={
+            "access_token": "ghp_external-credential-token",
+            "external_account_reference": "org/site-repo-content",
+        },
+    )
+    assert connection.status_code == 201, connection.text
+    assert connection.json()["data"]["status"] == "connected"
+    connection_id = connection.json()["data"]["id"]
+
+    listed = client.get(f"{base}/connections", headers=HEADERS)
+    assert listed.status_code == 200
+    assert len(listed.json()["data"]) == pre_count + 1
+
+    target = client.post(
+        f"{base}/targets",
+        headers=HEADERS,
+        json={
+            "key": "secondary",
+            "connection_id": connection_id,
+            "target_type": "github_astro",
+            "repository_id": "org/site-repo-content",
+            "base_branch": "main",
+            "allowed_path_prefix": "src/content",
+        },
+    )
+    assert target.status_code == 201, target.text
+    assert target.json()["data"]["status"] == "active"
+    assert target.json()["data"]["repository_id"] == "org/site-repo-content"
+    assert target.json()["data"]["base_branch"] == "main"
+
+    targets = client.get(f"{base}/targets", headers=HEADERS)
+    assert targets.status_code == 200
+    configured = [t for t in targets.json()["data"] if t["key"] == "secondary"]
+    assert any(t["repository_id"] == "org/site-repo-content" for t in configured)
+
+
+@pytest.mark.integration
+def test_create_target_with_unconnected_connection_is_rejected(
+    content_client: tuple[TestClient, dict[str, UUID]],
+) -> None:
+    """A target referencing a missing connection is rejected, not silently stored."""
+    client, ids = content_client
+    org = ids["organization"]
+    base = f"/api/v1/organizations/{org}/content"
+
+    response = client.post(
+        f"{base}/targets",
+        headers=HEADERS,
+        json={
+            "key": "orphan",
+            "connection_id": str(uuid4()),
+            "target_type": "github_astro",
+            "repository_id": "org/repo",
+            "base_branch": "main",
+            "allowed_path_prefix": "src/content",
+        },
+    )
+    assert response.status_code == 409

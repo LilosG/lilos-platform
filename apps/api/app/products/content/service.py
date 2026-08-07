@@ -1,6 +1,7 @@
 """Governed content opportunities, briefs, grounded revisions, approval, and publication intent."""
 
 import hashlib
+import json
 import re
 from datetime import UTC, datetime
 from typing import TypedDict, cast
@@ -16,8 +17,10 @@ from apps.api.app.audit.enums import AuditActorType, AuditResult
 from apps.api.app.audit.metadata import JsonValue
 from apps.api.app.audit.repository import AuditEventRepository
 from apps.api.app.audit.service import AuditEventService
+from apps.api.app.config import Settings
 from apps.api.app.execution.service import ExecutionService
-from apps.api.app.integrations.models import IntegrationConnection
+from apps.api.app.integrations.models import IntegrationConnection, Provider
+from apps.api.app.integrations.secrets import FernetSecretStore
 from apps.api.app.notifications.models import NotificationTemplate
 from apps.api.app.notifications.service import NotificationService
 from apps.api.app.products.content.adapter import validate_target_path
@@ -25,15 +28,18 @@ from apps.api.app.products.content.contracts import (
     AIDraftCreate,
     ApprovalDecision,
     BriefCreate,
+    GitHubConnectionCreate,
     ItemCreate,
     OpportunityCreate,
     OpportunityDecision,
     PublicationCreate,
     RevisionCreate,
+    TargetCreate,
 )
 from apps.api.app.products.content.errors import (
     ContentApprovalStageConflictError,
     ContentBriefNotFoundError,
+    ContentGitHubProviderNotConfiguredError,
     ContentItemNotFoundError,
     ContentOpportunityNotDecidableError,
     ContentOpportunityNotFoundError,
@@ -795,6 +801,120 @@ class ContentService:
                 .order_by(PublishingTarget.key)
             )
         )
+
+    async def list_github_connections(
+        self, session: AsyncSession, organization_id: UUID
+    ) -> list[IntegrationConnection]:
+        """List GitHub integration connections available for publishing targets."""
+        return list(
+            await session.scalars(
+                select(IntegrationConnection)
+                .join(Provider, Provider.id == IntegrationConnection.provider_id)
+                .where(
+                    IntegrationConnection.organization_id == organization_id,
+                    Provider.key == "github",
+                    IntegrationConnection.status != "disconnected",
+                )
+                .order_by(IntegrationConnection.created_at.desc())
+            )
+        )
+
+    async def register_github_connection(
+        self,
+        session: AsyncSession,
+        settings: Settings,
+        organization_id: UUID,
+        command: GitHubConnectionCreate,
+        *,
+        actor_id: UUID | None,
+        correlation_id: str,
+    ) -> IntegrationConnection:
+        """Register an application-side GitHub connection for content publishing.
+
+        The GitHub access token is an externally-obtained credential; this
+        stores it encrypted-at-rest through the platform secret store and
+        records the opaque ``credential_reference`` on a ``connected`` row.
+        The github provider must already be seeded (platform configuration).
+        """
+        provider = await session.scalar(select(Provider).where(Provider.key == "github"))
+        if provider is None:
+            raise ContentGitHubProviderNotConfiguredError
+
+        store = FernetSecretStore.create(session, settings)
+        credential_reference = await store.put(json.dumps({"access_token": command.access_token}))
+
+        connection = IntegrationConnection(
+            organization_id=organization_id,
+            provider_id=provider.id,
+            external_account_reference=command.external_account_reference,
+            credential_reference=credential_reference,
+            status="connected",
+        )
+        session.add(connection)
+        await session.flush()
+        await self._audit(
+            session,
+            event="content.github_connection.registered",
+            organization_id=organization_id,
+            location_id=None,
+            actor_id=actor_id,
+            resource_type="integration_connection",
+            resource_id=connection.id,
+            correlation_id=correlation_id,
+            summary="GitHub publishing connection registered.",
+            metadata={"external_account_reference": command.external_account_reference or ""},
+        )
+        return connection
+
+    async def create_target(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        command: TargetCreate,
+        *,
+        actor_id: UUID | None,
+        correlation_id: str,
+    ) -> PublishingTarget:
+        """Configure a repository publishing target referencing a GitHub connection."""
+        connection = await session.scalar(
+            select(IntegrationConnection).where(
+                IntegrationConnection.organization_id == organization_id,
+                IntegrationConnection.id == command.connection_id,
+            )
+        )
+        if connection is None or connection.status != "connected":
+            raise ContentTargetNotConfiguredError
+        target = PublishingTarget(
+            organization_id=organization_id,
+            connection_id=connection.id,
+            key=command.key,
+            target_type=command.target_type,
+            repository_id=command.repository_id,
+            base_branch=command.base_branch,
+            allowed_path_prefix=command.allowed_path_prefix,
+            deployment_target_reference=command.deployment_target_reference,
+            status="active",
+            version=1,
+        )
+        session.add(target)
+        await session.flush()
+        await self._audit(
+            session,
+            event="content.target.configured",
+            organization_id=organization_id,
+            location_id=None,
+            actor_id=actor_id,
+            resource_type="publishing_target",
+            resource_id=target.id,
+            correlation_id=correlation_id,
+            summary="Publishing target configured.",
+            metadata={
+                "key": command.key,
+                "repository_id": command.repository_id,
+                "base_branch": command.base_branch,
+            },
+        )
+        return target
 
     async def summary(self, session: AsyncSession, organization_id: UUID) -> dict[str, object]:
         rows = (

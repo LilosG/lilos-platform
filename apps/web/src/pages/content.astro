@@ -69,6 +69,48 @@ import "../styles/global.css";
               </h2>
             </div>
           </div><ul class="product-list" id="targets-list"></ul>
+          <details class="attention-card" id="publishing-setup">
+            <summary>Publishing setup</summary>
+            <div>
+              <h3>Step 1 — GitHub credential (external)</h3>
+              <p class="field-hint">
+                Create a GitHub access token in GitHub (the external credential
+                step), then register it here. It is stored encrypted at rest and
+                referenced by a publishing connection.
+              </p><label class="sr-only" for="github-token">GitHub access token</label
+              ><input id="github-token" type="password" placeholder="github_pat_…"
+              /><label class="sr-only" for="github-account">GitHub account/repo slug</label
+              ><input
+                id="github-account"
+                type="text"
+                placeholder="org/site-repo (optional)"
+              /><button type="button" class="button" id="register-connection-button"
+                >Register GitHub connection</button
+              >
+              <h3>Step 2 — Publishing target (application)</h3>
+              <p class="field-hint">
+                Configure the repository, base branch, and allowed path prefix
+                that governed content may be published to.
+              </p><label class="sr-only" for="target-key">Target key</label
+              ><input id="target-key" type="text" placeholder="primary"
+              /><label class="sr-only" for="target-connection">Connection</label
+              ><select id="target-connection"></select><label
+                class="sr-only"
+                for="target-repo">Repository</label
+              ><input id="target-repo" type="text" placeholder="org/site-repo"
+              /><label class="sr-only" for="target-base">Base branch</label
+              ><input id="target-base" type="text" placeholder="main"
+              /><label class="sr-only" for="target-prefix">Allowed path prefix</label
+              ><input
+                id="target-prefix"
+                type="text"
+                placeholder="src/content"
+              /><button type="button" class="button" id="create-target-button"
+                >Create publishing target</button
+              >
+              <p id="setup-status" role="status" aria-live="polite"></p>
+            </div>
+          </details>
         </section>
 
         <section aria-labelledby="opportunities-title">
@@ -186,18 +228,21 @@ import "../styles/global.css";
       } from "../lib/workspace";
       import {
         createBrief,
+        createPublishingTarget,
         createRevision,
         decideOpportunity,
         decideRevision,
         fetchBriefs,
         fetchContentItems,
         fetchContentSummary,
+        fetchGitHubConnections,
         fetchItemAudit,
         fetchOpportunities,
         fetchPublications,
         fetchPublishingTargets,
         fetchRevisions,
         generateAIDraft,
+        registerGitHubConnection,
         reservePublication,
         type ContentItem,
         type ContentOpportunity,
@@ -362,8 +407,22 @@ import "../styles/global.css";
         const select = document.getElementById(
           "target-select",
         ) as HTMLSelectElement;
+        const connectionSelect = document.getElementById(
+          "target-connection",
+        ) as HTMLSelectElement;
         list.replaceChildren();
         select.replaceChildren();
+        connectionSelect.replaceChildren();
+        const connections = await fetchGitHubConnections(organizationId);
+        if (connections.kind === "ok") {
+          for (const connection of connections.data) {
+            const option = document.createElement("option");
+            option.value = connection.id;
+            option.textContent =
+              connection.external_account_reference ?? connection.id;
+            connectionSelect.append(option);
+          }
+        }
         const outcome = await fetchPublishingTargets(organizationId);
         if (outcome.kind !== "ok") {
           const item = document.createElement("li");
@@ -374,7 +433,7 @@ import "../styles/global.css";
         if (outcome.data.length === 0) {
           const item = document.createElement("li");
           item.textContent =
-            "No publishing target configured yet. Connecting a repository is required before publishing.";
+            "No publishing target configured yet. Use the publishing setup form below to connect a repository.";
           list.append(item);
           return;
         }
@@ -715,7 +774,7 @@ import "../styles/global.css";
         );
         setActionStatus(
           result.kind === "ok"
-            ? "Publication reserved. Live repository dispatch is not yet configured."
+            ? "Publication reserved. The workflow will dispatch it to the configured GitHub repository."
             : describeFailure(result),
         );
         if (result.kind === "ok") await renderPublications(itemId);
@@ -845,6 +904,78 @@ import "../styles/global.css";
           });
       }
 
+      function setSetupStatus(message: string): void {
+        document.getElementById("setup-status")!.textContent = message;
+      }
+
+      function wirePublishingSetup(): void {
+        document
+          .getElementById("register-connection-button")
+          ?.addEventListener("click", async () => {
+            const token = (
+              document.getElementById("github-token") as HTMLInputElement
+            ).value.trim();
+            const account = (
+              document.getElementById("github-account") as HTMLInputElement
+            ).value.trim();
+            if (!token) {
+              setSetupStatus("Paste a GitHub access token first.");
+              return;
+            }
+            setSetupStatus("Registering GitHub connection…");
+            const result = await registerGitHubConnection(organizationId, {
+              accessToken: token,
+              externalAccountReference: account || undefined,
+            });
+            if (result.kind === "ok") {
+              setSetupStatus("GitHub connection registered.");
+              await renderTargets();
+            } else {
+              setSetupStatus(describeFailure(result));
+            }
+          });
+
+        document
+          .getElementById("create-target-button")
+          ?.addEventListener("click", async () => {
+            const key = (
+              document.getElementById("target-key") as HTMLInputElement
+            ).value.trim();
+            const connectionId = (
+              document.getElementById("target-connection") as HTMLSelectElement
+            ).value;
+            const repo = (
+              document.getElementById("target-repo") as HTMLInputElement
+            ).value.trim();
+            const baseBranch = (
+              document.getElementById("target-base") as HTMLInputElement
+            ).value.trim();
+            const prefix = (
+              document.getElementById("target-prefix") as HTMLInputElement
+            ).value.trim();
+            if (!key || !connectionId || !repo || !baseBranch || !prefix) {
+              setSetupStatus(
+                "Key, connection, repository, base branch, and path prefix are required.",
+              );
+              return;
+            }
+            setSetupStatus("Creating publishing target…");
+            const result = await createPublishingTarget(organizationId, {
+              key,
+              connectionId,
+              repositoryId: repo,
+              baseBranch,
+              allowedPathPrefix: prefix,
+            });
+            if (result.kind === "ok") {
+              setSetupStatus("Publishing target created.");
+              await renderTargets();
+            } else {
+              setSetupStatus(describeFailure(result));
+            }
+          });
+      }
+
       async function boot(): Promise<void> {
         if (!readPublicConfig()) {
           showOnly(regions.notConfigured);
@@ -904,6 +1035,7 @@ import "../styles/global.css";
         wireBriefButton();
         wireComposer();
         wireFilters();
+        wirePublishingSetup();
         await renderReadiness();
         await Promise.all([
           renderSummary(),

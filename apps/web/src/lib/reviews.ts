@@ -180,3 +180,19 @@ export function publishResponse(
     { method: "POST", body: { idempotency_key: idempotencyKey } },
   );
 }
+
+export type ReviewIngestionSummary = {
+  total: number;
+  ingested: number;
+  updated: number;
+};
+
+export function ingestReviews(
+  organizationId: string,
+  locationId: string,
+): Promise<ApiOutcome<ReviewIngestionSummary>> {
+  return apiRequest<ReviewIngestionSummary>(
+    `${base(organizationId, locationId)}/ingest`,
+    { method: "POST", body: {} },
+  );
+}

@@ -55,6 +55,14 @@ import "../styles/global.css";
             ><select id="location-select"></select>
           </div><div class="attention-card" id="readiness-panel">
             <p>Checking readiness…</p>
+          </div><div class="hero__actions">
+            <button type="button" class="button" id="ingest-reviews-button"
+              >Import reviews from Google</button
+            ><p
+              id="ingest-status"
+              role="status"
+              aria-live="polite"
+            ></p>
           </div>
         </section>
 
@@ -149,6 +157,7 @@ import "../styles/global.css";
         fetchReviewSummary,
         fetchReviews,
         generateAIDraft,
+        ingestReviews,
         publishResponse,
         type ReviewResponse,
         type ReviewSummary,
@@ -490,7 +499,7 @@ import "../styles/global.css";
             );
             setDraftStatus(
               result.kind === "ok"
-                ? "Publication reserved. Live provider dispatch is not yet configured."
+                ? "Response published to Google."
                 : describeFailure(result),
             );
             await renderResponseHistory(reviewId);
@@ -607,6 +616,31 @@ import "../styles/global.css";
           });
       }
 
+      function setIngestStatus(message: string): void {
+        document.getElementById("ingest-status")!.textContent = message;
+      }
+
+      function wireIngestButton(): void {
+        document
+          .getElementById("ingest-reviews-button")
+          ?.addEventListener("click", async () => {
+            if (!currentLocationId) {
+              setIngestStatus("Select a location first.");
+              return;
+            }
+            setIngestStatus("Importing reviews from Google…");
+            const result = await ingestReviews(organizationId, currentLocationId);
+            if (result.kind === "ok") {
+              setIngestStatus(
+                `Imported ${result.data.ingested} new review(s), updated ${result.data.updated}.`,
+              );
+              await Promise.all([renderSummary(), renderReviewList()]);
+            } else {
+              setIngestStatus(describeFailure(result));
+            }
+          });
+      }
+
       async function loadLocation(locationId: string): Promise<void> {
         currentLocationId = locationId;
         document.getElementById("detail-section")!.hidden = true;
@@ -697,6 +731,7 @@ import "../styles/global.css";
         populateLocationSelect(locations.data);
         wireComposer();
         wireFilters();
+        wireIngestButton();
         await loadLocation(locations.data[0].id);
 
         showOnly(regions.content);

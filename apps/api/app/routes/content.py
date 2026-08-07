@@ -13,15 +13,18 @@ from apps.api.app.authorization.contracts import AuthorizationDecision
 from apps.api.app.authorization.dependencies import require_authorization
 from apps.api.app.database.session import get_database_session
 from apps.api.app.errors import request_correlation_id
+from apps.api.app.integrations.models import IntegrationConnection
 from apps.api.app.products.content.contracts import (
     AIDraftCreate,
     ApprovalDecision,
     BriefCreate,
+    GitHubConnectionCreate,
     ItemCreate,
     OpportunityCreate,
     OpportunityDecision,
     PublicationCreate,
     RevisionCreate,
+    TargetCreate,
 )
 from apps.api.app.products.content.models import (
     ContentBrief,
@@ -32,6 +35,7 @@ from apps.api.app.products.content.models import (
     PublishingTarget,
 )
 from apps.api.app.products.content.service import ContentService
+from apps.api.app.routes.health import settings_from_request
 
 router = APIRouter(
     prefix="/api/v1/organizations/{organization_id}/content",
@@ -143,6 +147,73 @@ async def list_targets(
 ) -> dict[str, object]:
     items = await service.list_targets(session, organization_id)
     return {"data": [target_row(item) for item in items], "meta": meta(request)}
+
+
+def connection_row(item: IntegrationConnection) -> dict[str, object]:
+    return {
+        "id": str(item.id),
+        "external_account_reference": item.external_account_reference,
+        "status": item.status,
+    }
+
+
+@router.get("/connections", dependencies=[Depends(no_store)])
+async def list_connections(
+    request: Request,
+    organization_id: UUID,
+    session: Session,
+    _: Annotated[AuthorizationDecision, policy("content.read")],
+) -> dict[str, object]:
+    """List GitHub integration connections available for publishing targets."""
+    items = await service.list_github_connections(session, organization_id)
+    return {"data": [connection_row(item) for item in items], "meta": meta(request)}
+
+
+@router.post("/connections", status_code=status.HTTP_201_CREATED, dependencies=[Depends(no_store)])
+async def register_connection(
+    request: Request,
+    organization_id: UUID,
+    command: GitHubConnectionCreate,
+    session: Session,
+    principal: Authenticated,
+    _: Annotated[AuthorizationDecision, policy("content.manage_targets", True)],
+) -> dict[str, object]:
+    """Register an application-side GitHub publishing connection.
+
+    The GitHub access token is an externally-obtained credential (created in
+    GitHub); this stores it encrypted-at-rest and records the connection. This
+    is the external credential step, distinct from the application-side
+    publishing target configuration (``POST /targets``).
+    """
+    item = await service.register_github_connection(
+        session,
+        settings_from_request(request),
+        organization_id,
+        command,
+        actor_id=principal.platform_user_id,
+        correlation_id=request_correlation_id(request),
+    )
+    return {"data": connection_row(item), "meta": meta(request)}
+
+
+@router.post("/targets", status_code=status.HTTP_201_CREATED, dependencies=[Depends(no_store)])
+async def create_target(
+    request: Request,
+    organization_id: UUID,
+    command: TargetCreate,
+    session: Session,
+    principal: Authenticated,
+    _: Annotated[AuthorizationDecision, policy("content.manage_targets", True)],
+) -> dict[str, object]:
+    """Configure a repository publishing target referencing a GitHub connection."""
+    item = await service.create_target(
+        session,
+        organization_id,
+        command,
+        actor_id=principal.platform_user_id,
+        correlation_id=request_correlation_id(request),
+    )
+    return {"data": target_row(item), "meta": meta(request)}
 
 
 @router.get("/opportunities", dependencies=[Depends(no_store)])

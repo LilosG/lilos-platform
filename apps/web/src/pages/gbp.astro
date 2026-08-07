@@ -983,7 +983,7 @@ import "../styles/global.css";
             );
             setOperationsStatus(
               result.kind === "ok"
-                ? "Post publication reserved. Live dispatch is not yet configured."
+                ? "Post publication reserved. The workflow will dispatch it to Google."
                 : describeFailure(result),
             );
             await renderPosts();
