@@ -172,9 +172,7 @@ async def _reconcile_defaults(factory: async_sessionmaker[AsyncSession]) -> None
 
     # An existing client has no approval policy.
     async with factory() as session:
-        before = await service.policies.effective(
-            session, org_id, "approval", utc_now(), None
-        )
+        before = await service.policies.effective(session, org_id, "approval", utc_now(), None)
     assert before == []
 
     # Reconcile provisions the default.

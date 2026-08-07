@@ -70,6 +70,4 @@ class ReviewIngestionUnavailableError(ConflictError):
     """Review import was requested before a GBP location is connected and mapped."""
 
     code = "REVIEW_INGESTION_UNAVAILABLE"
-    public_message = (
-        "Connect and map a Google Business Profile location before importing reviews."
-    )
+    public_message = "Connect and map a Google Business Profile location before importing reviews."

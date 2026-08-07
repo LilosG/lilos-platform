@@ -176,9 +176,7 @@ class FactRepository:
             stmt = stmt.where(BusinessFactRevision.location_id.is_(None))
         else:
             stmt = stmt.where(BusinessFactRevision.location_id == location_id)
-        return list(
-            await session.scalars(stmt.order_by(BusinessFactRevision.revision.desc()))
-        )
+        return list(await session.scalars(stmt.order_by(BusinessFactRevision.revision.desc())))
 
     async def list_pending(
         self, session: AsyncSession, organization_id: UUID
