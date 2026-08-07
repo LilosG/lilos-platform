@@ -68,12 +68,8 @@ import "../styles/global.css";
                 Confirmed websites
               </h2>
             </div>
-          </div><label class="sr-only" for="website-key">Website key</label
+          </div><label class="sr-only" for="website-name">Website name</label
           ><input
-            id="website-key"
-            type="text"
-            placeholder="key (e.g. primary)"
-          /><label class="sr-only" for="website-name">Website name</label><input
             id="website-name"
             type="text"
             placeholder="Website name"
@@ -83,8 +79,12 @@ import "../styles/global.css";
             type="text"
             placeholder="https://example.com"
           /><button type="button" class="button" id="create-website-button"
-            >Add website</button
-          ><ul class="product-list" id="websites-list"></ul>
+            >Confirm website</button
+          ><p id="website-hint" class="field-hint"></p><ul
+            class="product-list"
+            id="websites-list"
+          >
+          </ul>
         </section>
 
         <section id="detail-section" aria-labelledby="detail-title" hidden>
@@ -212,6 +212,7 @@ import "../styles/global.css";
       import { getCurrentSession, signOut } from "../lib/session";
       import { readPublicConfig } from "../lib/config";
       import { startWorkflowRun } from "../lib/workflows";
+      import { fetchOrganizationDomains } from "../lib/settings";
       import type { ApiOutcome } from "../lib/api-client";
 
       const regions = {
@@ -558,28 +559,22 @@ import "../styles/global.css";
         document
           .getElementById("create-website-button")
           ?.addEventListener("click", async () => {
-            const key = (
-              document.getElementById("website-key") as HTMLInputElement
-            ).value.trim();
             const name = (
               document.getElementById("website-name") as HTMLInputElement
             ).value.trim();
             const origin = (
               document.getElementById("website-origin") as HTMLInputElement
             ).value.trim();
-            if (!key || !name || !origin) {
-              setActionStatus("Enter a key, name, and canonical origin first.");
+            if (!name || !origin) {
+              setActionStatus("Enter a website name and canonical origin.");
               return;
             }
             const result = await createWebsite(organizationId, {
-              key,
+              key: "primary",
               name,
               canonicalOrigin: origin,
             });
             if (result.kind === "ok") {
-              (
-                document.getElementById("website-key") as HTMLInputElement
-              ).value = "";
               (
                 document.getElementById("website-name") as HTMLInputElement
               ).value = "";
@@ -591,6 +586,28 @@ import "../styles/global.css";
               setActionStatus(describeFailure(result));
             }
           });
+      }
+
+      async function prefillWebsiteFromDomain(): Promise<void> {
+        const originInput = document.getElementById(
+          "website-origin",
+        ) as HTMLInputElement | null;
+        const nameInput = document.getElementById(
+          "website-name",
+        ) as HTMLInputElement | null;
+        const hint = document.getElementById("website-hint");
+        if (!originInput || !nameInput) return;
+        const result = await fetchOrganizationDomains(organizationId);
+        if (result.kind !== "ok") return;
+        const primary = result.data.find(
+          (d) => d.is_primary && d.status === "active",
+        );
+        if (primary) {
+          originInput.value = `https://${primary.domain}`;
+          if (!nameInput.value) nameInput.value = primary.domain;
+          if (hint)
+            hint.textContent = `Pre-filled from the primary domain ${primary.domain}.`;
+        }
       }
 
       async function renderOpportunities(): Promise<void> {
@@ -884,6 +901,7 @@ import "../styles/global.css";
           renderSummary(),
           renderWebsites(),
           renderOpportunities(),
+          prefillWebsiteFromDomain(),
         ]);
 
         showOnly(regions.content);

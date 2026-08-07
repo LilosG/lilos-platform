@@ -102,18 +102,20 @@ import "../styles/global.css";
           </div><div class="split">
             <article>
               <p class="eyebrow">Completeness</p><div id="completeness-body">
-              </div><h3>Propose a change</h3><label
-                class="sr-only"
-                for="change-capability-key">Capability key</label
-              ><input
-                id="change-capability-key"
-                type="text"
-                placeholder="capability key (e.g. categories)"
-              /><label class="sr-only" for="change-field">Field</label><input
-                id="change-field"
-                type="text"
-                placeholder="field name"
-              /><label class="sr-only" for="change-value">Value</label><input
+              </div>
+              <h3>Propose a change</h3><label class="sr-only" for="change-task"
+                >What to edit</label
+              ><select id="change-task" class="button button--secondary">
+                <option value="">Choose what to edit…</option>
+                <option value="profile.description">Business description</option
+                >
+                <option value="regularHours.regularHours">Business hours</option
+                >
+                <option value="phoneNumbers.phoneNumbers">Phone number</option>
+                <option value="websiteUri.websiteUri">Website URL</option>
+                <option value="categories.categories">Categories</option
+                ></select
+              ><label class="sr-only" for="change-value">New value</label><input
                 id="change-value"
                 type="text"
                 placeholder="new value"
@@ -1060,23 +1062,19 @@ import "../styles/global.css";
           .getElementById("propose-change-button")
           ?.addEventListener("click", async () => {
             if (!selectedPlatformLocationId || !selectedGbpLocationId) return;
-            const capabilityKey = (
-              document.getElementById(
-                "change-capability-key",
-              ) as HTMLInputElement
-            ).value.trim();
-            const field = (
-              document.getElementById("change-field") as HTMLInputElement
+            const task = (
+              document.getElementById("change-task") as HTMLSelectElement
             ).value.trim();
             const value = (
               document.getElementById("change-value") as HTMLInputElement
             ).value.trim();
-            if (!capabilityKey || !field || !value) {
+            if (!task || !value) {
               setOperationsStatus(
-                "Enter a capability key, field, and value first.",
+                "Choose what to edit and enter a value first.",
               );
               return;
             }
+            const [capabilityKey, field] = task.split(".");
             const result = await proposeChangeSet(
               organizationId,
               selectedPlatformLocationId,

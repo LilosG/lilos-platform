@@ -72,30 +72,41 @@ import "../styles/global.css";
           <details class="attention-card" id="publishing-setup">
             <summary>Publishing setup</summary>
             <div>
-              <h3>Step 1 — GitHub credential (external)</h3>
+              <h3>GitHub connection</h3>
               <p class="field-hint">
-                Create a GitHub access token in GitHub (the external credential
-                step), then register it here. It is stored encrypted at rest and
-                referenced by a publishing connection.
-              </p><label class="sr-only" for="github-token"
-                >GitHub access token</label
-              ><input
-                id="github-token"
-                type="password"
-                placeholder="github_pat_…"
-              /><label class="sr-only" for="github-account"
-                >GitHub account/repo slug</label
-              ><input
-                id="github-account"
-                type="text"
-                placeholder="org/site-repo (optional)"
-              /><button
-                type="button"
-                class="button"
-                id="register-connection-button"
-                >Register GitHub connection</button
-              >
-              <h3>Step 2 — Publishing target (application)</h3>
+                Connect a GitHub repository from the
+                <a href="/integrations">Integrations</a> page. Once connected, configure
+                a publishing target below.
+              </p>
+              <p id="github-connection-status" class="field-hint">
+                Checking GitHub connection…
+              </p>
+              <details>
+                <summary>Advanced: manual token (developer fallback)</summary>
+                <p class="field-hint">
+                  The normal workflow connects GitHub through the Integrations
+                  page. This manual token path is retained only as a developer
+                  fallback and is not intended for production use.
+                </p><label class="sr-only" for="github-token"
+                  >GitHub access token</label
+                ><input
+                  id="github-token"
+                  type="password"
+                  placeholder="github_pat_…"
+                /><label class="sr-only" for="github-account"
+                  >GitHub account/repo slug</label
+                ><input
+                  id="github-account"
+                  type="text"
+                  placeholder="org/site-repo (optional)"
+                /><button
+                  type="button"
+                  class="button"
+                  id="register-connection-button"
+                  >Register GitHub connection</button
+                >
+              </details>
+              <h3>Publishing target</h3>
               <p class="field-hint">
                 Configure the repository, base branch, and allowed path prefix
                 that governed content may be published to.
