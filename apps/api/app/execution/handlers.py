@@ -345,6 +345,57 @@ async def _handle_content_publish(
 
 
 # ---------------------------------------------------------------------------
+# Reviews publish-response handler
+# ---------------------------------------------------------------------------
+
+
+async def _handle_reviews_publish_response(
+    session: AsyncSession,
+    *,
+    organization_id: UUID,
+    location_id: UUID | None,
+    input_document: dict[str, Any],
+    correlation_id: str,
+) -> JobOutcome:
+    """Publish an approved review response to the provider (Google).
+
+    Real publication requires a ``reply_to_review`` method on the GBP adapter
+    and Google OAuth credentials with the ``business.manage`` scope.  Neither
+    is available in this codebase yet.  Rather than fabricating a ``published``
+    status (as the prior direct API path did by setting ``"publishing"`` and
+    sending a ``reviews.response.published`` notification), this handler
+    fails closed: the response is marked ``failed`` with a clear
+    ``safe_error_code`` so operators see the real blocker.  Once the adapter
+    method and credentials are added, this handler should perform the real
+    provider write and verification, mirroring ``_handle_gbp_publish_change``.
+    """
+    from sqlalchemy import select
+
+    from apps.api.app.products.reviews.models import ReviewResponseRevision
+
+    response_id = input_document.get("response_id")
+    if not response_id:
+        return JobOutcome(result="permanent_failure", safe_error="MISSING_RESPONSE_ID")
+
+    response = await session.scalar(
+        select(ReviewResponseRevision).where(
+            ReviewResponseRevision.organization_id == organization_id,
+            ReviewResponseRevision.id == UUID(str(response_id)),
+        )
+    )
+    if response is None:
+        return JobOutcome(result="permanent_failure", safe_error="RESPONSE_NOT_FOUND")
+
+    if response.status != "publishing":
+        return JobOutcome(result="permanent_failure", safe_error="RESPONSE_NOT_PUBLISHING")
+
+    response.status = "failed"
+    return JobOutcome(
+        result="permanent_failure", safe_error="REVIEW_REPLY_API_NOT_CONFIGURED"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Register all handlers
 # ---------------------------------------------------------------------------
 
@@ -354,6 +405,7 @@ def _register_all() -> None:
     register_workflow_handler("gbp.publish_post", _handle_gbp_publish_post)
     register_workflow_handler("seo.crawl_or_analysis", _handle_seo_crawl)
     register_workflow_handler("content.publish", _handle_content_publish)
+    register_workflow_handler("reviews.publish_response", _handle_reviews_publish_response)
 
 
 _register_all()

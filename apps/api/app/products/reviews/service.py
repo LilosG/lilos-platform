@@ -54,7 +54,10 @@ NOTIFICATION_TEMPLATES = {
         "in_app",
         "A review requires human review before any response.",
     ),
-    "reviews.response.published": ("in_app", "A review response was reserved for publication."),
+    "reviews.response.publication_reserved": (
+        "in_app",
+        "A review response was reserved for publication.",
+    ),
 }
 
 
@@ -562,8 +565,8 @@ class ReviewService:
             session,
             organization_id=organization_id,
             location_id=item.location_id,
-            event_type="reviews.response.published",
-            idempotency_key=f"reviews.published.{item.id}",
+            event_type="reviews.response.publication_reserved",
+            idempotency_key=f"reviews.publication_reserved.{item.id}",
             context={"review_id": str(item.review_id), "response_id": str(item.id)},
         )
         return item

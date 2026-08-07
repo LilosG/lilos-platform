@@ -476,4 +476,152 @@ async def test_content_publish_requires_publication_id() -> None:
         correlation_id="test",
     )
     assert outcome.result == "permanent_failure"
-    assert outcome.safe_error == "MISSING_PUBLICATION_ID"
+
+
+# ---------------------------------------------------------------------------
+# Reviews publish-response handler: must NOT fabricate "published" status
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+@pytest.mark.anyio
+async def test_reviews_publish_response_fails_closed_without_provider_write(
+    clean_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """The review-response handler must fail closed, not fabricate 'published'."""
+    from apps.api.app.integrations.models import Provider, ProviderResourceMapping
+    from apps.api.app.products.reviews.models import (
+        Review,
+        ReviewResponseRevision,
+        ReviewRevision,
+    )
+
+    async with clean_session_factory.begin() as session:
+        org = Organization(
+            name="Reviews Handler Test",
+            slug=f"reviews-handler-test-{uuid4().hex[:8]}",
+            organization_type=OrganizationType.TEST,
+            status=OrganizationStatus.ACTIVE,
+            timezone="UTC",
+            default_currency="USD",
+            version=1,
+        )
+        session.add(org)
+        await session.flush()
+
+        location = Location(
+            organization_id=org.id,
+            name="Reviews Handler Loc",
+            slug=f"reviews-handler-loc-{uuid4().hex[:8]}",
+            location_type=LocationType.VIRTUAL,
+            status=LocationStatus.ACTIVE,
+            timezone="UTC",
+            country_code="US",
+            website_url="https://example.invalid",
+            is_primary=True,
+            version=1,
+        )
+        session.add(location)
+        await session.flush()
+
+        provider = Provider(
+            key="google_business_profile",
+            name="Google Business Profile",
+            status="active",
+            capabilities=["reviews.read"],
+        )
+        session.add(provider)
+        await session.flush()
+
+        connection = IntegrationConnection(
+            organization_id=org.id,
+            provider_id=provider.id,
+            external_account_reference="accounts/rev-test",
+            status="connected",
+        )
+        session.add(connection)
+        await session.flush()
+
+        resource_mapping = ProviderResourceMapping(
+            organization_id=org.id,
+            connection_id=connection.id,
+            resource_type="gbp_location",
+            external_resource_id="locations/rev-test",
+            platform_resource_id=location.id,
+            status="active",
+        )
+        session.add(resource_mapping)
+        await session.flush()
+
+        review = Review(
+            organization_id=org.id,
+            location_id=location.id,
+            integration_resource_id=resource_mapping.id,
+            external_review_id="review-123",
+            provider="google",
+            rating=5,
+            status="triaged",
+            review_created_at=datetime.now(UTC),
+        )
+        session.add(review)
+        await session.flush()
+
+        review_revision = ReviewRevision(
+            organization_id=org.id,
+            review_id=review.id,
+            revision_number=1,
+            rating=5,
+            body="Great service!",
+            content_hash="a" * 64,
+        )
+        session.add(review_revision)
+        await session.flush()
+
+        response = ReviewResponseRevision(
+            organization_id=org.id,
+            location_id=location.id,
+            review_id=review.id,
+            review_revision_id=review_revision.id,
+            revision_number=1,
+            response_text="Thank you!",
+            content_hash="b" * 64,
+            status="publishing",
+            generated_by_type="manual",
+            approved_fact_revision_ids=[],
+        )
+        session.add(response)
+        await session.flush()
+        response_id = response.id
+
+        from apps.api.app.execution.handlers import _handle_reviews_publish_response
+
+        outcome = await _handle_reviews_publish_response(
+            session,
+            organization_id=org.id,
+            location_id=location.id,
+            input_document={"response_id": str(response_id)},
+            correlation_id="test",
+        )
+
+    assert outcome.result == "permanent_failure"
+    assert outcome.safe_error == "REVIEW_REPLY_API_NOT_CONFIGURED"
+
+    async with clean_session_factory() as session:
+        refreshed = await session.get(ReviewResponseRevision, response_id)
+        assert refreshed is not None
+        assert refreshed.status == "failed"
+
+
+@pytest.mark.anyio
+async def test_reviews_publish_response_requires_response_id() -> None:
+    from apps.api.app.execution.handlers import _handle_reviews_publish_response
+
+    outcome = await _handle_reviews_publish_response(
+        None,  # type: ignore[arg-type]
+        organization_id=uuid4(),
+        location_id=None,
+        input_document={},
+        correlation_id="test",
+    )
+    assert outcome.result == "permanent_failure"
+    assert outcome.safe_error == "MISSING_RESPONSE_ID"
