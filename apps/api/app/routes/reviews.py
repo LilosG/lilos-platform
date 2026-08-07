@@ -14,10 +14,14 @@ from apps.api.app.authorization.dependencies import require_authorization
 from apps.api.app.database.session import get_database_session
 from apps.api.app.errors import request_correlation_id
 from apps.api.app.products.reviews.contracts import AIDraftCreate, DraftCreate, PublishResponse
-from apps.api.app.products.reviews.errors import ReviewNotFoundError
+from apps.api.app.products.reviews.errors import (
+    ReviewIngestionUnavailableError,
+    ReviewNotFoundError,
+)
 from apps.api.app.products.reviews.ingestion_service import ReviewIngestionService
 from apps.api.app.products.reviews.models import Review, ReviewRevision
 from apps.api.app.products.reviews.service import ReviewService
+from apps.api.app.routes.health import settings_from_request
 
 router = APIRouter(
     prefix="/api/v1/organizations/{organization_id}/locations/{location_id}/reviews",
@@ -348,15 +352,16 @@ async def ingest_reviews(
 
     Does not publish any response; preserves the approval workflow.
     """
-    from apps.api.app.config import Settings
-
     ingestion = ReviewIngestionService()
-    summary = await ingestion.ingest_for_location(
-        session,
-        Settings(),
-        organization_id,
-        location_id,
-        actor_id=principal.platform_user_id,
-        correlation_id=request_correlation_id(request),
-    )
+    try:
+        summary = await ingestion.ingest_for_location(
+            session,
+            settings_from_request(request),
+            organization_id,
+            location_id,
+            actor_id=principal.platform_user_id,
+            correlation_id=request_correlation_id(request),
+        )
+    except LookupError:
+        raise ReviewIngestionUnavailableError from None
     return {"data": summary, "meta": meta(request)}

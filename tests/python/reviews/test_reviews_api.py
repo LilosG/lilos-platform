@@ -443,3 +443,29 @@ def test_cross_tenant_review_detail_is_not_found(
     base = f"/api/v1/organizations/{other_org}/locations/{location}/reviews"
     response = client.get(f"{base}/{uuid4()}", headers=HEADERS)
     assert response.status_code in (403, 404)
+
+
+@pytest.mark.integration
+def test_ingest_route_maps_to_ingest_handler_not_get_review_by_id(
+    reviews_client: tuple[TestClient, dict[str, UUID]],
+) -> None:
+    """Regression: the production frontend sends ``POST .../reviews/ingest``.
+
+    Production returned ``405 Method Not Allowed`` because an older API build
+    lacked the ``POST /ingest`` route, so the path matched ``GET .../reviews/{review_id}``
+    (``review_id == "ingest"``) with the wrong method. This test proves the current
+    route table maps the exact frontend-shaped request to the ``ingest_reviews``
+    handler: an authenticated POST with body ``{}`` must NOT return 405, and with
+    no active GBP location mapping it returns a truthful 409 the operator can act on.
+    """
+    client, ids = reviews_client
+    org, location = ids["organization"], ids["location"]
+    base = f"/api/v1/organizations/{org}/locations/{location}/reviews"
+
+    response = client.post(f"{base}/ingest", headers=HEADERS, json={})
+
+    assert response.status_code != 405, "ingest route is shadowed by GET /{review_id}"
+    assert response.status_code == 409
+    body = response.json()
+    assert body["error"]["code"] == "REVIEW_INGESTION_UNAVAILABLE"
+    assert "Google Business Profile" in body["error"]["message"]
