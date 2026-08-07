@@ -1,4 +1,4 @@
-import { apiGet, type ApiOutcome } from "./api-client";
+import { apiGet, apiRequest, type ApiOutcome } from "./api-client";
 
 export type GBPAccountSummary = {
   id: string;
@@ -37,5 +37,37 @@ export function fetchGBPLocations(
 ): Promise<ApiOutcome<GBPLocationSummary[]>> {
   return apiGet<GBPLocationSummary[]>(
     `/api/v1/organizations/${organizationId}/gbp/locations`,
+  );
+}
+
+export type PlatformLocation = {
+  id: string;
+  name: string;
+  status: string;
+  is_primary: boolean;
+};
+
+export function fetchPlatformLocations(
+  organizationId: string,
+): Promise<ApiOutcome<PlatformLocation[]>> {
+  return apiGet<PlatformLocation[]>(
+    `/api/v1/organizations/${organizationId}/locations`,
+  );
+}
+
+export function confirmLocationMapping(
+  organizationId: string,
+  platformLocationId: string,
+  gbpLocationId: string,
+  writeEnabled: boolean,
+): Promise<
+  ApiOutcome<{ id: string; mapping_status: string; write_enabled: boolean }>
+> {
+  return apiRequest(
+    `/api/v1/organizations/${organizationId}/locations/${platformLocationId}/gbp/locations/${gbpLocationId}/confirm`,
+    {
+      method: "POST",
+      body: { location_id: platformLocationId, write_enabled: writeEnabled },
+    },
   );
 }

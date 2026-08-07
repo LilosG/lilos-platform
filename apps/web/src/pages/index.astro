@@ -217,7 +217,7 @@ import "../styles/global.css";
       async function loadOrganization(
         organization: MyOrganization,
       ): Promise<void> {
-        const activeId = organization.organization_id || organization.id;
+        const activeId = organization.organization_id;
         if (activeId && typeof window !== "undefined") {
           localStorage.setItem("selected_org_id", activeId);
           const url = new URL(window.location.href);

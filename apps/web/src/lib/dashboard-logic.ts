@@ -15,11 +15,10 @@ export function selectDefaultOrganization(
 
     if (targetId) {
       const matched = organizations.find(
-        (item) => (item.organization_id || item.id) === targetId
+        (item) => item.organization_id === targetId,
       );
       if (matched) {
-        const matchedId = matched.organization_id || matched.id;
-        localStorage.setItem("selected_org_id", matchedId);
+        localStorage.setItem("selected_org_id", matched.organization_id);
         return matched;
       }
     }
@@ -31,8 +30,7 @@ export function selectDefaultOrganization(
     null;
 
   if (defaultOrg && typeof window !== "undefined") {
-    const defaultId = defaultOrg.organization_id || defaultOrg.id;
-    if (defaultId) localStorage.setItem("selected_org_id", defaultId);
+    localStorage.setItem("selected_org_id", defaultOrg.organization_id);
   }
 
   return defaultOrg;

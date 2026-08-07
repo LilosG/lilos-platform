@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from apps.api.app.config import Settings
 from apps.api.app.database.runtime import DatabaseRuntime, create_database_runtime
 from apps.api.app.execution.contracts import JobOutcome
-from apps.api.app.execution.models import Job, WorkflowRun, WorkflowVersion
+from apps.api.app.execution.models import Job, WorkflowDefinition, WorkflowRun, WorkflowVersion
 from apps.api.app.execution.service import ExecutionService
 from apps.api.app.observability.models import ServiceHeartbeat
 from apps.api.app.observability.telemetry import MetricPoint
@@ -220,7 +220,7 @@ class WorkerBackend(DurableProcessBackend):
 
 
 async def _execute_workflow_job(session: AsyncSession, job: Job) -> JobOutcome:
-    """Execute only the currently supported deterministic workflow envelope."""
+    """Execute a workflow job using registered step handlers or the deterministic envelope."""
     run = await session.scalar(
         select(WorkflowRun)
         .where(
@@ -238,10 +238,59 @@ async def _execute_workflow_job(session: AsyncSession, job: Job) -> JobOutcome:
         run.status = "failed"
         run.failure_code = "WORKFLOW_VERSION_NOT_EXECUTABLE"
         return JobOutcome(result="permanent_failure", safe_error="WORKFLOW_VERSION_NOT_EXECUTABLE")
-    if version.step_specification:
-        run.status = "failed"
-        run.failure_code = "WORKFLOW_HANDLER_NOT_REGISTERED"
-        return JobOutcome(result="permanent_failure", safe_error="WORKFLOW_HANDLER_NOT_REGISTERED")
+
+    definition = await session.get(WorkflowDefinition, version.definition_id)
+    workflow_key = definition.key if definition else None
+
+    if workflow_key:
+        from apps.api.app.execution.handlers import get_workflow_handler
+        from apps.api.app.execution.workflow_catalog import is_known_workflow_key
+
+        handler = get_workflow_handler(workflow_key)
+        if handler is not None:
+            now = datetime.now(UTC)
+            run.status = "running"
+            run.started_at = run.started_at or now
+            await session.flush()
+
+            try:
+                outcome = await handler(
+                    session,
+                    organization_id=run.organization_id,
+                    location_id=run.location_id,
+                    input_document=run.input_document,
+                    correlation_id=f"workflow-{run.id}",
+                )
+            except Exception as exc:
+                run.status = "failed"
+                run.failure_code = "HANDLER_EXCEPTION"
+                logger.exception(
+                    "Workflow handler raised an exception",
+                    extra={
+                        "event_name": "workflow.handler.exception",
+                        "workflow_key": workflow_key,
+                        "workflow_run_id": str(run.id),
+                        "error": str(exc)[:200],
+                    },
+                )
+                return JobOutcome(result="permanent_failure", safe_error="HANDLER_EXCEPTION")
+
+            if outcome.result == "succeeded":
+                run.status = "completed"
+                run.completed_at = datetime.now(UTC)
+                run.output_reference = outcome.result_reference
+            elif outcome.result in ("permanent_failure", "retryable_failure"):
+                run.status = "failed"
+                run.failure_code = outcome.safe_error
+            await session.flush()
+            return outcome
+
+        if is_known_workflow_key(workflow_key):
+            run.status = "failed"
+            run.failure_code = "WORKFLOW_HANDLER_NOT_REGISTERED"
+            return JobOutcome(
+                result="permanent_failure", safe_error="WORKFLOW_HANDLER_NOT_REGISTERED"
+            )
 
     now = datetime.now(UTC)
     run.status = "completed"

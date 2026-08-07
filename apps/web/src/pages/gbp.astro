@@ -198,13 +198,17 @@ import "../styles/global.css";
       import {
         fetchGBPAccounts,
         fetchGBPLocations,
+        fetchPlatformLocations,
+        confirmLocationMapping,
         type GBPAccountSummary,
         type GBPLocationSummary,
+        type PlatformLocation,
       } from "../lib/gbp";
       import {
         beginConnection,
         disconnectConnection,
         fetchConnectionStatus,
+        discoverResources,
       } from "../lib/gbp-connection";
       import {
         createPostRevision,
@@ -241,6 +245,7 @@ import "../styles/global.css";
       let organizationId = "";
       let selectedPlatformLocationId: string | null = null;
       let selectedGbpLocationId: string | null = null;
+      let platformLocationsCache: PlatformLocation[] = [];
 
       const regions = {
         notConfigured: document.getElementById("boot-not-configured")!,
@@ -432,6 +437,35 @@ import "../styles/global.css";
         renderConnection(await fetchConnectionStatus(organizationId));
       }
 
+      async function performDiscovery(
+        button: HTMLButtonElement,
+      ): Promise<void> {
+        button.disabled = true;
+        button.textContent = "Discovering…";
+        const outcome = await discoverResources(organizationId);
+        if (outcome.kind !== "ok") {
+          const msg =
+            outcome.kind === "error" && outcome.code === "RECONNECT_REQUIRED"
+              ? "Google access token expired. Reconnect your Google account."
+              : describeFailure(outcome);
+          document.getElementById("connection-panel")!.append(errorAlert(msg));
+          button.textContent = "Discover accounts and locations";
+          button.disabled = false;
+          return;
+        }
+        const result = outcome.data;
+        button.textContent = `Discovered ${result.accounts_discovered} account(s), ${result.locations_discovered} location(s)`;
+        // Refresh accounts and locations
+        const [accounts, locations, pLocs] = await Promise.all([
+          fetchGBPAccounts(organizationId),
+          fetchGBPLocations(organizationId),
+          fetchPlatformLocations(organizationId),
+        ]);
+        if (pLocs.kind === "ok") platformLocationsCache = pLocs.data;
+        renderAccounts(accounts.kind === "ok" ? accounts.data : []);
+        renderLocations(locations.kind === "ok" ? locations.data : []);
+      }
+
       function renderConnection(
         outcome: Awaited<ReturnType<typeof fetchConnectionStatus>>,
       ): void {
@@ -510,6 +544,16 @@ import "../styles/global.css";
           connectionState.status === "connected" ||
           connectionState.status === "degraded"
         ) {
+          const discoverButton = document.createElement("button");
+          discoverButton.type = "button";
+          discoverButton.className = "button";
+          discoverButton.textContent = "Discover accounts and locations";
+          discoverButton.addEventListener(
+            "click",
+            () => void performDiscovery(discoverButton),
+          );
+          panel.append(discoverButton);
+
           const disconnectButton = document.createElement("button");
           disconnectButton.type = "button";
           disconnectButton.className = "button button--secondary";
@@ -528,8 +572,8 @@ import "../styles/global.css";
           const empty = document.createElement("li");
           empty.append(
             emptyState(
-              "No Google accounts connected",
-              "Connecting a Google account is not yet available in this release, so no accounts can be discovered.",
+              "No Google accounts discovered",
+              "Connect a Google account and click 'Discover accounts and locations' to find accessible GBP accounts.",
             ),
           );
           list.append(empty);
@@ -561,8 +605,8 @@ import "../styles/global.css";
           const empty = document.createElement("li");
           empty.append(
             emptyState(
-              "No Google Business locations yet",
-              "Location discovery requires a connected Google account. Once an account is connected, its locations will appear here for mapping.",
+              "No Google Business locations discovered",
+              "Click 'Discover accounts and locations' after connecting a Google account.",
             ),
           );
           list.append(empty);
@@ -602,6 +646,45 @@ import "../styles/global.css";
               () => void openOperations(location.location_id!, location.id),
             );
             item.append(openButton);
+          } else if (
+            location.mapping_status === "unmapped" &&
+            platformLocationsCache.length > 0
+          ) {
+            const mapContainer = document.createElement("div");
+            mapContainer.className = "mapping-controls";
+            const select = document.createElement("select");
+            select.innerHTML =
+              '<option value="">Select a location…</option>' +
+              platformLocationsCache
+                .map((l) => `<option value="${l.id}">${l.name}</option>`)
+                .join("");
+            const mapButton = document.createElement("button");
+            mapButton.type = "button";
+            mapButton.className = "button button--secondary button--sm";
+            mapButton.textContent = "Map";
+            mapButton.addEventListener("click", async () => {
+              const platformLocId = select.value;
+              if (!platformLocId) return;
+              mapButton.disabled = true;
+              mapButton.textContent = "Mapping…";
+              const result = await confirmLocationMapping(
+                organizationId,
+                platformLocId,
+                location.id,
+                false,
+              );
+              if (result.kind === "ok") {
+                // Refresh
+                const locs = await fetchGBPLocations(organizationId);
+                renderLocations(locs.kind === "ok" ? locs.data : []);
+              } else {
+                mapButton.textContent = "Map";
+                mapButton.disabled = false;
+                item.append(errorAlert(describeFailure(result)));
+              }
+            });
+            mapContainer.append(select, mapButton);
+            item.append(mapContainer);
           }
           list.append(item);
         }
@@ -1137,12 +1220,16 @@ import "../styles/global.css";
         wireOperationsComposer();
         renderCallbackBanner();
 
-        const [readiness, connection, accounts, locations] = await Promise.all([
-          fetchProductReadiness(organization.organization_id, "gbp"),
-          fetchConnectionStatus(organization.organization_id),
-          fetchGBPAccounts(organization.organization_id),
-          fetchGBPLocations(organization.organization_id),
-        ]);
+        const [readiness, connection, accounts, locations, pLocs] =
+          await Promise.all([
+            fetchProductReadiness(organization.organization_id, "gbp"),
+            fetchConnectionStatus(organization.organization_id),
+            fetchGBPAccounts(organization.organization_id),
+            fetchGBPLocations(organization.organization_id),
+            fetchPlatformLocations(organization.organization_id),
+          ]);
+
+        if (pLocs.kind === "ok") platformLocationsCache = pLocs.data;
 
         renderReadiness(readiness);
         renderConnection(connection);

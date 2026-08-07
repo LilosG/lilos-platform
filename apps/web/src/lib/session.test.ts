@@ -11,6 +11,7 @@ import {
   findVerifiedTotpFactor,
   getAssuranceLevels,
   hasReachedAal2,
+  refreshAccessToken,
   unenrollFactor,
   verifyTotpCode,
 } from "./session";
@@ -19,8 +20,18 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function fakeClient(mfa: Record<string, unknown>) {
-  return { auth: { mfa } } as unknown as ReturnType<typeof getSupabaseClient>;
+const defaultRefreshSession = vi.fn().mockResolvedValue({
+  data: { session: { access_token: "refreshed" } },
+  error: null,
+});
+
+function fakeClient(
+  mfa: Record<string, unknown>,
+  auth: Record<string, unknown> = {},
+) {
+  return {
+    auth: { mfa, refreshSession: defaultRefreshSession, ...auth },
+  } as unknown as ReturnType<typeof getSupabaseClient>;
 }
 
 describe("getAssuranceLevels", () => {
@@ -229,5 +240,61 @@ describe("verifyTotpCode", () => {
     const serialized = JSON.stringify(result);
     expect(serialized).not.toContain("654321");
     expect(serialized).not.toContain("super-secret-token");
+  });
+
+  it("forces a real session refresh after a successful verify before reporting settled, and fails safely if that refresh does not confirm a session", async () => {
+    // Regression: challengeAndVerify's own local session update is not
+    // enough of a guarantee that the elevated session is actually settled
+    // (in-memory and persisted) before the caller navigates away to an
+    // AAL2-protected route -- an explicit refreshSession() round-trip is
+    // the confirmation.
+    const challengeAndVerify = vi
+      .fn()
+      .mockResolvedValue({ data: { access_token: "new-token" }, error: null });
+    const refreshSession = vi
+      .fn()
+      .mockResolvedValue({ data: { session: null }, error: null });
+    vi.mocked(getSupabaseClient).mockReturnValue(
+      fakeClient({ challengeAndVerify }, { refreshSession }),
+    );
+
+    const result = await verifyTotpCode("factor-123", "123456");
+
+    expect(refreshSession).toHaveBeenCalledTimes(1);
+    expect(result.ok).toBe(false);
+  });
+});
+
+describe("refreshAccessToken", () => {
+  it("returns the newly-issued access token on a successful refresh", async () => {
+    vi.mocked(getSupabaseClient).mockReturnValue(
+      fakeClient(
+        {},
+        {
+          refreshSession: vi.fn().mockResolvedValue({
+            data: { session: { access_token: "brand-new-token" } },
+            error: null,
+          }),
+        },
+      ),
+    );
+    const token = await refreshAccessToken();
+    expect(token).toBe("brand-new-token");
+  });
+
+  it("returns null (not a thrown error) when the refresh token itself is no longer valid", async () => {
+    vi.mocked(getSupabaseClient).mockReturnValue(
+      fakeClient(
+        {},
+        {
+          refreshSession: vi.fn().mockResolvedValue({
+            data: { session: null },
+            error: { message: "invalid" },
+          }),
+        },
+      ),
+    );
+    const token = await refreshAccessToken();
+    expect(token).toBeNull();
   });
 });

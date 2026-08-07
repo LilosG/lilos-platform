@@ -37,3 +37,28 @@ export function disconnectConnection(
     method: "POST",
   });
 }
+
+export type DiscoveryResult = {
+  accounts_discovered: number;
+  locations_discovered: number;
+  profiles_synced: number;
+};
+
+export function discoverResources(
+  organizationId: string,
+): Promise<ApiOutcome<DiscoveryResult>> {
+  return apiRequest<DiscoveryResult>(`${base(organizationId)}/discover`, {
+    method: "POST",
+  });
+}
+
+export function syncProfile(
+  organizationId: string,
+  gbpLocationId: string,
+): Promise<
+  ApiOutcome<{ snapshot_id: string; content_hash: string; observed_at: string }>
+> {
+  return apiRequest(`${base(organizationId)}/locations/${gbpLocationId}/sync`, {
+    method: "POST",
+  });
+}

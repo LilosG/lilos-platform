@@ -824,15 +824,16 @@ import "../styles/global.css";
 
       // ---------- Step 0: picker / create ----------
 
-      async function populateOrgPicker(): Promise<ApiOutcome<unknown>> {
+      async function populateOrgPicker(): Promise<
+        ApiOutcome<AdminOrganization[]>
+      > {
         const select = document.getElementById(
           "org-picker",
         ) as HTMLSelectElement;
         const outcome = await fetchOrganizations();
         select.innerHTML = '<option value="">Select a client…</option>';
         if (outcome.kind !== "ok") return outcome;
-        const orgs = Array.isArray(outcome.data) ? outcome.data : (outcome.data?.organizations || []);
-        for (const organization of orgs) {
+        for (const organization of outcome.data) {
           const option = document.createElement("option");
           option.value = organization.id;
           option.textContent = `${organization.name} (${organization.status})`;
@@ -841,11 +842,14 @@ import "../styles/global.css";
         return outcome;
       }
 
-      async function populateIndustrySelects(): Promise<ApiOutcome<unknown>> {
+      async function populateIndustrySelects(): Promise<
+        ApiOutcome<Industry[]>
+      > {
         const outcome = await fetchIndustries();
         const options =
           outcome.kind === "ok"
-            ? (Array.isArray(outcome.data) ? outcome.data : (outcome.data?.industries || outcome.data?.items || [])).map(
+            ? outcome.data
+                .map(
                   (industry: Industry) =>
                     `<option value="${industry.id}">${industry.name}</option>`,
                 )
@@ -882,7 +886,8 @@ import "../styles/global.css";
             default_currency: String(
               data.get("default_currency") ?? "",
             ).toUpperCase(),
-            industry_id: (industryId && industryId.trim() !== "") ? industryId : null,
+            industry_id:
+              industryId && industryId.trim() !== "" ? industryId : null,
           });
           if (outcome.kind !== "ok") {
             alertInto("picker-alert", "error", describeFailure(outcome));
@@ -964,7 +969,7 @@ import "../styles/global.css";
           list.append(item);
           return;
         }
-        const locations = Array.isArray(outcome.data) ? outcome.data : (outcome.data?.locations || outcome.data?.items || []);
+        const locations = outcome.data;
         if (locations.length === 0) {
           const empty = document.createElement("div");
           empty.className = "empty-state";
@@ -1040,7 +1045,7 @@ import "../styles/global.css";
           list.append(item);
           return;
         }
-        const domains = Array.isArray(outcome.data) ? outcome.data : (outcome.data?.domains || outcome.data?.items || []);
+        const domains = outcome.data;
         if (domains.length === 0) {
           const empty = document.createElement("div");
           empty.className = "empty-state";
@@ -1285,7 +1290,10 @@ import "../styles/global.css";
         const productsOutcome = await fetchProducts(organizationId);
         const productsByKey = new Map(
           productsOutcome.kind === "ok"
-            ? (Array.isArray(productsOutcome?.data) ? productsOutcome.data : []).map((product) => [product.key, product])
+            ? (Array.isArray(productsOutcome?.data)
+                ? productsOutcome.data
+                : []
+              ).map((product) => [product.key, product])
             : [],
         );
         const statuses = state?.products ?? [];
