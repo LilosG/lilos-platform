@@ -504,15 +504,6 @@ import "../styles/global.css";
               style="margin-top: 1rem;"
             >
               <div class="field">
-                <label for="approval-policy-key">Policy key</label><input
-                  id="approval-policy-key"
-                  name="policy_key"
-                  type="text"
-                  required
-                  placeholder="content.publish_approval"
-                />
-              </div>
-              <div class="field">
                 <label for="approval-min-approvals">Minimum approvals</label
                 ><input
                   id="approval-min-approvals"
@@ -548,15 +539,6 @@ import "../styles/global.css";
               class="form-grid"
               style="margin-top: 1rem;"
             >
-              <div class="field field--full">
-                <label for="notification-policy-key">Policy key</label><input
-                  id="notification-policy-key"
-                  name="policy_key"
-                  type="text"
-                  required
-                  placeholder="client.default_notifications"
-                />
-              </div>
               <div class="field--full form-actions">
                 <button
                   type="submit"
@@ -1481,6 +1463,17 @@ import "../styles/global.css";
 
       // ---------- Step 7: policies ----------
 
+      function policyKeyLabel(key: string): string {
+        const labels: Record<string, string> = {
+          "default.approval": "Default approval policy",
+          "default.notifications": "Default notification policy",
+        };
+        if (labels[key]) return labels[key];
+        return key
+          .replace(/[._]/g, " ")
+          .replace(/\b\w/g, (c) => c.toUpperCase());
+      }
+
       function policyRow(
         policy: PolicyRevision,
         organizationId: string,
@@ -1489,7 +1482,7 @@ import "../styles/global.css";
         const item = document.createElement("li");
         const info = document.createElement("div");
         const title = document.createElement("h3");
-        title.textContent = policy.policy_key;
+        title.textContent = policyKeyLabel(policy.policy_key);
         info.append(title);
         const actions = document.createElement("div");
         if (policy.status === "pending_approval" || policy.status === "draft") {
@@ -1571,7 +1564,7 @@ import "../styles/global.css";
           const data = new FormData(form);
           const outcome = await createPolicy(
             currentOrganization.id,
-            String(data.get("policy_key") ?? ""),
+            "default.approval",
             "approval",
             "organization",
             {
@@ -1600,10 +1593,9 @@ import "../styles/global.css";
         form.addEventListener("submit", async (event) => {
           event.preventDefault();
           if (!currentOrganization) return;
-          const data = new FormData(form);
           const outcome = await createPolicy(
             currentOrganization.id,
-            String(data.get("policy_key") ?? ""),
+            "default.notifications",
             "notification",
             "organization",
             { mandatory_channels: ["email"], quiet_hours_allowed: true },
