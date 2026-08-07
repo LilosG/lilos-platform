@@ -67,16 +67,17 @@ The matrix below distinguishes five orthogonal states for each capability:
   with individual sync-failure tolerance. The tests use a deterministic fake
   `GBPAdapter` (no real Google HTTP calls) and a `FakeConnectionService` that
   bypasses token refresh.
-- `gbp.publish_change` is the only handler that performs a real provider
-  write (via `GoogleBusinessProfileAdapter.patch_location`) and a
-  verification re-read. It is blocked on Google OAuth credentials for
-  real-provider verification.
+- `gbp.publish_change`, `gbp.publish_post`, and `reviews.publish_response`
+  all perform real provider writes through the Google Business Profile
+  adapter (`patch_location`, `create_local_post`, and `update_review_reply`
+  respectively), each followed by a verification re-read. All are blocked on
+  Google OAuth credentials for real-provider verification.
 - The review-response publication path previously fabricated a `published`
   outcome: the API route set `publishing` status and sent a
   `reviews.response.published` notification, but no background worker actually
   published the response to Google. This is now corrected: a
-  `reviews.publish_response` workflow handler fails closed with
-  `REVIEW_REPLY_API_NOT_CONFIGURED`, and the notification name is corrected to
+  `reviews.publish_response` workflow handler performs the real provider
+  write and verification re-read, and the notification name is corrected to
   `reviews.response.publication_reserved`.
 - Product entitlements can now be created through the platform-administration
   API (`POST /api/v1/platform/organizations/{id}/product-entitlements`),
