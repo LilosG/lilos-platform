@@ -12,6 +12,10 @@ test("unconfigured workspace shows a truthful not-configured state, not fabricat
     page.getByRole("heading", { name: "This deployment is not configured" }),
   ).toBeVisible();
   await expect(page.getByText("Good morning", { exact: false })).toHaveCount(0);
+  // The dashboard must not carry hard-coded "not available in this release" /
+  // "no backing API" messaging that conflicts with real platform capability.
+  await expect(page.getByText("Not available in this release")).toHaveCount(0);
+  await expect(page.getByText("no backing API")).toHaveCount(0);
 });
 
 test("workspace has no serious accessibility violations in the not-configured state", async ({

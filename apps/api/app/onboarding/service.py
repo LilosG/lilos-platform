@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.app.access_control.enums import MembershipStatus
 from apps.api.app.access_control.service import AccessControlService
+from apps.api.app.administration.contracts import ReadinessFinding
 from apps.api.app.administration.errors import AdministrationNotFoundError
 from apps.api.app.administration.service import AdministrationService
 from apps.api.app.database.base import utc_now
@@ -36,12 +37,12 @@ CANONICAL_PRODUCT_KEYS: tuple[str, ...] = (
     "insights",
 )
 
-# Findings that reflect Batch-2+ external integration/platform-availability
-# work, not something the operator can resolve through this onboarding
-# workflow, and not something that should block *organization* activation —
-# they remain truthfully visible as per-product blockers only.
+# Findings that reflect external integration/connection or platform-level
+# state the operator resolves per-product, not something that should block
+# *organization* activation — they remain truthfully visible as per-product
+# blockers only.
 _NON_ACTIVATION_BLOCKING_CODES = frozenset(
-    {"INTEGRATION_FOUNDATION_DEFERRED", "ORGANIZATION_NOT_ACTIVE", "ENTITLEMENT_NOT_EFFECTIVE"}
+    {"CONNECTION_REQUIRED", "ORGANIZATION_NOT_ACTIVE", "ENTITLEMENT_NOT_EFFECTIVE"}
 )
 _NOT_SELECTED_ENTITLEMENT_STATUSES = frozenset({"not_enabled", "archived"})
 
@@ -213,6 +214,12 @@ class OnboardingOrchestrationService:
             blockers.append("Assign at least one active user with organization access.")
 
         products: list[OnboardingProductStatus] = []
+        # Group per-product blockers by their remediation text so shared
+        # requirements (one approved business.name, one approval policy, one
+        # connection) are surfaced as a SINGLE actionable blocker listing the
+        # affected products, rather than repeated once per product.
+        grouped_blockers: dict[str, list[str]] = {}
+        connection_required_products: list[str] = []
         for key in CANONICAL_PRODUCT_KEYS:
             product = await self.administration.catalog.get_product_by_key(session, key)
             if product is None:
@@ -256,22 +263,18 @@ class OnboardingOrchestrationService:
                 readiness = await self.administration.readiness(session, organization_id, key)
             except AdministrationNotFoundError:
                 continue
-            other_findings = [
-                item
-                for item in readiness.blocking_requirements
-                if item.code not in _NON_ACTIVATION_BLOCKING_CODES
-            ]
-            integration_pending = any(
-                item.code == "INTEGRATION_FOUNDATION_DEFERRED"
-                for item in readiness.blocking_requirements
-            )
-            if other_findings:
-                blockers.extend(f"[{product.name}] {item.remediation}" for item in other_findings)
-            if integration_pending:
-                warnings.append(
-                    f"[{product.name}] requires an external integration not yet available "
-                    "in this release; does not block organization activation."
-                )
+            other_findings: list[ReadinessFinding] = []
+            connection_required = False
+            for item in readiness.blocking_requirements:
+                if item.code == "CONNECTION_REQUIRED":
+                    connection_required = True
+                    continue
+                if item.code in _NON_ACTIVATION_BLOCKING_CODES:
+                    continue
+                other_findings.append(item)
+                grouped_blockers.setdefault(item.remediation, []).append(product.name)
+            if connection_required:
+                connection_required_products.append(product.name)
             products.append(
                 OnboardingProductStatus(
                     product_key=key,
@@ -281,10 +284,19 @@ class OnboardingOrchestrationService:
                     readiness_state=readiness.readiness_state,
                     ready=readiness.ready,
                     blocking_findings=tuple(item.remediation for item in other_findings),
-                    external_integration_pending=integration_pending,
+                    external_integration_pending=connection_required,
                     next_action=other_findings[0].remediation if other_findings else None,
                 )
             )
+
+        for remediation, names in grouped_blockers.items():
+            unique = list(dict.fromkeys(names))
+            if len(unique) == 1:
+                blockers.append(f"[{unique[0]}] {remediation}")
+            else:
+                blockers.append(f"{remediation} (required by: {', '.join(unique)})")
+        for name in connection_required_products:
+            warnings.append(f"[{name}] requires a connected external integration.")
 
         total_steps = len(steps)
         complete_steps = sum(1 for step in steps if step.state is OnboardingStepState.COMPLETE)

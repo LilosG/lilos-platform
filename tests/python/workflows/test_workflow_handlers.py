@@ -328,6 +328,9 @@ async def test_gbp_publish_post_creates_local_post_and_verifies(
         async def get_review(self, *args: object, **kwargs: object) -> dict[str, Any]:
             raise NotImplementedError
 
+        async def list_reviews(self, *args: object, **kwargs: object) -> list[dict[str, Any]]:
+            raise NotImplementedError
+
         async def create_local_post(
             self, access_token: str, location_name: str, post_body: dict[str, Any]
         ) -> dict[str, Any]:
@@ -589,6 +592,9 @@ async def test_reviews_publish_response_publishes_and_verifies(
         async def get_review(self, access_token: str, review_name: str) -> dict[str, Any]:
             return {"reviewReply": {"comment": approved_comment}}
 
+        async def list_reviews(self, *args: object, **kwargs: object) -> list[dict[str, Any]]:
+            raise NotImplementedError
+
         async def create_local_post(self, *args: object, **kwargs: object) -> dict[str, Any]:
             raise NotImplementedError
 
@@ -785,6 +791,9 @@ async def test_reviews_publish_response_verification_mismatch_marks_reconciliati
 
         async def get_review(self, access_token: str, review_name: str) -> dict[str, Any]:
             return {"reviewReply": {"comment": "DIFFERENT CONTENT THAN APPROVED"}}
+
+        async def list_reviews(self, *args: object, **kwargs: object) -> list[dict[str, Any]]:
+            raise NotImplementedError
 
         async def create_local_post(self, *args: object, **kwargs: object) -> dict[str, Any]:
             raise NotImplementedError
@@ -1128,6 +1137,9 @@ def _make_stateful_post_adapter(
             raise NotImplementedError
 
         async def get_review(self, *args: object, **kwargs: object) -> dict[str, Any]:
+            raise NotImplementedError
+
+        async def list_reviews(self, *args: object, **kwargs: object) -> list[dict[str, Any]]:
             raise NotImplementedError
 
         async def create_local_post(
@@ -1730,6 +1742,9 @@ async def test_reviews_publish_response_persists_safe_error_code_provider_write_
         async def get_review(self, *args: object, **kwargs: object) -> dict[str, Any]:
             raise NotImplementedError
 
+        async def list_reviews(self, *args: object, **kwargs: object) -> list[dict[str, Any]]:
+            raise NotImplementedError
+
         async def create_local_post(self, *args: object, **kwargs: object) -> dict[str, Any]:
             raise NotImplementedError
 
@@ -1849,6 +1864,9 @@ async def test_reviews_publish_response_persists_safe_error_code_verification_re
 
         async def get_review(self, *args: object, **kwargs: object) -> dict[str, Any]:
             raise RuntimeError("re-read failed")
+
+        async def list_reviews(self, *args: object, **kwargs: object) -> list[dict[str, Any]]:
+            raise NotImplementedError
 
         async def create_local_post(self, *args: object, **kwargs: object) -> dict[str, Any]:
             raise NotImplementedError

@@ -15,6 +15,7 @@ from apps.api.app.database.session import get_database_session
 from apps.api.app.errors import request_correlation_id
 from apps.api.app.products.reviews.contracts import AIDraftCreate, DraftCreate, PublishResponse
 from apps.api.app.products.reviews.errors import ReviewNotFoundError
+from apps.api.app.products.reviews.ingestion_service import ReviewIngestionService
 from apps.api.app.products.reviews.models import Review, ReviewRevision
 from apps.api.app.products.reviews.service import ReviewService
 
@@ -328,3 +329,34 @@ async def publish(
         "data": {"id": str(item.id), "status": item.status},
         "meta": meta(request),
     }
+
+
+@router.post(
+    "/ingest",
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(no_store)],
+)
+async def ingest_reviews(
+    request: Request,
+    organization_id: UUID,
+    location_id: UUID,
+    session: Session,
+    principal: Authenticated,
+    _: Annotated[AuthorizationDecision, policy("reviews.generate_response")],
+) -> dict[str, object]:
+    """Pull reviews from the connected GBP location and ingest them.
+
+    Does not publish any response; preserves the approval workflow.
+    """
+    from apps.api.app.config import Settings
+
+    ingestion = ReviewIngestionService()
+    summary = await ingestion.ingest_for_location(
+        session,
+        Settings(),
+        organization_id,
+        location_id,
+        actor_id=principal.platform_user_id,
+        correlation_id=request_correlation_id(request),
+    )
+    return {"data": summary, "meta": meta(request)}

@@ -36,7 +36,12 @@ from apps.api.app.administration.contracts import (
     ServiceCreate,
     ServiceUpdate,
 )
-from apps.api.app.administration.enums import ControlState, FactAuthority
+from apps.api.app.administration.enums import (
+    ConfigurationScope,
+    ControlState,
+    FactAuthority,
+    PolicyCategory,
+)
 from apps.api.app.administration.errors import (
     AdministrationConflictError,
     AdministrationNotFoundError,
@@ -146,6 +151,18 @@ async def _location(
     if item is None:
         raise LocationNotFoundError
     return item
+
+
+_INTEGRATION_LABELS = {
+    "google_business_profile": "Google Business Profile",
+    "google_search_console": "Google Search Console",
+    "google_analytics": "Google Analytics",
+}
+
+
+def _integration_remediation(integration_key: str) -> str:
+    label = _INTEGRATION_LABELS.get(integration_key, integration_key)
+    return f"Connect {label}."
 
 
 @dataclass(frozen=True, slots=True)
@@ -578,6 +595,16 @@ class AdministrationService:
                 )
         except IntegrityError:
             raise AdministrationConflictError from None
+        # Provision a standard default approval policy for this organization if
+        # none exists yet.  The governing specification allows a default
+        # approval policy (it is governance configuration, not a factual
+        # assertion requiring human confirmation), and a single
+        # organization-scoped policy satisfies every product's
+        # ``requires_approval_policy`` so the operator is not asked to
+        # "activate an approval policy" once per product.
+        await self._ensure_default_approval_policy(
+            session, organization_id, actor_id=actor_id, correlation_id=correlation_id
+        )
         await self._audit(
             session,
             organization_id,
@@ -589,6 +616,51 @@ class AdministrationService:
             {"operation": "created", "product_id": str(product.id), "version": 1},
         )
         return item
+
+    async def _ensure_default_approval_policy(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        *,
+        actor_id: UUID,
+        correlation_id: str,
+    ) -> None:
+        """Provision a standard organization-scoped approval policy if none exists.
+
+        Idempotent: if any active approval policy already covers the
+        organization (or any product within it), no default is created.  The
+        default requires at least one approval and disallows self-approval so
+        it never auto-approves a factual assertion that requires human
+        confirmation.
+        """
+        existing = await self.policies.effective(
+            session, organization_id, "approval", utc_now(), None
+        )
+        if existing:
+            return
+        default_document = {
+            "action_type": "governed_change",
+            "required_approver_permission": "administration.manage",
+            "minimum_approvals": 1,
+            "self_approval_allowed": False,
+            "material_edit_invalidates": True,
+        }
+        command = PolicyCreate(
+            policy_key="default.approval",
+            category=PolicyCategory.APPROVAL,
+            schema_version=1,
+            scope_type=ConfigurationScope.ORGANIZATION,
+            location_id=None,
+            product_key=None,
+            document=default_document,
+            change_reason="Standard default approval policy provisioned at entitlement creation.",
+        )
+        revision = await self.create_policy(
+            session, organization_id, command, actor_id=actor_id, correlation_id=correlation_id
+        )
+        await self.approve_policy(
+            session, organization_id, revision.id, actor_id=actor_id, correlation_id=correlation_id
+        )
 
     async def transition_entitlement(
         self,
@@ -1497,15 +1569,21 @@ class AdministrationService:
             elif fact_resolution.selected_revision_id:
                 fact_ids.append(fact_resolution.selected_revision_id)
         if product.required_integrations:
-            findings.extend(
-                ReadinessFinding(
-                    code="INTEGRATION_FOUNDATION_DEFERRED",
-                    blocking=True,
-                    resource_key=key,
-                    remediation="Connect the required integration when the integration foundation is available.",
-                )
-                for key in product.required_integrations
-            )
+            for key in product.required_integrations:
+                # Check the LIVE connection state rather than unconditionally
+                # claiming the integration is "not yet available in this
+                # release".  A connected integration satisfies the requirement;
+                # otherwise the operator sees an actionable "Connect …" blocker.
+                connected = await self._integration_connected(session, organization_id, key)
+                if not connected:
+                    findings.append(
+                        ReadinessFinding(
+                            code="CONNECTION_REQUIRED",
+                            blocking=True,
+                            resource_key=key,
+                            remediation=_integration_remediation(key),
+                        )
+                    )
         if product.requires_approval_policy:
             policies = await self.policies.effective(
                 session, organization_id, "approval", utc_now(), product.id
@@ -1559,6 +1637,23 @@ class AdministrationService:
             warnings=tuple(item for item in findings if not item.blocking),
             evaluated_at=utc_now(),
         )
+
+    async def _integration_connected(
+        self, session: AsyncSession, organization_id: UUID, integration_key: str
+    ) -> bool:
+        """Return True when a live, connected integration exists for this key.
+
+        Only integrations with a real connection lifecycle are checked here;
+        an unkeyed integration is treated as not-yet-connected (an external
+        dependency the operator must connect) rather than as a product that is
+        "not available in this release".
+        """
+        if integration_key == "google_business_profile":
+            from apps.api.app.integrations.connection_service import GBPConnectionService
+
+            connection = await GBPConnectionService().find_connection(session, organization_id)
+            return connection is not None and connection.status == "connected"
+        return False
 
     async def _audit(
         self,

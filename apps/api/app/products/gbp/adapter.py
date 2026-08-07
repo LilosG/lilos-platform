@@ -9,8 +9,23 @@ BUSINESS_MANAGE_SCOPE = "https://www.googleapis.com/auth/business.manage"
 ACCOUNT_BASE = "https://mybusinessaccountmanagement.googleapis.com/v1"
 INFO_BASE = "https://mybusinessbusinessinformation.googleapis.com/v1"
 MYBUSINESS_BASE = "https://mybusiness.googleapis.com/v4"
-SUPPORTED_READ_MASK = (
-    "name,title,storefrontAddress,regularHours,profile,phoneNumbers,categories,websiteUri,openInfo"
+SUPPORTED_READ_MASK = ",".join(
+    [
+        "name",
+        "title",
+        "storefrontAddress",
+        "serviceArea",
+        "regularHours",
+        "specialHours",
+        "moreHours",
+        "profile",
+        "phoneNumbers",
+        "categories",
+        "websiteUri",
+        "openInfo",
+        "labels",
+        "serviceItems",
+    ]
 )
 SUPPORTED_WRITE_FIELDS = frozenset({"profile.description", "regularHours"})
 
@@ -36,6 +51,7 @@ class GBPAdapter(Protocol):
         self, access_token: str, review_name: str, comment: str
     ) -> dict[str, Any]: ...
     async def get_review(self, access_token: str, review_name: str) -> dict[str, Any]: ...
+    async def list_reviews(self, access_token: str, location_name: str) -> list[dict[str, Any]]: ...
     async def create_local_post(
         self, access_token: str, location_name: str, post_body: dict[str, Any]
     ) -> dict[str, Any]: ...
@@ -132,6 +148,22 @@ class GoogleBusinessProfileAdapter:
             f"{MYBUSINESS_BASE}/{review_name}",
             access_token,
         )
+
+    async def list_reviews(self, access_token: str, location_name: str) -> list[dict[str, Any]]:
+        """List reviews for a location via the legacy My Business v4 API.
+
+        ``location_name`` must be the v4 account-qualified parent
+        ``accounts/{accountId}/locations/{locationId}``.  Returns the raw
+        ``reviews`` array (each entry has ``name``, ``reviewId``,
+        ``starRating``, ``comment``, ``createTime``, ``updateTime``).
+        """
+        payload = await self._request(
+            "GET",
+            f"{MYBUSINESS_BASE}/{location_name}/reviews",
+            access_token,
+            params={"pageSize": 100},
+        )
+        return list(payload.get("reviews", []))
 
     async def create_local_post(
         self, access_token: str, location_name: str, post_body: dict[str, Any]

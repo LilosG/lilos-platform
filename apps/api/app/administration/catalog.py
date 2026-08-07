@@ -21,7 +21,11 @@ PRODUCT_CATALOG: dict[str, dict[str, object]] = {
         "description": "Search visibility and optimization opportunities.",
         "required_configuration_keys": ["seo.general"],
         "required_business_fact_keys": ["business.name", "business.address"],
-        "required_integrations": ["google_search_console", "google_analytics"],
+        # The self-contained crawl/analysis path requires NO external
+        # integration.  Google Search Console and Google Analytics are
+        # optional, separately-classified enhancements (SEOSearchProperty) and
+        # must NOT block the crawl path or mark the SEO product unavailable.
+        "required_integrations": [],
         "requires_location_profile": True,
     },
     "gbp": {

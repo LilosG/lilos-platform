@@ -216,10 +216,11 @@ summary:focus-visible {
   align-items: center;
   gap: 0.7rem;
 }
-.topbar button,
-.attention-card button {
+.topbar button:not(.button),
+.attention-card button:not(.button) {
   border: 1px solid var(--line);
   background: #fff;
+  color: var(--ink);
   border-radius: var(--radius-sm);
   padding: 0.5rem 0.75rem;
   font-weight: 600;
@@ -227,8 +228,8 @@ summary:focus-visible {
     border-color 0.12s ease,
     background-color 0.12s ease;
 }
-.topbar button:hover,
-.attention-card button:hover {
+.topbar button:not(.button):hover,
+.attention-card button:not(.button):hover {
   border-color: var(--line-strong);
   background: var(--surface-alt);
 }

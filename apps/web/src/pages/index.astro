@@ -1,6 +1,5 @@
 ---
 import AppShell from "../components/AppShell.astro";
-import StatusBadge from "../components/StatusBadge.astro";
 import "../styles/global.css";
 ---
 
@@ -69,22 +68,19 @@ import "../styles/global.css";
           </div><ul class="product-list" id="locations-list"></ul>
         </section>
 
-        <section aria-labelledby="unavailable-title">
+        <section aria-labelledby="reporting-title">
           <div class="section-heading">
             <div>
-              <p class="eyebrow">Reporting</p><h2 id="unavailable-title">
+              <p class="eyebrow">Reporting</p><h2 id="reporting-title">
                 Metrics, activity, and recommendations
               </h2>
             </div>
-          </div><div class="attention-card">
-            <StatusBadge
-              status="missing"
-              label="Not available in this release"
-            /><p>
-              Insights, activity history, and SEO recommendations have no
-              backing API yet. This section intentionally shows no simulated
-              data.
-            </p>
+          </div><div
+            class="attention-card"
+            id="reporting-card"
+            data-state="loading"
+          >
+            <p>Loading reporting status…</p>
           </div>
         </section>
 
@@ -194,8 +190,11 @@ import "../styles/global.css";
         const results = await Promise.all(
           PRODUCT_KEYS.map((key) => fetchProductReadiness(organizationId, key)),
         );
+        const summaries: Record<string, { status: string; detail: string }> =
+          {};
         PRODUCT_KEYS.forEach((key, index) => {
           const readinessOutcome = summarizeReadiness(results[index]);
+          summaries[key] = readinessOutcome;
           const item = document.createElement("li");
           const info = document.createElement("div");
           const name = document.createElement("h3");
@@ -212,7 +211,59 @@ import "../styles/global.css";
           item.append(info, badge);
           list.append(item);
         });
+        renderReportingCard(summaries);
       }
+
+      // Derive the reporting card from REAL readiness state (insights + seo)
+      // rather than a hard-coded "not available in this release" label.  Each
+      // state is actionable with a link to the surface that resolves it.
+      function renderReportingCard(
+        summaries: Record<string, { status: string; detail: string }>,
+      ): void {
+        const card = document.getElementById("reporting-card")!;
+        card.replaceChildren();
+        const insights = summaries["insights"];
+        const status = insights?.status ?? "missing";
+        const badge = document.createElement("span");
+        badge.className = `status status--${status}`;
+        const dot = document.createElement("span");
+        dot.setAttribute("aria-hidden", "true");
+        dot.className = "status__dot";
+        const statusLabel = REPORTING_STATUS_LABEL[status] ?? status;
+        badge.append(dot, document.createTextNode(statusLabel));
+        const copy = document.createElement("p");
+        const link = document.createElement("a");
+        link.href = "/insights";
+        link.textContent = "Open Insights";
+        if (status === "ready") {
+          copy.textContent =
+            "Insights reporting is available. SEO crawl recommendations are on the SEO page.";
+        } else if (status === "setup") {
+          copy.textContent =
+            "Insights requires setup before reporting is available.";
+          link.href = "/onboarding";
+          link.textContent = "Complete setup";
+        } else if (status === "blocked") {
+          copy.textContent =
+            "Insights is blocked. Resolve the blocking requirement to enable reporting.";
+          link.href = "/onboarding";
+          link.textContent = "Review blockers";
+        } else {
+          copy.textContent =
+            "Reporting status could not be loaded for this organization.";
+          link.href = "/insights";
+          link.textContent = "Open Insights";
+        }
+        card.append(badge, copy, link);
+        card.dataset.state = status;
+      }
+
+      const REPORTING_STATUS_LABEL: Record<string, string> = {
+        ready: "Ready",
+        setup: "Setup required",
+        blocked: "Blocked",
+        missing: "Unavailable",
+      };
 
       async function loadOrganization(
         organization: MyOrganization,

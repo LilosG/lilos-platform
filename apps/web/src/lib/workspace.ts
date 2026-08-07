@@ -102,3 +102,27 @@ export function fetchProductReadiness(
     `/api/v1/organizations/${organizationId}/products/${productKey}/readiness`,
   );
 }
+
+export type InsightsSummary = {
+  workflow_runs: Record<string, number>;
+  gbp: {
+    locations: number;
+    profile_snapshots: number;
+    publications: Record<string, number>;
+  };
+  reviews: Record<string, number>;
+  content_publications: Record<string, number>;
+  seo: {
+    crawl_runs: Record<string, number>;
+    opportunities: Record<string, number>;
+  };
+  leads: Record<string, number>;
+};
+
+export function fetchInsightsSummary(
+  organizationId: string,
+): Promise<ApiOutcome<InsightsSummary>> {
+  return apiGet<InsightsSummary>(
+    `/api/v1/organizations/${organizationId}/insights/summary`,
+  );
+}
