@@ -58,11 +58,7 @@ import "../styles/global.css";
           </div><div class="hero__actions">
             <button type="button" class="button" id="ingest-reviews-button"
               >Import reviews from Google</button
-            ><p
-              id="ingest-status"
-              role="status"
-              aria-live="polite"
-            ></p>
+            ><p id="ingest-status" role="status" aria-live="polite"></p>
           </div>
         </section>
 
@@ -629,7 +625,10 @@ import "../styles/global.css";
               return;
             }
             setIngestStatus("Importing reviews from Google…");
-            const result = await ingestReviews(organizationId, currentLocationId);
+            const result = await ingestReviews(
+              organizationId,
+              currentLocationId,
+            );
             if (result.kind === "ok") {
               setIngestStatus(
                 `Imported ${result.data.ingested} new review(s), updated ${result.data.updated}.`,

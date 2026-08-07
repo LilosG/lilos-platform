@@ -77,14 +77,22 @@ import "../styles/global.css";
                 Create a GitHub access token in GitHub (the external credential
                 step), then register it here. It is stored encrypted at rest and
                 referenced by a publishing connection.
-              </p><label class="sr-only" for="github-token">GitHub access token</label
-              ><input id="github-token" type="password" placeholder="github_pat_…"
-              /><label class="sr-only" for="github-account">GitHub account/repo slug</label
+              </p><label class="sr-only" for="github-token"
+                >GitHub access token</label
+              ><input
+                id="github-token"
+                type="password"
+                placeholder="github_pat_…"
+              /><label class="sr-only" for="github-account"
+                >GitHub account/repo slug</label
               ><input
                 id="github-account"
                 type="text"
                 placeholder="org/site-repo (optional)"
-              /><button type="button" class="button" id="register-connection-button"
+              /><button
+                type="button"
+                class="button"
+                id="register-connection-button"
                 >Register GitHub connection</button
               >
               <h3>Step 2 — Publishing target (application)</h3>
@@ -92,15 +100,20 @@ import "../styles/global.css";
                 Configure the repository, base branch, and allowed path prefix
                 that governed content may be published to.
               </p><label class="sr-only" for="target-key">Target key</label
-              ><input id="target-key" type="text" placeholder="primary"
-              /><label class="sr-only" for="target-connection">Connection</label
+              ><input id="target-key" type="text" placeholder="primary" /><label
+                class="sr-only"
+                for="target-connection">Connection</label
               ><select id="target-connection"></select><label
                 class="sr-only"
                 for="target-repo">Repository</label
-              ><input id="target-repo" type="text" placeholder="org/site-repo"
+              ><input
+                id="target-repo"
+                type="text"
+                placeholder="org/site-repo"
               /><label class="sr-only" for="target-base">Base branch</label
-              ><input id="target-base" type="text" placeholder="main"
-              /><label class="sr-only" for="target-prefix">Allowed path prefix</label
+              ><input id="target-base" type="text" placeholder="main" /><label
+                class="sr-only"
+                for="target-prefix">Allowed path prefix</label
               ><input
                 id="target-prefix"
                 type="text"
