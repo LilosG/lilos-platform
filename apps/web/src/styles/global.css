@@ -849,9 +849,9 @@ td {
   }
   .topbar {
     padding: 1rem;
-  }
-  .topbar__actions button:last-child {
-    display: none;
+    /* Allow the actions to wrap to a second row at narrow widths instead of
+       hiding them. A no-op when the org name and actions fit on one line. */
+    flex-wrap: wrap;
   }
   main {
     padding: 1.2rem;
@@ -884,9 +884,6 @@ td {
   }
   .topbar {
     height: auto;
-  }
-  .topbar__actions {
-    display: none;
   }
   .product-list li {
     grid-template-columns: 1fr auto;
