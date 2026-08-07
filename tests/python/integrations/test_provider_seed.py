@@ -19,7 +19,7 @@ async def test_seed_creates_google_business_profile_once(
 ) -> None:
     async with integrations_session_factory.begin() as session:
         result = await ProviderCatalogSeeder().run(session)
-        assert result.created == ("google_business_profile",)
+        assert result.created == ("google_business_profile", "github")
         assert result.existing == ()
 
         stored = await session.scalar(
@@ -32,7 +32,7 @@ async def test_seed_creates_google_business_profile_once(
     async with integrations_session_factory.begin() as session:
         second = await ProviderCatalogSeeder().run(session)
         assert second.created == ()
-        assert second.existing == ("google_business_profile",)
+        assert second.existing == ("google_business_profile", "github")
 
 
 @pytest.mark.integration

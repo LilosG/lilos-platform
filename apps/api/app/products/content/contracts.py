@@ -4,6 +4,34 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 
+class GitHubConnectionCreate(BaseModel):
+    """Register an application-side GitHub integration connection.
+
+    The GitHub access token is an externally-obtained credential (created in
+    GitHub); this stores it encrypted-at-rest through the platform secret store
+    and records the opaque ``credential_reference`` on the connection. The
+    optional ``external_account_reference`` is the GitHub account/repo slug the
+    operator is binding (e.g. ``org/site-repo``).
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    access_token: str = Field(min_length=1, max_length=4096)
+    external_account_reference: str | None = Field(default=None, max_length=255)
+
+
+class TargetCreate(BaseModel):
+    """Configure a repository publishing target that references a GitHub connection."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    key: str = Field(min_length=1, max_length=128)
+    connection_id: UUID
+    target_type: Literal["github_astro"] = "github_astro"
+    repository_id: str = Field(min_length=1, max_length=255)
+    base_branch: str = Field(min_length=1, max_length=255)
+    allowed_path_prefix: str = Field(min_length=1, max_length=500)
+    deployment_target_reference: str | None = Field(default=None, max_length=500)
+
+
 class OpportunityCreate(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
     location_id: UUID | None = None

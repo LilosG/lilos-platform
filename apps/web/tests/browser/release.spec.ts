@@ -12,6 +12,10 @@ test("unconfigured workspace shows a truthful not-configured state, not fabricat
     page.getByRole("heading", { name: "This deployment is not configured" }),
   ).toBeVisible();
   await expect(page.getByText("Good morning", { exact: false })).toHaveCount(0);
+  // The dashboard must not carry hard-coded "not available in this release" /
+  // "no backing API" messaging that conflicts with real platform capability.
+  await expect(page.getByText("Not available in this release")).toHaveCount(0);
+  await expect(page.getByText("no backing API")).toHaveCount(0);
 });
 
 test("workspace has no serious accessibility violations in the not-configured state", async ({
@@ -111,6 +115,16 @@ test("unconfigured Reviews page shows a truthful not-configured state, not fabri
   ).toEqual([]);
 });
 
+test("Reviews page exposes a reachable operator action to import reviews from Google", async ({
+  page,
+}) => {
+  await page.goto("/reviews");
+  // The ingestion button is present in the markup (inside the hidden
+  // configured region), proving the operator-path action exists even before
+  // a deployment is wired — it is not a missing/unreachable control.
+  await expect(page.locator("#ingest-reviews-button")).toHaveCount(1);
+});
+
 test("unconfigured Leads page shows a truthful not-configured state, not fabricated lead data", async ({
   page,
 }) => {
@@ -145,6 +159,14 @@ test("unconfigured Content page shows a truthful not-configured state, not fabri
       ["serious", "critical"].includes(item.impact ?? ""),
     ),
   ).toEqual([]);
+});
+
+test("Content page exposes a reachable publishing setup form to configure a GitHub target", async ({
+  page,
+}) => {
+  await page.goto("/content");
+  await expect(page.locator("#register-connection-button")).toHaveCount(1);
+  await expect(page.locator("#create-target-button")).toHaveCount(1);
 });
 
 test("unconfigured SEO page shows a truthful not-configured state, not fabricated SEO data", async ({

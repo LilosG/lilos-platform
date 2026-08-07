@@ -128,7 +128,7 @@ test.describe("Insights surface", () => {
     await expect(page.locator("#organization-switcher")).toBeAttached();
   });
 
-  test("explains that it has no simulated data rather than presenting placeholder metrics as live", async ({
+  test("explains that Insights uses real operational data rather than placeholder metrics", async ({
     page,
   }) => {
     await page.goto("/insights");
@@ -136,7 +136,7 @@ test.describe("Insights surface", () => {
     // the unconfigured build, so it is asserted as attached markup rather
     // than visible.
     await expect(
-      page.getByText("no simulated data", { exact: false }),
+      page.getByText("no simulated or fabricated metrics", { exact: false }),
     ).toBeAttached();
     // No chart/bar placeholder markup should be present as live data.
     await expect(page.locator(".bars, .chart-card")).toHaveCount(0);

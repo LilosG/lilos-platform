@@ -10,6 +10,7 @@ marking, and truthful error/empty-state handling.
 
 import asyncio
 from collections.abc import Iterator
+from datetime import datetime
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -84,6 +85,9 @@ class FakeGBPAdapter:
         raise NotImplementedError
 
     async def get_review(self, access_token: str, review_name: str) -> dict[str, Any]:
+        raise NotImplementedError
+
+    async def list_reviews(self, access_token: str, location_name: str) -> list[dict[str, Any]]:
         raise NotImplementedError
 
     async def create_local_post(
@@ -426,8 +430,9 @@ class TestGBPDiscoveryLocations:
         adapter = FakeGBPAdapter(
             locations_by_account={
                 "accounts/111": [
-                    {"name": "accounts/111/locations/loc-a", "title": "Location A"},
-                    {"name": "accounts/111/locations/loc-b", "title": "Location B"},
+                    # Business Information v1 returns ``locations/{locationId}``.
+                    {"name": "locations/loc-a", "title": "Location A"},
+                    {"name": "locations/loc-b", "title": "Location B"},
                 ]
             }
         )
@@ -449,7 +454,7 @@ class TestGBPDiscoveryLocations:
         locations = asyncio.run(run())
         assert len(locations) == 2
         ext_ids = {loc.external_location_id for loc in locations}
-        assert ext_ids == {"loc-a", "loc-b"}
+        assert ext_ids == {"locations/loc-a", "locations/loc-b"}
         assert all(loc.mapping_status == "unmapped" for loc in locations)
 
         async def check_audit() -> list[AuditEvent]:
@@ -472,7 +477,7 @@ class TestGBPDiscoveryLocations:
         adapter = FakeGBPAdapter(
             locations_by_account={
                 "accounts/111": [
-                    {"name": "accounts/111/locations/loc-a", "title": "Location A"},
+                    {"name": "locations/loc-a", "title": "Location A"},
                 ]
             }
         )
@@ -558,7 +563,7 @@ class TestGBPDiscoveryLocations:
                     organization_id=org_id,
                     connection_id=conn.id,
                     account_id=acct.id,
-                    external_location_id="loc-old",
+                    external_location_id="locations/loc-old",
                     business_name="Old Location",
                     mapping_status="unmapped",
                 )
@@ -569,7 +574,7 @@ class TestGBPDiscoveryLocations:
         adapter = FakeGBPAdapter(
             locations_by_account={
                 "accounts/111": [
-                    {"name": "accounts/111/locations/loc-new", "title": "New Location"},
+                    {"name": "locations/loc-new", "title": "New Location"},
                 ]
             }
         )
@@ -590,10 +595,10 @@ class TestGBPDiscoveryLocations:
 
         locations = asyncio.run(run())
         by_ext = {loc.external_location_id: loc for loc in locations}
-        assert "loc-old" in by_ext
-        assert by_ext["loc-old"].mapping_status == "archived"
-        assert "loc-new" in by_ext
-        assert by_ext["loc-new"].mapping_status == "unmapped"
+        assert "locations/loc-old" in by_ext
+        assert by_ext["locations/loc-old"].mapping_status == "archived"
+        assert "locations/loc-new" in by_ext
+        assert by_ext["locations/loc-new"].mapping_status == "unmapped"
 
 
 @pytest.mark.integration
@@ -629,7 +634,7 @@ class TestGBPProfileSync:
                     organization_id=org_id,
                     connection_id=conn.id,
                     account_id=acct.id,
-                    external_location_id="loc-a",
+                    external_location_id="locations/loc-a",
                     business_name="Location A",
                     mapping_status="unmapped",
                 )
@@ -644,8 +649,9 @@ class TestGBPProfileSync:
         factory, db_url, org_id, _, loc_id = setup
         adapter = FakeGBPAdapter(
             location_details={
-                "accounts/111/locations/loc-a": {
-                    "name": "accounts/111/locations/loc-a",
+                # Business Information v1 ``locations.get`` uses locations/{id}.
+                "locations/loc-a": {
+                    "name": "locations/loc-a",
                     "title": "My Business",
                     "storefrontAddress": {"locality": "San Diego"},
                     "phoneNumbers": {"primaryPhone": "+16195551234"},
@@ -690,10 +696,10 @@ class TestGBPProfileSync:
     def test_sync_profile_idempotent_same_hash(self, setup: SyncSetupTuple) -> None:
         factory, db_url, org_id, _, loc_id = setup
         profile = {
-            "name": "accounts/111/locations/loc-a",
+            "name": "locations/loc-a",
             "title": "Consistent Business",
         }
-        adapter = FakeGBPAdapter(location_details={"accounts/111/locations/loc-a": profile})
+        adapter = FakeGBPAdapter(location_details={"locations/loc-a": profile})
         service = GBPDiscoveryService(
             adapter=adapter,
             connection=FakeConnectionService(),
@@ -767,12 +773,12 @@ class TestDiscoverAndSync:
             accounts=[{"name": "accounts/111", "accountName": "Full Flow Account"}],
             locations_by_account={
                 "accounts/111": [
-                    {"name": "accounts/111/locations/loc-a", "title": "Full Flow Location"},
+                    {"name": "locations/loc-a", "title": "Full Flow Location"},
                 ]
             },
             location_details={
-                "accounts/111/locations/loc-a": {
-                    "name": "accounts/111/locations/loc-a",
+                "locations/loc-a": {
+                    "name": "locations/loc-a",
                     "title": "Full Flow Location",
                     "storefrontAddress": {"locality": "Portland"},
                 }
@@ -808,13 +814,13 @@ class TestDiscoverAndSync:
             accounts=[{"name": "accounts/111", "accountName": "Account"}],
             locations_by_account={
                 "accounts/111": [
-                    {"name": "accounts/111/locations/loc-a", "title": "Loc A"},
-                    {"name": "accounts/111/locations/loc-b", "title": "Loc B"},
+                    {"name": "locations/loc-a", "title": "Loc A"},
+                    {"name": "locations/loc-b", "title": "Loc B"},
                 ]
             },
             location_details={
-                "accounts/111/locations/loc-a": {
-                    "name": "accounts/111/locations/loc-a",
+                "locations/loc-a": {
+                    "name": "locations/loc-a",
                     "title": "Loc A",
                 },
             },
@@ -839,3 +845,345 @@ class TestDiscoverAndSync:
         assert summary["accounts_discovered"] == 1
         assert summary["locations_discovered"] == 2
         assert summary["profiles_synced"] == 1
+
+
+@pytest.mark.integration
+class TestProviderContractRegressions:
+    """Bounded regressions for the Google provider-contract correction.
+
+    Verifies the v1 ``locations/{locationId}`` resource is used for profile
+    sync (not account-qualified), discovery reconciles legacy/broken rows
+    rather than duplicating, a successful sync creates a usable profile
+    snapshot AND a capability snapshot so operations do not 404, and a
+    failed-sync location recovers on retry without manual DB intervention.
+    """
+
+    def _setup(self, factory: async_sessionmaker[AsyncSession], slug: str) -> tuple[UUID, UUID]:
+        return asyncio.run(_setup_org_with_connection(factory, slug=slug))
+
+    def test_rediscovery_reconciles_legacy_account_qualified_row(
+        self, discovery_session_factory: async_sessionmaker[AsyncSession], postgresql_test_url: str
+    ) -> None:
+        """A persisted row with a legacy account-qualified external id is
+        reconciled to the canonical form on rediscovery — not duplicated."""
+        org_id, _conn_id = self._setup(discovery_session_factory, "reconcile-org")
+
+        async def seed_account_and_legacy_location() -> None:
+            async with discovery_session_factory.begin() as session:
+                conn = await session.scalar(
+                    select(IntegrationConnection).where(
+                        IntegrationConnection.organization_id == org_id
+                    )
+                )
+                assert conn is not None
+                acct = GBPAccount(
+                    organization_id=org_id,
+                    connection_id=conn.id,
+                    external_account_id="111",
+                    display_name="Reconcile Account",
+                    status="discovered",
+                )
+                session.add(acct)
+                await session.flush()
+                # Persist a BROKEN legacy row: account-qualified external id as
+                # produced by the old broken parser.
+                loc = GBPLocation(
+                    organization_id=org_id,
+                    connection_id=conn.id,
+                    account_id=acct.id,
+                    external_location_id="accounts/111/locations/123",
+                    business_name="Legacy Wheyland",
+                    mapping_status="unmapped",
+                )
+                session.add(loc)
+
+        asyncio.run(seed_account_and_legacy_location())
+
+        adapter = FakeGBPAdapter(
+            accounts=[{"name": "accounts/111", "accountName": "Reconcile Account"}],
+            locations_by_account={
+                "accounts/111": [{"name": "locations/123", "title": "Wheyland Electric"}],
+            },
+        )
+        service = GBPDiscoveryService(adapter=adapter, connection=FakeConnectionService())
+
+        async def run() -> list[GBPLocation]:
+            async with discovery_session_factory() as session, session.begin():
+                return await service.discover_locations(
+                    session,
+                    _settings(postgresql_test_url),
+                    org_id,
+                    actor_id=None,
+                    correlation_id="test-reconcile",
+                )
+
+        locations = asyncio.run(run())
+        # Exactly one row for this location — not a duplicate.
+        ext_ids = [loc.external_location_id for loc in locations]
+        assert ext_ids.count("locations/123") == 1
+        # The legacy row was reconciled to the canonical v1 name.
+        assert "accounts/111/locations/123" not in ext_ids
+        assert "locations/123" in ext_ids
+
+    def test_sync_uses_v1_locations_resource_not_account_qualified(
+        self, discovery_session_factory: async_sessionmaker[AsyncSession], postgresql_test_url: str
+    ) -> None:
+        """Initial profile sync calls Business Information v1 with
+        ``locations/123``, not ``accounts/.../locations/123``."""
+        org_id, _conn_id = self._setup(discovery_session_factory, "v1-sync-org")
+
+        async def seed() -> UUID:
+            async with discovery_session_factory.begin() as session:
+                conn = await session.scalar(
+                    select(IntegrationConnection).where(
+                        IntegrationConnection.organization_id == org_id
+                    )
+                )
+                assert conn is not None
+                acct = GBPAccount(
+                    organization_id=org_id,
+                    connection_id=conn.id,
+                    external_account_id="111",
+                    display_name="V1 Account",
+                    status="discovered",
+                )
+                session.add(acct)
+                await session.flush()
+                loc = GBPLocation(
+                    organization_id=org_id,
+                    connection_id=conn.id,
+                    account_id=acct.id,
+                    external_location_id="locations/123",
+                    business_name="V1 Location",
+                    mapping_status="unmapped",
+                )
+                session.add(loc)
+                await session.flush()
+                return loc.id
+
+        loc_id = asyncio.run(seed())
+
+        captured: dict[str, str] = {}
+
+        class V1CapturingAdapter(FakeGBPAdapter):
+            async def get_location(self, access_token: str, location_name: str) -> dict[str, Any]:
+                captured["location_name"] = location_name
+                return {
+                    "name": location_name,
+                    "title": "V1 Business",
+                    "storefrontAddress": {"locality": "Anywhere"},
+                }
+
+        adapter = V1CapturingAdapter()
+        service = GBPDiscoveryService(adapter=adapter, connection=FakeConnectionService())
+
+        async def run() -> GBPProfileSnapshot:
+            async with discovery_session_factory() as session, session.begin():
+                return await service.sync_profile(
+                    session,
+                    _settings(postgresql_test_url),
+                    org_id,
+                    loc_id,
+                    actor_id=None,
+                    correlation_id="test-v1-sync",
+                )
+
+        snapshot = asyncio.run(run())
+        assert captured["location_name"] == "locations/123"
+        assert "accounts/" not in captured["location_name"]
+        assert snapshot.normalized_profile.get("title") == "V1 Business"
+
+    def test_successful_sync_creates_capability_snapshot_and_completeness_works(
+        self, discovery_session_factory: async_sessionmaker[AsyncSession], postgresql_test_url: str
+    ) -> None:
+        """After sync: a profile snapshot exists, a capability snapshot exists,
+        and the operations completeness report does NOT 404."""
+        org_id, _conn_id = self._setup(discovery_session_factory, "completeness-org")
+
+        async def seed() -> UUID:
+            async with discovery_session_factory.begin() as session:
+                conn = await session.scalar(
+                    select(IntegrationConnection).where(
+                        IntegrationConnection.organization_id == org_id
+                    )
+                )
+                assert conn is not None
+                acct = GBPAccount(
+                    organization_id=org_id,
+                    connection_id=conn.id,
+                    external_account_id="111",
+                    display_name="Completeness Account",
+                    status="discovered",
+                )
+                session.add(acct)
+                await session.flush()
+                loc = GBPLocation(
+                    organization_id=org_id,
+                    connection_id=conn.id,
+                    account_id=acct.id,
+                    external_location_id="locations/123",
+                    business_name="Completeness Location",
+                    mapping_status="unmapped",
+                )
+                session.add(loc)
+                await session.flush()
+                return loc.id
+
+        loc_id = asyncio.run(seed())
+
+        adapter = FakeGBPAdapter(
+            location_details={
+                "locations/123": {
+                    "name": "locations/123",
+                    "title": "Full Business",
+                    "storefrontAddress": {"locality": "Town"},
+                    "phoneNumbers": {"primaryPhone": "+16195551234"},
+                    "regularHours": {"periods": []},
+                    "profile": {"description": "A business"},
+                    "websiteUri": "https://example.test",
+                    "openInfo": {"status": "OPEN"},
+                    "categories": {"primaryCategory": {"name": "electrician"}},
+                }
+            }
+        )
+        service = GBPDiscoveryService(adapter=adapter, connection=FakeConnectionService())
+
+        async def run_sync() -> GBPProfileSnapshot:
+            async with discovery_session_factory() as session, session.begin():
+                return await service.sync_profile(
+                    session,
+                    _settings(postgresql_test_url),
+                    org_id,
+                    loc_id,
+                    actor_id=None,
+                    correlation_id="test-completeness",
+                )
+
+        snapshot = asyncio.run(run_sync())
+        assert snapshot.completeness == "full"
+        assert snapshot.normalized_profile.get("title") == "Full Business"
+
+        from apps.api.app.products.gbp.operations_service import GBPOperationsService
+
+        ops = GBPOperationsService()
+
+        async def check_capability() -> object:
+            async with discovery_session_factory() as session:
+                return await ops.latest_capability_snapshot(session, org_id, loc_id)
+
+        cap = asyncio.run(check_capability())
+        assert cap is not None
+
+        async def check_completeness() -> dict[str, object]:
+            async with discovery_session_factory() as session:
+                return await ops.completeness_report(session, org_id, loc_id)
+
+        report = asyncio.run(check_completeness())
+        assert "known" in report and "unknown" in report
+
+    def test_failed_sync_location_recovers_without_manual_db_intervention(
+        self, discovery_session_factory: async_sessionmaker[AsyncSession], postgresql_test_url: str
+    ) -> None:
+        """A location whose prior sync failed (last_synced_at is None) is
+        retried by discover_and_sync and recovers once the provider is
+        reachable — no manual SQL required."""
+        org_id, _conn_id = self._setup(discovery_session_factory, "recover-org")
+
+        async def seed() -> None:
+            async with discovery_session_factory.begin() as session:
+                conn = await session.scalar(
+                    select(IntegrationConnection).where(
+                        IntegrationConnection.organization_id == org_id
+                    )
+                )
+                assert conn is not None
+                acct = GBPAccount(
+                    organization_id=org_id,
+                    connection_id=conn.id,
+                    external_account_id="111",
+                    display_name="Recover Account",
+                    status="discovered",
+                )
+                session.add(acct)
+                await session.flush()
+                loc = GBPLocation(
+                    organization_id=org_id,
+                    connection_id=conn.id,
+                    account_id=acct.id,
+                    external_location_id="locations/123",
+                    business_name="Recover Location",
+                    mapping_status="unmapped",
+                )
+                session.add(loc)
+
+        asyncio.run(seed())
+
+        # First pass: provider unreachable -> sync fails, last_synced_at stays None.
+        adapter_fail = FakeGBPAdapter(
+            accounts=[{"name": "accounts/111", "accountName": "Recover Account"}],
+            locations_by_account={
+                "accounts/111": [{"name": "locations/123", "title": "Recover Location"}],
+            },
+            location_detail_error=RuntimeError("provider down"),
+        )
+        service_fail = GBPDiscoveryService(adapter=adapter_fail, connection=FakeConnectionService())
+
+        async def run_fail() -> dict[str, Any]:
+            async with discovery_session_factory() as session, session.begin():
+                return await service_fail.discover_and_sync(
+                    session,
+                    _settings(postgresql_test_url),
+                    org_id,
+                    actor_id=None,
+                    correlation_id="test-recover-fail",
+                )
+
+        summary_fail = asyncio.run(run_fail())
+        assert summary_fail["profiles_synced"] == 0
+
+        async def check_not_synced() -> datetime | None:
+            async with discovery_session_factory() as session:
+                loc = await session.scalar(
+                    select(GBPLocation).where(GBPLocation.organization_id == org_id)
+                )
+                return loc.last_synced_at if loc else None
+
+        assert asyncio.run(check_not_synced()) is None
+
+        # Second pass: provider now reachable -> sync succeeds (retry path).
+        adapter_ok = FakeGBPAdapter(
+            accounts=[{"name": "accounts/111", "accountName": "Recover Account"}],
+            locations_by_account={
+                "accounts/111": [{"name": "locations/123", "title": "Recover Location"}],
+            },
+            location_details={
+                "locations/123": {
+                    "name": "locations/123",
+                    "title": "Recover Location",
+                    "storefrontAddress": {"locality": "Recovery City"},
+                }
+            },
+        )
+        service_ok = GBPDiscoveryService(adapter=adapter_ok, connection=FakeConnectionService())
+
+        async def run_ok() -> dict[str, Any]:
+            async with discovery_session_factory() as session, session.begin():
+                return await service_ok.discover_and_sync(
+                    session,
+                    _settings(postgresql_test_url),
+                    org_id,
+                    actor_id=None,
+                    correlation_id="test-recover-ok",
+                )
+
+        summary_ok = asyncio.run(run_ok())
+        assert summary_ok["profiles_synced"] == 1
+
+        async def check_synced() -> datetime | None:
+            async with discovery_session_factory() as session:
+                loc = await session.scalar(
+                    select(GBPLocation).where(GBPLocation.organization_id == org_id)
+                )
+                return loc.last_synced_at if loc else None
+
+        assert asyncio.run(check_synced()) is not None

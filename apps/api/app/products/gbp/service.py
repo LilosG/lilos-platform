@@ -44,12 +44,17 @@ def normalize_profile(payload: dict[str, object]) -> dict[str, object]:
         "name",
         "title",
         "storefrontAddress",
+        "serviceArea",
         "regularHours",
+        "specialHours",
+        "moreHours",
         "profile",
         "phoneNumbers",
         "categories",
         "websiteUri",
         "openInfo",
+        "labels",
+        "serviceItems",
     )
     return {key: payload[key] for key in allowed if key in payload}
 

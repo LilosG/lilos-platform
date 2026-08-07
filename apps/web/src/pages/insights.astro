@@ -57,13 +57,27 @@ import "../styles/global.css";
               <p class="eyebrow">Data sources</p><h2 id="sources-title">
                 What insights will draw on
               </h2><p>
-                Insights is a cross-product reporting view. It has no simulated
-                data or preview charts — it will populate once the products
-                below are connected and have activity history. Complete setup on
-                each product's page to unlock reporting.
+                Insights is a cross-product reporting view populated from real
+                activity history across the connected products. Complete setup
+                on each product's page to unlock reporting.
               </p>
             </div>
           </div><ul class="product-list" id="sources-list"></ul>
+        </section>
+
+        <section aria-labelledby="activity-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Activity</p><h2 id="activity-title">
+                Real cross-product activity
+              </h2><p>
+                Counts below are derived live from real operational records — no
+                simulated or fabricated metrics.
+              </p>
+            </div>
+          </div><div class="attention-card" id="activity-panel">
+            <p>Loading activity…</p>
+          </div>
         </section>
       </div>
     </AppShell>
@@ -72,6 +86,7 @@ import "../styles/global.css";
         fetchMyOrganizations,
         fetchPrincipal,
         fetchProductReadiness,
+        fetchInsightsSummary,
         PRODUCT_LABELS,
         type MyOrganization,
         type ProductKey,
@@ -186,6 +201,90 @@ import "../styles/global.css";
         }
       }
 
+      async function renderActivity(): Promise<void> {
+        const panel = document.getElementById("activity-panel")!;
+        panel.replaceChildren();
+        const outcome = await fetchInsightsSummary(organizationId);
+        if (outcome.kind !== "ok") {
+          panel.append(errorAlert(describeFailure(outcome)));
+          return;
+        }
+        const s = outcome.data;
+        const total = (counts: Record<string, number>): number =>
+          Object.values(counts).reduce((sum, value) => sum + value, 0);
+        const groups: {
+          label: string;
+          items: { name: string; value: number }[];
+        }[] = [
+          {
+            label: "Workflow runs",
+            items: Object.entries(s.workflow_runs).map(([name, value]) => ({
+              name,
+              value,
+            })),
+          },
+          {
+            label: "GBP",
+            items: [
+              { name: "locations", value: s.gbp.locations },
+              { name: "profile_snapshots", value: s.gbp.profile_snapshots },
+              {
+                name: "publications (total)",
+                value: total(s.gbp.publications),
+              },
+            ],
+          },
+          {
+            label: "Reviews",
+            items: Object.entries(s.reviews).map(([name, value]) => ({
+              name,
+              value,
+            })),
+          },
+          {
+            label: "Content publications",
+            items: Object.entries(s.content_publications).map(
+              ([name, value]) => ({
+                name,
+                value,
+              }),
+            ),
+          },
+          {
+            label: "SEO",
+            items: [
+              { name: "crawl_runs (total)", value: total(s.seo.crawl_runs) },
+              {
+                name: "opportunities (total)",
+                value: total(s.seo.opportunities),
+              },
+            ],
+          },
+          {
+            label: "Leads",
+            items: Object.entries(s.leads).map(([name, value]) => ({
+              name,
+              value,
+            })),
+          },
+        ];
+        const list = document.createElement("ul");
+        list.className = "product-list";
+        for (const group of groups) {
+          const item = document.createElement("li");
+          const heading = document.createElement("h3");
+          heading.textContent = group.label;
+          item.append(heading);
+          const detail = document.createElement("p");
+          detail.textContent = group.items
+            .map((entry) => `${entry.name}: ${entry.value}`)
+            .join(" · ");
+          item.append(detail);
+          list.append(item);
+        }
+        panel.append(list);
+      }
+
       async function renderSources(): Promise<void> {
         const list = document.getElementById("sources-list")!;
         list.replaceChildren();
@@ -273,7 +372,11 @@ import "../styles/global.css";
           document.getElementById("organization-switcher") as HTMLSelectElement
         ).value = organizationId;
 
-        await Promise.all([renderReadiness(), renderSources()]);
+        await Promise.all([
+          renderReadiness(),
+          renderSources(),
+          renderActivity(),
+        ]);
       }
 
       async function boot(): Promise<void> {

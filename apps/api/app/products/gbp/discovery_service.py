@@ -22,6 +22,7 @@ from apps.api.app.config import Settings
 from apps.api.app.integrations.connection_service import GBPConnectionService
 from apps.api.app.products.gbp.adapter import GBPAdapter, GoogleBusinessProfileAdapter
 from apps.api.app.products.gbp.models import GBPAccount, GBPLocation, GBPProfileSnapshot
+from apps.api.app.products.gbp.resource_names import normalize_location_name, v1_location_name
 from apps.api.app.products.gbp.service import GBPService
 
 
@@ -229,8 +230,14 @@ class GBPDiscoveryService:
             GBPLocation.connection_id == connection.id,
         )
         existing_rows = list(await session.scalars(existing_stmt))
+        # Match existing rows by their CANONICAL v1 location name so that rows
+        # persisted with a legacy/account-qualified ``external_location_id``
+        # (e.g. ``accounts/456/locations/123`` or the bare id ``123``) are
+        # reconciled with the canonical ``locations/123`` form rather than
+        # duplicated.  This is the safe in-place backfill for production rows
+        # created by the broken parser.
         existing_by_ext: dict[str, GBPLocation] = {
-            row.external_location_id: row for row in existing_rows
+            normalize_location_name(row.external_location_id): row for row in existing_rows
         }
 
         seen_ext_ids: set[str] = set()
@@ -245,9 +252,12 @@ class GBPDiscoveryService:
 
             for raw in raw_locations:
                 loc_name = str(raw.get("name", ""))
-                ext_id = loc_name.removeprefix(f"{account_name}/locations/")
-                if not ext_id:
+                if not loc_name:
                     continue
+                # ``accounts.locations.list`` (Business Information v1) returns
+                # ``Location.name`` as ``locations/{locationId}``.  Normalize
+                # any legacy/account-qualified form to the canonical v1 name.
+                ext_id = normalize_location_name(loc_name)
                 seen_ext_ids.add(ext_id)
                 business_name = str(raw.get("title", raw.get("name", ext_id)))
                 now = datetime.now(UTC)
@@ -256,6 +266,9 @@ class GBPDiscoveryService:
                     loc = existing_by_ext[ext_id]
                     loc.business_name = business_name
                     loc.last_discovered_at = now
+                    # Reconcile the persisted identity to the canonical form so
+                    # downstream v1/v4 resource construction is correct.
+                    loc.external_location_id = ext_id
                     if loc.mapping_status == "unavailable":
                         loc.mapping_status = "unmapped"
                 else:
@@ -270,6 +283,7 @@ class GBPDiscoveryService:
                         last_discovered_at=now,
                     )
                     session.add(loc)
+                    existing_by_ext[ext_id] = loc
 
         # Mark locations no longer accessible
         for ext_id, loc in existing_by_ext.items():
@@ -329,15 +343,12 @@ class GBPDiscoveryService:
         if not gbp_location:
             raise LookupError("GBP location not found")
 
-        location_name = (
-            f"accounts/{gbp_location.account_id}/locations/{gbp_location.external_location_id}"
-        )
-        # Resolve the actual external account id
-        acct = await session.get(GBPAccount, gbp_location.account_id)
-        if acct:
-            location_name = (
-                f"accounts/{acct.external_account_id}/locations/{gbp_location.external_location_id}"
-            )
+        # Business Information v1 ``locations.get`` uses the canonical
+        # ``locations/{locationId}`` resource name — NOT the account-qualified
+        # ``accounts/{accountId}/locations/{locationId}`` form.  Using the
+        # account-qualified form here was the root cause of the production 404
+        # during initial profile sync.
+        location_name = v1_location_name(gbp_location.external_location_id)
 
         try:
             raw = await self.adapter.get_location(token, location_name)
@@ -358,6 +369,16 @@ class GBPDiscoveryService:
 
         snapshot = await self.gbp_service.store_snapshot(session, gbp_location, raw, partial=False)
 
+        # Record a capability snapshot derived from the fields the provider
+        # actually returned so the operations surface (completeness, change
+        # sets, posts) does not 404 immediately after a successful sync.  A
+        # field present in the response is readable; writability follows the
+        # adapter's declared write field set.  This uses the existing
+        # ``GBPOperationsService.record_capability_snapshot`` path.
+        await self._record_sync_capability_snapshot(
+            session, organization_id, gbp_location_id, raw, correlation_id
+        )
+
         await self._audit(
             session,
             event="gbp.sync.profile_synced",
@@ -371,6 +392,48 @@ class GBPDiscoveryService:
         )
 
         return snapshot
+
+    async def _record_sync_capability_snapshot(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        gbp_location_id: UUID,
+        raw_profile: dict[str, Any],
+        correlation_id: str,
+    ) -> None:
+        """Derive a provider capability snapshot from a fetched profile.
+
+        Every top-level field the provider returned for this location is
+        readable; writability is gated by the adapter's declared write field
+        set.  Delegates to ``GBPOperationsService.record_capability_snapshot``,
+        which is idempotent on the capability document hash.
+        """
+        from apps.api.app.products.gbp.adapter import SUPPORTED_WRITE_FIELDS
+        from apps.api.app.products.gbp.operations_service import GBPOperationsService
+
+        # Map the normalized profile field keys to the capability keys used by
+        # the operations surface.  ``profile.description`` is the writable
+        # leaf; the read capability is tracked on the top-level ``profile``.
+        write_keys = {key.split(".", 1)[0] for key in SUPPORTED_WRITE_FIELDS}
+        capabilities: dict[str, object] = {}
+        for field_key in raw_profile:
+            if field_key == "name":
+                continue
+            capabilities[field_key] = {
+                "readable": True,
+                "writable": field_key in write_keys,
+                "reason": None,
+            }
+        operations = GBPOperationsService()
+        await operations.record_capability_snapshot(
+            session,
+            organization_id,
+            gbp_location_id,
+            capabilities,
+            datetime.now(UTC),
+            actor_id=None,
+            correlation_id=correlation_id,
+        )
 
     # -- combined discover + sync -------------------------------------------
 

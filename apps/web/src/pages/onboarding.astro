@@ -1438,7 +1438,7 @@ import "../styles/global.css";
             meta.textContent = `Enabled — entitlement is ${entitlement.status.replace(/_/g, " ")}.`;
           } else if (productStatus.external_integration_pending) {
             meta.textContent =
-              "Enabled — blocked on an external integration not yet available in this release (does not block organization activation).";
+              "Enabled — requires a connected external integration (does not block organization activation).";
           } else if (productStatus.blocking_findings.length > 0) {
             meta.textContent = productStatus.blocking_findings[0];
           } else if (productStatus.ready) {

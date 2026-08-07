@@ -302,9 +302,12 @@ async def _exercise(factory: async_sessionmaker[AsyncSession]) -> None:
         )
         readiness = await domain.readiness(session, org_a, "seo")
         assert not readiness.ready and readiness.entitlement_version == entitlement.version
-        assert "INTEGRATION_FOUNDATION_DEFERRED" in {
-            item.code for item in readiness.blocking_requirements
-        }
+        # SEO's self-contained crawl requires NO external integration, so a
+        # connection requirement must NOT block it.  The real blocker here is
+        # the unresolved business fact.
+        codes = {item.code for item in readiness.blocking_requirements}
+        assert "CONNECTION_REQUIRED" not in codes
+        assert "BUSINESS_FACT_UNRESOLVED" in codes
         flag = await domain.create_flag(
             session,
             org_a,

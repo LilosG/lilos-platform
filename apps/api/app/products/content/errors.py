@@ -43,6 +43,14 @@ class ContentTargetNotConfiguredError(ConflictError):
     public_message = "No active, connected publishing target is configured."
 
 
+class ContentGitHubProviderNotConfiguredError(ConflictError):
+    code = "CONTENT_GITHUB_PROVIDER_NOT_CONFIGURED"
+    public_message = (
+        "The GitHub provider is not registered. Run the integration provider seed "
+        "before configuring a GitHub publishing connection."
+    )
+
+
 class ContentPublicationNotAdvanceableError(ConflictError):
     code = "CONTENT_PUBLICATION_NOT_ADVANCEABLE"
     public_message = "This publication is not in a state that allows this transition."

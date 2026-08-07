@@ -19,6 +19,7 @@ from apps.api.app.integrations.models import Provider
 
 INITIAL_PROVIDERS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ("google_business_profile", "Google Business Profile", ("profile.read", "profile.write")),
+    ("github", "GitHub", ("content.publish",)),
 )
 
 

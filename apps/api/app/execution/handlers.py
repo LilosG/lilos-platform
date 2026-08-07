@@ -32,6 +32,17 @@ logger = logging.getLogger(__name__)
 _adapter_factory: Callable[[], GBPAdapter] = GoogleBusinessProfileAdapter
 
 
+# Content publisher factory — production builds the real GitHub adapter from a
+# resolved access token; tests can override to inject a deterministic fake.
+def _production_content_publisher_factory(access_token: str) -> Any:
+    from apps.api.app.products.content.github_adapter import GitHubRepositoryPublisher
+
+    return GitHubRepositoryPublisher(access_token=access_token)
+
+
+_content_publisher_factory: Callable[[str], Any] = _production_content_publisher_factory
+
+
 # Token resolver — production uses the real GBP connection lifecycle; tests
 # can override to bypass real OAuth/secret-store interaction.
 # Signature: (session, organization_id) -> (access_token, connection)
@@ -148,6 +159,7 @@ async def _handle_gbp_publish_change(
         return JobOutcome(result="retryable_failure", safe_error="TOKEN_REFRESH_FAILED")
 
     from apps.api.app.products.gbp.models import GBPAccount
+    from apps.api.app.products.gbp.resource_names import v1_location_name
 
     acct = await session.get(GBPAccount, gbp_location.account_id)
     if not acct:
@@ -155,9 +167,9 @@ async def _handle_gbp_publish_change(
         publication.safe_error_code = "ACCOUNT_NOT_FOUND"
         return JobOutcome(result="permanent_failure", safe_error="ACCOUNT_NOT_FOUND")
 
-    location_name = (
-        f"accounts/{acct.external_account_id}/locations/{gbp_location.external_location_id}"
-    )
+    # Business Information v1 ``locations.patch`` uses the canonical
+    # ``locations/{locationId}`` resource name — NOT account-qualified.
+    location_name = v1_location_name(gbp_location.external_location_id)
     update_fields: dict[str, Any] = {}
 
     from apps.api.app.products.gbp.models import GBPProfileChangeRevision
@@ -259,6 +271,7 @@ async def _handle_gbp_publish_post(
         GBPPostPublication,
         GBPPostRevision,
     )
+    from apps.api.app.products.gbp.resource_names import v4_localposts_parent
 
     publication_id = input_document.get("publication_id")
     if not publication_id:
@@ -318,8 +331,11 @@ async def _handle_gbp_publish_post(
         publication.status = "reconciliation_required"
         return JobOutcome(result="retryable_failure", safe_error="TOKEN_REFRESH_FAILED")
 
-    location_name = (
-        f"accounts/{gbp_account.external_account_id}/locations/{gbp_location.external_location_id}"
+    # Legacy My Business v4 ``accounts.locations.localPosts.create`` requires
+    # the account-qualified ``accounts/{accountId}/locations/{locationId}``
+    # parent — constructed from the same canonical location identity.
+    location_name = v4_localposts_parent(
+        gbp_account.external_account_id, gbp_location.external_location_id
     )
 
     if publication.provider_post_id:
@@ -492,21 +508,37 @@ async def _handle_content_publish(
     input_document: dict[str, Any],
     correlation_id: str,
 ) -> JobOutcome:
-    """Publish governed content to a configured publishing target.
+    """Publish governed content to a configured GitHub publishing target.
 
-    Real publication to GitHub/CMS targets requires a configured
-    per-organization publishing-target connection and a provider adapter
-    that does not yet exist in this codebase.  Rather than fabricating a
-    ``verified`` publication status, this handler fails closed: the
-    publication is marked ``failed`` with a clear ``safe_error_code`` so
-    operators see the real blocker.  Once a publishing connector and
-    adapter are added, this handler should perform the real provider write
-    and verification, mirroring ``_handle_gbp_publish_change``.
+    Resolves the publication -> approved revision -> publishing target ->
+    integration connection chain (never accepts a provider path from the
+    client), reads the stored GitHub access token through the existing
+    credential store, calls the real ``GitHubRepositoryPublisher`` adapter
+    (branch -> put file -> pull request), persists the provider references,
+    and verifies by re-reading the pull request.  The publication reservation,
+    approval, audit, and idempotency controls are preserved upstream by
+    ``ContentService.reserve_publication``.
+
+    If the GitHub connection or its credential is not configured, the handler
+    fails with a clear external-blocker error code so the operator sees the one
+    genuine remaining dependency rather than a fabricated failure.
     """
+    import json
+    from datetime import UTC, datetime
+
     from sqlalchemy import select
 
-    from apps.api.app.products.content.models import ContentPublication
+    from apps.api.app.config import Settings
+    from apps.api.app.integrations.models import IntegrationConnection
+    from apps.api.app.integrations.secrets import FernetSecretStore, SecretUnavailableError
+    from apps.api.app.products.content.adapter import RepositoryPublisher
+    from apps.api.app.products.content.models import (
+        ContentPublication,
+        ContentRevision,
+        PublishingTarget,
+    )
 
+    del location_id
     publication_id = input_document.get("publication_id")
     if not publication_id:
         return JobOutcome(result="permanent_failure", safe_error="MISSING_PUBLICATION_ID")
@@ -519,10 +551,113 @@ async def _handle_content_publish(
     )
     if publication is None:
         return JobOutcome(result="permanent_failure", safe_error="PUBLICATION_NOT_FOUND")
+    if publication.status not in ("reserved", "branch_created", "pull_request_created"):
+        return JobOutcome(result="permanent_failure", safe_error="PUBLICATION_NOT_RESERVABLE")
 
-    publication.status = "failed"
-    publication.safe_error_code = "PUBLISHING_TARGET_NOT_CONFIGURED"
-    return JobOutcome(result="permanent_failure", safe_error="PUBLISHING_TARGET_NOT_CONFIGURED")
+    target = await session.scalar(
+        select(PublishingTarget).where(
+            PublishingTarget.organization_id == organization_id,
+            PublishingTarget.id == publication.publishing_target_id,
+            PublishingTarget.status == "active",
+        )
+    )
+    if target is None:
+        publication.status = "failed"
+        publication.safe_error_code = "PUBLISHING_TARGET_NOT_CONFIGURED"
+        return JobOutcome(result="permanent_failure", safe_error="PUBLISHING_TARGET_NOT_CONFIGURED")
+
+    connection = await session.scalar(
+        select(IntegrationConnection).where(
+            IntegrationConnection.organization_id == organization_id,
+            IntegrationConnection.id == target.connection_id,
+        )
+    )
+    if connection is None or connection.status != "connected":
+        publication.status = "failed"
+        publication.safe_error_code = "GITHUB_CONNECTION_REQUIRED"
+        return JobOutcome(result="permanent_failure", safe_error="GITHUB_CONNECTION_REQUIRED")
+
+    if not connection.credential_reference:
+        publication.status = "failed"
+        publication.safe_error_code = "GITHUB_CREDENTIAL_REQUIRED"
+        return JobOutcome(result="permanent_failure", safe_error="GITHUB_CREDENTIAL_REQUIRED")
+
+    try:
+        store = FernetSecretStore.create(session, Settings())
+        raw = await store.get(connection.credential_reference)
+        token = str(json.loads(raw)["access_token"])
+    except (SecretUnavailableError, KeyError, ValueError, TypeError):
+        publication.status = "failed"
+        publication.safe_error_code = "GITHUB_CREDENTIAL_REQUIRED"
+        return JobOutcome(result="permanent_failure", safe_error="GITHUB_CREDENTIAL_REQUIRED")
+
+    revision = await session.get(ContentRevision, publication.content_revision_id)
+    if revision is None:
+        publication.status = "failed"
+        publication.safe_error_code = "REVISION_NOT_FOUND"
+        return JobOutcome(result="permanent_failure", safe_error="REVISION_NOT_FOUND")
+
+    publisher: RepositoryPublisher = _content_publisher_factory(token)
+    repo = target.repository_id
+    branch_name = f"lilos-content-{publication.id}"
+
+    try:
+        if not publication.base_commit:
+            base_commit = await publisher.get_base_commit(repo, target.base_branch)
+            publication.base_commit = base_commit
+        base_commit = publication.base_commit
+        await publisher.create_branch(repo, target.base_branch, base_commit, branch_name)
+        publication.branch_name = branch_name
+        publication.status = "branch_created"
+        await publisher.put_file(repo, branch_name, publication.target_path, revision.body, None)
+        pr_number = await publisher.create_pull_request(
+            repo,
+            branch_name,
+            target.base_branch,
+            f"Publish: {publication.target_path}",
+            str(publication.idempotency_key),
+        )
+        publication.external_pull_request_id = pr_number
+        publication.external_revision_id = pr_number
+        publication.published_url = f"https://github.com/{repo}/pull/{pr_number}"
+        publication.status = "pull_request_created"
+    except Exception as exc:
+        publication.status = "failed"
+        publication.safe_error_code = "PROVIDER_WRITE_FAILED"
+        logger.warning(
+            "Content publish failed",
+            extra={
+                "event_name": "content.publish.failed",
+                "publication_id": str(publication.id),
+                "error": str(exc)[:200],
+            },
+        )
+        return JobOutcome(result="retryable_failure", safe_error="PROVIDER_WRITE_FAILED")
+
+    try:
+        pr = await publisher.get_pull_request(repo, pr_number)
+        if pr.get("number") is not None:
+            publication.status = "verified"
+            publication.verified_at = datetime.now(UTC)
+            return JobOutcome(
+                result="succeeded",
+                result_reference=f"publication:{publication.id}",
+            )
+    except Exception as exc:
+        publication.status = "reconciliation_required"
+        publication.safe_error_code = "VERIFICATION_REREAD_FAILED"
+        logger.warning(
+            "Content publish verification re-read failed",
+            extra={
+                "event_name": "content.publish.verification_failed",
+                "publication_id": str(publication.id),
+                "error": str(exc)[:200],
+            },
+        )
+        return JobOutcome(result="retryable_failure", safe_error="VERIFICATION_REREAD_FAILED")
+
+    publication.status = "reconciliation_required"
+    return JobOutcome(result="retryable_failure", safe_error="VERIFICATION_REREAD_FAILED")
 
 
 # ---------------------------------------------------------------------------
@@ -554,6 +689,7 @@ async def _handle_reviews_publish_response(
 
     from apps.api.app.integrations.models import ProviderResourceMapping
     from apps.api.app.products.gbp.models import GBPAccount, GBPLocation
+    from apps.api.app.products.gbp.resource_names import v4_review_name
     from apps.api.app.products.reviews.models import Review, ReviewResponseRevision
 
     response_id = input_document.get("response_id")
@@ -633,10 +769,13 @@ async def _handle_reviews_publish_response(
         response.safe_error_code = "TOKEN_REFRESH_FAILED"
         return JobOutcome(result="retryable_failure", safe_error="TOKEN_REFRESH_FAILED")
 
-    review_name = (
-        f"accounts/{gbp_account.external_account_id}"
-        f"/locations/{gbp_location.external_location_id}"
-        f"/reviews/{review.external_review_id}"
+    # Legacy My Business v4 ``accounts.locations.reviews`` requires the
+    # account-qualified review resource name, constructed from the same
+    # canonical location identity.
+    review_name = v4_review_name(
+        gbp_account.external_account_id,
+        gbp_location.external_location_id,
+        review.external_review_id,
     )
 
     approved_comment = response.response_text

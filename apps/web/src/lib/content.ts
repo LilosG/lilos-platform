@@ -64,6 +64,12 @@ export type PublishingTarget = {
   status: string;
 };
 
+export type GitHubConnection = {
+  id: string;
+  external_account_reference: string | null;
+  status: string;
+};
+
 export type ContentSummaryStats = {
   by_status: Record<string, number>;
   open_opportunities: number;
@@ -113,6 +119,53 @@ export function fetchPublishingTargets(
   organizationId: string,
 ): Promise<ApiOutcome<PublishingTarget[]>> {
   return apiGet<PublishingTarget[]>(`${base(organizationId)}/targets`);
+}
+
+export function fetchGitHubConnections(
+  organizationId: string,
+): Promise<ApiOutcome<GitHubConnection[]>> {
+  return apiGet<GitHubConnection[]>(`${base(organizationId)}/connections`);
+}
+
+export function registerGitHubConnection(
+  organizationId: string,
+  body: {
+    accessToken: string;
+    externalAccountReference?: string;
+  },
+): Promise<ApiOutcome<GitHubConnection>> {
+  return apiRequest(`${base(organizationId)}/connections`, {
+    method: "POST",
+    body: {
+      access_token: body.accessToken,
+      external_account_reference: body.externalAccountReference ?? null,
+    },
+  });
+}
+
+export function createPublishingTarget(
+  organizationId: string,
+  body: {
+    key: string;
+    connectionId: string;
+    repositoryId: string;
+    baseBranch: string;
+    allowedPathPrefix: string;
+    deploymentTargetReference?: string;
+  },
+): Promise<ApiOutcome<PublishingTarget>> {
+  return apiRequest(`${base(organizationId)}/targets`, {
+    method: "POST",
+    body: {
+      key: body.key,
+      connection_id: body.connectionId,
+      target_type: "github_astro",
+      repository_id: body.repositoryId,
+      base_branch: body.baseBranch,
+      allowed_path_prefix: body.allowedPathPrefix,
+      deployment_target_reference: body.deploymentTargetReference ?? null,
+    },
+  });
 }
 
 export function fetchContentSummary(
