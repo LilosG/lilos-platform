@@ -330,6 +330,7 @@ import "../styles/global.css";
         type AdminOrganization,
         type AdminLocation,
       } from "../lib/platform-admin";
+      import { withBootBoundary } from "../lib/boot-boundary";
 
       const regions = {
         notConfigured: document.getElementById("boot-not-configured")!,
@@ -595,14 +596,14 @@ import "../styles/global.css";
           const item = document.createElement("li");
           item.textContent = describeFailure(locations);
           locationsList.append(item);
-        } else if (locations.data.length === 0) {
+        } else if (locations.data.items.length === 0) {
           const empty = document.createElement("div");
           empty.className = "empty-state";
           empty.innerHTML =
             "<h3>No locations yet</h3><p>Add this client's first location using the form below.</p>";
           locationsList.replaceWith(empty);
         } else {
-          for (const location of locations.data) {
+          for (const location of locations.data.items) {
             locationsList.append(renderLocationRow(organization, location));
           }
         }
@@ -656,7 +657,7 @@ import "../styles/global.css";
         if (outcome.kind !== "ok") {
           return;
         }
-        if (outcome.data.length === 0) {
+        if (outcome.data.items.length === 0) {
           const empty = document.createElement("div");
           empty.className = "empty-state";
           empty.innerHTML =
@@ -664,7 +665,7 @@ import "../styles/global.css";
           list.append(empty);
           return;
         }
-        for (const organization of outcome.data) {
+        for (const organization of outcome.data.items) {
           const item = document.createElement("li");
           const info = document.createElement("div");
           const title = document.createElement("h3");
@@ -704,7 +705,7 @@ import "../styles/global.css";
         }
         select.innerHTML =
           '<option value="">No industry (internal/test organizations only)</option>' +
-          industries.data
+          industries.data.items
             .map(
               (industry) =>
                 `<option value="${industry.id}">${industry.name}</option>`,
@@ -881,7 +882,16 @@ import "../styles/global.css";
         showOnly(regions.content);
       }
 
-      void boot();
+      // Final boot failure boundary: an unexpected exception during boot
+      // (the production `data.map is not a function` class of bug) must
+      // never leave the page permanently on "Loading Administration…".
+      // Render the existing truthful error region instead. Known, expected
+      // failures are still classified and rendered inside `boot` itself.
+      void withBootBoundary(regions, boot, (error) =>
+        error instanceof Error && error.message
+          ? `Administration failed to load: ${error.message}`
+          : "Administration failed to load unexpectedly.",
+      );
     </script>
   </body>
 </html>

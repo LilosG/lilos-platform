@@ -48,6 +48,32 @@ export type Industry = {
   name: string;
 };
 
+/**
+ * Real response shape of `GET /api/v1/platform/industries`:
+ * `{ data: { items: [...] }, meta: ... }`. The shared client unwraps the
+ * outer `data` envelope, so callers receive `{ items: Industry[] }`.
+ */
+export type IndustriesResponse = {
+  items: Industry[];
+};
+
+/**
+ * Real paginated response shape used by `GET /api/v1/platform/organizations`
+ * and `GET /api/v1/platform/organizations/{id}/locations`:
+ * `{ data: { items, limit, offset, next_offset, has_more }, meta }`.
+ * `next_offset` is `null` when there is no further page.
+ */
+export type Paginated<T> = {
+  items: T[];
+  limit: number;
+  offset: number;
+  next_offset: number | null;
+  has_more: boolean;
+};
+
+export type PaginatedOrganizations = Paginated<AdminOrganization>;
+export type PaginatedLocations = Paginated<AdminLocation>;
+
 export type CreateOrganizationInput = {
   name: string;
   slug: string;
@@ -161,12 +187,14 @@ export type OnboardingState = {
 
 const base = "/api/v1/platform";
 
-export function fetchIndustries(): Promise<ApiOutcome<Industry[]>> {
-  return apiGet<Industry[]>(`${base}/industries`);
+export function fetchIndustries(): Promise<ApiOutcome<IndustriesResponse>> {
+  return apiGet<IndustriesResponse>(`${base}/industries`);
 }
 
-export function fetchOrganizations(): Promise<ApiOutcome<AdminOrganization[]>> {
-  return apiGet<AdminOrganization[]>(`${base}/organizations`);
+export function fetchOrganizations(): Promise<
+  ApiOutcome<PaginatedOrganizations>
+> {
+  return apiGet<PaginatedOrganizations>(`${base}/organizations`);
 }
 
 export function fetchOrganization(
@@ -209,8 +237,8 @@ export function activateOrganization(
 
 export function fetchOrganizationLocations(
   organizationId: string,
-): Promise<ApiOutcome<AdminLocation[]>> {
-  return apiGet<AdminLocation[]>(
+): Promise<ApiOutcome<PaginatedLocations>> {
+  return apiGet<PaginatedLocations>(
     `${base}/organizations/${organizationId}/locations`,
   );
 }
