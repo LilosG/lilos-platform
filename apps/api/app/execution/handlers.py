@@ -341,10 +341,15 @@ async def _handle_gbp_publish_post(
         if provider_state == "REJECTED":
             publication.status = "failed"
             return JobOutcome(result="permanent_failure", safe_error="POST_REJECTED_BY_PROVIDER")
-        if provider_state in ("LIVE", "PROCESSING"):
+        if provider_state == "LIVE":
             publication.status = "verified"
             publication.verified_at = datetime.now(UTC)
             return JobOutcome(result="succeeded", result_reference=f"publication:{publication.id}")
+        # PROCESSING and any other non-LIVE, non-REJECTED state means the
+        # post is still under provider moderation or in a transitional
+        # state. Mark reconciliation_required so a later retry re-reads the
+        # same provider resource (provider_post_id is already persisted)
+        # without creating a duplicate post.
         publication.status = "reconciliation_required"
         return JobOutcome(result="retryable_failure", safe_error="POST_NOT_YET_LIVE")
 
@@ -404,11 +409,14 @@ async def _handle_gbp_publish_post(
     if provider_state == "REJECTED":
         publication.status = "failed"
         return JobOutcome(result="permanent_failure", safe_error="POST_REJECTED_BY_PROVIDER")
-    if provider_state in ("LIVE", "PROCESSING"):
+    if provider_state == "LIVE":
         publication.status = "verified"
         publication.verified_at = datetime.now(UTC)
         return JobOutcome(result="succeeded", result_reference=f"publication:{publication.id}")
-
+    # PROCESSING and any other non-LIVE, non-REJECTED state means the
+    # post is still under provider moderation or in a transitional state.
+    # provider_post_id is already persisted, so a later retry re-reads the
+    # same provider resource without creating a duplicate post.
     publication.status = "reconciliation_required"
     return JobOutcome(result="retryable_failure", safe_error="POST_NOT_YET_LIVE")
 
@@ -576,7 +584,7 @@ async def _handle_reviews_publish_response(
     )
     if review is None:
         response.status = "failed"
-        response.safe_error_code = None
+        response.safe_error_code = "REVIEW_NOT_FOUND"
         return JobOutcome(result="permanent_failure", safe_error="REVIEW_NOT_FOUND")
 
     resource_mapping = await session.scalar(
@@ -588,6 +596,7 @@ async def _handle_reviews_publish_response(
     )
     if resource_mapping is None:
         response.status = "failed"
+        response.safe_error_code = "PROVIDER_MAPPING_NOT_FOUND"
         return JobOutcome(result="permanent_failure", safe_error="PROVIDER_MAPPING_NOT_FOUND")
 
     gbp_location = await session.scalar(
@@ -598,11 +607,13 @@ async def _handle_reviews_publish_response(
     )
     if gbp_location is None:
         response.status = "failed"
+        response.safe_error_code = "GBP_LOCATION_NOT_FOUND"
         return JobOutcome(result="permanent_failure", safe_error="GBP_LOCATION_NOT_FOUND")
 
     gbp_account = await session.get(GBPAccount, gbp_location.account_id)
     if gbp_account is None:
         response.status = "failed"
+        response.safe_error_code = "GBP_ACCOUNT_NOT_FOUND"
         return JobOutcome(result="permanent_failure", safe_error="GBP_ACCOUNT_NOT_FOUND")
 
     adapter = _adapter_factory()
@@ -611,6 +622,7 @@ async def _handle_reviews_publish_response(
         token, _connection = await _token_resolver(session, organization_id)
     except IntegrationNotFoundError:
         response.status = "failed"
+        response.safe_error_code = "NO_CONNECTED_INTEGRATION"
         return JobOutcome(result="permanent_failure", safe_error="NO_CONNECTED_INTEGRATION")
     except IntegrationReconnectRequiredError:
         response.status = "reconciliation_required"
