@@ -73,6 +73,7 @@ import "../styles/global.css";
         fetchPrincipal,
         fetchProductReadiness,
         PRODUCT_LABELS,
+        type MyOrganization,
         type ProductKey,
       } from "../lib/workspace";
       import { selectDefaultOrganization } from "../lib/dashboard-logic";
@@ -91,6 +92,7 @@ import "../styles/global.css";
       ];
 
       let organizationId = "";
+      let organizations: MyOrganization[] = [];
 
       const regions = {
         notConfigured: document.getElementById("boot-not-configured")!,
@@ -226,6 +228,54 @@ import "../styles/global.css";
         });
       }
 
+      /**
+       * Populates the shared organization switcher in the topbar (rendered by
+       * AppShell) from the caller's real memberships. Reuses the existing
+       * `selectDefaultOrganization` helper for resolution — this is not a
+       * second organization-selection mechanism; it wires the one already in
+       * the shell that this page previously left dead and empty.
+       */
+      function populateSwitcher(): void {
+        const select = document.getElementById(
+          "organization-switcher",
+        ) as HTMLSelectElement;
+        select.replaceChildren();
+        for (const organization of organizations) {
+          const option = document.createElement("option");
+          option.value = organization.organization_id;
+          option.textContent = organization.organization_name;
+          select.append(option);
+        }
+        select.hidden = organizations.length <= 1;
+        select.addEventListener("change", () => {
+          const chosen = organizations.find(
+            (item) => item.organization_id === select.value,
+          );
+          if (chosen) void loadOrganization(chosen);
+        });
+      }
+
+      async function loadOrganization(
+        organization: MyOrganization,
+      ): Promise<void> {
+        organizationId = organization.organization_id;
+        if (typeof window !== "undefined") {
+          localStorage.setItem("selected_org_id", organizationId);
+          const url = new URL(window.location.href);
+          if (url.searchParams.get("org") !== organizationId) {
+            url.searchParams.set("org", organizationId);
+            window.history.replaceState({}, "", url.toString());
+          }
+        }
+        document.getElementById("active-organization-name")!.textContent =
+          organization.organization_name;
+        (
+          document.getElementById("organization-switcher") as HTMLSelectElement
+        ).value = organizationId;
+
+        await Promise.all([renderReadiness(), renderSources()]);
+      }
+
       async function boot(): Promise<void> {
         if (!readPublicConfig()) {
           showOnly(regions.notConfigured);
@@ -259,30 +309,30 @@ import "../styles/global.css";
         signOutButton.hidden = false;
         wireSignOut();
 
-        const organizations = await fetchMyOrganizations();
-        if (organizations.kind === "unauthenticated") {
+        const organizationsResult = await fetchMyOrganizations();
+        if (organizationsResult.kind === "unauthenticated") {
           goToLogin();
           return;
         }
-        if (organizations.kind !== "ok") {
-          regions.error.textContent = describeFailure(organizations);
+        if (organizationsResult.kind !== "ok") {
+          regions.error.textContent = describeFailure(organizationsResult);
           showOnly(regions.error);
           return;
         }
-        if (organizations.data.length === 0) {
+        if (organizationsResult.data.length === 0) {
           showOnly(regions.empty);
           return;
         }
-        const organization = selectDefaultOrganization(organizations.data);
+        organizations = organizationsResult.data;
+
+        const organization = selectDefaultOrganization(organizations);
         if (!organization) {
           showOnly(regions.empty);
           return;
         }
-        document.getElementById("active-organization-name")!.textContent =
-          organization.organization_name;
-        organizationId = organization.organization_id;
 
-        await Promise.all([renderReadiness(), renderSources()]);
+        populateSwitcher();
+        await loadOrganization(organization);
 
         showOnly(regions.content);
       }

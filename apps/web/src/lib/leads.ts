@@ -256,3 +256,103 @@ export function completeLeadTask(
     },
   );
 }
+
+/**
+ * Every lead status the API contract permits on `Lead.status` (the backend
+ * check constraint). The Leads list filter offers exactly this set so a lead
+ * can be found regardless of its lifecycle state — previously the filter only
+ * listed six statuses, leaving leads in any other state unfilterable.
+ */
+export const LEAD_STATUS_VALUES = [
+  "new",
+  "validating",
+  "unassigned",
+  "assigned",
+  "acknowledged",
+  "contact_attempted",
+  "contacted",
+  "qualifying",
+  "qualified",
+  "appointment_requested",
+  "appointment_scheduled",
+  "converted",
+  "nurture",
+  "unresponsive",
+  "disqualified",
+  "lost",
+  "spam",
+  "duplicate",
+  "archived",
+] as const;
+
+/**
+ * Every urgency the API contract permits on `Lead.urgency`. `unknown` is the
+ * server default assigned at intake, so it must be filterable or newly
+ * intaken leads cannot be located through the filter.
+ */
+export const LEAD_URGENCY_VALUES = [
+  "routine",
+  "same_day",
+  "urgent",
+  "emergency",
+  "unknown",
+] as const;
+
+/**
+ * Statuses reachable through `POST .../status` (the `LeadStatusTransition`
+ * `to_status` literal). Conversion, loss, spam, cancelled, and duplicate are
+ * intentionally excluded: they are only reachable through the dedicated
+ * `/convert` and `/loss` endpoints (or set at intake for `duplicate`), never
+ * through the generic status transition.
+ */
+export const LEAD_TRANSITION_TARGET_STATUSES = [
+  "new",
+  "validating",
+  "unassigned",
+  "assigned",
+  "acknowledged",
+  "contact_attempted",
+  "contacted",
+  "qualifying",
+  "qualified",
+  "appointment_requested",
+  "appointment_scheduled",
+  "nurture",
+  "unresponsive",
+  "archived",
+] as const;
+
+/**
+ * Statuses from which no further status transition is ever permitted. The
+ * backend `can_transition` only allows a terminal status to move to
+ * `archived`, and `archived` is itself terminal (and `from == to` is
+ * rejected), so every status here is a true dead-end for the transition
+ * control. Used to disable the transition/convert/loss controls for leads
+ * that have already reached a terminal state, rather than leaving controls
+ * that can only ever produce an `InvalidLeadTransition` error.
+ */
+export const TERMINAL_LEAD_STATUSES = [
+  "converted",
+  "disqualified",
+  "lost",
+  "spam",
+  "duplicate",
+  "cancelled",
+  "archived",
+] as const;
+
+export function isTerminalLeadStatus(status: string): boolean {
+  return (TERMINAL_LEAD_STATUSES as readonly string[]).includes(status);
+}
+
+/**
+ * Truthful speed-to-lead display. Never rounds a sub-minute average down to
+ * "0 min" (which previously displayed a real 30-second average as zero
+ * minutes), and never invents a value when the backend returned `null`
+ * (no leads have reached first human contact yet, so no average exists).
+ */
+export function formatSpeedToLead(seconds: number | null): string {
+  if (seconds === null || Number.isNaN(seconds)) return "Not available";
+  if (seconds < 60) return `${Math.round(seconds)} sec`;
+  return `${Math.round(seconds / 60)} min`;
+}
