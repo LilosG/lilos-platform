@@ -100,5 +100,5 @@ def test_organization_domain_migration_constraints_and_downgrade(
     assert "organization_domains" in asyncio.run(table_names(postgresql_test_url))
     assert (
         asyncio.run(scalar(postgresql_test_url, "SELECT version_num FROM alembic_version"))
-        == "20260805_0002"
+        == "20260806_0001"
     )
