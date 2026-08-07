@@ -26,6 +26,7 @@ from apps.api.app.integrations.provider_seed import ProviderCatalogSeeder
 from apps.api.app.main import create_app
 from apps.api.app.organizations.enums import OrganizationStatus, OrganizationType
 from apps.api.app.organizations.models import Organization
+from apps.api.app.platform_admin.models import PlatformAdministrator
 
 
 class FakeVerifier:
@@ -129,6 +130,15 @@ def integrations_client(
                 correlation_id="integrations-api-owner-2",
             )
 
+            # The same operator that owns the no-entitlement organization is
+            # also an active platform administrator — the role required to
+            # call the production platform-administration entitlement route.
+            # This is the truthful production shape: a platform administrator
+            # onboards a client (becomes its owner) and then enables GBP
+            # through the application API, not a manual database script.
+            session.add(PlatformAdministrator(user_profile_id=non_member_profile.id))
+            await session.flush()
+
             product = await AdministrationCatalogRepository().get_product_by_key(session, "gbp")
             assert product is not None
             session.add(
@@ -203,6 +213,119 @@ def test_connect_without_effective_entitlement_is_blocked(
         f"/api/v1/organizations/{organization_id}/integrations/google/connect", headers=HEADERS
     )
     assert response.status_code == 409, response.text
+    # Regression A: the connect route fails closed with the specific
+    # PRODUCT_NOT_READY code (not a generic 409) when no GBP entitlement
+    # exists. The frontend /gbp page keys its actionable message off this
+    # exact code.
+    assert response.json()["error"]["code"] == "PRODUCT_NOT_READY"
+
+
+@pytest.mark.integration
+def test_platform_admin_enables_gbp_then_connect_returns_authorization_url(
+    integrations_client: tuple[TestClient, FakeVerifier, dict[str, object]],
+) -> None:
+    """Regression B + C: the production-shaped operator flow.
+
+    A platform administrator (who is also the client's organization owner)
+    enables GBP through the production platform-administration entitlement
+    API (no manual database script), producing a `setup_required`
+    entitlement. The same operator then calls the GBP connect route: with
+    the effective entitlement in place, the connect route is allowed to
+    proceed far enough to return a Google `authorization_url`. No real Google
+    write is performed — the OAuth intent is created locally and the
+    authorization URL is built deterministically from the configured client
+    id/redirect URI.
+    """
+    client, verifier, ids = integrations_client
+    verifier.result = claims(ids["non_member_subject"])  # type: ignore[arg-type]
+    organization_id = ids["no_entitlement_organization_id"]
+
+    # B: enable GBP through the production entitlement API. The actor is
+    # the authenticated platform administrator; the resulting row is
+    # `setup_required` (effective enough to permit the OAuth connection).
+    create = client.post(
+        f"/api/v1/platform/organizations/{organization_id}/product-entitlements",
+        headers=HEADERS,
+        json={
+            "product_key": "gbp",
+            "source": "platform_admin_onboarding",
+            "reason": "Enable GBP during client onboarding",
+        },
+    )
+    assert create.status_code == 201, create.text
+    entitlement = create.json()["data"]
+    assert entitlement["status"] == "setup_required"
+
+    # The entitlement is now listed by the production route.
+    listed = client.get(
+        f"/api/v1/platform/organizations/{organization_id}/product-entitlements",
+        headers=HEADERS,
+    )
+    assert listed.status_code == 200, listed.text
+    rows = list(listed.json()["data"])
+    assert len(rows) == 1
+    assert rows[0]["id"] == entitlement["id"]
+    assert rows[0]["status"] == "setup_required"
+
+    # C: the same operator calls connect. With an effective entitlement in
+    # place, the route is allowed to proceed far enough to return a Google
+    # authorization_url — it no longer fails closed with PRODUCT_NOT_READY.
+    connect = client.post(
+        f"/api/v1/organizations/{organization_id}/integrations/google/connect", headers=HEADERS
+    )
+    assert connect.status_code == 200, connect.text
+    authorization_url = connect.json()["data"]["authorization_url"]
+    assert authorization_url.startswith("https://accounts.google.com/o/oauth2/v2/auth?")
+
+
+@pytest.mark.integration
+def test_existing_entitlement_is_not_recreated_by_platform_admin(
+    integrations_client: tuple[TestClient, FakeVerifier, dict[str, object]],
+) -> None:
+    """Regression E: an existing entitlement must not be silently recreated.
+
+    The production `create_entitlement` service enforces a uniqueness guard
+    per organization+product. The platform-administration route surfaces that
+    as `ENTITLEMENT_CONFLICT` (409), never as a duplicate row. The operator
+    UI must render that truthful failure rather than recreating or bypassing
+    the existing row.
+    """
+    client, verifier, ids = integrations_client
+    verifier.result = claims(ids["non_member_subject"])  # type: ignore[arg-type]
+    organization_id = ids["no_entitlement_organization_id"]
+
+    first = client.post(
+        f"/api/v1/platform/organizations/{organization_id}/product-entitlements",
+        headers=HEADERS,
+        json={
+            "product_key": "gbp",
+            "source": "platform_admin_onboarding",
+            "reason": "First enablement",
+        },
+    )
+    assert first.status_code == 201, first.text
+
+    duplicate = client.post(
+        f"/api/v1/platform/organizations/{organization_id}/product-entitlements",
+        headers=HEADERS,
+        json={
+            "product_key": "gbp",
+            "source": "platform_admin_onboarding",
+            "reason": "Duplicate enablement attempt",
+        },
+    )
+    assert duplicate.status_code == 409, duplicate.text
+    assert duplicate.json()["error"]["code"] == "ENTITLEMENT_CONFLICT"
+
+    # Only one entitlement row exists — no silent duplicate was created.
+    listed = client.get(
+        f"/api/v1/platform/organizations/{organization_id}/product-entitlements",
+        headers=HEADERS,
+    )
+    assert listed.status_code == 200
+    rows = list(listed.json()["data"])
+    assert len(rows) == 1
+    assert rows[0]["id"] == first.json()["data"]["id"]
 
 
 @pytest.mark.integration
