@@ -1,4 +1,20 @@
-"""One-off, idempotent, production-safe GBP integration-entitlement provisioning.
+"""Deprecated: use the platform-administration API route instead.
+
+This script is retained for reference and emergency operator use only.
+Normal client onboarding should create product entitlements through the
+application API:
+
+    POST /api/v1/platform/organizations/{organization_id}/product-entitlements
+
+That route reuses the exact same ``AdministrationService.create_entitlement``
+governed service this script calls, attributes the audit event to the
+authenticated platform administrator (instead of the system), and enforces
+the same integrity guards, tenant isolation, and audit logging — without
+requiring direct database access or a Render one-off Job.
+
+The original script documentation follows for reference:
+
+---
 
 `POST /api/v1/organizations/{organization_id}/integrations/google/connect`
 requires an effective `gbp` `ProductEntitlement`

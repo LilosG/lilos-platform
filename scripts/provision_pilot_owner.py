@@ -1,4 +1,27 @@
-"""One-off, idempotent, production-safe pilot organization owner provisioning.
+"""Bootstrap-only alternative for the very first pilot organization + owner.
+
+For **normal client onboarding**, use the platform-administration API routes
+instead:
+
+    POST /api/v1/platform/organizations
+    POST /api/v1/platform/organizations/{id}/owner
+    POST /api/v1/platform/organizations/{id}/locations
+    POST /api/v1/platform/organizations/{id}/product-entitlements
+    POST /api/v1/platform/organizations/{id}/activate
+
+Those routes reuse the exact same domain services this script calls
+(``OrganizationService``, ``UserAdministrationService``, ``AccessControlService``)
+and provide governed, audited, UI-accessible onboarding without direct
+database access.
+
+This script is retained only for the cold-start bootstrap scenario where no
+platform administrator exists yet and the operator needs to provision the very
+first pilot organization + owner before the platform-administration UI is
+reachable.  After ``scripts/provision_platform_administrator.py`` has granted
+the first platform-administrator grant, this script should not be needed for
+normal operations.
+
+--- Original documentation ---
 
 Reuses the exact same domain services the application uses everywhere else
 (``OrganizationService``, ``UserAdministrationService``, ``AccessControlService``)

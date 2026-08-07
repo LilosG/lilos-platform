@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from starlette.testclient import TestClient
 
 from apps.api.app.access_control.catalog import AccessCatalogSeeder
+from apps.api.app.administration.catalog import AdministrationCatalogSeeder
 from apps.api.app.authentication.contracts import VerifiedProviderClaims
 from apps.api.app.authentication.enums import AssuranceLevel, UserStatus
 from apps.api.app.authentication.models import UserProfile
@@ -58,6 +59,9 @@ def platform_administration_client(
         seeder = AccessCatalogSeeder()
         async with platform_administration_session_factory.begin() as session:
             await seeder.seed(session, correlation_id="platform-admin-catalog")
+            await AdministrationCatalogSeeder().seed(
+                session, correlation_id="platform-admin-admin-catalog"
+            )
 
             admin_profile = UserProfile(auth_user_id=uuid4(), status=UserStatus.ACTIVE, version=1)
             revoked_admin_profile = UserProfile(
@@ -499,4 +503,74 @@ def test_self_status_requires_authentication(
 
     response = client.get("/api/v1/me/platform-administrator")
     assert response.status_code == 401, response.text
-    assert response.json()["error"]["code"] == "AUTHENTICATION_REQUIRED"
+
+
+@pytest.mark.integration
+def test_platform_admin_creates_and_lists_product_entitlement(
+    platform_administration_client: tuple[TestClient, FakeVerifier, dict[str, UUID]],
+) -> None:
+    """A platform administrator can enable a product via the API, not a manual script."""
+    client, verifier, ids = platform_administration_client
+    verifier.result = claims(ids["admin_subject"], assurance=AssuranceLevel.AAL2)
+
+    org = _create_organization(client, slug="entitlement-test-org")
+    organization_id = org["id"]
+
+    # Create a GBP entitlement through the application API.
+    create_response = client.post(
+        f"/api/v1/platform/organizations/{organization_id}/product-entitlements",
+        headers=HEADERS,
+        json={
+            "product_key": "gbp",
+            "source": "platform_admin_onboarding",
+            "reason": "Enable GBP during client onboarding",
+        },
+    )
+    assert create_response.status_code == 201, create_response.text
+    entitlement = dict(create_response.json()["data"])
+    assert entitlement["status"] == "setup_required"
+    assert entitlement["source"] == "platform_admin_onboarding"
+
+    # Listing shows the created entitlement.
+    list_response = client.get(
+        f"/api/v1/platform/organizations/{organization_id}/product-entitlements",
+        headers=HEADERS,
+    )
+    assert list_response.status_code == 200, list_response.text
+    items = list(list_response.json()["data"])
+    assert len(items) == 1
+    assert items[0]["id"] == entitlement["id"]
+
+    # Creating the same entitlement again returns a conflict, not a duplicate.
+    duplicate_response = client.post(
+        f"/api/v1/platform/organizations/{organization_id}/product-entitlements",
+        headers=HEADERS,
+        json={
+            "product_key": "gbp",
+            "source": "platform_admin_onboarding",
+            "reason": "Duplicate attempt",
+        },
+    )
+    assert duplicate_response.status_code == 409, duplicate_response.text
+    assert duplicate_response.json()["error"]["code"] == "ENTITLEMENT_CONFLICT"
+
+
+@pytest.mark.integration
+def test_non_admin_cannot_create_product_entitlement(
+    platform_administration_client: tuple[TestClient, FakeVerifier, dict[str, UUID]],
+) -> None:
+    client, verifier, ids = platform_administration_client
+    verifier.result = claims(ids["non_admin_subject"], assurance=AssuranceLevel.AAL2)
+    organization_id = uuid4()
+
+    response = client.post(
+        f"/api/v1/platform/organizations/{organization_id}/product-entitlements",
+        headers=HEADERS,
+        json={
+            "product_key": "gbp",
+            "source": "test",
+            "reason": "Should be denied",
+        },
+    )
+    assert response.status_code == 403, response.text
+    assert response.json()["error"]["code"] == "AUTHORIZATION_DENIED"
