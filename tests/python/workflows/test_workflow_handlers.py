@@ -1173,11 +1173,11 @@ async def test_gbp_publish_post_processing_state_does_not_become_verified(
         async with clean_session_factory.begin() as session:
             post_pub_id, _name = await _seed_gbp_post_publication(session)
 
+            publication = await session.get(GBPPostPublication, post_pub_id)
+            assert publication is not None
             outcome = await _handle_gbp_publish_post(
                 session,
-                organization_id=(
-                    await session.get(GBPPostPublication, post_pub_id)  # type: ignore[arg-type]
-                ).organization_id,
+                organization_id=publication.organization_id,
                 location_id=None,
                 input_document={"publication_id": str(post_pub_id)},
                 correlation_id="test",
@@ -1224,11 +1224,11 @@ async def test_gbp_publish_post_processing_reread_does_not_become_verified(
                 publication_status="reconciliation_required",
             )
 
+            publication = await session.get(GBPPostPublication, post_pub_id)
+            assert publication is not None
             outcome = await _handle_gbp_publish_post(
                 session,
-                organization_id=(
-                    await session.get(GBPPostPublication, post_pub_id)  # type: ignore[arg-type]
-                ).organization_id,
+                organization_id=publication.organization_id,
                 location_id=None,
                 input_document={"publication_id": str(post_pub_id)},
                 correlation_id="test",
@@ -1273,11 +1273,11 @@ async def test_gbp_publish_post_processing_then_live_becomes_verified_on_retry(
                 publication_status="reconciliation_required",
             )
 
+            publication = await session.get(GBPPostPublication, post_pub_id)
+            assert publication is not None
             outcome = await _handle_gbp_publish_post(
                 session,
-                organization_id=(
-                    await session.get(GBPPostPublication, post_pub_id)  # type: ignore[arg-type]
-                ).organization_id,
+                organization_id=publication.organization_id,
                 location_id=None,
                 input_document={"publication_id": str(post_pub_id)},
                 correlation_id="test",
@@ -1321,11 +1321,11 @@ async def test_gbp_publish_post_rejected_remains_failed(
                 publication_status="reconciliation_required",
             )
 
+            publication = await session.get(GBPPostPublication, post_pub_id)
+            assert publication is not None
             outcome = await _handle_gbp_publish_post(
                 session,
-                organization_id=(
-                    await session.get(GBPPostPublication, post_pub_id)  # type: ignore[arg-type]
-                ).organization_id,
+                organization_id=publication.organization_id,
                 location_id=None,
                 input_document={"publication_id": str(post_pub_id)},
                 correlation_id="test",
@@ -1519,11 +1519,11 @@ async def test_reviews_publish_response_persists_safe_error_code_provider_mappin
                 session, include_mapping=True, mapping_active=False
             )
 
+            revision = await session.get(ReviewResponseRevision, response_id)
+            assert revision is not None
             outcome = await _handle_reviews_publish_response(
                 session,
-                organization_id=(
-                    await session.get(ReviewResponseRevision, response_id)  # type: ignore[arg-type]
-                ).organization_id,
+                organization_id=revision.organization_id,
                 location_id=None,
                 input_document={"response_id": str(response_id)},
                 correlation_id="test",
@@ -1562,11 +1562,11 @@ async def test_reviews_publish_response_persists_safe_error_code_gbp_location_no
                 session, include_mapping=True, include_gbp_location=False
             )
 
+            revision = await session.get(ReviewResponseRevision, response_id)
+            assert revision is not None
             outcome = await _handle_reviews_publish_response(
                 session,
-                organization_id=(
-                    await session.get(ReviewResponseRevision, response_id)  # type: ignore[arg-type]
-                ).organization_id,
+                organization_id=revision.organization_id,
                 location_id=None,
                 input_document={"response_id": str(response_id)},
                 correlation_id="test",
@@ -1615,13 +1615,17 @@ async def test_reviews_publish_response_persists_safe_error_code_gbp_account_not
             response = await session.get(ReviewResponseRevision, response_id)
             assert response is not None
 
-            # Wrap session.get to simulate a missing GBPAccount.
+            # Wrap session.get to simulate a missing GBPAccount. The wrapper
+            # accepts the same flexible signature shape as the bound
+            # AsyncSession.get method so the assignment stays type-correct;
+            # the method-assignment ignore records that we are intentionally
+            # shadowing a bound method for the duration of this session.
             original_get = session.get
 
-            async def _fake_get(entity: Any, ident: Any) -> Any:
-                if entity is GBPAccount:
+            async def _fake_get(*args: Any, **kwargs: Any) -> Any:
+                if args and args[0] is GBPAccount:
                     return None
-                return await original_get(entity, ident)
+                return await original_get(*args, **kwargs)
 
             session.get = _fake_get  # type: ignore[method-assign]
 
@@ -1670,11 +1674,11 @@ async def test_reviews_publish_response_persists_safe_error_code_no_connected_in
         async with clean_session_factory.begin() as session:
             response_id = await _seed_review_response_publication(session)
 
+            revision = await session.get(ReviewResponseRevision, response_id)
+            assert revision is not None
             outcome = await _handle_reviews_publish_response(
                 session,
-                organization_id=(
-                    await session.get(ReviewResponseRevision, response_id)  # type: ignore[arg-type]
-                ).organization_id,
+                organization_id=revision.organization_id,
                 location_id=None,
                 input_document={"response_id": str(response_id)},
                 correlation_id="test",
@@ -1743,11 +1747,11 @@ async def test_reviews_publish_response_persists_safe_error_code_provider_write_
         async with clean_session_factory.begin() as session:
             response_id = await _seed_review_response_publication(session)
 
+            revision = await session.get(ReviewResponseRevision, response_id)
+            assert revision is not None
             outcome = await _handle_reviews_publish_response(
                 session,
-                organization_id=(
-                    await session.get(ReviewResponseRevision, response_id)  # type: ignore[arg-type]
-                ).organization_id,
+                organization_id=revision.organization_id,
                 location_id=None,
                 input_document={"response_id": str(response_id)},
                 correlation_id="test",
@@ -1790,11 +1794,11 @@ async def test_reviews_publish_response_persists_safe_error_code_token_refresh_f
         async with clean_session_factory.begin() as session:
             response_id = await _seed_review_response_publication(session)
 
+            revision = await session.get(ReviewResponseRevision, response_id)
+            assert revision is not None
             outcome = await _handle_reviews_publish_response(
                 session,
-                organization_id=(
-                    await session.get(ReviewResponseRevision, response_id)  # type: ignore[arg-type]
-                ).organization_id,
+                organization_id=revision.organization_id,
                 location_id=None,
                 input_document={"response_id": str(response_id)},
                 correlation_id="test",
@@ -1863,11 +1867,11 @@ async def test_reviews_publish_response_persists_safe_error_code_verification_re
         async with clean_session_factory.begin() as session:
             response_id = await _seed_review_response_publication(session)
 
+            revision = await session.get(ReviewResponseRevision, response_id)
+            assert revision is not None
             outcome = await _handle_reviews_publish_response(
                 session,
-                organization_id=(
-                    await session.get(ReviewResponseRevision, response_id)  # type: ignore[arg-type]
-                ).organization_id,
+                organization_id=revision.organization_id,
                 location_id=None,
                 input_document={"response_id": str(response_id)},
                 correlation_id="test",
