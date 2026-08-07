@@ -72,7 +72,7 @@ async def prove_cross_organization_membership_rejected(database_url: str) -> Non
 
 @pytest.mark.integration
 def test_location_group_migration_integrity_downgrade_and_reupgrade(
-    postgresql_test_url: str, monkeypatch: pytest.MonkeyPatch
+    postgresql_test_url: str, monkeypatch: pytest.MonkeyPatch, alembic_head: str
 ) -> None:
     monkeypatch.setenv("LILOS_MIGRATION_DATABASE_URL", postgresql_test_url)
     config = Config(ROOT / "alembic.ini")
@@ -80,7 +80,7 @@ def test_location_group_migration_integrity_downgrade_and_reupgrade(
     command.upgrade(config, "head")
     assert (
         asyncio.run(scalar(postgresql_test_url, "SELECT version_num FROM alembic_version"))
-        == "20260805_0002"
+        == alembic_head
     )
     assert asyncio.run(
         scalar(
@@ -178,5 +178,5 @@ def test_location_group_migration_integrity_downgrade_and_reupgrade(
     command.upgrade(config, "head")
     assert (
         asyncio.run(scalar(postgresql_test_url, "SELECT version_num FROM alembic_version"))
-        == "20260805_0002"
+        == alembic_head
     )

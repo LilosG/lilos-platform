@@ -128,6 +128,23 @@ class InvitationAcceptanceResult:
 
 
 @dataclass(frozen=True, slots=True)
+class AssignableMemberSummary:
+    """Read-shape result for the lead-assignment teammate lookup.
+
+    A focused, organization-scoped projection of an active membership joined
+    to its active user profile and the role keys held in this organization.
+    Reuses the same membership/user/role subsystems as every other access
+    read; it adds no parallel membership or user store of its own.
+    """
+
+    user_profile_id: UUID
+    display_name: str | None
+    membership_status: MembershipStatus
+    membership_type: MembershipType
+    role_keys: list[str]
+
+
+@dataclass(frozen=True, slots=True)
 class AccessControlService:
     memberships: MembershipRepository = field(default_factory=MembershipRepository)
     invitations: InvitationRepository = field(default_factory=InvitationRepository)
@@ -175,6 +192,69 @@ class AccessControlService:
         return await self.invitations.list_by_organization(
             session, organization_id, limit=limit, offset=offset
         )
+
+    async def list_assignable_members(
+        self, session: AsyncSession, organization_id: UUID
+    ) -> list[AssignableMemberSummary]:
+        """Resolve active teammates who may be assigned work in this organization.
+
+        Organization-scoped and tenant-isolated by ``organization_id``; returns
+        only memberships in ``ACTIVE`` whose ``UserProfile`` is also ``ACTIVE``,
+        excluding invited/suspended/revoked/expired members and deactivated
+        users. Role keys are the distinct catalog keys held by each membership
+        in this organization (across both organization and location scopes),
+        which is the assignment-relevant role information the picker shows.
+        """
+        rows = (
+            await session.execute(
+                select(UserProfile, OrganizationMembership)
+                .join(
+                    OrganizationMembership,
+                    OrganizationMembership.user_profile_id == UserProfile.id,
+                )
+                .where(
+                    OrganizationMembership.organization_id == organization_id,
+                    OrganizationMembership.status == MembershipStatus.ACTIVE,
+                    UserProfile.status == UserStatus.ACTIVE,
+                )
+                .order_by(
+                    UserProfile.display_name.asc().nulls_last(),
+                    UserProfile.id.asc(),
+                )
+            )
+        ).all()
+        if not rows:
+            return []
+        membership_ids = [membership.id for _user, membership in rows]
+        assignments = list(
+            await session.scalars(
+                select(MembershipRoleAssignment).where(
+                    MembershipRoleAssignment.organization_id == organization_id,
+                    MembershipRoleAssignment.membership_id.in_(membership_ids),
+                )
+            )
+        )
+        role_ids = {assignment.role_id for assignment in assignments}
+        role_keys_by_id: dict[UUID, str] = (
+            {role.id: role.key for role in await self.catalog.get_roles_by_ids(session, role_ids)}
+            if role_ids
+            else {}
+        )
+        roles_by_membership: dict[UUID, set[str]] = {}
+        for assignment in assignments:
+            key = role_keys_by_id.get(assignment.role_id)
+            if key is not None:
+                roles_by_membership.setdefault(assignment.membership_id, set()).add(key)
+        return [
+            AssignableMemberSummary(
+                user_profile_id=membership.user_profile_id,
+                display_name=user.display_name,
+                membership_status=membership.status,
+                membership_type=membership.membership_type,
+                role_keys=sorted(roles_by_membership.get(membership.id, set())),
+            )
+            for user, membership in rows
+        ]
 
     async def _audit(
         self,

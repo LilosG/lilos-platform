@@ -134,6 +134,7 @@ def validate_blueprint(path: Path = BLUEPRINT) -> tuple[str, ...]:
         "scripts.seed_industries",
         "scripts.seed_access_catalog",
         "scripts.seed_administration_catalog",
+        "scripts.seed_integration_providers",
     ):
         if command not in predeploy_policy_text:
             errors.append(f"lilos-api:predeploy:{command}")

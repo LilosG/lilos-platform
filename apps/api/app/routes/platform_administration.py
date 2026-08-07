@@ -11,16 +11,27 @@ and locations from the UI instead of running a one-off script against the
 database.
 """
 
-from typing import Annotated
+from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request, Response, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from apps.api.app.administration.contracts import DataResponse
+from apps.api.app.administration.contracts import (
+    DataResponse,
+    EntitlementCreate,
+    EntitlementTransition,
+)
+from apps.api.app.administration.errors import (
+    AdministrationConflictError,
+    AdministrationNotFoundError,
+    AdministrationVersionConflictError,
+    ReadinessBlockedError,
+)
+from apps.api.app.administration.service import AdministrationService
 from apps.api.app.authentication.contracts import UserProfileCreate
-from apps.api.app.authentication.dependencies import get_authenticated_principal
+from apps.api.app.authentication.dependencies import Authenticated, get_authenticated_principal
 from apps.api.app.database.session import get_database_session
 from apps.api.app.domains.contracts import (
     OrganizationDomainArchive,
@@ -80,6 +91,7 @@ platform_administration = PlatformAdministrationService()
 onboarding_service = OnboardingOrchestrationService()
 organization_profiles = OrganizationProfileService()
 organization_domains = OrganizationDomainService()
+administration = AdministrationService()
 DatabaseSession = Annotated[AsyncSession, Depends(get_database_session)]
 
 
@@ -87,6 +99,10 @@ def response(request: Request, data: object) -> DataResponse:
     return DataResponse(
         data=data, meta=ResponseMeta(correlation_id=request_correlation_id(request))
     )
+
+
+def _row(item: Any) -> dict[str, Any]:
+    return {column.name: getattr(item, column.name) for column in item.__table__.columns}
 
 
 @router.post(
@@ -487,3 +503,138 @@ async def bootstrap_owner(
         session, organization_id, command, correlation_id=request_correlation_id(request)
     )
     return response(request, result)
+
+
+@router.get(
+    "/organizations/{organization_id}/product-entitlements",
+    response_model=DataResponse,
+    summary="List product entitlements for an organization",
+)
+async def list_product_entitlements(
+    request: Request,
+    organization_id: UUID,
+    session: DatabaseSession,
+) -> DataResponse:
+    items = await administration.entitlements.list_by_organization(session, organization_id)
+    return response(request, [_row(item) for item in items])
+
+
+@router.post(
+    "/organizations/{organization_id}/product-entitlements",
+    response_model=DataResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a product entitlement during onboarding",
+    responses={
+        409: {"description": "Entitlement already exists or product not seeded"},
+    },
+)
+async def create_product_entitlement(
+    request: Request,
+    organization_id: UUID,
+    command: EntitlementCreate,
+    session: DatabaseSession,
+    principal: Authenticated,
+) -> DataResponse | JSONResponse:
+    """Create a product entitlement for an organization during onboarding.
+
+    Reuses ``AdministrationService.create_entitlement`` verbatim — the same
+    governed service the per-organization ``products.entitlements.manage``
+    route uses — so audit events, integrity guards, and lifecycle protections
+    are identical.  The platform administrator's ``platform_user_id`` is
+    attributed as the audit actor, exactly as a per-organization admin would
+    be through the standard route.
+
+    This eliminates the need for ``scripts/provision_gbp_entitlement.py``:
+    normal client onboarding can now enable products through the application
+    API instead of a manual database script.
+    """
+    try:
+        item = await administration.create_entitlement(
+            session,
+            organization_id,
+            command,
+            actor_id=principal.platform_user_id,
+            correlation_id=request_correlation_id(request),
+        )
+    except AdministrationNotFoundError:
+        return error_response(
+            request,
+            status_code=status.HTTP_409_CONFLICT,
+            code="PRODUCT_NOT_SEEDED",
+            message="The requested product is not seeded in the catalog.",
+            category=ErrorCategory.CONFLICT,
+        )
+    except AdministrationConflictError:
+        return error_response(
+            request,
+            status_code=status.HTTP_409_CONFLICT,
+            code="ENTITLEMENT_CONFLICT",
+            message="An entitlement already exists for this product or the dates are invalid.",
+            category=ErrorCategory.CONFLICT,
+        )
+    return response(request, _row(item))
+
+
+@router.post(
+    "/organizations/{organization_id}/product-entitlements/{entitlement_id}/transition",
+    response_model=DataResponse,
+    summary="Transition a product entitlement's lifecycle state",
+    responses={
+        409: {
+            "description": "Transition not allowed from current status, or readiness not met",
+        },
+    },
+)
+async def transition_product_entitlement(
+    request: Request,
+    organization_id: UUID,
+    entitlement_id: UUID,
+    command: EntitlementTransition,
+    session: DatabaseSession,
+    principal: Authenticated,
+) -> DataResponse | JSONResponse:
+    try:
+        item = await administration.transition_entitlement(
+            session,
+            organization_id,
+            entitlement_id,
+            command,
+            actor_id=principal.platform_user_id,
+            correlation_id=request_correlation_id(request),
+        )
+    except AdministrationNotFoundError:
+        return error_response(
+            request,
+            status_code=status.HTTP_404_NOT_FOUND,
+            code="ENTITLEMENT_NOT_FOUND",
+            message="No entitlement found for this organization with that id.",
+            category=ErrorCategory.NOT_FOUND,
+        )
+    except AdministrationVersionConflictError:
+        return error_response(
+            request,
+            status_code=status.HTTP_409_CONFLICT,
+            code="VERSION_CONFLICT",
+            message="The entitlement version does not match; reload and retry.",
+            category=ErrorCategory.CONFLICT,
+        )
+    except AdministrationConflictError:
+        return error_response(
+            request,
+            status_code=status.HTTP_409_CONFLICT,
+            code="TRANSITION_NOT_ALLOWED",
+            message=(
+                "The requested transition is not allowed from the current "
+                "status, or readiness is not met."
+            ),
+            category=ErrorCategory.CONFLICT,
+        )
+    except ReadinessBlockedError:
+        return error_response(
+            request,
+            status_code=status.HTTP_409_CONFLICT,
+            code="READINESS_NOT_MET",
+            message="The product is not ready to activate; resolve blocking requirements first.",
+            category=ErrorCategory.CONFLICT,
+        )
+    return response(request, _row(item))

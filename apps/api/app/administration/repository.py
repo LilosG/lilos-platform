@@ -223,6 +223,17 @@ class EntitlementRepository:
             ),
         )
 
+    async def list_by_organization(
+        self, session: AsyncSession, organization_id: UUID
+    ) -> list[ProductEntitlement]:
+        return list(
+            await session.scalars(
+                select(ProductEntitlement)
+                .where(ProductEntitlement.organization_id == organization_id)
+                .order_by(ProductEntitlement.created_at, ProductEntitlement.id)
+            )
+        )
+
     async def locations(
         self, session: AsyncSession, organization_id: UUID, entitlement_id: UUID
     ) -> list[ProductEntitlementLocation]:

@@ -75,6 +75,21 @@ export type LeadSourcePerformance = {
   converted_count: number;
 };
 
+/**
+ * Assignable teammate returned by the organization-scoped
+ * `GET /api/v1/organizations/{id}/leads/assignees` picker endpoint. Mirrors the
+ * backend `AssignableMemberData` contract: only the fields the picker needs,
+ * and no email (the backend intentionally omits it because no public
+ * membership contract exposes it).
+ */
+export type AssigneeCandidate = {
+  user_profile_id: string;
+  display_name: string | null;
+  membership_status: string;
+  membership_type: string;
+  role_keys: string[];
+};
+
 export type AuditEntry = {
   id: string;
   event_type: string;
@@ -122,6 +137,19 @@ export function fetchSourcePerformance(
   return apiGet<LeadSourcePerformance[]>(
     `${base(organizationId)}/sources/performance`,
   );
+}
+
+/**
+ * Fetch the teammates who may be assigned leads for the currently selected
+ * organization. Organization-scoped and authorized through the existing
+ * `leads.assign` policy; returns an empty list when the organization has no
+ * assignable members, and a `forbidden` outcome when the caller cannot assign
+ * leads — the caller must render each truthfully rather than guessing.
+ */
+export function fetchLeadAssignees(
+  organizationId: string,
+): Promise<ApiOutcome<AssigneeCandidate[]>> {
+  return apiGet<AssigneeCandidate[]>(`${base(organizationId)}/assignees`);
 }
 
 export function fetchLead(
@@ -255,4 +283,104 @@ export function completeLeadTask(
       body: {},
     },
   );
+}
+
+/**
+ * Every lead status the API contract permits on `Lead.status` (the backend
+ * check constraint). The Leads list filter offers exactly this set so a lead
+ * can be found regardless of its lifecycle state — previously the filter only
+ * listed six statuses, leaving leads in any other state unfilterable.
+ */
+export const LEAD_STATUS_VALUES = [
+  "new",
+  "validating",
+  "unassigned",
+  "assigned",
+  "acknowledged",
+  "contact_attempted",
+  "contacted",
+  "qualifying",
+  "qualified",
+  "appointment_requested",
+  "appointment_scheduled",
+  "converted",
+  "nurture",
+  "unresponsive",
+  "disqualified",
+  "lost",
+  "spam",
+  "duplicate",
+  "archived",
+] as const;
+
+/**
+ * Every urgency the API contract permits on `Lead.urgency`. `unknown` is the
+ * server default assigned at intake, so it must be filterable or newly
+ * intaken leads cannot be located through the filter.
+ */
+export const LEAD_URGENCY_VALUES = [
+  "routine",
+  "same_day",
+  "urgent",
+  "emergency",
+  "unknown",
+] as const;
+
+/**
+ * Statuses reachable through `POST .../status` (the `LeadStatusTransition`
+ * `to_status` literal). Conversion, loss, spam, cancelled, and duplicate are
+ * intentionally excluded: they are only reachable through the dedicated
+ * `/convert` and `/loss` endpoints (or set at intake for `duplicate`), never
+ * through the generic status transition.
+ */
+export const LEAD_TRANSITION_TARGET_STATUSES = [
+  "new",
+  "validating",
+  "unassigned",
+  "assigned",
+  "acknowledged",
+  "contact_attempted",
+  "contacted",
+  "qualifying",
+  "qualified",
+  "appointment_requested",
+  "appointment_scheduled",
+  "nurture",
+  "unresponsive",
+  "archived",
+] as const;
+
+/**
+ * Statuses from which no further status transition is ever permitted. The
+ * backend `can_transition` only allows a terminal status to move to
+ * `archived`, and `archived` is itself terminal (and `from == to` is
+ * rejected), so every status here is a true dead-end for the transition
+ * control. Used to disable the transition/convert/loss controls for leads
+ * that have already reached a terminal state, rather than leaving controls
+ * that can only ever produce an `InvalidLeadTransition` error.
+ */
+export const TERMINAL_LEAD_STATUSES = [
+  "converted",
+  "disqualified",
+  "lost",
+  "spam",
+  "duplicate",
+  "cancelled",
+  "archived",
+] as const;
+
+export function isTerminalLeadStatus(status: string): boolean {
+  return (TERMINAL_LEAD_STATUSES as readonly string[]).includes(status);
+}
+
+/**
+ * Truthful speed-to-lead display. Never rounds a sub-minute average down to
+ * "0 min" (which previously displayed a real 30-second average as zero
+ * minutes), and never invents a value when the backend returned `null`
+ * (no leads have reached first human contact yet, so no average exists).
+ */
+export function formatSpeedToLead(seconds: number | null): string {
+  if (seconds === null || Number.isNaN(seconds)) return "Not available";
+  if (seconds < 60) return `${Math.round(seconds)} sec`;
+  return `${Math.round(seconds / 60)} min`;
 }

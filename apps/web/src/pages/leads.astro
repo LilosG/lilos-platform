@@ -78,22 +78,40 @@ import "../styles/global.css";
             </div><form id="filter-form">
               <label class="sr-only" for="status-filter">Status</label><select
                 id="status-filter"
+                aria-label="Filter leads by status"
               >
                 <option value="">All statuses</option><option value="new"
                   >New</option
+                ><option value="validating">Validating</option><option
+                  value="unassigned">Unassigned</option
                 ><option value="assigned">Assigned</option><option
-                  value="contacted">Contacted</option
+                  value="acknowledged">Acknowledged</option
+                ><option value="contact_attempted">Contact attempted</option
+                ><option value="contacted">Contacted</option><option
+                  value="qualifying">Qualifying</option
                 ><option value="qualified">Qualified</option><option
-                  value="converted">Converted</option
-                ><option value="lost">Lost</option>
+                  value="appointment_requested">Appointment requested</option
+                ><option value="appointment_scheduled"
+                  >Appointment scheduled</option
+                ><option value="converted">Converted</option><option
+                  value="nurture">Nurture</option
+                ><option value="unresponsive">Unresponsive</option><option
+                  value="disqualified">Disqualified</option
+                ><option value="lost">Lost</option><option value="spam"
+                  >Spam</option
+                ><option value="duplicate">Duplicate</option><option
+                  value="archived">Archived</option
+                >
               </select><label class="sr-only" for="urgency-filter"
                 >Urgency</label
-              ><select id="urgency-filter">
+              ><select id="urgency-filter" aria-label="Filter leads by urgency">
                 <option value="">All urgency</option><option value="routine"
                   >Routine</option
                 ><option value="same_day">Same day</option><option
                   value="urgent">Urgent</option
-                ><option value="emergency">Emergency</option>
+                ><option value="emergency">Emergency</option><option
+                  value="unknown">Unknown</option
+                >
               </select><label class="sr-only" for="search-input">Search</label
               ><input
                 id="search-input"
@@ -117,7 +135,9 @@ import "../styles/global.css";
             <article>
               <p class="eyebrow">Contact</p><div id="detail-body"></div><h3>
                 Lifecycle
-              </h3><div class="hero__actions">
+              </h3><div id="lifecycle-facts" class="lifecycle-facts"></div><div
+                class="hero__actions"
+              >
                 <label class="sr-only" for="status-select">Status</label><select
                   id="status-select"
                 >
@@ -142,17 +162,24 @@ import "../styles/global.css";
                   id="status-button">Change status</button
                 >
               </div><div class="field">
-                <label for="assignee-input">Assign to (platform user ID)</label
-                ><input
-                  id="assignee-input"
-                  type="text"
-                  placeholder="Platform user ID"
-                /><p class="field-hint">
-                  Advanced/technical field: enter the internal platform user ID
-                  of the teammate to assign. There is no lookup for this yet, so
-                  you will need the ID from an administrator.
-                </p><button type="button" class="button" id="assign-button"
-                  >Assign</button
+                <label for="assignee-select">Assign to teammate</label><select
+                  id="assignee-select"
+                  aria-label="Assign to teammate"
+                  disabled
+                >
+                  <option value="">Unassigned</option>
+                </select><p
+                  class="field-hint"
+                  id="assignee-status"
+                  role="status"
+                  aria-live="polite"
+                >
+                  Loading teammates…
+                </p><button
+                  type="button"
+                  class="button"
+                  id="assign-button"
+                  disabled>Assign</button
                 >
               </div><div class="hero__actions">
                 <label class="sr-only" for="conversion-value"
@@ -167,7 +194,8 @@ import "../styles/global.css";
                   class="button button--secondary"
                   id="convert-button">Mark converted</button
                 >
-              </div><div class="hero__actions">
+              </div>
+              <div class="hero__actions">
                 <label class="sr-only" for="loss-reason">Loss reason</label
                 ><input
                   id="loss-reason"
@@ -178,12 +206,22 @@ import "../styles/global.css";
                   class="button button--secondary"
                   id="loss-button">Mark lost</button
                 >
-              </div><p id="action-status" role="status" aria-live="polite">
-              </p><h3>Add note</h3><label class="sr-only" for="note-text"
-                >Note</label
-              ><textarea id="note-text" rows="3" maxlength="5000"
-              ></textarea><button type="button" class="button" id="note-button"
-                >Save note</button
+              </div><p
+                id="terminal-note"
+                class="alert alert--info"
+                role="status"
+                hidden
+              >
+              </p><p id="action-status" role="status" aria-live="polite"></p><h3
+              >
+                Add note
+              </h3><label class="sr-only" for="note-text">Note</label><textarea
+                id="note-text"
+                rows="3"
+                maxlength="5000"></textarea><button
+                type="button"
+                class="button"
+                id="note-button">Save note</button
               ><h3>Follow-up task</h3><label class="sr-only" for="task-title"
                 >Task title</label
               ><input id="task-title" type="text" placeholder="Task title" />
@@ -215,6 +253,7 @@ import "../styles/global.css";
         fetchMyOrganizations,
         fetchPrincipal,
         fetchProductReadiness,
+        type MyOrganization,
       } from "../lib/workspace";
       import {
         addLeadNote,
@@ -223,6 +262,7 @@ import "../styles/global.css";
         convertLead,
         createLeadTask,
         fetchLead,
+        fetchLeadAssignees,
         fetchLeadAudit,
         fetchLeadCommunications,
         fetchLeadNotes,
@@ -230,8 +270,12 @@ import "../styles/global.css";
         fetchLeadTasks,
         fetchLeads,
         fetchSourcePerformance,
+        formatSpeedToLead,
+        isTerminalLeadStatus,
+        LEAD_TRANSITION_TARGET_STATUSES,
         recordLeadLoss,
         transitionLeadStatus,
+        type AssigneeCandidate,
         type LeadDetail,
         type LeadSummary,
         type LeadTask,
@@ -250,7 +294,13 @@ import "../styles/global.css";
       };
 
       let organizationId = "";
+      let organizations: MyOrganization[] = [];
       let selectedLeadId: string | null = null;
+      // Assignable teammates for the currently selected organization only.
+      // Reset to an empty list on every organization switch so stale members
+      // from a previous organization can never remain selectable, and only
+      // ever populated from the authoritative `leads/assignees` endpoint.
+      let assignees: AssigneeCandidate[] = [];
 
       function showOnly(region: HTMLElement): void {
         for (const key of Object.keys(regions) as (keyof typeof regions)[]) {
@@ -369,9 +419,7 @@ import "../styles/global.css";
         const metrics: Array<[string, string]> = [
           [
             "Average speed to lead",
-            outcome.data.average_speed_to_lead_seconds !== null
-              ? `${Math.round(outcome.data.average_speed_to_lead_seconds / 60)} min`
-              : "Not available",
+            formatSpeedToLead(outcome.data.average_speed_to_lead_seconds),
           ],
           ["Open urgent leads", String(outcome.data.open_urgent_count)],
           ...Object.entries(outcome.data.by_status).map(
@@ -506,6 +554,128 @@ import "../styles/global.css";
         ]);
       }
 
+      function when(value: string | null): string {
+        return value ? new Date(value).toLocaleString() : "Not yet";
+      }
+
+      function fact(label: string, value: string): HTMLParagraphElement {
+        const p = document.createElement("p");
+        const strong = document.createElement("strong");
+        strong.textContent = `${label}: `;
+        p.append(strong, document.createTextNode(value));
+        return p;
+      }
+
+      /**
+       * Reflects the lead's current status into the transition select
+       * truthfully. For a status that is not a valid transition target (any
+       * terminal state other than `archived`), injects a single selected
+       * placeholder option showing that status instead of leaving the select
+       * displaying an unrelated state such as "new". The select itself is
+       * disabled separately for terminal leads, so the placeholder only ever
+       * displays the real state and can never be submitted.
+       */
+      function setLeadStatusSelect(status: string): void {
+        const select = document.getElementById(
+          "status-select",
+        ) as HTMLSelectElement;
+        select.querySelector("option[data-terminal-placeholder]")?.remove();
+        if (
+          (LEAD_TRANSITION_TARGET_STATUSES as readonly string[]).includes(
+            status,
+          )
+        ) {
+          select.value = status;
+          return;
+        }
+        const option = document.createElement("option");
+        option.value = status;
+        option.textContent = status;
+        option.setAttribute("data-terminal-placeholder", "");
+        option.selected = true;
+        select.prepend(option);
+      }
+
+      function assigneeLabel(candidate: AssigneeCandidate): string {
+        const name = candidate.display_name?.trim();
+        if (name) return name;
+        // No display name on file — never invent one. Show the raw id so the
+        // operator can still distinguish teammates, exactly as the backend
+        // knows them.
+        return candidate.user_profile_id;
+      }
+
+      function setAssigneeSelect(currentAssigneeId: string | null): void {
+        const select = document.getElementById(
+          "assignee-select",
+        ) as HTMLSelectElement;
+        select
+          .querySelectorAll("option[data-candidate]")
+          .forEach((option) => option.remove());
+        for (const candidate of assignees) {
+          const option = document.createElement("option");
+          option.value = candidate.user_profile_id;
+          option.textContent = assigneeLabel(candidate);
+          option.setAttribute("data-candidate", "");
+          select.append(option);
+        }
+        const selectable =
+          currentAssigneeId !== null &&
+          assignees.some(
+            (candidate) => candidate.user_profile_id === currentAssigneeId,
+          );
+        select.value = selectable ? currentAssigneeId! : "";
+      }
+
+      async function renderAssignees(): Promise<void> {
+        const select = document.getElementById(
+          "assignee-select",
+        ) as HTMLSelectElement;
+        const status = document.getElementById("assignee-status")!;
+        const assignButton = document.getElementById(
+          "assign-button",
+        ) as HTMLButtonElement;
+        select.disabled = true;
+        assignButton.disabled = true;
+        status.textContent = "Loading teammates…";
+        // Drop any previous organization's members immediately so a stale
+        // teammate can never be selected while the new list loads.
+        assignees = [];
+        select
+          .querySelectorAll("option[data-candidate]")
+          .forEach((option) => option.remove());
+
+        const outcome = await fetchLeadAssignees(organizationId);
+        if (outcome.kind === "forbidden") {
+          status.textContent = "You do not have permission to assign leads.";
+          return;
+        }
+        if (outcome.kind === "unauthenticated") {
+          status.textContent = "Your session has expired. Sign in again.";
+          return;
+        }
+        if (outcome.kind === "disconnected") {
+          status.textContent = "Could not reach the platform API.";
+          return;
+        }
+        if (outcome.kind !== "ok") {
+          status.textContent = describeFailure(outcome);
+          return;
+        }
+        assignees = outcome.data;
+        if (assignees.length === 0) {
+          status.textContent =
+            "No assignable teammates in this organization yet.";
+          // The select stays usable for displaying the unassigned state but
+          // assignment is not possible without teammates.
+          select.disabled = false;
+          return;
+        }
+        status.textContent = "";
+        select.disabled = false;
+        assignButton.disabled = false;
+      }
+
       function renderDetailBody(lead: LeadDetail): void {
         const bodyPanel = document.getElementById("detail-body")!;
         bodyPanel.replaceChildren();
@@ -524,25 +694,71 @@ import "../styles/global.css";
         const status = document.createElement("p");
         status.append(badge(statusBadgeKind(lead.status), lead.status));
         bodyPanel.append(name, contact, message, status);
-        (document.getElementById("status-select") as HTMLSelectElement).value =
-          [
-            "new",
-            "validating",
-            "unassigned",
-            "assigned",
-            "acknowledged",
-            "contact_attempted",
-            "contacted",
-            "qualifying",
-            "qualified",
-            "appointment_requested",
-            "appointment_scheduled",
-            "nurture",
-            "unresponsive",
-            "archived",
-          ].includes(lead.status)
-            ? lead.status
-            : "new";
+
+        // Lifecycle facts come from real backend timestamps only — no value
+        // is ever invented. `acknowledged_at` and `first_human_contact_at`
+        // are the lead's own speed-to-lead state; showing them truthfully
+        // (including a clear "Not yet") is the only way the operator can see
+        // whether human contact has actually happened.
+        const facts = document.getElementById("lifecycle-facts")!;
+        facts.replaceChildren();
+        facts.append(
+          fact("Urgency", lead.urgency),
+          fact("Received", when(lead.received_at)),
+          fact("Acknowledged", when(lead.acknowledged_at)),
+          fact("First human contact", when(lead.first_human_contact_at)),
+          fact("Assigned to", lead.assigned_to_user_id ?? "Unassigned"),
+        );
+        if (lead.converted_at !== null) {
+          facts.append(
+            fact("Converted at", when(lead.converted_at)),
+            fact(
+              "Converted value",
+              lead.converted_value_cents !== null
+                ? `${lead.converted_value_cents} cents`
+                : "Not specified",
+            ),
+          );
+        }
+        if (lead.loss_reason !== null) {
+          facts.append(fact("Loss reason", lead.loss_reason));
+        }
+
+        // Reflect the current assignee into the picker truthfully. If the
+        // assignee is an active teammate in this organization, the picker
+        // selects their option so the operator sees their name. If the lead
+        // is unassigned, or the assignee is no longer selectable (revoked,
+        // suspended, deactivated, or from a different organization), the
+        // picker falls back to "Unassigned" — it never fabricates a name for
+        // an unresolved id and never leaves a stale id selectable. The real
+        // current assignee id is still shown verbatim in the lifecycle facts
+        // above, so no information is hidden.
+        setAssigneeSelect(lead.assigned_to_user_id);
+
+        setLeadStatusSelect(lead.status);
+
+        // A terminal lead cannot be transitioned, converted, or lost further
+        // (the backend rejects every such attempt with InvalidLeadTransition),
+        // so those controls are disabled rather than left as controls that
+        // can only ever produce an error. Assignment remains enabled because
+        // the API permits reassigning a closed lead for record-keeping.
+        const terminal = isTerminalLeadStatus(lead.status);
+        (
+          document.getElementById("status-select") as HTMLSelectElement
+        ).disabled = terminal;
+        (
+          document.getElementById("status-button") as HTMLButtonElement
+        ).disabled = terminal;
+        (
+          document.getElementById("convert-button") as HTMLButtonElement
+        ).disabled = terminal;
+        (document.getElementById("loss-button") as HTMLButtonElement).disabled =
+          terminal;
+        const terminalNote = document.getElementById("terminal-note")!;
+        terminalNote.hidden = !terminal;
+        if (terminal) {
+          terminalNote.textContent = `This lead is in a terminal state (${lead.status}). No further status transition, conversion, or loss is available.`;
+        }
       }
 
       async function renderNotes(leadId: string): Promise<void> {
@@ -643,10 +859,28 @@ import "../styles/global.css";
         for (const comm of outcome.data) {
           const item = document.createElement("li");
           const strong = document.createElement("strong");
-          strong.textContent = `${comm.channel} (${comm.status})`;
-          const span = document.createElement("span");
-          span.textContent = comm.message_reference;
-          item.append(strong, span);
+          // The status is the backend's real delivery state — never a
+          // fabricated "sent"/"delivered" — so it is shown verbatim.
+          strong.textContent = `${comm.channel} · ${comm.direction} · ${comm.status}`;
+          const ref = document.createElement("span");
+          ref.textContent = `Reference: ${comm.message_reference}`;
+          const delivery = document.createElement("span");
+          const parts: string[] = [];
+          if (comm.sent_at)
+            parts.push(`Sent ${new Date(comm.sent_at).toLocaleString()}`);
+          if (comm.delivered_at)
+            parts.push(
+              `Delivered ${new Date(comm.delivered_at).toLocaleString()}`,
+            );
+          if (comm.failed_at)
+            parts.push(`Failed ${new Date(comm.failed_at).toLocaleString()}`);
+          // A communication with no delivery events yet has simply not been
+          // sent/delivered — that is shown plainly, never as a success.
+          delivery.textContent =
+            parts.length > 0
+              ? parts.join(" · ")
+              : "No delivery events recorded yet.";
+          item.append(strong, ref, delivery);
           list.append(item);
         }
       }
@@ -687,11 +921,20 @@ import "../styles/global.css";
           .getElementById("assign-button")
           ?.addEventListener("click", async () => {
             if (!selectedLeadId) return;
-            const assignee = (
-              document.getElementById("assignee-input") as HTMLInputElement
-            ).value.trim();
+            const select = document.getElementById(
+              "assignee-select",
+            ) as HTMLSelectElement;
+            const assignee = select.value;
             if (!assignee) {
-              setActionStatus("Enter an assignee user ID first.");
+              setActionStatus("Select a teammate to assign first.");
+              return;
+            }
+            if (
+              !assignees.some(
+                (candidate) => candidate.user_profile_id === assignee,
+              )
+            ) {
+              setActionStatus("Select a valid teammate from the list.");
               return;
             }
             const result = await assignLead(
@@ -856,6 +1099,68 @@ import "../styles/global.css";
           });
       }
 
+      /**
+       * Populates the shared organization switcher in the topbar (rendered by
+       * AppShell) from the caller's real memberships. Reuses the existing
+       * `selectDefaultOrganization` helper for resolution — this is not a
+       * second organization-selection mechanism; it wires the one already in
+       * the shell that this page previously left dead and empty.
+       */
+      function populateSwitcher(): void {
+        const select = document.getElementById(
+          "organization-switcher",
+        ) as HTMLSelectElement;
+        select.replaceChildren();
+        for (const organization of organizations) {
+          const option = document.createElement("option");
+          option.value = organization.organization_id;
+          option.textContent = organization.organization_name;
+          select.append(option);
+        }
+        select.hidden = organizations.length <= 1;
+        select.addEventListener("change", () => {
+          const chosen = organizations.find(
+            (item) => item.organization_id === select.value,
+          );
+          if (chosen) void loadOrganization(chosen);
+        });
+      }
+
+      async function loadOrganization(
+        organization: MyOrganization,
+      ): Promise<void> {
+        organizationId = organization.organization_id;
+        if (typeof window !== "undefined") {
+          localStorage.setItem("selected_org_id", organizationId);
+          const url = new URL(window.location.href);
+          if (url.searchParams.get("org") !== organizationId) {
+            url.searchParams.set("org", organizationId);
+            window.history.replaceState({}, "", url.toString());
+          }
+        }
+        document.getElementById("active-organization-name")!.textContent =
+          organization.organization_name;
+        (
+          document.getElementById("organization-switcher") as HTMLSelectElement
+        ).value = organizationId;
+
+        // The previously selected lead belongs to the previous organization.
+        // Close its detail panel and clear the action status so no stale
+        // lifecycle state ever leaks across organizations.
+        selectedLeadId = null;
+        document.getElementById("detail-section")!.hidden = true;
+        document.getElementById("terminal-note")!.hidden = true;
+        setActionStatus("");
+
+        await renderReadiness();
+        await Promise.all([
+          renderSummary(),
+          renderSources(),
+          renderLeadsList(),
+          renderAssignees(),
+        ]);
+      }
+
       async function boot(): Promise<void> {
         if (!readPublicConfig()) {
           showOnly(regions.notConfigured);
@@ -889,37 +1194,32 @@ import "../styles/global.css";
         signOutButton.hidden = false;
         wireSignOut();
 
-        const organizations = await fetchMyOrganizations();
-        if (organizations.kind === "unauthenticated") {
+        const organizationsResult = await fetchMyOrganizations();
+        if (organizationsResult.kind === "unauthenticated") {
           goToLogin();
           return;
         }
-        if (organizations.kind !== "ok") {
-          regions.error.textContent = describeFailure(organizations);
+        if (organizationsResult.kind !== "ok") {
+          regions.error.textContent = describeFailure(organizationsResult);
           showOnly(regions.error);
           return;
         }
-        if (organizations.data.length === 0) {
+        if (organizationsResult.data.length === 0) {
           showOnly(regions.empty);
           return;
         }
-        const organization = selectDefaultOrganization(organizations.data);
+        organizations = organizationsResult.data;
+
+        const organization = selectDefaultOrganization(organizations);
         if (!organization) {
           showOnly(regions.empty);
           return;
         }
-        organizationId = organization.organization_id;
-        document.getElementById("active-organization-name")!.textContent =
-          organization.organization_name;
 
         wireDetailActions();
         wireFilters();
-        await renderReadiness();
-        await Promise.all([
-          renderSummary(),
-          renderSources(),
-          renderLeadsList(),
-        ]);
+        populateSwitcher();
+        await loadOrganization(organization);
 
         showOnly(regions.content);
       }

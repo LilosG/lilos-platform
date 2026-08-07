@@ -13,7 +13,7 @@ This procedure has not been executed against production because accounts, values
 
 ## Render deployment projection
 
-Link the repository-root `render.yaml` only after Render workspace access and all `sync: false` values are approved. The Blueprint uses the repo root as Docker context, one portable backend Dockerfile, Oregon region, CI-gated automatic deploys, no disks, and no Render datastore or workflow products. The API pre-deploy command upgrades Alembic and runs only the established idempotent industry, access, and administration catalog seeds using the dedicated migration URL. Workers never run that command.
+Link the repository-root `render.yaml` only after Render workspace access and all `sync: false` values are approved. The Blueprint uses the repo root as Docker context, one portable backend Dockerfile, Oregon region, CI-gated automatic deploys, no disks, and no Render datastore or workflow products. The API pre-deploy command upgrades Alembic and runs only the established idempotent industry, access, administration catalog, and integration provider seeds using the dedicated migration URL. Workers never run that command.
 
 Render injects `PORT`; the API command binds it on `0.0.0.0`. Readiness, not liveness, gates traffic.
 The worker and scheduler use `python -m apps.worker` and `python -m apps.scheduler`, respectively,

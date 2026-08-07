@@ -24,7 +24,7 @@ async def scalar(database_url: str, statement: str) -> Any:
 
 @pytest.mark.integration
 def test_location_migration_and_downgrade(
-    postgresql_test_url: str, monkeypatch: pytest.MonkeyPatch
+    postgresql_test_url: str, monkeypatch: pytest.MonkeyPatch, alembic_head: str
 ) -> None:
     monkeypatch.setenv("LILOS_MIGRATION_DATABASE_URL", postgresql_test_url)
     config = Config(ROOT / "alembic.ini")
@@ -32,7 +32,7 @@ def test_location_migration_and_downgrade(
     command.upgrade(config, "head")
     assert (
         asyncio.run(scalar(postgresql_test_url, "SELECT version_num FROM alembic_version"))
-        == "20260805_0002"
+        == alembic_head
     )
     assert (
         asyncio.run(

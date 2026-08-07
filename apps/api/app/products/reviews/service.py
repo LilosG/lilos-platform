@@ -15,6 +15,7 @@ from apps.api.app.audit.enums import AuditActorType, AuditResult
 from apps.api.app.audit.metadata import JsonValue
 from apps.api.app.audit.repository import AuditEventRepository
 from apps.api.app.audit.service import AuditEventService
+from apps.api.app.execution.service import ExecutionService
 from apps.api.app.notifications.models import NotificationTemplate
 from apps.api.app.notifications.service import NotificationService
 from apps.api.app.products.reviews.errors import (
@@ -54,7 +55,10 @@ NOTIFICATION_TEMPLATES = {
         "in_app",
         "A review requires human review before any response.",
     ),
-    "reviews.response.published": ("in_app", "A review response was reserved for publication."),
+    "reviews.response.publication_reserved": (
+        "in_app",
+        "A review response was reserved for publication.",
+    ),
 }
 
 
@@ -99,6 +103,7 @@ class ReviewService:
         self.audit_repository = AuditEventRepository()
         self.notifications = NotificationService()
         self.ai_gateway = AIGateway(DeterministicAIProvider())
+        self.execution = ExecutionService()
 
     async def _audit(
         self,
@@ -546,6 +551,16 @@ class ReviewService:
         item.status = "publishing"
         item.idempotency_key = idempotency_key
         await session.flush()
+        await self.execution.start_named(
+            session,
+            organization_id,
+            "reviews.publish_response",
+            idempotency_key,
+            location_id=item.location_id,
+            input_document={"response_id": str(item.id)},
+            correlation_id=correlation_id,
+            actor_id=actor_id,
+        )
         await self._audit(
             session,
             event="reviews.response.publication_reserved",
@@ -562,8 +577,8 @@ class ReviewService:
             session,
             organization_id=organization_id,
             location_id=item.location_id,
-            event_type="reviews.response.published",
-            idempotency_key=f"reviews.published.{item.id}",
+            event_type="reviews.response.publication_reserved",
+            idempotency_key=f"reviews.publication_reserved.{item.id}",
             context={"review_id": str(item.review_id), "response_id": str(item.id)},
         )
         return item

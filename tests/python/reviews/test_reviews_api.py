@@ -384,7 +384,10 @@ def test_manual_and_ai_draft_full_flow_produces_audit_and_notification(
     assert statuses[ai_response_id] == "publishing"
 
     assert (
-        _notification_event_exists(postgresql_test_url, org, "reviews.response.published") is True
+        _notification_event_exists(
+            postgresql_test_url, org, "reviews.response.publication_reserved"
+        )
+        is True
     )
 
 

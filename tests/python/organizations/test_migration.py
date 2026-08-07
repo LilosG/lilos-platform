@@ -131,6 +131,7 @@ async def downgraded_state(database_url: str) -> tuple[object, object, object, o
 def test_organization_migration_schema_drift_downgrade_and_reupgrade(
     postgresql_test_url: str,
     monkeypatch: pytest.MonkeyPatch,
+    alembic_head: str,
 ) -> None:
     monkeypatch.setenv("LILOS_MIGRATION_DATABASE_URL", postgresql_test_url)
     config = Config(REPOSITORY_ROOT / "alembic.ini")
@@ -138,7 +139,7 @@ def test_organization_migration_schema_drift_downgrade_and_reupgrade(
     command.upgrade(config, "head")
 
     state = asyncio.run(catalog(postgresql_test_url))
-    assert state["revision"] == "20260805_0002"
+    assert state["revision"] == alembic_head
     assert len(state["columns"]) == 20
     assert ("created_at", "timestamp with time zone", "NO") in state["columns"]
     assert ("updated_at", "timestamp with time zone", "NO") in state["columns"]
@@ -177,4 +178,4 @@ def test_organization_migration_schema_drift_downgrade_and_reupgrade(
     assert slug_function is None
 
     command.upgrade(config, "head")
-    assert asyncio.run(catalog(postgresql_test_url))["revision"] == "20260805_0002"
+    assert asyncio.run(catalog(postgresql_test_url))["revision"] == alembic_head

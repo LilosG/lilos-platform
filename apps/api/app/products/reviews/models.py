@@ -159,6 +159,7 @@ class ReviewResponseRevision(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     external_response_id: Mapped[str | None] = mapped_column(String(500))
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     idempotency_key: Mapped[str | None] = mapped_column(String(128), unique=True)
+    safe_error_code: Mapped[str | None] = mapped_column(String(128))
 
 
 class ReviewEscalation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
