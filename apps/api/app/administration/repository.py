@@ -153,6 +153,47 @@ class FactRepository:
             )
         )
 
+    async def list_for_key(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        fact_key: str,
+        *,
+        location_id: UUID | None = None,
+    ) -> list[BusinessFactRevision]:
+        """List every revision for a fact key regardless of lifecycle status.
+
+        Used by the business-fact reconciliation to check idempotency before
+        proposing a candidate derived from authoritative client data, so a
+        reconciliation never creates a duplicate of an already-active or
+        already-pending fact with the same value.
+        """
+        stmt = select(BusinessFactRevision).where(
+            BusinessFactRevision.organization_id == organization_id,
+            BusinessFactRevision.fact_key == fact_key,
+        )
+        if location_id is None:
+            stmt = stmt.where(BusinessFactRevision.location_id.is_(None))
+        else:
+            stmt = stmt.where(BusinessFactRevision.location_id == location_id)
+        return list(
+            await session.scalars(stmt.order_by(BusinessFactRevision.revision.desc()))
+        )
+
+    async def list_pending(
+        self, session: AsyncSession, organization_id: UUID
+    ) -> list[BusinessFactRevision]:
+        """List business-fact revisions awaiting operator confirmation."""
+        stmt = (
+            select(BusinessFactRevision)
+            .where(
+                BusinessFactRevision.organization_id == organization_id,
+                BusinessFactRevision.status.in_(("proposed", "pending_approval")),
+            )
+            .order_by(BusinessFactRevision.created_at.desc(), BusinessFactRevision.id)
+        )
+        return list(await session.scalars(stmt))
+
 
 class AdministrationCatalogRepository:
     async def list_products(self, session: AsyncSession) -> list[Product]:

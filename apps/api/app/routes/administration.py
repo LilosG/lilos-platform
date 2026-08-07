@@ -256,6 +256,43 @@ async def resolve_fact(
     )
 
 
+@router.post("/business-facts/reconcile", response_model=DataResponse)
+async def reconcile_business_facts(
+    request: Request,
+    organization_id: UUID,
+    session: DatabaseSession,
+    principal: Authenticated,
+    _: Annotated[AuthorizationDecision | None, policy("business_facts.propose")] = None,
+) -> DataResponse:
+    """Derive business-fact candidates from the client's authoritative data.
+
+    Proposes ``system_derived`` candidates for the keys products require so an
+    operator can confirm them in one place rather than typing internal fact
+    keys by hand. Never auto-approves; preserves the human-confirmation gate.
+    """
+    return response(
+        request,
+        await service.reconcile_business_facts(
+            session,
+            organization_id,
+            actor_id=principal.platform_user_id,
+            correlation_id=request_correlation_id(request),
+        ),
+    )
+
+
+@router.get("/business-facts/candidates", response_model=DataResponse)
+async def list_business_fact_candidates(
+    request: Request,
+    organization_id: UUID,
+    session: DatabaseSession,
+    _: Annotated[AuthorizationDecision | None, policy("business_facts.read")] = None,
+) -> DataResponse:
+    """List proposed business facts awaiting operator confirmation."""
+    items = await service.facts.list_pending(session, organization_id)
+    return response(request, [row(item) for item in items])
+
+
 @router.get("/products", response_model=DataResponse)
 async def list_products(
     request: Request,

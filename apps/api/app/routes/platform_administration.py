@@ -257,6 +257,33 @@ async def get_onboarding_state(
 
 
 @router.post(
+    "/organizations/{organization_id}/reconcile-defaults",
+    response_model=DataResponse,
+    summary="Provision intended safe defaults an existing client may lack",
+)
+async def reconcile_organization_defaults(
+    request: Request,
+    organization_id: UUID,
+    session: DatabaseSession,
+    principal: Authenticated,
+) -> DataResponse:
+    """Idempotently provision the default approval policy if none exists.
+
+    Existing organizations that predate the default-policy provisioning in
+    ``create_entitlement`` would otherwise remain permanently blocked by
+    ``APPROVAL_POLICY_MISSING``. This gives them a one-click recovery path
+    without manual SQL, without overwriting a custom policy, audited.
+    """
+    result = await administration.reconcile_defaults(
+        session,
+        organization_id,
+        actor_id=principal.platform_user_id,
+        correlation_id=request_correlation_id(request),
+    )
+    return response(request, result)
+
+
+@router.post(
     "/organizations/{organization_id}/pause",
     response_model=DataResponse,
     summary="Pause an organization",

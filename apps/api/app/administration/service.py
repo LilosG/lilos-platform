@@ -4,6 +4,7 @@
 from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import datetime
+from json import dumps as _json_dumps
 from typing import cast
 from uuid import UUID, uuid4
 
@@ -661,6 +662,206 @@ class AdministrationService:
         await self.approve_policy(
             session, organization_id, revision.id, actor_id=actor_id, correlation_id=correlation_id
         )
+
+    async def reconcile_defaults(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        *,
+        actor_id: UUID,
+        correlation_id: str,
+    ) -> dict[str, object]:
+        """Idempotently provision intended safe defaults an existing client may lack.
+
+        Existing organizations that predate the default-approval-policy
+        provisioning in ``create_entitlement`` would otherwise remain
+        permanently blocked by ``APPROVAL_POLICY_MISSING`` with no operator
+        action short of manual SQL. This reconciles only the intended safe
+        default approval policy (never overwriting a custom policy), audits
+        the reconciliation, and returns a summary the caller can surface.
+        """
+        await _organization(session, organization_id, lock=True)
+        before = await self.policies.effective(
+            session, organization_id, "approval", utc_now(), None
+        )
+        await self._ensure_default_approval_policy(
+            session, organization_id, actor_id=actor_id, correlation_id=correlation_id
+        )
+        after = await self.policies.effective(
+            session, organization_id, "approval", utc_now(), None
+        )
+        provisioned = before != after
+        await self._audit(
+            session,
+            organization_id,
+            "organization.reconciled_defaults",
+            "organization",
+            organization_id,
+            actor_id,
+            correlation_id,
+            {
+                "operation": "reconcile_defaults",
+                "approval_policy_provisioned": provisioned,
+            },
+        )
+        return {"approval_policy_provisioned": provisioned}
+
+    async def reconcile_business_facts(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        *,
+        actor_id: UUID,
+        correlation_id: str,
+    ) -> dict[str, object]:
+        """Derive business-fact candidates from authoritative client data.
+
+        Reads the organization profile, primary location, and primary domain
+        and proposes ``system_derived`` business facts for the keys products
+        actually require (``business.name``, ``business.address``,
+        ``brand.approved_claims``). Each candidate is proposed (NOT
+        auto-approved) so a human still confirms it; an already-active or
+        already-proposed fact with the same value is never duplicated. Facts
+        with no derivable source (e.g. ``business.hours`` until a location
+        hours field or GBP sync exists) are reported as ``unresolved`` so the
+        operator knows they need manual entry rather than silently passing.
+        """
+        await _organization(session, organization_id, lock=True)
+        organization = await _organization(session, organization_id)
+        profile = await session.scalar(
+            select(OrganizationProfile).where(
+                OrganizationProfile.organization_id == organization_id
+            )
+        )
+        primary_location = await session.scalar(
+            select(Location).where(
+                Location.organization_id == organization_id,
+                Location.is_primary.is_(True),
+                Location.archived_at.is_(None),
+            )
+        )
+        from apps.api.app.domains.models import OrganizationDomain
+
+        primary_domain = await session.scalar(
+            select(OrganizationDomain)
+            .where(
+                OrganizationDomain.organization_id == organization_id,
+                OrganizationDomain.is_primary.is_(True),
+                OrganizationDomain.archived_at.is_(None),
+            )
+            .order_by(OrganizationDomain.created_at)
+        )
+
+        candidates: list[tuple[str, str, str, object, UUID | None]] = []
+        # business.name ← organization profile brand_name, falling back to org name.
+        name_value = (profile.brand_name if profile is not None else None) or organization.name
+        candidates.append(
+            ("business.name", "string", "organization_profile", name_value, None)
+        )
+        # business.address ← primary location address (only when a physical address exists).
+        if primary_location is not None and primary_location.address_line_1 is not None:
+            address_value = {
+                "address_line_1": primary_location.address_line_1,
+                "address_line_2": primary_location.address_line_2,
+                "city": primary_location.city,
+                "region": primary_location.region,
+                "postal_code": primary_location.postal_code,
+                "country_code": primary_location.country_code,
+            }
+            candidates.append(
+                (
+                    "business.address",
+                    "object",
+                    "location",
+                    address_value,
+                    primary_location.id,
+                )
+            )
+        # business.website ← primary domain (informational candidate).
+        if primary_domain is not None:
+            candidates.append(
+                (
+                    "business.website",
+                    "string",
+                    "organization_domain",
+                    primary_domain.domain,
+                    None,
+                )
+            )
+        # brand.approved_claims ← organization profile approved claims list.
+        if profile is not None and profile.approved_claims:
+            candidates.append(
+                (
+                    "brand.approved_claims",
+                    "string_list",
+                    "organization_profile",
+                    list(profile.approved_claims),
+                    None,
+                )
+            )
+
+        proposed: list[dict[str, object]] = []
+        unresolved: list[str] = []
+        for fact_key, value_type, source, value, location_id in candidates:
+            existing = await self.facts.list_for_key(
+                session, organization_id, fact_key, location_id=location_id
+            )
+            value_signature = _json_dumps(value, sort_keys=True, default=str)
+            already_present = any(
+                item.status in {"active", "proposed"}
+                and _json_dumps(item.value, sort_keys=True, default=str) == value_signature
+                for item in existing
+            )
+            if already_present:
+                continue
+            identity = existing[0].fact_identity if existing else uuid4()
+            command = BusinessFactPropose(
+                fact_identity=identity,
+                location_id=location_id,
+                fact_key=fact_key,
+                value_type=value_type,  # type: ignore[arg-type]
+                value=value,
+                source=source,
+                authority=FactAuthority.SYSTEM_DERIVED,
+                change_reason="Candidate derived from authoritative client data during reconciliation.",
+            )
+            revision = await self.propose_fact(
+                session,
+                organization_id,
+                command,
+                actor_id=actor_id,
+                correlation_id=correlation_id,
+            )
+            proposed.append(
+                {"fact_key": fact_key, "revision_id": str(revision.id), "location_id": str(location_id) if location_id else None}
+            )
+        # Report facts the products require that have no derivable source yet.
+        products = await self.catalog.list_products(session)
+        required_keys: set[str] = set()
+        for product in products:
+            required_keys.update(product.required_business_fact_keys)
+        derivable = {item[0] for item in candidates}
+        for key in sorted(required_keys):
+            if key in derivable:
+                continue
+            resolution = await self.resolve_fact(session, organization_id, key)
+            if resolution.state != "resolved":
+                unresolved.append(key)
+        await self._audit(
+            session,
+            organization_id,
+            "business_facts.reconciled",
+            "business_fact",
+            organization_id,
+            actor_id,
+            correlation_id,
+            {
+                "operation": "reconcile",
+                "proposed": len(proposed),
+                "unresolved": len(unresolved),
+            },
+        )
+        return {"proposed": proposed, "unresolved": unresolved}
 
     async def transition_entitlement(
         self,
@@ -1555,19 +1756,28 @@ class AdministrationService:
                 for source in configuration_resolution.sources
                 if source.record_id and source.layer not in {"platform", "industry"}
             )
+        unresolved_fact_keys: list[str] = []
         for key in product.required_business_fact_keys:
             fact_resolution = await self.resolve_fact(session, organization_id, key)
             if fact_resolution.state != "resolved":
-                findings.append(
-                    ReadinessFinding(
-                        code="BUSINESS_FACT_UNRESOLVED",
-                        blocking=True,
-                        resource_key=key,
-                        remediation="Approve one unambiguous current business fact.",
-                    )
-                )
+                unresolved_fact_keys.append(key)
             elif fact_resolution.selected_revision_id:
                 fact_ids.append(fact_resolution.selected_revision_id)
+        if unresolved_fact_keys:
+            count = len(unresolved_fact_keys)
+            findings.append(
+                ReadinessFinding(
+                    code="BUSINESS_FACT_UNRESOLVED",
+                    blocking=True,
+                    resource_key=None,
+                    remediation=(
+                        f"Review {count} business detail"
+                        f"{'s' if count != 1 else ''} needing confirmation."
+                        if count
+                        else "Approve one unambiguous current business fact."
+                    ),
+                )
+            )
         if product.required_integrations:
             for key in product.required_integrations:
                 # Check the LIVE connection state rather than unconditionally
@@ -1594,7 +1804,7 @@ class AdministrationService:
                         code="APPROVAL_POLICY_MISSING",
                         blocking=True,
                         resource_key=product_key,
-                        remediation="Activate an approval policy.",
+                        remediation="Provision the default approval policy for this client.",
                     )
                 )
             policy_ids.extend(item.id for item in policies)
@@ -1648,7 +1858,7 @@ class AdministrationService:
         dependency the operator must connect) rather than as a product that is
         "not available in this release".
         """
-        if integration_key == "google_business_profile":
+        if integration_key.startswith("google_"):
             from apps.api.app.integrations.connection_service import GBPConnectionService
 
             connection = await GBPConnectionService().find_connection(session, organization_id)
