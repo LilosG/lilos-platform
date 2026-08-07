@@ -55,7 +55,7 @@ async def catalog(database_url: str) -> dict[str, object]:
 
 @pytest.mark.integration
 def test_access_migration_upgrade_downgrade_and_preservation(
-    postgresql_test_url: str, monkeypatch: pytest.MonkeyPatch
+    postgresql_test_url: str, monkeypatch: pytest.MonkeyPatch, alembic_head: str
 ) -> None:
     monkeypatch.setenv("LILOS_MIGRATION_DATABASE_URL", postgresql_test_url)
     config = Config(ROOT / "alembic.ini")
@@ -70,7 +70,7 @@ def test_access_migration_upgrade_downgrade_and_preservation(
         "membership_role_assignments",
         "membership_permission_denies",
     }
-    assert state["revision"] == "20260805_0002"
+    assert state["revision"] == alembic_head
     assert expected <= cast(set[str], state["tables"])
     assert {
         "organization_memberships_immutable_type",
@@ -102,4 +102,4 @@ def test_access_migration_upgrade_downgrade_and_preservation(
     } <= cast(set[str], downgraded["tables"])
     assert "audit_events_append_only" in cast(set[str], downgraded["triggers"])
     command.upgrade(config, "head")
-    assert asyncio.run(catalog(postgresql_test_url))["revision"] == "20260805_0002"
+    assert asyncio.run(catalog(postgresql_test_url))["revision"] == alembic_head

@@ -34,6 +34,7 @@ async def database_state(database_url: str) -> tuple[list[str], list[str]]:
 def test_baseline_migration_upgrades_downgrades_and_upgrades_again(
     postgresql_test_url: str,
     monkeypatch: pytest.MonkeyPatch,
+    alembic_head: str,
 ) -> None:
     monkeypatch.setenv("LILOS_MIGRATION_DATABASE_URL", postgresql_test_url)
     config = alembic_config()
@@ -158,7 +159,7 @@ def test_baseline_migration_upgrades_downgrades_and_upgrades_again(
         "workflow_steps",
         "workflow_versions",
     ]
-    assert revisions_at_head == ["20260805_0002"]
+    assert revisions_at_head == [alembic_head]
 
     command.downgrade(config, "base")
     tables_at_base, revisions_at_base = asyncio.run(database_state(postgresql_test_url))
@@ -284,4 +285,4 @@ def test_baseline_migration_upgrades_downgrades_and_upgrades_again(
         "workflow_steps",
         "workflow_versions",
     ]
-    assert revisions_at_final_head == ["20260805_0002"]
+    assert revisions_at_final_head == [alembic_head]
