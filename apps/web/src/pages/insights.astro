@@ -184,20 +184,23 @@ import "../styles/global.css";
           return;
         }
         const state = outcome.data.readiness_state;
-        const label = state === "not_entitled" ? "setup" : state;
-        panel.append(badge(label));
-        for (const finding of outcome.data.blocking_requirements) {
-          const reason = document.createElement("p");
-          reason.textContent = finding.remediation;
-          panel.append(reason);
-        }
-        if (
-          outcome.data.blocking_requirements.length === 0 &&
-          state === "ready"
-        ) {
+        if (state === "ready") {
+          panel.append(badge("ready", "ready"));
           const ready = document.createElement("p");
           ready.textContent = "Insights is ready to use.";
           panel.append(ready);
+        } else {
+          panel.append(badge("setup", "setup in progress"));
+          const note = document.createElement("p");
+          note.textContent =
+            "Some reporting prerequisites are still being set up, but real data from already-active sources is shown below.";
+          panel.append(note);
+          for (const finding of outcome.data.blocking_requirements) {
+            const reason = document.createElement("p");
+            reason.className = "field-hint";
+            reason.textContent = finding.remediation;
+            panel.append(reason);
+          }
         }
       }
 
@@ -215,14 +218,9 @@ import "../styles/global.css";
         const groups: {
           label: string;
           items: { name: string; value: number }[];
+          emptyPrompt?: string;
+          href?: string;
         }[] = [
-          {
-            label: "Workflow runs",
-            items: Object.entries(s.workflow_runs).map(([name, value]) => ({
-              name,
-              value,
-            })),
-          },
           {
             label: "GBP",
             items: [
@@ -233,6 +231,8 @@ import "../styles/global.css";
                 value: total(s.gbp.publications),
               },
             ],
+            emptyPrompt: "Connect Google Business Profile to see activity.",
+            href: "/gbp",
           },
           {
             label: "Reviews",
@@ -240,6 +240,9 @@ import "../styles/global.css";
               name,
               value,
             })),
+            emptyPrompt:
+              "No reviews synced yet. Import reviews to see metrics.",
+            href: "/reviews",
           },
           {
             label: "Content publications",
@@ -249,6 +252,8 @@ import "../styles/global.css";
                 value,
               }),
             ),
+            emptyPrompt: "No content published yet.",
+            href: "/content",
           },
           {
             label: "SEO",
@@ -259,6 +264,8 @@ import "../styles/global.css";
                 value: total(s.seo.opportunities),
               },
             ],
+            emptyPrompt: "Run first crawl to see SEO activity.",
+            href: "/seo",
           },
           {
             label: "Leads",
@@ -266,6 +273,8 @@ import "../styles/global.css";
               name,
               value,
             })),
+            emptyPrompt: "No leads yet.",
+            href: "/leads",
           },
         ];
         const list = document.createElement("ul");
@@ -275,11 +284,26 @@ import "../styles/global.css";
           const heading = document.createElement("h3");
           heading.textContent = group.label;
           item.append(heading);
-          const detail = document.createElement("p");
-          detail.textContent = group.items
-            .map((entry) => `${entry.name}: ${entry.value}`)
-            .join(" · ");
-          item.append(detail);
+          const hasData = group.items.some((entry) => entry.value > 0);
+          if (hasData) {
+            const detail = document.createElement("p");
+            detail.textContent = group.items
+              .map((entry) => `${entry.name}: ${entry.value}`)
+              .join(" · ");
+            item.append(detail);
+          } else if (group.emptyPrompt) {
+            const prompt = document.createElement("p");
+            prompt.className = "field-hint";
+            prompt.textContent = group.emptyPrompt;
+            item.append(prompt);
+            if (group.href) {
+              const link = document.createElement("a");
+              link.href = `${group.href}?org=${organizationId}`;
+              link.className = "button button--secondary button--sm";
+              link.textContent = `Open ${group.label}`;
+              item.append(link);
+            }
+          }
           list.append(item);
         }
         panel.append(list);
