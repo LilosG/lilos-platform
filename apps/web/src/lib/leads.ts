@@ -75,6 +75,21 @@ export type LeadSourcePerformance = {
   converted_count: number;
 };
 
+/**
+ * Assignable teammate returned by the organization-scoped
+ * `GET /api/v1/organizations/{id}/leads/assignees` picker endpoint. Mirrors the
+ * backend `AssignableMemberData` contract: only the fields the picker needs,
+ * and no email (the backend intentionally omits it because no public
+ * membership contract exposes it).
+ */
+export type AssigneeCandidate = {
+  user_profile_id: string;
+  display_name: string | null;
+  membership_status: string;
+  membership_type: string;
+  role_keys: string[];
+};
+
 export type AuditEntry = {
   id: string;
   event_type: string;
@@ -122,6 +137,19 @@ export function fetchSourcePerformance(
   return apiGet<LeadSourcePerformance[]>(
     `${base(organizationId)}/sources/performance`,
   );
+}
+
+/**
+ * Fetch the teammates who may be assigned leads for the currently selected
+ * organization. Organization-scoped and authorized through the existing
+ * `leads.assign` policy; returns an empty list when the organization has no
+ * assignable members, and a `forbidden` outcome when the caller cannot assign
+ * leads — the caller must render each truthfully rather than guessing.
+ */
+export function fetchLeadAssignees(
+  organizationId: string,
+): Promise<ApiOutcome<AssigneeCandidate[]>> {
+  return apiGet<AssigneeCandidate[]>(`${base(organizationId)}/assignees`);
 }
 
 export function fetchLead(

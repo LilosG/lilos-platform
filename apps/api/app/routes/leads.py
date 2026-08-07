@@ -6,7 +6,9 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from apps.api.app.access_control.contracts import AssignableMemberData, AssignableMemberListResponse
 from apps.api.app.access_control.enums import ScopeType
+from apps.api.app.access_control.service import AccessControlService
 from apps.api.app.authentication.dependencies import Authenticated, get_authenticated_principal
 from apps.api.app.authentication.enums import AssuranceLevel
 from apps.api.app.authorization.contracts import AuthorizationDecision
@@ -32,6 +34,7 @@ from apps.api.app.products.leads.models import (
     LeadTask,
 )
 from apps.api.app.products.leads.service import LeadService
+from apps.api.app.schemas import ResponseMeta
 
 router = APIRouter(
     prefix="/api/v1/organizations/{organization_id}/leads",
@@ -39,6 +42,7 @@ router = APIRouter(
     dependencies=[Depends(get_authenticated_principal)],
 )
 service = LeadService()
+access_service = AccessControlService()
 Session = Annotated[AsyncSession, Depends(get_database_session)]
 
 
@@ -197,6 +201,43 @@ async def source_performance(
         "data": await service.source_performance(session, organization_id),
         "meta": meta(request),
     }
+
+
+@router.get(
+    "/assignees",
+    response_model=AssignableMemberListResponse,
+    dependencies=[Depends(no_store)],
+)
+async def list_assignees(
+    request: Request,
+    organization_id: UUID,
+    session: Session,
+    _: Annotated[AuthorizationDecision, policy("leads.assign")],
+) -> AssignableMemberListResponse:
+    """List teammates who may be assigned leads for this organization.
+
+    Organization-scoped, tenant-isolated, and authorized through the existing
+    ``leads.assign`` access-control policy so only operators who can actually
+    assign leads learn who is assignable. Returns the focused fields the
+    picker needs; no email, no fabricated names, no raw SQL bypass, and no
+    parallel membership/user subsystem — it reads the same authoritative
+    membership, user-profile, and role-assignment tables every other access
+    read uses.
+    """
+    members = await access_service.list_assignable_members(session, organization_id)
+    return AssignableMemberListResponse(
+        data=[
+            AssignableMemberData(
+                user_profile_id=member.user_profile_id,
+                display_name=member.display_name,
+                membership_status=member.membership_status,
+                membership_type=member.membership_type,
+                role_keys=member.role_keys,
+            )
+            for member in members
+        ],
+        meta=ResponseMeta(correlation_id=request_correlation_id(request)),
+    )
 
 
 @router.get("/{lead_id}", dependencies=[Depends(no_store)])

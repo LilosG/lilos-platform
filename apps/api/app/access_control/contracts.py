@@ -285,3 +285,27 @@ class InvitationListResponse(BaseModel):
     data: list[InvitationData]
     pagination: AccessPagination
     meta: ResponseMeta
+
+
+class AssignableMemberData(BaseModel):
+    """Organization-scoped teammate summary for lead-assignment pickers.
+
+    Discloses only the fields a lead assigner needs: the platform user id to
+    hand to the existing assignment API, a display name for the picker, the
+    membership status/type, and the role keys held in this organization. Email
+    is intentionally omitted because no public membership contract exposes it.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    user_profile_id: UUID
+    display_name: str | None
+    membership_status: MembershipStatus
+    membership_type: MembershipType
+    role_keys: list[str]
+
+
+class AssignableMemberListResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    data: list[AssignableMemberData]
+    meta: ResponseMeta

@@ -1,5 +1,23 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+const config = {
+  apiBaseUrl: "https://api.lilos.invalid",
+  supabaseUrl: "x",
+  supabaseAnonKey: "y",
+};
+
+vi.mock("./config", () => ({
+  readPublicConfig: vi.fn(),
+}));
+vi.mock("./session", () => ({
+  getAccessToken: vi.fn(),
+  refreshAccessToken: vi.fn(),
+}));
+
+import { readPublicConfig } from "./config";
+import { getAccessToken } from "./session";
 import {
+  fetchLeadAssignees,
   LEAD_STATUS_VALUES,
   LEAD_TRANSITION_TARGET_STATUSES,
   LEAD_URGENCY_VALUES,
@@ -7,6 +25,83 @@ import {
   formatSpeedToLead,
   isTerminalLeadStatus,
 } from "./leads";
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+describe("fetchLeadAssignees", () => {
+  it("calls the organization-scoped assignees endpoint and returns the typed candidates", async () => {
+    vi.mocked(readPublicConfig).mockReturnValue(config);
+    vi.mocked(getAccessToken).mockResolvedValue("token");
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          data: [
+            {
+              user_profile_id: "11111111-1111-4111-8111-111111111111",
+              display_name: "Owner Operator",
+              membership_status: "active",
+              membership_type: "client",
+              role_keys: ["organization_owner"],
+            },
+            {
+              user_profile_id: "22222222-2222-4222-8222-222222222222",
+              display_name: null,
+              membership_status: "active",
+              membership_type: "client",
+              role_keys: ["organization_member"],
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
+    );
+    const outcome = await fetchLeadAssignees(
+      "00000000-0000-4000-8000-000000000001",
+    );
+    expect(outcome.kind).toBe("ok");
+    if (outcome.kind === "ok") {
+      expect(outcome.data).toHaveLength(2);
+      expect(outcome.data[0].display_name).toBe("Owner Operator");
+      expect(outcome.data[1].display_name).toBeNull();
+    }
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const [url] = fetchSpy.mock.calls[0];
+    expect(url).toBe(
+      "https://api.lilos.invalid/api/v1/organizations/00000000-0000-4000-8000-000000000001/leads/assignees",
+    );
+  });
+
+  it("returns forbidden when the caller lacks leads.assign — never fabricates a list", async () => {
+    vi.mocked(readPublicConfig).mockReturnValue(config);
+    vi.mocked(getAccessToken).mockResolvedValue("token");
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ error: { code: "FORBIDDEN" } }), {
+        status: 403,
+      }),
+    );
+    const outcome = await fetchLeadAssignees(
+      "00000000-0000-4000-8000-000000000001",
+    );
+    expect(outcome.kind).toBe("forbidden");
+  });
+
+  it("returns an empty list truthfully when the organization has no assignable members", async () => {
+    vi.mocked(readPublicConfig).mockReturnValue(config);
+    vi.mocked(getAccessToken).mockResolvedValue("token");
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ data: [] }), { status: 200 }),
+    );
+    const outcome = await fetchLeadAssignees(
+      "00000000-0000-4000-8000-000000000001",
+    );
+    expect(outcome.kind).toBe("ok");
+    if (outcome.kind === "ok") {
+      expect(outcome.data).toEqual([]);
+    }
+  });
+});
 
 describe("LEAD_STATUS_VALUES", () => {
   it("contains every status the API contract permits so the filter can locate any lead", () => {

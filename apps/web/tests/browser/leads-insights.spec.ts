@@ -90,6 +90,34 @@ test.describe("Leads surface", () => {
       "Filter leads by urgency",
     );
   });
+
+  test("replaces the raw UUID assignee field with a governed teammate picker", async ({
+    page,
+  }) => {
+    // Regression: the lead detail previously offered a free-text "platform
+    // user ID" input with no lookup. It now offers a governed select backed
+    // by the organization-scoped `leads/assignees` endpoint, with an
+    // unassigned option and a live status region for loading/empty/
+    // unauthorized/failure states. The select starts disabled and shows a
+    // loading status until the (unconfigured) fetch resolves.
+    await page.goto("/leads");
+    await expect(page.locator("#assignee-input")).toHaveCount(0);
+    const select = page.locator("#assignee-select");
+    await expect(select).toBeAttached();
+    await expect(select).toHaveAttribute("aria-label", "Assign to teammate");
+    const values = await select
+      .locator("option")
+      .evaluateAll((opts) => opts.map((o) => (o as HTMLOptionElement).value));
+    // Until the authenticated fetch populates it, only the unassigned
+    // sentinel is present — never a stale or fabricated teammate.
+    expect(values).toEqual([""]);
+    await expect(page.locator("#assignee-status")).toBeAttached();
+    await expect(page.locator("#assignee-status")).toHaveText(
+      "Loading teammates…",
+    );
+    await expect(select).toBeDisabled();
+    await expect(page.locator("#assign-button")).toBeDisabled();
+  });
 });
 
 test.describe("Insights surface", () => {

@@ -162,17 +162,24 @@ import "../styles/global.css";
                   id="status-button">Change status</button
                 >
               </div><div class="field">
-                <label for="assignee-input">Assign to (platform user ID)</label
-                ><input
-                  id="assignee-input"
-                  type="text"
-                  placeholder="Platform user ID"
-                /><p class="field-hint">
-                  Advanced/technical field: enter the internal platform user ID
-                  of the teammate to assign. There is no lookup for this yet, so
-                  you will need the ID from an administrator.
-                </p><button type="button" class="button" id="assign-button"
-                  >Assign</button
+                <label for="assignee-select">Assign to teammate</label><select
+                  id="assignee-select"
+                  aria-label="Assign to teammate"
+                  disabled
+                >
+                  <option value="">Unassigned</option>
+                </select><p
+                  class="field-hint"
+                  id="assignee-status"
+                  role="status"
+                  aria-live="polite"
+                >
+                  Loading teammates…
+                </p><button
+                  type="button"
+                  class="button"
+                  id="assign-button"
+                  disabled>Assign</button
                 >
               </div><div class="hero__actions">
                 <label class="sr-only" for="conversion-value"
@@ -255,6 +262,7 @@ import "../styles/global.css";
         convertLead,
         createLeadTask,
         fetchLead,
+        fetchLeadAssignees,
         fetchLeadAudit,
         fetchLeadCommunications,
         fetchLeadNotes,
@@ -267,6 +275,7 @@ import "../styles/global.css";
         LEAD_TRANSITION_TARGET_STATUSES,
         recordLeadLoss,
         transitionLeadStatus,
+        type AssigneeCandidate,
         type LeadDetail,
         type LeadSummary,
         type LeadTask,
@@ -287,6 +296,11 @@ import "../styles/global.css";
       let organizationId = "";
       let organizations: MyOrganization[] = [];
       let selectedLeadId: string | null = null;
+      // Assignable teammates for the currently selected organization only.
+      // Reset to an empty list on every organization switch so stale members
+      // from a previous organization can never remain selectable, and only
+      // ever populated from the authoritative `leads/assignees` endpoint.
+      let assignees: AssigneeCandidate[] = [];
 
       function showOnly(region: HTMLElement): void {
         for (const key of Object.keys(regions) as (keyof typeof regions)[]) {
@@ -582,6 +596,86 @@ import "../styles/global.css";
         select.prepend(option);
       }
 
+      function assigneeLabel(candidate: AssigneeCandidate): string {
+        const name = candidate.display_name?.trim();
+        if (name) return name;
+        // No display name on file — never invent one. Show the raw id so the
+        // operator can still distinguish teammates, exactly as the backend
+        // knows them.
+        return candidate.user_profile_id;
+      }
+
+      function setAssigneeSelect(currentAssigneeId: string | null): void {
+        const select = document.getElementById(
+          "assignee-select",
+        ) as HTMLSelectElement;
+        select
+          .querySelectorAll("option[data-candidate]")
+          .forEach((option) => option.remove());
+        for (const candidate of assignees) {
+          const option = document.createElement("option");
+          option.value = candidate.user_profile_id;
+          option.textContent = assigneeLabel(candidate);
+          option.setAttribute("data-candidate", "");
+          select.append(option);
+        }
+        const selectable =
+          currentAssigneeId !== null &&
+          assignees.some(
+            (candidate) => candidate.user_profile_id === currentAssigneeId,
+          );
+        select.value = selectable ? currentAssigneeId! : "";
+      }
+
+      async function renderAssignees(): Promise<void> {
+        const select = document.getElementById(
+          "assignee-select",
+        ) as HTMLSelectElement;
+        const status = document.getElementById("assignee-status")!;
+        const assignButton = document.getElementById(
+          "assign-button",
+        ) as HTMLButtonElement;
+        select.disabled = true;
+        assignButton.disabled = true;
+        status.textContent = "Loading teammates…";
+        // Drop any previous organization's members immediately so a stale
+        // teammate can never be selected while the new list loads.
+        assignees = [];
+        select
+          .querySelectorAll("option[data-candidate]")
+          .forEach((option) => option.remove());
+
+        const outcome = await fetchLeadAssignees(organizationId);
+        if (outcome.kind === "forbidden") {
+          status.textContent = "You do not have permission to assign leads.";
+          return;
+        }
+        if (outcome.kind === "unauthenticated") {
+          status.textContent = "Your session has expired. Sign in again.";
+          return;
+        }
+        if (outcome.kind === "disconnected") {
+          status.textContent = "Could not reach the platform API.";
+          return;
+        }
+        if (outcome.kind !== "ok") {
+          status.textContent = describeFailure(outcome);
+          return;
+        }
+        assignees = outcome.data;
+        if (assignees.length === 0) {
+          status.textContent =
+            "No assignable teammates in this organization yet.";
+          // The select stays usable for displaying the unassigned state but
+          // assignment is not possible without teammates.
+          select.disabled = false;
+          return;
+        }
+        status.textContent = "";
+        select.disabled = false;
+        assignButton.disabled = false;
+      }
+
       function renderDetailBody(lead: LeadDetail): void {
         const bodyPanel = document.getElementById("detail-body")!;
         bodyPanel.replaceChildren();
@@ -630,10 +724,16 @@ import "../styles/global.css";
           facts.append(fact("Loss reason", lead.loss_reason));
         }
 
-        // Pre-fill the assignee field with the current assignee so the
-        // operator can see who owns the lead without a separate lookup.
-        (document.getElementById("assignee-input") as HTMLInputElement).value =
-          lead.assigned_to_user_id ?? "";
+        // Reflect the current assignee into the picker truthfully. If the
+        // assignee is an active teammate in this organization, the picker
+        // selects their option so the operator sees their name. If the lead
+        // is unassigned, or the assignee is no longer selectable (revoked,
+        // suspended, deactivated, or from a different organization), the
+        // picker falls back to "Unassigned" — it never fabricates a name for
+        // an unresolved id and never leaves a stale id selectable. The real
+        // current assignee id is still shown verbatim in the lifecycle facts
+        // above, so no information is hidden.
+        setAssigneeSelect(lead.assigned_to_user_id);
 
         setLeadStatusSelect(lead.status);
 
@@ -821,11 +921,20 @@ import "../styles/global.css";
           .getElementById("assign-button")
           ?.addEventListener("click", async () => {
             if (!selectedLeadId) return;
-            const assignee = (
-              document.getElementById("assignee-input") as HTMLInputElement
-            ).value.trim();
+            const select = document.getElementById(
+              "assignee-select",
+            ) as HTMLSelectElement;
+            const assignee = select.value;
             if (!assignee) {
-              setActionStatus("Enter an assignee user ID first.");
+              setActionStatus("Select a teammate to assign first.");
+              return;
+            }
+            if (
+              !assignees.some(
+                (candidate) => candidate.user_profile_id === assignee,
+              )
+            ) {
+              setActionStatus("Select a valid teammate from the list.");
               return;
             }
             const result = await assignLead(
@@ -1048,6 +1157,7 @@ import "../styles/global.css";
           renderSummary(),
           renderSources(),
           renderLeadsList(),
+          renderAssignees(),
         ]);
       }
 
