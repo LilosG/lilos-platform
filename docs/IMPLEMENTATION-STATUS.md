@@ -1,6 +1,6 @@
 # LILOs implementation status
 
-## Operational Release Matrix (2026-08-06)
+## Operational Release Matrix (2026-08-06, production-operationalization pass)
 
 The matrix below distinguishes five orthogonal states for each capability:
 
@@ -16,17 +16,19 @@ The matrix below distinguishes five orthogonal states for each capability:
 | Authentication (Supabase email/password) | Yes | Yes | Yes (pilot sign-in) | Yes | None |
 | MFA / AAL2 step-up | Yes | Yes (`session.test.ts`) | Yes | Yes (pilot TOTP) | None |
 | Platform administration | Yes | Yes | Partial | Partial | None |
-| Client onboarding | Yes | Yes | Partial | Partial | None |
+| Client onboarding (incl. product entitlements via API) | Yes | Yes | Partial | Partial | None |
 | Organization/location management | Yes | Yes | Yes | Yes | None |
-| Product entitlements and readiness | Yes | Yes | Yes | Yes | None |
+| Product entitlements (via platform-admin API) | Yes | Yes (`test_api.py`) | Yes | Yes | None |
+| Integration provider catalog seeding (deployment bootstrap) | Yes | Yes (`provider_seed.py`) | Yes | Yes | None |
 | Google OAuth connection | Yes | Yes (`test_connection_service.py`) | No | No | **Google OAuth credentials** (4 env vars) |
-| GBP account/location discovery | Yes | No (code complete, untested) | No | No | **Google OAuth credentials** |
-| GBP profile sync | Yes | No (code complete, untested) | No | No | **Google OAuth credentials** |
+| GBP account/location discovery | Yes | Yes (`test_discovery_service.py`) | No | No | **Google OAuth credentials** |
+| GBP profile sync | Yes | Yes (`test_discovery_service.py`) | No | No | **Google OAuth credentials** |
 | GBP location mapping | Yes | Yes (`test_gbp_api.py`) | No | No | **Google OAuth credentials** |
 | GBP operations (hours, media, posts) | Yes | Yes (`test_gbp_operations_api.py`) | No | No | **Google OAuth credentials** |
 | GBP workflow execution (`gbp.publish_change`) | Yes | Yes (handler test) | No | No | **Google OAuth credentials** |
 | GBP workflow execution (`gbp.publish_post`) | Yes (fails closed) | Yes (handler test) | No | No | **GBP Posts API scope** + Google OAuth credentials |
 | Reviews ingestion + response | Yes | Yes (`test_reviews_api.py`) | No | No | **Google OAuth credentials** for provider dispatch |
+| Reviews workflow execution (`reviews.publish_response`) | Yes (fails closed) | Yes (handler test) | No | No | **Review reply API** + Google OAuth credentials |
 | Leads management | Yes | Yes (`test_leads_api.py`) | No | No | **Email/SMS provider credentials** for speed-to-lead |
 | Content pipeline | Yes | Yes (`test_content_api.py`) | No | No | **GitHub publishing target** for real publication |
 | Content workflow execution (`content.publish`) | Yes (fails closed) | Yes (handler test) | No | No | **Publishing connector** not yet implemented |
@@ -41,33 +43,53 @@ The matrix below distinguishes five orthogonal states for each capability:
 
 ### Notes on the matrix
 
-- "Fails closed" for `gbp.publish_post` and `content.publish` means the
-  handler honestly marks the publication as `failed` with a clear
-  `safe_error_code` rather than fabricating a `verified` status. Real
-  provider-backed completion requires the listed external blocker to be
-  resolved and the handler to be updated to perform the actual provider
-  write and verification re-read.
-- "No (code complete, untested)" for GBP discovery means the
-  `GBPDiscoveryService` has no dedicated automated tests yet — the existing
-  test suite passes but does not exercise the discovery service's code
-  paths. This is a known gap, not a release blocker, because the service
-  cannot be exercised without real Google credentials.
+- "Fails closed" for `gbp.publish_post`, `content.publish`, and
+  `reviews.publish_response` means the handler honestly marks the
+  publication/response as `failed` with a clear `safe_error_code` rather than
+  fabricating a `verified`/`published` status. Real provider-backed
+  completion requires the listed external blocker to be resolved and the
+  handler to be updated to perform the actual provider write and verification
+  re-read.
+- GBP discovery (`GBPDiscoveryService`) is now test-verified via 14 dedicated
+  tests (`test_discovery_service.py`) covering account discovery, location
+  discovery, profile sync, idempotent persistence, stale-resource marking,
+  tenant isolation, error paths, and the combined `discover_and_sync` flow
+  with individual sync-failure tolerance. The tests use a deterministic fake
+  `GBPAdapter` (no real Google HTTP calls) and a `FakeConnectionService` that
+  bypasses token refresh.
 - `gbp.publish_change` is the only handler that performs a real provider
   write (via `GoogleBusinessProfileAdapter.patch_location`) and a
   verification re-read. It is blocked on Google OAuth credentials for
   real-provider verification.
+- The review-response publication path previously fabricated a `published`
+  outcome: the API route set `publishing` status and sent a
+  `reviews.response.published` notification, but no background worker actually
+  published the response to Google. This is now corrected: a
+  `reviews.publish_response` workflow handler fails closed with
+  `REVIEW_REPLY_API_NOT_CONFIGURED`, and the notification name is corrected to
+  `reviews.response.publication_reserved`.
+- Product entitlements can now be created through the platform-administration
+  API (`POST /api/v1/platform/organizations/{id}/product-entitlements`),
+  eliminating the need for `scripts/provision_gbp_entitlement.py` during normal
+  client onboarding. The script is deprecated and retained for emergency use
+  only.
+- Integration-provider catalog seeding is now included in the deployment
+  bootstrap path (`render_predeploy.sh`), running alongside the existing
+  industry, access, and administration catalog seeds on every API deploy.
 
 ### Current task
 
 - Roadmap phase: Phase 19 — Production Deployment and Launch (operational closure)
-- Status: Implementation complete, awaiting external production credentials
+- Status: Production-operationalization pass complete, awaiting external production credentials
 - Date: 2026-08-06
-- Branch: `release/operational-closure-2026-08-06`
+- Branch: `release/production-operationalization-2026-08-06`
 
-### Commits this session
+### Commits this session (production-operationalization pass)
 
-1. `1bcf685` — fix(web): reconcile MFA/session stabilization and fix pre-existing TypeScript errors
-2. `4249e93` — feat(integrations): add GBP account/location discovery and profile sync
+1. `a071f2f` — feat(platform): eliminate normal-operation manual provisioning
+2. `ea6af38` — test(gbp): add dedicated GBPDiscoveryService tests
+3. `0073d8d` — fix(execution): add review-response workflow handler and fix misleading notification
+4. `4af3826` — style: ruff format handlers.py
 3. `5f1ff78` — feat(execution): register workflow step handlers for product workflows
 4. `daadc15` — fix(web): remove unused DiscoveryResult type import from gbp.astro
 
