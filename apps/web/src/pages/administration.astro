@@ -330,6 +330,15 @@ import "../styles/global.css";
         type AdminOrganization,
         type AdminLocation,
       } from "../lib/platform-admin";
+      import {
+        describeEntitlementRow,
+        enableProduct,
+        entitlementBadgeKind,
+        loadEntitlementsByKey,
+        reEnableProduct,
+        type EntitlementRowState,
+        type ProductEntitlementMap,
+      } from "../lib/product-entitlements";
       import { withBootBoundary } from "../lib/boot-boundary";
 
       const regions = {
@@ -391,66 +400,21 @@ import "../styles/global.css";
         return el;
       }
 
-      async function renderProducts(): Promise<void> {
-        const list = document.getElementById("products-list")!;
-        list.replaceChildren();
-        const outcome = await fetchProducts(organizationId);
-        if (outcome.kind !== "ok") {
-          const item = document.createElement("li");
-          item.textContent = describeFailure(outcome);
-          list.append(item);
-          return;
-        }
-        if (outcome.data.length === 0) {
-          const item = document.createElement("li");
-          item.textContent = "No products are registered yet.";
-          list.append(item);
-          return;
-        }
-        const byKey = new Map(
-          outcome.data.map((product) => [product.key, product]),
-        );
-        for (const key of PRODUCT_KEYS) {
-          const product = byKey.get(key);
-          list.append(await productRow(key, product));
-        }
-        for (const product of outcome.data) {
-          if (
-            !PRODUCT_KEYS.includes(product.key as (typeof PRODUCT_KEYS)[number])
-          ) {
-            list.append(await productRow(product.key, product));
-          }
-        }
-      }
+      let currentPrincipal: PrincipalSummary | null = null;
+      let selectedClientOrganization: AdminOrganization | null = null;
+      let administrationIsPlatformAdmin = false;
+      let administrationEntitlementsByKey: ProductEntitlementMap = new Map();
 
-      async function productRow(
-        key: string,
-        product: AdministeredProduct | undefined,
-      ): Promise<HTMLLIElement> {
-        const item = document.createElement("li");
-        const info = document.createElement("div");
-        const title = document.createElement("h3");
-        title.textContent = product?.name ?? key;
-        const meta = document.createElement("p");
-        meta.textContent =
-          product?.description ?? "Not registered for this deployment.";
-        info.append(title, meta);
-        const actions = document.createElement("div");
-        const readiness = await fetchProductReadiness(
-          organizationId,
-          key as Parameters<typeof fetchProductReadiness>[1],
-        );
-        if (readiness.kind === "ok") {
-          const label =
-            readiness.data.readiness_state === "not_entitled"
-              ? "setup"
-              : readiness.data.readiness_state;
-          actions.append(badge(label));
-        } else {
-          actions.append(badge("blocked", describeFailure(readiness)));
-        }
-        item.append(info, actions);
-        return item;
+      function platformAlert(kind: "error" | "success", message: string): void {
+        const container = document.getElementById("platform-admin-alert")!;
+        container.replaceChildren();
+        const alert = document.createElement("div");
+        alert.className = `alert alert--${kind}`;
+        alert.setAttribute("role", kind === "error" ? "alert" : "status");
+        const p = document.createElement("p");
+        p.textContent = message;
+        alert.append(p);
+        container.append(alert);
       }
 
       async function renderServices(): Promise<void> {
@@ -486,19 +450,202 @@ import "../styles/global.css";
         }
       }
 
-      let currentPrincipal: PrincipalSummary | null = null;
-      let selectedClientOrganization: AdminOrganization | null = null;
+      async function renderProducts(): Promise<void> {
+        const list = document.getElementById("products-list")!;
+        list.replaceChildren();
+        const outcome = await fetchProducts(organizationId);
+        // Build product_id -> product_key so entitlement rows (which carry
+        // product_id) can be associated with the stable product key the rest
+        // of the UI uses. The entitlement rows are only loaded when the
+        // caller is a platform administrator (the platform-admin entitlement
+        // routes require an active platform-admin grant); a non-admin still
+        // sees the truthful readiness badge below, but no Enable control.
+        const productIdToKey = new Map<string, string>();
+        if (outcome.kind === "ok") {
+          for (const product of outcome.data) {
+            productIdToKey.set(product.id, product.key);
+          }
+        }
+        if (administrationIsPlatformAdmin) {
+          const loaded = await loadEntitlementsByKey(
+            organizationId,
+            productIdToKey,
+          );
+          administrationEntitlementsByKey = loaded.byKey;
+        } else {
+          administrationEntitlementsByKey = new Map();
+        }
+        if (outcome.kind !== "ok") {
+          const item = document.createElement("li");
+          item.textContent = describeFailure(outcome);
+          list.append(item);
+          return;
+        }
+        if (outcome.data.length === 0) {
+          const item = document.createElement("li");
+          item.textContent = "No products are registered yet.";
+          list.append(item);
+          return;
+        }
+        const byKey = new Map(
+          outcome.data.map((product) => [product.key, product]),
+        );
+        for (const key of PRODUCT_KEYS) {
+          const product = byKey.get(key);
+          list.append(await productRow(key, product));
+        }
+        for (const product of outcome.data) {
+          if (
+            !PRODUCT_KEYS.includes(product.key as (typeof PRODUCT_KEYS)[number])
+          ) {
+            list.append(await productRow(product.key, product));
+          }
+        }
+      }
 
-      function platformAlert(kind: "error" | "success", message: string): void {
-        const container = document.getElementById("platform-admin-alert")!;
-        container.replaceChildren();
-        const alert = document.createElement("div");
-        alert.className = `alert alert--${kind}`;
-        alert.setAttribute("role", kind === "error" ? "alert" : "status");
-        const p = document.createElement("p");
-        p.textContent = message;
-        alert.append(p);
-        container.append(alert);
+      /**
+       * Wire the same shared Enable / Restore-to-setup_required control used
+       * by /onboarding, so the two pages never diverge in entitlement
+       * behavior. After a successful POST the readiness/entitlement state is
+       * refreshed immediately. Lifecycle guards remain backend-owned; a
+       * transition the current status does not permit is rendered as a
+       * truthful failure rather than retried.
+       */
+      function wireAdminEntitlementAction(
+        state: EntitlementRowState,
+      ): HTMLButtonElement | null {
+        if (!administrationIsPlatformAdmin) return null;
+        const alert = (kind: "error" | "success", message: string) => {
+          const container = document.getElementById("platform-admin-alert");
+          if (!container) return;
+          const box = document.createElement("div");
+          box.className = `alert alert--${kind}`;
+          box.setAttribute("role", kind === "error" ? "alert" : "status");
+          const p = document.createElement("p");
+          p.textContent = message;
+          box.append(p);
+          container.replaceChildren(box);
+        };
+
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "button button--secondary button--sm";
+
+        if (state.canEnable) {
+          button.textContent = "Enable";
+          button.title =
+            "Create a setup_required entitlement for this product through the platform-administration API.";
+          button.addEventListener("click", async () => {
+            button.disabled = true;
+            button.textContent = "Enabling…";
+            const result = await enableProduct(
+              organizationId,
+              state.productKey,
+              `Enable ${state.productKey} from Administration.`,
+            );
+            if (result.kind !== "ok") {
+              button.disabled = false;
+              button.textContent = "Enable";
+              alert("error", describeFailure(result));
+              return;
+            }
+            alert("success", `${state.productKey} enabled.`);
+            await renderProducts();
+          });
+          return button;
+        }
+
+        if (state.canReEnable && state.entitlement !== null) {
+          const entitlement = state.entitlement;
+          button.textContent = "Restore to setup required";
+          button.title =
+            "Restores this deliberately disabled/suspended entitlement to setup_required through the governed transition API.";
+          button.addEventListener("click", async () => {
+            button.disabled = true;
+            button.textContent = "Restoring…";
+            const result = await reEnableProduct(
+              organizationId,
+              entitlement,
+              `Operator restored ${state.productKey} entitlement to setup_required from Administration.`,
+            );
+            if (result.kind !== "ok") {
+              button.disabled = false;
+              button.textContent = "Restore to setup required";
+              alert("error", describeFailure(result));
+              return;
+            }
+            alert("success", `${state.productKey} restored.`);
+            await renderProducts();
+          });
+          return button;
+        }
+
+        return null;
+      }
+
+      async function productRow(
+        key: string,
+        product: AdministeredProduct | undefined,
+      ): Promise<HTMLLIElement> {
+        const item = document.createElement("li");
+        const info = document.createElement("div");
+        const title = document.createElement("h3");
+        title.textContent = product?.name ?? key;
+        const meta = document.createElement("p");
+        meta.textContent =
+          product?.description ?? "Not registered for this deployment.";
+        info.append(title, meta);
+        const actions = document.createElement("div");
+        actions.style.display = "flex";
+        actions.style.flexDirection = "column";
+        actions.style.gap = "0.5rem";
+        actions.style.alignItems = "flex-end";
+        // Truthful readiness state from the per-organization readiness route.
+        const readiness = await fetchProductReadiness(
+          organizationId,
+          key as Parameters<typeof fetchProductReadiness>[1],
+        );
+        // Truthful entitlement state from the platform-administration
+        // entitlement route (loaded once per renderProducts pass). Reused
+        // by /onboarding so the two pages cannot diverge.
+        const entitlement = administrationEntitlementsByKey.get(key) ?? null;
+        const rowState = describeEntitlementRow(key, entitlement);
+        const readinessLabel =
+          readiness.kind === "ok"
+            ? readiness.data.readiness_state === "not_entitled"
+              ? "setup"
+              : readiness.data.readiness_state
+            : "blocked";
+        actions.append(badge(readinessLabel));
+        // Render the truthful entitlement lifecycle state alongside the
+        // readiness badge, instead of only the readiness badge. The badge
+        // alone hid the case where no entitlement row existed at all (the
+        // release-blocking GBP symptom).
+        const entBadge = document.createElement("span");
+        entBadge.className = `status status--${
+          entitlement === null
+            ? "blocked"
+            : entitlementBadgeKind(entitlement.status)
+        }`;
+        const entDot = document.createElement("span");
+        entDot.setAttribute("aria-hidden", "true");
+        entDot.className = "status__dot";
+        entBadge.append(entDot);
+        entBadge.append(
+          document.createTextNode(
+            entitlement === null
+              ? "no entitlement"
+              : entitlement.status.replace(/_/g, " "),
+          ),
+        );
+        actions.append(entBadge);
+        // Operator action: Enable (no entitlement) or Restore
+        // (not_enabled/suspended). Archived is terminal; an existing
+        // effective entitlement is never recreated.
+        const action = wireAdminEntitlementAction(rowState);
+        if (action !== null) actions.append(action);
+        item.append(info, actions);
+        return item;
       }
 
       async function renderClientDetail(
@@ -847,6 +994,7 @@ import "../styles/global.css";
         }
 
         const isPlatformAdmin = await renderPlatformAdmin();
+        administrationIsPlatformAdmin = isPlatformAdmin;
 
         const organizations = await fetchMyOrganizations();
         if (organizations.kind === "unauthenticated") {

@@ -209,6 +209,7 @@ import "../styles/global.css";
         disconnectConnection,
         fetchConnectionStatus,
         discoverResources,
+        describeGbpConnectFailure,
       } from "../lib/gbp-connection";
       import {
         createPostRevision,
@@ -394,10 +395,54 @@ import "../styles/global.css";
         panel.replaceChildren(document.createTextNode("Connecting…"));
         const outcome = await beginConnection(organizationId);
         if (outcome.kind !== "ok") {
-          panel.replaceChildren(errorAlert(describeFailure(outcome)));
+          panel.replaceChildren(
+            renderConnectFailure(outcome, () => void beginOrReconnect()),
+          );
           return;
         }
         window.location.assign(outcome.data.authorization_url);
+      }
+
+      /**
+       * Render the specific, actionable failure for a GBP connect attempt
+       * (e.g. `PRODUCT_NOT_READY` -> "enable GBP in Client Onboarding", with
+       * a link) instead of the generic "The request conflicts with the
+       * current resource state." The classification lives in the pure,
+       * unit-tested `describeGbpConnectFailure` helper; this function only
+       * builds DOM from it. The backend OAuth-requires-an-effective-
+       * entitlement rule is NOT weakened here.
+       */
+      function renderConnectFailure(
+        outcome: ApiOutcome<unknown>,
+        retry: () => void,
+      ): HTMLDivElement {
+        const description = describeGbpConnectFailure(outcome, organizationId);
+        if (description.kind === "product_not_ready") {
+          const alert = document.createElement("div");
+          alert.className = "alert alert--error";
+          alert.setAttribute("role", "alert");
+          const message = document.createElement("p");
+          message.textContent = description.message;
+          alert.append(message);
+          const actions = document.createElement("div");
+          actions.className = "hero__actions";
+          if (description.onboardingHref !== null) {
+            const onboardingLink = document.createElement("a");
+            onboardingLink.href = description.onboardingHref;
+            onboardingLink.className = "button button--secondary button--sm";
+            onboardingLink.textContent = "Open Client Onboarding";
+            actions.append(onboardingLink);
+          }
+          const retryButton = document.createElement("button");
+          retryButton.type = "button";
+          retryButton.className = "button button--secondary button--sm";
+          retryButton.textContent = "Try again";
+          retryButton.addEventListener("click", retry);
+          actions.append(retryButton);
+          alert.append(actions);
+          return alert;
+        }
+        return errorAlert(description.message);
       }
 
       function confirmDisconnect(

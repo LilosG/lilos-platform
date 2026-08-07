@@ -1,6 +1,13 @@
 import { apiGet, apiRequest, type ApiOutcome } from "./api-client";
 
 export type AdministeredProduct = {
+  /**
+   * Product catalog row id (UUID). The backend `GET /products` route serializes
+   * the full `Product` row, including `id`; entitlement rows reference this
+   * same `id` via `product_id`, so the operator UI needs it to associate
+   * entitlements with product keys.
+   */
+  id: string;
   key: string;
   name: string;
   description: string;

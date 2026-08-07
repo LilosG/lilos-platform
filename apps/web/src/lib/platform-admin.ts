@@ -185,6 +185,93 @@ export type OnboardingState = {
   evaluated_at: string;
 };
 
+/**
+ * Truthful lifecycle states of a `ProductEntitlement`, mirroring the backend
+ * `EntitlementStatus` enum (`apps.api.app.administration.enums`). These are
+ * the only values the backend ever writes to `status`; the frontend must
+ * render them truthfully rather than inventing its own.
+ */
+export type EntitlementStatus =
+  | "not_enabled"
+  | "setup_required"
+  | "configuration_required"
+  | "connection_required"
+  | "ready"
+  | "active"
+  | "paused"
+  | "degraded"
+  | "suspended"
+  | "archived";
+
+/**
+ * Real row shape returned by the platform-administration entitlement routes.
+ * The backend `list_product_entitlements`/`create_product_entitlement`/
+ * `transition_product_entitlement` handlers serialize the `ProductEntitlement`
+ * row's columns verbatim (see `_row` in `routes/platform_administration.py`),
+ * so this contract must match those columns exactly — no client-side
+ * fabrication.
+ */
+export type ProductEntitlement = {
+  id: string;
+  organization_id: string;
+  product_id: string;
+  status: EntitlementStatus;
+  source: string;
+  reason: string;
+  effective_from: string | null;
+  effective_until: string | null;
+  activated_at: string | null;
+  archived_at: string | null;
+  version: number;
+  created_at: string;
+  updated_at: string;
+};
+
+/**
+ * Entitlement statuses that the OAuth connect route's
+ * `_require_effective_entitlement` treats as *not* effective (a connection
+ * attempt fails closed with `PRODUCT_NOT_READY`). Mirrors the backend
+ * `NOT_EFFECTIVE_ENTITLEMENT_STATUSES` frozenset exactly. Kept in sync here
+ * so the operator UI can render the truthful "not effective" state without
+ * a second round-trip.
+ */
+export const NOT_EFFECTIVE_ENTITLEMENT_STATUSES: ReadonlySet<EntitlementStatus> =
+  new Set<EntitlementStatus>(["not_enabled", "archived", "suspended"]);
+
+/**
+ * Entitlement statuses the onboarding read model counts as "selected" — i.e.
+ * the product is enabled for this client, even if not yet ready. Mirrors the
+ * backend `_NOT_SELECTED_ENTITLEMENT_STATUSES` inverse (the onboarding
+ * service treats only `not_enabled`/`archived` as not selected). A
+ * `setup_required` entitlement therefore counts as selected/effective for
+ * the purpose of permitting the GBP OAuth connection.
+ */
+export const SELECTED_ENTITLEMENT_STATUSES: ReadonlySet<EntitlementStatus> =
+  new Set<EntitlementStatus>([
+    "setup_required",
+    "configuration_required",
+    "connection_required",
+    "ready",
+    "active",
+    "paused",
+    "degraded",
+  ]);
+
+export type CreateProductEntitlementInput = {
+  product_key: string;
+  /** Stable operator/onboarding source attribution (audit). */
+  source: string;
+  /** Truthful audit reason recorded on the entitlement row. */
+  reason: string;
+  location_ids?: string[];
+};
+
+export type TransitionProductEntitlementInput = {
+  target_status: EntitlementStatus;
+  reason: string;
+  expected_version: number;
+};
+
 const base = "/api/v1/platform";
 
 export function fetchIndustries(): Promise<ApiOutcome<IndustriesResponse>> {
@@ -358,5 +445,75 @@ export function fetchOnboardingState(
 ): Promise<ApiOutcome<OnboardingState>> {
   return apiGet<OnboardingState>(
     `${base}/organizations/${organizationId}/onboarding-state`,
+  );
+}
+
+/**
+ * List product entitlements for an organization through the production
+ * platform-administration API. The backend serializes each row verbatim
+ * (see `ProductEntitlement`); the returned array is the truthful lifecycle
+ * state — never fabricated, never a readiness badge that hides an absent
+ * entitlement.
+ */
+export function fetchProductEntitlements(
+  organizationId: string,
+): Promise<ApiOutcome<ProductEntitlement[]>> {
+  return apiGet<ProductEntitlement[]>(
+    `${base}/organizations/${organizationId}/product-entitlements`,
+  );
+}
+
+/**
+ * Create a product entitlement for an organization through the production
+ * platform-administration API — the same governed
+ * `AdministrationService.create_entitlement` service the per-organization
+ * route uses, attributed to the authenticated platform administrator. This
+ * is the normal-application-flow replacement for the deprecated
+ * `scripts/provision_gbp_entitlement.py` script; the resulting
+ * `setup_required` entitlement is effective enough to permit the GBP OAuth
+ * connection. Does not use the deprecated DB provisioning script.
+ */
+export function createProductEntitlement(
+  organizationId: string,
+  command: CreateProductEntitlementInput,
+): Promise<ApiOutcome<ProductEntitlement>> {
+  return apiRequest<ProductEntitlement>(
+    `${base}/organizations/${organizationId}/product-entitlements`,
+    {
+      method: "POST",
+      body: {
+        product_key: command.product_key,
+        source: command.source,
+        reason: command.reason,
+        location_ids: command.location_ids ?? [],
+      },
+    },
+  );
+}
+
+/**
+ * Transition a product entitlement's lifecycle state through the production
+ * platform-administration API. The backend enforces the same
+ * `ENTITLEMENT_TRANSITIONS` lifecycle guards as the per-organization route:
+ * an invalid transition is rejected with `TRANSITION_NOT_ALLOWED` (409)
+ * rather than silently applied. Callers must pass the row's current
+ * `version` for optimistic-concurrency control. Does not weaken lifecycle
+ * guards.
+ */
+export function transitionProductEntitlement(
+  organizationId: string,
+  entitlementId: string,
+  command: TransitionProductEntitlementInput,
+): Promise<ApiOutcome<ProductEntitlement>> {
+  return apiRequest<ProductEntitlement>(
+    `${base}/organizations/${organizationId}/product-entitlements/${entitlementId}/transition`,
+    {
+      method: "POST",
+      body: {
+        target_status: command.target_status,
+        reason: command.reason,
+        expected_version: command.expected_version,
+      },
+    },
   );
 }
