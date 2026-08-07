@@ -1,6 +1,9 @@
 """Safe SEO-domain errors exposed through the standard API envelope."""
 
-from apps.api.app.errors import ConflictError, NotFoundError
+from http import HTTPStatus
+
+from apps.api.app.errors import ApiError, ConflictError, NotFoundError
+from apps.api.app.schemas import ErrorCategory
 
 
 class SEOWebsiteNotFoundError(NotFoundError):
@@ -11,6 +14,28 @@ class SEOWebsiteNotFoundError(NotFoundError):
 class SEOSearchPropertyNotConfiguredError(ConflictError):
     code = "SEO_SEARCH_PROPERTY_NOT_CONFIGURED"
     public_message = "No active, connected Search Console connection is configured."
+
+
+class SEOSearchPropertyNotFoundError(NotFoundError):
+    code = "SEO_SEARCH_PROPERTY_NOT_FOUND"
+    public_message = "The requested Search Console property mapping was not found."
+
+
+class SEOSearchConsoleScopeRequiredError(ConflictError):
+    """The Google connection has not granted the Search Console OAuth scope."""
+
+    code = "SEO_SEARCH_CONSOLE_SCOPE_REQUIRED"
+    public_message = "Reconnect Google and authorize Search Console before discovering properties."
+
+
+class SEOSearchConsoleDiscoveryFailedError(ApiError):
+    """The Search Console discovery call to Google failed."""
+
+    status_code = HTTPStatus.BAD_GATEWAY
+    code = "SEO_SEARCH_CONSOLE_DISCOVERY_FAILED"
+    category = ErrorCategory.SYSTEM
+    retryable = True
+    public_message = "Search Console property discovery failed."
 
 
 class SEOOpportunityNotFoundError(NotFoundError):

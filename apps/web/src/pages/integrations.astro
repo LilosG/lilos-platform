@@ -92,12 +92,20 @@ import "../styles/global.css";
   import {
     fetchConnectionStatus,
     beginConnection,
+    connectGoogle,
     disconnectConnection,
     describeGbpConnectFailure,
     type GBPConnectionStatus,
+    type GoogleServices,
   } from "../lib/gbp-connection";
   import { fetchGitHubConnections } from "../lib/content";
   import { fetchWebsites, fetchSearchProperties } from "../lib/seo";
+  import {
+    discoverSearchConsole,
+    mapSearchConsole,
+    syncSearchConsole,
+    fetchSearchConsoleSummary,
+  } from "../lib/search-console";
   import { selectDefaultOrganization } from "../lib/dashboard-logic";
   import { getCurrentSession } from "../lib/session";
 
@@ -238,6 +246,7 @@ import "../styles/global.css";
           const r = await disconnectConnection(organizationId);
           if (r.kind !== "ok") alert(describeFailure(r));
           await renderGoogle();
+          await renderSearchConsole();
         }),
       );
     } else {
@@ -253,6 +262,37 @@ import "../styles/global.css";
       );
     }
     panel.append(row);
+
+    // Service-level states beneath one Google connection.
+    const services: GoogleServices = status?.services ?? {
+      gbp: false,
+      search_console: false,
+      analytics: false,
+    };
+    const serviceList = document.createElement("ul");
+    serviceList.className = "product-list";
+    for (const [key, label] of [
+      ["gbp", "Google Business Profile"],
+      ["search_console", "Search Console"],
+      ["analytics", "Google Analytics"],
+    ] as const) {
+      const li = document.createElement("li");
+      const div = document.createElement("div");
+      div.className = "product-list__info";
+      const name = document.createElement("strong");
+      name.textContent = label;
+      const enabled = services[key as keyof GoogleServices];
+      div.append(
+        name,
+        badge(
+          enabled ? "connected" : "missing",
+          enabled ? "Connected" : "Connect",
+        ),
+      );
+      li.append(div);
+      serviceList.append(li);
+    }
+    panel.append(serviceList);
 
     const note = document.createElement("p");
     note.className = "field-hint";
@@ -312,32 +352,177 @@ import "../styles/global.css";
       return;
     }
     const websiteId = websites.data[0].id;
-    const props = await fetchSearchProperties(organizationId, websiteId);
-    if (props.kind !== "ok" || props.data.length === 0) {
+
+    // Connection gating: Search Console requires the Google connection +
+    // the search_console scope. If missing, offer to authorize it here.
+    const status = await fetchConnectionStatus(organizationId);
+    const connected =
+      status.kind === "ok" &&
+      (status.data as GBPConnectionStatus | null)?.status === "connected";
+    const scopeGranted =
+      connected &&
+      (status.data as GBPConnectionStatus | null)?.services?.search_console;
+
+    if (!connected) {
       panel.append(
-        badge("missing", "Not mapped"),
+        badge("missing", "Google not connected"),
         document.createTextNode(
-          " No Search Console property mapped. Map one from the SEO workspace.",
+          " Connect Google above before mapping Search Console.",
+        ),
+      );
+      return;
+    }
+    if (!scopeGranted) {
+      panel.append(
+        badge("setup", "Scope required"),
+        document.createTextNode(
+          " Search Console access is not authorized for this Google connection.",
+        ),
+      );
+      panel.append(
+        actionButton("Authorize Search Console", async () => {
+          const r = await connectGoogle(organizationId, [
+            "gbp",
+            "search_console",
+          ]);
+          if (r.kind === "ok") window.location.assign(r.data.authorization_url);
+          else alert(describeFailure(r));
+        }),
+      );
+      return;
+    }
+
+    // Existing mappings + synced performance summary.
+    const [propsResult, summaryResult] = await Promise.all([
+      fetchSearchProperties(organizationId, websiteId),
+      fetchSearchConsoleSummary(organizationId, websiteId),
+    ]);
+    const summary =
+      summaryResult.kind === "ok"
+        ? summaryResult.data
+        : {
+            connected: false,
+            total_clicks: 0,
+            total_impressions: 0,
+            properties: [],
+          };
+
+    if (propsResult.kind === "ok" && propsResult.data.length > 0) {
+      const list = document.createElement("ul");
+      list.className = "product-list";
+      for (const prop of propsResult.data) {
+        const row = document.createElement("li");
+        const info = document.createElement("div");
+        info.className = "product-list__info";
+        const name = document.createElement("strong");
+        name.textContent = prop.external_property_id;
+        info.append(
+          name,
+          badge(
+            prop.mapping_status === "active" || prop.mapping_status === "mapped"
+              ? "connected"
+              : "setup",
+            prop.mapping_status,
+          ),
+        );
+        if (prop.last_synced_at) {
+          info.append(
+            document.createTextNode(
+              ` Last synced ${new Date(prop.last_synced_at).toLocaleString()}`,
+            ),
+          );
+        }
+        row.append(info);
+        row.append(
+          actionButton("Sync", async () => {
+            const r = await syncSearchConsole(
+              organizationId,
+              websiteId,
+              prop.id,
+            );
+            if (r.kind !== "ok") alert(describeFailure(r));
+            await renderSearchConsole();
+          }),
+        );
+        list.append(row);
+      }
+      panel.append(list);
+      if (summary.connected) {
+        const perf = document.createElement("p");
+        perf.className = "field-hint";
+        perf.textContent = `Synced performance: ${summary.total_clicks} clicks, ${summary.total_impressions} impressions.`;
+        panel.append(perf);
+      }
+      // Allow mapping another property too.
+      panel.append(
+        actionButton("Discover properties", async () => {
+          await runDiscovery(websiteId);
+        }),
+      );
+      return;
+    }
+
+    // No mapping yet -> drive the operator through discovery + selection.
+    panel.append(
+      badge("missing", "Not mapped"),
+      document.createTextNode(
+        " Discover your Search Console properties and select one.",
+      ),
+    );
+    panel.append(
+      actionButton("Discover properties", async () => {
+        await runDiscovery(websiteId);
+      }),
+    );
+  }
+
+  async function runDiscovery(websiteId: string): Promise<void> {
+    const panel = document.getElementById("gsc-panel")!;
+    const discovery = await discoverSearchConsole(organizationId, websiteId);
+    if (discovery.kind !== "ok") {
+      alert(describeFailure(discovery));
+      return;
+    }
+    panel.replaceChildren();
+    if (discovery.data.properties.length === 0) {
+      panel.append(
+        badge("missing", "No properties"),
+        document.createTextNode(
+          " No Search Console properties are accessible to this Google account.",
         ),
       );
       return;
     }
     const list = document.createElement("ul");
     list.className = "product-list";
-    for (const prop of props.data) {
+    for (const prop of discovery.data.properties) {
+      const isRecommended =
+        discovery.data.recommended?.external_property_id ===
+        prop.external_property_id;
       const row = document.createElement("li");
       const info = document.createElement("div");
       info.className = "product-list__info";
       const name = document.createElement("strong");
       name.textContent = prop.external_property_id;
-      info.append(
-        name,
-        badge(
-          prop.mapping_status === "active" ? "connected" : "setup",
-          prop.mapping_status,
-        ),
-      );
+      info.append(name);
+      if (isRecommended) {
+        info.append(badge("connected", "Recommended"));
+      }
+      info.append(document.createTextNode(` (${prop.property_type})`));
       row.append(info);
+      row.append(
+        actionButton("Map", async () => {
+          const r = await mapSearchConsole(organizationId, websiteId, {
+            external_property_id: prop.external_property_id,
+            property_type: prop.property_type as "domain" | "url_prefix",
+          });
+          if (r.kind !== "ok") {
+            alert(describeFailure(r));
+            return;
+          }
+          await renderSearchConsole();
+        }),
+      );
       list.append(row);
     }
     panel.append(list);

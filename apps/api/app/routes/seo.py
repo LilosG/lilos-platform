@@ -20,7 +20,9 @@ from apps.api.app.products.seo.contracts import (
     OutcomeRecord,
     RecommendationCreate,
     RecommendationDecision,
+    SearchConsoleSyncRequest,
     SearchPropertyCreate,
+    SearchPropertySelect,
     WebsiteCreate,
 )
 from apps.api.app.products.seo.models import (
@@ -31,7 +33,9 @@ from apps.api.app.products.seo.models import (
     SEOSearchProperty,
     SEOWebsite,
 )
+from apps.api.app.products.seo.search_console_service import SearchConsoleService
 from apps.api.app.products.seo.service import SEOService
+from apps.api.app.routes.health import settings_from_request
 
 router = APIRouter(
     prefix="/api/v1/organizations/{organization_id}/seo",
@@ -39,6 +43,7 @@ router = APIRouter(
     dependencies=[Depends(get_authenticated_principal)],
 )
 service = SEOService()
+search_console = SearchConsoleService()
 Session = Annotated[AsyncSession, Depends(get_database_session)]
 
 
@@ -223,6 +228,126 @@ async def create_search_property(
         correlation_id=request_correlation_id(request),
     )
     return {"data": search_property_row(item), "meta": meta(request)}
+
+
+@router.get(
+    "/websites/{website_id}/search-console/discover",
+    dependencies=[Depends(no_store)],
+    summary="Discover accessible Search Console properties and recommend a match",
+)
+async def discover_search_console(
+    request: Request,
+    organization_id: UUID,
+    website_id: UUID,
+    session: Session,
+    principal: Authenticated,
+    _: Annotated[AuthorizationDecision, policy("seo.manage")],
+) -> dict[str, object]:
+    settings = settings_from_request(request)
+    result = await search_console.discover_properties(
+        session,
+        settings,
+        organization_id,
+        website_id,
+        actor_id=principal.platform_user_id,
+        correlation_id=request_correlation_id(request),
+    )
+    return {
+        "data": {
+            "properties": [
+                {
+                    "external_property_id": p.external_property_id,
+                    "property_type": p.property_type,
+                    "permission_level": p.permission_level,
+                }
+                for p in result.properties
+            ],
+            "recommended": (
+                {
+                    "external_property_id": result.recommended.external_property_id,
+                    "property_type": result.recommended.property_type,
+                    "permission_level": result.recommended.permission_level,
+                }
+                if result.recommended is not None
+                else None
+            ),
+        },
+        "meta": meta(request),
+    }
+
+
+@router.post(
+    "/websites/{website_id}/search-console/map",
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(no_store)],
+    summary="Map the operator-selected Search Console property",
+)
+async def map_search_console(
+    request: Request,
+    organization_id: UUID,
+    website_id: UUID,
+    command: SearchPropertySelect,
+    session: Session,
+    principal: Authenticated,
+    _: Annotated[AuthorizationDecision, policy("seo.manage")],
+) -> dict[str, object]:
+    settings = settings_from_request(request)
+    item = await search_console.map_property(
+        session,
+        settings,
+        organization_id,
+        website_id,
+        external_property_id=command.external_property_id,
+        property_type=command.property_type,
+        actor_id=principal.platform_user_id,
+        correlation_id=request_correlation_id(request),
+    )
+    return {"data": search_property_row(item), "meta": meta(request)}
+
+
+@router.post(
+    "/websites/{website_id}/search-properties/{search_property_id}/sync",
+    dependencies=[Depends(no_store)],
+    summary="Sync Search Console observations for a mapped property",
+)
+async def sync_search_console(
+    request: Request,
+    organization_id: UUID,
+    website_id: UUID,
+    search_property_id: UUID,
+    session: Session,
+    principal: Authenticated,
+    _: Annotated[AuthorizationDecision, policy("seo.manage")],
+    command: SearchConsoleSyncRequest | None = None,
+) -> dict[str, object]:
+    settings = settings_from_request(request)
+    days = command.days if command is not None else 28
+    result = await search_console.sync_observations(
+        session,
+        settings,
+        organization_id,
+        search_property_id,
+        actor_id=principal.platform_user_id,
+        correlation_id=request_correlation_id(request),
+        days=days,
+    )
+    return {"data": result, "meta": meta(request)}
+
+
+@router.get(
+    "/websites/{website_id}/search-console/summary",
+    dependencies=[Depends(no_store)],
+    summary="Aggregate synced Search Console performance for the SEO page",
+)
+async def search_console_summary(
+    request: Request,
+    organization_id: UUID,
+    website_id: UUID,
+    session: Session,
+    _: Annotated[AuthorizationDecision, policy("seo.read")],
+) -> dict[str, object]:
+    result = await search_console.search_performance_summary(session, organization_id, website_id)
+    return {"data": result, "meta": meta(request)}
 
 
 @router.get("/websites/{website_id}/landing-page-gaps", dependencies=[Depends(no_store)])

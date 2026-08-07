@@ -19,6 +19,19 @@ class SearchPropertyCreate(BaseModel):
     property_type: Literal["domain", "url_prefix"]
 
 
+class SearchPropertySelect(BaseModel):
+    """Operator selects a discovered Search Console property to map."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    external_property_id: str = Field(min_length=1, max_length=1000)
+    property_type: Literal["domain", "url_prefix"]
+
+
+class SearchConsoleSyncRequest(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    days: int = Field(default=28, ge=7, le=365)
+
+
 class CrawlRequest(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
     workflow_run_id: UUID
