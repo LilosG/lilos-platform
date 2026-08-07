@@ -20,15 +20,15 @@ The matrix below distinguishes five orthogonal states for each capability:
 | Organization/location management | Yes | Yes | Yes | Yes | None |
 | Product entitlements (via platform-admin API) | Yes | Yes (`test_api.py`) | Yes | Yes | None |
 | Integration provider catalog seeding (deployment bootstrap) | Yes | Yes (`provider_seed.py`) | Yes | Yes | None |
-| Google OAuth connection | Yes | Yes (`test_connection_service.py`) | No | No | **Google OAuth credentials** (4 env vars) |
-| GBP account/location discovery | Yes | Yes (`test_discovery_service.py`) | No | No | **Google OAuth credentials** |
-| GBP profile sync | Yes | Yes (`test_discovery_service.py`) | No | No | **Google OAuth credentials** |
-| GBP location mapping | Yes | Yes (`test_gbp_api.py`) | No | No | **Google OAuth credentials** |
-| GBP operations (hours, media, posts) | Yes | Yes (`test_gbp_operations_api.py`) | No | No | **Google OAuth credentials** |
-| GBP workflow execution (`gbp.publish_change`) | Yes | Yes (handler test) | No | No | **Google OAuth credentials** |
-| GBP workflow execution (`gbp.publish_post`) | Yes (fails closed) | Yes (handler test) | No | No | **GBP Posts API scope** + Google OAuth credentials |
-| Reviews ingestion + response | Yes | Yes (`test_reviews_api.py`) | No | No | **Google OAuth credentials** for provider dispatch |
-| Reviews workflow execution (`reviews.publish_response`) | Yes (fails closed) | Yes (handler test) | No | No | **Review reply API** + Google OAuth credentials |
+| Google OAuth connection | Yes | Yes (`test_connection_service.py`) | Yes (env vars configured) | No | Real-provider verification pending operator OAuth authorization |
+| GBP account/location discovery | Yes | Yes (`test_discovery_service.py`) | Yes | No | Real-provider verification pending operator OAuth authorization |
+| GBP profile sync | Yes | Yes (`test_discovery_service.py`) | Yes | No | Real-provider verification pending operator OAuth authorization |
+| GBP location mapping | Yes | Yes (`test_gbp_api.py`) | Yes | No | Real-provider verification pending operator OAuth authorization |
+| GBP operations (hours, media, posts) | Yes | Yes (`test_gbp_operations_api.py`) | Yes | No | Real-provider verification pending operator OAuth authorization |
+| GBP workflow execution (`gbp.publish_change`) | Yes | Yes (handler test) | Yes | No | Real-provider verification pending operator OAuth authorization |
+| GBP workflow execution (`gbp.publish_post`) | Yes | Yes (handler test) | Yes | No | Real-provider verification pending operator OAuth authorization |
+| Reviews ingestion + response | Yes | Yes (`test_reviews_api.py`) | Yes | No | Real-provider verification pending operator OAuth authorization |
+| Reviews workflow execution (`reviews.publish_response`) | Yes | Yes (handler test) | Yes | No | Real-provider verification pending operator OAuth authorization |
 | Leads management | Yes | Yes (`test_leads_api.py`) | No | No | **Email/SMS provider credentials** for speed-to-lead |
 | Content pipeline | Yes | Yes (`test_content_api.py`) | No | No | **GitHub publishing target** for real publication |
 | Content workflow execution (`content.publish`) | Yes (fails closed) | Yes (handler test) | No | No | **Publishing connector** not yet implemented |
@@ -43,14 +43,24 @@ The matrix below distinguishes five orthogonal states for each capability:
 
 ### Notes on the matrix
 
-- "Fails closed" for `gbp.publish_post`, `content.publish`, and
-  `reviews.publish_response` means the handler honestly marks the
-  publication/response as `failed` with a clear `safe_error_code` rather than
-  fabricating a `verified`/`published` status. Real provider-backed
-  completion requires the listed external blocker to be resolved and the
-  handler to be updated to perform the actual provider write and verification
-  re-read.
-- GBP discovery (`GBPDiscoveryService`) is now test-verified via 14 dedicated
+- `gbp.publish_post` and `reviews.publish_response` now perform real
+  provider-backed writes through the Google Business Profile adapter
+  (`create_local_post` and `update_review_reply` respectively), with
+  verification re-reads. They are no longer fail-closed placeholders. Both
+  use the standard `business.manage` OAuth scope already configured in
+  production. Real-provider verification is pending an actual operator
+  OAuth authorization flow against the configured Google Cloud project.
+- `content.publish` remains fail-closed (`PUBLISHING_TARGET_NOT_CONFIGURED`)
+  because no publishing connector is implemented yet — this is a genuine
+  code dependency, not an external credential blocker.
+- Google OAuth environment variables (`LILOS_GOOGLE_OAUTH_CLIENT_ID`,
+  `LILOS_GOOGLE_OAUTH_CLIENT_SECRET`, `LILOS_GOOGLE_OAUTH_REDIRECT_URI`,
+  `LILOS_SECRET_ENCRYPTION_KEY`) are operator-verified as populated in the
+  Render production configuration. The telemetry endpoint
+  (`LILOS_TELEMETRY_EXPORT_ENDPOINT`) is also configured. These are no
+  longer classified as missing; they are deployed, and real-provider
+  verification is the only remaining step.
+- GBP discovery (`GBPDiscoveryService`) is test-verified via 14 dedicated
   tests (`test_discovery_service.py`) covering account discovery, location
   discovery, profile sync, idempotent persistence, stale-resource marking,
   tenant isolation, error paths, and the combined `discover_and_sync` flow
@@ -80,7 +90,7 @@ The matrix below distinguishes five orthogonal states for each capability:
 ### Current task
 
 - Roadmap phase: Phase 19 — Production Deployment and Launch (operational closure)
-- Status: Production-operationalization pass complete, awaiting external production credentials
+- Status: Production-operationalization pass complete, real-provider verification pending
 - Date: 2026-08-06
 - Branch: `release/production-operationalization-2026-08-06`
 
@@ -90,8 +100,26 @@ The matrix below distinguishes five orthogonal states for each capability:
 2. `ea6af38` — test(gbp): add dedicated GBPDiscoveryService tests
 3. `0073d8d` — fix(execution): add review-response workflow handler and fix misleading notification
 4. `4af3826` — style: ruff format handlers.py
-3. `5f1ff78` — feat(execution): register workflow step handlers for product workflows
-4. `daadc15` — fix(web): remove unused DiscoveryResult type import from gbp.astro
+5. `5349e97` — docs: update implementation-status matrix for production-operationalization pass
+6. `156f411` — feat(integrations): implement real GBP review-reply and Local Post publication
+
+### Remaining external dependencies (genuinely external, not code gaps)
+
+1. **Real-provider verification** — Google OAuth env vars are configured in
+   production Render; an actual operator OAuth authorization flow against the
+   configured Google Cloud project is needed to verify the end-to-end GBP
+   connection, discovery, profile sync, review reply, and Local Post
+   workflows against a real Google account.
+2. **Search Console sync** — requires the same Google OAuth authorization;
+   the code path is implemented but not yet exercised against a real Google
+   Search Console property.
+3. **Email/SMS provider credentials** — for lead speed-to-lead dispatch.
+4. **Content publishing connector** — a code dependency (not an external
+   credential): no GitHub/CMS publishing adapter is implemented yet.
+5. **Canonical domain cutover** — `app.lilosgrowth.com` DNS/TLS.
+6. **Database backup/PITR verification** — external database provider
+   backup status needs operator confirmation.
+7. **Section 27 sign-off** — named launch approvers.
 
 ### Audit corrections (release-rc audit of e885760)
 
