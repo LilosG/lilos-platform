@@ -13,6 +13,7 @@ import asyncio
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
@@ -306,33 +307,37 @@ async def test_gbp_publish_post_creates_local_post_and_verifies(
     post_resource_name = "accounts/123/locations/456/localPosts/abc123"
 
     class FakePostAdapter:
-        async def list_accounts(self, access_token: str) -> list[dict]:
+        async def list_accounts(self, access_token: str) -> list[dict[str, Any]]:
             raise NotImplementedError
 
-        async def list_locations(self, access_token: str, account_name: str) -> list[dict]:
+        async def list_locations(
+            self, access_token: str, account_name: str
+        ) -> list[dict[str, Any]]:
             raise NotImplementedError
 
-        async def get_location(self, access_token: str, location_name: str) -> dict:
+        async def get_location(self, access_token: str, location_name: str) -> dict[str, Any]:
             raise NotImplementedError
 
-        async def patch_location(self, *args: object, **kwargs: object) -> dict:
+        async def patch_location(self, *args: object, **kwargs: object) -> dict[str, Any]:
             raise NotImplementedError
 
-        async def update_review_reply(self, *args: object, **kwargs: object) -> dict:
+        async def update_review_reply(self, *args: object, **kwargs: object) -> dict[str, Any]:
             raise NotImplementedError
 
-        async def get_review(self, *args: object, **kwargs: object) -> dict:
+        async def get_review(self, *args: object, **kwargs: object) -> dict[str, Any]:
             raise NotImplementedError
 
         async def create_local_post(
-            self, access_token: str, location_name: str, post_body: dict
-        ) -> dict:
+            self, access_token: str, location_name: str, post_body: dict[str, Any]
+        ) -> dict[str, Any]:
             return {"name": post_resource_name, "state": "LIVE", "postType": "STANDARD"}
 
-        async def get_local_post(self, access_token: str, post_name: str) -> dict:
+        async def get_local_post(self, access_token: str, post_name: str) -> dict[str, Any]:
             return {"name": post_name, "state": "LIVE", "postType": "STANDARD"}
 
-        async def list_local_posts(self, access_token: str, location_name: str) -> list[dict]:
+        async def list_local_posts(
+            self, access_token: str, location_name: str
+        ) -> list[dict[str, Any]]:
             return [{"name": post_resource_name, "state": "LIVE"}]
 
     original = handler_mod._adapter_factory
@@ -560,34 +565,36 @@ async def test_reviews_publish_response_publishes_and_verifies(
     approved_comment = "Thank you for your kind words!"
 
     class FakeReviewAdapter:
-        async def list_accounts(self, access_token: str) -> list[dict]:
+        async def list_accounts(self, access_token: str) -> list[dict[str, Any]]:
             raise NotImplementedError
 
-        async def list_locations(self, access_token: str, account_name: str) -> list[dict]:
+        async def list_locations(
+            self, access_token: str, account_name: str
+        ) -> list[dict[str, Any]]:
             raise NotImplementedError
 
-        async def get_location(self, access_token: str, location_name: str) -> dict:
+        async def get_location(self, access_token: str, location_name: str) -> dict[str, Any]:
             raise NotImplementedError
 
-        async def patch_location(self, *args: object, **kwargs: object) -> dict:
+        async def patch_location(self, *args: object, **kwargs: object) -> dict[str, Any]:
             raise NotImplementedError
 
         async def update_review_reply(
             self, access_token: str, review_name: str, comment: str
-        ) -> dict:
+        ) -> dict[str, Any]:
             assert comment == approved_comment
             return {"comment": comment}
 
-        async def get_review(self, access_token: str, review_name: str) -> dict:
+        async def get_review(self, access_token: str, review_name: str) -> dict[str, Any]:
             return {"reviewReply": {"comment": approved_comment}}
 
-        async def create_local_post(self, *args: object, **kwargs: object) -> dict:
+        async def create_local_post(self, *args: object, **kwargs: object) -> dict[str, Any]:
             raise NotImplementedError
 
-        async def get_local_post(self, *args: object, **kwargs: object) -> dict:
+        async def get_local_post(self, *args: object, **kwargs: object) -> dict[str, Any]:
             raise NotImplementedError
 
-        async def list_local_posts(self, *args: object, **kwargs: object) -> list[dict]:
+        async def list_local_posts(self, *args: object, **kwargs: object) -> list[dict[str, Any]]:
             raise NotImplementedError
 
     original = handler_mod._adapter_factory
@@ -756,33 +763,35 @@ async def test_reviews_publish_response_verification_mismatch_marks_reconciliati
     )
 
     class FakeMismatchAdapter:
-        async def list_accounts(self, access_token: str) -> list[dict]:
+        async def list_accounts(self, access_token: str) -> list[dict[str, Any]]:
             raise NotImplementedError
 
-        async def list_locations(self, access_token: str, account_name: str) -> list[dict]:
+        async def list_locations(
+            self, access_token: str, account_name: str
+        ) -> list[dict[str, Any]]:
             raise NotImplementedError
 
-        async def get_location(self, access_token: str, location_name: str) -> dict:
+        async def get_location(self, access_token: str, location_name: str) -> dict[str, Any]:
             raise NotImplementedError
 
-        async def patch_location(self, *args: object, **kwargs: object) -> dict:
+        async def patch_location(self, *args: object, **kwargs: object) -> dict[str, Any]:
             raise NotImplementedError
 
         async def update_review_reply(
             self, access_token: str, review_name: str, comment: str
-        ) -> dict:
+        ) -> dict[str, Any]:
             return {"comment": comment}
 
-        async def get_review(self, access_token: str, review_name: str) -> dict:
+        async def get_review(self, access_token: str, review_name: str) -> dict[str, Any]:
             return {"reviewReply": {"comment": "DIFFERENT CONTENT THAN APPROVED"}}
 
-        async def create_local_post(self, *args: object, **kwargs: object) -> dict:
+        async def create_local_post(self, *args: object, **kwargs: object) -> dict[str, Any]:
             raise NotImplementedError
 
-        async def get_local_post(self, *args: object, **kwargs: object) -> dict:
+        async def get_local_post(self, *args: object, **kwargs: object) -> dict[str, Any]:
             raise NotImplementedError
 
-        async def list_local_posts(self, *args: object, **kwargs: object) -> list[dict]:
+        async def list_local_posts(self, *args: object, **kwargs: object) -> list[dict[str, Any]]:
             raise NotImplementedError
 
     original = handler_mod._adapter_factory

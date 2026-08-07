@@ -78,6 +78,25 @@ class FakeGBPAdapter:
     ) -> dict[str, Any]:
         raise NotImplementedError
 
+    async def update_review_reply(
+        self, access_token: str, review_name: str, comment: str
+    ) -> dict[str, Any]:
+        raise NotImplementedError
+
+    async def get_review(self, access_token: str, review_name: str) -> dict[str, Any]:
+        raise NotImplementedError
+
+    async def create_local_post(
+        self, access_token: str, location_name: str, post_body: dict[str, Any]
+    ) -> dict[str, Any]:
+        raise NotImplementedError
+
+    async def get_local_post(self, access_token: str, post_name: str) -> dict[str, Any]:
+        raise NotImplementedError
+
+    async def list_local_posts(self, access_token: str, location_name: str) -> list[dict[str, Any]]:
+        raise NotImplementedError
+
 
 class FakeConnectionService(GBPConnectionService):
     """Bypasses token refresh; delegates get_connection to the real service."""
