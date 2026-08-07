@@ -8,10 +8,14 @@ import httpx
 BUSINESS_MANAGE_SCOPE = "https://www.googleapis.com/auth/business.manage"
 ACCOUNT_BASE = "https://mybusinessaccountmanagement.googleapis.com/v1"
 INFO_BASE = "https://mybusinessbusinessinformation.googleapis.com/v1"
+MYBUSINESS_BASE = "https://mybusiness.googleapis.com/v4"
 SUPPORTED_READ_MASK = (
     "name,title,storefrontAddress,regularHours,profile,phoneNumbers,categories,websiteUri,openInfo"
 )
 SUPPORTED_WRITE_FIELDS = frozenset({"profile.description", "regularHours"})
+
+SUPPORTED_POST_TYPES = frozenset({"STANDARD", "OFFER", "EVENT"})
+SUPPORTED_CTA_TYPES = frozenset({"BOOK", "ORDER", "SHOP", "LEARN_MORE", "SIGN_UP", "CALL", "MENU"})
 
 
 class GBPAdapter(Protocol):
@@ -28,6 +32,17 @@ class GBPAdapter(Protocol):
         update_mask: list[str],
         idempotency_key: str,
     ) -> dict[str, Any]: ...
+    async def update_review_reply(
+        self, access_token: str, review_name: str, comment: str
+    ) -> dict[str, Any]: ...
+    async def get_review(self, access_token: str, review_name: str) -> dict[str, Any]: ...
+    async def create_local_post(
+        self, access_token: str, location_name: str, post_body: dict[str, Any]
+    ) -> dict[str, Any]: ...
+    async def get_local_post(self, access_token: str, post_name: str) -> dict[str, Any]: ...
+    async def list_local_posts(
+        self, access_token: str, location_name: str
+    ) -> list[dict[str, Any]]: ...
 
 
 @dataclass(slots=True)
@@ -98,3 +113,59 @@ class GoogleBusinessProfileAdapter:
             json={"name": location_name, **fields},
             headers={"X-LILOS-Idempotency-Key": idempotency_key},
         )
+
+    async def update_review_reply(
+        self, access_token: str, review_name: str, comment: str
+    ) -> dict[str, Any]:
+        """PUT {review_name}/reply — create or update the owner reply to a review."""
+        return await self._request(
+            "PUT",
+            f"{MYBUSINESS_BASE}/{review_name}/reply",
+            access_token,
+            json={"comment": comment},
+        )
+
+    async def get_review(self, access_token: str, review_name: str) -> dict[str, Any]:
+        """GET a single review resource by name (for verification re-read)."""
+        return await self._request(
+            "GET",
+            f"{MYBUSINESS_BASE}/{review_name}",
+            access_token,
+        )
+
+    async def create_local_post(
+        self, access_token: str, location_name: str, post_body: dict[str, Any]
+    ) -> dict[str, Any]:
+        """POST {location_name}/localPosts — create a Local Post."""
+        post_type = post_body.get("postType")
+        if post_type not in SUPPORTED_POST_TYPES:
+            raise ValueError(f"unsupported GBP post type: {post_type}")
+        cta = post_body.get("callToAction")
+        if cta is not None:
+            cta_type = cta.get("actionType")
+            if cta_type not in SUPPORTED_CTA_TYPES:
+                raise ValueError(f"unsupported GBP CTA action type: {cta_type}")
+        return await self._request(
+            "POST",
+            f"{MYBUSINESS_BASE}/{location_name}/localPosts",
+            access_token,
+            json=post_body,
+        )
+
+    async def get_local_post(self, access_token: str, post_name: str) -> dict[str, Any]:
+        """GET a single Local Post resource by name (for verification re-read)."""
+        return await self._request(
+            "GET",
+            f"{MYBUSINESS_BASE}/{post_name}",
+            access_token,
+        )
+
+    async def list_local_posts(self, access_token: str, location_name: str) -> list[dict[str, Any]]:
+        """List Local Posts for a location (for reconciliation)."""
+        payload = await self._request(
+            "GET",
+            f"{MYBUSINESS_BASE}/{location_name}/localPosts",
+            access_token,
+            params={"pageSize": 100},
+        )
+        return list(payload.get("localPosts", []))
