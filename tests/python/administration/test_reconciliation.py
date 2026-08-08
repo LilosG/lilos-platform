@@ -14,6 +14,7 @@ Covers the operator-facing recovery paths for existing clients:
 """
 
 import asyncio
+from typing import cast
 from uuid import uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -112,7 +113,8 @@ async def _reconcile_derives_candidates(factory: async_sessionmaker[AsyncSession
             actor_id=actor_id,
             correlation_id="reconcile-test",
         )
-    proposed_keys = {item["fact_key"] for item in result["proposed"]}
+    proposed = cast(list[dict[str, object]], result["proposed"])
+    proposed_keys = {item["fact_key"] for item in proposed}
     assert "business.name" in proposed_keys
     assert "business.address" in proposed_keys
     assert "business.website" in proposed_keys

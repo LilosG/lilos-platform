@@ -344,6 +344,7 @@ def test_app_jwt_is_signed_with_rs256() -> None:
     private_key = serialization.load_pem_private_key(
         settings.github_app_private_key.encode("utf-8"), password=None
     )
-    public_key = private_key.public_key()  # type: ignore[attr-defined]
+    assert isinstance(private_key, rsa.RSAPrivateKey)
+    public_key = private_key.public_key()
     decoded = jwt.decode(token, public_key, algorithms=["RS256"])
     assert decoded["iss"] == "123456"

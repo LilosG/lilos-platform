@@ -6,9 +6,9 @@ deterministic fake and the Google OAuth token is short-circuited by writing a
 connected connection with the Search Console scope granted directly.
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from urllib.parse import parse_qs, urlsplit
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import httpx
 import pytest
@@ -75,7 +75,9 @@ async def make_organization(session: AsyncSession) -> Organization:
     return organization
 
 
-async def make_website(session: AsyncSession, organization_id, canonical_origin: str) -> SEOWebsite:
+async def make_website(
+    session: AsyncSession, organization_id: UUID, canonical_origin: str
+) -> SEOWebsite:
     website = SEOWebsite(
         organization_id=organization_id,
         location_id=None,
@@ -94,7 +96,7 @@ async def make_website(session: AsyncSession, organization_id, canonical_origin:
 async def make_connected_google_connection(
     session: AsyncSession,
     settings: Settings,
-    organization_id,
+    organization_id: UUID,
     *,
     http_handler: Callable[[httpx.Request], httpx.Response],
 ) -> IntegrationConnection:
@@ -142,8 +144,8 @@ class FakeSearchConsoleAdapter(SearchConsoleAdapter):
         *,
         start_date: str,
         end_date: str,
-        dimensions=("query",),
-        row_limit=1000,
+        dimensions: Sequence[str] = ("query",),
+        row_limit: int = 1000,
     ) -> list[SearchAnalyticsRow]:
         self.query_calls.append((site_url, start_date))
         return self._rows
