@@ -2,563 +2,626 @@
 import AppShell from "../components/AppShell.astro";
 import "../styles/global.css";
 ---
-
 <!doctype html>
 <html lang="en">
-  <head
-    ><meta charset="UTF-8" /><meta
-      name="viewport"
-      content="width=device-width, initial-scale=1"
-    /><meta name="description" content="LILOs client settings" /><title>
-      Client Settings · LILOs
-    </title></head
-  >
-  <body
-    ><AppShell>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="LILOs settings" />
+    <title>Settings · LILOs</title>
+  </head>
+  <body>
+    <AppShell>
       <div id="boot-not-configured" role="status">
-        <h1>This deployment is not configured</h1><p>
-          No Supabase or API connection is configured for this build.
-        </p>
+        <h1>This deployment is not configured</h1>
+        <p>No Supabase or API connection is configured for this build.</p>
       </div>
 
       <div id="boot-loading" role="status" aria-live="polite" hidden>
-        <p>Loading Client Settings…</p>
+        <p class="loading-state">Loading settings…</p>
       </div>
 
-      <div id="boot-error" class="alert alert--error" role="alert" hidden></div>
+      <div id="boot-error" role="alert" hidden></div>
 
       <div id="workspace-empty" role="status" hidden>
-        <h1>No organization access yet</h1><p>
-          Your account is not a member of any organization. Ask an administrator
-          to invite you.
-        </p>
+        <div class="empty-state">
+          <span class="empty-state__icon" aria-hidden="true">○</span>
+          <h3>No organization access yet</h3>
+          <p>Your account is not a member of any organization. Ask an administrator to invite you.</p>
+        </div>
       </div>
 
       <div id="settings-content" hidden>
-        <section id="overview" aria-labelledby="page-title">
-          <p class="eyebrow">Client Settings</p><h1 id="page-title">
-            Business information
-          </h1><p class="field-hint">
-            Edit this client's business details. Confirmed facts here satisfy
-            every product that relies on them — you do not need to approve the
-            same detail separately for each product.
-          </p>
-        </section>
-
-        <section aria-labelledby="profile-title">
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow">Business information</p><h2 id="profile-title">
-                Business profile
-              </h2>
+        <!-- Settings directory -->
+        <div id="settings-directory">
+          <div class="page-head">
+            <div class="page-head__intro">
+              <p class="eyebrow">Manage</p>
+              <h1>Settings</h1>
+              <p>Configure this organization's business information, locations, website, users, and governance.</p>
             </div>
-          </div><div class="attention-card" id="profile-panel">
-            <p>Loading business profile…</p>
           </div>
-        </section>
 
-        <section aria-labelledby="facts-title">
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow">Business facts</p><h2 id="facts-title">
-                Review business information
-              </h2>
-            </div><div class="hero__actions">
-              <button type="button" class="button" id="reconcile-facts-button"
-                >Generate facts from client data</button
-              ><p id="reconcile-status" role="status" aria-live="polite"></p>
-            </div>
-          </div><div class="attention-card" id="facts-panel">
-            <p>Loading business facts…</p>
-          </div>
-        </section>
+          <div class="directory-grid" id="settings-cards">
+            <button class="settings-card" data-domain="business" type="button">
+              <div class="settings-card__header">
+                <span class="settings-card__icon" aria-hidden="true">B</span>
+                <div>
+                  <div class="settings-card__title">Business Information</div>
+                </div>
+              </div>
+              <p class="settings-card__desc">Brand name, description, claims, tone, and call to action.</p>
+            </button>
 
-        <section aria-labelledby="policy-title">
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow">Governance</p><h2 id="policy-title">
-                Approval policy
-              </h2>
-            </div><div class="hero__actions">
-              <button
-                type="button"
-                class="button button--secondary"
-                id="reconcile-policy-button"
-                >Provision default approval policy</button
-              ><p id="policy-status" role="status" aria-live="polite"></p>
-            </div>
-          </div><div class="attention-card" id="policy-panel">
-            <p>Checking approval policy…</p>
+            <button class="settings-card" data-domain="locations" type="button">
+              <div class="settings-card__header">
+                <span class="settings-card__icon" aria-hidden="true">L</span>
+                <div>
+                  <div class="settings-card__title">Locations</div>
+                </div>
+              </div>
+              <p class="settings-card__desc">Manage business locations and their status.</p>
+            </button>
+
+            <button class="settings-card" data-domain="website" type="button">
+              <div class="settings-card__header">
+                <span class="settings-card__icon" aria-hidden="true">W</span>
+                <div>
+                  <div class="settings-card__title">Website & Domain</div>
+                </div>
+              </div>
+              <p class="settings-card__desc">Domains associated with this organization.</p>
+            </button>
+
+            <button class="settings-card" data-domain="users" type="button">
+              <div class="settings-card__header">
+                <span class="settings-card__icon" aria-hidden="true">U</span>
+                <div>
+                  <div class="settings-card__title">Users & Access</div>
+                </div>
+              </div>
+              <p class="settings-card__desc">Team members, invitations, and role assignments.</p>
+            </button>
+
+            <button class="settings-card" data-domain="governance" type="button">
+              <div class="settings-card__header">
+                <span class="settings-card__icon" aria-hidden="true">G</span>
+                <div>
+                  <div class="settings-card__title">Governance & Approvals</div>
+                </div>
+              </div>
+              <p class="settings-card__desc">Approval policies, business facts, and notification rules.</p>
+            </button>
+
+            <button class="settings-card" data-domain="products" type="button">
+              <div class="settings-card__header">
+                <span class="settings-card__icon" aria-hidden="true">P</span>
+                <div>
+                  <div class="settings-card__title">Products</div>
+                </div>
+              </div>
+              <p class="settings-card__desc">Enabled products and their readiness state.</p>
+            </button>
           </div>
-        </section>
+        </div>
+
+        <!-- Domain workspace (shown when a card is selected) -->
+        <div id="settings-domain" hidden>
+          <div class="page-head">
+            <div class="page-head__intro">
+              <p class="eyebrow">Settings</p>
+              <h1 id="domain-title">—</h1>
+              <p id="domain-description"></p>
+            </div>
+            <div class="page-head__meta">
+              <div class="page-head__actions">
+                <button type="button" class="button button--secondary button--sm" id="back-to-settings">← Back to Settings</button>
+              </div>
+            </div>
+          </div>
+          <div id="domain-content"></div>
+        </div>
       </div>
     </AppShell>
+    <script>
+      import {
+        fetchOrganizationProfile,
+        replaceOrganizationProfile,
+        fetchOrganizationDomains,
+        type OrganizationProfile,
+        type OrganizationDomain,
+      } from "../lib/settings";
+      import {
+        fetchLocations,
+      } from "../lib/workspace";
+      import {
+        fetchBusinessFactCandidates,
+        decideBusinessFact,
+        reconcileBusinessFacts,
+        reconcileDefaultPolicy,
+        fetchEffectivePolicies,
+        fetchMemberships,
+        fetchInvitations,
+        fetchProducts,
+        type BusinessFactRevision,
+        type Membership,
+        type Invitation,
+      } from "../lib/administration";
+      import {
+        bootWorkspace,
+        applyBootResult,
+        populateSwitcher,
+        setActiveOrganization,
+        statusBadge,
+        emptyState,
+        errorAlert,
+        describeFailure,
+        goToLogin,
+        type BootRegions,
+      } from "../lib/ui";
+
+      let organizationId = "";
+
+      const regions: BootRegions = {
+        notConfigured: document.getElementById("boot-not-configured")!,
+        loading: document.getElementById("boot-loading")!,
+        error: document.getElementById("boot-error")!,
+        empty: document.getElementById("workspace-empty")!,
+      };
+
+      const directory = document.getElementById("settings-directory")!;
+      const domainView = document.getElementById("settings-domain")!;
+      const domainTitle = document.getElementById("domain-title")!;
+      const domainDesc = document.getElementById("domain-description")!;
+      const domainContent = document.getElementById("domain-content")!;
+
+      function showDirectory(): void {
+        directory.hidden = false;
+        domainView.hidden = true;
+      }
+
+      function showDomain(title: string, description: string): void {
+        directory.hidden = true;
+        domainView.hidden = false;
+        domainTitle.textContent = title;
+        domainDesc.textContent = description;
+        domainContent.replaceChildren();
+        domainContent.append(createLoading());
+      }
+
+      function createLoading(): HTMLDivElement {
+        const el = document.createElement("div");
+        el.className = "loading-state";
+        el.textContent = "Loading…";
+        return el;
+      }
+
+      document.getElementById("back-to-settings")!.addEventListener("click", showDirectory);
+
+      // Wire settings cards
+      document.querySelectorAll<HTMLElement>("[data-domain]").forEach((card) => {
+        card.addEventListener("click", () => {
+          const domain = card.dataset.domain!;
+          switch (domain) {
+            case "business": void openBusiness(); break;
+            case "locations": void openLocations(); break;
+            case "website": void openWebsite(); break;
+            case "users": void openUsers(); break;
+            case "governance": void openGovernance(); break;
+            case "products": void openProducts(); break;
+          }
+        });
+      });
+
+      // ---- Business Information ----
+      async function openBusiness(): Promise<void> {
+        showDomain("Business Information", "Edit this client's brand details, description, and approved claims.");
+        const result = await fetchOrganizationProfile(organizationId);
+        if (result.kind === "not-found") {
+          domainContent.replaceChildren(
+            emptyState("No business profile yet", "Create a business profile to start confirming business facts."),
+          );
+          return;
+        }
+        if (result.kind !== "ok") {
+          domainContent.replaceChildren(errorAlert(describeFailure(result, "Business profile")));
+          return;
+        }
+        domainContent.replaceChildren(renderBusinessForm(result.data));
+      }
+
+      function renderBusinessForm(profile: OrganizationProfile): HTMLFormElement {
+        const form = document.createElement("form");
+        form.id = "profile-form";
+        const grid = document.createElement("div");
+        grid.className = "form-grid";
+
+        function field(id: string, label: string, value: string | null, multiline = false): HTMLDivElement {
+          const f = document.createElement("div");
+          f.className = "field";
+          const lbl = document.createElement("label");
+          lbl.htmlFor = id;
+          lbl.textContent = label;
+          f.append(lbl);
+          const inp = multiline ? document.createElement("textarea") : document.createElement("input");
+          inp.id = id;
+          (inp as HTMLInputElement).value = value ?? "";
+          if (multiline) (inp as HTMLTextAreaElement).rows = 3;
+          f.append(inp);
+          return f;
+        }
+
+        grid.append(
+          field("profile-brand-name", "Business / brand name", profile.brand_name),
+          field("profile-call-to-action", "Default call to action", profile.default_call_to_action),
+          field("profile-summary", "Brand summary", profile.brand_summary),
+        );
+        const desc = field("profile-description", "Business description", profile.business_description, true);
+        desc.classList.add("field--full");
+        grid.append(desc);
+        const claims = field("profile-approved-claims", "Approved claims (comma-separated)", (profile.approved_claims ?? []).join(", "));
+        claims.classList.add("field--full");
+        grid.append(claims);
+        form.append(grid);
+
+        const actions = document.createElement("div");
+        actions.className = "form-actions";
+        const submit = document.createElement("button");
+        submit.type = "submit";
+        submit.className = "button";
+        submit.textContent = "Save business profile";
+        const status = document.createElement("p");
+        status.id = "profile-save-status";
+        status.setAttribute("role", "status");
+        status.setAttribute("aria-live", "polite");
+        status.className = "text-sm muted";
+        actions.append(submit, status);
+        form.append(actions);
+
+        form.addEventListener("submit", async (event) => {
+          event.preventDefault();
+          const claimsValue = (document.getElementById("profile-approved-claims") as HTMLInputElement).value.split(",").map((s) => s.trim()).filter(Boolean);
+          status.textContent = "Saving…";
+          const result = await replaceOrganizationProfile(organizationId, {
+            brand_name: (document.getElementById("profile-brand-name") as HTMLInputElement).value || null,
+            brand_summary: (document.getElementById("profile-summary") as HTMLInputElement).value || null,
+            business_description: (document.getElementById("profile-description") as HTMLTextAreaElement).value || null,
+            value_proposition: profile.value_proposition,
+            target_customer: profile.target_customer,
+            primary_services: profile.primary_services,
+            approved_claims: claimsValue.length ? claimsValue : null,
+            prohibited_claims: profile.prohibited_claims,
+            tone_guidelines: profile.tone_guidelines,
+            legal_disclaimers: profile.legal_disclaimers,
+            default_call_to_action: (document.getElementById("profile-call-to-action") as HTMLInputElement).value || null,
+            expected_version: profile.version,
+          });
+          if (result.kind === "ok") {
+            profile.version = result.data.version;
+            status.textContent = "Saved. Run \u201cGenerate facts\u201d to candidate the updated details.";
+          } else {
+            status.textContent = describeFailure(result, "Save");
+          }
+        });
+        return form;
+      }
+
+      // ---- Locations ----
+      async function openLocations(): Promise<void> {
+        showDomain("Locations", "Manage business locations for this organization.");
+        const result = await fetchLocations(organizationId);
+        if (result.kind !== "ok") {
+          domainContent.replaceChildren(errorAlert(describeFailure(result, "Locations")));
+          return;
+        }
+        if (result.data.length === 0) {
+          domainContent.replaceChildren(
+            emptyState("No locations yet", "Add locations for this organization to start managing business profiles and operations.", "Add in Onboarding", "/onboarding"),
+          );
+          return;
+        }
+        const list = document.createElement("ul");
+        list.className = "product-list";
+        for (const loc of result.data) {
+          const item = document.createElement("li");
+          const info = document.createElement("div");
+          const name = document.createElement("h3");
+          name.textContent = loc.name;
+          const detail = document.createElement("p");
+          detail.textContent = loc.is_primary ? `${loc.status} · Primary` : loc.status;
+          info.append(name, detail);
+          const badge = statusBadge(loc.is_primary ? "ready" : "neutral", loc.status);
+          item.append(info, badge);
+          list.append(item);
+        }
+        domainContent.replaceChildren(list);
+      }
+
+      // ---- Website & Domain ----
+      async function openWebsite(): Promise<void> {
+        showDomain("Website & Domain", "Domains associated with this organization.");
+        const result = await fetchOrganizationDomains(organizationId);
+        if (result.kind !== "ok") {
+          domainContent.replaceChildren(errorAlert(describeFailure(result, "Domains")));
+          return;
+        }
+        if (result.data.length === 0) {
+          domainContent.replaceChildren(
+            emptyState("No domains yet", "Add a domain for this organization during onboarding.", "Go to Onboarding", "/onboarding"),
+          );
+          return;
+        }
+        const list = document.createElement("ul");
+        list.className = "product-list";
+        for (const dom of result.data) {
+          const item = document.createElement("li");
+          const info = document.createElement("div");
+          const name = document.createElement("h3");
+          name.textContent = dom.domain;
+          const detail = document.createElement("p");
+          detail.textContent = dom.is_primary ? `${dom.status} · Primary` : dom.status;
+          info.append(name, detail);
+          const badge = statusBadge(dom.status === "verified" ? "ready" : "neutral", dom.status);
+          item.append(info, badge);
+          list.append(item);
+        }
+        domainContent.replaceChildren(list);
+      }
+
+      // ---- Users & Access ----
+      async function openUsers(): Promise<void> {
+        showDomain("Users & Access", "Team members, invitations, and role assignments.");
+        const [membersResult, invitationsResult] = await Promise.all([
+          fetchMemberships(organizationId),
+          fetchInvitations(organizationId),
+        ]);
+
+        const sections: HTMLElement[] = [];
+
+        if (membersResult.kind === "ok" && membersResult.data.length > 0) {
+          const card = document.createElement("div");
+          card.className = "card";
+          const header = document.createElement("div");
+          header.className = "card__header";
+          header.append(Object.assign(document.createElement("h3"), { className: "card__title", textContent: "Members" }));
+          card.append(header);
+          const body = document.createElement("div");
+          body.className = "card__body";
+          const list = document.createElement("ul");
+          list.className = "product-list";
+          for (const member of membersResult.data) {
+            const item = document.createElement("li");
+            const info = document.createElement("div");
+            const name = document.createElement("h3");
+            name.textContent = member.membership_type;
+            const detail = document.createElement("p");
+            detail.textContent = member.user_profile_id;
+            info.append(name, detail);
+            const badge = statusBadge(member.status === "active" ? "ready" : "blocked", member.status);
+            item.append(info, badge);
+            list.append(item);
+          }
+          body.append(list);
+          card.append(body);
+          sections.push(card);
+        }
+
+        if (invitationsResult.kind === "ok" && invitationsResult.data.length > 0) {
+          const card = document.createElement("div");
+          card.className = "card";
+          const header = document.createElement("div");
+          header.className = "card__header";
+          header.append(Object.assign(document.createElement("h3"), { className: "card__title", textContent: "Pending Invitations" }));
+          card.append(header);
+          const body = document.createElement("div");
+          body.className = "card__body";
+          const list = document.createElement("ul");
+          list.className = "product-list";
+          for (const inv of invitationsResult.data) {
+            const item = document.createElement("li");
+            const info = document.createElement("div");
+            const name = document.createElement("h3");
+            name.textContent = inv.normalized_email;
+            const detail = document.createElement("p");
+            detail.textContent = `Expires ${new Date(inv.expires_at).toLocaleDateString()}`;
+            info.append(name, detail);
+            const badge = statusBadge(inv.status === "pending" ? "setup" : "neutral", inv.status);
+            item.append(info, badge);
+            list.append(item);
+          }
+          body.append(list);
+          card.append(body);
+          sections.push(card);
+        }
+
+        if (sections.length === 0) {
+          domainContent.replaceChildren(
+            emptyState("No team members yet", "Add or invite team members during onboarding.", "Go to Onboarding", "/onboarding"),
+          );
+          return;
+        }
+        domainContent.replaceChildren(...sections);
+      }
+
+      // ---- Governance & Approvals ----
+      async function openGovernance(): Promise<void> {
+        showDomain("Governance & Approvals", "Approval policies, business facts, and notification rules.");
+
+        const [policyResult, factsResult] = await Promise.all([
+          fetchEffectivePolicies(organizationId, "approval"),
+          fetchBusinessFactCandidates(organizationId),
+        ]);
+
+        const sections: HTMLElement[] = [];
+
+        // Policy section
+        const policyCard = document.createElement("div");
+        policyCard.className = "card";
+        const policyHeader = document.createElement("div");
+        policyHeader.className = "card__header";
+        const policyTitle = document.createElement("h3");
+        policyTitle.className = "card__title";
+        policyTitle.textContent = "Approval Policy";
+        policyHeader.append(policyTitle);
+        policyCard.append(policyHeader);
+        const policyBody = document.createElement("div");
+        policyBody.className = "card__body";
+
+        if (policyResult.kind === "ok" && policyResult.data.length > 0) {
+          const badge = statusBadge("ready", "Active");
+          const note = document.createElement("p");
+          note.className = "text-sm muted";
+          note.textContent = "An approval policy is in place.";
+          policyBody.append(badge, note);
+        } else if (policyResult.kind === "not-found" || (policyResult.kind === "ok" && policyResult.data.length === 0)) {
+          const badge = statusBadge("blocked", "Missing");
+          const note = document.createElement("p");
+          note.className = "text-sm muted";
+          note.textContent = "No approval policy yet.";
+          policyBody.append(badge, note);
+          const provisionBtn = document.createElement("button");
+          provisionBtn.type = "button";
+          provisionBtn.className = "button button--secondary button--sm";
+          provisionBtn.textContent = "Provision default policy";
+          provisionBtn.style.marginTop = "0.75rem";
+          provisionBtn.addEventListener("click", async () => {
+            provisionBtn.disabled = true;
+            provisionBtn.textContent = "Provisioning…";
+            const result = await reconcileDefaultPolicy(organizationId);
+            if (result.kind === "ok") {
+              provisionBtn.textContent = "Provisioned";
+              await openGovernance();
+            } else {
+              provisionBtn.disabled = false;
+              provisionBtn.textContent = "Provision default policy";
+              policyBody.append(errorAlert(describeFailure(result, "Policy")));
+            }
+          });
+          policyBody.append(provisionBtn);
+        } else {
+          policyBody.append(errorAlert(describeFailure(policyResult, "Policy")));
+        }
+        policyCard.append(policyBody);
+        sections.push(policyCard);
+
+        // Facts section
+        const factsCard = document.createElement("div");
+        factsCard.className = "card";
+        const factsHeader = document.createElement("div");
+        factsHeader.className = "card__header";
+        const factsTitle = document.createElement("h3");
+        factsTitle.className = "card__title";
+        factsTitle.textContent = "Business Facts";
+        factsHeader.append(factsTitle);
+        factsCard.append(factsHeader);
+        const factsBody = document.createElement("div");
+        factsBody.className = "card__body";
+
+        if (factsResult.kind === "ok" && factsResult.data.length > 0) {
+          const list = document.createElement("ul");
+          list.className = "product-list";
+          for (const candidate of factsResult.data) {
+            const item = document.createElement("li");
+            const info = document.createElement("div");
+            const name = document.createElement("h3");
+            name.textContent = candidate.fact_key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+            const detail = document.createElement("p");
+            detail.textContent = String(candidate.value);
+            info.append(name, detail);
+            const confirmBtn = document.createElement("button");
+            confirmBtn.type = "button";
+            confirmBtn.className = "button button--sm";
+            confirmBtn.textContent = "Confirm";
+            confirmBtn.addEventListener("click", async () => {
+              confirmBtn.disabled = true;
+              confirmBtn.textContent = "Confirming…";
+              const result = await decideBusinessFact(organizationId, candidate.id, "approve");
+              if (result.kind === "ok") {
+                item.remove();
+              } else {
+                confirmBtn.disabled = false;
+                confirmBtn.textContent = "Confirm";
+                info.append(errorAlert(describeFailure(result, "Confirm")));
+              }
+            });
+            item.append(info, confirmBtn);
+            list.append(item);
+          }
+          factsBody.append(list);
+        } else if (factsResult.kind === "ok") {
+          const reconcileBtn = document.createElement("button");
+          reconcileBtn.type = "button";
+          reconcileBtn.className = "button button--secondary button--sm";
+          reconcileBtn.textContent = "Generate facts from client data";
+          reconcileBtn.addEventListener("click", async () => {
+            reconcileBtn.disabled = true;
+            reconcileBtn.textContent = "Generating…";
+            const result = await reconcileBusinessFacts(organizationId);
+            if (result.kind === "ok") {
+              await openGovernance();
+            } else {
+              reconcileBtn.disabled = false;
+              reconcileBtn.textContent = "Generate facts from client data";
+              factsBody.append(errorAlert(describeFailure(result, "Facts")));
+            }
+          });
+          factsBody.append(
+            emptyState("No business details awaiting confirmation", "Generate candidates from this client's business profile, location, and domain."),
+          );
+          factsBody.append(reconcileBtn);
+        } else {
+          factsBody.append(errorAlert(describeFailure(factsResult, "Facts")));
+        }
+        factsCard.append(factsBody);
+        sections.push(factsCard);
+
+        domainContent.replaceChildren(...sections);
+      }
+
+      // ---- Products ----
+      async function openProducts(): Promise<void> {
+        showDomain("Products", "Enabled products and their readiness state.");
+        const result = await fetchProducts(organizationId);
+        if (result.kind !== "ok") {
+          domainContent.replaceChildren(errorAlert(describeFailure(result, "Products")));
+          return;
+        }
+        if (result.data.length === 0) {
+          domainContent.replaceChildren(emptyState("No products available", "Products will appear here once configured."));
+          return;
+        }
+        const list = document.createElement("ul");
+        list.className = "product-list";
+        for (const product of result.data) {
+          const item = document.createElement("li");
+          const info = document.createElement("div");
+          const name = document.createElement("h3");
+          name.textContent = product.name;
+          const detail = document.createElement("p");
+          detail.textContent = product.description || product.key;
+          info.append(name, detail);
+          const badge = statusBadge(product.status === "active" ? "ready" : "neutral", product.status);
+          item.append(info, badge);
+          list.append(item);
+        }
+        domainContent.replaceChildren(list);
+      }
+
+      async function loadOrganization(org: import("../lib/workspace").MyOrganization): Promise<void> {
+        setActiveOrganization(org);
+        organizationId = org.organization_id;
+        showDirectory();
+      }
+
+      async function boot(): Promise<void> {
+        const result = await bootWorkspace("Settings");
+        if (!applyBootResult(regions, result)) return;
+        populateSwitcher(result.organizations, (o) => void loadOrganization(o));
+        const org = result.organizations.find((o) => o.organization_id === result.context.organizationId) ?? result.organizations[0];
+        await loadOrganization(org);
+      }
+
+      void boot();
+    </script>
   </body>
 </html>
-
-<script>
-  import { apiGet, type ApiOutcome } from "../lib/api-client";
-  import {
-    fetchMyOrganizations,
-    fetchPrincipal,
-    type MyOrganization,
-  } from "../lib/workspace";
-  import {
-    fetchOrganizationProfile,
-    replaceOrganizationProfile,
-    type OrganizationProfile,
-  } from "../lib/settings";
-  import {
-    fetchBusinessFactCandidates,
-    decideBusinessFact,
-    reconcileBusinessFacts,
-    reconcileDefaultPolicy,
-    type BusinessFactRevision,
-  } from "../lib/administration";
-  import { selectDefaultOrganization } from "../lib/dashboard-logic";
-  import { getCurrentSession } from "../lib/session";
-
-  const regions = {
-    notConfigured: "boot-not-configured",
-    loading: "boot-loading",
-    error: "boot-error",
-    empty: "workspace-empty",
-    content: "settings-content",
-  } as const;
-
-  let organizationId = "";
-
-  function showOnly(id: string): void {
-    for (const region of Object.values(regions)) {
-      const el = document.getElementById(region);
-      if (el) el.hidden = region !== id;
-    }
-  }
-
-  function describeFailure(outcome: ApiOutcome<unknown>): string {
-    switch (outcome.kind) {
-      case "forbidden":
-        return "You do not have permission to view this organization's settings.";
-      case "not-found":
-        return "The requested resource could not be found.";
-      case "disconnected":
-        return "Could not reach the platform API.";
-      case "unauthenticated":
-        return "Your session has expired. Sign in again.";
-      case "not-configured":
-        return "This deployment is not configured.";
-      case "error":
-        return outcome.message;
-      case "ok":
-        return "";
-    }
-  }
-
-  function goToLogin(): void {
-    const next = encodeURIComponent(window.location.pathname);
-    window.location.assign(`/login?next=${next}`);
-  }
-
-  function wireSignOut(): void {
-    document
-      .getElementById("sign-out-button")
-      ?.addEventListener("click", async () => {
-        const { signOut } = await import("../lib/session");
-        await signOut();
-        goToLogin();
-      });
-  }
-
-  function badge(status: string, label = status): HTMLSpanElement {
-    const el = document.createElement("span");
-    el.className = `status status--${status}`;
-    const dot = document.createElement("span");
-    dot.className = "status__dot";
-    dot.setAttribute("aria-hidden", "true");
-    el.append(dot, document.createTextNode(label));
-    return el;
-  }
-
-  function emptyState(heading: string, description: string): HTMLElement {
-    const el = document.createElement("div");
-    el.className = "empty-state";
-    const h = document.createElement("h3");
-    h.textContent = heading;
-    const p = document.createElement("p");
-    p.textContent = description;
-    el.append(h, p);
-    return el;
-  }
-
-  function input(
-    id: string,
-    label: string,
-    value: string | null,
-    opts: { multiline?: boolean } = {},
-  ): HTMLDivElement {
-    const field = document.createElement("div");
-    field.className = "field";
-    const lbl = document.createElement("label");
-    lbl.setAttribute("for", id);
-    lbl.textContent = label;
-    const inputEl = opts.multiline
-      ? document.createElement("textarea")
-      : document.createElement("input");
-    inputEl.id = id;
-    (inputEl as HTMLInputElement).value = value ?? "";
-    field.append(lbl, inputEl);
-    return field;
-  }
-
-  function profileForm(profile: OrganizationProfile): HTMLFormElement {
-    const form = document.createElement("form");
-    form.id = "profile-form";
-    const grid = document.createElement("div");
-    grid.className = "form-grid";
-    grid.append(
-      input("profile-brand-name", "Business / brand name", profile.brand_name),
-      input(
-        "profile-call-to-action",
-        "Default call to action",
-        profile.default_call_to_action,
-      ),
-      input("profile-summary", "Brand summary", profile.brand_summary),
-    );
-    const desc = input(
-      "profile-description",
-      "Business description",
-      profile.business_description,
-      { multiline: true },
-    );
-    desc.classList.add("field--full");
-    grid.append(desc);
-    const claims = input(
-      "profile-approved-claims",
-      "Approved claims (comma-separated)",
-      (profile.approved_claims ?? []).join(", "),
-    );
-    claims.classList.add("field--full");
-    grid.append(claims);
-    form.append(grid);
-    const actions = document.createElement("div");
-    actions.className = "form-actions";
-    const submit = document.createElement("button");
-    submit.type = "submit";
-    submit.className = "button";
-    submit.textContent = "Save business profile";
-    const status = document.createElement("p");
-    status.id = "profile-save-status";
-    status.setAttribute("role", "status");
-    status.setAttribute("aria-live", "polite");
-    actions.append(submit, status);
-    form.append(actions);
-    form.addEventListener("submit", async (event) => {
-      event.preventDefault();
-      const claimsValue = (
-        document.getElementById("profile-approved-claims") as HTMLInputElement
-      ).value
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean);
-      const body = {
-        brand_name:
-          (document.getElementById("profile-brand-name") as HTMLInputElement)
-            .value || null,
-        brand_summary:
-          (document.getElementById("profile-summary") as HTMLInputElement)
-            .value || null,
-        business_description:
-          (
-            document.getElementById(
-              "profile-description",
-            ) as HTMLTextAreaElement
-          ).value || null,
-        value_proposition: profile.value_proposition,
-        target_customer: profile.target_customer,
-        primary_services: profile.primary_services,
-        approved_claims: claimsValue.length ? claimsValue : null,
-        prohibited_claims: profile.prohibited_claims,
-        tone_guidelines: profile.tone_guidelines,
-        legal_disclaimers: profile.legal_disclaimers,
-        default_call_to_action:
-          (
-            document.getElementById(
-              "profile-call-to-action",
-            ) as HTMLInputElement
-          ).value || null,
-        expected_version: profile.version,
-      };
-      status.textContent = "Saving…";
-      const result = await replaceOrganizationProfile(organizationId, body);
-      if (result.kind === "ok") {
-        profile.version = result.data.version;
-        status.textContent =
-          "Saved. Run \u201cGenerate facts\u201d to candidate the updated details for confirmation.";
-      } else {
-        status.textContent = describeFailure(result);
-      }
-    });
-    return form;
-  }
-
-  function renderProfile(profile: OrganizationProfile | null): void {
-    const panel = document.getElementById("profile-panel")!;
-    panel.replaceChildren();
-    if (profile === null) {
-      panel.append(
-        emptyState(
-          "No business profile yet",
-          "Create a business profile to start confirming business facts.",
-        ),
-      );
-      return;
-    }
-    panel.append(profileForm(profile));
-  }
-
-  function factLabel(key: string): string {
-    const labels: Record<string, string> = {
-      "business.name": "Business name",
-      "business.address": "Business address",
-      "business.hours": "Business hours",
-      "business.website": "Website",
-      "brand.approved_claims": "Approved brand claims",
-    };
-    return labels[key] ?? key;
-  }
-
-  function factValueText(value: unknown): string {
-    if (value === null || value === undefined) return "—";
-    if (typeof value === "string") return value;
-    if (Array.isArray(value)) return value.join(", ");
-    if (typeof value === "object") {
-      const parts: string[] = [];
-      const obj = value as Record<string, unknown>;
-      for (const key of [
-        "address_line_1",
-        "address_line_2",
-        "city",
-        "region",
-        "postal_code",
-        "country_code",
-      ]) {
-        if (obj[key]) parts.push(String(obj[key]));
-      }
-      return parts.join(", ");
-    }
-    return String(value);
-  }
-
-  function renderFacts(candidates: BusinessFactRevision[]): void {
-    const panel = document.getElementById("facts-panel")!;
-    panel.replaceChildren();
-    if (candidates.length === 0) {
-      panel.append(
-        emptyState(
-          "No business details awaiting confirmation",
-          "Click \u201cGenerate facts from client data\u201d to derive candidates from this client's business profile, location, and domain. You confirm each one before it satisfies product readiness.",
-        ),
-      );
-      return;
-    }
-    const list = document.createElement("ul");
-    list.className = "product-list";
-    for (const candidate of candidates) {
-      const row = document.createElement("li");
-      const info = document.createElement("div");
-      info.className = "product-list__info";
-      const name = document.createElement("strong");
-      name.textContent = factLabel(candidate.fact_key);
-      const value = document.createElement("p");
-      value.className = "field-hint";
-      value.textContent = factValueText(candidate.value);
-      info.append(name, value);
-      const actions = document.createElement("div");
-      actions.className = "hero__actions";
-      const confirm = document.createElement("button");
-      confirm.type = "button";
-      confirm.className = "button button--sm";
-      confirm.textContent = "Confirm";
-      confirm.addEventListener("click", async () => {
-        confirm.disabled = true;
-        confirm.textContent = "Confirming…";
-        const result = await decideBusinessFact(
-          organizationId,
-          candidate.id,
-          "approve",
-        );
-        if (result.kind === "ok") {
-          row.remove();
-        } else {
-          confirm.disabled = false;
-          confirm.textContent = "Confirm";
-          alert(describeFailure(result));
-        }
-      });
-      actions.append(confirm);
-      row.append(info, actions);
-      list.append(row);
-    }
-    panel.append(list);
-  }
-
-  function wireReconcileFacts(): void {
-    document
-      .getElementById("reconcile-facts-button")
-      ?.addEventListener("click", async () => {
-        const status = document.getElementById("reconcile-status")!;
-        status.textContent = "Generating candidates…";
-        const result = await reconcileBusinessFacts(organizationId);
-        if (result.kind === "ok") {
-          const n = result.data.proposed.length;
-          status.textContent = n
-            ? `Generated ${n} candidate${n === 1 ? "" : "s"} for confirmation.`
-            : "No new candidates — existing facts are already up to date.";
-          await refreshFacts();
-        } else {
-          status.textContent = describeFailure(result);
-        }
-      });
-  }
-
-  async function refreshFacts(): Promise<void> {
-    const result = await fetchBusinessFactCandidates(organizationId);
-    if (result.kind === "ok") {
-      renderFacts(result.data);
-    } else {
-      document
-        .getElementById("facts-panel")!
-        .replaceChildren(
-          emptyState("Could not load business facts", describeFailure(result)),
-        );
-    }
-  }
-
-  function wireReconcilePolicy(): void {
-    document
-      .getElementById("reconcile-policy-button")
-      ?.addEventListener("click", async () => {
-        const status = document.getElementById("policy-status")!;
-        status.textContent = "Provisioning…";
-        const result = await reconcileDefaultPolicy(organizationId);
-        if (result.kind === "ok") {
-          status.textContent = result.data.approval_policy_provisioned
-            ? "Default approval policy provisioned."
-            : "A default approval policy is already in place.";
-          await refreshPolicy();
-        } else {
-          status.textContent = describeFailure(result);
-        }
-      });
-  }
-
-  async function refreshPolicy(): Promise<void> {
-    const panel = document.getElementById("policy-panel")!;
-    const result = await apiGet<{ data: unknown }>(
-      `/api/v1/organizations/${organizationId}/policies/effective/approval`,
-    );
-    panel.replaceChildren();
-    if (result.kind === "ok" && result.data) {
-      panel.append(
-        badge("ready", "Active"),
-        document.createTextNode(" An approval policy is in place."),
-      );
-    } else if (result.kind === "not-found") {
-      panel.append(
-        badge("blocked", "Missing"),
-        document.createTextNode(
-          " No approval policy yet. Click \u201cProvision default approval policy\u201d to create the safe default.",
-        ),
-      );
-    } else {
-      panel.append(document.createTextNode(describeFailure(result)));
-    }
-  }
-
-  async function loadOrganization(org: MyOrganization): Promise<void> {
-    organizationId = org.organization_id;
-    document.getElementById("active-organization-name")!.textContent =
-      org.organization_name;
-    const params = new URLSearchParams(window.location.search);
-    params.set("org", organizationId);
-    history.replaceState(
-      null,
-      "",
-      `${window.location.pathname}?${params.toString()}`,
-    );
-    localStorage.setItem("selected_org_id", organizationId);
-
-    const [profileResult] = await Promise.all([
-      fetchOrganizationProfile(organizationId),
-      refreshFacts(),
-      refreshPolicy(),
-    ]);
-    if (profileResult.kind === "ok") {
-      renderProfile(profileResult.data);
-    } else if (profileResult.kind === "not-found") {
-      renderProfile(null);
-    } else {
-      document
-        .getElementById("profile-panel")!
-        .replaceChildren(
-          emptyState(
-            "Could not load business profile",
-            describeFailure(profileResult),
-          ),
-        );
-    }
-    wireReconcileFacts();
-    wireReconcilePolicy();
-    showOnly(regions.content);
-  }
-
-  async function boot(): Promise<void> {
-    const config = (await import("../lib/config")).readPublicConfig();
-    if (!config) {
-      showOnly(regions.notConfigured);
-      return;
-    }
-    showOnly(regions.loading);
-    const session = await getCurrentSession();
-    if (session.status !== "signed-in") {
-      goToLogin();
-      return;
-    }
-    const principal = await fetchPrincipal();
-    if (principal.kind !== "ok") {
-      document.getElementById("boot-error")!.textContent =
-        describeFailure(principal);
-      showOnly(regions.error);
-      return;
-    }
-    document.getElementById("current-user-label")!.textContent =
-      principal.data.auth_user_id;
-    document.getElementById("current-user-initial")!.textContent =
-      principal.data.auth_user_id.charAt(0).toUpperCase();
-    document.getElementById("current-assurance-label")!.textContent =
-      principal.data.assurance_level;
-    const signOutBtn = document.getElementById("sign-out-button");
-    if (signOutBtn) signOutBtn.hidden = false;
-    wireSignOut();
-
-    const orgs = await fetchMyOrganizations();
-    if (orgs.kind !== "ok") {
-      document.getElementById("boot-error")!.textContent =
-        describeFailure(orgs);
-      showOnly(regions.error);
-      return;
-    }
-    if (orgs.data.length === 0) {
-      showOnly(regions.empty);
-      return;
-    }
-    const selected = selectDefaultOrganization(orgs.data);
-    if (!selected) {
-      showOnly(regions.empty);
-      return;
-    }
-    await loadOrganization(selected);
-  }
-
-  void boot();
-</script>
