@@ -35,94 +35,80 @@ import "../styles/global.css";
       </div>
 
       <div id="leads-content" hidden>
-        <section id="overview" aria-labelledby="page-title">
-          <p class="eyebrow">Leads</p><h1 id="page-title">Leads</h1>
-        </section>
-
-        <section aria-labelledby="readiness-title">
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow">Product readiness</p><h2 id="readiness-title">
-                Setup status
-              </h2>
-            </div>
-          </div><div class="attention-card" id="readiness-panel">
-            <p>Checking readiness…</p>
+        <div class="page-head">
+          <div class="page-head__intro">
+            <p class="eyebrow">Operations</p>
+            <h1>Leads</h1>
+            <p>Manage incoming leads, track lifecycle, and assign follow-up work.</p>
           </div>
-        </section>
+        </div>
 
-        <section aria-labelledby="summary-title">
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow">Insights</p><h2 id="summary-title">
-                Lead summary
-              </h2>
-            </div>
-          </div><div class="metric-grid" id="summary-panel"></div>
-        </section>
+        <div class="metric-grid" id="summary-panel"></div>
 
-        <section aria-labelledby="sources-title">
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow">Sources</p><h2 id="sources-title">
-                Source performance
-              </h2>
-            </div>
-          </div><ul class="product-list" id="sources-list"></ul>
-        </section>
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Product readiness</p>
+            <h2>Setup status</h2>
+          </div>
+        </div>
+        <div class="attention-card" id="readiness-panel">
+          <p>Checking readiness…</p>
+        </div>
 
-        <section aria-labelledby="inbox-title">
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow">Inbox</p><h2 id="inbox-title">Leads</h2>
-            </div><form id="filter-form">
-              <label class="sr-only" for="status-filter">Status</label><select
-                id="status-filter"
-                aria-label="Filter leads by status"
-              >
-                <option value="">All statuses</option><option value="new"
-                  >New</option
-                ><option value="validating">Validating</option><option
-                  value="unassigned">Unassigned</option
-                ><option value="assigned">Assigned</option><option
-                  value="acknowledged">Acknowledged</option
-                ><option value="contact_attempted">Contact attempted</option
-                ><option value="contacted">Contacted</option><option
-                  value="qualifying">Qualifying</option
-                ><option value="qualified">Qualified</option><option
-                  value="appointment_requested">Appointment requested</option
-                ><option value="appointment_scheduled"
-                  >Appointment scheduled</option
-                ><option value="converted">Converted</option><option
-                  value="nurture">Nurture</option
-                ><option value="unresponsive">Unresponsive</option><option
-                  value="disqualified">Disqualified</option
-                ><option value="lost">Lost</option><option value="spam"
-                  >Spam</option
-                ><option value="duplicate">Duplicate</option><option
-                  value="archived">Archived</option
-                >
-              </select><label class="sr-only" for="urgency-filter"
-                >Urgency</label
-              ><select id="urgency-filter" aria-label="Filter leads by urgency">
-                <option value="">All urgency</option><option value="routine"
-                  >Routine</option
-                ><option value="same_day">Same day</option><option
-                  value="urgent">Urgent</option
-                ><option value="emergency">Emergency</option><option
-                  value="unknown">Unknown</option
-                >
-              </select><label class="sr-only" for="search-input">Search</label
-              ><input
-                id="search-input"
-                type="search"
-                placeholder="Search name, email, message"
-              /><button type="submit" class="button button--secondary"
-                >Apply</button
-              >
-            </form>
-          </div><ul class="product-list" id="leads-list"></ul>
-        </section>
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Sources</p>
+            <h2>Source performance</h2>
+          </div>
+        </div>
+        <ul class="product-list" id="sources-list"></ul>
+
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Inbox</p>
+            <h2>Leads</h2>
+          </div>
+          <form id="filter-form" style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center">
+            <label class="sr-only" for="status-filter">Status</label>
+            <select id="status-filter" class="button button--secondary button--sm" aria-label="Filter leads by status">
+              <option value="">All statuses</option>
+              <option value="new">New</option>
+              <option value="validating">Validating</option>
+              <option value="unassigned">Unassigned</option>
+              <option value="assigned">Assigned</option>
+              <option value="acknowledged">Acknowledged</option>
+              <option value="contact_attempted">Contact attempted</option>
+              <option value="contacted">Contacted</option>
+              <option value="qualifying">Qualifying</option>
+              <option value="qualified">Qualified</option>
+              <option value="appointment_requested">Appointment requested</option>
+              <option value="appointment_scheduled">Appointment scheduled</option>
+              <option value="converted">Converted</option>
+              <option value="nurture">Nurture</option>
+              <option value="unresponsive">Unresponsive</option>
+              <option value="disqualified">Disqualified</option>
+              <option value="lost">Lost</option>
+              <option value="spam">Spam</option>
+              <option value="duplicate">Duplicate</option>
+              <option value="archived">Archived</option>
+            </select>
+            <label class="sr-only" for="urgency-filter">Urgency</label>
+            <select id="urgency-filter" class="button button--secondary button--sm" aria-label="Filter leads by urgency">
+              <option value="">All urgency</option>
+              <option value="routine">Routine</option>
+              <option value="same_day">Same day</option>
+              <option value="urgent">Urgent</option>
+              <option value="emergency">Emergency</option>
+              <option value="unknown">Unknown</option>
+            </select>
+            <label class="sr-only" for="search-input">Search</label>
+            <input id="search-input" type="search" placeholder="Search…" class="button button--secondary button--sm" style="flex:1;min-width:12rem" />
+            <button type="submit" class="button button--secondary button--sm">Apply</button>
+          </form>
+        </div>
+        <div id="leads-list-panel">
+          <ul class="product-list" id="leads-list"></ul>
+        </div>
 
         <section id="detail-section" aria-labelledby="detail-title" hidden>
           <div class="section-heading">

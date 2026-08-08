@@ -2,466 +2,290 @@
 import AppShell from "../components/AppShell.astro";
 import "../styles/global.css";
 ---
-
 <!doctype html>
 <html lang="en">
-  <head
-    ><meta charset="UTF-8" /><meta
-      name="viewport"
-      content="width=device-width, initial-scale=1"
-    /><meta name="description" content="LILOs Insights workspace" /><title>
-      Insights · LILOs
-    </title></head
-  >
-  <body
-    ><AppShell>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="LILOs insights" />
+    <title>Insights · LILOs</title>
+  </head>
+  <body>
+    <AppShell>
       <div id="boot-not-configured" role="status">
-        <h1>This deployment is not configured</h1><p>
-          No Supabase or API connection is configured for this build.
-        </p>
+        <h1>This deployment is not configured</h1>
+        <p>No Supabase or API connection is configured for this build.</p>
       </div>
 
       <div id="boot-loading" role="status" aria-live="polite" hidden>
-        <p>Loading Insights…</p>
+        <p class="loading-state">Loading insights…</p>
       </div>
 
-      <div id="boot-error" class="alert alert--error" role="alert" hidden></div>
+      <div id="boot-error" role="alert" hidden></div>
 
       <div id="workspace-empty" role="status" hidden>
-        <h1>No organization access yet</h1><p>
-          Your account is not a member of any organization. Ask an administrator
-          to invite you.
-        </p>
+        <div class="empty-state">
+          <span class="empty-state__icon" aria-hidden="true">○</span>
+          <h3>No organization access yet</h3>
+          <p>Your account is not a member of any organization. Ask an administrator to invite you.</p>
+        </div>
       </div>
 
       <div id="insights-content" hidden>
-        <section id="overview" aria-labelledby="page-title">
-          <p class="eyebrow">Insights</p><h1 id="page-title">Insights</h1>
-        </section>
-
-        <section aria-labelledby="readiness-title">
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow">Product readiness</p><h2 id="readiness-title">
-                Setup status
-              </h2>
-            </div>
-          </div><div class="attention-card" id="readiness-panel">
-            <p>Checking readiness…</p>
+        <div class="page-head">
+          <div class="page-head__intro">
+            <p class="eyebrow">Operations</p>
+            <h1>Insights</h1>
+            <p>Cross-product reporting from real operational data — no simulated or fabricated metrics.</p>
           </div>
-        </section>
-
-        <section aria-labelledby="sources-title">
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow">Data sources</p><h2 id="sources-title">
-                What insights will draw on
-              </h2><p>
-                Insights is a cross-product reporting view populated from real
-                activity history across the connected products. Complete setup
-                on each product's page to unlock reporting.
-              </p>
+          <div class="page-head__meta">
+            <div class="page-head__actions">
+              <a class="button button--secondary button--sm" href="/integrations">Manage data sources</a>
             </div>
-          </div><ul class="product-list" id="sources-list"></ul>
-        </section>
-
-        <section aria-labelledby="activity-title">
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow">Activity</p><h2 id="activity-title">
-                Real cross-product activity
-              </h2><p>
-                Counts below are derived live from real operational records — no
-                simulated or fabricated metrics.
-              </p>
-            </div>
-          </div><div class="attention-card" id="activity-panel">
-            <p>Loading activity…</p>
           </div>
-        </section>
+        </div>
+
+        <div id="insights-readiness-panel"></div>
+
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Data sources</p>
+            <h2>Connected sources</h2>
+          </div>
+        </div>
+        <div id="sources-panel">
+          <div class="loading-state">Loading data sources…</div>
+        </div>
+
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Activity</p>
+            <h2>Cross-product metrics</h2>
+          </div>
+        </div>
+        <div id="activity-panel">
+          <div class="loading-state">Loading activity…</div>
+        </div>
       </div>
     </AppShell>
     <script>
       import {
-        fetchMyOrganizations,
-        fetchPrincipal,
         fetchProductReadiness,
         fetchInsightsSummary,
+        PRODUCT_KEYS,
         PRODUCT_LABELS,
-        type MyOrganization,
-        type ProductKey,
+        type InsightsSummary,
       } from "../lib/workspace";
-      import { selectDefaultOrganization } from "../lib/dashboard-logic";
-      import { getCurrentSession, signOut } from "../lib/session";
-      import { readPublicConfig } from "../lib/config";
-      import type { ApiOutcome } from "../lib/api-client";
-
-      // Products whose activity feeds this cross-product reporting view.
-      // Insights itself is deliberately excluded from its own source list.
-      const SOURCE_PRODUCTS: { key: ProductKey; href: string }[] = [
-        { key: "gbp", href: "/gbp" },
-        { key: "reviews", href: "/reviews" },
-        { key: "leads", href: "/leads" },
-        { key: "content", href: "/content" },
-        { key: "seo", href: "/seo" },
-      ];
+      import { summarizeReadiness } from "../lib/dashboard-logic";
+      import {
+        bootWorkspace,
+        applyBootResult,
+        populateSwitcher,
+        setActiveOrganization,
+        statusBadge,
+        metricCard,
+        emptyState,
+        errorAlert,
+        describeFailure,
+        type BootRegions,
+      } from "../lib/ui";
 
       let organizationId = "";
-      let organizations: MyOrganization[] = [];
 
-      const regions = {
+      const regions: BootRegions = {
         notConfigured: document.getElementById("boot-not-configured")!,
         loading: document.getElementById("boot-loading")!,
         error: document.getElementById("boot-error")!,
         empty: document.getElementById("workspace-empty")!,
-        content: document.getElementById("insights-content")!,
       };
 
-      function showOnly(region: HTMLElement): void {
-        for (const key of Object.keys(regions) as (keyof typeof regions)[]) {
-          regions[key].hidden = regions[key] !== region;
-        }
+      const SOURCE_PRODUCTS = ["gbp", "reviews", "leads", "content", "seo"] as const;
+
+      async function loadOrganization(org: import("../lib/workspace").MyOrganization): Promise<void> {
+        setActiveOrganization(org);
+        organizationId = org.organization_id;
+
+        const [readinessResult, summaryResult, sourceReadiness] = await Promise.all([
+          fetchProductReadiness(organizationId, "insights"),
+          fetchInsightsSummary(organizationId),
+          Promise.all(SOURCE_PRODUCTS.map((key) => fetchProductReadiness(organizationId, key))),
+        ]);
+
+        renderReadiness(readinessResult);
+        renderSources(sourceReadiness);
+        renderActivity(summaryResult);
       }
 
-      function describeFailure(outcome: ApiOutcome<unknown>): string {
-        switch (outcome.kind) {
-          case "forbidden":
-            return "You do not have permission to view Insights for this organization.";
-          case "not-found":
-            return "The requested resource could not be found.";
-          case "disconnected":
-            return "Could not reach the platform API.";
-          case "unauthenticated":
-            return "Your session has expired. Sign in again.";
-          case "not-configured":
-            return "This deployment is not configured.";
-          case "error":
-            return outcome.message;
-          case "ok":
-            return "";
-        }
-      }
-
-      function goToLogin(): void {
-        const next = encodeURIComponent(window.location.pathname);
-        window.location.assign(`/login?next=${next}`);
-      }
-
-      function wireSignOut(): void {
-        document
-          .getElementById("sign-out-button")
-          ?.addEventListener("click", async () => {
-            await signOut();
-            goToLogin();
-          });
-      }
-
-      function badge(status: string, label = status): HTMLSpanElement {
-        const el = document.createElement("span");
-        el.className = `status status--${status}`;
-        const dot = document.createElement("span");
-        dot.setAttribute("aria-hidden", "true");
-        dot.className = "status__dot";
-        el.append(dot, document.createTextNode(label));
-        return el;
-      }
-
-      function errorAlert(message: string): HTMLDivElement {
-        const alert = document.createElement("div");
-        alert.className = "alert alert--error";
-        const text = document.createElement("p");
-        text.textContent = message;
-        alert.append(text);
-        return alert;
-      }
-
-      async function renderReadiness(): Promise<void> {
-        const panel = document.getElementById("readiness-panel")!;
+      function renderReadiness(outcome: Awaited<ReturnType<typeof fetchProductReadiness>>): void {
+        const panel = document.getElementById("insights-readiness-panel")!;
         panel.replaceChildren();
-        const outcome = await fetchProductReadiness(organizationId, "insights");
+
         if (outcome.kind !== "ok") {
-          panel.append(errorAlert(describeFailure(outcome)));
+          panel.append(errorAlert(describeFailure(outcome, "Insights")));
           return;
         }
-        const state = outcome.data.readiness_state;
-        if (state === "ready") {
-          panel.append(badge("ready", "ready"));
-          const ready = document.createElement("p");
-          ready.textContent = "Insights is ready to use.";
-          panel.append(ready);
-        } else {
-          panel.append(badge("setup", "setup in progress"));
-          const note = document.createElement("p");
-          note.textContent =
-            "Some reporting prerequisites are still being set up, but real data from already-active sources is shown below.";
-          panel.append(note);
-          for (const finding of outcome.data.blocking_requirements) {
-            const reason = document.createElement("p");
-            reason.className = "field-hint";
-            reason.textContent = finding.remediation;
-            panel.append(reason);
-          }
+
+        const summary = summarizeReadiness(outcome);
+        if (summary.status === "ready") {
+          const alert = document.createElement("div");
+          alert.className = "alert alert--success";
+          alert.style.marginBottom = "0";
+          alert.append(statusBadge("ready", "Ready"));
+          const text = document.createElement("p");
+          text.className = "text-sm";
+          text.textContent = "Insights reporting is available. SEO recommendations are on the SEO page.";
+          alert.append(text);
+          panel.append(alert);
+        } else if (summary.status === "setup" || summary.status === "blocked") {
+          const alert = document.createElement("div");
+          alert.className = "alert alert--warning";
+          alert.style.marginBottom = "0";
+          alert.append(statusBadge(summary.status, summary.status === "setup" ? "Setup required" : "Blocked"));
+          const text = document.createElement("p");
+          text.className = "text-sm";
+          text.textContent = summary.detail;
+          alert.append(text);
+          const link = document.createElement("a");
+          link.className = "button button--secondary button--sm";
+          link.href = "/onboarding";
+          link.textContent = summary.status === "setup" ? "Complete setup" : "Review blockers";
+          alert.append(link);
+          panel.append(alert);
         }
       }
 
-      async function renderActivity(): Promise<void> {
+      function renderSources(readinessResults: Awaited<ReturnType<typeof fetchProductReadiness>>[]): void {
+        const panel = document.getElementById("sources-panel")!;
+        panel.replaceChildren();
+
+        const grid = document.createElement("div");
+        grid.className = "directory-grid";
+
+        for (let i = 0; i < SOURCE_PRODUCTS.length; i++) {
+          const key = SOURCE_PRODUCTS[i];
+          const summary = summarizeReadiness(readinessResults[i]);
+          const card = document.createElement("div");
+          card.className = "integration-card";
+
+          const header = document.createElement("div");
+          header.className = "integration-card__header";
+          const icon = document.createElement("span");
+          icon.className = "integration-card__icon";
+          icon.textContent = PRODUCT_LABELS[key][0];
+          const title = document.createElement("div");
+          title.className = "integration-card__title";
+          title.textContent = PRODUCT_LABELS[key];
+          header.append(icon, title);
+
+          const desc = document.createElement("p");
+          desc.className = "integration-card__desc";
+          desc.textContent = summary.detail;
+
+          const footer = document.createElement("div");
+          footer.className = "integration-card__footer";
+          footer.append(statusBadge(summary.status, summary.status === "ready" ? "Connected" : summary.status === "missing" ? "Unavailable" : summary.status));
+          const link = document.createElement("a");
+          link.className = "button button--secondary button--sm";
+          link.href = `/${key}`;
+          link.textContent = "Open →";
+          footer.append(link);
+
+          card.append(header, desc, footer);
+          grid.append(card);
+        }
+
+        panel.append(grid);
+      }
+
+      function renderActivity(summaryResult: Awaited<ReturnType<typeof fetchInsightsSummary>>): void {
         const panel = document.getElementById("activity-panel")!;
         panel.replaceChildren();
-        const outcome = await fetchInsightsSummary(organizationId);
-        if (outcome.kind !== "ok") {
-          panel.append(errorAlert(describeFailure(outcome)));
+
+        if (summaryResult.kind !== "ok") {
+          panel.append(
+            emptyState(
+              "Activity unavailable",
+              "Connect the insights product to see cross-product activity.",
+              "Set up Insights",
+              "/onboarding",
+            ),
+          );
           return;
         }
-        const s = outcome.data;
-        const total = (counts: Record<string, number>): number =>
-          Object.values(counts).reduce((sum, value) => sum + value, 0);
-        const groups: {
-          label: string;
-          items: { name: string; value: number }[];
-          emptyPrompt?: string;
-          href?: string;
-        }[] = [
-          {
-            label: "GBP",
-            items: [
-              { name: "locations", value: s.gbp.locations },
-              { name: "profile_snapshots", value: s.gbp.profile_snapshots },
-              {
-                name: "publications (total)",
-                value: total(s.gbp.publications),
-              },
-            ],
-            emptyPrompt: "Connect Google Business Profile to see activity.",
-            href: "/gbp",
-          },
-          {
-            label: "Reviews",
-            items: Object.entries(s.reviews).map(([name, value]) => ({
-              name,
-              value,
-            })),
-            emptyPrompt:
-              "No reviews synced yet. Import reviews to see metrics.",
-            href: "/reviews",
-          },
-          {
-            label: "Content publications",
-            items: Object.entries(s.content_publications).map(
-              ([name, value]) => ({
-                name,
-                value,
-              }),
-            ),
-            emptyPrompt: "No content published yet.",
-            href: "/content",
-          },
-          {
-            label: "SEO",
-            items: [
-              { name: "crawl_runs (total)", value: total(s.seo.crawl_runs) },
-              {
-                name: "opportunities (total)",
-                value: total(s.seo.opportunities),
-              },
-            ],
-            emptyPrompt: "Run first crawl to see SEO activity.",
-            href: "/seo",
-          },
-          {
-            label: "Leads",
-            items: Object.entries(s.leads).map(([name, value]) => ({
-              name,
-              value,
-            })),
-            emptyPrompt: "No leads yet.",
-            href: "/leads",
-          },
+
+        const data = summaryResult.data;
+        const groups: { title: string; metrics: { label: string; value: number }[] }[] = [];
+
+        // GBP
+        const gbpMetrics = [
+          { label: "Locations", value: data.gbp?.locations ?? 0 },
+          { label: "Profile snapshots", value: data.gbp?.profile_snapshots ?? 0 },
+          { label: "Publications", value: Object.values(data.gbp?.publications ?? {}).reduce((a, b) => a + b, 0) },
         ];
-        const list = document.createElement("ul");
-        list.className = "product-list";
-        for (const group of groups) {
-          const item = document.createElement("li");
-          const heading = document.createElement("h3");
-          heading.textContent = group.label;
-          item.append(heading);
-          const hasData = group.items.some((entry) => entry.value > 0);
-          if (hasData) {
-            const detail = document.createElement("p");
-            detail.textContent = group.items
-              .map((entry) => `${entry.name}: ${entry.value}`)
-              .join(" · ");
-            item.append(detail);
-          } else if (group.emptyPrompt) {
-            const prompt = document.createElement("p");
-            prompt.className = "field-hint";
-            prompt.textContent = group.emptyPrompt;
-            item.append(prompt);
-            if (group.href) {
-              const link = document.createElement("a");
-              link.href = `${group.href}?org=${organizationId}`;
-              link.className = "button button--secondary button--sm";
-              link.textContent = `Open ${group.label}`;
-              item.append(link);
-            }
-          }
-          list.append(item);
-        }
-        panel.append(list);
-      }
+        groups.push({ title: "Business Profile", metrics: gbpMetrics });
 
-      async function renderSources(): Promise<void> {
-        const list = document.getElementById("sources-list")!;
-        list.replaceChildren();
-        const results = await Promise.all(
-          SOURCE_PRODUCTS.map((source) =>
-            fetchProductReadiness(organizationId, source.key),
-          ),
-        );
-        SOURCE_PRODUCTS.forEach((source, index) => {
-          const outcome = results[index];
-          const item = document.createElement("li");
-          const info = document.createElement("div");
-          const name = document.createElement("h3");
-          name.textContent = PRODUCT_LABELS[source.key];
-          const meta = document.createElement("p");
-          const actions = document.createElement("div");
+        // Reviews
+        const reviewMetrics = Object.entries(data.reviews ?? {}).map(([k, v]) => ({ label: k.replace(/_/g, " "), value: v }));
+        if (reviewMetrics.length > 0) groups.push({ title: "Reviews", metrics: reviewMetrics });
 
-          if (outcome.kind !== "ok") {
-            meta.textContent = describeFailure(outcome);
-            actions.append(badge("missing", "unavailable"));
-          } else {
-            const state = outcome.data.readiness_state;
-            const label = state === "not_entitled" ? "setup" : state;
-            const blocking = outcome.data.blocking_requirements[0];
-            meta.textContent =
-              state === "ready"
-                ? "Connected and ready."
-                : (blocking?.remediation ?? "Setup required.");
-            actions.append(badge(label));
-          }
+        // Leads
+        const leadMetrics = Object.entries(data.leads ?? {}).map(([k, v]) => ({ label: k.replace(/_/g, " "), value: v }));
+        if (leadMetrics.length > 0) groups.push({ title: "Leads", metrics: leadMetrics });
 
-          info.append(name, meta);
-          const link = document.createElement("a");
-          link.href = source.href;
-          link.className = "button button--secondary button--sm";
-          link.textContent = `Open ${PRODUCT_LABELS[source.key]}`;
-          actions.append(link);
-          item.append(info, actions);
-          list.append(item);
-        });
-      }
+        // Content
+        const contentMetrics = Object.entries(data.content_publications ?? {}).map(([k, v]) => ({ label: k.replace(/_/g, " "), value: v }));
+        if (contentMetrics.length > 0) groups.push({ title: "Content", metrics: contentMetrics });
 
-      /**
-       * Populates the shared organization switcher in the topbar (rendered by
-       * AppShell) from the caller's real memberships. Reuses the existing
-       * `selectDefaultOrganization` helper for resolution — this is not a
-       * second organization-selection mechanism; it wires the one already in
-       * the shell that this page previously left dead and empty.
-       */
-      function populateSwitcher(): void {
-        const select = document.getElementById(
-          "organization-switcher",
-        ) as HTMLSelectElement;
-        select.replaceChildren();
-        for (const organization of organizations) {
-          const option = document.createElement("option");
-          option.value = organization.organization_id;
-          option.textContent = organization.organization_name;
-          select.append(option);
-        }
-        select.hidden = organizations.length <= 1;
-        select.addEventListener("change", () => {
-          const chosen = organizations.find(
-            (item) => item.organization_id === select.value,
+        // SEO
+        const seoMetrics = [
+          ...Object.entries(data.seo?.crawl_runs ?? {}).map(([k, v]) => ({ label: `Crawl: ${k}`, value: v })),
+          ...Object.entries(data.seo?.opportunities ?? {}).map(([k, v]) => ({ label: `Opportunities: ${k}`, value: v })),
+        ];
+        if (seoMetrics.length > 0) groups.push({ title: "SEO", metrics: seoMetrics });
+
+        if (groups.length === 0 || groups.every((g) => g.metrics.every((m) => m.value === 0))) {
+          panel.append(
+            emptyState(
+              "No activity recorded yet",
+              "Once operations start running, activity from all products will appear here.",
+            ),
           );
-          if (chosen) void loadOrganization(chosen);
-        });
-      }
-
-      async function loadOrganization(
-        organization: MyOrganization,
-      ): Promise<void> {
-        organizationId = organization.organization_id;
-        if (typeof window !== "undefined") {
-          localStorage.setItem("selected_org_id", organizationId);
-          const url = new URL(window.location.href);
-          if (url.searchParams.get("org") !== organizationId) {
-            url.searchParams.set("org", organizationId);
-            window.history.replaceState({}, "", url.toString());
-          }
+          return;
         }
-        document.getElementById("active-organization-name")!.textContent =
-          organization.organization_name;
-        (
-          document.getElementById("organization-switcher") as HTMLSelectElement
-        ).value = organizationId;
 
-        await Promise.all([
-          renderReadiness(),
-          renderSources(),
-          renderActivity(),
-        ]);
+        const grid = document.createElement("div");
+        grid.className = "split";
+        for (const group of groups) {
+          const card = document.createElement("article");
+          card.className = "card";
+          const header = document.createElement("div");
+          header.className = "card__header";
+          header.append(Object.assign(document.createElement("h3"), { className: "card__title", textContent: group.title }));
+          card.append(header);
+          const body = document.createElement("div");
+          body.className = "card__body";
+          for (const m of group.metrics) {
+            const row = document.createElement("div");
+            row.className = "flex-row";
+            row.style.justifyContent = "space-between";
+            row.append(
+              Object.assign(document.createElement("span"), { className: "text-sm", textContent: m.label.replace(/\b\w/g, (c) => c.toUpperCase()) }),
+              Object.assign(document.createElement("strong"), { textContent: String(m.value) }),
+            );
+            body.append(row);
+          }
+          card.append(body);
+          grid.append(card);
+        }
+        panel.append(grid);
       }
 
       async function boot(): Promise<void> {
-        if (!readPublicConfig()) {
-          showOnly(regions.notConfigured);
-          return;
-        }
-        showOnly(regions.loading);
-
-        const session = await getCurrentSession();
-        if (session.status !== "signed-in") {
-          goToLogin();
-          return;
-        }
-
-        const principal = await fetchPrincipal();
-        if (principal.kind === "unauthenticated") {
-          goToLogin();
-          return;
-        }
-        if (principal.kind !== "ok") {
-          regions.error.textContent = describeFailure(principal);
-          showOnly(regions.error);
-          return;
-        }
-        document.getElementById("current-user-label")!.textContent =
-          principal.data.auth_user_id;
-        document.getElementById("current-user-initial")!.textContent =
-          principal.data.auth_user_id.slice(0, 1).toUpperCase();
-        document.getElementById("current-assurance-label")!.textContent =
-          principal.data.assurance_level;
-        const signOutButton = document.getElementById("sign-out-button")!;
-        signOutButton.hidden = false;
-        wireSignOut();
-
-        const organizationsResult = await fetchMyOrganizations();
-        if (organizationsResult.kind === "unauthenticated") {
-          goToLogin();
-          return;
-        }
-        if (organizationsResult.kind !== "ok") {
-          regions.error.textContent = describeFailure(organizationsResult);
-          showOnly(regions.error);
-          return;
-        }
-        if (organizationsResult.data.length === 0) {
-          showOnly(regions.empty);
-          return;
-        }
-        organizations = organizationsResult.data;
-
-        const organization = selectDefaultOrganization(organizations);
-        if (!organization) {
-          showOnly(regions.empty);
-          return;
-        }
-
-        populateSwitcher();
-        await loadOrganization(organization);
-
-        showOnly(regions.content);
+        const result = await bootWorkspace("Insights");
+        if (!applyBootResult(regions, result)) return;
+        populateSwitcher(result.organizations, (o) => void loadOrganization(o));
+        const org = result.organizations.find((o) => o.organization_id === result.context.organizationId) ?? result.organizations[0];
+        await loadOrganization(org);
       }
 
       void boot();

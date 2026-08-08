@@ -2,198 +2,78 @@
 import AppShell from "../components/AppShell.astro";
 import "../styles/global.css";
 ---
-
 <!doctype html>
 <html lang="en">
-  <head
-    ><meta charset="UTF-8" /><meta
-      name="viewport"
-      content="width=device-width, initial-scale=1"
-    /><meta
-      name="description"
-      content="LILOs Business Profile workspace"
-    /><title>Business Profile · LILOs</title></head
-  >
-  <body
-    ><AppShell>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="LILOs Business Profile workspace" />
+    <title>Business Profile · LILOs</title>
+  </head>
+  <body>
+    <AppShell>
       <div id="boot-not-configured" role="status">
-        <h1>This deployment is not configured</h1><p>
-          No Supabase or API connection is configured for this build.
-        </p>
+        <h1>This deployment is not configured</h1>
+        <p>No Supabase or API connection is configured for this build.</p>
       </div>
 
       <div id="boot-loading" role="status" aria-live="polite" hidden>
-        <p>Loading Business Profile…</p>
+        <p class="loading-state">Loading Business Profile…</p>
       </div>
 
-      <div id="boot-error" class="alert alert--error" role="alert" hidden></div>
+      <div id="boot-error" role="alert" hidden></div>
 
       <div id="workspace-empty" role="status" hidden>
-        <h1>No organization access yet</h1><p>
-          Your account is not a member of any organization. Ask an administrator
-          to invite you.
-        </p>
+        <div class="empty-state">
+          <span class="empty-state__icon" aria-hidden="true">○</span>
+          <h3>No organization access yet</h3>
+          <p>Your account is not a member of any organization. Ask an administrator to invite you.</p>
+        </div>
       </div>
 
       <div id="gbp-content" hidden>
-        <section id="overview" aria-labelledby="page-title">
-          <p class="eyebrow">Business Profile</p><h1 id="page-title">
-            Google Business Profile
-          </h1>
-        </section>
-
-        <section aria-labelledby="readiness-title">
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow">Product readiness</p><h2 id="readiness-title">
-                Setup status
-              </h2>
-            </div>
-          </div><div class="attention-card" id="readiness-panel">
-            <p>Checking readiness…</p>
+        <div class="page-head">
+          <div class="page-head__intro">
+            <p class="eyebrow">Operations</p>
+            <h1>Business Profile</h1>
+            <p>Manage your Google Business Profile location data, hours, posts, and media.</p>
           </div>
-        </section>
-
-        <section aria-labelledby="connection-title">
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow">Google connection</p><h2 id="connection-title">
-                Connect Google Business Profile
-              </h2>
+          <div class="page-head__meta">
+            <div class="page-head__actions">
+              <a class="button button--secondary button--sm" href="/integrations">Manage connection</a>
             </div>
           </div>
-          <div id="connection-callback-banner"></div>
-          <div class="attention-card" id="connection-panel">
-            <p>Checking connection…</p>
+        </div>
+
+        <div id="connection-status-panel"></div>
+
+        <div id="location-picker-section">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Location</p>
+              <h2>Business location</h2>
+            </div>
           </div>
-        </section>
-
-        <section aria-labelledby="accounts-title">
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow">Google connection</p><h2 id="accounts-title">
-                Discovered accounts
-              </h2>
-            </div>
-          </div><ul class="product-list" id="accounts-list"></ul>
-        </section>
-
-        <section aria-labelledby="locations-title">
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow">Mapping</p><h2 id="locations-title">
-                Google Business locations
-              </h2>
-            </div>
-          </div><ul class="product-list" id="locations-list"></ul>
-        </section>
-
-        <section
-          id="operations-section"
-          aria-labelledby="operations-title"
-          hidden
-        >
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow">Operations</p><h2 id="operations-title">
-                Categories, hours, media, posts, and suspension
-              </h2>
-            </div>
-          </div><div class="split">
-            <article>
-              <p class="eyebrow">Completeness</p><div id="completeness-body">
-              </div>
-              <h3>Propose a change</h3><label class="sr-only" for="change-task"
-                >What to edit</label
-              ><select id="change-task" class="button button--secondary">
-                <option value="">Choose what to edit…</option>
-                <option value="profile.description">Business description</option
-                >
-                <option value="regularHours.regularHours">Business hours</option
-                >
-                <option value="phoneNumbers.phoneNumbers">Phone number</option>
-                <option value="websiteUri.websiteUri">Website URL</option>
-                <option value="categories.categories">Categories</option
-                ></select
-              ><label class="sr-only" for="change-value">New value</label><input
-                id="change-value"
-                type="text"
-                placeholder="new value"
-              /><button type="button" class="button" id="propose-change-button"
-                >Propose change</button
-              ><h3>Propose special hours</h3><label
-                class="sr-only"
-                for="special-hours-date">Service date</label
-              ><input id="special-hours-date" type="date" /><label
-                class="sr-only"
-                for="special-hours-opens">Opens</label
-              ><input
-                id="special-hours-opens"
-                type="time"
-                value="09:00"
-              /><label class="sr-only" for="special-hours-closes">Closes</label
-              ><input
-                id="special-hours-closes"
-                type="time"
-                value="17:00"
-              /><button type="button" class="button" id="propose-hours-button"
-                >Propose special hours</button
-              ><h3>Propose media</h3><label
-                class="sr-only"
-                for="media-reference">Media URL</label
-              ><input
-                id="media-reference"
-                type="text"
-                placeholder="https://example.com/photo.jpg"
-              /><button type="button" class="button" id="propose-media-button"
-                >Propose media</button
-              ><h3>Draft a post</h3><label class="sr-only" for="post-content"
-                >Post content</label
-              ><textarea id="post-content" rows="3"></textarea><button
-                type="button"
-                class="button"
-                id="create-post-button">Draft post</button
-              ><h3>Report suspension</h3><label
-                class="sr-only"
-                for="suspension-status">Provider status</label
-              ><input
-                id="suspension-status"
-                type="text"
-                placeholder="e.g. SUSPENDED"
-              /><button
-                type="button"
-                class="button button--secondary"
-                id="report-suspension-button">Report suspension case</button
-              ><p id="operations-status" role="status" aria-live="polite"></p>
-            </article><article id="operations-activity">
-              <p class="eyebrow">Change sets</p><ol
-                class="timeline"
-                id="change-sets-list"
-              >
-              </ol><p class="eyebrow">Special hours</p><ol
-                class="timeline"
-                id="special-hours-list"
-              >
-              </ol><p class="eyebrow">Media</p><ol
-                class="timeline"
-                id="media-list"
-              >
-              </ol><p class="eyebrow">Posts</p><ol
-                class="timeline"
-                id="posts-list"
-              >
-              </ol><p class="eyebrow">Suspension cases</p><ol
-                class="timeline"
-                id="suspension-cases-list"
-              >
-              </ol><p class="eyebrow">Audit history</p><ol
-                class="timeline"
-                id="operations-audit-list"
-              >
-              </ol>
-            </article>
+          <div id="location-picker-panel">
+            <div class="loading-state">Loading locations…</div>
           </div>
-        </section>
+        </div>
+
+        <div id="gbp-workspace" hidden>
+          <div class="tabs" role="tablist" id="gbp-tabs">
+            <button class="tabs__tab" role="tab" aria-selected="true" data-tab="overview">Overview</button>
+            <button class="tabs__tab" role="tab" aria-selected="false" data-tab="profile">Profile</button>
+            <button class="tabs__tab" role="tab" aria-selected="false" data-tab="hours">Hours</button>
+            <button class="tabs__tab" role="tab" aria-selected="false" data-tab="posts">Posts</button>
+            <button class="tabs__tab" role="tab" aria-selected="false" data-tab="media">Media</button>
+          </div>
+
+          <div id="tab-overview" class="tab-panel"></div>
+          <div id="tab-profile" class="tab-panel" hidden></div>
+          <div id="tab-hours" class="tab-panel" hidden></div>
+          <div id="tab-posts" class="tab-panel" hidden></div>
+          <div id="tab-media" class="tab-panel" hidden></div>
+        </div>
       </div>
     </AppShell>
     <script>
@@ -202,16 +82,11 @@ import "../styles/global.css";
         fetchGBPLocations,
         fetchPlatformLocations,
         confirmLocationMapping,
-        type GBPAccountSummary,
         type GBPLocationSummary,
         type PlatformLocation,
       } from "../lib/gbp";
       import {
-        beginConnection,
-        disconnectConnection,
         fetchConnectionStatus,
-        discoverResources,
-        describeGbpConnectFailure,
       } from "../lib/gbp-connection";
       import {
         createPostRevision,
@@ -235,1067 +110,788 @@ import "../styles/global.css";
         type SpecialHours,
       } from "../lib/gbp-operations";
       import {
-        fetchMyOrganizations,
-        fetchPrincipal,
         fetchProductReadiness,
       } from "../lib/workspace";
-      import { selectDefaultOrganization } from "../lib/dashboard-logic";
-      import { getCurrentSession, signOut } from "../lib/session";
-      import { readPublicConfig } from "../lib/config";
+      import {
+        bootWorkspace,
+        applyBootResult,
+        populateSwitcher,
+        setActiveOrganization,
+        statusBadge,
+        emptyState,
+        errorAlert,
+        describeFailure,
+        formatTimestamp,
+        type BootRegions,
+      } from "../lib/ui";
       import { startWorkflowRun } from "../lib/workflows";
-      import type { ApiOutcome } from "../lib/api-client";
 
       let organizationId = "";
       let selectedPlatformLocationId: string | null = null;
       let selectedGbpLocationId: string | null = null;
+      let selectedLocationName = "";
       let platformLocationsCache: PlatformLocation[] = [];
 
-      const regions = {
+      const regions: BootRegions = {
         notConfigured: document.getElementById("boot-not-configured")!,
         loading: document.getElementById("boot-loading")!,
         error: document.getElementById("boot-error")!,
         empty: document.getElementById("workspace-empty")!,
-        content: document.getElementById("gbp-content")!,
       };
 
-      function showOnly(region: HTMLElement): void {
-        for (const key of Object.keys(regions) as (keyof typeof regions)[]) {
-          regions[key].hidden = regions[key] !== region;
-        }
-      }
-
-      function describeFailure(outcome: ApiOutcome<unknown>): string {
-        switch (outcome.kind) {
-          case "forbidden":
-            return "You do not have permission to view Business Profile for this organization.";
-          case "not-found":
-            return "The requested resource could not be found.";
-          case "disconnected":
-            return "Could not reach the platform API.";
-          case "unauthenticated":
-            return "Your session has expired. Sign in again.";
-          case "not-configured":
-            return "This deployment is not configured.";
-          case "error":
-            return outcome.message;
-          case "ok":
-            return "";
-        }
-      }
-
-      function goToLogin(): void {
-        const next = encodeURIComponent(window.location.pathname);
-        window.location.assign(`/login?next=${next}`);
-      }
-
-      function wireSignOut(): void {
-        document
-          .getElementById("sign-out-button")
-          ?.addEventListener("click", async () => {
-            await signOut();
-            goToLogin();
+      // Tab switching
+      document.querySelectorAll<HTMLElement>("[data-tab]").forEach((tab) => {
+        tab.addEventListener("click", () => {
+          document.querySelectorAll<HTMLElement>("[data-tab]").forEach((t) => {
+            t.setAttribute("aria-selected", t === tab ? "true" : "false");
           });
-      }
-
-      function errorAlert(message: string): HTMLDivElement {
-        const alert = document.createElement("div");
-        alert.className = "alert alert--error";
-        const text = document.createElement("p");
-        text.textContent = message;
-        alert.append(text);
-        return alert;
-      }
-
-      function emptyState(
-        heading: string,
-        description: string,
-      ): HTMLDivElement {
-        const wrap = document.createElement("div");
-        wrap.className = "empty-state";
-        const title = document.createElement("h3");
-        title.textContent = heading;
-        const body = document.createElement("p");
-        body.textContent = description;
-        wrap.append(title, body);
-        return wrap;
-      }
-
-      function renderReadiness(
-        outcome: Awaited<ReturnType<typeof fetchProductReadiness>>,
-      ): void {
-        const panel = document.getElementById("readiness-panel")!;
-        panel.replaceChildren();
-        if (outcome.kind !== "ok") {
-          panel.append(errorAlert(describeFailure(outcome)));
-          return;
-        }
-        const state = outcome.data.readiness_state;
-        const label = state === "not_entitled" ? "setup" : state;
-        const badge = document.createElement("span");
-        badge.className = `status status--${label}`;
-        const dot = document.createElement("span");
-        dot.setAttribute("aria-hidden", "true");
-        dot.className = "status__dot";
-        badge.append(dot, document.createTextNode(label));
-        panel.append(badge);
-        for (const finding of outcome.data.blocking_requirements) {
-          const reason = document.createElement("p");
-          reason.textContent = finding.remediation;
-          panel.append(reason);
-        }
-        if (
-          outcome.data.blocking_requirements.length === 0 &&
-          state === "ready"
-        ) {
-          const ready = document.createElement("p");
-          ready.textContent = "Business Profile is ready to use.";
-          panel.append(ready);
-        }
-      }
-
-      function statusBadge(label: string, kind: string): HTMLSpanElement {
-        const badge = document.createElement("span");
-        badge.className = `status status--${kind}`;
-        const dot = document.createElement("span");
-        dot.setAttribute("aria-hidden", "true");
-        dot.className = "status__dot";
-        badge.append(dot, document.createTextNode(label));
-        return badge;
-      }
-
-      function renderCallbackBanner(): void {
-        const banner = document.getElementById("connection-callback-banner")!;
-        banner.replaceChildren();
-        const params = new URLSearchParams(window.location.search);
-        const connected = params.get("connected");
-        if (connected === null) return;
-        if (connected === "1") {
-          const success = document.createElement("div");
-          success.className = "alert alert--success";
-          const text = document.createElement("p");
-          text.textContent = "Google Business Profile connected.";
-          success.append(text);
-          banner.append(success);
-        } else {
-          const reason = params.get("reason") ?? "error";
-          banner.append(
-            errorAlert(`Google Business Profile connection failed: ${reason}.`),
-          );
-        }
-        params.delete("connected");
-        params.delete("reason");
-        const query = params.toString();
-        window.history.replaceState(
-          {},
-          "",
-          `${window.location.pathname}${query ? `?${query}` : ""}`,
-        );
-      }
-
-      async function beginOrReconnect(): Promise<void> {
-        const panel = document.getElementById("connection-panel")!;
-        panel.replaceChildren(document.createTextNode("Connecting…"));
-        const outcome = await beginConnection(organizationId);
-        if (outcome.kind !== "ok") {
-          panel.replaceChildren(
-            renderConnectFailure(outcome, () => void beginOrReconnect()),
-          );
-          return;
-        }
-        window.location.assign(outcome.data.authorization_url);
-      }
-
-      /**
-       * Render the specific, actionable failure for a GBP connect attempt
-       * (e.g. `PRODUCT_NOT_READY` -> "enable GBP in Client Onboarding", with
-       * a link) instead of the generic "The request conflicts with the
-       * current resource state." The classification lives in the pure,
-       * unit-tested `describeGbpConnectFailure` helper; this function only
-       * builds DOM from it. The backend OAuth-requires-an-effective-
-       * entitlement rule is NOT weakened here.
-       */
-      function renderConnectFailure(
-        outcome: ApiOutcome<unknown>,
-        retry: () => void,
-      ): HTMLDivElement {
-        const description = describeGbpConnectFailure(outcome, organizationId);
-        if (description.kind === "product_not_ready") {
-          const alert = document.createElement("div");
-          alert.className = "alert alert--error";
-          alert.setAttribute("role", "alert");
-          const message = document.createElement("p");
-          message.textContent = description.message;
-          alert.append(message);
-          const actions = document.createElement("div");
-          actions.className = "hero__actions";
-          if (description.onboardingHref !== null) {
-            const onboardingLink = document.createElement("a");
-            onboardingLink.href = description.onboardingHref;
-            onboardingLink.className = "button button--secondary button--sm";
-            onboardingLink.textContent = "Open Client Onboarding";
-            actions.append(onboardingLink);
-          }
-          const retryButton = document.createElement("button");
-          retryButton.type = "button";
-          retryButton.className = "button button--secondary button--sm";
-          retryButton.textContent = "Try again";
-          retryButton.addEventListener("click", retry);
-          actions.append(retryButton);
-          alert.append(actions);
-          return alert;
-        }
-        return errorAlert(description.message);
-      }
-
-      function confirmDisconnect(
-        panel: HTMLElement,
-        trigger: HTMLButtonElement,
-      ): void {
-        trigger.hidden = true;
-        const prompt = document.createElement("div");
-        const message = document.createElement("p");
-        message.textContent =
-          "Disconnect this Google Business Profile connection?";
-        const confirmButton = document.createElement("button");
-        confirmButton.type = "button";
-        confirmButton.className = "button button--secondary";
-        confirmButton.textContent = "Confirm disconnect";
-        confirmButton.addEventListener("click", () => void performDisconnect());
-        const cancelButton = document.createElement("button");
-        cancelButton.type = "button";
-        cancelButton.className = "button";
-        cancelButton.textContent = "Cancel";
-        cancelButton.addEventListener("click", () => {
-          prompt.remove();
-          trigger.hidden = false;
+          document.querySelectorAll<HTMLElement>(".tab-panel").forEach((panel) => {
+            panel.hidden = !panel.id.endsWith(tab.dataset.tab!);
+          });
         });
-        prompt.append(message, confirmButton, cancelButton);
-        panel.append(prompt);
-      }
+      });
 
-      async function performDisconnect(): Promise<void> {
-        const outcome = await disconnectConnection(organizationId);
-        if (outcome.kind !== "ok") {
-          document
-            .getElementById("connection-panel")!
-            .append(errorAlert(describeFailure(outcome)));
-          return;
-        }
-        renderConnection(await fetchConnectionStatus(organizationId));
-      }
+      async function loadOrganization(org: import("../lib/workspace").MyOrganization): Promise<void> {
+        setActiveOrganization(org);
+        organizationId = org.organization_id;
 
-      async function performDiscovery(
-        button: HTMLButtonElement,
-      ): Promise<void> {
-        button.disabled = true;
-        button.textContent = "Discovering…";
-        const outcome = await discoverResources(organizationId);
-        if (outcome.kind !== "ok") {
-          const msg =
-            outcome.kind === "error" && outcome.code === "RECONNECT_REQUIRED"
-              ? "Google access token expired. Reconnect your Google account."
-              : describeFailure(outcome);
-          document.getElementById("connection-panel")!.append(errorAlert(msg));
-          button.textContent = "Discover accounts and locations";
-          button.disabled = false;
-          return;
-        }
-        const result = outcome.data;
-        button.textContent = `Discovered ${result.accounts_discovered} account(s), ${result.locations_discovered} location(s)`;
-        // Refresh accounts and locations
-        const [accounts, locations, pLocs] = await Promise.all([
-          fetchGBPAccounts(organizationId),
+        const [connectionResult, locationsResult, platformLocsResult] = await Promise.all([
+          fetchConnectionStatus(organizationId),
           fetchGBPLocations(organizationId),
           fetchPlatformLocations(organizationId),
         ]);
-        if (pLocs.kind === "ok") platformLocationsCache = pLocs.data;
-        renderAccounts(accounts.kind === "ok" ? accounts.data : []);
-        renderLocations(locations.kind === "ok" ? locations.data : []);
+
+        if (platformLocsResult.kind === "ok") platformLocationsCache = platformLocsResult.data;
+
+        renderConnectionStatus(connectionResult);
+        renderLocationPicker(locationsResult.kind === "ok" ? locationsResult.data : []);
       }
 
-      function renderConnection(
-        outcome: Awaited<ReturnType<typeof fetchConnectionStatus>>,
-      ): void {
-        const panel = document.getElementById("connection-panel")!;
+      function renderConnectionStatus(outcome: Awaited<ReturnType<typeof fetchConnectionStatus>>): void {
+        const panel = document.getElementById("connection-status-panel")!;
         panel.replaceChildren();
 
-        if (outcome.kind === "forbidden") {
-          panel.append(
-            errorAlert(
-              "You do not have permission to manage the Google connection for this organization.",
-            ),
-          );
-          return;
-        }
-        if (
-          outcome.kind === "error" &&
-          outcome.code === "INTEGRATION_NOT_CONFIGURED"
-        ) {
-          panel.append(
-            emptyState(
-              "Google connection is not configured",
-              "This deployment has not been configured with Google OAuth credentials yet.",
-            ),
-          );
+        if (outcome.kind === "error" && outcome.code === "INTEGRATION_NOT_CONFIGURED") {
+          const alert = document.createElement("div");
+          alert.className = "alert alert--warning";
+          const text = document.createElement("p");
+          text.textContent = "Google is not connected. Connect in Integrations to start using Business Profile.";
+          alert.append(text);
+          const link = document.createElement("a");
+          link.className = "button button--secondary button--sm";
+          link.href = "/integrations";
+          link.textContent = "Go to Integrations";
+          alert.append(link);
+          panel.append(alert);
           return;
         }
         if (outcome.kind !== "ok") {
-          panel.append(errorAlert(describeFailure(outcome)));
+          panel.append(errorAlert(describeFailure(outcome, "Google connection")));
           return;
         }
 
-        const connectionState = outcome.data;
-        if (
-          connectionState === null ||
-          connectionState.status === "disconnected"
-        ) {
-          const connectButton = document.createElement("button");
-          connectButton.type = "button";
-          connectButton.className = "button";
-          connectButton.textContent = "Connect Google";
-          connectButton.addEventListener(
-            "click",
-            () => void beginOrReconnect(),
-          );
-          panel.append(connectButton);
+        const state = outcome.data;
+        if (state === null || state.status === "disconnected") {
+          const alert = document.createElement("div");
+          alert.className = "alert alert--info";
+          const text = document.createElement("p");
+          text.textContent = "Google is not connected. Connect in Integrations to discover and map your Business Profile locations.";
+          alert.append(text);
+          const link = document.createElement("a");
+          link.className = "button button--secondary button--sm";
+          link.href = "/integrations";
+          link.textContent = "Connect Google";
+          alert.append(link);
+          panel.append(alert);
           return;
         }
 
-        const badgeKind =
-          connectionState.status === "connected"
-            ? "ready"
-            : connectionState.status === "reconnect_required"
-              ? "blocked"
-              : "setup";
-        panel.append(statusBadge(connectionState.status, badgeKind));
-
-        if (connectionState.last_verified_at) {
-          const verified = document.createElement("p");
-          verified.textContent = `Last verified ${connectionState.last_verified_at}`;
-          panel.append(verified);
+        if (state.status === "reconnect_required") {
+          const alert = document.createElement("div");
+          alert.className = "alert alert--error";
+          const text = document.createElement("p");
+          text.textContent = "Google connection needs attention. Reconnect in Integrations.";
+          alert.append(text);
+          const link = document.createElement("a");
+          link.className = "button button--secondary button--sm";
+          link.href = "/integrations";
+          link.textContent = "Reconnect";
+          alert.append(link);
+          panel.append(alert);
+          return;
         }
 
-        if (connectionState.status === "reconnect_required") {
-          const reconnectButton = document.createElement("button");
-          reconnectButton.type = "button";
-          reconnectButton.className = "button";
-          reconnectButton.textContent = "Reconnect Google";
-          reconnectButton.addEventListener(
-            "click",
-            () => void beginOrReconnect(),
-          );
-          panel.append(reconnectButton);
-        }
-
-        if (
-          connectionState.status === "connected" ||
-          connectionState.status === "degraded"
-        ) {
-          const discoverButton = document.createElement("button");
-          discoverButton.type = "button";
-          discoverButton.className = "button";
-          discoverButton.textContent = "Discover accounts and locations";
-          discoverButton.addEventListener(
-            "click",
-            () => void performDiscovery(discoverButton),
-          );
-          panel.append(discoverButton);
-
-          const disconnectButton = document.createElement("button");
-          disconnectButton.type = "button";
-          disconnectButton.className = "button button--secondary";
-          disconnectButton.textContent = "Disconnect";
-          disconnectButton.addEventListener("click", () =>
-            confirmDisconnect(panel, disconnectButton),
-          );
-          panel.append(disconnectButton);
-        }
+        const info = document.createElement("div");
+        info.className = "alert alert--success";
+        info.style.marginBottom = "0";
+        const badge = statusBadge(state.status === "connected" ? "ready" : "degraded", state.status);
+        const text = document.createElement("p");
+        text.className = "text-sm";
+        text.textContent = state.last_verified_at ? `Last synced ${formatTimestamp(state.last_verified_at)}` : "Connected";
+        info.append(badge, text);
+        panel.append(info);
       }
 
-      function renderAccounts(accounts: GBPAccountSummary[]): void {
-        const list = document.getElementById("accounts-list")!;
-        list.replaceChildren();
-        if (accounts.length === 0) {
-          const empty = document.createElement("li");
-          empty.append(
-            emptyState(
-              "No Google accounts discovered",
-              "Connect a Google account and click 'Discover accounts and locations' to find accessible GBP accounts.",
-            ),
-          );
-          list.append(empty);
-          return;
-        }
-        for (const account of accounts) {
-          const item = document.createElement("li");
-          const info = document.createElement("div");
-          const name = document.createElement("h3");
-          name.textContent = account.display_name;
-          const meta = document.createElement("p");
-          meta.textContent = account.account_type ?? "Account";
-          info.append(name, meta);
-          const badge = document.createElement("span");
-          badge.className = `status status--${account.status === "selected" ? "ready" : "setup"}`;
-          const dot = document.createElement("span");
-          dot.setAttribute("aria-hidden", "true");
-          dot.className = "status__dot";
-          badge.append(dot, document.createTextNode(account.status));
-          item.append(info, badge);
-          list.append(item);
-        }
-      }
+      function renderLocationPicker(locations: GBPLocationSummary[]): void {
+        const panel = document.getElementById("location-picker-panel")!;
+        panel.replaceChildren();
 
-      function renderLocations(locations: GBPLocationSummary[]): void {
-        const list = document.getElementById("locations-list")!;
-        list.replaceChildren();
+        const confirmed = locations.filter((l) => l.mapping_status === "confirmed");
+
         if (locations.length === 0) {
-          const empty = document.createElement("li");
-          empty.append(
+          panel.append(
             emptyState(
-              "No Google Business locations discovered",
-              "Click 'Discover accounts and locations' after connecting a Google account.",
+              "No Business Profile locations discovered",
+              "Connect Google in Integrations and discover your accounts and locations to get started.",
+              "Go to Integrations",
+              "/integrations",
             ),
           );
-          list.append(empty);
           return;
         }
-        for (const location of locations) {
-          const item = document.createElement("li");
-          const info = document.createElement("div");
-          const name = document.createElement("h3");
-          name.textContent = location.business_name;
-          const meta = document.createElement("p");
-          meta.textContent = location.last_synced_at
-            ? `Last synced ${location.last_synced_at}`
-            : "Not yet synced";
-          info.append(name, meta);
-          const badgeStatus =
-            location.mapping_status === "confirmed"
-              ? "ready"
-              : location.mapping_status === "conflicted" ||
-                  location.mapping_status === "disconnected"
-                ? "blocked"
-                : "setup";
-          const badge = document.createElement("span");
-          badge.className = `status status--${badgeStatus}`;
-          const dot = document.createElement("span");
-          dot.setAttribute("aria-hidden", "true");
-          dot.className = "status__dot";
-          badge.append(dot, document.createTextNode(location.mapping_status));
-          item.append(info, badge);
-          if (location.mapping_status === "confirmed" && location.location_id) {
-            const openButton = document.createElement("button");
-            openButton.type = "button";
-            openButton.className = "button button--secondary";
-            openButton.textContent = "Open operations";
-            openButton.addEventListener(
-              "click",
-              () => void openOperations(location.location_id!, location.id),
-            );
-            item.append(openButton);
-          } else if (
-            location.mapping_status === "unmapped" &&
-            platformLocationsCache.length > 0
-          ) {
-            const mapContainer = document.createElement("div");
-            mapContainer.className = "mapping-controls";
+
+        if (confirmed.length > 0) {
+          const list = document.createElement("ul");
+          list.className = "product-list";
+          for (const loc of confirmed) {
+            const item = document.createElement("li");
+            const info = document.createElement("div");
+            const name = document.createElement("h3");
+            name.textContent = loc.business_name;
+            const detail = document.createElement("p");
+            detail.textContent = loc.last_synced_at ? `Last synced ${formatTimestamp(loc.last_synced_at)}` : "Not yet synced";
+            info.append(name, detail);
+            const openBtn = document.createElement("button");
+            openBtn.type = "button";
+            openBtn.className = "button button--sm";
+            openBtn.textContent = "Open";
+            openBtn.addEventListener("click", () => void openWorkspace(loc));
+            item.append(info, openBtn);
+            list.append(item);
+          }
+          panel.append(list);
+        }
+
+        const unmapped = locations.filter((l) => l.mapping_status === "unmapped" && platformLocationsCache.length > 0);
+        if (unmapped.length > 0) {
+          const heading = document.createElement("p");
+          heading.className = "eyebrow";
+          heading.style.marginTop = "1rem";
+          heading.textContent = "Unmapped locations";
+          panel.append(heading);
+          const list = document.createElement("ul");
+          list.className = "product-list";
+          for (const loc of unmapped) {
+            const item = document.createElement("li");
+            const info = document.createElement("div");
+            const name = document.createElement("h3");
+            name.textContent = loc.business_name;
+            const detail = document.createElement("p");
+            detail.textContent = "Map to a platform location to start managing.";
+            info.append(name, detail);
+
             const select = document.createElement("select");
-            select.innerHTML =
-              '<option value="">Select a location…</option>' +
-              platformLocationsCache
-                .map((l) => `<option value="${l.id}">${l.name}</option>`)
-                .join("");
-            const mapButton = document.createElement("button");
-            mapButton.type = "button";
-            mapButton.className = "button button--secondary button--sm";
-            mapButton.textContent = "Map";
-            mapButton.addEventListener("click", async () => {
-              const platformLocId = select.value;
-              if (!platformLocId) return;
-              mapButton.disabled = true;
-              mapButton.textContent = "Mapping…";
-              const result = await confirmLocationMapping(
-                organizationId,
-                platformLocId,
-                location.id,
-                false,
-              );
+            select.className = "button button--secondary button--sm";
+            const placeholder = document.createElement("option");
+            placeholder.value = "";
+            placeholder.textContent = "Select location…";
+            select.append(placeholder);
+            for (const pLoc of platformLocationsCache) {
+              const opt = document.createElement("option");
+              opt.value = pLoc.id;
+              opt.textContent = pLoc.name;
+              select.append(opt);
+            }
+            const mapBtn = document.createElement("button");
+            mapBtn.type = "button";
+            mapBtn.className = "button button--secondary button--sm";
+            mapBtn.textContent = "Map";
+            mapBtn.addEventListener("click", async () => {
+              if (!select.value) return;
+              mapBtn.disabled = true;
+              mapBtn.textContent = "Mapping…";
+              const result = await confirmLocationMapping(organizationId, select.value, loc.id, false);
               if (result.kind === "ok") {
-                // Refresh
                 const locs = await fetchGBPLocations(organizationId);
-                renderLocations(locs.kind === "ok" ? locs.data : []);
+                renderLocationPicker(locs.kind === "ok" ? locs.data : []);
               } else {
-                mapButton.textContent = "Map";
-                mapButton.disabled = false;
-                item.append(errorAlert(describeFailure(result)));
+                mapBtn.disabled = false;
+                mapBtn.textContent = "Map";
+                panel.append(errorAlert(describeFailure(result, "Mapping")));
               }
             });
-            mapContainer.append(select, mapButton);
-            item.append(mapContainer);
+            item.append(info, select, mapBtn);
+            list.append(item);
           }
-          list.append(item);
+          panel.append(list);
         }
       }
 
-      function setOperationsStatus(message: string): void {
-        document.getElementById("operations-status")!.textContent = message;
+      async function openWorkspace(loc: GBPLocationSummary): Promise<void> {
+        if (!loc.location_id) return;
+        selectedPlatformLocationId = platformLocationsCache.find((p) => p.name === loc.business_name)?.id ?? null;
+        selectedGbpLocationId = loc.location_id;
+        selectedLocationName = loc.business_name;
+        document.getElementById("gbp-workspace")!.hidden = false;
+        document.getElementById("location-picker-section")!.hidden = true;
+
+        // Update page title to show selected location
+        const titleEl = document.querySelector("#gbp-content .page-head__intro h1");
+        if (titleEl) titleEl.textContent = loc.business_name;
+
+        await Promise.all([renderOverview(), renderProfile(), renderHours(), renderPosts(), renderMedia()]);
       }
 
-      async function openOperations(
-        platformLocationId: string,
-        gbpLocationId: string,
-      ): Promise<void> {
-        selectedPlatformLocationId = platformLocationId;
-        selectedGbpLocationId = gbpLocationId;
-        document.getElementById("operations-section")!.hidden = false;
-        await Promise.all([
-          renderCompleteness(),
-          renderChangeSets(),
-          renderSpecialHours(),
-          renderMedia(),
-          renderPosts(),
-          renderSuspensionCases(),
-          renderOperationsAudit(),
-        ]);
-      }
-
-      async function renderCompleteness(): Promise<void> {
-        if (!selectedPlatformLocationId || !selectedGbpLocationId) return;
-        const panel = document.getElementById("completeness-body")!;
+      // ---- Overview tab ----
+      async function renderOverview(): Promise<void> {
+        const panel = document.getElementById("tab-overview")!;
         panel.replaceChildren();
-        const outcome = await fetchCompleteness(
-          organizationId,
-          selectedPlatformLocationId,
-          selectedGbpLocationId,
-        );
-        if (outcome.kind !== "ok") {
-          panel.append(document.createTextNode(describeFailure(outcome)));
-          return;
-        }
-        const summary = document.createElement("p");
-        summary.textContent = outcome.data.complete
-          ? "All supported fields are known."
-          : `Missing: ${outcome.data.unknown.join(", ") || "none"}`;
-        panel.append(summary);
-      }
-
-      async function renderChangeSets(): Promise<void> {
         if (!selectedPlatformLocationId || !selectedGbpLocationId) return;
-        const list = document.getElementById("change-sets-list")!;
-        list.replaceChildren();
-        const outcome = await fetchChangeSets(
-          organizationId,
-          selectedPlatformLocationId,
-          selectedGbpLocationId,
-        );
-        if (outcome.kind !== "ok") {
-          const item = document.createElement("li");
-          item.textContent = describeFailure(outcome);
-          list.append(item);
-          return;
+
+        const [completenessResult, auditResult, suspensionResult] = await Promise.all([
+          fetchCompleteness(organizationId, selectedPlatformLocationId, selectedGbpLocationId),
+          fetchOperationsAudit(organizationId, selectedPlatformLocationId, selectedGbpLocationId),
+          fetchSuspensionCases(organizationId, selectedPlatformLocationId, selectedGbpLocationId),
+        ]);
+
+        // Completeness
+        const compCard = document.createElement("div");
+        compCard.className = "card";
+        const compHeader = document.createElement("div");
+        compHeader.className = "card__header";
+        compHeader.append(Object.assign(document.createElement("h3"), { className: "card__title", textContent: "Profile completeness" }));
+        compCard.append(compHeader);
+        const compBody = document.createElement("div");
+        compBody.className = "card__body";
+        if (completenessResult.kind === "ok") {
+          compBody.append(statusBadge(completenessResult.data.complete ? "ready" : "setup", completenessResult.data.complete ? "Complete" : "Incomplete"));
+          if (!completenessResult.data.complete) {
+            const missing = document.createElement("p");
+            missing.className = "text-sm muted";
+            missing.style.marginTop = "0.5rem";
+            missing.textContent = `Missing: ${completenessResult.data.unknown.join(", ") || "none"}`;
+            compBody.append(missing);
+          }
+        } else {
+          compBody.append(errorAlert(describeFailure(completenessResult, "Completeness")));
         }
-        if (outcome.data.length === 0) {
-          const item = document.createElement("li");
-          item.textContent = "No change sets proposed yet.";
-          list.append(item);
-          return;
+        compCard.append(compBody);
+        panel.append(compCard);
+
+        // Items needing attention
+        const attentionCard = document.createElement("div");
+        attentionCard.className = "card";
+        const attentionHeader = document.createElement("div");
+        attentionHeader.className = "card__header";
+        attentionHeader.append(Object.assign(document.createElement("h3"), { className: "card__title", textContent: "Needs attention" }));
+        attentionCard.append(attentionHeader);
+        const attentionBody = document.createElement("div");
+        attentionBody.className = "card__body";
+        const pending = [];
+        if (suspensionResult.kind === "ok" && suspensionResult.data.length > 0) {
+          pending.push(`${suspensionResult.data.length} suspension case(s)`);
         }
-        for (const changeSet of outcome.data) {
-          list.append(changeSetRow(changeSet));
+        if (pending.length === 0) {
+          attentionBody.append(emptyState("All clear", "No items need immediate attention."));
+        } else {
+          for (const item of pending) {
+            const p = document.createElement("p");
+            p.className = "text-sm";
+            p.textContent = `• ${item}`;
+            attentionBody.append(p);
+          }
         }
+        attentionCard.append(attentionBody);
+        panel.append(attentionCard);
+
+        // Recent activity
+        const activityCard = document.createElement("div");
+        activityCard.className = "card";
+        const activityHeader = document.createElement("div");
+        activityHeader.className = "card__header";
+        activityHeader.append(Object.assign(document.createElement("h3"), { className: "card__title", textContent: "Recent activity" }));
+        activityCard.append(activityHeader);
+        const activityBody = document.createElement("div");
+        activityBody.className = "card__body";
+        if (auditResult.kind === "ok" && auditResult.data.length > 0) {
+          const list = document.createElement("ol");
+          list.className = "timeline";
+          for (const event of auditResult.data.slice(0, 10)) {
+            const item = document.createElement("li");
+            const strong = document.createElement("strong");
+            strong.textContent = event.summary;
+            const span = document.createElement("span");
+            span.textContent = `${event.event_type} · ${formatTimestamp(event.occurred_at)}`;
+            item.append(strong, span);
+            list.append(item);
+          }
+          activityBody.append(list);
+        } else {
+          activityBody.append(emptyState("No activity yet", "Operations and changes will appear here."));
+        }
+        activityCard.append(activityBody);
+        panel.append(activityCard);
       }
 
-      function changeSetRow(changeSet: ChangeSet): HTMLLIElement {
-        const item = document.createElement("li");
-        const strong = document.createElement("strong");
-        strong.textContent = `Revision ${changeSet.revision} — ${changeSet.status}`;
-        const span = document.createElement("span");
-        span.textContent = JSON.stringify(changeSet.field_changes);
-        item.append(strong, span);
-        if (changeSet.status === "awaiting_approval") {
-          const approveButton = document.createElement("button");
-          approveButton.type = "button";
-          approveButton.textContent = "Approve";
-          approveButton.addEventListener("click", async () => {
-            if (!selectedPlatformLocationId) return;
-            await decideChangeSet(
-              organizationId,
-              selectedPlatformLocationId,
-              changeSet.id,
-              true,
-            );
-            await renderChangeSets();
+      // ---- Profile tab ----
+      async function renderProfile(): Promise<void> {
+        const panel = document.getElementById("tab-profile")!;
+        panel.replaceChildren();
+        if (!selectedPlatformLocationId || !selectedGbpLocationId) return;
+
+        const [changeSetsResult] = await Promise.all([
+          fetchChangeSets(organizationId, selectedPlatformLocationId, selectedGbpLocationId),
+        ]);
+
+        // Propose change form
+        const formCard = document.createElement("div");
+        formCard.className = "card";
+        const formHeader = document.createElement("div");
+        formHeader.className = "card__header";
+        formHeader.append(Object.assign(document.createElement("h3"), { className: "card__title", textContent: "Propose a change" }));
+        formCard.append(formHeader);
+        const formBody = document.createElement("div");
+        formBody.className = "card__body";
+
+        const grid = document.createElement("div");
+        grid.className = "form-grid";
+        const taskField = document.createElement("div");
+        taskField.className = "field";
+        const taskLabel = document.createElement("label");
+        taskLabel.htmlFor = "change-task";
+        taskLabel.textContent = "What to edit";
+        const taskSelect = document.createElement("select");
+        taskSelect.id = "change-task";
+        taskSelect.className = "button button--secondary";
+        const taskOptions = [
+          { value: "", label: "Choose what to edit…" },
+          { value: "profile.description", label: "Business description" },
+          { value: "regularHours.regularHours", label: "Business hours" },
+          { value: "phoneNumbers.phoneNumbers", label: "Phone number" },
+          { value: "websiteUri.websiteUri", label: "Website URL" },
+          { value: "categories.categories", label: "Categories" },
+        ];
+        for (const opt of taskOptions) {
+          const o = document.createElement("option");
+          o.value = opt.value;
+          o.textContent = opt.label;
+          taskSelect.append(o);
+        }
+        taskField.append(taskLabel, taskSelect);
+        grid.append(taskField);
+
+        const valueField = document.createElement("div");
+        valueField.className = "field";
+        const valueLabel = document.createElement("label");
+        valueLabel.htmlFor = "change-value";
+        valueLabel.textContent = "New value";
+        const valueInput = document.createElement("input");
+        valueInput.id = "change-value";
+        valueInput.type = "text";
+        valueInput.placeholder = "new value";
+        valueField.append(valueLabel, valueInput);
+        grid.append(valueField);
+        formBody.append(grid);
+
+        const proposeBtn = document.createElement("button");
+        proposeBtn.type = "button";
+        proposeBtn.className = "button";
+        proposeBtn.textContent = "Propose change";
+        const status = document.createElement("p");
+        status.setAttribute("role", "status");
+        status.setAttribute("aria-live", "polite");
+        status.className = "text-sm muted";
+        proposeBtn.addEventListener("click", async () => {
+          const task = taskSelect.value.trim();
+          const value = valueInput.value.trim();
+          if (!task || !value) {
+            status.textContent = "Choose what to edit and enter a value first.";
+            return;
+          }
+          const [capabilityKey, field] = task.split(".");
+          const result = await proposeChangeSet(organizationId, selectedPlatformLocationId!, selectedGbpLocationId!, {
+            capabilityKey,
+            field,
+            value,
+            idempotencyKey: `web-change-${Date.now()}`,
           });
-          item.append(approveButton);
+          status.textContent = result.kind === "ok" ? "Change proposed." : describeFailure(result, "Propose");
+          if (result.kind === "ok") await renderProfile();
+        });
+
+        const actions = document.createElement("div");
+        actions.className = "form-actions";
+        actions.style.borderTop = "none";
+        actions.style.paddingTop = "0.5rem";
+        actions.append(proposeBtn, status);
+        formBody.append(actions);
+        formCard.append(formBody);
+        panel.append(formCard);
+
+        // Pending changes
+        if (changeSetsResult.kind === "ok" && changeSetsResult.data.length > 0) {
+          const pendingCard = document.createElement("div");
+          pendingCard.className = "card";
+          const pendingHeader = document.createElement("div");
+          pendingHeader.className = "card__header";
+          pendingHeader.append(Object.assign(document.createElement("h3"), { className: "card__title", textContent: "Pending changes" }));
+          pendingCard.append(pendingHeader);
+          const pendingBody = document.createElement("div");
+          pendingBody.className = "card__body";
+          const list = document.createElement("ul");
+          list.className = "product-list";
+          for (const cs of changeSetsResult.data) {
+            const item = document.createElement("li");
+            const info = document.createElement("div");
+            const name = document.createElement("h3");
+            name.textContent = `Revision ${cs.revision}`;
+            const detail = document.createElement("p");
+            detail.textContent = `Status: ${cs.status}`;
+            info.append(name, detail);
+            item.append(info, statusBadge(cs.status === "awaiting_approval" ? "setup" : "ready", cs.status));
+            if (cs.status === "awaiting_approval") {
+              const approveBtn = document.createElement("button");
+              approveBtn.type = "button";
+              approveBtn.className = "button button--sm";
+              approveBtn.textContent = "Approve";
+              approveBtn.addEventListener("click", async () => {
+                await decideChangeSet(organizationId, selectedPlatformLocationId!, cs.id, true);
+                await renderProfile();
+              });
+              item.append(approveBtn);
+            }
+            list.append(item);
+          }
+          pendingBody.append(list);
+          pendingCard.append(pendingBody);
+          panel.append(pendingCard);
         }
-        return item;
       }
 
-      async function renderSpecialHours(): Promise<void> {
+      // ---- Hours tab ----
+      async function renderHours(): Promise<void> {
+        const panel = document.getElementById("tab-hours")!;
+        panel.replaceChildren();
         if (!selectedPlatformLocationId || !selectedGbpLocationId) return;
-        const list = document.getElementById("special-hours-list")!;
-        list.replaceChildren();
-        const outcome = await fetchSpecialHours(
-          organizationId,
-          selectedPlatformLocationId,
-          selectedGbpLocationId,
-        );
-        if (outcome.kind !== "ok") {
-          const item = document.createElement("li");
-          item.textContent = describeFailure(outcome);
-          list.append(item);
-          return;
-        }
-        if (outcome.data.length === 0) {
-          const item = document.createElement("li");
-          item.textContent = "No special hours proposed yet.";
-          list.append(item);
-          return;
-        }
-        for (const hours of outcome.data) {
-          list.append(specialHoursRow(hours));
-        }
-      }
 
-      function specialHoursRow(hours: SpecialHours): HTMLLIElement {
-        const item = document.createElement("li");
-        const strong = document.createElement("strong");
-        strong.textContent = `${hours.service_date} — ${hours.status}`;
-        item.append(strong);
-        if (hours.status === "awaiting_approval") {
-          const approveButton = document.createElement("button");
-          approveButton.type = "button";
-          approveButton.textContent = "Approve";
-          approveButton.addEventListener("click", async () => {
-            if (!selectedPlatformLocationId) return;
-            await decideSpecialHours(
-              organizationId,
-              selectedPlatformLocationId,
-              hours.id,
-              true,
-            );
-            await renderSpecialHours();
+        const hoursResult = await fetchSpecialHours(organizationId, selectedPlatformLocationId, selectedGbpLocationId);
+
+        // Propose special hours form
+        const formCard = document.createElement("div");
+        formCard.className = "card";
+        const formHeader = document.createElement("div");
+        formHeader.className = "card__header";
+        formHeader.append(Object.assign(document.createElement("h3"), { className: "card__title", textContent: "Add special hours" }));
+        formCard.append(formHeader);
+        const formBody = document.createElement("div");
+        formBody.className = "card__body";
+
+        const grid = document.createElement("div");
+        grid.className = "form-grid";
+        const dateField = document.createElement("div");
+        dateField.className = "field";
+        dateField.append(Object.assign(document.createElement("label"), { htmlFor: "special-hours-date", textContent: "Service date" }));
+        const dateInput = document.createElement("input");
+        dateInput.id = "special-hours-date";
+        dateInput.type = "date";
+        dateField.append(dateInput);
+        grid.append(dateField);
+
+        const opensField = document.createElement("div");
+        opensField.className = "field";
+        opensField.append(Object.assign(document.createElement("label"), { htmlFor: "special-hours-opens", textContent: "Opens" }));
+        const opensInput = document.createElement("input");
+        opensInput.id = "special-hours-opens";
+        opensInput.type = "time";
+        opensInput.value = "09:00";
+        opensField.append(opensInput);
+        grid.append(opensField);
+
+        const closesField = document.createElement("div");
+        closesField.className = "field";
+        closesField.append(Object.assign(document.createElement("label"), { htmlFor: "special-hours-closes", textContent: "Closes" }));
+        const closesInput = document.createElement("input");
+        closesInput.id = "special-hours-closes";
+        closesInput.type = "time";
+        closesInput.value = "17:00";
+        closesField.append(closesInput);
+        grid.append(closesField);
+        formBody.append(grid);
+
+        const proposeBtn = document.createElement("button");
+        proposeBtn.type = "button";
+        proposeBtn.className = "button";
+        proposeBtn.textContent = "Propose special hours";
+        const status = document.createElement("p");
+        status.setAttribute("role", "status");
+        status.setAttribute("aria-live", "polite");
+        status.className = "text-sm muted";
+        proposeBtn.addEventListener("click", async () => {
+          const serviceDate = dateInput.value;
+          if (!serviceDate) {
+            status.textContent = "Select a service date first.";
+            return;
+          }
+          const result = await proposeSpecialHours(organizationId, selectedPlatformLocationId!, selectedGbpLocationId!, {
+            serviceDate,
+            opens: `${opensInput.value}:00`,
+            closes: `${closesInput.value}:00`,
           });
-          item.append(approveButton);
+          status.textContent = result.kind === "ok" ? "Special hours proposed." : describeFailure(result, "Propose");
+          if (result.kind === "ok") await renderHours();
+        });
+
+        const actions = document.createElement("div");
+        actions.className = "form-actions";
+        actions.style.borderTop = "none";
+        actions.style.paddingTop = "0.5rem";
+        actions.append(proposeBtn, status);
+        formBody.append(actions);
+        formCard.append(formBody);
+        panel.append(formCard);
+
+        // Existing special hours
+        if (hoursResult.kind === "ok" && hoursResult.data.length > 0) {
+          const listCard = document.createElement("div");
+          listCard.className = "card";
+          const listHeader = document.createElement("div");
+          listHeader.className = "card__header";
+          listHeader.append(Object.assign(document.createElement("h3"), { className: "card__title", textContent: "Special hours" }));
+          listCard.append(listHeader);
+          const listBody = document.createElement("div");
+          listBody.className = "card__body";
+          const list = document.createElement("ul");
+          list.className = "product-list";
+          for (const hours of hoursResult.data) {
+            const item = document.createElement("li");
+            const info = document.createElement("div");
+            const name = document.createElement("h3");
+            name.textContent = hours.service_date;
+            const detail = document.createElement("p");
+            detail.textContent = `Status: ${hours.status}`;
+            info.append(name, detail);
+            item.append(info, statusBadge(hours.status === "awaiting_approval" ? "setup" : "ready", hours.status));
+            if (hours.status === "awaiting_approval") {
+              const approveBtn = document.createElement("button");
+              approveBtn.type = "button";
+              approveBtn.className = "button button--sm";
+              approveBtn.textContent = "Approve";
+              approveBtn.addEventListener("click", async () => {
+                await decideSpecialHours(organizationId, selectedPlatformLocationId!, hours.id, true);
+                await renderHours();
+              });
+              item.append(approveBtn);
+            }
+            list.append(item);
+          }
+          listBody.append(list);
+          listCard.append(listBody);
+          panel.append(listCard);
         }
-        return item;
       }
 
-      async function renderMedia(): Promise<void> {
-        if (!selectedPlatformLocationId || !selectedGbpLocationId) return;
-        const list = document.getElementById("media-list")!;
-        list.replaceChildren();
-        const outcome = await fetchMedia(
-          organizationId,
-          selectedPlatformLocationId,
-          selectedGbpLocationId,
-        );
-        if (outcome.kind !== "ok") {
-          const item = document.createElement("li");
-          item.textContent = describeFailure(outcome);
-          list.append(item);
-          return;
-        }
-        if (outcome.data.length === 0) {
-          const item = document.createElement("li");
-          item.textContent = "No media proposed yet.";
-          list.append(item);
-          return;
-        }
-        for (const media of outcome.data) {
-          const item = document.createElement("li");
-          const strong = document.createElement("strong");
-          strong.textContent = `${media.media_type} — ${media.status}`;
-          item.append(strong);
-          list.append(item);
-        }
-      }
-
+      // ---- Posts tab ----
       async function renderPosts(): Promise<void> {
+        const panel = document.getElementById("tab-posts")!;
+        panel.replaceChildren();
         if (!selectedPlatformLocationId || !selectedGbpLocationId) return;
-        const list = document.getElementById("posts-list")!;
-        list.replaceChildren();
-        const outcome = await fetchPostRevisions(
-          organizationId,
-          selectedPlatformLocationId,
-          selectedGbpLocationId,
-        );
-        if (outcome.kind !== "ok") {
-          const item = document.createElement("li");
-          item.textContent = describeFailure(outcome);
-          list.append(item);
-          return;
-        }
-        if (outcome.data.length === 0) {
-          const item = document.createElement("li");
-          item.textContent = "No posts drafted yet.";
-          list.append(item);
-          return;
-        }
-        for (const post of outcome.data) {
-          list.append(postRow(post));
-        }
-      }
 
-      function postRow(post: GBPPostRevisionItem): HTMLLIElement {
-        const item = document.createElement("li");
-        const strong = document.createElement("strong");
-        strong.textContent = `${post.content} — ${post.status}`;
-        item.append(strong);
-        if (post.status === "awaiting_approval") {
-          const approveButton = document.createElement("button");
-          approveButton.type = "button";
-          approveButton.textContent = "Approve";
-          approveButton.addEventListener("click", async () => {
-            if (!selectedPlatformLocationId) return;
-            await decidePostRevision(
-              organizationId,
-              selectedPlatformLocationId,
-              post.id,
-              true,
-            );
-            await renderPosts();
-          });
-          item.append(approveButton);
-        }
-        if (post.status === "approved") {
-          const publishButton = document.createElement("button");
-          publishButton.type = "button";
-          publishButton.textContent = "Reserve publication";
-          publishButton.addEventListener("click", async () => {
-            if (!selectedPlatformLocationId) return;
-            setOperationsStatus("Starting publication workflow…");
-            const workflowStart = await startWorkflowRun(
-              organizationId,
-              "gbp.publish_post",
-              {
-                locationId: selectedPlatformLocationId,
-                idempotencyKey: `web-post-publish-start-${post.id}-${Date.now()}`,
-              },
-            );
-            if (workflowStart.kind !== "ok") {
-              setOperationsStatus(describeFailure(workflowStart));
-              return;
+        const postsResult = await fetchPostRevisions(organizationId, selectedPlatformLocationId, selectedGbpLocationId);
+
+        // Draft post form
+        const formCard = document.createElement("div");
+        formCard.className = "card";
+        const formHeader = document.createElement("div");
+        formHeader.className = "card__header";
+        formHeader.append(Object.assign(document.createElement("h3"), { className: "card__title", textContent: "Draft a post" }));
+        formCard.append(formHeader);
+        const formBody = document.createElement("div");
+        formBody.className = "card__body";
+        const contentArea = document.createElement("textarea");
+        contentArea.id = "post-content";
+        contentArea.rows = 3;
+        contentArea.placeholder = "Write your post…";
+        formBody.append(contentArea);
+        const draftBtn = document.createElement("button");
+        draftBtn.type = "button";
+        draftBtn.className = "button";
+        draftBtn.textContent = "Draft post";
+        const status = document.createElement("p");
+        status.setAttribute("role", "status");
+        status.setAttribute("aria-live", "polite");
+        status.className = "text-sm muted";
+        draftBtn.addEventListener("click", async () => {
+          const content = contentArea.value;
+          if (!content.trim()) {
+            status.textContent = "Enter post content first.";
+            return;
+          }
+          const result = await createPostRevision(organizationId, selectedPlatformLocationId!, selectedGbpLocationId!, { postType: "standard", content });
+          status.textContent = result.kind === "ok" ? "Post drafted." : describeFailure(result, "Draft");
+          if (result.kind === "ok") await renderPosts();
+        });
+        const actions = document.createElement("div");
+        actions.className = "form-actions";
+        actions.style.borderTop = "none";
+        actions.style.paddingTop = "0.5rem";
+        actions.append(draftBtn, status);
+        formBody.append(actions);
+        formCard.append(formBody);
+        panel.append(formCard);
+
+        // Posts list
+        if (postsResult.kind === "ok" && postsResult.data.length > 0) {
+          const listCard = document.createElement("div");
+          listCard.className = "card";
+          const listHeader = document.createElement("div");
+          listHeader.className = "card__header";
+          listHeader.append(Object.assign(document.createElement("h3"), { className: "card__title", textContent: "Posts" }));
+          listCard.append(listHeader);
+          const listBody = document.createElement("div");
+          listBody.className = "card__body";
+          const list = document.createElement("ul");
+          list.className = "product-list";
+          for (const post of postsResult.data) {
+            const item = document.createElement("li");
+            const info = document.createElement("div");
+            const name = document.createElement("h3");
+            name.textContent = post.content.length > 80 ? post.content.slice(0, 80) + "…" : post.content;
+            const detail = document.createElement("p");
+            detail.textContent = `Status: ${post.status}`;
+            info.append(name, detail);
+            item.append(info, statusBadge(post.status === "awaiting_approval" ? "setup" : post.status === "approved" ? "ready" : "neutral", post.status));
+            if (post.status === "awaiting_approval") {
+              const approveBtn = document.createElement("button");
+              approveBtn.type = "button";
+              approveBtn.className = "button button--sm";
+              approveBtn.textContent = "Approve";
+              approveBtn.addEventListener("click", async () => {
+                await decidePostRevision(organizationId, selectedPlatformLocationId!, post.id, true);
+                await renderPosts();
+              });
+              item.append(approveBtn);
             }
-            const result = await publishPost(
-              organizationId,
-              selectedPlatformLocationId,
-              post.id,
-              workflowStart.data.workflow_run_id,
-            );
-            setOperationsStatus(
-              result.kind === "ok"
-                ? "Post publication reserved. The workflow will dispatch it to Google."
-                : describeFailure(result),
-            );
-            await renderPosts();
-          });
-          item.append(publishButton);
+            if (post.status === "approved") {
+              const publishBtn = document.createElement("button");
+              publishBtn.type = "button";
+              publishBtn.className = "button button--sm";
+              publishBtn.textContent = "Publish";
+              publishBtn.addEventListener("click", async () => {
+                status.textContent = "Starting publication…";
+                const workflowStart = await startWorkflowRun(organizationId, "gbp.publish_post", {
+                  locationId: selectedPlatformLocationId!,
+                  idempotencyKey: `web-post-publish-${post.id}-${Date.now()}`,
+                });
+                if (workflowStart.kind !== "ok") {
+                  status.textContent = describeFailure(workflowStart, "Publish");
+                  return;
+                }
+                const result = await publishPost(organizationId, selectedPlatformLocationId!, post.id, workflowStart.data.workflow_run_id);
+                status.textContent = result.kind === "ok" ? "Post publication reserved." : describeFailure(result, "Publish");
+                if (result.kind === "ok") await renderPosts();
+              });
+              item.append(publishBtn);
+            }
+            list.append(item);
+          }
+          listBody.append(list);
+          listCard.append(listBody);
+          panel.append(listCard);
         }
-        return item;
       }
 
-      async function renderSuspensionCases(): Promise<void> {
+      // ---- Media tab ----
+      async function renderMedia(): Promise<void> {
+        const panel = document.getElementById("tab-media")!;
+        panel.replaceChildren();
         if (!selectedPlatformLocationId || !selectedGbpLocationId) return;
-        const list = document.getElementById("suspension-cases-list")!;
-        list.replaceChildren();
-        const outcome = await fetchSuspensionCases(
-          organizationId,
-          selectedPlatformLocationId,
-          selectedGbpLocationId,
-        );
-        if (outcome.kind !== "ok") {
-          const item = document.createElement("li");
-          item.textContent = describeFailure(outcome);
-          list.append(item);
-          return;
-        }
-        if (outcome.data.length === 0) {
-          const item = document.createElement("li");
-          item.textContent = "No suspension cases reported.";
-          list.append(item);
-          return;
-        }
-        for (const suspensionCase of outcome.data) {
-          const item = document.createElement("li");
-          const strong = document.createElement("strong");
-          strong.textContent = `${suspensionCase.provider_status} — ${suspensionCase.status}`;
-          item.append(strong);
-          list.append(item);
-        }
-      }
 
-      async function renderOperationsAudit(): Promise<void> {
-        if (!selectedPlatformLocationId || !selectedGbpLocationId) return;
-        const list = document.getElementById("operations-audit-list")!;
-        list.replaceChildren();
-        const outcome = await fetchOperationsAudit(
-          organizationId,
-          selectedPlatformLocationId,
-          selectedGbpLocationId,
-        );
-        if (outcome.kind !== "ok") {
-          const item = document.createElement("li");
-          item.textContent = describeFailure(outcome);
-          list.append(item);
-          return;
-        }
-        if (outcome.data.length === 0) {
-          const item = document.createElement("li");
-          item.textContent = "No audit history yet.";
-          list.append(item);
-          return;
-        }
-        for (const event of outcome.data) {
-          const item = document.createElement("li");
-          const strong = document.createElement("strong");
-          strong.textContent = event.summary;
-          const span = document.createElement("span");
-          span.textContent = `${event.event_type} · ${new Date(event.occurred_at).toLocaleString()}`;
-          item.append(strong, span);
-          list.append(item);
-        }
-      }
+        const mediaResult = await fetchMedia(organizationId, selectedPlatformLocationId, selectedGbpLocationId);
 
-      function wireOperationsComposer(): void {
-        document
-          .getElementById("propose-change-button")
-          ?.addEventListener("click", async () => {
-            if (!selectedPlatformLocationId || !selectedGbpLocationId) return;
-            const task = (
-              document.getElementById("change-task") as HTMLSelectElement
-            ).value.trim();
-            const value = (
-              document.getElementById("change-value") as HTMLInputElement
-            ).value.trim();
-            if (!task || !value) {
-              setOperationsStatus(
-                "Choose what to edit and enter a value first.",
-              );
-              return;
-            }
-            const [capabilityKey, field] = task.split(".");
-            const result = await proposeChangeSet(
-              organizationId,
-              selectedPlatformLocationId,
-              selectedGbpLocationId,
-              {
-                capabilityKey,
-                field,
-                value,
-                idempotencyKey: `web-change-${Date.now()}`,
-              },
-            );
-            setOperationsStatus(
-              result.kind === "ok"
-                ? "Change proposed."
-                : describeFailure(result),
-            );
-            if (result.kind === "ok") await renderChangeSets();
+        // Propose media form
+        const formCard = document.createElement("div");
+        formCard.className = "card";
+        const formHeader = document.createElement("div");
+        formHeader.className = "card__header";
+        formHeader.append(Object.assign(document.createElement("h3"), { className: "card__title", textContent: "Upload media" }));
+        formCard.append(formHeader);
+        const formBody = document.createElement("div");
+        formBody.className = "card__body";
+        const urlField = document.createElement("div");
+        urlField.className = "field";
+        urlField.append(Object.assign(document.createElement("label"), { htmlFor: "media-reference", textContent: "Media URL" }));
+        const urlInput = document.createElement("input");
+        urlInput.id = "media-reference";
+        urlInput.type = "text";
+        urlInput.placeholder = "https://example.com/photo.jpg";
+        urlField.append(urlInput);
+        formBody.append(urlField);
+        const proposeBtn = document.createElement("button");
+        proposeBtn.type = "button";
+        proposeBtn.className = "button";
+        proposeBtn.textContent = "Propose media";
+        const status = document.createElement("p");
+        status.setAttribute("role", "status");
+        status.setAttribute("aria-live", "polite");
+        status.className = "text-sm muted";
+        proposeBtn.addEventListener("click", async () => {
+          const reference = urlInput.value.trim();
+          if (!reference) {
+            status.textContent = "Enter a media URL first.";
+            return;
+          }
+          const result = await proposeMedia(organizationId, selectedPlatformLocationId!, selectedGbpLocationId!, {
+            mediaType: "photo",
+            sourceReference: reference,
+            rightsAuthority: "Business owner upload",
           });
+          status.textContent = result.kind === "ok" ? "Media proposed." : describeFailure(result, "Propose");
+          if (result.kind === "ok") await renderMedia();
+        });
+        const actions = document.createElement("div");
+        actions.className = "form-actions";
+        actions.style.borderTop = "none";
+        actions.style.paddingTop = "0.5rem";
+        actions.append(proposeBtn, status);
+        formBody.append(actions);
+        formCard.append(formBody);
+        panel.append(formCard);
 
-        document
-          .getElementById("propose-hours-button")
-          ?.addEventListener("click", async () => {
-            if (!selectedPlatformLocationId || !selectedGbpLocationId) return;
-            const serviceDate = (
-              document.getElementById("special-hours-date") as HTMLInputElement
-            ).value;
-            const opens = (
-              document.getElementById("special-hours-opens") as HTMLInputElement
-            ).value;
-            const closes = (
-              document.getElementById(
-                "special-hours-closes",
-              ) as HTMLInputElement
-            ).value;
-            if (!serviceDate) {
-              setOperationsStatus("Select a service date first.");
-              return;
-            }
-            const result = await proposeSpecialHours(
-              organizationId,
-              selectedPlatformLocationId,
-              selectedGbpLocationId,
-              { serviceDate, opens: `${opens}:00`, closes: `${closes}:00` },
-            );
-            setOperationsStatus(
-              result.kind === "ok"
-                ? "Special hours proposed."
-                : describeFailure(result),
-            );
-            if (result.kind === "ok") await renderSpecialHours();
-          });
-
-        document
-          .getElementById("propose-media-button")
-          ?.addEventListener("click", async () => {
-            if (!selectedPlatformLocationId || !selectedGbpLocationId) return;
-            const reference = (
-              document.getElementById("media-reference") as HTMLInputElement
-            ).value.trim();
-            if (!reference) {
-              setOperationsStatus("Enter a media URL first.");
-              return;
-            }
-            const result = await proposeMedia(
-              organizationId,
-              selectedPlatformLocationId,
-              selectedGbpLocationId,
-              {
-                mediaType: "photo",
-                sourceReference: reference,
-                rightsAuthority: "Business owner upload",
-              },
-            );
-            setOperationsStatus(
-              result.kind === "ok"
-                ? "Media proposed."
-                : describeFailure(result),
-            );
-            if (result.kind === "ok") await renderMedia();
-          });
-
-        document
-          .getElementById("create-post-button")
-          ?.addEventListener("click", async () => {
-            if (!selectedPlatformLocationId || !selectedGbpLocationId) return;
-            const content = (
-              document.getElementById("post-content") as HTMLTextAreaElement
-            ).value;
-            if (!content.trim()) {
-              setOperationsStatus("Enter post content first.");
-              return;
-            }
-            const result = await createPostRevision(
-              organizationId,
-              selectedPlatformLocationId,
-              selectedGbpLocationId,
-              { postType: "standard", content },
-            );
-            setOperationsStatus(
-              result.kind === "ok" ? "Post drafted." : describeFailure(result),
-            );
-            if (result.kind === "ok") await renderPosts();
-          });
-
-        document
-          .getElementById("report-suspension-button")
-          ?.addEventListener("click", async () => {
-            if (!selectedPlatformLocationId || !selectedGbpLocationId) return;
-            const status = (
-              document.getElementById("suspension-status") as HTMLInputElement
-            ).value.trim();
-            if (!status) {
-              setOperationsStatus("Enter a provider status first.");
-              return;
-            }
-            const result = await reportSuspensionCase(
-              organizationId,
-              selectedPlatformLocationId,
-              selectedGbpLocationId,
-              { providerStatus: status },
-            );
-            setOperationsStatus(
-              result.kind === "ok"
-                ? "Suspension case reported."
-                : describeFailure(result),
-            );
-            if (result.kind === "ok") await renderSuspensionCases();
-          });
+        // Media list
+        if (mediaResult.kind === "ok" && mediaResult.data.length > 0) {
+          const listCard = document.createElement("div");
+          listCard.className = "card";
+          const listHeader = document.createElement("div");
+          listHeader.className = "card__header";
+          listHeader.append(Object.assign(document.createElement("h3"), { className: "card__title", textContent: "Media" }));
+          listCard.append(listHeader);
+          const listBody = document.createElement("div");
+          listBody.className = "card__body";
+          const list = document.createElement("ul");
+          list.className = "product-list";
+          for (const media of mediaResult.data) {
+            const item = document.createElement("li");
+            const info = document.createElement("div");
+            const name = document.createElement("h3");
+            name.textContent = media.media_type;
+            const detail = document.createElement("p");
+            detail.textContent = `Status: ${media.status}`;
+            info.append(name, detail);
+            item.append(info, statusBadge(media.status === "awaiting_approval" ? "setup" : "ready", media.status));
+            list.append(item);
+          }
+          listBody.append(list);
+          listCard.append(listBody);
+          panel.append(listCard);
+        }
       }
 
       async function boot(): Promise<void> {
-        if (!readPublicConfig()) {
-          showOnly(regions.notConfigured);
-          return;
-        }
-        showOnly(regions.loading);
-
-        const session = await getCurrentSession();
-        if (session.status !== "signed-in") {
-          goToLogin();
-          return;
-        }
-
-        const principal = await fetchPrincipal();
-        if (principal.kind === "unauthenticated") {
-          goToLogin();
-          return;
-        }
-        if (principal.kind !== "ok") {
-          regions.error.textContent = describeFailure(principal);
-          showOnly(regions.error);
-          return;
-        }
-        document.getElementById("current-user-label")!.textContent =
-          principal.data.auth_user_id;
-        document.getElementById("current-user-initial")!.textContent =
-          principal.data.auth_user_id.slice(0, 1).toUpperCase();
-        document.getElementById("current-assurance-label")!.textContent =
-          principal.data.assurance_level;
-        const signOutButton = document.getElementById("sign-out-button")!;
-        signOutButton.hidden = false;
-        wireSignOut();
-
-        const organizations = await fetchMyOrganizations();
-        if (organizations.kind === "unauthenticated") {
-          goToLogin();
-          return;
-        }
-        if (organizations.kind !== "ok") {
-          regions.error.textContent = describeFailure(organizations);
-          showOnly(regions.error);
-          return;
-        }
-        if (organizations.data.length === 0) {
-          showOnly(regions.empty);
-          return;
-        }
-        const organization = selectDefaultOrganization(organizations.data);
-        if (!organization) {
-          showOnly(regions.empty);
-          return;
-        }
-        document.getElementById("active-organization-name")!.textContent =
-          organization.organization_name;
-        organizationId = organization.organization_id;
-        wireOperationsComposer();
-        renderCallbackBanner();
-
-        const [readiness, connection, accounts, locations, pLocs] =
-          await Promise.all([
-            fetchProductReadiness(organization.organization_id, "gbp"),
-            fetchConnectionStatus(organization.organization_id),
-            fetchGBPAccounts(organization.organization_id),
-            fetchGBPLocations(organization.organization_id),
-            fetchPlatformLocations(organization.organization_id),
-          ]);
-
-        if (pLocs.kind === "ok") platformLocationsCache = pLocs.data;
-
-        renderReadiness(readiness);
-        renderConnection(connection);
-        renderAccounts(accounts.kind === "ok" ? accounts.data : []);
-        renderLocations(locations.kind === "ok" ? locations.data : []);
-        if (accounts.kind !== "ok" && accounts.kind !== "not-found") {
-          document
-            .getElementById("accounts-list")!
-            .before(
-              errorAlert(`Accounts unavailable: ${describeFailure(accounts)}`),
-            );
-        }
-        if (locations.kind !== "ok" && locations.kind !== "not-found") {
-          document
-            .getElementById("locations-list")!
-            .before(
-              errorAlert(
-                `Locations unavailable: ${describeFailure(locations)}`,
-              ),
-            );
-        }
-
-        showOnly(regions.content);
+        const result = await bootWorkspace("Business Profile");
+        if (!applyBootResult(regions, result)) return;
+        populateSwitcher(result.organizations, (o) => void loadOrganization(o));
+        const org = result.organizations.find((o) => o.organization_id === result.context.organizationId) ?? result.organizations[0];
+        await loadOrganization(org);
       }
 
       void boot();
