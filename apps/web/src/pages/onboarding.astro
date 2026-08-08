@@ -41,16 +41,13 @@ import "../styles/global.css";
       </div>
 
       <div id="onboarding-content" hidden>
-        <section aria-labelledby="page-title">
-          <p class="eyebrow">Client onboarding</p><h1 id="page-title">
-            Onboard a new client
-          </h1><p>
-            Create the client organization, complete required setup, and
-            activate the account — all from this workspace. Nothing here
-            requires shell access, manual database changes, or a
-            manually-entered ID.
-          </p>
-        </section>
+        <div class="page-head">
+          <div class="page-head__intro">
+            <p class="eyebrow">Admin</p>
+            <h1 id="page-title">Client Onboarding</h1>
+            <p>Create the client organization, complete required setup, and activate the account — all from this workspace.</p>
+          </div>
+        </div>
 
         <section aria-labelledby="picker-title">
           <div class="section-heading">
@@ -141,6 +138,24 @@ import "../styles/global.css";
         </section>
 
         <div id="client-workspace" hidden>
+          <div class="stepper" id="onboarding-stepper">
+            <button class="stepper__step" data-step="profile" type="button"><span class="stepper__number">1</span>Profile</button>
+            <div class="stepper__connector"></div>
+            <button class="stepper__step" data-step="locations" type="button"><span class="stepper__number">2</span>Locations</button>
+            <div class="stepper__connector"></div>
+            <button class="stepper__step" data-step="website" type="button"><span class="stepper__number">3</span>Website</button>
+            <div class="stepper__connector"></div>
+            <button class="stepper__step" data-step="industry" type="button"><span class="stepper__number">4</span>Industry</button>
+            <div class="stepper__connector"></div>
+            <button class="stepper__step" data-step="users" type="button"><span class="stepper__number">5</span>Users</button>
+            <div class="stepper__connector"></div>
+            <button class="stepper__step" data-step="products" type="button"><span class="stepper__number">6</span>Products</button>
+            <div class="stepper__connector"></div>
+            <button class="stepper__step" data-step="policies" type="button"><span class="stepper__number">7</span>Policies</button>
+            <div class="stepper__connector"></div>
+            <button class="stepper__step" data-step="activate" type="button"><span class="stepper__number">8</span>Activate</button>
+          </div>
+
           <section aria-labelledby="progress-title">
             <div class="section-heading">
               <div>
