@@ -313,6 +313,7 @@ UNAUTHENTICATED_PRODUCTION_ROUTES = frozenset(
         # from the already-validated, hashed, one-time `state` parameter; see
         # `test_google_oauth_callback_is_deliberately_unauthenticated_but_fails_closed`.
         ("get", "/api/v1/integrations/google/callback"),
+        ("get", "/api/v1/integrations/github/callback"),
     }
 )
 
