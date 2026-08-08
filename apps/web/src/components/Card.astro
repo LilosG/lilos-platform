@@ -1,0 +1,34 @@
+---
+interface Props {
+  title?: string;
+  description?: string;
+  variant?: "default" | "clickable" | "urgent";
+  href?: string;
+}
+const { title, description, variant = "default", href } = Astro.props;
+const classes = ["card"];
+if (variant === "clickable") classes.push("card--clickable");
+if (variant === "urgent") classes.push("attention-card--urgent");
+---
+{href ? (
+  <a class={classes.join(" ")} href={href}>
+    {title && (
+      <div class="card__header">
+        <h3 class="card__title">{title}</h3>
+        {description && <p class="card__description">{description}</p>}
+      </div>
+    )}
+    <div class="card__body"><slot /></div>
+  </a>
+) : (
+  <div class={classes.join(" ")}>
+    {title && (
+      <div class="card__header">
+        <h3 class="card__title">{title}</h3>
+        {description && <p class="card__description">{description}</p>}
+      </div>
+    )}
+    {title ? <div class="card__body"><slot /></div> : <slot />}
+    <slot name="footer" />
+  </div>
+)}
