@@ -87,10 +87,7 @@ export function cellText(text: string | null | undefined): string {
   return text ?? "—";
 }
 
-export function cellBadge(
-  status: string,
-  label?: string,
-): HTMLSpanElement {
+export function cellBadge(status: string, label?: string): HTMLSpanElement {
   const badge = document.createElement("span");
   badge.className = `status status--${status}`;
   const dot = document.createElement("span");
@@ -116,9 +113,7 @@ export function cellMeta(primary: string, secondary?: string): HTMLDivElement {
   return div;
 }
 
-export function formatTimestamp(
-  iso: string | null | undefined,
-): string {
+export function formatTimestamp(iso: string | null | undefined): string {
   if (!iso) return "Not available";
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso;

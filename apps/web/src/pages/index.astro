@@ -2,6 +2,7 @@
 import AppShell from "../components/AppShell.astro";
 import "../styles/global.css";
 ---
+
 <!doctype html>
 <html lang="en">
   <head>
@@ -32,9 +33,17 @@ import "../styles/global.css";
         <div class="empty-state">
           <span class="empty-state__icon" aria-hidden="true">○</span>
           <h3>No organization access yet</h3>
-          <p>Your account is not a member of any organization. Ask an administrator to invite you.</p>
+          <p>
+            Your account is not a member of any organization. Ask an
+            administrator to invite you.
+          </p>
         </div>
-        <button type="button" class="button button--secondary" id="empty-sign-out" style="margin-top:1rem">Sign out</button>
+        <button
+          type="button"
+          class="button button--secondary"
+          id="empty-sign-out"
+          style="margin-top:1rem">Sign out</button
+        >
       </div>
 
       <div id="workspace-content" hidden>
@@ -42,13 +51,21 @@ import "../styles/global.css";
           <div class="page-head__intro">
             <p class="eyebrow" id="active-organization-status"></p>
             <h1>Overview</h1>
-            <p>Operational health and activity for your selected organization.</p>
+            <p>
+              Operational health and activity for your selected organization.
+            </p>
           </div>
         </div>
 
         <div id="kpi-section">
           <div class="metric-grid" id="kpi-grid">
-            <div class="metric-card"><p class="metric-card__label">Loading…</p><p class="metric-card__value">—</p></div>
+            <div class="metric-card">
+              <p class="metric-card__label">Loading…</p><p
+                class="metric-card__value"
+              >
+                —
+              </p>
+            </div>
           </div>
         </div>
 
@@ -100,7 +117,6 @@ import "../styles/global.css";
         fetchInsightsSummary,
         PRODUCT_KEYS,
         PRODUCT_LABELS,
-        type InsightsSummary,
       } from "../lib/workspace";
       import { summarizeReadiness } from "../lib/dashboard-logic";
       import { signOut } from "../lib/session";
@@ -119,7 +135,6 @@ import "../styles/global.css";
       } from "../lib/ui";
 
       let organizationId = "";
-      let insightsData: InsightsSummary | null = null;
 
       const regions: BootRegions = {
         notConfigured: document.getElementById("boot-not-configured")!,
@@ -140,7 +155,9 @@ import "../styles/global.css";
           await Promise.all([
             fetchLocations(organizationId),
             Promise.all(
-              PRODUCT_KEYS.map((key) => fetchProductReadiness(organizationId, key)),
+              PRODUCT_KEYS.map((key) =>
+                fetchProductReadiness(organizationId, key),
+              ),
             ),
             fetchInsightsSummary(organizationId),
           ]);
@@ -160,7 +177,9 @@ import "../styles/global.css";
 
       function renderKPIs(
         summaries: Record<string, { status: string; detail: string }>,
-        locationsResult: typeof fetchLocations extends never ? never : Awaited<ReturnType<typeof fetchLocations>>,
+        locationsResult: typeof fetchLocations extends never
+          ? never
+          : Awaited<ReturnType<typeof fetchLocations>>,
         insightsResult: Awaited<ReturnType<typeof fetchInsightsSummary>>,
       ): void {
         const grid = document.getElementById("kpi-grid")!;
@@ -204,7 +223,6 @@ import "../styles/global.css";
         );
 
         if (insightsResult.kind === "ok") {
-          insightsData = insightsResult.data;
           const reviewCount = Object.values(
             insightsResult.data.reviews ?? {},
           ).reduce((a, b) => a + b, 0);
@@ -233,7 +251,11 @@ import "../styles/global.css";
             insightsResult.data.seo?.opportunities ?? {},
           ).reduce((a, b) => a + b, 0);
           grid.append(
-            metricCard("SEO opportunities", String(seoOpps), "Open and resolved"),
+            metricCard(
+              "SEO opportunities",
+              String(seoOpps),
+              "Open and resolved",
+            ),
           );
         } else {
           grid.append(
@@ -273,9 +295,7 @@ import "../styles/global.css";
           card.className = "attention-card attention-card--urgent";
           const header = document.createElement("div");
           header.className = "flex-row";
-          header.append(
-            statusBadge("blocked", PRODUCT_LABELS[key]),
-          );
+          header.append(statusBadge("blocked", PRODUCT_LABELS[key]));
           const body = document.createElement("p");
           body.className = "text-sm muted";
           body.textContent = summaries[key].detail;
@@ -314,7 +334,9 @@ import "../styles/global.css";
         panel.replaceChildren();
 
         if (locationsResult.kind !== "ok") {
-          panel.append(errorAlert(describeFailure(locationsResult, "Locations")));
+          panel.append(
+            errorAlert(describeFailure(locationsResult, "Locations")),
+          );
           return;
         }
 
@@ -397,8 +419,10 @@ import "../styles/global.css";
         }
 
         const data = insightsResult.data;
-        const groups: { title: string; items: { label: string; value: number }[] }[] =
-          [];
+        const groups: {
+          title: string;
+          items: { label: string; value: number }[];
+        }[] = [];
 
         const gbpItems: { label: string; value: number }[] = [];
         gbpItems.push({ label: "Locations", value: data.gbp?.locations ?? 0 });
@@ -406,9 +430,10 @@ import "../styles/global.css";
           label: "Profile snapshots",
           value: data.gbp?.profile_snapshots ?? 0,
         });
-        const gbpPubs = Object.values(
-          data.gbp?.publications ?? {},
-        ).reduce((a, b) => a + b, 0);
+        const gbpPubs = Object.values(data.gbp?.publications ?? {}).reduce(
+          (a, b) => a + b,
+          0,
+        );
         gbpItems.push({ label: "Publications", value: gbpPubs });
         groups.push({ title: "Business Profile", items: gbpItems });
 
@@ -427,12 +452,12 @@ import "../styles/global.css";
         if (leadItems.length > 0)
           groups.push({ title: "Leads", items: leadItems });
 
-        const contentItems = Object.entries(data.content_publications ?? {}).map(
-          ([label, value]) => ({
-            label: label.replace(/_/g, " "),
-            value,
-          }),
-        );
+        const contentItems = Object.entries(
+          data.content_publications ?? {},
+        ).map(([label, value]) => ({
+          label: label.replace(/_/g, " "),
+          value,
+        }));
         if (contentItems.length > 0)
           groups.push({ title: "Content", items: contentItems });
 
@@ -443,8 +468,7 @@ import "../styles/global.css";
           ([label, value]) => ({ label: label.replace(/_/g, " "), value }),
         );
         const seoItems = [...crawlItems, ...oppItems];
-        if (seoItems.length > 0)
-          groups.push({ title: "SEO", items: seoItems });
+        if (seoItems.length > 0) groups.push({ title: "SEO", items: seoItems });
 
         if (groups.length === 0) {
           panel.append(
@@ -476,7 +500,9 @@ import "../styles/global.css";
             row.style.justifyContent = "space-between";
             const label = document.createElement("span");
             label.className = "text-sm";
-            label.textContent = item.label.replace(/\b\w/g, (c) => c.toUpperCase());
+            label.textContent = item.label.replace(/\b\w/g, (c) =>
+              c.toUpperCase(),
+            );
             const value = document.createElement("strong");
             value.textContent = String(item.value);
             row.append(label, value);
@@ -503,10 +529,14 @@ import "../styles/global.css";
         if (!applyBootResult(regions, result)) return;
         wireSignOut(document.getElementById("sign-out-button"));
 
-        populateSwitcher(result.organizations, (org) => void loadOrganization(org));
-        const org = result.organizations.find(
-          (o) => o.organization_id === result.context.organizationId,
-        ) ?? result.organizations[0];
+        populateSwitcher(
+          result.organizations,
+          (org) => void loadOrganization(org),
+        );
+        const org =
+          result.organizations.find(
+            (o) => o.organization_id === result.context.organizationId,
+          ) ?? result.organizations[0];
         await loadOrganization(org);
       }
 

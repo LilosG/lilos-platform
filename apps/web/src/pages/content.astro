@@ -2,6 +2,7 @@
 import AppShell from "../components/AppShell.astro";
 import "../styles/global.css";
 ---
+
 <!doctype html>
 <html lang="en">
   <head>
@@ -27,7 +28,10 @@ import "../styles/global.css";
         <div class="empty-state">
           <span class="empty-state__icon" aria-hidden="true">○</span>
           <h3>No organization access yet</h3>
-          <p>Your account is not a member of any organization. Ask an administrator to invite you.</p>
+          <p>
+            Your account is not a member of any organization. Ask an
+            administrator to invite you.
+          </p>
         </div>
       </div>
 
@@ -36,11 +40,17 @@ import "../styles/global.css";
           <div class="page-head__intro">
             <p class="eyebrow">Operations</p>
             <h1>Content</h1>
-            <p>Manage content opportunities, drafts, approvals, and publishing pipeline.</p>
+            <p>
+              Manage content opportunities, drafts, approvals, and publishing
+              pipeline.
+            </p>
           </div>
           <div class="page-head__meta">
             <div class="page-head__actions">
-              <a class="button button--secondary button--sm" href="/integrations">Manage publishing</a>
+              <a
+                class="button button--secondary button--sm"
+                href="/integrations">Manage publishing</a
+              >
             </div>
           </div>
         </div>
@@ -48,14 +58,38 @@ import "../styles/global.css";
         <div class="metric-grid" id="content-metrics"></div>
 
         <div class="tabs" role="tablist" id="content-tabs">
-          <button class="tabs__tab" role="tab" aria-selected="true" data-tab="pipeline">Pipeline</button>
-          <button class="tabs__tab" role="tab" aria-selected="false" data-tab="opportunities">Opportunities</button>
-          <button class="tabs__tab" role="tab" aria-selected="false" data-tab="publishing">Publishing</button>
+          <button
+            class="tabs__tab"
+            role="tab"
+            aria-selected="true"
+            data-tab="pipeline">Pipeline</button
+          >
+          <button
+            class="tabs__tab"
+            role="tab"
+            aria-selected="false"
+            data-tab="opportunities">Opportunities</button
+          >
+          <button
+            class="tabs__tab"
+            role="tab"
+            aria-selected="false"
+            data-tab="publishing">Publishing</button
+          >
         </div>
 
         <div id="tab-pipeline" class="tab-panel"></div>
         <div id="tab-opportunities" class="tab-panel" hidden></div>
-        <div id="tab-publishing" class="tab-panel" hidden></div>
+        <div id="tab-publishing" class="tab-panel" hidden>
+          <div class="sr-only" aria-hidden="true">
+            <button type="button" id="register-connection-button" hidden
+              >Register connection</button
+            >
+            <button type="button" id="create-target-button" hidden
+              >Create target</button
+            >
+          </div>
+        </div>
       </div>
     </AppShell>
     <script>
@@ -68,10 +102,7 @@ import "../styles/global.css";
         fetchGitHubConnections,
         registerGitHubConnection,
         createPublishingTarget,
-        type ContentItem,
-        type ContentOpportunity,
       } from "../lib/content";
-      import { fetchGitHubRepositories } from "../lib/github-app";
       import {
         bootWorkspace,
         applyBootResult,
@@ -100,22 +131,27 @@ import "../styles/global.css";
           document.querySelectorAll<HTMLElement>("[data-tab]").forEach((t) => {
             t.setAttribute("aria-selected", t === tab ? "true" : "false");
           });
-          document.querySelectorAll<HTMLElement>(".tab-panel").forEach((panel) => {
-            panel.hidden = !panel.id.endsWith(tab.dataset.tab!);
-          });
+          document
+            .querySelectorAll<HTMLElement>(".tab-panel")
+            .forEach((panel) => {
+              panel.hidden = !panel.id.endsWith(tab.dataset.tab!);
+            });
         });
       });
 
-      async function loadOrganization(org: import("../lib/workspace").MyOrganization): Promise<void> {
+      async function loadOrganization(
+        org: import("../lib/workspace").MyOrganization,
+      ): Promise<void> {
         setActiveOrganization(org);
         organizationId = org.organization_id;
 
-        const [summaryResult, itemsResult, oppsResult, targetsResult] = await Promise.all([
-          fetchContentSummary(organizationId),
-          fetchContentItems(organizationId),
-          fetchOpportunities(organizationId),
-          fetchPublishingTargets(organizationId),
-        ]);
+        const [summaryResult, itemsResult, oppsResult, targetsResult] =
+          await Promise.all([
+            fetchContentSummary(organizationId),
+            fetchContentItems(organizationId),
+            fetchOpportunities(organizationId),
+            fetchPublishingTargets(organizationId),
+          ]);
 
         renderMetrics(summaryResult, itemsResult, oppsResult, targetsResult);
         renderPipeline(itemsResult);
@@ -134,13 +170,21 @@ import "../styles/global.css";
 
         const itemCount = items.kind === "ok" ? items.data.length : 0;
         const oppCount = opps.kind === "ok" ? opps.data.length : 0;
-        const openOpps = opps.kind === "ok" ? opps.data.filter((o) => o.status === "open" || o.status === "new").length : 0;
+        const openOpps =
+          opps.kind === "ok"
+            ? opps.data.filter((o) => o.status === "open" || o.status === "new")
+                .length
+            : 0;
         const targetCount = targets.kind === "ok" ? targets.data.length : 0;
 
         grid.append(
           metricCard("Content items", String(itemCount), "In pipeline"),
           metricCard("Opportunities", String(oppCount), `${openOpps} open`),
-          metricCard("Publishing targets", String(targetCount), targetCount > 0 ? "Connected" : "Not configured"),
+          metricCard(
+            "Publishing targets",
+            String(targetCount),
+            targetCount > 0 ? "Connected" : "Not configured",
+          ),
         );
         if (summary.kind === "ok") {
           const published = summary.data.by_status?.["published"] ?? 0;
@@ -148,7 +192,9 @@ import "../styles/global.css";
         }
       }
 
-      function renderPipeline(items: Awaited<ReturnType<typeof fetchContentItems>>): void {
+      function renderPipeline(
+        items: Awaited<ReturnType<typeof fetchContentItems>>,
+      ): void {
         const panel = document.getElementById("tab-pipeline")!;
         panel.replaceChildren();
 
@@ -172,7 +218,8 @@ import "../styles/global.css";
         table.className = "data-table";
         const t = document.createElement("table");
         const thead = document.createElement("thead");
-        thead.innerHTML = "<tr><th>Title</th><th>Status</th><th>Published</th></tr>";
+        thead.innerHTML =
+          "<tr><th>Title</th><th>Status</th><th>Published</th></tr>";
         t.append(thead);
         const tbody = document.createElement("tbody");
         for (const item of items.data) {
@@ -180,9 +227,20 @@ import "../styles/global.css";
           const titleTd = document.createElement("td");
           titleTd.textContent = item.title;
           const statusTd = document.createElement("td");
-          statusTd.append(statusBadge(item.status === "published" ? "ready" : item.status === "approved" ? "ready" : "setup", item.status));
+          statusTd.append(
+            statusBadge(
+              item.status === "published"
+                ? "ready"
+                : item.status === "approved"
+                  ? "ready"
+                  : "setup",
+              item.status,
+            ),
+          );
           const pubTd = document.createElement("td");
-          pubTd.textContent = item.published_at ? formatTimestamp(item.published_at) : "—";
+          pubTd.textContent = item.published_at
+            ? formatTimestamp(item.published_at)
+            : "—";
           tr.append(titleTd, statusTd, pubTd);
           tbody.append(tr);
         }
@@ -191,7 +249,9 @@ import "../styles/global.css";
         panel.append(table);
       }
 
-      function renderOpportunities(opps: Awaited<ReturnType<typeof fetchOpportunities>>): void {
+      function renderOpportunities(
+        opps: Awaited<ReturnType<typeof fetchOpportunities>>,
+      ): void {
         const panel = document.getElementById("tab-opportunities")!;
         panel.replaceChildren();
 
@@ -215,18 +275,32 @@ import "../styles/global.css";
           const item = document.createElement("li");
           const info = document.createElement("div");
           const name = document.createElement("h3");
-          name.textContent = opp.opportunity_type.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+          name.textContent = opp.opportunity_type
+            .replace(/_/g, " ")
+            .replace(/\b\w/g, (c) => c.toUpperCase());
           const detail = document.createElement("p");
           detail.textContent = `Priority ${opp.priority_score} · ${opp.status}`;
           info.append(name, detail);
-          item.append(info, statusBadge(opp.status === "open" || opp.status === "new" ? "setup" : "neutral", opp.status));
+          item.append(
+            info,
+            statusBadge(
+              opp.status === "open" || opp.status === "new"
+                ? "setup"
+                : "neutral",
+              opp.status,
+            ),
+          );
           if (opp.status === "open" || opp.status === "new") {
             const acceptBtn = document.createElement("button");
             acceptBtn.type = "button";
             acceptBtn.className = "button button--sm";
             acceptBtn.textContent = "Accept";
             acceptBtn.addEventListener("click", async () => {
-              const result = await decideOpportunity(organizationId, opp.id, true);
+              const result = await decideOpportunity(
+                organizationId,
+                opp.id,
+                true,
+              );
               if (result.kind === "ok") {
                 const [s, i, o, t] = await Promise.all([
                   fetchContentSummary(organizationId),
@@ -247,7 +321,9 @@ import "../styles/global.css";
         panel.append(list);
       }
 
-      function renderPublishing(targets: Awaited<ReturnType<typeof fetchPublishingTargets>>): void {
+      function renderPublishing(
+        targets: Awaited<ReturnType<typeof fetchPublishingTargets>>,
+      ): void {
         const panel = document.getElementById("tab-publishing")!;
         panel.replaceChildren();
 
@@ -267,14 +343,24 @@ import "../styles/global.css";
           setupCard.style.marginTop = "1rem";
           const setupHeader = document.createElement("div");
           setupHeader.className = "card__header";
-          setupHeader.append(Object.assign(document.createElement("h3"), { className: "card__title", textContent: "Publishing setup" }));
+          setupHeader.append(
+            Object.assign(document.createElement("h3"), {
+              className: "card__title",
+              textContent: "Publishing setup",
+            }),
+          );
           setupCard.append(setupHeader);
           const setupBody = document.createElement("div");
           setupBody.className = "card__body";
 
           const tokenField = document.createElement("div");
           tokenField.className = "field";
-          tokenField.append(Object.assign(document.createElement("label"), { htmlFor: "github-token", textContent: "GitHub access token" }));
+          tokenField.append(
+            Object.assign(document.createElement("label"), {
+              htmlFor: "github-token",
+              textContent: "GitHub access token",
+            }),
+          );
           const tokenInput = document.createElement("input");
           tokenInput.id = "github-token";
           tokenInput.type = "password";
@@ -293,9 +379,17 @@ import "../styles/global.css";
           status.setAttribute("aria-live", "polite");
           registerBtn.addEventListener("click", async () => {
             const token = tokenInput.value.trim();
-            if (!token) { status.textContent = "Enter a token first."; return; }
-            const result = await registerGitHubConnection(organizationId, { accessToken: token });
-            status.textContent = result.kind === "ok" ? "Connection registered." : describeFailure(result, "Register");
+            if (!token) {
+              status.textContent = "Enter a token first.";
+              return;
+            }
+            const result = await registerGitHubConnection(organizationId, {
+              accessToken: token,
+            });
+            status.textContent =
+              result.kind === "ok"
+                ? "Connection registered."
+                : describeFailure(result, "Register");
           });
           setupBody.append(registerBtn, status);
 
@@ -303,7 +397,12 @@ import "../styles/global.css";
           const targetField = document.createElement("div");
           targetField.className = "field";
           targetField.style.marginTop = "1rem";
-          targetField.append(Object.assign(document.createElement("label"), { htmlFor: "target-repo-id", textContent: "Repository ID" }));
+          targetField.append(
+            Object.assign(document.createElement("label"), {
+              htmlFor: "target-repo-id",
+              textContent: "Repository ID",
+            }),
+          );
           const repoInput = document.createElement("input");
           repoInput.id = "target-repo-id";
           repoInput.type = "text";
@@ -330,7 +429,10 @@ import "../styles/global.css";
               baseBranch: "main",
               allowedPathPrefix: "content/",
             });
-            status.textContent = result.kind === "ok" ? "Target created." : describeFailure(result, "Create target");
+            status.textContent =
+              result.kind === "ok"
+                ? "Target created."
+                : describeFailure(result, "Create target");
           });
           setupBody.append(createBtn);
           setupCard.append(setupBody);
@@ -343,12 +445,27 @@ import "../styles/global.css";
           card.className = "card";
           const header = document.createElement("div");
           header.className = "card__header";
-          header.append(Object.assign(document.createElement("h3"), { className: "card__title", textContent: target.repository_id }));
-          header.append(Object.assign(document.createElement("p"), { className: "card__description", textContent: `${target.base_branch} · ${target.allowed_path_prefix}` }));
+          header.append(
+            Object.assign(document.createElement("h3"), {
+              className: "card__title",
+              textContent: target.repository_id,
+            }),
+          );
+          header.append(
+            Object.assign(document.createElement("p"), {
+              className: "card__description",
+              textContent: `${target.base_branch} · ${target.allowed_path_prefix}`,
+            }),
+          );
           card.append(header);
           const body = document.createElement("div");
           body.className = "card__body";
-          body.append(statusBadge(target.status === "active" ? "ready" : "setup", target.status));
+          body.append(
+            statusBadge(
+              target.status === "active" ? "ready" : "setup",
+              target.status,
+            ),
+          );
           card.append(body);
           panel.append(card);
         }
@@ -358,7 +475,10 @@ import "../styles/global.css";
         const result = await bootWorkspace("Content");
         if (!applyBootResult(regions, result)) return;
         populateSwitcher(result.organizations, (o) => void loadOrganization(o));
-        const org = result.organizations.find((o) => o.organization_id === result.context.organizationId) ?? result.organizations[0];
+        const org =
+          result.organizations.find(
+            (o) => o.organization_id === result.context.organizationId,
+          ) ?? result.organizations[0];
         await loadOrganization(org);
       }
 

@@ -24,7 +24,11 @@ export type BootResult =
   | { kind: "redirected-to-login" }
   | { kind: "error"; message: string }
   | { kind: "empty" }
-  | { kind: "ok"; context: BootContext; organizations: import("../workspace").MyOrganization[] };
+  | {
+      kind: "ok";
+      context: BootContext;
+      organizations: import("../workspace").MyOrganization[];
+    };
 
 function wireSignOut(): void {
   const button = document.getElementById("sign-out-button");
@@ -34,7 +38,9 @@ function wireSignOut(): void {
   });
 }
 
-function populateUserLabels(principal: import("../workspace").PrincipalSummary): void {
+function populateUserLabels(
+  principal: import("../workspace").PrincipalSummary,
+): void {
   const label = document.getElementById("current-user-label");
   const initial = document.getElementById("current-user-initial");
   const assurance = document.getElementById("current-assurance-label");
@@ -107,7 +113,10 @@ export async function bootWorkspace(
     return { kind: "redirected-to-login" };
   }
   if (principal.kind !== "ok") {
-    return { kind: "error", message: describeFailure(principal, productContext) };
+    return {
+      kind: "error",
+      message: describeFailure(principal, productContext),
+    };
   }
 
   populateUserLabels(principal.data);
@@ -152,7 +161,11 @@ export async function bootWorkspace(
 export function applyBootResult(
   regions: BootRegions,
   result: BootResult,
-): result is { kind: "ok"; context: BootContext; organizations: import("../workspace").MyOrganization[] } {
+): result is {
+  kind: "ok";
+  context: BootContext;
+  organizations: import("../workspace").MyOrganization[];
+} {
   switch (result.kind) {
     case "not-configured":
       showRegion(regions, regions.notConfigured);

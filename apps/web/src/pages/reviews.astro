@@ -2,6 +2,7 @@
 import AppShell from "../components/AppShell.astro";
 import "../styles/global.css";
 ---
+
 <!doctype html>
 <html lang="en">
   <head>
@@ -27,7 +28,10 @@ import "../styles/global.css";
         <div class="empty-state">
           <span class="empty-state__icon" aria-hidden="true">○</span>
           <h3>No organization access yet</h3>
-          <p>Your account is not a member of any organization. Ask an administrator to invite you.</p>
+          <p>
+            Your account is not a member of any organization. Ask an
+            administrator to invite you.
+          </p>
         </div>
       </div>
 
@@ -36,12 +40,21 @@ import "../styles/global.css";
           <div class="page-head__intro">
             <p class="eyebrow">Operations</p>
             <h1>Reviews</h1>
-            <p>Manage customer reviews, draft responses, and publish replies.</p>
+            <p>
+              Manage customer reviews, draft responses, and publish replies.
+            </p>
           </div>
           <div class="page-head__meta">
             <div class="page-head__actions">
-              <select id="location-select" class="button button--secondary button--sm" aria-label="Select location"></select>
-              <button type="button" class="button button--secondary button--sm" id="ingest-reviews-button">Sync from Google</button>
+              <select
+                id="location-select"
+                class="button button--secondary button--sm"
+                aria-label="Select location"></select>
+              <button
+                type="button"
+                class="button button--secondary button--sm"
+                id="ingest-reviews-button">Sync from Google</button
+              >
             </div>
           </div>
         </div>
@@ -65,9 +78,18 @@ import "../styles/global.css";
           </div>
 
           <div class="card" style="margin-bottom: 1rem">
-            <div class="card__body" style="display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center">
-              <label class="sr-only" for="status-filter">Filter reviews by status</label>
-              <select id="status-filter" class="button button--secondary button--sm" aria-label="Filter reviews by status">
+            <div
+              class="card__body"
+              style="display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center"
+            >
+              <label class="sr-only" for="status-filter"
+                >Filter reviews by status</label
+              >
+              <select
+                id="status-filter"
+                class="button button--secondary button--sm"
+                aria-label="Filter reviews by status"
+              >
                 <option value="">All statuses</option>
                 <option value="new">New</option>
                 <option value="classified">Classified</option>
@@ -76,8 +98,19 @@ import "../styles/global.css";
                 <option value="restricted">Restricted</option>
               </select>
               <label class="sr-only" for="search-input">Search reviews</label>
-              <input id="search-input" type="search" placeholder="Search reviews…" aria-label="Search reviews" class="button button--secondary button--sm" style="flex: 1; min-width: 12rem" />
-              <button type="button" class="button button--secondary button--sm" id="apply-filters">Apply</button>
+              <input
+                id="search-input"
+                type="search"
+                placeholder="Search reviews…"
+                aria-label="Search reviews"
+                class="button button--secondary button--sm"
+                style="flex: 1; min-width: 12rem"
+              />
+              <button
+                type="button"
+                class="button button--secondary button--sm"
+                id="apply-filters">Apply</button
+              >
             </div>
           </div>
 
@@ -89,7 +122,11 @@ import "../styles/global.css";
                 <p class="eyebrow">Review detail</p>
                 <h2 id="review-detail-title">—</h2>
               </div>
-              <button type="button" class="button button--secondary button--sm" id="close-detail">← Back to list</button>
+              <button
+                type="button"
+                class="button button--secondary button--sm"
+                id="close-detail">← Back to list</button
+              >
             </div>
             <div id="review-detail-content"></div>
           </div>
@@ -108,12 +145,8 @@ import "../styles/global.css";
         publishResponse,
         ingestReviews,
         type ReviewSummary,
-        type ReviewDetail,
-        type ReviewResponse,
       } from "../lib/reviews";
-      import {
-        fetchLocations,
-      } from "../lib/workspace";
+      import { fetchLocations } from "../lib/workspace";
       import {
         bootWorkspace,
         applyBootResult,
@@ -142,12 +175,17 @@ import "../styles/global.css";
         document.getElementById("review-detail")!.hidden = true;
       });
 
-      async function loadOrganization(org: import("../lib/workspace").MyOrganization): Promise<void> {
+      async function loadOrganization(
+        org: import("../lib/workspace").MyOrganization,
+      ): Promise<void> {
         setActiveOrganization(org);
         organizationId = org.organization_id;
 
         const locationsResult = await fetchLocations(organizationId);
-        if (locationsResult.kind !== "ok" || locationsResult.data.length === 0) {
+        if (
+          locationsResult.kind !== "ok" ||
+          locationsResult.data.length === 0
+        ) {
           document.getElementById("no-locations")!.hidden = false;
           document.getElementById("reviews-workspace")!.hidden = true;
           return;
@@ -158,8 +196,12 @@ import "../styles/global.css";
         await loadReviews();
       }
 
-      function populateLocationSelect(locations: import("../lib/workspace").LocationSummary[]): void {
-        const select = document.getElementById("location-select") as HTMLSelectElement;
+      function populateLocationSelect(
+        locations: import("../lib/workspace").LocationSummary[],
+      ): void {
+        const select = document.getElementById(
+          "location-select",
+        ) as HTMLSelectElement;
         select.replaceChildren();
         for (const loc of locations) {
           const opt = document.createElement("option");
@@ -188,12 +230,21 @@ import "../styles/global.css";
       }
 
       function getFilters(): { statusFilter?: string; search?: string } {
-        const status = (document.getElementById("status-filter") as HTMLSelectElement).value;
-        const search = (document.getElementById("search-input") as HTMLInputElement).value;
-        return { statusFilter: status || undefined, search: search || undefined };
+        const status = (
+          document.getElementById("status-filter") as HTMLSelectElement
+        ).value;
+        const search = (
+          document.getElementById("search-input") as HTMLInputElement
+        ).value;
+        return {
+          statusFilter: status || undefined,
+          search: search || undefined,
+        };
       }
 
-      function renderMetrics(summary: Awaited<ReturnType<typeof fetchReviewSummary>>): void {
+      function renderMetrics(
+        summary: Awaited<ReturnType<typeof fetchReviewSummary>>,
+      ): void {
         const grid = document.getElementById("reviews-metrics")!;
         grid.replaceChildren();
         if (summary.kind !== "ok") {
@@ -201,19 +252,33 @@ import "../styles/global.css";
           return;
         }
         const stats = summary.data;
-        const total = Object.values(stats.by_status ?? {}).reduce((a, b) => a + b, 0);
+        const total = Object.values(stats.by_status ?? {}).reduce(
+          (a, b) => a + b,
+          0,
+        );
         const newCount = stats.by_status?.["new"] ?? 0;
-        const needsResponse = (stats.by_status?.["new"] ?? 0) + (stats.by_status?.["classified"] ?? 0);
-        const responded = stats.by_status?.["responded"] ?? 0;
+        const needsResponse =
+          (stats.by_status?.["new"] ?? 0) +
+          (stats.by_status?.["classified"] ?? 0);
         grid.append(
-          metricCard("Average rating", stats.average_rating ? stats.average_rating.toFixed(1) : "—", "Out of 5"),
+          metricCard(
+            "Average rating",
+            stats.average_rating ? stats.average_rating.toFixed(1) : "—",
+            "Out of 5",
+          ),
           metricCard("Total reviews", String(total), "All time"),
           metricCard("New", String(newCount), "Awaiting review"),
-          metricCard("Needs response", String(needsResponse), "Action required"),
+          metricCard(
+            "Needs response",
+            String(needsResponse),
+            "Action required",
+          ),
         );
       }
 
-      function renderList(reviews: Awaited<ReturnType<typeof fetchReviews>>): void {
+      function renderList(
+        reviews: Awaited<ReturnType<typeof fetchReviews>>,
+      ): void {
         const panel = document.getElementById("reviews-list-panel")!;
         panel.replaceChildren();
         if (reviews.kind !== "ok") {
@@ -233,7 +298,8 @@ import "../styles/global.css";
         table.className = "data-table";
         const t = document.createElement("table");
         const thead = document.createElement("thead");
-        thead.innerHTML = "<tr><th>Rating</th><th>Status</th><th>Provider</th><th>Date</th><th></th></tr>";
+        thead.innerHTML =
+          "<tr><th>Rating</th><th>Status</th><th>Provider</th><th>Date</th><th></th></tr>";
         t.append(thead);
         const tbody = document.createElement("tbody");
         for (const review of reviews.data) {
@@ -245,7 +311,16 @@ import "../styles/global.css";
           ratingTd.textContent = review.rating ? `${review.rating}★` : "—";
 
           const statusTd = document.createElement("td");
-          statusTd.append(statusBadge(review.status === "new" ? "setup" : review.status === "responded" ? "ready" : "neutral", review.status));
+          statusTd.append(
+            statusBadge(
+              review.status === "new"
+                ? "setup"
+                : review.status === "responded"
+                  ? "ready"
+                  : "neutral",
+              review.status,
+            ),
+          );
 
           const providerTd = document.createElement("td");
           providerTd.textContent = review.provider;
@@ -263,7 +338,8 @@ import "../styles/global.css";
 
       async function openReview(review: ReviewSummary): Promise<void> {
         document.getElementById("review-detail")!.hidden = false;
-        document.getElementById("review-detail-title")!.textContent = `Review ${review.rating ? `${review.rating}★` : "—"}`;
+        document.getElementById("review-detail-title")!.textContent =
+          `Review ${review.rating ? `${review.rating}★` : "—"}`;
 
         const content = document.getElementById("review-detail-content")!;
         content.replaceChildren();
@@ -277,7 +353,9 @@ import "../styles/global.css";
         content.replaceChildren();
 
         if (detailResult.kind !== "ok") {
-          content.append(errorAlert(describeFailure(detailResult, "Review detail")));
+          content.append(
+            errorAlert(describeFailure(detailResult, "Review detail")),
+          );
           return;
         }
 
@@ -286,11 +364,17 @@ import "../styles/global.css";
         reviewCard.className = "card";
         const reviewHeader = document.createElement("div");
         reviewHeader.className = "card__header";
-        reviewHeader.append(Object.assign(document.createElement("h3"), { className: "card__title", textContent: "Review content" }));
+        reviewHeader.append(
+          Object.assign(document.createElement("h3"), {
+            className: "card__title",
+            textContent: "Review content",
+          }),
+        );
         reviewCard.append(reviewHeader);
         const reviewBody = document.createElement("div");
         reviewBody.className = "card__body";
-        const latestRevision = detailResult.data.revisions[detailResult.data.revisions.length - 1];
+        const latestRevision =
+          detailResult.data.revisions[detailResult.data.revisions.length - 1];
         if (latestRevision) {
           if (latestRevision.title) {
             const title = document.createElement("h3");
@@ -304,7 +388,12 @@ import "../styles/global.css";
             reviewBody.append(body);
           }
         }
-        reviewBody.append(Object.assign(document.createElement("p"), { className: "text-xs muted", textContent: `Provider: ${review.provider} · ${formatTimestamp(review.review_created_at)}` }));
+        reviewBody.append(
+          Object.assign(document.createElement("p"), {
+            className: "text-xs muted",
+            textContent: `Provider: ${review.provider} · ${formatTimestamp(review.review_created_at)}`,
+          }),
+        );
         reviewCard.append(reviewBody);
         content.append(reviewCard);
 
@@ -313,7 +402,12 @@ import "../styles/global.css";
         composeCard.className = "card";
         const composeHeader = document.createElement("div");
         composeHeader.className = "card__header";
-        composeHeader.append(Object.assign(document.createElement("h3"), { className: "card__title", textContent: "Compose response" }));
+        composeHeader.append(
+          Object.assign(document.createElement("h3"), {
+            className: "card__title",
+            textContent: "Compose response",
+          }),
+        );
         composeCard.append(composeHeader);
         const composeBody = document.createElement("div");
         composeBody.className = "card__body";
@@ -337,31 +431,56 @@ import "../styles/global.css";
         status.setAttribute("role", "status");
         status.setAttribute("aria-live", "polite");
         saveBtn.addEventListener("click", async () => {
-          if (!textarea.value.trim()) { status.textContent = "Enter a response first."; return; }
-          const latestRev = detailResult.data.revisions[detailResult.data.revisions.length - 1];
-          if (!latestRev) { status.textContent = "No revision to respond to."; return; }
-          const result = await draftResponse(organizationId, selectedLocationId, review.id, {
-            review_revision_id: latestRev.id,
-            response_text: textarea.value,
-            generated_by_type: "user",
-            approved_fact_revision_ids: [],
-          });
-          status.textContent = result.kind === "ok" ? "Draft saved." : describeFailure(result, "Save");
+          if (!textarea.value.trim()) {
+            status.textContent = "Enter a response first.";
+            return;
+          }
+          const latestRev =
+            detailResult.data.revisions[detailResult.data.revisions.length - 1];
+          if (!latestRev) {
+            status.textContent = "No revision to respond to.";
+            return;
+          }
+          const result = await draftResponse(
+            organizationId,
+            selectedLocationId,
+            review.id,
+            {
+              review_revision_id: latestRev.id,
+              response_text: textarea.value,
+              generated_by_type: "user",
+              approved_fact_revision_ids: [],
+            },
+          );
+          status.textContent =
+            result.kind === "ok"
+              ? "Draft saved."
+              : describeFailure(result, "Save");
           if (result.kind === "ok") await openReview(review);
         });
         aiBtn.addEventListener("click", async () => {
           aiBtn.disabled = true;
           aiBtn.textContent = "Generating…";
-          const latestRev = detailResult.data.revisions[detailResult.data.revisions.length - 1];
-          if (!latestRev) { status.textContent = "No revision to respond to."; return; }
-          const result = await generateAIDraft(organizationId, selectedLocationId, review.id, {
-            review_revision_id: latestRev.id,
-            approved_fact_revision_ids: [],
-            idempotency_key: `web-ai-${review.id}-${Date.now()}`,
-          });
+          const latestRev =
+            detailResult.data.revisions[detailResult.data.revisions.length - 1];
+          if (!latestRev) {
+            status.textContent = "No revision to respond to.";
+            return;
+          }
+          const result = await generateAIDraft(
+            organizationId,
+            selectedLocationId,
+            review.id,
+            {
+              review_revision_id: latestRev.id,
+              approved_fact_revision_ids: [],
+              idempotency_key: `web-ai-${review.id}-${Date.now()}`,
+            },
+          );
           if (result.kind === "ok") {
             textarea.value = result.data.response_text;
-            status.textContent = "AI draft generated. Review it carefully before approving.";
+            status.textContent =
+              "AI draft generated. Review it carefully before approving.";
           } else {
             status.textContent = describeFailure(result, "AI draft");
           }
@@ -379,7 +498,12 @@ import "../styles/global.css";
           historyCard.className = "card";
           const historyHeader = document.createElement("div");
           historyHeader.className = "card__header";
-          historyHeader.append(Object.assign(document.createElement("h3"), { className: "card__title", textContent: "Response history" }));
+          historyHeader.append(
+            Object.assign(document.createElement("h3"), {
+              className: "card__title",
+              textContent: "Response history",
+            }),
+          );
           historyCard.append(historyHeader);
           const historyBody = document.createElement("div");
           historyBody.className = "card__body";
@@ -391,16 +515,34 @@ import "../styles/global.css";
             const name = document.createElement("h3");
             name.textContent = `${resp.generated_by_type} · ${resp.status}`;
             const detail = document.createElement("p");
-            detail.textContent = resp.response_text.length > 100 ? resp.response_text.slice(0, 100) + "…" : resp.response_text;
+            detail.textContent =
+              resp.response_text.length > 100
+                ? resp.response_text.slice(0, 100) + "…"
+                : resp.response_text;
             info.append(name, detail);
-            item.append(info, statusBadge(resp.status === "published" ? "ready" : resp.status === "approved" ? "ready" : "setup", resp.status));
+            item.append(
+              info,
+              statusBadge(
+                resp.status === "published"
+                  ? "ready"
+                  : resp.status === "approved"
+                    ? "ready"
+                    : "setup",
+                resp.status,
+              ),
+            );
             if (resp.status === "awaiting_approval") {
               const approveBtn = document.createElement("button");
               approveBtn.type = "button";
               approveBtn.className = "button button--sm";
               approveBtn.textContent = "Approve";
               approveBtn.addEventListener("click", async () => {
-                await approveResponse(organizationId, selectedLocationId, review.id, resp.id);
+                await approveResponse(
+                  organizationId,
+                  selectedLocationId,
+                  review.id,
+                  resp.id,
+                );
                 await openReview(review);
               });
               item.append(approveBtn);
@@ -411,7 +553,13 @@ import "../styles/global.css";
               publishBtn.className = "button button--sm";
               publishBtn.textContent = "Publish";
               publishBtn.addEventListener("click", async () => {
-                await publishResponse(organizationId, selectedLocationId, review.id, resp.id, `web-publish-${resp.id}-${Date.now()}`);
+                await publishResponse(
+                  organizationId,
+                  selectedLocationId,
+                  review.id,
+                  resp.id,
+                  `web-publish-${resp.id}-${Date.now()}`,
+                );
                 await openReview(review);
               });
               item.append(publishBtn);
@@ -432,29 +580,41 @@ import "../styles/global.css";
       }
 
       // Wire filter apply
-      document.getElementById("apply-filters")!.addEventListener("click", () => void loadReviews());
+      document
+        .getElementById("apply-filters")!
+        .addEventListener("click", () => void loadReviews());
 
       // Wire ingest
-      document.getElementById("ingest-reviews-button")!.addEventListener("click", async () => {
-        const btn = document.getElementById("ingest-reviews-button") as HTMLButtonElement;
-        btn.disabled = true;
-        btn.textContent = "Syncing…";
-        const result = await ingestReviews(organizationId, selectedLocationId);
-        btn.disabled = false;
-        btn.textContent = "Sync from Google";
-        if (result.kind === "ok") {
-          await loadReviews();
-        } else {
-          const panel = document.getElementById("reviews-list-panel")!;
-          panel.prepend(errorAlert(describeFailure(result, "Sync")));
-        }
-      });
+      document
+        .getElementById("ingest-reviews-button")!
+        .addEventListener("click", async () => {
+          const btn = document.getElementById(
+            "ingest-reviews-button",
+          ) as HTMLButtonElement;
+          btn.disabled = true;
+          btn.textContent = "Syncing…";
+          const result = await ingestReviews(
+            organizationId,
+            selectedLocationId,
+          );
+          btn.disabled = false;
+          btn.textContent = "Sync from Google";
+          if (result.kind === "ok") {
+            await loadReviews();
+          } else {
+            const panel = document.getElementById("reviews-list-panel")!;
+            panel.prepend(errorAlert(describeFailure(result, "Sync")));
+          }
+        });
 
       async function boot(): Promise<void> {
         const result = await bootWorkspace("Reviews");
         if (!applyBootResult(regions, result)) return;
         populateSwitcher(result.organizations, (o) => void loadOrganization(o));
-        const org = result.organizations.find((o) => o.organization_id === result.context.organizationId) ?? result.organizations[0];
+        const org =
+          result.organizations.find(
+            (o) => o.organization_id === result.context.organizationId,
+          ) ?? result.organizations[0];
         await loadOrganization(org);
       }
 

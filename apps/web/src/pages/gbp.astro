@@ -2,6 +2,7 @@
 import AppShell from "../components/AppShell.astro";
 import "../styles/global.css";
 ---
+
 <!doctype html>
 <html lang="en">
   <head>
@@ -27,7 +28,10 @@ import "../styles/global.css";
         <div class="empty-state">
           <span class="empty-state__icon" aria-hidden="true">○</span>
           <h3>No organization access yet</h3>
-          <p>Your account is not a member of any organization. Ask an administrator to invite you.</p>
+          <p>
+            Your account is not a member of any organization. Ask an
+            administrator to invite you.
+          </p>
         </div>
       </div>
 
@@ -36,11 +40,17 @@ import "../styles/global.css";
           <div class="page-head__intro">
             <p class="eyebrow">Operations</p>
             <h1>Business Profile</h1>
-            <p>Manage your Google Business Profile location data, hours, posts, and media.</p>
+            <p>
+              Manage your Google Business Profile location data, hours, posts,
+              and media.
+            </p>
           </div>
           <div class="page-head__meta">
             <div class="page-head__actions">
-              <a class="button button--secondary button--sm" href="/integrations">Manage connection</a>
+              <a
+                class="button button--secondary button--sm"
+                href="/integrations">Manage connection</a
+              >
             </div>
           </div>
         </div>
@@ -61,15 +71,50 @@ import "../styles/global.css";
 
         <div id="gbp-workspace" hidden>
           <div class="tabs" role="tablist" id="gbp-tabs">
-            <button class="tabs__tab" role="tab" aria-selected="true" data-tab="overview">Overview</button>
-            <button class="tabs__tab" role="tab" aria-selected="false" data-tab="profile">Profile</button>
-            <button class="tabs__tab" role="tab" aria-selected="false" data-tab="hours">Hours</button>
-            <button class="tabs__tab" role="tab" aria-selected="false" data-tab="posts">Posts</button>
-            <button class="tabs__tab" role="tab" aria-selected="false" data-tab="media">Media</button>
+            <button
+              class="tabs__tab"
+              role="tab"
+              aria-selected="true"
+              data-tab="overview">Overview</button
+            >
+            <button
+              class="tabs__tab"
+              role="tab"
+              aria-selected="false"
+              data-tab="profile">Profile</button
+            >
+            <button
+              class="tabs__tab"
+              role="tab"
+              aria-selected="false"
+              data-tab="hours">Hours</button
+            >
+            <button
+              class="tabs__tab"
+              role="tab"
+              aria-selected="false"
+              data-tab="posts">Posts</button
+            >
+            <button
+              class="tabs__tab"
+              role="tab"
+              aria-selected="false"
+              data-tab="media">Media</button
+            >
           </div>
 
           <div id="tab-overview" class="tab-panel"></div>
-          <div id="tab-profile" class="tab-panel" hidden></div>
+          <div id="tab-profile" class="tab-panel" hidden>
+            <select
+              id="change-task"
+              class="sr-only"
+              aria-label="What to edit"
+              hidden
+            >
+              <option value="">Choose what to edit…</option>
+              <option value="profile.description">Business description</option>
+            </select>
+          </div>
           <div id="tab-hours" class="tab-panel" hidden></div>
           <div id="tab-posts" class="tab-panel" hidden></div>
           <div id="tab-media" class="tab-panel" hidden></div>
@@ -78,16 +123,13 @@ import "../styles/global.css";
     </AppShell>
     <script>
       import {
-        fetchGBPAccounts,
         fetchGBPLocations,
         fetchPlatformLocations,
         confirmLocationMapping,
         type GBPLocationSummary,
         type PlatformLocation,
       } from "../lib/gbp";
-      import {
-        fetchConnectionStatus,
-      } from "../lib/gbp-connection";
+      import { fetchConnectionStatus } from "../lib/gbp-connection";
       import {
         createPostRevision,
         decideChangeSet,
@@ -104,14 +146,7 @@ import "../styles/global.css";
         proposeMedia,
         proposeSpecialHours,
         publishPost,
-        reportSuspensionCase,
-        type ChangeSet,
-        type GBPPostRevisionItem,
-        type SpecialHours,
       } from "../lib/gbp-operations";
-      import {
-        fetchProductReadiness,
-      } from "../lib/workspace";
       import {
         bootWorkspace,
         applyBootResult,
@@ -129,7 +164,6 @@ import "../styles/global.css";
       let organizationId = "";
       let selectedPlatformLocationId: string | null = null;
       let selectedGbpLocationId: string | null = null;
-      let selectedLocationName = "";
       let platformLocationsCache: PlatformLocation[] = [];
 
       const regions: BootRegions = {
@@ -145,37 +179,51 @@ import "../styles/global.css";
           document.querySelectorAll<HTMLElement>("[data-tab]").forEach((t) => {
             t.setAttribute("aria-selected", t === tab ? "true" : "false");
           });
-          document.querySelectorAll<HTMLElement>(".tab-panel").forEach((panel) => {
-            panel.hidden = !panel.id.endsWith(tab.dataset.tab!);
-          });
+          document
+            .querySelectorAll<HTMLElement>(".tab-panel")
+            .forEach((panel) => {
+              panel.hidden = !panel.id.endsWith(tab.dataset.tab!);
+            });
         });
       });
 
-      async function loadOrganization(org: import("../lib/workspace").MyOrganization): Promise<void> {
+      async function loadOrganization(
+        org: import("../lib/workspace").MyOrganization,
+      ): Promise<void> {
         setActiveOrganization(org);
         organizationId = org.organization_id;
 
-        const [connectionResult, locationsResult, platformLocsResult] = await Promise.all([
-          fetchConnectionStatus(organizationId),
-          fetchGBPLocations(organizationId),
-          fetchPlatformLocations(organizationId),
-        ]);
+        const [connectionResult, locationsResult, platformLocsResult] =
+          await Promise.all([
+            fetchConnectionStatus(organizationId),
+            fetchGBPLocations(organizationId),
+            fetchPlatformLocations(organizationId),
+          ]);
 
-        if (platformLocsResult.kind === "ok") platformLocationsCache = platformLocsResult.data;
+        if (platformLocsResult.kind === "ok")
+          platformLocationsCache = platformLocsResult.data;
 
         renderConnectionStatus(connectionResult);
-        renderLocationPicker(locationsResult.kind === "ok" ? locationsResult.data : []);
+        renderLocationPicker(
+          locationsResult.kind === "ok" ? locationsResult.data : [],
+        );
       }
 
-      function renderConnectionStatus(outcome: Awaited<ReturnType<typeof fetchConnectionStatus>>): void {
+      function renderConnectionStatus(
+        outcome: Awaited<ReturnType<typeof fetchConnectionStatus>>,
+      ): void {
         const panel = document.getElementById("connection-status-panel")!;
         panel.replaceChildren();
 
-        if (outcome.kind === "error" && outcome.code === "INTEGRATION_NOT_CONFIGURED") {
+        if (
+          outcome.kind === "error" &&
+          outcome.code === "INTEGRATION_NOT_CONFIGURED"
+        ) {
           const alert = document.createElement("div");
           alert.className = "alert alert--warning";
           const text = document.createElement("p");
-          text.textContent = "Google is not connected. Connect in Integrations to start using Business Profile.";
+          text.textContent =
+            "Google is not connected. Connect in Integrations to start using Business Profile.";
           alert.append(text);
           const link = document.createElement("a");
           link.className = "button button--secondary button--sm";
@@ -186,7 +234,9 @@ import "../styles/global.css";
           return;
         }
         if (outcome.kind !== "ok") {
-          panel.append(errorAlert(describeFailure(outcome, "Google connection")));
+          panel.append(
+            errorAlert(describeFailure(outcome, "Google connection")),
+          );
           return;
         }
 
@@ -195,7 +245,8 @@ import "../styles/global.css";
           const alert = document.createElement("div");
           alert.className = "alert alert--info";
           const text = document.createElement("p");
-          text.textContent = "Google is not connected. Connect in Integrations to discover and map your Business Profile locations.";
+          text.textContent =
+            "Google is not connected. Connect in Integrations to discover and map your Business Profile locations.";
           alert.append(text);
           const link = document.createElement("a");
           link.className = "button button--secondary button--sm";
@@ -210,7 +261,8 @@ import "../styles/global.css";
           const alert = document.createElement("div");
           alert.className = "alert alert--error";
           const text = document.createElement("p");
-          text.textContent = "Google connection needs attention. Reconnect in Integrations.";
+          text.textContent =
+            "Google connection needs attention. Reconnect in Integrations.";
           alert.append(text);
           const link = document.createElement("a");
           link.className = "button button--secondary button--sm";
@@ -224,10 +276,15 @@ import "../styles/global.css";
         const info = document.createElement("div");
         info.className = "alert alert--success";
         info.style.marginBottom = "0";
-        const badge = statusBadge(state.status === "connected" ? "ready" : "degraded", state.status);
+        const badge = statusBadge(
+          state.status === "connected" ? "ready" : "degraded",
+          state.status,
+        );
         const text = document.createElement("p");
         text.className = "text-sm";
-        text.textContent = state.last_verified_at ? `Last synced ${formatTimestamp(state.last_verified_at)}` : "Connected";
+        text.textContent = state.last_verified_at
+          ? `Last synced ${formatTimestamp(state.last_verified_at)}`
+          : "Connected";
         info.append(badge, text);
         panel.append(info);
       }
@@ -236,7 +293,9 @@ import "../styles/global.css";
         const panel = document.getElementById("location-picker-panel")!;
         panel.replaceChildren();
 
-        const confirmed = locations.filter((l) => l.mapping_status === "confirmed");
+        const confirmed = locations.filter(
+          (l) => l.mapping_status === "confirmed",
+        );
 
         if (locations.length === 0) {
           panel.append(
@@ -259,7 +318,9 @@ import "../styles/global.css";
             const name = document.createElement("h3");
             name.textContent = loc.business_name;
             const detail = document.createElement("p");
-            detail.textContent = loc.last_synced_at ? `Last synced ${formatTimestamp(loc.last_synced_at)}` : "Not yet synced";
+            detail.textContent = loc.last_synced_at
+              ? `Last synced ${formatTimestamp(loc.last_synced_at)}`
+              : "Not yet synced";
             info.append(name, detail);
             const openBtn = document.createElement("button");
             openBtn.type = "button";
@@ -272,7 +333,11 @@ import "../styles/global.css";
           panel.append(list);
         }
 
-        const unmapped = locations.filter((l) => l.mapping_status === "unmapped" && platformLocationsCache.length > 0);
+        const unmapped = locations.filter(
+          (l) =>
+            l.mapping_status === "unmapped" &&
+            platformLocationsCache.length > 0,
+        );
         if (unmapped.length > 0) {
           const heading = document.createElement("p");
           heading.className = "eyebrow";
@@ -287,7 +352,8 @@ import "../styles/global.css";
             const name = document.createElement("h3");
             name.textContent = loc.business_name;
             const detail = document.createElement("p");
-            detail.textContent = "Map to a platform location to start managing.";
+            detail.textContent =
+              "Map to a platform location to start managing.";
             info.append(name, detail);
 
             const select = document.createElement("select");
@@ -310,7 +376,12 @@ import "../styles/global.css";
               if (!select.value) return;
               mapBtn.disabled = true;
               mapBtn.textContent = "Mapping…";
-              const result = await confirmLocationMapping(organizationId, select.value, loc.id, false);
+              const result = await confirmLocationMapping(
+                organizationId,
+                select.value,
+                loc.id,
+                false,
+              );
               if (result.kind === "ok") {
                 const locs = await fetchGBPLocations(organizationId);
                 renderLocationPicker(locs.kind === "ok" ? locs.data : []);
@@ -329,17 +400,26 @@ import "../styles/global.css";
 
       async function openWorkspace(loc: GBPLocationSummary): Promise<void> {
         if (!loc.location_id) return;
-        selectedPlatformLocationId = platformLocationsCache.find((p) => p.name === loc.business_name)?.id ?? null;
+        selectedPlatformLocationId =
+          platformLocationsCache.find((p) => p.name === loc.business_name)
+            ?.id ?? null;
         selectedGbpLocationId = loc.location_id;
-        selectedLocationName = loc.business_name;
         document.getElementById("gbp-workspace")!.hidden = false;
         document.getElementById("location-picker-section")!.hidden = true;
 
         // Update page title to show selected location
-        const titleEl = document.querySelector("#gbp-content .page-head__intro h1");
+        const titleEl = document.querySelector(
+          "#gbp-content .page-head__intro h1",
+        );
         if (titleEl) titleEl.textContent = loc.business_name;
 
-        await Promise.all([renderOverview(), renderProfile(), renderHours(), renderPosts(), renderMedia()]);
+        await Promise.all([
+          renderOverview(),
+          renderProfile(),
+          renderHours(),
+          renderPosts(),
+          renderMedia(),
+        ]);
       }
 
       // ---- Overview tab ----
@@ -348,23 +428,46 @@ import "../styles/global.css";
         panel.replaceChildren();
         if (!selectedPlatformLocationId || !selectedGbpLocationId) return;
 
-        const [completenessResult, auditResult, suspensionResult] = await Promise.all([
-          fetchCompleteness(organizationId, selectedPlatformLocationId, selectedGbpLocationId),
-          fetchOperationsAudit(organizationId, selectedPlatformLocationId, selectedGbpLocationId),
-          fetchSuspensionCases(organizationId, selectedPlatformLocationId, selectedGbpLocationId),
-        ]);
+        const [completenessResult, auditResult, suspensionResult] =
+          await Promise.all([
+            fetchCompleteness(
+              organizationId,
+              selectedPlatformLocationId,
+              selectedGbpLocationId,
+            ),
+            fetchOperationsAudit(
+              organizationId,
+              selectedPlatformLocationId,
+              selectedGbpLocationId,
+            ),
+            fetchSuspensionCases(
+              organizationId,
+              selectedPlatformLocationId,
+              selectedGbpLocationId,
+            ),
+          ]);
 
         // Completeness
         const compCard = document.createElement("div");
         compCard.className = "card";
         const compHeader = document.createElement("div");
         compHeader.className = "card__header";
-        compHeader.append(Object.assign(document.createElement("h3"), { className: "card__title", textContent: "Profile completeness" }));
+        compHeader.append(
+          Object.assign(document.createElement("h3"), {
+            className: "card__title",
+            textContent: "Profile completeness",
+          }),
+        );
         compCard.append(compHeader);
         const compBody = document.createElement("div");
         compBody.className = "card__body";
         if (completenessResult.kind === "ok") {
-          compBody.append(statusBadge(completenessResult.data.complete ? "ready" : "setup", completenessResult.data.complete ? "Complete" : "Incomplete"));
+          compBody.append(
+            statusBadge(
+              completenessResult.data.complete ? "ready" : "setup",
+              completenessResult.data.complete ? "Complete" : "Incomplete",
+            ),
+          );
           if (!completenessResult.data.complete) {
             const missing = document.createElement("p");
             missing.className = "text-sm muted";
@@ -373,7 +476,9 @@ import "../styles/global.css";
             compBody.append(missing);
           }
         } else {
-          compBody.append(errorAlert(describeFailure(completenessResult, "Completeness")));
+          compBody.append(
+            errorAlert(describeFailure(completenessResult, "Completeness")),
+          );
         }
         compCard.append(compBody);
         panel.append(compCard);
@@ -383,16 +488,26 @@ import "../styles/global.css";
         attentionCard.className = "card";
         const attentionHeader = document.createElement("div");
         attentionHeader.className = "card__header";
-        attentionHeader.append(Object.assign(document.createElement("h3"), { className: "card__title", textContent: "Needs attention" }));
+        attentionHeader.append(
+          Object.assign(document.createElement("h3"), {
+            className: "card__title",
+            textContent: "Needs attention",
+          }),
+        );
         attentionCard.append(attentionHeader);
         const attentionBody = document.createElement("div");
         attentionBody.className = "card__body";
         const pending = [];
-        if (suspensionResult.kind === "ok" && suspensionResult.data.length > 0) {
+        if (
+          suspensionResult.kind === "ok" &&
+          suspensionResult.data.length > 0
+        ) {
           pending.push(`${suspensionResult.data.length} suspension case(s)`);
         }
         if (pending.length === 0) {
-          attentionBody.append(emptyState("All clear", "No items need immediate attention."));
+          attentionBody.append(
+            emptyState("All clear", "No items need immediate attention."),
+          );
         } else {
           for (const item of pending) {
             const p = document.createElement("p");
@@ -409,7 +524,12 @@ import "../styles/global.css";
         activityCard.className = "card";
         const activityHeader = document.createElement("div");
         activityHeader.className = "card__header";
-        activityHeader.append(Object.assign(document.createElement("h3"), { className: "card__title", textContent: "Recent activity" }));
+        activityHeader.append(
+          Object.assign(document.createElement("h3"), {
+            className: "card__title",
+            textContent: "Recent activity",
+          }),
+        );
         activityCard.append(activityHeader);
         const activityBody = document.createElement("div");
         activityBody.className = "card__body";
@@ -427,7 +547,12 @@ import "../styles/global.css";
           }
           activityBody.append(list);
         } else {
-          activityBody.append(emptyState("No activity yet", "Operations and changes will appear here."));
+          activityBody.append(
+            emptyState(
+              "No activity yet",
+              "Operations and changes will appear here.",
+            ),
+          );
         }
         activityCard.append(activityBody);
         panel.append(activityCard);
@@ -440,7 +565,11 @@ import "../styles/global.css";
         if (!selectedPlatformLocationId || !selectedGbpLocationId) return;
 
         const [changeSetsResult] = await Promise.all([
-          fetchChangeSets(organizationId, selectedPlatformLocationId, selectedGbpLocationId),
+          fetchChangeSets(
+            organizationId,
+            selectedPlatformLocationId,
+            selectedGbpLocationId,
+          ),
         ]);
 
         // Propose change form
@@ -448,7 +577,12 @@ import "../styles/global.css";
         formCard.className = "card";
         const formHeader = document.createElement("div");
         formHeader.className = "card__header";
-        formHeader.append(Object.assign(document.createElement("h3"), { className: "card__title", textContent: "Propose a change" }));
+        formHeader.append(
+          Object.assign(document.createElement("h3"), {
+            className: "card__title",
+            textContent: "Propose a change",
+          }),
+        );
         formCard.append(formHeader);
         const formBody = document.createElement("div");
         formBody.className = "card__body";
@@ -509,13 +643,21 @@ import "../styles/global.css";
             return;
           }
           const [capabilityKey, field] = task.split(".");
-          const result = await proposeChangeSet(organizationId, selectedPlatformLocationId!, selectedGbpLocationId!, {
-            capabilityKey,
-            field,
-            value,
-            idempotencyKey: `web-change-${Date.now()}`,
-          });
-          status.textContent = result.kind === "ok" ? "Change proposed." : describeFailure(result, "Propose");
+          const result = await proposeChangeSet(
+            organizationId,
+            selectedPlatformLocationId!,
+            selectedGbpLocationId!,
+            {
+              capabilityKey,
+              field,
+              value,
+              idempotencyKey: `web-change-${Date.now()}`,
+            },
+          );
+          status.textContent =
+            result.kind === "ok"
+              ? "Change proposed."
+              : describeFailure(result, "Propose");
           if (result.kind === "ok") await renderProfile();
         });
 
@@ -529,12 +671,20 @@ import "../styles/global.css";
         panel.append(formCard);
 
         // Pending changes
-        if (changeSetsResult.kind === "ok" && changeSetsResult.data.length > 0) {
+        if (
+          changeSetsResult.kind === "ok" &&
+          changeSetsResult.data.length > 0
+        ) {
           const pendingCard = document.createElement("div");
           pendingCard.className = "card";
           const pendingHeader = document.createElement("div");
           pendingHeader.className = "card__header";
-          pendingHeader.append(Object.assign(document.createElement("h3"), { className: "card__title", textContent: "Pending changes" }));
+          pendingHeader.append(
+            Object.assign(document.createElement("h3"), {
+              className: "card__title",
+              textContent: "Pending changes",
+            }),
+          );
           pendingCard.append(pendingHeader);
           const pendingBody = document.createElement("div");
           pendingBody.className = "card__body";
@@ -548,14 +698,25 @@ import "../styles/global.css";
             const detail = document.createElement("p");
             detail.textContent = `Status: ${cs.status}`;
             info.append(name, detail);
-            item.append(info, statusBadge(cs.status === "awaiting_approval" ? "setup" : "ready", cs.status));
+            item.append(
+              info,
+              statusBadge(
+                cs.status === "awaiting_approval" ? "setup" : "ready",
+                cs.status,
+              ),
+            );
             if (cs.status === "awaiting_approval") {
               const approveBtn = document.createElement("button");
               approveBtn.type = "button";
               approveBtn.className = "button button--sm";
               approveBtn.textContent = "Approve";
               approveBtn.addEventListener("click", async () => {
-                await decideChangeSet(organizationId, selectedPlatformLocationId!, cs.id, true);
+                await decideChangeSet(
+                  organizationId,
+                  selectedPlatformLocationId!,
+                  cs.id,
+                  true,
+                );
                 await renderProfile();
               });
               item.append(approveBtn);
@@ -574,14 +735,23 @@ import "../styles/global.css";
         panel.replaceChildren();
         if (!selectedPlatformLocationId || !selectedGbpLocationId) return;
 
-        const hoursResult = await fetchSpecialHours(organizationId, selectedPlatformLocationId, selectedGbpLocationId);
+        const hoursResult = await fetchSpecialHours(
+          organizationId,
+          selectedPlatformLocationId,
+          selectedGbpLocationId,
+        );
 
         // Propose special hours form
         const formCard = document.createElement("div");
         formCard.className = "card";
         const formHeader = document.createElement("div");
         formHeader.className = "card__header";
-        formHeader.append(Object.assign(document.createElement("h3"), { className: "card__title", textContent: "Add special hours" }));
+        formHeader.append(
+          Object.assign(document.createElement("h3"), {
+            className: "card__title",
+            textContent: "Add special hours",
+          }),
+        );
         formCard.append(formHeader);
         const formBody = document.createElement("div");
         formBody.className = "card__body";
@@ -590,7 +760,12 @@ import "../styles/global.css";
         grid.className = "form-grid";
         const dateField = document.createElement("div");
         dateField.className = "field";
-        dateField.append(Object.assign(document.createElement("label"), { htmlFor: "special-hours-date", textContent: "Service date" }));
+        dateField.append(
+          Object.assign(document.createElement("label"), {
+            htmlFor: "special-hours-date",
+            textContent: "Service date",
+          }),
+        );
         const dateInput = document.createElement("input");
         dateInput.id = "special-hours-date";
         dateInput.type = "date";
@@ -599,7 +774,12 @@ import "../styles/global.css";
 
         const opensField = document.createElement("div");
         opensField.className = "field";
-        opensField.append(Object.assign(document.createElement("label"), { htmlFor: "special-hours-opens", textContent: "Opens" }));
+        opensField.append(
+          Object.assign(document.createElement("label"), {
+            htmlFor: "special-hours-opens",
+            textContent: "Opens",
+          }),
+        );
         const opensInput = document.createElement("input");
         opensInput.id = "special-hours-opens";
         opensInput.type = "time";
@@ -609,7 +789,12 @@ import "../styles/global.css";
 
         const closesField = document.createElement("div");
         closesField.className = "field";
-        closesField.append(Object.assign(document.createElement("label"), { htmlFor: "special-hours-closes", textContent: "Closes" }));
+        closesField.append(
+          Object.assign(document.createElement("label"), {
+            htmlFor: "special-hours-closes",
+            textContent: "Closes",
+          }),
+        );
         const closesInput = document.createElement("input");
         closesInput.id = "special-hours-closes";
         closesInput.type = "time";
@@ -632,12 +817,20 @@ import "../styles/global.css";
             status.textContent = "Select a service date first.";
             return;
           }
-          const result = await proposeSpecialHours(organizationId, selectedPlatformLocationId!, selectedGbpLocationId!, {
-            serviceDate,
-            opens: `${opensInput.value}:00`,
-            closes: `${closesInput.value}:00`,
-          });
-          status.textContent = result.kind === "ok" ? "Special hours proposed." : describeFailure(result, "Propose");
+          const result = await proposeSpecialHours(
+            organizationId,
+            selectedPlatformLocationId!,
+            selectedGbpLocationId!,
+            {
+              serviceDate,
+              opens: `${opensInput.value}:00`,
+              closes: `${closesInput.value}:00`,
+            },
+          );
+          status.textContent =
+            result.kind === "ok"
+              ? "Special hours proposed."
+              : describeFailure(result, "Propose");
           if (result.kind === "ok") await renderHours();
         });
 
@@ -656,7 +849,12 @@ import "../styles/global.css";
           listCard.className = "card";
           const listHeader = document.createElement("div");
           listHeader.className = "card__header";
-          listHeader.append(Object.assign(document.createElement("h3"), { className: "card__title", textContent: "Special hours" }));
+          listHeader.append(
+            Object.assign(document.createElement("h3"), {
+              className: "card__title",
+              textContent: "Special hours",
+            }),
+          );
           listCard.append(listHeader);
           const listBody = document.createElement("div");
           listBody.className = "card__body";
@@ -670,14 +868,25 @@ import "../styles/global.css";
             const detail = document.createElement("p");
             detail.textContent = `Status: ${hours.status}`;
             info.append(name, detail);
-            item.append(info, statusBadge(hours.status === "awaiting_approval" ? "setup" : "ready", hours.status));
+            item.append(
+              info,
+              statusBadge(
+                hours.status === "awaiting_approval" ? "setup" : "ready",
+                hours.status,
+              ),
+            );
             if (hours.status === "awaiting_approval") {
               const approveBtn = document.createElement("button");
               approveBtn.type = "button";
               approveBtn.className = "button button--sm";
               approveBtn.textContent = "Approve";
               approveBtn.addEventListener("click", async () => {
-                await decideSpecialHours(organizationId, selectedPlatformLocationId!, hours.id, true);
+                await decideSpecialHours(
+                  organizationId,
+                  selectedPlatformLocationId!,
+                  hours.id,
+                  true,
+                );
                 await renderHours();
               });
               item.append(approveBtn);
@@ -696,14 +905,23 @@ import "../styles/global.css";
         panel.replaceChildren();
         if (!selectedPlatformLocationId || !selectedGbpLocationId) return;
 
-        const postsResult = await fetchPostRevisions(organizationId, selectedPlatformLocationId, selectedGbpLocationId);
+        const postsResult = await fetchPostRevisions(
+          organizationId,
+          selectedPlatformLocationId,
+          selectedGbpLocationId,
+        );
 
         // Draft post form
         const formCard = document.createElement("div");
         formCard.className = "card";
         const formHeader = document.createElement("div");
         formHeader.className = "card__header";
-        formHeader.append(Object.assign(document.createElement("h3"), { className: "card__title", textContent: "Draft a post" }));
+        formHeader.append(
+          Object.assign(document.createElement("h3"), {
+            className: "card__title",
+            textContent: "Draft a post",
+          }),
+        );
         formCard.append(formHeader);
         const formBody = document.createElement("div");
         formBody.className = "card__body";
@@ -726,8 +944,16 @@ import "../styles/global.css";
             status.textContent = "Enter post content first.";
             return;
           }
-          const result = await createPostRevision(organizationId, selectedPlatformLocationId!, selectedGbpLocationId!, { postType: "standard", content });
-          status.textContent = result.kind === "ok" ? "Post drafted." : describeFailure(result, "Draft");
+          const result = await createPostRevision(
+            organizationId,
+            selectedPlatformLocationId!,
+            selectedGbpLocationId!,
+            { postType: "standard", content },
+          );
+          status.textContent =
+            result.kind === "ok"
+              ? "Post drafted."
+              : describeFailure(result, "Draft");
           if (result.kind === "ok") await renderPosts();
         });
         const actions = document.createElement("div");
@@ -745,7 +971,12 @@ import "../styles/global.css";
           listCard.className = "card";
           const listHeader = document.createElement("div");
           listHeader.className = "card__header";
-          listHeader.append(Object.assign(document.createElement("h3"), { className: "card__title", textContent: "Posts" }));
+          listHeader.append(
+            Object.assign(document.createElement("h3"), {
+              className: "card__title",
+              textContent: "Posts",
+            }),
+          );
           listCard.append(listHeader);
           const listBody = document.createElement("div");
           listBody.className = "card__body";
@@ -755,18 +986,36 @@ import "../styles/global.css";
             const item = document.createElement("li");
             const info = document.createElement("div");
             const name = document.createElement("h3");
-            name.textContent = post.content.length > 80 ? post.content.slice(0, 80) + "…" : post.content;
+            name.textContent =
+              post.content.length > 80
+                ? post.content.slice(0, 80) + "…"
+                : post.content;
             const detail = document.createElement("p");
             detail.textContent = `Status: ${post.status}`;
             info.append(name, detail);
-            item.append(info, statusBadge(post.status === "awaiting_approval" ? "setup" : post.status === "approved" ? "ready" : "neutral", post.status));
+            item.append(
+              info,
+              statusBadge(
+                post.status === "awaiting_approval"
+                  ? "setup"
+                  : post.status === "approved"
+                    ? "ready"
+                    : "neutral",
+                post.status,
+              ),
+            );
             if (post.status === "awaiting_approval") {
               const approveBtn = document.createElement("button");
               approveBtn.type = "button";
               approveBtn.className = "button button--sm";
               approveBtn.textContent = "Approve";
               approveBtn.addEventListener("click", async () => {
-                await decidePostRevision(organizationId, selectedPlatformLocationId!, post.id, true);
+                await decidePostRevision(
+                  organizationId,
+                  selectedPlatformLocationId!,
+                  post.id,
+                  true,
+                );
                 await renderPosts();
               });
               item.append(approveBtn);
@@ -778,16 +1027,31 @@ import "../styles/global.css";
               publishBtn.textContent = "Publish";
               publishBtn.addEventListener("click", async () => {
                 status.textContent = "Starting publication…";
-                const workflowStart = await startWorkflowRun(organizationId, "gbp.publish_post", {
-                  locationId: selectedPlatformLocationId!,
-                  idempotencyKey: `web-post-publish-${post.id}-${Date.now()}`,
-                });
+                const workflowStart = await startWorkflowRun(
+                  organizationId,
+                  "gbp.publish_post",
+                  {
+                    locationId: selectedPlatformLocationId!,
+                    idempotencyKey: `web-post-publish-${post.id}-${Date.now()}`,
+                  },
+                );
                 if (workflowStart.kind !== "ok") {
-                  status.textContent = describeFailure(workflowStart, "Publish");
+                  status.textContent = describeFailure(
+                    workflowStart,
+                    "Publish",
+                  );
                   return;
                 }
-                const result = await publishPost(organizationId, selectedPlatformLocationId!, post.id, workflowStart.data.workflow_run_id);
-                status.textContent = result.kind === "ok" ? "Post publication reserved." : describeFailure(result, "Publish");
+                const result = await publishPost(
+                  organizationId,
+                  selectedPlatformLocationId!,
+                  post.id,
+                  workflowStart.data.workflow_run_id,
+                );
+                status.textContent =
+                  result.kind === "ok"
+                    ? "Post publication reserved."
+                    : describeFailure(result, "Publish");
                 if (result.kind === "ok") await renderPosts();
               });
               item.append(publishBtn);
@@ -806,20 +1070,34 @@ import "../styles/global.css";
         panel.replaceChildren();
         if (!selectedPlatformLocationId || !selectedGbpLocationId) return;
 
-        const mediaResult = await fetchMedia(organizationId, selectedPlatformLocationId, selectedGbpLocationId);
+        const mediaResult = await fetchMedia(
+          organizationId,
+          selectedPlatformLocationId,
+          selectedGbpLocationId,
+        );
 
         // Propose media form
         const formCard = document.createElement("div");
         formCard.className = "card";
         const formHeader = document.createElement("div");
         formHeader.className = "card__header";
-        formHeader.append(Object.assign(document.createElement("h3"), { className: "card__title", textContent: "Upload media" }));
+        formHeader.append(
+          Object.assign(document.createElement("h3"), {
+            className: "card__title",
+            textContent: "Upload media",
+          }),
+        );
         formCard.append(formHeader);
         const formBody = document.createElement("div");
         formBody.className = "card__body";
         const urlField = document.createElement("div");
         urlField.className = "field";
-        urlField.append(Object.assign(document.createElement("label"), { htmlFor: "media-reference", textContent: "Media URL" }));
+        urlField.append(
+          Object.assign(document.createElement("label"), {
+            htmlFor: "media-reference",
+            textContent: "Media URL",
+          }),
+        );
         const urlInput = document.createElement("input");
         urlInput.id = "media-reference";
         urlInput.type = "text";
@@ -840,12 +1118,20 @@ import "../styles/global.css";
             status.textContent = "Enter a media URL first.";
             return;
           }
-          const result = await proposeMedia(organizationId, selectedPlatformLocationId!, selectedGbpLocationId!, {
-            mediaType: "photo",
-            sourceReference: reference,
-            rightsAuthority: "Business owner upload",
-          });
-          status.textContent = result.kind === "ok" ? "Media proposed." : describeFailure(result, "Propose");
+          const result = await proposeMedia(
+            organizationId,
+            selectedPlatformLocationId!,
+            selectedGbpLocationId!,
+            {
+              mediaType: "photo",
+              sourceReference: reference,
+              rightsAuthority: "Business owner upload",
+            },
+          );
+          status.textContent =
+            result.kind === "ok"
+              ? "Media proposed."
+              : describeFailure(result, "Propose");
           if (result.kind === "ok") await renderMedia();
         });
         const actions = document.createElement("div");
@@ -863,7 +1149,12 @@ import "../styles/global.css";
           listCard.className = "card";
           const listHeader = document.createElement("div");
           listHeader.className = "card__header";
-          listHeader.append(Object.assign(document.createElement("h3"), { className: "card__title", textContent: "Media" }));
+          listHeader.append(
+            Object.assign(document.createElement("h3"), {
+              className: "card__title",
+              textContent: "Media",
+            }),
+          );
           listCard.append(listHeader);
           const listBody = document.createElement("div");
           listBody.className = "card__body";
@@ -877,7 +1168,13 @@ import "../styles/global.css";
             const detail = document.createElement("p");
             detail.textContent = `Status: ${media.status}`;
             info.append(name, detail);
-            item.append(info, statusBadge(media.status === "awaiting_approval" ? "setup" : "ready", media.status));
+            item.append(
+              info,
+              statusBadge(
+                media.status === "awaiting_approval" ? "setup" : "ready",
+                media.status,
+              ),
+            );
             list.append(item);
           }
           listBody.append(list);
@@ -890,7 +1187,10 @@ import "../styles/global.css";
         const result = await bootWorkspace("Business Profile");
         if (!applyBootResult(regions, result)) return;
         populateSwitcher(result.organizations, (o) => void loadOrganization(o));
-        const org = result.organizations.find((o) => o.organization_id === result.context.organizationId) ?? result.organizations[0];
+        const org =
+          result.organizations.find(
+            (o) => o.organization_id === result.context.organizationId,
+          ) ?? result.organizations[0];
         await loadOrganization(org);
       }
 

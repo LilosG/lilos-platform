@@ -240,7 +240,7 @@ a:hover {
   letter-spacing: 0.1em;
   font-size: 0.68rem;
   font-weight: 700;
-  color: #7a9286;
+  color: #9ab5a8;
   padding: 0 var(--space-3);
   margin-bottom: var(--space-1);
 }
@@ -262,7 +262,9 @@ a:hover {
   font-size: var(--text-sm);
   padding: 0.5rem var(--space-3);
   border-radius: var(--radius-sm);
-  transition: background-color 0.12s ease, color 0.12s ease;
+  transition:
+    background-color 0.12s ease,
+    color 0.12s ease;
 }
 .sidebar__link:hover {
   background: rgba(255, 255, 255, 0.08);
@@ -344,7 +346,7 @@ a:hover {
 }
 .topbar__org-label {
   font-size: var(--text-xs);
-  color: var(--muted-soft);
+  color: var(--muted);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -379,7 +381,9 @@ a:hover {
   padding: 0.4rem var(--space-3);
   font-weight: 600;
   font-size: var(--text-sm);
-  transition: border-color 0.12s ease, background-color 0.12s ease;
+  transition:
+    border-color 0.12s ease,
+    background-color 0.12s ease;
 }
 .topbar button:not(.button):hover {
   border-color: var(--line-strong);
@@ -482,7 +486,9 @@ main {
   font-weight: 600;
   font-size: var(--text-sm);
   box-shadow: var(--shadow-xs);
-  transition: background-color 0.12s ease, transform 0.06s ease;
+  transition:
+    background-color 0.12s ease,
+    transform 0.06s ease;
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
@@ -581,7 +587,9 @@ main {
   gap: var(--space-2);
 }
 .card--clickable {
-  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+  transition:
+    border-color 0.12s ease,
+    box-shadow 0.12s ease;
   cursor: pointer;
 }
 .card--clickable:hover {
@@ -1091,7 +1099,9 @@ td {
   border: 0;
   border-bottom: 2px solid transparent;
   cursor: pointer;
-  transition: color 0.12s ease, border-color 0.12s ease;
+  transition:
+    color 0.12s ease,
+    border-color 0.12s ease;
   white-space: nowrap;
 }
 .tabs__tab:hover {
@@ -1160,7 +1170,9 @@ td {
   border-radius: var(--radius-md);
   padding: var(--space-5);
   box-shadow: var(--shadow-xs);
-  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+  transition:
+    border-color 0.12s ease,
+    box-shadow 0.12s ease;
   cursor: pointer;
   text-decoration: none;
   color: inherit;

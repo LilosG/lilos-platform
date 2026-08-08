@@ -1,9 +1,4 @@
-export {
-  badgeKindFor,
-  badgeLabel,
-  statusBadge,
-  type BadgeKind,
-} from "./badge";
+export { badgeKindFor, badgeLabel, statusBadge, type BadgeKind } from "./badge";
 export { describeFailure } from "./errors";
 export {
   errorAlert,

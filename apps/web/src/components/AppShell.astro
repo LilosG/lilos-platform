@@ -10,11 +10,13 @@ const iconPaths: Record<string, string> = {
   home: "M3 12l9-9 9 9M5 10v10h14V10",
   building: "M4 21V7l8-4 8 4v14M9 21v-6h6v6",
   star: "M12 2l3 7h7l-5.5 4 2 7L12 16l-6.5 4 2-7L2 9h7z",
-  inbox: "M22 12h-6l-2 3h-4l-2-3H2M5.45 5.11L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6l-3.45-6.89A2 2 0 0016.76 4H7.24a2 2 0 00-1.79 1.11z",
+  inbox:
+    "M22 12h-6l-2 3h-4l-2-3H2M5.45 5.11L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6l-3.45-6.89A2 2 0 0016.76 4H7.24a2 2 0 00-1.79 1.11z",
   document: "M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z M14 2v6h6",
   search: "M11 19a8 8 0 100-16 8 8 0 000 16zM21 21l-4.35-4.35",
   chart: "M3 3v18h18M7 14l4-4 4 4 5-5",
-  settings: "M12 15a3 3 0 100-6 3 3 0 000 6z M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z",
+  settings:
+    "M12 15a3 3 0 100-6 3 3 0 000 6z M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z",
   plug: "M12 2v6m0 0a4 4 0 014 4v4a4 4 0 01-4 4 4 4 0 01-4-4v-4a4 4 0 014-4zM12 22v-4",
   shield: "M12 2l8 4v6c0 5-3.5 9-8 10-4.5-1-8-5-8-10V6z",
   plus: "M12 5v14M5 12h14",
@@ -68,7 +70,9 @@ const iconPaths: Record<string, string> = {
       <span aria-hidden="true" class="avatar" id="current-user-initial">·</span>
       <div>
         <strong id="current-user-label">Loading…</strong>
-        <small>Assurance · <span id="current-assurance-label">unknown</span></small>
+        <small
+          >Assurance · <span id="current-assurance-label">unknown</span></small
+        >
       </div>
     </div>
   </aside>
@@ -77,14 +81,26 @@ const iconPaths: Record<string, string> = {
       <div class="topbar__context">
         <div class="topbar__org">
           <span class="topbar__org-label">Organization</span>
-          <span class="topbar__org-name" id="active-organization-name">Loading…</span>
+          <span class="topbar__org-name" id="active-organization-name"
+            >Loading…</span
+          >
         </div>
       </div>
       <div class="topbar__actions">
-        <label class="sr-only" for="organization-switcher">Switch organization</label>
-        <select id="organization-switcher" class="button button--secondary button--sm" hidden></select>
+        <label class="sr-only" for="organization-switcher"
+          >Switch organization</label
+        >
+        <select
+          id="organization-switcher"
+          class="button button--secondary button--sm"
+          hidden></select>
         <div class="topbar__divider"></div>
-        <button type="button" id="sign-out-button" class="button button--secondary button--sm" hidden>Sign out</button>
+        <button
+          type="button"
+          id="sign-out-button"
+          class="button button--secondary button--sm"
+          hidden>Sign out</button
+        >
       </div>
     </header>
     <main id="main-content" tabindex="-1"><slot /></main>

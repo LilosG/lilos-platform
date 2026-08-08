@@ -2,6 +2,7 @@
 import AppShell from "../components/AppShell.astro";
 import "../styles/global.css";
 ---
+
 <!doctype html>
 <html lang="en">
   <head>
@@ -27,7 +28,10 @@ import "../styles/global.css";
         <div class="empty-state">
           <span class="empty-state__icon" aria-hidden="true">○</span>
           <h3>No organization access yet</h3>
-          <p>Your account is not a member of any organization. Ask an administrator to invite you.</p>
+          <p>
+            Your account is not a member of any organization. Ask an
+            administrator to invite you.
+          </p>
         </div>
       </div>
 
@@ -36,11 +40,17 @@ import "../styles/global.css";
           <div class="page-head__intro">
             <p class="eyebrow">Operations</p>
             <h1>SEO</h1>
-            <p>Crawl your website, identify opportunities, and track Search Console performance.</p>
+            <p>
+              Crawl your website, identify opportunities, and track Search
+              Console performance.
+            </p>
           </div>
           <div class="page-head__meta">
             <div class="page-head__actions">
-              <a class="button button--secondary button--sm" href="/integrations">Manage integrations</a>
+              <a
+                class="button button--secondary button--sm"
+                href="/integrations">Manage integrations</a
+              >
             </div>
           </div>
         </div>
@@ -48,10 +58,30 @@ import "../styles/global.css";
         <div class="metric-grid" id="seo-metrics"></div>
 
         <div class="tabs" role="tablist" id="seo-tabs">
-          <button class="tabs__tab" role="tab" aria-selected="true" data-tab="overview">Overview</button>
-          <button class="tabs__tab" role="tab" aria-selected="false" data-tab="crawl">Crawl</button>
-          <button class="tabs__tab" role="tab" aria-selected="false" data-tab="opportunities">Opportunities</button>
-          <button class="tabs__tab" role="tab" aria-selected="false" data-tab="search-console">Search Console</button>
+          <button
+            class="tabs__tab"
+            role="tab"
+            aria-selected="true"
+            data-tab="overview">Overview</button
+          >
+          <button
+            class="tabs__tab"
+            role="tab"
+            aria-selected="false"
+            data-tab="crawl">Crawl</button
+          >
+          <button
+            class="tabs__tab"
+            role="tab"
+            aria-selected="false"
+            data-tab="opportunities">Opportunities</button
+          >
+          <button
+            class="tabs__tab"
+            role="tab"
+            aria-selected="false"
+            data-tab="search-console">Search Console</button
+          >
         </div>
 
         <div id="tab-overview" class="tab-panel"></div>
@@ -66,17 +96,9 @@ import "../styles/global.css";
         fetchSEOSummary,
         fetchOpportunities,
         fetchSearchProperties,
-        fetchWebsiteAudit,
         runCrawl,
-        type SEOOpportunity,
-        type SEOWebsite,
       } from "../lib/seo";
-      import {
-        fetchSearchConsoleSummary,
-      } from "../lib/search-console";
-      import {
-        fetchOrganizationDomains,
-      } from "../lib/settings";
+      import { fetchSearchConsoleSummary } from "../lib/search-console";
       import { startWorkflowRun } from "../lib/workflows";
       import {
         bootWorkspace,
@@ -106,13 +128,17 @@ import "../styles/global.css";
           document.querySelectorAll<HTMLElement>("[data-tab]").forEach((t) => {
             t.setAttribute("aria-selected", t === tab ? "true" : "false");
           });
-          document.querySelectorAll<HTMLElement>(".tab-panel").forEach((panel) => {
-            panel.hidden = !panel.id.endsWith(tab.dataset.tab!);
-          });
+          document
+            .querySelectorAll<HTMLElement>(".tab-panel")
+            .forEach((panel) => {
+              panel.hidden = !panel.id.endsWith(tab.dataset.tab!);
+            });
         });
       });
 
-      async function loadOrganization(org: import("../lib/workspace").MyOrganization): Promise<void> {
+      async function loadOrganization(
+        org: import("../lib/workspace").MyOrganization,
+      ): Promise<void> {
         setActiveOrganization(org);
         organizationId = org.organization_id;
 
@@ -139,16 +165,42 @@ import "../styles/global.css";
 
         const websiteCount = websites.kind === "ok" ? websites.data.length : 0;
         const oppCount = opps.kind === "ok" ? opps.data.length : 0;
-        const openOpps = opps.kind === "ok" ? opps.data.filter((o) => o.status === "open" || o.status === "new").length : 0;
-        const highPriority = opps.kind === "ok" ? opps.data.filter((o) => o.priority_score >= 70).length : 0;
+        const openOpps =
+          opps.kind === "ok"
+            ? opps.data.filter((o) => o.status === "open" || o.status === "new")
+                .length
+            : 0;
+        const highPriority =
+          opps.kind === "ok"
+            ? opps.data.filter((o) => o.priority_score >= 70).length
+            : 0;
 
         grid.append(
-          metricCard("Websites", String(websiteCount), websites.kind === "ok" ? "Configured" : "Unable to load"),
+          metricCard(
+            "Websites",
+            String(websiteCount),
+            websites.kind === "ok" ? "Configured" : "Unable to load",
+          ),
           metricCard("Opportunities", String(oppCount), `${openOpps} open`),
-          metricCard("High priority", String(highPriority), "Priority score ≥ 70"),
+          metricCard(
+            "High priority",
+            String(highPriority),
+            "Priority score ≥ 70",
+          ),
         );
         if (summary.kind === "ok") {
-          grid.append(metricCard("Crawl runs", String(Object.values(summary.data.by_status ?? {}).reduce((a, b) => a + b, 0)), "Total"));
+          grid.append(
+            metricCard(
+              "Crawl runs",
+              String(
+                Object.values(summary.data.by_status ?? {}).reduce(
+                  (a, b) => a + b,
+                  0,
+                ),
+              ),
+              "Total",
+            ),
+          );
         }
       }
 
@@ -175,12 +227,29 @@ import "../styles/global.css";
           card.className = "card";
           const header = document.createElement("div");
           header.className = "card__header";
-          header.append(Object.assign(document.createElement("h3"), { className: "card__title", textContent: website.name }));
-          header.append(Object.assign(document.createElement("p"), { className: "card__description", textContent: website.canonical_origin }));
+          header.append(
+            Object.assign(document.createElement("h3"), {
+              className: "card__title",
+              textContent: website.name,
+            }),
+          );
+          header.append(
+            Object.assign(document.createElement("p"), {
+              className: "card__description",
+              textContent: website.canonical_origin,
+            }),
+          );
           card.append(header);
           const body = document.createElement("div");
           body.className = "card__body";
-          body.append(statusBadge(website.status === "verified" || website.status === "active" ? "ready" : "setup", website.status));
+          body.append(
+            statusBadge(
+              website.status === "verified" || website.status === "active"
+                ? "ready"
+                : "setup",
+              website.status,
+            ),
+          );
           if (website.verified_at) {
             const verified = document.createElement("p");
             verified.className = "text-sm muted";
@@ -198,7 +267,12 @@ import "../styles/global.css";
           card.className = "card";
           const header = document.createElement("div");
           header.className = "card__header";
-          header.append(Object.assign(document.createElement("h3"), { className: "card__title", textContent: "Recent opportunities" }));
+          header.append(
+            Object.assign(document.createElement("h3"), {
+              className: "card__title",
+              textContent: "Recent opportunities",
+            }),
+          );
           card.append(header);
           const body = document.createElement("div");
           body.className = "card__body";
@@ -208,11 +282,21 @@ import "../styles/global.css";
             const item = document.createElement("li");
             const info = document.createElement("div");
             const name = document.createElement("h3");
-            name.textContent = opp.opportunity_type.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+            name.textContent = opp.opportunity_type
+              .replace(/_/g, " ")
+              .replace(/\b\w/g, (c) => c.toUpperCase());
             const detail = document.createElement("p");
             detail.textContent = `Priority ${opp.priority_score} · ${opp.status}`;
             info.append(name, detail);
-            item.append(info, statusBadge(opp.status === "open" || opp.status === "new" ? "setup" : "neutral", opp.status));
+            item.append(
+              info,
+              statusBadge(
+                opp.status === "open" || opp.status === "new"
+                  ? "setup"
+                  : "neutral",
+                opp.status,
+              ),
+            );
             list.append(item);
           }
           body.append(list);
@@ -221,12 +305,19 @@ import "../styles/global.css";
         }
       }
 
-      function renderCrawl(websites: Awaited<ReturnType<typeof fetchWebsites>>): void {
+      function renderCrawl(
+        websites: Awaited<ReturnType<typeof fetchWebsites>>,
+      ): void {
         const panel = document.getElementById("tab-crawl")!;
         panel.replaceChildren();
 
         if (websites.kind !== "ok" || websites.data.length === 0) {
-          panel.append(emptyState("No websites to crawl", "Add a website first to enable crawling."));
+          panel.append(
+            emptyState(
+              "No websites to crawl",
+              "Add a website first to enable crawling.",
+            ),
+          );
           return;
         }
 
@@ -235,14 +326,24 @@ import "../styles/global.css";
           card.className = "card";
           const header = document.createElement("div");
           header.className = "card__header";
-          header.append(Object.assign(document.createElement("h3"), { className: "card__title", textContent: `Crawl ${website.name}` }));
+          header.append(
+            Object.assign(document.createElement("h3"), {
+              className: "card__title",
+              textContent: `Crawl ${website.name}`,
+            }),
+          );
           card.append(header);
           const body = document.createElement("div");
           body.className = "card__body";
 
           const maxPagesField = document.createElement("div");
           maxPagesField.className = "field";
-          maxPagesField.append(Object.assign(document.createElement("label"), { htmlFor: `crawl-max-pages-${website.id}`, textContent: "Max pages" }));
+          maxPagesField.append(
+            Object.assign(document.createElement("label"), {
+              htmlFor: `crawl-max-pages-${website.id}`,
+              textContent: "Max pages",
+            }),
+          );
           const maxPagesInput = document.createElement("input");
           maxPagesInput.id = `crawl-max-pages-${website.id}`;
           maxPagesInput.type = "number";
@@ -261,9 +362,13 @@ import "../styles/global.css";
           crawlBtn.addEventListener("click", async () => {
             crawlBtn.disabled = true;
             crawlBtn.textContent = "Starting…";
-            const workflowStart = await startWorkflowRun(organizationId, "seo.crawl_or_analysis", {
-              idempotencyKey: `web-crawl-${website.id}-${Date.now()}`,
-            });
+            const workflowStart = await startWorkflowRun(
+              organizationId,
+              "seo.crawl_or_analysis",
+              {
+                idempotencyKey: `web-crawl-${website.id}-${Date.now()}`,
+              },
+            );
             if (workflowStart.kind !== "ok") {
               status.textContent = describeFailure(workflowStart, "Crawl");
               crawlBtn.disabled = false;
@@ -296,7 +401,9 @@ import "../styles/global.css";
         }
       }
 
-      function renderOpportunities(opps: Awaited<ReturnType<typeof fetchOpportunities>>): void {
+      function renderOpportunities(
+        opps: Awaited<ReturnType<typeof fetchOpportunities>>,
+      ): void {
         const panel = document.getElementById("tab-opportunities")!;
         panel.replaceChildren();
 
@@ -318,18 +425,35 @@ import "../styles/global.css";
         table.className = "data-table";
         const t = document.createElement("table");
         const thead = document.createElement("thead");
-        thead.innerHTML = "<tr><th>Type</th><th>Priority</th><th>Status</th></tr>";
+        thead.innerHTML =
+          "<tr><th>Type</th><th>Priority</th><th>Status</th></tr>";
         t.append(thead);
         const tbody = document.createElement("tbody");
         for (const opp of opps.data) {
           const tr = document.createElement("tr");
           const typeTd = document.createElement("td");
-          typeTd.textContent = opp.opportunity_type.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+          typeTd.textContent = opp.opportunity_type
+            .replace(/_/g, " ")
+            .replace(/\b\w/g, (c) => c.toUpperCase());
           const priorityTd = document.createElement("td");
-          const priorityBadge = statusBadge(opp.priority_score >= 70 ? "blocked" : opp.priority_score >= 40 ? "setup" : "neutral", String(opp.priority_score));
+          const priorityBadge = statusBadge(
+            opp.priority_score >= 70
+              ? "blocked"
+              : opp.priority_score >= 40
+                ? "setup"
+                : "neutral",
+            String(opp.priority_score),
+          );
           priorityTd.append(priorityBadge);
           const statusTd = document.createElement("td");
-          statusTd.append(statusBadge(opp.status === "resolved" || opp.status === "closed" ? "ready" : "setup", opp.status));
+          statusTd.append(
+            statusBadge(
+              opp.status === "resolved" || opp.status === "closed"
+                ? "ready"
+                : "setup",
+              opp.status,
+            ),
+          );
           tr.append(typeTd, priorityTd, statusTd);
           tbody.append(tr);
         }
@@ -338,12 +462,19 @@ import "../styles/global.css";
         panel.append(table);
       }
 
-      async function renderSearchConsole(websites: Awaited<ReturnType<typeof fetchWebsites>>): Promise<void> {
+      async function renderSearchConsole(
+        websites: Awaited<ReturnType<typeof fetchWebsites>>,
+      ): Promise<void> {
         const panel = document.getElementById("tab-search-console")!;
         panel.replaceChildren();
 
         if (websites.kind !== "ok" || websites.data.length === 0) {
-          panel.append(emptyState("No websites configured", "Add a website to enable Search Console integration."));
+          panel.append(
+            emptyState(
+              "No websites configured",
+              "Add a website to enable Search Console integration.",
+            ),
+          );
           return;
         }
 
@@ -352,22 +483,46 @@ import "../styles/global.css";
           card.className = "card";
           const header = document.createElement("div");
           header.className = "card__header";
-          header.append(Object.assign(document.createElement("h3"), { className: "card__title", textContent: website.name }));
+          header.append(
+            Object.assign(document.createElement("h3"), {
+              className: "card__title",
+              textContent: website.name,
+            }),
+          );
           card.append(header);
           const body = document.createElement("div");
           body.className = "card__body";
 
-          const propsResult = await fetchSearchProperties(organizationId, website.id);
+          const propsResult = await fetchSearchProperties(
+            organizationId,
+            website.id,
+          );
           if (propsResult.kind !== "ok" || propsResult.data.length === 0) {
-            body.append(emptyState("No Search Console properties", "Map a Search Console property in Integrations to see performance data.", "Go to Integrations", "/integrations"));
+            body.append(
+              emptyState(
+                "No Search Console properties",
+                "Map a Search Console property in Integrations to see performance data.",
+                "Go to Integrations",
+                "/integrations",
+              ),
+            );
           } else {
-            const summaryResult = await fetchSearchConsoleSummary(organizationId, website.id);
+            const summaryResult = await fetchSearchConsoleSummary(
+              organizationId,
+              website.id,
+            );
             if (summaryResult.kind === "ok") {
               const grid = document.createElement("div");
               grid.className = "metric-grid";
               grid.append(
-                metricCard("Clicks", String(summaryResult.data.total_clicks ?? 0)),
-                metricCard("Impressions", String(summaryResult.data.total_impressions ?? 0)),
+                metricCard(
+                  "Clicks",
+                  String(summaryResult.data.total_clicks ?? 0),
+                ),
+                metricCard(
+                  "Impressions",
+                  String(summaryResult.data.total_impressions ?? 0),
+                ),
               );
               body.append(grid);
             }
@@ -381,7 +536,10 @@ import "../styles/global.css";
         const result = await bootWorkspace("SEO");
         if (!applyBootResult(regions, result)) return;
         populateSwitcher(result.organizations, (o) => void loadOrganization(o));
-        const org = result.organizations.find((o) => o.organization_id === result.context.organizationId) ?? result.organizations[0];
+        const org =
+          result.organizations.find(
+            (o) => o.organization_id === result.context.organizationId,
+          ) ?? result.organizations[0];
         await loadOrganization(org);
       }
 

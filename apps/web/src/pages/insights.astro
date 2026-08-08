@@ -2,6 +2,7 @@
 import AppShell from "../components/AppShell.astro";
 import "../styles/global.css";
 ---
+
 <!doctype html>
 <html lang="en">
   <head>
@@ -27,7 +28,10 @@ import "../styles/global.css";
         <div class="empty-state">
           <span class="empty-state__icon" aria-hidden="true">○</span>
           <h3>No organization access yet</h3>
-          <p>Your account is not a member of any organization. Ask an administrator to invite you.</p>
+          <p>
+            Your account is not a member of any organization. Ask an
+            administrator to invite you.
+          </p>
         </div>
       </div>
 
@@ -36,11 +40,17 @@ import "../styles/global.css";
           <div class="page-head__intro">
             <p class="eyebrow">Operations</p>
             <h1>Insights</h1>
-            <p>Cross-product reporting from real operational data — no simulated or fabricated metrics.</p>
+            <p>
+              Cross-product reporting from real operational data — no simulated
+              or fabricated metrics.
+            </p>
           </div>
           <div class="page-head__meta">
             <div class="page-head__actions">
-              <a class="button button--secondary button--sm" href="/integrations">Manage data sources</a>
+              <a
+                class="button button--secondary button--sm"
+                href="/integrations">Manage data sources</a
+              >
             </div>
           </div>
         </div>
@@ -72,9 +82,7 @@ import "../styles/global.css";
       import {
         fetchProductReadiness,
         fetchInsightsSummary,
-        PRODUCT_KEYS,
         PRODUCT_LABELS,
-        type InsightsSummary,
       } from "../lib/workspace";
       import { summarizeReadiness } from "../lib/dashboard-logic";
       import {
@@ -83,7 +91,6 @@ import "../styles/global.css";
         populateSwitcher,
         setActiveOrganization,
         statusBadge,
-        metricCard,
         emptyState,
         errorAlert,
         describeFailure,
@@ -99,24 +106,39 @@ import "../styles/global.css";
         empty: document.getElementById("workspace-empty")!,
       };
 
-      const SOURCE_PRODUCTS = ["gbp", "reviews", "leads", "content", "seo"] as const;
+      const SOURCE_PRODUCTS = [
+        "gbp",
+        "reviews",
+        "leads",
+        "content",
+        "seo",
+      ] as const;
 
-      async function loadOrganization(org: import("../lib/workspace").MyOrganization): Promise<void> {
+      async function loadOrganization(
+        org: import("../lib/workspace").MyOrganization,
+      ): Promise<void> {
         setActiveOrganization(org);
         organizationId = org.organization_id;
 
-        const [readinessResult, summaryResult, sourceReadiness] = await Promise.all([
-          fetchProductReadiness(organizationId, "insights"),
-          fetchInsightsSummary(organizationId),
-          Promise.all(SOURCE_PRODUCTS.map((key) => fetchProductReadiness(organizationId, key))),
-        ]);
+        const [readinessResult, summaryResult, sourceReadiness] =
+          await Promise.all([
+            fetchProductReadiness(organizationId, "insights"),
+            fetchInsightsSummary(organizationId),
+            Promise.all(
+              SOURCE_PRODUCTS.map((key) =>
+                fetchProductReadiness(organizationId, key),
+              ),
+            ),
+          ]);
 
         renderReadiness(readinessResult);
         renderSources(sourceReadiness);
         renderActivity(summaryResult);
       }
 
-      function renderReadiness(outcome: Awaited<ReturnType<typeof fetchProductReadiness>>): void {
+      function renderReadiness(
+        outcome: Awaited<ReturnType<typeof fetchProductReadiness>>,
+      ): void {
         const panel = document.getElementById("insights-readiness-panel")!;
         panel.replaceChildren();
 
@@ -133,14 +155,20 @@ import "../styles/global.css";
           alert.append(statusBadge("ready", "Ready"));
           const text = document.createElement("p");
           text.className = "text-sm";
-          text.textContent = "Insights reporting is available. SEO recommendations are on the SEO page.";
+          text.textContent =
+            "Insights reporting is available. SEO recommendations are on the SEO page.";
           alert.append(text);
           panel.append(alert);
         } else if (summary.status === "setup" || summary.status === "blocked") {
           const alert = document.createElement("div");
           alert.className = "alert alert--warning";
           alert.style.marginBottom = "0";
-          alert.append(statusBadge(summary.status, summary.status === "setup" ? "Setup required" : "Blocked"));
+          alert.append(
+            statusBadge(
+              summary.status,
+              summary.status === "setup" ? "Setup required" : "Blocked",
+            ),
+          );
           const text = document.createElement("p");
           text.className = "text-sm";
           text.textContent = summary.detail;
@@ -148,13 +176,16 @@ import "../styles/global.css";
           const link = document.createElement("a");
           link.className = "button button--secondary button--sm";
           link.href = "/onboarding";
-          link.textContent = summary.status === "setup" ? "Complete setup" : "Review blockers";
+          link.textContent =
+            summary.status === "setup" ? "Complete setup" : "Review blockers";
           alert.append(link);
           panel.append(alert);
         }
       }
 
-      function renderSources(readinessResults: Awaited<ReturnType<typeof fetchProductReadiness>>[]): void {
+      function renderSources(
+        readinessResults: Awaited<ReturnType<typeof fetchProductReadiness>>[],
+      ): void {
         const panel = document.getElementById("sources-panel")!;
         panel.replaceChildren();
 
@@ -183,7 +214,16 @@ import "../styles/global.css";
 
           const footer = document.createElement("div");
           footer.className = "integration-card__footer";
-          footer.append(statusBadge(summary.status, summary.status === "ready" ? "Connected" : summary.status === "missing" ? "Unavailable" : summary.status));
+          footer.append(
+            statusBadge(
+              summary.status,
+              summary.status === "ready"
+                ? "Connected"
+                : summary.status === "missing"
+                  ? "Unavailable"
+                  : summary.status,
+            ),
+          );
           const link = document.createElement("a");
           link.className = "button button--secondary button--sm";
           link.href = `/${key}`;
@@ -197,7 +237,9 @@ import "../styles/global.css";
         panel.append(grid);
       }
 
-      function renderActivity(summaryResult: Awaited<ReturnType<typeof fetchInsightsSummary>>): void {
+      function renderActivity(
+        summaryResult: Awaited<ReturnType<typeof fetchInsightsSummary>>,
+      ): void {
         const panel = document.getElementById("activity-panel")!;
         panel.replaceChildren();
 
@@ -214,36 +256,68 @@ import "../styles/global.css";
         }
 
         const data = summaryResult.data;
-        const groups: { title: string; metrics: { label: string; value: number }[] }[] = [];
+        const groups: {
+          title: string;
+          metrics: { label: string; value: number }[];
+        }[] = [];
 
         // GBP
         const gbpMetrics = [
           { label: "Locations", value: data.gbp?.locations ?? 0 },
-          { label: "Profile snapshots", value: data.gbp?.profile_snapshots ?? 0 },
-          { label: "Publications", value: Object.values(data.gbp?.publications ?? {}).reduce((a, b) => a + b, 0) },
+          {
+            label: "Profile snapshots",
+            value: data.gbp?.profile_snapshots ?? 0,
+          },
+          {
+            label: "Publications",
+            value: Object.values(data.gbp?.publications ?? {}).reduce(
+              (a, b) => a + b,
+              0,
+            ),
+          },
         ];
         groups.push({ title: "Business Profile", metrics: gbpMetrics });
 
         // Reviews
-        const reviewMetrics = Object.entries(data.reviews ?? {}).map(([k, v]) => ({ label: k.replace(/_/g, " "), value: v }));
-        if (reviewMetrics.length > 0) groups.push({ title: "Reviews", metrics: reviewMetrics });
+        const reviewMetrics = Object.entries(data.reviews ?? {}).map(
+          ([k, v]) => ({ label: k.replace(/_/g, " "), value: v }),
+        );
+        if (reviewMetrics.length > 0)
+          groups.push({ title: "Reviews", metrics: reviewMetrics });
 
         // Leads
-        const leadMetrics = Object.entries(data.leads ?? {}).map(([k, v]) => ({ label: k.replace(/_/g, " "), value: v }));
-        if (leadMetrics.length > 0) groups.push({ title: "Leads", metrics: leadMetrics });
+        const leadMetrics = Object.entries(data.leads ?? {}).map(([k, v]) => ({
+          label: k.replace(/_/g, " "),
+          value: v,
+        }));
+        if (leadMetrics.length > 0)
+          groups.push({ title: "Leads", metrics: leadMetrics });
 
         // Content
-        const contentMetrics = Object.entries(data.content_publications ?? {}).map(([k, v]) => ({ label: k.replace(/_/g, " "), value: v }));
-        if (contentMetrics.length > 0) groups.push({ title: "Content", metrics: contentMetrics });
+        const contentMetrics = Object.entries(
+          data.content_publications ?? {},
+        ).map(([k, v]) => ({ label: k.replace(/_/g, " "), value: v }));
+        if (contentMetrics.length > 0)
+          groups.push({ title: "Content", metrics: contentMetrics });
 
         // SEO
         const seoMetrics = [
-          ...Object.entries(data.seo?.crawl_runs ?? {}).map(([k, v]) => ({ label: `Crawl: ${k}`, value: v })),
-          ...Object.entries(data.seo?.opportunities ?? {}).map(([k, v]) => ({ label: `Opportunities: ${k}`, value: v })),
+          ...Object.entries(data.seo?.crawl_runs ?? {}).map(([k, v]) => ({
+            label: `Crawl: ${k}`,
+            value: v,
+          })),
+          ...Object.entries(data.seo?.opportunities ?? {}).map(([k, v]) => ({
+            label: `Opportunities: ${k}`,
+            value: v,
+          })),
         ];
-        if (seoMetrics.length > 0) groups.push({ title: "SEO", metrics: seoMetrics });
+        if (seoMetrics.length > 0)
+          groups.push({ title: "SEO", metrics: seoMetrics });
 
-        if (groups.length === 0 || groups.every((g) => g.metrics.every((m) => m.value === 0))) {
+        if (
+          groups.length === 0 ||
+          groups.every((g) => g.metrics.every((m) => m.value === 0))
+        ) {
           panel.append(
             emptyState(
               "No activity recorded yet",
@@ -260,7 +334,12 @@ import "../styles/global.css";
           card.className = "card";
           const header = document.createElement("div");
           header.className = "card__header";
-          header.append(Object.assign(document.createElement("h3"), { className: "card__title", textContent: group.title }));
+          header.append(
+            Object.assign(document.createElement("h3"), {
+              className: "card__title",
+              textContent: group.title,
+            }),
+          );
           card.append(header);
           const body = document.createElement("div");
           body.className = "card__body";
@@ -269,8 +348,13 @@ import "../styles/global.css";
             row.className = "flex-row";
             row.style.justifyContent = "space-between";
             row.append(
-              Object.assign(document.createElement("span"), { className: "text-sm", textContent: m.label.replace(/\b\w/g, (c) => c.toUpperCase()) }),
-              Object.assign(document.createElement("strong"), { textContent: String(m.value) }),
+              Object.assign(document.createElement("span"), {
+                className: "text-sm",
+                textContent: m.label.replace(/\b\w/g, (c) => c.toUpperCase()),
+              }),
+              Object.assign(document.createElement("strong"), {
+                textContent: String(m.value),
+              }),
             );
             body.append(row);
           }
@@ -284,7 +368,10 @@ import "../styles/global.css";
         const result = await bootWorkspace("Insights");
         if (!applyBootResult(regions, result)) return;
         populateSwitcher(result.organizations, (o) => void loadOrganization(o));
-        const org = result.organizations.find((o) => o.organization_id === result.context.organizationId) ?? result.organizations[0];
+        const org =
+          result.organizations.find(
+            (o) => o.organization_id === result.context.organizationId,
+          ) ?? result.organizations[0];
         await loadOrganization(org);
       }
 

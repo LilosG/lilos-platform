@@ -39,7 +39,9 @@ import "../styles/global.css";
           <div class="page-head__intro">
             <p class="eyebrow">Operations</p>
             <h1>Leads</h1>
-            <p>Manage incoming leads, track lifecycle, and assign follow-up work.</p>
+            <p>
+              Manage incoming leads, track lifecycle, and assign follow-up work.
+            </p>
           </div>
         </div>
 
@@ -68,9 +70,16 @@ import "../styles/global.css";
             <p class="eyebrow">Inbox</p>
             <h2>Leads</h2>
           </div>
-          <form id="filter-form" style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center">
+          <form
+            id="filter-form"
+            style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center"
+          >
             <label class="sr-only" for="status-filter">Status</label>
-            <select id="status-filter" class="button button--secondary button--sm" aria-label="Filter leads by status">
+            <select
+              id="status-filter"
+              class="button button--secondary button--sm"
+              aria-label="Filter leads by status"
+            >
               <option value="">All statuses</option>
               <option value="new">New</option>
               <option value="validating">Validating</option>
@@ -81,8 +90,12 @@ import "../styles/global.css";
               <option value="contacted">Contacted</option>
               <option value="qualifying">Qualifying</option>
               <option value="qualified">Qualified</option>
-              <option value="appointment_requested">Appointment requested</option>
-              <option value="appointment_scheduled">Appointment scheduled</option>
+              <option value="appointment_requested"
+                >Appointment requested</option
+              >
+              <option value="appointment_scheduled"
+                >Appointment scheduled</option
+              >
               <option value="converted">Converted</option>
               <option value="nurture">Nurture</option>
               <option value="unresponsive">Unresponsive</option>
@@ -93,7 +106,11 @@ import "../styles/global.css";
               <option value="archived">Archived</option>
             </select>
             <label class="sr-only" for="urgency-filter">Urgency</label>
-            <select id="urgency-filter" class="button button--secondary button--sm" aria-label="Filter leads by urgency">
+            <select
+              id="urgency-filter"
+              class="button button--secondary button--sm"
+              aria-label="Filter leads by urgency"
+            >
               <option value="">All urgency</option>
               <option value="routine">Routine</option>
               <option value="same_day">Same day</option>
@@ -102,8 +119,16 @@ import "../styles/global.css";
               <option value="unknown">Unknown</option>
             </select>
             <label class="sr-only" for="search-input">Search</label>
-            <input id="search-input" type="search" placeholder="Search…" class="button button--secondary button--sm" style="flex:1;min-width:12rem" />
-            <button type="submit" class="button button--secondary button--sm">Apply</button>
+            <input
+              id="search-input"
+              type="search"
+              placeholder="Search…"
+              class="button button--secondary button--sm"
+              style="flex:1;min-width:12rem"
+            />
+            <button type="submit" class="button button--secondary button--sm"
+              >Apply</button
+            >
           </form>
         </div>
         <div id="leads-list-panel">

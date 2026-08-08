@@ -1,7 +1,4 @@
-export function card(
-  title?: string,
-  description?: string,
-): HTMLDivElement {
+export function card(title?: string, description?: string): HTMLDivElement {
   const card = document.createElement("div");
   card.className = "card";
   if (title) {

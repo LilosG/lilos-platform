@@ -7,11 +7,16 @@ interface Props {
 }
 const { heading, description, actionLabel, actionHref } = Astro.props;
 ---
+
 <div class="empty-state">
   <span class="empty-state__icon" aria-hidden="true">○</span>
   <h3>{heading}</h3>
   <p>{description}</p>
-  {actionLabel && actionHref && (
-    <a class="button button--secondary button--sm" href={actionHref}>{actionLabel}</a>
-  )}
+  {
+    actionLabel && actionHref && (
+      <a class="button button--secondary button--sm" href={actionHref}>
+        {actionLabel}
+      </a>
+    )
+  }
 </div>

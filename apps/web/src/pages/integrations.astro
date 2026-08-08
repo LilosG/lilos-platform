@@ -2,6 +2,7 @@
 import AppShell from "../components/AppShell.astro";
 import "../styles/global.css";
 ---
+
 <!doctype html>
 <html lang="en">
   <head>
@@ -27,7 +28,10 @@ import "../styles/global.css";
         <div class="empty-state">
           <span class="empty-state__icon" aria-hidden="true">○</span>
           <h3>No organization access yet</h3>
-          <p>Your account is not a member of any organization. Ask an administrator to invite you.</p>
+          <p>
+            Your account is not a member of any organization. Ask an
+            administrator to invite you.
+          </p>
         </div>
       </div>
 
@@ -38,7 +42,10 @@ import "../styles/global.css";
             <div class="page-head__intro">
               <p class="eyebrow">Manage</p>
               <h1>Integrations</h1>
-              <p>Connect external providers. Daily product pages consume these connections automatically.</p>
+              <p>
+                Connect external providers. Daily product pages consume these
+                connections automatically.
+              </p>
             </div>
           </div>
 
@@ -55,7 +62,11 @@ import "../styles/global.css";
             </div>
             <div class="page-head__meta">
               <div class="page-head__actions">
-                <button type="button" class="button button--secondary button--sm" id="back-to-integrations">← Back to Integrations</button>
+                <button
+                  type="button"
+                  class="button button--secondary button--sm"
+                  id="back-to-integrations">← Back to Integrations</button
+                >
               </div>
             </div>
           </div>
@@ -75,25 +86,7 @@ import "../styles/global.css";
         beginGitHubInstall,
         fetchGitHubRepositories,
       } from "../lib/github-app";
-      import {
-        fetchGitHubConnections,
-      } from "../lib/content";
-      import {
-        fetchWebsites,
-        fetchSearchProperties,
-      } from "../lib/seo";
-      import {
-        fetchSearchConsoleSummary,
-        discoverSearchConsole,
-        mapSearchConsole,
-        syncSearchConsole,
-      } from "../lib/search-console";
-      import {
-        discoverAnalytics,
-        mapAnalytics,
-        syncAnalytics,
-        fetchAnalyticsSummary,
-      } from "../lib/analytics";
+      import { fetchGitHubConnections } from "../lib/content";
       import {
         bootWorkspace,
         applyBootResult,
@@ -102,8 +95,6 @@ import "../styles/global.css";
         statusBadge,
         emptyState,
         errorAlert,
-        successAlert,
-        infoAlert,
         describeFailure,
         formatTimestamp,
         type BootRegions,
@@ -145,7 +136,9 @@ import "../styles/global.css";
         return el;
       }
 
-      document.getElementById("back-to-integrations")!.addEventListener("click", showDirectory);
+      document
+        .getElementById("back-to-integrations")!
+        .addEventListener("click", showDirectory);
 
       async function renderDirectory(): Promise<void> {
         const cards = document.getElementById("integration-cards")!;
@@ -174,23 +167,38 @@ import "../styles/global.css";
 
         const googleDesc = document.createElement("p");
         googleDesc.className = "integration-card__desc";
-        googleDesc.textContent = "Business Profile, Search Console, and Analytics";
+        googleDesc.textContent =
+          "Business Profile, Search Console, and Analytics";
 
         const googleFooter = document.createElement("div");
         googleFooter.className = "integration-card__footer";
 
-        if (googleResult.kind === "ok" && googleResult.data && googleResult.data.status === "connected") {
+        if (
+          googleResult.kind === "ok" &&
+          googleResult.data &&
+          googleResult.data.status === "connected"
+        ) {
           googleFooter.append(statusBadge("ready", "Connected"));
-        } else if (googleResult.kind === "ok" && googleResult.data && googleResult.data.status === "reconnect_required") {
+        } else if (
+          googleResult.kind === "ok" &&
+          googleResult.data &&
+          googleResult.data.status === "reconnect_required"
+        ) {
           googleFooter.append(statusBadge("blocked", "Needs attention"));
-        } else if (googleResult.kind === "error" && googleResult.code === "INTEGRATION_NOT_CONFIGURED") {
+        } else if (
+          googleResult.kind === "error" &&
+          googleResult.code === "INTEGRATION_NOT_CONFIGURED"
+        ) {
           googleFooter.append(statusBadge("missing", "Not configured"));
         } else {
           googleFooter.append(statusBadge("setup", "Not connected"));
         }
 
         googleCard.append(googleHeader, googleDesc, googleFooter);
-        googleCard.addEventListener("click", () => void openGoogle(googleResult));
+        googleCard.addEventListener(
+          "click",
+          () => void openGoogle(googleResult),
+        );
         cards.append(googleCard);
 
         // GitHub card
@@ -223,13 +231,21 @@ import "../styles/global.css";
         }
 
         githubCard.append(ghHeader, ghDesc, ghFooter);
-        githubCard.addEventListener("click", () => void openGitHub(githubResult));
+        githubCard.addEventListener(
+          "click",
+          () => void openGitHub(githubResult),
+        );
         cards.append(githubCard);
       }
 
       // ---- Google provider workspace ----
-      async function openGoogle(connectionResult: Awaited<ReturnType<typeof fetchConnectionStatus>>): Promise<void> {
-        showProvider("Google", "Manage the Google connection for Business Profile, Search Console, and Analytics.");
+      async function openGoogle(
+        connectionResult: Awaited<ReturnType<typeof fetchConnectionStatus>>,
+      ): Promise<void> {
+        showProvider(
+          "Google",
+          "Manage the Google connection for Business Profile, Search Console, and Analytics.",
+        );
         const content = providerContent;
         content.replaceChildren();
 
@@ -265,7 +281,11 @@ import "../styles/global.css";
         servicesCard.append(servicesBody);
         content.append(servicesCard);
 
-        if (connectionResult.kind === "ok" && connectionResult.data && connectionResult.data.services) {
+        if (
+          connectionResult.kind === "ok" &&
+          connectionResult.data &&
+          connectionResult.data.services
+        ) {
           const services = connectionResult.data.services;
           const list = document.createElement("ul");
           list.className = "product-list";
@@ -273,27 +293,55 @@ import "../styles/global.css";
             const item = document.createElement("li");
             const info = document.createElement("div");
             const sName = document.createElement("h3");
-            sName.textContent = name === "gbp" ? "Business Profile" : name === "search_console" ? "Search Console" : name === "analytics" ? "Analytics" : name;
+            sName.textContent =
+              name === "gbp"
+                ? "Business Profile"
+                : name === "search_console"
+                  ? "Search Console"
+                  : name === "analytics"
+                    ? "Analytics"
+                    : name;
             info.append(sName);
-            const badge = statusBadge(enabled ? "ready" : "setup", enabled ? "Enabled" : "Not enabled");
+            const badge = statusBadge(
+              enabled ? "ready" : "setup",
+              enabled ? "Enabled" : "Not enabled",
+            );
             item.append(info, badge);
             list.append(item);
           }
           servicesBody.append(list);
         } else {
-          servicesBody.append(emptyState("No services connected", "Connect Google to discover and enable individual services."));
+          servicesBody.append(
+            emptyState(
+              "No services connected",
+              "Connect Google to discover and enable individual services.",
+            ),
+          );
         }
       }
 
-      function renderGoogleConnection(panel: HTMLElement, outcome: Awaited<ReturnType<typeof fetchConnectionStatus>>): void {
+      function renderGoogleConnection(
+        panel: HTMLElement,
+        outcome: Awaited<ReturnType<typeof fetchConnectionStatus>>,
+      ): void {
         panel.replaceChildren();
 
-        if (outcome.kind === "error" && outcome.code === "INTEGRATION_NOT_CONFIGURED") {
-          panel.append(emptyState("Google connection is not configured", "This deployment has not been configured with Google OAuth credentials yet."));
+        if (
+          outcome.kind === "error" &&
+          outcome.code === "INTEGRATION_NOT_CONFIGURED"
+        ) {
+          panel.append(
+            emptyState(
+              "Google connection is not configured",
+              "This deployment has not been configured with Google OAuth credentials yet.",
+            ),
+          );
           return;
         }
         if (outcome.kind !== "ok") {
-          panel.append(errorAlert(describeFailure(outcome, "Google connection")));
+          panel.append(
+            errorAlert(describeFailure(outcome, "Google connection")),
+          );
           return;
         }
 
@@ -317,11 +365,22 @@ import "../styles/global.css";
             }
           });
           panel.append(connectBtn);
-          panel.append(Object.assign(document.createElement("p"), { className: "text-sm muted", textContent: "Connect your Google account to enable Business Profile, Search Console, and Analytics." }));
+          panel.append(
+            Object.assign(document.createElement("p"), {
+              className: "text-sm muted",
+              textContent:
+                "Connect your Google account to enable Business Profile, Search Console, and Analytics.",
+            }),
+          );
           return;
         }
 
-        const badgeKind = state.status === "connected" ? "ready" : state.status === "reconnect_required" ? "blocked" : "setup";
+        const badgeKind =
+          state.status === "connected"
+            ? "ready"
+            : state.status === "reconnect_required"
+              ? "blocked"
+              : "setup";
         panel.append(statusBadge(badgeKind, state.status));
 
         if (state.last_verified_at) {
@@ -344,7 +403,8 @@ import "../styles/global.css";
           reconnectBtn.textContent = "Reconnect Google";
           reconnectBtn.addEventListener("click", async () => {
             const result = await beginConnection(organizationId);
-            if (result.kind === "ok") window.location.assign(result.data.authorization_url);
+            if (result.kind === "ok")
+              window.location.assign(result.data.authorization_url);
             else panel.append(errorAlert(describeFailure(result, "Reconnect")));
           });
           actions.append(reconnectBtn);
@@ -389,8 +449,13 @@ import "../styles/global.css";
       }
 
       // ---- GitHub provider workspace ----
-      async function openGitHub(connectionsResult: Awaited<ReturnType<typeof fetchGitHubConnections>>): Promise<void> {
-        showProvider("GitHub", "Connect GitHub for content publishing to repositories.");
+      async function openGitHub(
+        connectionsResult: Awaited<ReturnType<typeof fetchGitHubConnections>>,
+      ): Promise<void> {
+        showProvider(
+          "GitHub",
+          "Connect GitHub for content publishing to repositories.",
+        );
         const content = providerContent;
         content.replaceChildren();
 
@@ -408,7 +473,10 @@ import "../styles/global.css";
         connCard.append(connBody);
         content.append(connCard);
 
-        if (connectionsResult.kind !== "ok" || connectionsResult.data.length === 0) {
+        if (
+          connectionsResult.kind !== "ok" ||
+          connectionsResult.data.length === 0
+        ) {
           const installBtn = document.createElement("button");
           installBtn.type = "button";
           installBtn.className = "button";
@@ -426,12 +494,23 @@ import "../styles/global.css";
             }
           });
           connBody.append(installBtn);
-          connBody.append(Object.assign(document.createElement("p"), { className: "text-sm muted", textContent: "Install the GitHub App to enable content publishing to your repositories." }));
+          connBody.append(
+            Object.assign(document.createElement("p"), {
+              className: "text-sm muted",
+              textContent:
+                "Install the GitHub App to enable content publishing to your repositories.",
+            }),
+          );
           return;
         }
 
         const conn = connectionsResult.data[0];
-        connBody.append(statusBadge(conn.status === "active" ? "ready" : "setup", conn.status));
+        connBody.append(
+          statusBadge(
+            conn.status === "active" ? "ready" : "setup",
+            conn.status,
+          ),
+        );
         if (conn.external_account_reference) {
           const ref = document.createElement("p");
           ref.className = "text-sm muted";
@@ -464,7 +543,10 @@ import "../styles/global.css";
             const detail = document.createElement("p");
             detail.textContent = `Default branch: ${repo.default_branch}`;
             info.append(name, detail);
-            const badge = statusBadge(repo.private ? "neutral" : "ready", repo.private ? "Private" : "Public");
+            const badge = statusBadge(
+              repo.private ? "neutral" : "ready",
+              repo.private ? "Private" : "Public",
+            );
             item.append(info, badge);
             list.append(item);
           }
@@ -473,7 +555,9 @@ import "../styles/global.css";
         }
       }
 
-      async function loadOrganization(org: import("../lib/workspace").MyOrganization): Promise<void> {
+      async function loadOrganization(
+        org: import("../lib/workspace").MyOrganization,
+      ): Promise<void> {
         setActiveOrganization(org);
         organizationId = org.organization_id;
         showDirectory();
@@ -484,7 +568,10 @@ import "../styles/global.css";
         const result = await bootWorkspace("Integrations");
         if (!applyBootResult(regions, result)) return;
         populateSwitcher(result.organizations, (o) => void loadOrganization(o));
-        const org = result.organizations.find((o) => o.organization_id === result.context.organizationId) ?? result.organizations[0];
+        const org =
+          result.organizations.find(
+            (o) => o.organization_id === result.context.organizationId,
+          ) ?? result.organizations[0];
         await loadOrganization(org);
       }
 

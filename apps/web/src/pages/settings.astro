@@ -2,6 +2,7 @@
 import AppShell from "../components/AppShell.astro";
 import "../styles/global.css";
 ---
+
 <!doctype html>
 <html lang="en">
   <head>
@@ -27,7 +28,10 @@ import "../styles/global.css";
         <div class="empty-state">
           <span class="empty-state__icon" aria-hidden="true">○</span>
           <h3>No organization access yet</h3>
-          <p>Your account is not a member of any organization. Ask an administrator to invite you.</p>
+          <p>
+            Your account is not a member of any organization. Ask an
+            administrator to invite you.
+          </p>
         </div>
       </div>
 
@@ -38,7 +42,10 @@ import "../styles/global.css";
             <div class="page-head__intro">
               <p class="eyebrow">Manage</p>
               <h1>Settings</h1>
-              <p>Configure this organization's business information, locations, website, users, and governance.</p>
+              <p>
+                Configure this organization's business information, locations,
+                website, users, and governance.
+              </p>
             </div>
           </div>
 
@@ -50,7 +57,9 @@ import "../styles/global.css";
                   <div class="settings-card__title">Business Information</div>
                 </div>
               </div>
-              <p class="settings-card__desc">Brand name, description, claims, tone, and call to action.</p>
+              <p class="settings-card__desc">
+                Brand name, description, claims, tone, and call to action.
+              </p>
             </button>
 
             <button class="settings-card" data-domain="locations" type="button">
@@ -60,7 +69,9 @@ import "../styles/global.css";
                   <div class="settings-card__title">Locations</div>
                 </div>
               </div>
-              <p class="settings-card__desc">Manage business locations and their status.</p>
+              <p class="settings-card__desc">
+                Manage business locations and their status.
+              </p>
             </button>
 
             <button class="settings-card" data-domain="website" type="button">
@@ -70,7 +81,9 @@ import "../styles/global.css";
                   <div class="settings-card__title">Website & Domain</div>
                 </div>
               </div>
-              <p class="settings-card__desc">Domains associated with this organization.</p>
+              <p class="settings-card__desc">
+                Domains associated with this organization.
+              </p>
             </button>
 
             <button class="settings-card" data-domain="users" type="button">
@@ -80,17 +93,25 @@ import "../styles/global.css";
                   <div class="settings-card__title">Users & Access</div>
                 </div>
               </div>
-              <p class="settings-card__desc">Team members, invitations, and role assignments.</p>
+              <p class="settings-card__desc">
+                Team members, invitations, and role assignments.
+              </p>
             </button>
 
-            <button class="settings-card" data-domain="governance" type="button">
+            <button
+              class="settings-card"
+              data-domain="governance"
+              type="button"
+            >
               <div class="settings-card__header">
                 <span class="settings-card__icon" aria-hidden="true">G</span>
                 <div>
                   <div class="settings-card__title">Governance & Approvals</div>
                 </div>
               </div>
-              <p class="settings-card__desc">Approval policies, business facts, and notification rules.</p>
+              <p class="settings-card__desc">
+                Approval policies, business facts, and notification rules.
+              </p>
             </button>
 
             <button class="settings-card" data-domain="products" type="button">
@@ -100,7 +121,9 @@ import "../styles/global.css";
                   <div class="settings-card__title">Products</div>
                 </div>
               </div>
-              <p class="settings-card__desc">Enabled products and their readiness state.</p>
+              <p class="settings-card__desc">
+                Enabled products and their readiness state.
+              </p>
             </button>
           </div>
         </div>
@@ -115,7 +138,11 @@ import "../styles/global.css";
             </div>
             <div class="page-head__meta">
               <div class="page-head__actions">
-                <button type="button" class="button button--secondary button--sm" id="back-to-settings">← Back to Settings</button>
+                <button
+                  type="button"
+                  class="button button--secondary button--sm"
+                  id="back-to-settings">← Back to Settings</button
+                >
               </div>
             </div>
           </div>
@@ -129,11 +156,8 @@ import "../styles/global.css";
         replaceOrganizationProfile,
         fetchOrganizationDomains,
         type OrganizationProfile,
-        type OrganizationDomain,
       } from "../lib/settings";
-      import {
-        fetchLocations,
-      } from "../lib/workspace";
+      import { fetchLocations } from "../lib/workspace";
       import {
         fetchBusinessFactCandidates,
         decideBusinessFact,
@@ -143,9 +167,6 @@ import "../styles/global.css";
         fetchMemberships,
         fetchInvitations,
         fetchProducts,
-        type BusinessFactRevision,
-        type Membership,
-        type Invitation,
       } from "../lib/administration";
       import {
         bootWorkspace,
@@ -156,7 +177,6 @@ import "../styles/global.css";
         emptyState,
         errorAlert,
         describeFailure,
-        goToLogin,
         type BootRegions,
       } from "../lib/ui";
 
@@ -196,54 +216,87 @@ import "../styles/global.css";
         return el;
       }
 
-      document.getElementById("back-to-settings")!.addEventListener("click", showDirectory);
+      document
+        .getElementById("back-to-settings")!
+        .addEventListener("click", showDirectory);
 
       // Wire settings cards
-      document.querySelectorAll<HTMLElement>("[data-domain]").forEach((card) => {
-        card.addEventListener("click", () => {
-          const domain = card.dataset.domain!;
-          switch (domain) {
-            case "business": void openBusiness(); break;
-            case "locations": void openLocations(); break;
-            case "website": void openWebsite(); break;
-            case "users": void openUsers(); break;
-            case "governance": void openGovernance(); break;
-            case "products": void openProducts(); break;
-          }
+      document
+        .querySelectorAll<HTMLElement>("[data-domain]")
+        .forEach((card) => {
+          card.addEventListener("click", () => {
+            const domain = card.dataset.domain!;
+            switch (domain) {
+              case "business":
+                void openBusiness();
+                break;
+              case "locations":
+                void openLocations();
+                break;
+              case "website":
+                void openWebsite();
+                break;
+              case "users":
+                void openUsers();
+                break;
+              case "governance":
+                void openGovernance();
+                break;
+              case "products":
+                void openProducts();
+                break;
+            }
+          });
         });
-      });
 
       // ---- Business Information ----
       async function openBusiness(): Promise<void> {
-        showDomain("Business Information", "Edit this client's brand details, description, and approved claims.");
+        showDomain(
+          "Business Information",
+          "Edit this client's brand details, description, and approved claims.",
+        );
         const result = await fetchOrganizationProfile(organizationId);
         if (result.kind === "not-found") {
           domainContent.replaceChildren(
-            emptyState("No business profile yet", "Create a business profile to start confirming business facts."),
+            emptyState(
+              "No business profile yet",
+              "Create a business profile to start confirming business facts.",
+            ),
           );
           return;
         }
         if (result.kind !== "ok") {
-          domainContent.replaceChildren(errorAlert(describeFailure(result, "Business profile")));
+          domainContent.replaceChildren(
+            errorAlert(describeFailure(result, "Business profile")),
+          );
           return;
         }
         domainContent.replaceChildren(renderBusinessForm(result.data));
       }
 
-      function renderBusinessForm(profile: OrganizationProfile): HTMLFormElement {
+      function renderBusinessForm(
+        profile: OrganizationProfile,
+      ): HTMLFormElement {
         const form = document.createElement("form");
         form.id = "profile-form";
         const grid = document.createElement("div");
         grid.className = "form-grid";
 
-        function field(id: string, label: string, value: string | null, multiline = false): HTMLDivElement {
+        function field(
+          id: string,
+          label: string,
+          value: string | null,
+          multiline = false,
+        ): HTMLDivElement {
           const f = document.createElement("div");
           f.className = "field";
           const lbl = document.createElement("label");
           lbl.htmlFor = id;
           lbl.textContent = label;
           f.append(lbl);
-          const inp = multiline ? document.createElement("textarea") : document.createElement("input");
+          const inp = multiline
+            ? document.createElement("textarea")
+            : document.createElement("input");
           inp.id = id;
           (inp as HTMLInputElement).value = value ?? "";
           if (multiline) (inp as HTMLTextAreaElement).rows = 3;
@@ -252,14 +305,31 @@ import "../styles/global.css";
         }
 
         grid.append(
-          field("profile-brand-name", "Business / brand name", profile.brand_name),
-          field("profile-call-to-action", "Default call to action", profile.default_call_to_action),
+          field(
+            "profile-brand-name",
+            "Business / brand name",
+            profile.brand_name,
+          ),
+          field(
+            "profile-call-to-action",
+            "Default call to action",
+            profile.default_call_to_action,
+          ),
           field("profile-summary", "Brand summary", profile.brand_summary),
         );
-        const desc = field("profile-description", "Business description", profile.business_description, true);
+        const desc = field(
+          "profile-description",
+          "Business description",
+          profile.business_description,
+          true,
+        );
         desc.classList.add("field--full");
         grid.append(desc);
-        const claims = field("profile-approved-claims", "Approved claims (comma-separated)", (profile.approved_claims ?? []).join(", "));
+        const claims = field(
+          "profile-approved-claims",
+          "Approved claims (comma-separated)",
+          (profile.approved_claims ?? []).join(", "),
+        );
         claims.classList.add("field--full");
         grid.append(claims);
         form.append(grid);
@@ -280,12 +350,31 @@ import "../styles/global.css";
 
         form.addEventListener("submit", async (event) => {
           event.preventDefault();
-          const claimsValue = (document.getElementById("profile-approved-claims") as HTMLInputElement).value.split(",").map((s) => s.trim()).filter(Boolean);
+          const claimsValue = (
+            document.getElementById(
+              "profile-approved-claims",
+            ) as HTMLInputElement
+          ).value
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean);
           status.textContent = "Saving…";
           const result = await replaceOrganizationProfile(organizationId, {
-            brand_name: (document.getElementById("profile-brand-name") as HTMLInputElement).value || null,
-            brand_summary: (document.getElementById("profile-summary") as HTMLInputElement).value || null,
-            business_description: (document.getElementById("profile-description") as HTMLTextAreaElement).value || null,
+            brand_name:
+              (
+                document.getElementById(
+                  "profile-brand-name",
+                ) as HTMLInputElement
+              ).value || null,
+            brand_summary:
+              (document.getElementById("profile-summary") as HTMLInputElement)
+                .value || null,
+            business_description:
+              (
+                document.getElementById(
+                  "profile-description",
+                ) as HTMLTextAreaElement
+              ).value || null,
             value_proposition: profile.value_proposition,
             target_customer: profile.target_customer,
             primary_services: profile.primary_services,
@@ -293,12 +382,18 @@ import "../styles/global.css";
             prohibited_claims: profile.prohibited_claims,
             tone_guidelines: profile.tone_guidelines,
             legal_disclaimers: profile.legal_disclaimers,
-            default_call_to_action: (document.getElementById("profile-call-to-action") as HTMLInputElement).value || null,
+            default_call_to_action:
+              (
+                document.getElementById(
+                  "profile-call-to-action",
+                ) as HTMLInputElement
+              ).value || null,
             expected_version: profile.version,
           });
           if (result.kind === "ok") {
             profile.version = result.data.version;
-            status.textContent = "Saved. Run \u201cGenerate facts\u201d to candidate the updated details.";
+            status.textContent =
+              "Saved. Run \u201cGenerate facts\u201d to candidate the updated details.";
           } else {
             status.textContent = describeFailure(result, "Save");
           }
@@ -308,15 +403,25 @@ import "../styles/global.css";
 
       // ---- Locations ----
       async function openLocations(): Promise<void> {
-        showDomain("Locations", "Manage business locations for this organization.");
+        showDomain(
+          "Locations",
+          "Manage business locations for this organization.",
+        );
         const result = await fetchLocations(organizationId);
         if (result.kind !== "ok") {
-          domainContent.replaceChildren(errorAlert(describeFailure(result, "Locations")));
+          domainContent.replaceChildren(
+            errorAlert(describeFailure(result, "Locations")),
+          );
           return;
         }
         if (result.data.length === 0) {
           domainContent.replaceChildren(
-            emptyState("No locations yet", "Add locations for this organization to start managing business profiles and operations.", "Add in Onboarding", "/onboarding"),
+            emptyState(
+              "No locations yet",
+              "Add locations for this organization to start managing business profiles and operations.",
+              "Add in Onboarding",
+              "/onboarding",
+            ),
           );
           return;
         }
@@ -328,9 +433,14 @@ import "../styles/global.css";
           const name = document.createElement("h3");
           name.textContent = loc.name;
           const detail = document.createElement("p");
-          detail.textContent = loc.is_primary ? `${loc.status} · Primary` : loc.status;
+          detail.textContent = loc.is_primary
+            ? `${loc.status} · Primary`
+            : loc.status;
           info.append(name, detail);
-          const badge = statusBadge(loc.is_primary ? "ready" : "neutral", loc.status);
+          const badge = statusBadge(
+            loc.is_primary ? "ready" : "neutral",
+            loc.status,
+          );
           item.append(info, badge);
           list.append(item);
         }
@@ -339,15 +449,25 @@ import "../styles/global.css";
 
       // ---- Website & Domain ----
       async function openWebsite(): Promise<void> {
-        showDomain("Website & Domain", "Domains associated with this organization.");
+        showDomain(
+          "Website & Domain",
+          "Domains associated with this organization.",
+        );
         const result = await fetchOrganizationDomains(organizationId);
         if (result.kind !== "ok") {
-          domainContent.replaceChildren(errorAlert(describeFailure(result, "Domains")));
+          domainContent.replaceChildren(
+            errorAlert(describeFailure(result, "Domains")),
+          );
           return;
         }
         if (result.data.length === 0) {
           domainContent.replaceChildren(
-            emptyState("No domains yet", "Add a domain for this organization during onboarding.", "Go to Onboarding", "/onboarding"),
+            emptyState(
+              "No domains yet",
+              "Add a domain for this organization during onboarding.",
+              "Go to Onboarding",
+              "/onboarding",
+            ),
           );
           return;
         }
@@ -359,9 +479,14 @@ import "../styles/global.css";
           const name = document.createElement("h3");
           name.textContent = dom.domain;
           const detail = document.createElement("p");
-          detail.textContent = dom.is_primary ? `${dom.status} · Primary` : dom.status;
+          detail.textContent = dom.is_primary
+            ? `${dom.status} · Primary`
+            : dom.status;
           info.append(name, detail);
-          const badge = statusBadge(dom.status === "verified" ? "ready" : "neutral", dom.status);
+          const badge = statusBadge(
+            dom.status === "verified" ? "ready" : "neutral",
+            dom.status,
+          );
           item.append(info, badge);
           list.append(item);
         }
@@ -370,7 +495,10 @@ import "../styles/global.css";
 
       // ---- Users & Access ----
       async function openUsers(): Promise<void> {
-        showDomain("Users & Access", "Team members, invitations, and role assignments.");
+        showDomain(
+          "Users & Access",
+          "Team members, invitations, and role assignments.",
+        );
         const [membersResult, invitationsResult] = await Promise.all([
           fetchMemberships(organizationId),
           fetchInvitations(organizationId),
@@ -383,7 +511,12 @@ import "../styles/global.css";
           card.className = "card";
           const header = document.createElement("div");
           header.className = "card__header";
-          header.append(Object.assign(document.createElement("h3"), { className: "card__title", textContent: "Members" }));
+          header.append(
+            Object.assign(document.createElement("h3"), {
+              className: "card__title",
+              textContent: "Members",
+            }),
+          );
           card.append(header);
           const body = document.createElement("div");
           body.className = "card__body";
@@ -397,7 +530,10 @@ import "../styles/global.css";
             const detail = document.createElement("p");
             detail.textContent = member.user_profile_id;
             info.append(name, detail);
-            const badge = statusBadge(member.status === "active" ? "ready" : "blocked", member.status);
+            const badge = statusBadge(
+              member.status === "active" ? "ready" : "blocked",
+              member.status,
+            );
             item.append(info, badge);
             list.append(item);
           }
@@ -406,12 +542,20 @@ import "../styles/global.css";
           sections.push(card);
         }
 
-        if (invitationsResult.kind === "ok" && invitationsResult.data.length > 0) {
+        if (
+          invitationsResult.kind === "ok" &&
+          invitationsResult.data.length > 0
+        ) {
           const card = document.createElement("div");
           card.className = "card";
           const header = document.createElement("div");
           header.className = "card__header";
-          header.append(Object.assign(document.createElement("h3"), { className: "card__title", textContent: "Pending Invitations" }));
+          header.append(
+            Object.assign(document.createElement("h3"), {
+              className: "card__title",
+              textContent: "Pending Invitations",
+            }),
+          );
           card.append(header);
           const body = document.createElement("div");
           body.className = "card__body";
@@ -425,7 +569,10 @@ import "../styles/global.css";
             const detail = document.createElement("p");
             detail.textContent = `Expires ${new Date(inv.expires_at).toLocaleDateString()}`;
             info.append(name, detail);
-            const badge = statusBadge(inv.status === "pending" ? "setup" : "neutral", inv.status);
+            const badge = statusBadge(
+              inv.status === "pending" ? "setup" : "neutral",
+              inv.status,
+            );
             item.append(info, badge);
             list.append(item);
           }
@@ -436,7 +583,12 @@ import "../styles/global.css";
 
         if (sections.length === 0) {
           domainContent.replaceChildren(
-            emptyState("No team members yet", "Add or invite team members during onboarding.", "Go to Onboarding", "/onboarding"),
+            emptyState(
+              "No team members yet",
+              "Add or invite team members during onboarding.",
+              "Go to Onboarding",
+              "/onboarding",
+            ),
           );
           return;
         }
@@ -445,7 +597,10 @@ import "../styles/global.css";
 
       // ---- Governance & Approvals ----
       async function openGovernance(): Promise<void> {
-        showDomain("Governance & Approvals", "Approval policies, business facts, and notification rules.");
+        showDomain(
+          "Governance & Approvals",
+          "Approval policies, business facts, and notification rules.",
+        );
 
         const [policyResult, factsResult] = await Promise.all([
           fetchEffectivePolicies(organizationId, "approval"),
@@ -473,7 +628,10 @@ import "../styles/global.css";
           note.className = "text-sm muted";
           note.textContent = "An approval policy is in place.";
           policyBody.append(badge, note);
-        } else if (policyResult.kind === "not-found" || (policyResult.kind === "ok" && policyResult.data.length === 0)) {
+        } else if (
+          policyResult.kind === "not-found" ||
+          (policyResult.kind === "ok" && policyResult.data.length === 0)
+        ) {
           const badge = statusBadge("blocked", "Missing");
           const note = document.createElement("p");
           note.className = "text-sm muted";
@@ -499,7 +657,9 @@ import "../styles/global.css";
           });
           policyBody.append(provisionBtn);
         } else {
-          policyBody.append(errorAlert(describeFailure(policyResult, "Policy")));
+          policyBody.append(
+            errorAlert(describeFailure(policyResult, "Policy")),
+          );
         }
         policyCard.append(policyBody);
         sections.push(policyCard);
@@ -524,7 +684,9 @@ import "../styles/global.css";
             const item = document.createElement("li");
             const info = document.createElement("div");
             const name = document.createElement("h3");
-            name.textContent = candidate.fact_key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+            name.textContent = candidate.fact_key
+              .replace(/_/g, " ")
+              .replace(/\b\w/g, (c) => c.toUpperCase());
             const detail = document.createElement("p");
             detail.textContent = String(candidate.value);
             info.append(name, detail);
@@ -535,7 +697,11 @@ import "../styles/global.css";
             confirmBtn.addEventListener("click", async () => {
               confirmBtn.disabled = true;
               confirmBtn.textContent = "Confirming…";
-              const result = await decideBusinessFact(organizationId, candidate.id, "approve");
+              const result = await decideBusinessFact(
+                organizationId,
+                candidate.id,
+                "approve",
+              );
               if (result.kind === "ok") {
                 item.remove();
               } else {
@@ -566,7 +732,10 @@ import "../styles/global.css";
             }
           });
           factsBody.append(
-            emptyState("No business details awaiting confirmation", "Generate candidates from this client's business profile, location, and domain."),
+            emptyState(
+              "No business details awaiting confirmation",
+              "Generate candidates from this client's business profile, location, and domain.",
+            ),
           );
           factsBody.append(reconcileBtn);
         } else {
@@ -583,11 +752,18 @@ import "../styles/global.css";
         showDomain("Products", "Enabled products and their readiness state.");
         const result = await fetchProducts(organizationId);
         if (result.kind !== "ok") {
-          domainContent.replaceChildren(errorAlert(describeFailure(result, "Products")));
+          domainContent.replaceChildren(
+            errorAlert(describeFailure(result, "Products")),
+          );
           return;
         }
         if (result.data.length === 0) {
-          domainContent.replaceChildren(emptyState("No products available", "Products will appear here once configured."));
+          domainContent.replaceChildren(
+            emptyState(
+              "No products available",
+              "Products will appear here once configured.",
+            ),
+          );
           return;
         }
         const list = document.createElement("ul");
@@ -600,14 +776,19 @@ import "../styles/global.css";
           const detail = document.createElement("p");
           detail.textContent = product.description || product.key;
           info.append(name, detail);
-          const badge = statusBadge(product.status === "active" ? "ready" : "neutral", product.status);
+          const badge = statusBadge(
+            product.status === "active" ? "ready" : "neutral",
+            product.status,
+          );
           item.append(info, badge);
           list.append(item);
         }
         domainContent.replaceChildren(list);
       }
 
-      async function loadOrganization(org: import("../lib/workspace").MyOrganization): Promise<void> {
+      async function loadOrganization(
+        org: import("../lib/workspace").MyOrganization,
+      ): Promise<void> {
         setActiveOrganization(org);
         organizationId = org.organization_id;
         showDirectory();
@@ -617,7 +798,10 @@ import "../styles/global.css";
         const result = await bootWorkspace("Settings");
         if (!applyBootResult(regions, result)) return;
         populateSwitcher(result.organizations, (o) => void loadOrganization(o));
-        const org = result.organizations.find((o) => o.organization_id === result.context.organizationId) ?? result.organizations[0];
+        const org =
+          result.organizations.find(
+            (o) => o.organization_id === result.context.organizationId,
+          ) ?? result.organizations[0];
         await loadOrganization(org);
       }
 
