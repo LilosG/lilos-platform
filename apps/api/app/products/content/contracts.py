@@ -5,13 +5,13 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class GitHubConnectionCreate(BaseModel):
-    """Register an application-side GitHub integration connection.
+    """Register an application-side GitHub connection (PAT fallback).
 
-    The GitHub access token is an externally-obtained credential (created in
-    GitHub); this stores it encrypted-at-rest through the platform secret store
-    and records the opaque ``credential_reference`` on the connection. The
-    optional ``external_account_reference`` is the GitHub account/repo slug the
-    operator is binding (e.g. ``org/site-repo``).
+    This is the **advanced/developer fallback** path. Normal production
+    publishing uses the GitHub App installation flow
+    (``POST .../integrations/github/install``), which mints short-lived
+    installation tokens and never persists a long-lived credential. This PAT
+    path remains for local development or app-less environments.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")

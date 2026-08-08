@@ -111,6 +111,11 @@ import "../styles/global.css";
     type GoogleServices,
   } from "../lib/gbp-connection";
   import { fetchGitHubConnections } from "../lib/content";
+  import {
+    beginGitHubInstall,
+    fetchGitHubRepositories,
+    type GitHubRepository,
+  } from "../lib/github-app";
   import { fetchWebsites, fetchSearchProperties } from "../lib/seo";
   import {
     discoverSearchConsole,
@@ -331,29 +336,59 @@ import "../styles/global.css";
       panel.append(
         badge("missing", "Not connected"),
         document.createTextNode(
-          " Connect a GitHub repository from the Content workspace to enable publishing.",
+          " Install the LILOs GitHub App to enable content publishing.",
         ),
       );
-      const link = document.createElement("a");
-      link.href = `/content?org=${organizationId}`;
-      link.textContent = "Go to Content →";
-      link.className = "button button--secondary button--sm";
-      panel.append(link);
+      panel.append(
+        actionButton("Connect GitHub", async () => {
+          const r = await beginGitHubInstall(organizationId);
+          if (r.kind === "ok") window.location.assign(r.data.authorization_url);
+          else alert(describeFailure(r));
+        }),
+      );
       return;
     }
+    const conn = result.data[0];
+    const isApp = conn.external_account_reference?.startsWith("installation:");
     const list = document.createElement("ul");
     list.className = "product-list";
-    for (const conn of result.data) {
-      const row = document.createElement("li");
-      const info = document.createElement("div");
-      info.className = "product-list__info";
-      const name = document.createElement("strong");
-      name.textContent = conn.external_account_reference || "GitHub";
-      info.append(name, badge("connected", "Connected"));
-      row.append(info);
-      list.append(row);
-    }
+    const row = document.createElement("li");
+    const info = document.createElement("div");
+    info.className = "product-list__info";
+    const name = document.createElement("strong");
+    name.textContent = isApp
+      ? "GitHub App"
+      : conn.external_account_reference || "GitHub";
+    info.append(name, badge("connected", "Connected"));
+    row.append(info);
+    list.append(row);
     panel.append(list);
+
+    // Show accessible repositories for GitHub App connections.
+    if (isApp) {
+      const repos = await fetchGitHubRepositories(organizationId);
+      if (repos.kind === "ok" && repos.data.length > 0) {
+        const repoNote = document.createElement("p");
+        repoNote.className = "field-hint";
+        repoNote.textContent = `Accessible repositories: ${repos.data.map((r: GitHubRepository) => r.repository_id).join(", ")}.`;
+        panel.append(repoNote);
+      }
+    }
+    const note = document.createElement("p");
+    note.className = "field-hint";
+    note.textContent = isApp
+      ? "Publishing uses short-lived installation tokens. Configure a publishing target in the Content workspace."
+      : "Using a personal access token (advanced fallback). Install the GitHub App for normal production.";
+    panel.append(note);
+    if (!isApp) {
+      panel.append(
+        actionButton("Install GitHub App", async () => {
+          const r = await beginGitHubInstall(organizationId);
+          if (r.kind === "ok") window.location.assign(r.data.authorization_url);
+          else alert(describeFailure(r));
+        }),
+      );
+    }
   }
 
   async function renderSearchConsole(): Promise<void> {

@@ -74,6 +74,14 @@ class Settings(BaseSettings):
     google_oauth_redirect_uri: HttpUrl | None = None
     secret_encryption_key: Annotated[str, Field(min_length=1, max_length=255)] | None = None
     secret_encryption_key_version: Annotated[int, Field(ge=1)] = 1
+    # GitHub App (normal production publishing). The private key is the PEM
+    # string configured in the secret manager; it is never committed and never
+    # returned by any API. Installation access tokens are minted server-side
+    # from the installation id and never persisted.
+    github_app_id: Annotated[str, Field(min_length=1, max_length=64)] | None = None
+    github_app_client_id: Annotated[str, Field(min_length=1, max_length=64)] | None = None
+    github_app_private_key: Annotated[str, Field(min_length=1, max_length=20_000)] | None = None
+    github_app_installation_redirect_uri: HttpUrl | None = None
     service_name: ClassVar[str] = "lilos-api"
 
     @field_validator("web_origins")

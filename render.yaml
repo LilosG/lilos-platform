@@ -59,6 +59,14 @@ services:
         sync: false
       - key: LILOS_SECRET_ENCRYPTION_KEY
         sync: false
+      - key: LILOS_GITHUB_APP_ID
+        sync: false
+      - key: LILOS_GITHUB_APP_CLIENT_ID
+        sync: false
+      - key: LILOS_GITHUB_APP_PRIVATE_KEY
+        sync: false
+      - key: LILOS_GITHUB_APP_INSTALLATION_REDIRECT_URI
+        sync: false
 
   - name: lilos-worker
     type: worker

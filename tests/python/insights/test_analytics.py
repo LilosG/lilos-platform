@@ -72,9 +72,7 @@ async def make_organization(session: AsyncSession) -> Organization:
     return org
 
 
-async def make_website(
-    session: AsyncSession, organization_id: UUID, origin: str
-) -> SEOWebsite:
+async def make_website(session: AsyncSession, organization_id: UUID, origin: str) -> SEOWebsite:
     website = SEOWebsite(
         organization_id=organization_id,
         location_id=None,

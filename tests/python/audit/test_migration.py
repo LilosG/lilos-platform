@@ -88,6 +88,7 @@ def test_audit_migration_upgrades_downgrades_and_restores_head(
             "ai_executions",
             "ai_task_definitions",
             "alembic_version",
+            "analytics_properties",
             "audit_events",
             "business_fact_revisions",
             "configuration_definitions",

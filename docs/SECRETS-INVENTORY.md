@@ -10,7 +10,7 @@ No production secret manager or values were available for this milestone; all pr
 
 Every Render service receives safe non-secret values from `lilos-production-runtime` and derives `LILOS_RELEASE` from its own `RENDER_GIT_COMMIT`. The Blueprint declares these value-less service variables with `sync: false`:
 
-- API: `LILOS_DATABASE_URL`, `LILOS_MIGRATION_DATABASE_URL`, `LILOS_SUPABASE_AUTH_ISSUER`, `LILOS_SUPABASE_AUTH_JWKS_URL`, `LILOS_TELEMETRY_EXPORT_ENDPOINT`, `LILOS_GOOGLE_OAUTH_CLIENT_ID`, `LILOS_GOOGLE_OAUTH_CLIENT_SECRET`, `LILOS_GOOGLE_OAUTH_REDIRECT_URI`, `LILOS_SECRET_ENCRYPTION_KEY`.
+- API: `LILOS_DATABASE_URL`, `LILOS_MIGRATION_DATABASE_URL`, `LILOS_SUPABASE_AUTH_ISSUER`, `LILOS_SUPABASE_AUTH_JWKS_URL`, `LILOS_TELEMETRY_EXPORT_ENDPOINT`, `LILOS_WEB_ORIGINS`, `LILOS_GOOGLE_OAUTH_CLIENT_ID`, `LILOS_GOOGLE_OAUTH_CLIENT_SECRET`, `LILOS_GOOGLE_OAUTH_REDIRECT_URI`, `LILOS_SECRET_ENCRYPTION_KEY`, `LILOS_GITHUB_APP_ID`, `LILOS_GITHUB_APP_CLIENT_ID`, `LILOS_GITHUB_APP_PRIVATE_KEY`, `LILOS_GITHUB_APP_INSTALLATION_REDIRECT_URI`.
 - Worker and scheduler: `LILOS_DATABASE_URL`, `LILOS_SUPABASE_AUTH_ISSUER`, `LILOS_SUPABASE_AUTH_JWKS_URL`, `LILOS_TELEMETRY_EXPORT_ENDPOINT`.
 
 The database URL must use the dedicated least-privilege Supabase application identity. The migration URL must use the separately approved migration identity and is available only to the API pre-deploy instance. Auth endpoints and telemetry destinations are treated as controlled production configuration even when they are not credentials. Notification, AI, repository, and alert credentials remain outside the Blueprint until their actual configuration contracts and approved secret references exist.
