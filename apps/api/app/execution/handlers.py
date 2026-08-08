@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable, Sequence
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,6 +23,9 @@ from apps.api.app.integrations.errors import (
 )
 from apps.api.app.integrations.models import IntegrationConnection
 from apps.api.app.products.gbp.adapter import GBPAdapter, GoogleBusinessProfileAdapter
+
+if TYPE_CHECKING:
+    from apps.api.app.config import Settings
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +44,39 @@ def _production_content_publisher_factory(access_token: str) -> Any:
 
 
 _content_publisher_factory: Callable[[str], Any] = _production_content_publisher_factory
+
+
+# GitHub credential resolver — resolves a short-lived installation access token
+# for GitHub-App connections (normal production) or falls back to a stored PAT
+# (advanced/developer fallback). Tests can override to bypass real GitHub.
+async def _production_github_token_resolver(
+    session: AsyncSession, settings: Settings, connection: IntegrationConnection
+) -> str:
+    import json
+
+    from apps.api.app.integrations.secrets import FernetSecretStore, SecretUnavailableError
+    from apps.api.app.products.content.github_app_service import (
+        GitHubAppService,
+        installation_id_from_reference,
+    )
+
+    # Normal production: a GitHub App installation. Mint a short-lived token.
+    installation_id = installation_id_from_reference(connection.external_account_reference)
+    if installation_id is not None:
+        app_service = GitHubAppService()
+        token = await app_service.create_installation_token(settings, installation_id)
+        return token.token
+    # Advanced/developer fallback: a stored PAT.
+    if not connection.credential_reference:
+        raise SecretUnavailableError("no GitHub credential configured")
+    store = FernetSecretStore.create(session, settings)
+    raw = await store.get(connection.credential_reference)
+    return str(json.loads(raw)["access_token"])
+
+
+_github_token_resolver: Callable[[AsyncSession, Any, IntegrationConnection], Any] = (
+    _production_github_token_resolver
+)
 
 
 # Token resolver — production uses the real GBP connection lifecycle; tests
@@ -523,14 +559,10 @@ async def _handle_content_publish(
     fails with a clear external-blocker error code so the operator sees the one
     genuine remaining dependency rather than a fabricated failure.
     """
-    import json
     from datetime import UTC, datetime
 
     from sqlalchemy import select
 
-    from apps.api.app.config import Settings
-    from apps.api.app.integrations.models import IntegrationConnection
-    from apps.api.app.integrations.secrets import FernetSecretStore, SecretUnavailableError
     from apps.api.app.products.content.adapter import RepositoryPublisher
     from apps.api.app.products.content.models import (
         ContentPublication,
@@ -577,16 +609,21 @@ async def _handle_content_publish(
         publication.safe_error_code = "GITHUB_CONNECTION_REQUIRED"
         return JobOutcome(result="permanent_failure", safe_error="GITHUB_CONNECTION_REQUIRED")
 
-    if not connection.credential_reference:
+    # A GitHub App installation stores no long-lived credential; a PAT
+    # fallback stores one in the secret store. The resolver handles both.
+    if not connection.credential_reference and not (
+        connection.external_account_reference
+        and connection.external_account_reference.startswith("installation:")
+    ):
         publication.status = "failed"
         publication.safe_error_code = "GITHUB_CREDENTIAL_REQUIRED"
         return JobOutcome(result="permanent_failure", safe_error="GITHUB_CREDENTIAL_REQUIRED")
 
+    from apps.api.app.config import Settings
+
     try:
-        store = FernetSecretStore.create(session, Settings())
-        raw = await store.get(connection.credential_reference)
-        token = str(json.loads(raw)["access_token"])
-    except (SecretUnavailableError, KeyError, ValueError, TypeError):
+        token = str(await _github_token_resolver(session, Settings(), connection))
+    except Exception:
         publication.status = "failed"
         publication.safe_error_code = "GITHUB_CREDENTIAL_REQUIRED"
         return JobOutcome(result="permanent_failure", safe_error="GITHUB_CREDENTIAL_REQUIRED")

@@ -91,6 +91,11 @@ test("unconfigured Business Profile page shows a truthful not-configured state, 
   await expect(
     page.getByText("Example Business", { exact: false }),
   ).toHaveCount(0);
+  // The engineering-oriented raw capability-key/field inputs must not appear;
+  // they are replaced by a task-specific dropdown.
+  await expect(page.locator("#change-capability-key")).toHaveCount(0);
+  await expect(page.locator("#change-field")).toHaveCount(0);
+  await expect(page.locator("#change-task")).toHaveCount(1);
   const results = await new AxeBuilder({ page }).analyze();
   expect(
     results.violations.filter((item) =>
@@ -179,6 +184,8 @@ test("unconfigured SEO page shows a truthful not-configured state, not fabricate
   await expect(
     page.getByText("No confirmed websites yet", { exact: false }),
   ).toHaveCount(0);
+  // The engineering-oriented raw "website key" input must not appear.
+  await expect(page.locator("#website-key")).toHaveCount(0);
   const results = await new AxeBuilder({ page }).analyze();
   expect(
     results.violations.filter((item) =>
@@ -232,6 +239,8 @@ const PROTECTED_ROUTES: ReadonlyArray<{ path: string; heading: string }> = [
   { path: "/content", heading: "This deployment is not configured" },
   { path: "/seo", heading: "This deployment is not configured" },
   { path: "/insights", heading: "This deployment is not configured" },
+  { path: "/settings", heading: "This deployment is not configured" },
+  { path: "/integrations", heading: "This deployment is not configured" },
   { path: "/administration", heading: "This deployment is not configured" },
   { path: "/onboarding", heading: "This deployment is not configured" },
 ];

@@ -11,6 +11,8 @@ describe("navigation", () => {
       "content",
       "seo",
       "insights",
+      "settings",
+      "integrations",
       "admin",
       "onboarding",
     ]);

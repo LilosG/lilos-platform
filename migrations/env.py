@@ -80,6 +80,7 @@ from apps.api.app.observability.models import (
     SLORecord,
 )
 from apps.api.app.organizations.models import Organization
+from apps.api.app.products.analytics.models import AnalyticsProperty
 from apps.api.app.products.content.models import (
     ContentBrief,
     ContentItem,
@@ -156,6 +157,7 @@ assert LocationGroup.metadata is target_metadata
 assert LocationGroupMembership.metadata is target_metadata
 assert OrganizationProfile.metadata is target_metadata
 assert LocationProfile.metadata is target_metadata
+assert AnalyticsProperty.metadata is target_metadata
 assert UserProfile.metadata is target_metadata
 assert OrganizationMembership.metadata is target_metadata
 assert OrganizationInvitation.metadata is target_metadata

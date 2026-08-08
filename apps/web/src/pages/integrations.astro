@@ -1,0 +1,804 @@
+---
+import AppShell from "../components/AppShell.astro";
+import "../styles/global.css";
+---
+
+<!doctype html>
+<html lang="en">
+  <head
+    ><meta charset="UTF-8" /><meta
+      name="viewport"
+      content="width=device-width, initial-scale=1"
+    /><meta name="description" content="LILOs integrations" /><title>
+      Integrations · LILOs
+    </title></head
+  >
+  <body
+    ><AppShell>
+      <div id="boot-not-configured" role="status">
+        <h1>This deployment is not configured</h1><p>
+          No Supabase or API connection is configured for this build.
+        </p>
+      </div>
+
+      <div id="boot-loading" role="status" aria-live="polite" hidden>
+        <p>Loading Integrations…</p>
+      </div>
+
+      <div id="boot-error" class="alert alert--error" role="alert" hidden></div>
+
+      <div id="workspace-empty" role="status" hidden>
+        <h1>No organization access yet</h1><p>
+          Your account is not a member of any organization. Ask an administrator
+          to invite you.
+        </p>
+      </div>
+
+      <div id="integrations-content" hidden>
+        <section id="overview" aria-labelledby="page-title">
+          <p class="eyebrow">Integrations</p><h1 id="page-title">
+            Integrations
+          </h1><p class="field-hint">
+            Connect external providers here. Daily product pages consume these
+            connections automatically.
+          </p>
+        </section>
+
+        <section aria-labelledby="google-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Google</p><h2 id="google-title">Google</h2>
+            </div>
+          </div><div class="attention-card" id="google-panel">
+            <p>Checking Google connection…</p>
+          </div>
+        </section>
+
+        <section aria-labelledby="github-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">GitHub</p><h2 id="github-title">
+                Content publishing
+              </h2>
+            </div>
+          </div><div class="attention-card" id="github-panel">
+            <p>Checking GitHub connection…</p>
+          </div>
+        </section>
+
+        <section aria-labelledby="gsc-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Google Search Console</p><h2 id="gsc-title">
+                Search Console property
+              </h2>
+            </div>
+          </div><div class="attention-card" id="gsc-panel">
+            <p>Checking Search Console mapping…</p>
+          </div>
+        </section>
+
+        <section aria-labelledby="ga4-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Google Analytics</p><h2 id="ga4-title">
+                Analytics property
+              </h2>
+            </div>
+          </div><div class="attention-card" id="ga4-panel">
+            <p>Checking Analytics mapping…</p>
+          </div>
+        </section>
+      </div>
+    </AppShell>
+  </body>
+</html>
+
+<script>
+  import type { ApiOutcome } from "../lib/api-client";
+  import {
+    fetchMyOrganizations,
+    fetchPrincipal,
+    type MyOrganization,
+  } from "../lib/workspace";
+  import {
+    fetchConnectionStatus,
+    beginConnection,
+    connectGoogle,
+    disconnectConnection,
+    describeGbpConnectFailure,
+    type GBPConnectionStatus,
+    type GoogleServices,
+  } from "../lib/gbp-connection";
+  import { fetchGitHubConnections } from "../lib/content";
+  import {
+    beginGitHubInstall,
+    fetchGitHubRepositories,
+    type GitHubRepository,
+  } from "../lib/github-app";
+  import { fetchWebsites, fetchSearchProperties } from "../lib/seo";
+  import {
+    discoverSearchConsole,
+    mapSearchConsole,
+    syncSearchConsole,
+    fetchSearchConsoleSummary,
+  } from "../lib/search-console";
+  import {
+    discoverAnalytics,
+    mapAnalytics,
+    syncAnalytics,
+    fetchAnalyticsSummary,
+  } from "../lib/analytics";
+  import { selectDefaultOrganization } from "../lib/dashboard-logic";
+  import { getCurrentSession } from "../lib/session";
+
+  const regions = {
+    notConfigured: "boot-not-configured",
+    loading: "boot-loading",
+    error: "boot-error",
+    empty: "workspace-empty",
+    content: "integrations-content",
+  } as const;
+
+  let organizationId = "";
+
+  function showOnly(id: string): void {
+    for (const region of Object.values(regions)) {
+      const el = document.getElementById(region);
+      if (el) el.hidden = region !== id;
+    }
+  }
+
+  function describeFailure(outcome: ApiOutcome<unknown>): string {
+    switch (outcome.kind) {
+      case "forbidden":
+        return "You do not have permission to view integrations for this organization.";
+      case "not-found":
+        return "The requested resource could not be found.";
+      case "disconnected":
+        return "Could not reach the platform API.";
+      case "unauthenticated":
+        return "Your session has expired. Sign in again.";
+      case "not-configured":
+        return "This deployment is not configured.";
+      case "error":
+        return outcome.message;
+      case "ok":
+        return "";
+    }
+  }
+
+  function goToLogin(): void {
+    const next = encodeURIComponent(window.location.pathname);
+    window.location.assign(`/login?next=${next}`);
+  }
+
+  function wireSignOut(): void {
+    document
+      .getElementById("sign-out-button")
+      ?.addEventListener("click", async () => {
+        const { signOut } = await import("../lib/session");
+        await signOut();
+        goToLogin();
+      });
+  }
+
+  function badge(status: string, label = status): HTMLSpanElement {
+    const el = document.createElement("span");
+    el.className = `status status--${status}`;
+    const dot = document.createElement("span");
+    dot.className = "status__dot";
+    dot.setAttribute("aria-hidden", "true");
+    el.append(dot, document.createTextNode(label));
+    return el;
+  }
+
+  function connectionStateLabel(status: string | null): {
+    kind: string;
+    label: string;
+  } {
+    if (status === null) return { kind: "missing", label: "Not connected" };
+    switch (status) {
+      case "connected":
+        return { kind: "connected", label: "Connected" };
+      case "reconnect_required":
+        return { kind: "degraded", label: "Reconnect required" };
+      case "degraded":
+        return { kind: "degraded", label: "Degraded" };
+      case "disconnected":
+        return { kind: "missing", label: "Disconnected" };
+      default:
+        return { kind: "setup", label: status };
+    }
+  }
+
+  function actionButton(
+    label: string,
+    onClick: () => Promise<void>,
+  ): HTMLButtonElement {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "button button--sm";
+    btn.textContent = label;
+    btn.addEventListener("click", async () => {
+      btn.disabled = true;
+      btn.textContent = "Working…";
+      try {
+        await onClick();
+      } finally {
+        btn.disabled = false;
+        btn.textContent = label;
+      }
+    });
+    return btn;
+  }
+
+  async function renderGoogle(): Promise<void> {
+    const panel = document.getElementById("google-panel")!;
+    panel.replaceChildren();
+    const result = await fetchConnectionStatus(organizationId);
+    if (result.kind === "error" && result.code === "PRODUCT_NOT_READY") {
+      const desc = describeGbpConnectFailure(result, organizationId);
+      panel.append(
+        badge("blocked", "Setup required"),
+        document.createTextNode(` ${desc.message}`),
+      );
+      return;
+    }
+    if (result.kind !== "ok") {
+      panel.append(document.createTextNode(describeFailure(result)));
+      return;
+    }
+    const status = result.data as GBPConnectionStatus | null;
+    const state = connectionStateLabel(status?.status ?? null);
+    const row = document.createElement("div");
+    row.className = "hero__actions";
+    const info = document.createElement("p");
+    info.append(badge(state.kind, state.label));
+    if (status?.last_verified_at) {
+      info.append(
+        document.createTextNode(
+          ` Last verified ${new Date(status.last_verified_at).toLocaleString()}`,
+        ),
+      );
+    }
+    row.append(info);
+    if (state.kind === "connected" || state.kind === "degraded") {
+      row.append(
+        actionButton("Disconnect", async () => {
+          const r = await disconnectConnection(organizationId);
+          if (r.kind !== "ok") alert(describeFailure(r));
+          await renderGoogle();
+          await renderSearchConsole();
+        }),
+      );
+    } else {
+      row.append(
+        actionButton("Connect Google", async () => {
+          const r = await beginConnection(organizationId);
+          if (r.kind === "ok") {
+            window.location.assign(r.data.authorization_url);
+          } else {
+            alert(describeFailure(r));
+          }
+        }),
+      );
+    }
+    panel.append(row);
+
+    // Service-level states beneath one Google connection.
+    const services: GoogleServices = status?.services ?? {
+      gbp: false,
+      search_console: false,
+      analytics: false,
+    };
+    const serviceList = document.createElement("ul");
+    serviceList.className = "product-list";
+    for (const [key, label] of [
+      ["gbp", "Google Business Profile"],
+      ["search_console", "Search Console"],
+      ["analytics", "Google Analytics"],
+    ] as const) {
+      const li = document.createElement("li");
+      const div = document.createElement("div");
+      div.className = "product-list__info";
+      const name = document.createElement("strong");
+      name.textContent = label;
+      const enabled = services[key as keyof GoogleServices];
+      div.append(
+        name,
+        badge(
+          enabled ? "connected" : "missing",
+          enabled ? "Connected" : "Connect",
+        ),
+      );
+      li.append(div);
+      serviceList.append(li);
+    }
+    panel.append(serviceList);
+
+    const note = document.createElement("p");
+    note.className = "field-hint";
+    note.textContent =
+      "Connecting Google authorizes Business Profile, Search Console, and Analytics access. Map specific properties in the product workspaces below.";
+    panel.append(note);
+  }
+
+  async function renderGitHub(): Promise<void> {
+    const panel = document.getElementById("github-panel")!;
+    panel.replaceChildren();
+    const result = await fetchGitHubConnections(organizationId);
+    if (result.kind !== "ok") {
+      panel.append(document.createTextNode(describeFailure(result)));
+      return;
+    }
+    if (result.data.length === 0) {
+      panel.append(
+        badge("missing", "Not connected"),
+        document.createTextNode(
+          " Install the LILOs GitHub App to enable content publishing.",
+        ),
+      );
+      panel.append(
+        actionButton("Connect GitHub", async () => {
+          const r = await beginGitHubInstall(organizationId);
+          if (r.kind === "ok") window.location.assign(r.data.authorization_url);
+          else alert(describeFailure(r));
+        }),
+      );
+      return;
+    }
+    const conn = result.data[0];
+    const isApp = conn.external_account_reference?.startsWith("installation:");
+    const list = document.createElement("ul");
+    list.className = "product-list";
+    const row = document.createElement("li");
+    const info = document.createElement("div");
+    info.className = "product-list__info";
+    const name = document.createElement("strong");
+    name.textContent = isApp
+      ? "GitHub App"
+      : conn.external_account_reference || "GitHub";
+    info.append(name, badge("connected", "Connected"));
+    row.append(info);
+    list.append(row);
+    panel.append(list);
+
+    // Show accessible repositories for GitHub App connections.
+    if (isApp) {
+      const repos = await fetchGitHubRepositories(organizationId);
+      if (repos.kind === "ok" && repos.data.length > 0) {
+        const repoNote = document.createElement("p");
+        repoNote.className = "field-hint";
+        repoNote.textContent = `Accessible repositories: ${repos.data.map((r: GitHubRepository) => r.repository_id).join(", ")}.`;
+        panel.append(repoNote);
+      }
+    }
+    const note = document.createElement("p");
+    note.className = "field-hint";
+    note.textContent = isApp
+      ? "Publishing uses short-lived installation tokens. Configure a publishing target in the Content workspace."
+      : "Using a personal access token (advanced fallback). Install the GitHub App for normal production.";
+    panel.append(note);
+    if (!isApp) {
+      panel.append(
+        actionButton("Install GitHub App", async () => {
+          const r = await beginGitHubInstall(organizationId);
+          if (r.kind === "ok") window.location.assign(r.data.authorization_url);
+          else alert(describeFailure(r));
+        }),
+      );
+    }
+  }
+
+  async function renderSearchConsole(): Promise<void> {
+    const panel = document.getElementById("gsc-panel")!;
+    panel.replaceChildren();
+    const websites = await fetchWebsites(organizationId);
+    if (websites.kind !== "ok" || websites.data.length === 0) {
+      panel.append(
+        badge("missing", "No website"),
+        document.createTextNode(
+          " Confirm a website in the SEO workspace before mapping a Search Console property.",
+        ),
+      );
+      return;
+    }
+    const websiteId = websites.data[0].id;
+
+    // Connection gating: Search Console requires the Google connection +
+    // the search_console scope. If missing, offer to authorize it here.
+    const status = await fetchConnectionStatus(organizationId);
+    const connected =
+      status.kind === "ok" &&
+      (status.data as GBPConnectionStatus | null)?.status === "connected";
+    const scopeGranted =
+      connected &&
+      (status.data as GBPConnectionStatus | null)?.services?.search_console;
+
+    if (!connected) {
+      panel.append(
+        badge("missing", "Google not connected"),
+        document.createTextNode(
+          " Connect Google above before mapping Search Console.",
+        ),
+      );
+      return;
+    }
+    if (!scopeGranted) {
+      panel.append(
+        badge("setup", "Scope required"),
+        document.createTextNode(
+          " Search Console access is not authorized for this Google connection.",
+        ),
+      );
+      panel.append(
+        actionButton("Authorize Search Console", async () => {
+          const r = await connectGoogle(organizationId, [
+            "gbp",
+            "search_console",
+          ]);
+          if (r.kind === "ok") window.location.assign(r.data.authorization_url);
+          else alert(describeFailure(r));
+        }),
+      );
+      return;
+    }
+
+    // Existing mappings + synced performance summary.
+    const [propsResult, summaryResult] = await Promise.all([
+      fetchSearchProperties(organizationId, websiteId),
+      fetchSearchConsoleSummary(organizationId, websiteId),
+    ]);
+    const summary =
+      summaryResult.kind === "ok"
+        ? summaryResult.data
+        : {
+            connected: false,
+            total_clicks: 0,
+            total_impressions: 0,
+            properties: [],
+          };
+
+    if (propsResult.kind === "ok" && propsResult.data.length > 0) {
+      const list = document.createElement("ul");
+      list.className = "product-list";
+      for (const prop of propsResult.data) {
+        const row = document.createElement("li");
+        const info = document.createElement("div");
+        info.className = "product-list__info";
+        const name = document.createElement("strong");
+        name.textContent = prop.external_property_id;
+        info.append(
+          name,
+          badge(
+            prop.mapping_status === "active" || prop.mapping_status === "mapped"
+              ? "connected"
+              : "setup",
+            prop.mapping_status,
+          ),
+        );
+        if (prop.last_synced_at) {
+          info.append(
+            document.createTextNode(
+              ` Last synced ${new Date(prop.last_synced_at).toLocaleString()}`,
+            ),
+          );
+        }
+        row.append(info);
+        row.append(
+          actionButton("Sync", async () => {
+            const r = await syncSearchConsole(
+              organizationId,
+              websiteId,
+              prop.id,
+            );
+            if (r.kind !== "ok") alert(describeFailure(r));
+            await renderSearchConsole();
+          }),
+        );
+        list.append(row);
+      }
+      panel.append(list);
+      if (summary.connected) {
+        const perf = document.createElement("p");
+        perf.className = "field-hint";
+        perf.textContent = `Synced performance: ${summary.total_clicks} clicks, ${summary.total_impressions} impressions.`;
+        panel.append(perf);
+      }
+      // Allow mapping another property too.
+      panel.append(
+        actionButton("Discover properties", async () => {
+          await runDiscovery(websiteId);
+        }),
+      );
+      return;
+    }
+
+    // No mapping yet -> drive the operator through discovery + selection.
+    panel.append(
+      badge("missing", "Not mapped"),
+      document.createTextNode(
+        " Discover your Search Console properties and select one.",
+      ),
+    );
+    panel.append(
+      actionButton("Discover properties", async () => {
+        await runDiscovery(websiteId);
+      }),
+    );
+  }
+
+  async function runDiscovery(websiteId: string): Promise<void> {
+    const panel = document.getElementById("gsc-panel")!;
+    const discovery = await discoverSearchConsole(organizationId, websiteId);
+    if (discovery.kind !== "ok") {
+      alert(describeFailure(discovery));
+      return;
+    }
+    panel.replaceChildren();
+    if (discovery.data.properties.length === 0) {
+      panel.append(
+        badge("missing", "No properties"),
+        document.createTextNode(
+          " No Search Console properties are accessible to this Google account.",
+        ),
+      );
+      return;
+    }
+    const list = document.createElement("ul");
+    list.className = "product-list";
+    for (const prop of discovery.data.properties) {
+      const isRecommended =
+        discovery.data.recommended?.external_property_id ===
+        prop.external_property_id;
+      const row = document.createElement("li");
+      const info = document.createElement("div");
+      info.className = "product-list__info";
+      const name = document.createElement("strong");
+      name.textContent = prop.external_property_id;
+      info.append(name);
+      if (isRecommended) {
+        info.append(badge("connected", "Recommended"));
+      }
+      info.append(document.createTextNode(` (${prop.property_type})`));
+      row.append(info);
+      row.append(
+        actionButton("Map", async () => {
+          const r = await mapSearchConsole(organizationId, websiteId, {
+            external_property_id: prop.external_property_id,
+            property_type: prop.property_type as "domain" | "url_prefix",
+          });
+          if (r.kind !== "ok") {
+            alert(describeFailure(r));
+            return;
+          }
+          await renderSearchConsole();
+        }),
+      );
+      list.append(row);
+    }
+    panel.append(list);
+  }
+
+  async function renderAnalytics(): Promise<void> {
+    const panel = document.getElementById("ga4-panel")!;
+    panel.replaceChildren();
+    const status = await fetchConnectionStatus(organizationId);
+    const connected =
+      status.kind === "ok" &&
+      (status.data as GBPConnectionStatus | null)?.status === "connected";
+    const scopeGranted =
+      connected &&
+      (status.data as GBPConnectionStatus | null)?.services?.analytics;
+
+    if (!connected) {
+      panel.append(
+        badge("missing", "Google not connected"),
+        document.createTextNode(
+          " Connect Google above before mapping Analytics.",
+        ),
+      );
+      return;
+    }
+    if (!scopeGranted) {
+      panel.append(
+        badge("setup", "Scope required"),
+        document.createTextNode(
+          " Analytics access is not authorized for this Google connection.",
+        ),
+      );
+      panel.append(
+        actionButton("Authorize Analytics", async () => {
+          const r = await connectGoogle(organizationId, ["gbp", "analytics"]);
+          if (r.kind === "ok") window.location.assign(r.data.authorization_url);
+          else alert(describeFailure(r));
+        }),
+      );
+      return;
+    }
+
+    const summary = await fetchAnalyticsSummary(organizationId);
+    if (summary.kind !== "ok") {
+      panel.append(document.createTextNode(describeFailure(summary)));
+      return;
+    }
+    if (summary.data.properties.length === 0) {
+      panel.append(
+        badge("missing", "Not mapped"),
+        document.createTextNode(
+          " Discover your GA4 properties and select one.",
+        ),
+      );
+      panel.append(
+        actionButton("Discover properties", async () => {
+          await runAnalyticsDiscovery();
+        }),
+      );
+      return;
+    }
+    const list = document.createElement("ul");
+    list.className = "product-list";
+    for (const prop of summary.data.properties) {
+      const row = document.createElement("li");
+      const info = document.createElement("div");
+      info.className = "product-list__info";
+      const name = document.createElement("strong");
+      name.textContent = prop.display_name;
+      info.append(name, badge("connected", prop.freshness_status));
+      if (prop.last_synced_at) {
+        info.append(
+          document.createTextNode(
+            ` Last synced ${new Date(prop.last_synced_at).toLocaleString()}`,
+          ),
+        );
+      }
+      row.append(info);
+      row.append(
+        actionButton("Sync", async () => {
+          const r = await syncAnalytics(organizationId, prop.id);
+          if (r.kind !== "ok") alert(describeFailure(r));
+          await renderAnalytics();
+        }),
+      );
+      list.append(row);
+    }
+    panel.append(list);
+    const metrics = summary.data.metrics;
+    const metricKeys = Object.keys(metrics);
+    if (metricKeys.length > 0) {
+      const perf = document.createElement("p");
+      perf.className = "field-hint";
+      perf.textContent = `Synced GA4 metrics: ${metricKeys
+        .map((k) => `${k.replace("ga4.", "")}=${metrics[k]}`)
+        .join(", ")}.`;
+      panel.append(perf);
+    }
+  }
+
+  async function runAnalyticsDiscovery(): Promise<void> {
+    const panel = document.getElementById("ga4-panel")!;
+    const discovery = await discoverAnalytics(organizationId);
+    if (discovery.kind !== "ok") {
+      alert(describeFailure(discovery));
+      return;
+    }
+    panel.replaceChildren();
+    if (discovery.data.properties.length === 0) {
+      panel.append(
+        badge("missing", "No properties"),
+        document.createTextNode(
+          " No GA4 properties are accessible to this Google account.",
+        ),
+      );
+      return;
+    }
+    const list = document.createElement("ul");
+    list.className = "product-list";
+    for (const prop of discovery.data.properties) {
+      const isRecommended =
+        discovery.data.recommended?.external_property_id ===
+        prop.external_property_id;
+      const row = document.createElement("li");
+      const info = document.createElement("div");
+      info.className = "product-list__info";
+      const name = document.createElement("strong");
+      name.textContent = prop.display_name;
+      info.append(name);
+      if (isRecommended) {
+        info.append(badge("connected", "Recommended"));
+      }
+      info.append(
+        document.createTextNode(` (${prop.account_display_name || "GA4"})`),
+      );
+      row.append(info);
+      row.append(
+        actionButton("Map", async () => {
+          const r = await mapAnalytics(organizationId, {
+            external_property_id: prop.external_property_id,
+            property_number: prop.property_number,
+            display_name: prop.display_name,
+          });
+          if (r.kind !== "ok") {
+            alert(describeFailure(r));
+            return;
+          }
+          await renderAnalytics();
+        }),
+      );
+      list.append(row);
+    }
+    panel.append(list);
+  }
+
+  async function loadOrganization(org: MyOrganization): Promise<void> {
+    organizationId = org.organization_id;
+    document.getElementById("active-organization-name")!.textContent =
+      org.organization_name;
+    const params = new URLSearchParams(window.location.search);
+    params.set("org", organizationId);
+    history.replaceState(
+      null,
+      "",
+      `${window.location.pathname}?${params.toString()}`,
+    );
+    localStorage.setItem("selected_org_id", organizationId);
+    await Promise.all([
+      renderGoogle(),
+      renderGitHub(),
+      renderSearchConsole(),
+      renderAnalytics(),
+    ]);
+    showOnly(regions.content);
+  }
+
+  async function boot(): Promise<void> {
+    const config = (await import("../lib/config")).readPublicConfig();
+    if (!config) {
+      showOnly(regions.notConfigured);
+      return;
+    }
+    showOnly(regions.loading);
+    const session = await getCurrentSession();
+    if (session.status !== "signed-in") {
+      goToLogin();
+      return;
+    }
+    const principal = await fetchPrincipal();
+    if (principal.kind !== "ok") {
+      document.getElementById("boot-error")!.textContent =
+        describeFailure(principal);
+      showOnly(regions.error);
+      return;
+    }
+    document.getElementById("current-user-label")!.textContent =
+      principal.data.auth_user_id;
+    document.getElementById("current-user-initial")!.textContent =
+      principal.data.auth_user_id.charAt(0).toUpperCase();
+    document.getElementById("current-assurance-label")!.textContent =
+      principal.data.assurance_level;
+    const signOutBtn = document.getElementById("sign-out-button");
+    if (signOutBtn) signOutBtn.hidden = false;
+    wireSignOut();
+
+    const orgs = await fetchMyOrganizations();
+    if (orgs.kind !== "ok") {
+      document.getElementById("boot-error")!.textContent =
+        describeFailure(orgs);
+      showOnly(regions.error);
+      return;
+    }
+    if (orgs.data.length === 0) {
+      showOnly(regions.empty);
+      return;
+    }
+    const selected = selectDefaultOrganization(orgs.data);
+    if (!selected) {
+      showOnly(regions.empty);
+      return;
+    }
+    await loadOrganization(selected);
+  }
+
+  void boot();
+</script>

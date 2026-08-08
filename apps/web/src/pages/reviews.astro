@@ -635,9 +635,34 @@ import "../styles/global.css";
               );
               await Promise.all([renderSummary(), renderReviewList()]);
             } else {
-              setIngestStatus(describeFailure(result));
+              setIngestStatus(describeIngestFailure(result));
             }
           });
+      }
+
+      function describeIngestFailure(outcome: ApiOutcome<unknown>): string {
+        switch (outcome.kind) {
+          case "ok":
+            return "";
+          case "forbidden":
+            return "You do not have permission to import reviews for this location.";
+          case "not-found":
+            return "This location has no connected Google Business Profile to import from.";
+          case "disconnected":
+            return "Could not reach the platform API. Check your connection and try again.";
+          case "unauthenticated":
+            return "Your session has expired. Sign in again.";
+          case "not-configured":
+            return "This deployment is not configured.";
+          case "error":
+            if (outcome.code === "REVIEW_INGESTION_UNAVAILABLE") {
+              return outcome.message;
+            }
+            if (outcome.status === 405) {
+              return "Review import is not available in this deployment yet. Try refreshing the page, or contact support if it persists.";
+            }
+            return outcome.message;
+        }
       }
 
       async function loadLocation(locationId: string): Promise<void> {

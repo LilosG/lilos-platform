@@ -33,7 +33,11 @@ from apps.api.app.authorization.dependencies import require_authorization
 from apps.api.app.config import Settings
 from apps.api.app.database.session import get_database_session
 from apps.api.app.errors import request_correlation_id
-from apps.api.app.integrations.connection_service import GBPConnectionService
+from apps.api.app.integrations.connection_service import (
+    GBPConnectionService,
+    granted_services,
+)
+from apps.api.app.integrations.contracts import GoogleConnectRequest
 from apps.api.app.integrations.errors import (
     IntegrationNotConfiguredError,
     IntegrationNotFoundError,
@@ -108,7 +112,7 @@ def _frontend_return_url(settings: Settings, *, connected: bool, reason: str | N
     "/connect",
     status_code=status.HTTP_200_OK,
     dependencies=[Depends(no_store)],
-    summary="Begin a GBP OAuth connection",
+    summary="Begin a Google OAuth connection",
 )
 async def connect(
     request: Request,
@@ -116,15 +120,18 @@ async def connect(
     session: Session,
     principal: Authenticated,
     _: GBPConnect,
+    command: GoogleConnectRequest | None = None,
 ) -> dict[str, object]:
     await _require_effective_entitlement(session, organization_id)
     settings = settings_from_request(request)
+    products = tuple(command.products) if command is not None else ("gbp",)
     url = await service.begin_connection(
         session,
         settings,
         organization_id,
         actor_id=principal.platform_user_id,
         correlation_id=request_correlation_id(request),
+        products=products,
     )
     return {
         "data": {"authorization_url": url},
@@ -135,7 +142,7 @@ async def connect(
 @router.get(
     "/status",
     dependencies=[Depends(no_store)],
-    summary="Read the current GBP connection status",
+    summary="Read the current Google connection status",
 )
 async def connection_status(
     request: Request,
@@ -151,6 +158,7 @@ async def connection_status(
             "status": connection.status,
             "token_expires_at": connection.token_expires_at,
             "last_verified_at": connection.last_verified_at,
+            "services": granted_services(connection),
         }
     )
     return {

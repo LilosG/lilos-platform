@@ -1,7 +1,17 @@
-"""Google Business Profile OAuth connection lifecycle: connect, callback, refresh, disconnect."""
+"""Google OAuth connection lifecycle: connect, callback, refresh, disconnect.
+
+A single organization-scoped Google ``IntegrationConnection`` (anchored on the
+``google_business_profile`` provider row) supports multiple Google products --
+Business Profile, Search Console, and Analytics -- through incremental OAuth
+authorization. The set of OAuth scopes a connection has actually granted is
+recorded on ``IntegrationConnection.granted_capabilities``; requesting an
+additional product re-consents (``prompt=consent``) and reuses the *same*
+connection row so existing GBP mappings are never disturbed and no duplicate
+Google connection records are created.
+"""
 
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import cast
@@ -39,8 +49,71 @@ GOOGLE_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token"
 GOOGLE_REVOKE_ENDPOINT = "https://oauth2.googleapis.com/revoke"
 GBP_PROVIDER_KEY = "google_business_profile"
 BUSINESS_MANAGE_SCOPE = "https://www.googleapis.com/auth/business.manage"
+SEARCH_CONSOLE_SCOPE = "https://www.googleapis.com/auth/webmasters.readonly"
+ANALYTICS_SCOPE = "https://www.googleapis.com/auth/analytics.readonly"
+
+# Product key -> OAuth scopes that product requires. A single Google connection
+# accumulates granted scopes through incremental re-consent; this mapping drives
+# which scopes a "connect <product>" action requests.
+GOOGLE_PRODUCT_SCOPES: dict[str, tuple[str, ...]] = {
+    "gbp": (BUSINESS_MANAGE_SCOPE,),
+    "search_console": (SEARCH_CONSOLE_SCOPE,),
+    "analytics": (ANALYTICS_SCOPE,),
+}
+GOOGLE_SCOPE_PRODUCTS: dict[str, str] = {
+    BUSINESS_MANAGE_SCOPE: "gbp",
+    SEARCH_CONSOLE_SCOPE: "search_console",
+    ANALYTICS_SCOPE: "analytics",
+}
 REFRESH_SKEW = timedelta(minutes=5)
 DEFAULT_TOKEN_LIFETIME_SECONDS = 3600
+
+
+def granted_scopes(connection: IntegrationConnection) -> frozenset[str]:
+    """Return the OAuth scopes a connection has actually granted.
+
+    ``granted_capabilities`` is a JSONB list populated from Google's token
+    response ``scope`` field on every successful authorization. Empty/missing
+    for legacy connections that predate multi-scope tracking; those are treated
+    as GBP-only for backward compatibility.
+    """
+    raw = connection.granted_capabilities
+    if not raw:
+        return frozenset()
+    return frozenset(str(item) for item in raw)
+
+
+def granted_services(connection: IntegrationConnection) -> dict[str, bool]:
+    """Service-level booleans (gbp/search_console/analytics) for status display.
+
+    Never exposes raw OAuth scopes to the UI; this is the safe projection.
+    Legacy connections with no recorded scopes are assumed GBP-only.
+    """
+    scopes = granted_scopes(connection)
+    if not scopes:
+        return {"gbp": True, "search_console": False, "analytics": False}
+    return {
+        product: any(scope in scopes for scope in scopes_for_product(product))
+        for product in ("gbp", "search_console", "analytics")
+    }
+
+
+def scopes_for_product(product: str) -> tuple[str, ...]:
+    return GOOGLE_PRODUCT_SCOPES.get(product, ())
+
+
+def connection_has_scope(connection: IntegrationConnection, scope: str) -> bool:
+    return scope in granted_scopes(connection)
+
+
+def missing_scopes_for(
+    connection: IntegrationConnection, products: Sequence[str]
+) -> tuple[str, ...]:
+    wanted: set[str] = set()
+    for product in products:
+        wanted.update(scopes_for_product(product))
+    granted = granted_scopes(connection)
+    return tuple(sorted(wanted - granted))
 
 
 @dataclass(slots=True)
@@ -62,12 +135,22 @@ class GBPConnectionService:
             raise IntegrationNotConfiguredError
         return client_id, client_secret, str(redirect_uri)
 
-    def authorization_url(self, client_id: str, redirect_uri: str, state: str) -> str:
+    def authorization_url(
+        self,
+        client_id: str,
+        redirect_uri: str,
+        state: str,
+        scopes: Sequence[str] = (BUSINESS_MANAGE_SCOPE,),
+    ) -> str:
+        # Google accepts a space-delimited scope list. ``prompt=consent`` forces
+        # the consent screen so incremental authorization of an additional
+        # product returns a fresh refresh token covering the union of granted
+        # scopes (Google merges previously granted scopes server-side).
         params = {
             "client_id": client_id,
             "redirect_uri": redirect_uri,
             "response_type": "code",
-            "scope": BUSINESS_MANAGE_SCOPE,
+            "scope": " ".join(scopes),
             "access_type": "offline",
             "prompt": "consent",
             "state": state,
@@ -272,12 +355,29 @@ class GBPConnectionService:
         *,
         actor_id: UUID | None,
         correlation_id: str,
+        products: Sequence[str] = ("gbp",),
     ) -> str:
+        """Begin (or re-consent) a Google OAuth connection for the given products.
+
+        Reuses the organization's existing Google connection row -- never creates
+        a duplicate -- so incremental authorization of Search Console or Analytics
+        on top of an existing GBP connection preserves all GBP mappings. The
+        requested product scopes are unioned with already-granted scopes so a
+        re-consent always asks for the minimal additional authorization while
+        Google retains the previously granted ones.
+        """
         client_id, _, redirect_uri = self.require_configured(settings)
         provider = await self.get_provider(session)
         connection = await self.get_or_create_pending_connection(session, organization_id, provider)
+        wanted_scopes: set[str] = set()
+        for product in products:
+            wanted_scopes.update(scopes_for_product(product))
+        # Union with already-granted scopes so re-consent requests the full set
+        # Google needs to issue a refresh token covering every product.
+        wanted_scopes.update(granted_scopes(connection))
+        scopes = tuple(sorted(wanted_scopes)) or (BUSINESS_MANAGE_SCOPE,)
         _, state = await self.intents.create(session, organization_id, connection.id, redirect_uri)
-        url = self.authorization_url(client_id, redirect_uri, state)
+        url = self.authorization_url(client_id, redirect_uri, state, scopes)
         await self._audit(
             session,
             event="gbp.connection.started",
@@ -286,8 +386,8 @@ class GBPConnectionService:
             resource_type="integration_connection",
             resource_id=connection.id,
             correlation_id=correlation_id,
-            summary="GBP OAuth connection started.",
-            metadata={"status": connection.status},
+            summary="Google OAuth connection started.",
+            metadata={"status": connection.status, "products": list(products)},
         )
         return url
 
@@ -352,6 +452,13 @@ class GBPConnectionService:
         connection.status = "connected"
         connection.token_expires_at = now + timedelta(seconds=expires_in)
         connection.last_verified_at = now
+        # Record the OAuth scopes Google actually granted. Google's token
+        # response carries a space-delimited ``scope`` field; legacy GBP-only
+        # connections upgraded through re-consent accumulate the new scopes
+        # here without disturbing any existing GBP mappings.
+        granted = tokens.get("scope")
+        if isinstance(granted, str) and granted:
+            connection.granted_capabilities = cast(list[object], sorted(granted.split()))
         await session.flush()
         await self._audit(
             session,
@@ -466,6 +573,7 @@ class GBPConnectionService:
         new_access_token = str(payload["access_token"])
         new_refresh_token = str(payload.get("refresh_token") or tokens["refresh_token"])
         expires_in = int(cast(int, payload.get("expires_in", DEFAULT_TOKEN_LIFETIME_SECONDS)))
+        refreshed_scope = payload.get("scope")
         old_reference = connection.credential_reference
         new_reference = await self._store_tokens(
             session,
@@ -479,6 +587,8 @@ class GBPConnectionService:
         connection.token_expires_at = now + timedelta(seconds=expires_in)
         connection.last_verified_at = now
         connection.status = "connected"
+        if isinstance(refreshed_scope, str) and refreshed_scope:
+            connection.granted_capabilities = cast(list[object], sorted(refreshed_scope.split()))
         await session.flush()
         await self._audit(
             session,

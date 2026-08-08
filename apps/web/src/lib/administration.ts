@@ -188,6 +188,41 @@ export function decideBusinessFact(
   );
 }
 
+export type BusinessFactReconcileResult = {
+  proposed: {
+    fact_key: string;
+    revision_id: string;
+    location_id: string | null;
+  }[];
+  unresolved: string[];
+};
+
+export function reconcileBusinessFacts(
+  organizationId: string,
+): Promise<ApiOutcome<BusinessFactReconcileResult>> {
+  return apiRequest<BusinessFactReconcileResult>(
+    `${base(organizationId)}/business-facts/reconcile`,
+    { method: "POST", body: {} },
+  );
+}
+
+export function fetchBusinessFactCandidates(
+  organizationId: string,
+): Promise<ApiOutcome<BusinessFactRevision[]>> {
+  return apiGet<BusinessFactRevision[]>(
+    `${base(organizationId)}/business-facts/candidates`,
+  );
+}
+
+export function reconcileDefaultPolicy(
+  organizationId: string,
+): Promise<ApiOutcome<{ approval_policy_provisioned: boolean }>> {
+  return apiRequest<{ approval_policy_provisioned: boolean }>(
+    `/api/v1/platform/organizations/${organizationId}/reconcile-defaults`,
+    { method: "POST", body: {} },
+  );
+}
+
 export function fetchProductReadinessDetail(
   organizationId: string,
   productKey: string,

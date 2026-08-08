@@ -1,5 +1,11 @@
 import { apiGet, apiRequest, type ApiOutcome } from "./api-client";
 
+export type GoogleServices = {
+  gbp: boolean;
+  search_console: boolean;
+  analytics: boolean;
+};
+
 export type GBPConnectionStatus = {
   status:
     | "pending"
@@ -9,6 +15,7 @@ export type GBPConnectionStatus = {
     | "disconnected";
   token_expires_at: string | null;
   last_verified_at: string | null;
+  services?: GoogleServices;
 } | null;
 
 function base(organizationId: string): string {
@@ -83,6 +90,16 @@ export function beginConnection(
   return apiRequest<{ authorization_url: string }>(
     `${base(organizationId)}/connect`,
     { method: "POST" },
+  );
+}
+
+export function connectGoogle(
+  organizationId: string,
+  products: ("gbp" | "search_console" | "analytics")[],
+): Promise<ApiOutcome<{ authorization_url: string }>> {
+  return apiRequest<{ authorization_url: string }>(
+    `${base(organizationId)}/connect`,
+    { method: "POST", body: { products } },
   );
 }
 
