@@ -10,6 +10,7 @@ export type BootRegions = {
   loading: HTMLElement;
   error: HTMLElement;
   empty: HTMLElement;
+  content: HTMLElement;
 };
 
 export type BootContext = {
@@ -180,7 +181,7 @@ export function applyBootResult(
       showRegion(regions, regions.empty);
       return false;
     case "ok":
-      showRegion(regions, regions.loading);
+      showRegion(regions, regions.content);
       return true;
   }
   function showRegion(r: BootRegions, visible: HTMLElement): void {
@@ -188,6 +189,7 @@ export function applyBootResult(
     r.loading.hidden = true;
     r.error.hidden = true;
     r.empty.hidden = true;
+    r.content.hidden = true;
     visible.hidden = false;
   }
 }
