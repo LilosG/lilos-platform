@@ -78,6 +78,8 @@ def lead_row(item: Lead) -> dict[str, object]:
         "assigned_to_user_id": str(item.assigned_to_user_id) if item.assigned_to_user_id else None,
         "received_at": item.received_at,
         "acknowledged_at": item.acknowledged_at,
+        "first_outbound_attempt_at": item.first_outbound_attempt_at,
+        "first_delivered_at": item.first_delivered_at,
         "first_human_contact_at": item.first_human_contact_at,
         "converted_at": item.converted_at,
         "converted_value_cents": item.converted_value_cents,

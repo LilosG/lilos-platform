@@ -106,7 +106,8 @@ def leads_client(
                 version=1,
             )
             profile = UserProfile(auth_user_id=uuid4(), status=UserStatus.ACTIVE, version=1)
-            session.add_all([organization, other_organization, profile])
+            other_profile = UserProfile(auth_user_id=uuid4(), status=UserStatus.ACTIVE, version=1)
+            session.add_all([organization, other_organization, profile, other_profile])
             await session.flush()
 
             location = Location(
@@ -138,6 +139,15 @@ def leads_client(
                 membership.id,
                 RoleAssignmentCreate(role_id=owner.id, scope_type=ScopeType.ORGANIZATION),
                 correlation_id="leads-api-owner",
+            )
+            await access.create_membership(
+                session,
+                other_organization.id,
+                MembershipCreate(
+                    user_profile_id=other_profile.id,
+                    membership_type=MembershipType.CLIENT,
+                ),
+                correlation_id="leads-api-other-member",
             )
 
             source = LeadSource(
@@ -191,6 +201,7 @@ def leads_client(
                 "location": location.id,
                 "assigned_subject": profile.auth_user_id,
                 "profile": profile.id,
+                "other_profile": other_profile.id,
                 "source": source.id,
                 "workflow_run": workflow_run.id,
             }
@@ -322,11 +333,30 @@ def test_assignment_status_notes_tasks_and_conversion_flow(
     assert assign.json()["data"]["assigned_to_user_id"] == str(ids["profile"])
     assert _notification_event_exists(postgresql_test_url, org, "leads.lead.assigned") is True
 
+    cross_tenant_assign = client.post(
+        f"{base}/{lead_id}/assign",
+        headers=HEADERS,
+        json={"assigned_to_user_id": str(ids["other_profile"])},
+    )
+    assert cross_tenant_assign.status_code == 404
+    assert cross_tenant_assign.json()["error"]["code"] == "LEAD_ASSIGNEE_NOT_FOUND"
+
     acknowledged = client.post(
         f"{base}/{lead_id}/status", headers=HEADERS, json={"to_status": "acknowledged"}
     )
     assert acknowledged.status_code == 200
     assert acknowledged.json()["data"]["acknowledged_at"] is not None
+
+    attempted = client.post(
+        f"{base}/{lead_id}/status", headers=HEADERS, json={"to_status": "contact_attempted"}
+    )
+    assert attempted.status_code == 200
+    assert attempted.json()["data"]["first_outbound_attempt_at"] is not None
+    assert attempted.json()["data"]["first_human_contact_at"] is None
+
+    before_contact_summary = client.get(f"{base}/summary", headers=HEADERS)
+    assert before_contact_summary.status_code == 200
+    assert before_contact_summary.json()["data"]["average_speed_to_lead_seconds"] is None
 
     contacted = client.post(
         f"{base}/{lead_id}/status", headers=HEADERS, json={"to_status": "contacted"}

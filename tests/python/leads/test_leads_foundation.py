@@ -1,7 +1,10 @@
 from datetime import UTC, datetime
 from uuid import uuid4
 
-from apps.api.app.products.leads.contracts import LeadIntake
+import pytest
+from pydantic import ValidationError
+
+from apps.api.app.products.leads.contracts import CommunicationCreate, ConsentRecord, LeadIntake
 from apps.api.app.products.leads.models import Lead, LeadCommunication, LeadConsent
 from apps.api.app.products.leads.service import normalize_email, normalize_phone, submission_hash
 
@@ -52,3 +55,39 @@ def test_speed_to_lead_events_are_not_conflated() -> None:
         "first_human_contact_at",
         "converted_at",
     } <= set(Lead.__table__.columns.keys())
+
+
+@pytest.mark.parametrize(
+    ("channel", "consent_type"),
+    [
+        ("email", "transactional_sms"),
+        ("sms", "marketing_email"),
+        ("phone", "transactional_email"),
+    ],
+)
+def test_consent_type_must_match_channel(channel: str, consent_type: str) -> None:
+    with pytest.raises(ValidationError, match="consent_type is not valid"):
+        ConsentRecord.model_validate(
+            {
+                "channel": channel,
+                "consent_type": consent_type,
+                "status": "granted",
+                "source": "operator",
+                "disclosure_version": "v1",
+                "evidence_reference": "governed-record",
+                "captured_at": datetime.now(UTC),
+            }
+        )
+
+
+def test_communication_consent_type_must_match_channel() -> None:
+    with pytest.raises(ValidationError, match="consent_type is not valid"):
+        CommunicationCreate.model_validate(
+            {
+                "channel": "email",
+                "consent_type": "marketing_sms",
+                "message_reference": "draft:123",
+                "workflow_run_id": uuid4(),
+                "idempotency_key": "communication-123",
+            }
+        )
