@@ -13,7 +13,9 @@ import asyncio
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
+from unittest.mock import AsyncMock
 from uuid import UUID, uuid4
 
 import pytest
@@ -57,6 +59,12 @@ from apps.api.app.products.gbp.operations_models import (
 )
 
 ROOT = Path(__file__).resolve().parents[3]
+
+
+@pytest.fixture(autouse=True)
+def enable_provider_writes_for_handler_contracts(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Existing handler contracts explicitly exercise the provider-enabled path."""
+    monkeypatch.setenv("LILOS_PROVIDER_WRITES_ENABLED", "true")
 
 
 async def _fake_token_resolver(session: AsyncSession, organization_id: UUID) -> tuple[str, object]:
@@ -706,6 +714,28 @@ async def test_gbp_publish_post_creates_local_post_and_verifies(
 # ---------------------------------------------------------------------------
 # Content publish handler: must NOT fabricate "verified" status
 # ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_provider_write_kill_switch_blocks_before_adapter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("LILOS_PROVIDER_WRITES_ENABLED", "false")
+    publication = SimpleNamespace(status="reserved", safe_error_code=None)
+    session = SimpleNamespace(scalar=AsyncMock(return_value=publication))
+
+    outcome = await _handle_content_publish(
+        session,  # type: ignore[arg-type]
+        organization_id=uuid4(),
+        location_id=None,
+        input_document={"publication_id": str(uuid4())},
+        correlation_id="provider-write-kill-switch",
+    )
+
+    assert outcome.result == "permanent_failure"
+    assert outcome.safe_error == "PROVIDER_WRITES_DISABLED"
+    assert publication.status == "failed"
+    assert publication.safe_error_code == "PROVIDER_WRITES_DISABLED"
 
 
 @pytest.mark.integration
