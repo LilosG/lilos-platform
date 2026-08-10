@@ -50,6 +50,7 @@ SECRET_POLICY = {
 PROHIBITED_ROOT_KEYS = {"databases", "projects"}
 PROHIBITED_SERVICE_TYPES = {"cron", "keyvalue", "redis"}
 STAGING_BRANCH = "worker/backend-closure-2026-08-10"
+STAGING_REPOSITORY = "https://github.com/LilosG/lilos-platform.git"
 STAGING_PROJECT = "lilos-platform-staging"
 STAGING_ENVIRONMENT = "staging"
 STAGING_GROUP = "lilos-staging-runtime"
@@ -59,32 +60,8 @@ STAGING_SERVICE_POLICY = {
     "lilos-staging-worker": ("worker", None, "/app/scripts/render_start_worker.sh", 300),
 }
 STAGING_SECRET_POLICY = {
-    "lilos-staging-api": {
-        "LILOS_SUPABASE_AUTH_ISSUER",
-        "LILOS_SUPABASE_AUTH_JWKS_URL",
-        "LILOS_TELEMETRY_EXPORT_ENDPOINT",
-        "LILOS_WEB_ORIGINS",
-        "LILOS_GOOGLE_OAUTH_CLIENT_ID",
-        "LILOS_GOOGLE_OAUTH_CLIENT_SECRET",
-        "LILOS_GOOGLE_OAUTH_REDIRECT_URI",
-        "LILOS_SECRET_ENCRYPTION_KEY",
-        "LILOS_GITHUB_APP_ID",
-        "LILOS_GITHUB_APP_CLIENT_ID",
-        "LILOS_GITHUB_APP_PRIVATE_KEY",
-        "LILOS_GITHUB_APP_INSTALLATION_REDIRECT_URI",
-    },
-    "lilos-staging-worker": {
-        "LILOS_SUPABASE_AUTH_ISSUER",
-        "LILOS_SUPABASE_AUTH_JWKS_URL",
-        "LILOS_TELEMETRY_EXPORT_ENDPOINT",
-        "LILOS_GOOGLE_OAUTH_CLIENT_ID",
-        "LILOS_GOOGLE_OAUTH_CLIENT_SECRET",
-        "LILOS_GOOGLE_OAUTH_REDIRECT_URI",
-        "LILOS_SECRET_ENCRYPTION_KEY",
-        "LILOS_GITHUB_APP_ID",
-        "LILOS_GITHUB_APP_CLIENT_ID",
-        "LILOS_GITHUB_APP_PRIVATE_KEY",
-    },
+    "lilos-staging-api": set(),
+    "lilos-staging-worker": set(),
 }
 
 
@@ -264,6 +241,16 @@ def validate_staging_blueprint(path: Path = STAGING_BLUEPRINT) -> tuple[str, ...
         errors.append("staging:internal-routes")
     if shared_values.get("LILOS_PROVIDER_WRITES_ENABLED") != "false":
         errors.append("staging:provider-writes")
+    shared_items = {
+        item.get("key"): item
+        for item in group.get("envVars", [])
+        if isinstance(item, dict) and isinstance(item.get("key"), str)
+    }
+    if shared_items.get("LILOS_SECRET_ENCRYPTION_KEY") != {
+        "key": "LILOS_SECRET_ENCRYPTION_KEY",
+        "generateValue": True,
+    }:
+        errors.append("staging:generated-encryption-key")
     if any("sync" in item for item in group.get("envVars", []) if isinstance(item, dict)):
         errors.append("staging:group-placeholder")
 
@@ -292,6 +279,8 @@ def validate_staging_blueprint(path: Path = STAGING_BLUEPRINT) -> tuple[str, ...
             errors.append(f"{name}:runtime-region")
         if service.get("plan") != "starter" or service.get("numInstances") != 1:
             errors.append(f"{name}:capacity")
+        if service.get("repo") != STAGING_REPOSITORY:
+            errors.append(f"{name}:repository")
         if service.get("branch") != STAGING_BRANCH or service.get("autoDeployTrigger") != "off":
             errors.append(f"{name}:deploy-governance")
         if service.get("dockerContext") != "." or service.get("dockerfilePath") != DOCKERFILE:

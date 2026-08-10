@@ -36,6 +36,19 @@ def test_staging_blueprint_is_isolated_manual_and_write_disabled() -> None:
         "worker/backend-closure-2026-08-10"
     }
     assert {service["autoDeployTrigger"] for service in environment["services"]} == {"off"}
+    assert {service["repo"] for service in environment["services"]} == {
+        "https://github.com/LilosG/lilos-platform.git"
+    }
+    group_items = {item["key"]: item for item in environment["envVarGroups"][0]["envVars"]}
+    assert group_items["LILOS_SECRET_ENCRYPTION_KEY"] == {
+        "key": "LILOS_SECRET_ENCRYPTION_KEY",
+        "generateValue": True,
+    }
+    assert all(
+        item.get("sync") is not False
+        for service in environment["services"]
+        for item in service["envVars"]
+    )
 
 
 def test_staging_blueprint_rejects_provider_writes_enabled(tmp_path: Path) -> None:
