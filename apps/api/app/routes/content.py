@@ -361,7 +361,10 @@ async def item_audit(
 ) -> dict[str, object]:
     await service.get_item(session, organization_id, item_id)
     history = await service.resource_history(
-        session, resource_type="content_item", resource_id=item_id
+        session,
+        organization_id,
+        resource_type="content_item",
+        resource_id=item_id,
     )
     return {"data": history, "meta": meta(request)}
 
@@ -374,9 +377,11 @@ async def revision_audit(
     session: Session,
     _: Annotated[AuthorizationDecision, policy("audit.read")],
 ) -> dict[str, object]:
-    del organization_id
     history = await service.resource_history(
-        session, resource_type="content_revision", resource_id=revision_id
+        session,
+        organization_id,
+        resource_type="content_revision",
+        resource_id=revision_id,
     )
     return {"data": history, "meta": meta(request)}
 

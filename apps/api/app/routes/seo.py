@@ -188,7 +188,7 @@ async def website_audit(
 ) -> dict[str, object]:
     await service.get_website(session, organization_id, website_id)
     history = await service.resource_history(
-        session, resource_type="seo_website", resource_id=website_id
+        session, organization_id, resource_type="seo_website", resource_id=website_id
     )
     return {"data": history, "meta": meta(request)}
 
@@ -459,7 +459,7 @@ async def opportunity_audit(
 ) -> dict[str, object]:
     await service.get_opportunity(session, organization_id, opportunity_id)
     history = await service.resource_history(
-        session, resource_type="seo_opportunity", resource_id=opportunity_id
+        session, organization_id, resource_type="seo_opportunity", resource_id=opportunity_id
     )
     return {"data": history, "meta": meta(request)}
 

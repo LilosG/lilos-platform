@@ -311,7 +311,9 @@ async def lead_audit(
     _: Annotated[AuthorizationDecision, policy("audit.read")],
 ) -> dict[str, object]:
     await service.get(session, organization_id, lead_id)
-    history = await service.resource_history(session, resource_type="lead", resource_id=lead_id)
+    history = await service.resource_history(
+        session, organization_id, resource_type="lead", resource_id=lead_id
+    )
     return {"data": history, "meta": meta(request)}
 
 

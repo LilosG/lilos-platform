@@ -793,10 +793,20 @@ class GBPOperationsService:
         return conflicts(approved, desired, observed)
 
     async def resource_history(
-        self, session: AsyncSession, *, resource_type: str, resource_id: UUID, limit: int = 50
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        *,
+        resource_type: str,
+        resource_id: UUID,
+        limit: int = 50,
     ) -> list[dict[str, object]]:
         events = await self.audit_repository.list_for_resource(
-            session, resource_type=resource_type, resource_id=resource_id, limit=limit
+            session,
+            organization_id=organization_id,
+            resource_type=resource_type,
+            resource_id=resource_id,
+            limit=limit,
         )
         return [
             {

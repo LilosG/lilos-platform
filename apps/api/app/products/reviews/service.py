@@ -26,6 +26,7 @@ from apps.api.app.products.reviews.errors import (
     RestrictedReviewCannotAutoPublishError,
     ReviewChangedAfterDraftError,
     ReviewNotFoundError,
+    ReviewResponseNotFoundError,
     ReviewRevisionNotFoundError,
     UnsafeDraftError,
 )
@@ -322,10 +323,23 @@ class ReviewService:
         if not fact_ids:
             raise GroundingRequiredError
         review = await session.scalar(
-            select(Review).where(Review.organization_id == organization_id, Review.id == review_id)
+            select(Review).where(
+                Review.organization_id == organization_id,
+                Review.location_id == location_id,
+                Review.id == review_id,
+            )
         )
         if not review:
             raise ReviewNotFoundError
+        review_revision = await session.scalar(
+            select(ReviewRevision).where(
+                ReviewRevision.organization_id == organization_id,
+                ReviewRevision.review_id == review_id,
+                ReviewRevision.id == review_revision_id,
+            )
+        )
+        if not review_revision:
+            raise ReviewRevisionNotFoundError
         status = "awaiting_approval"
         last = await session.scalar(
             select(ReviewResponseRevision.revision_number)
@@ -385,10 +399,14 @@ class ReviewService:
         if not fact_ids:
             raise GroundingRequiredError
         revision = await session.scalar(
-            select(ReviewRevision).where(
+            select(ReviewRevision)
+            .join(Review, Review.id == ReviewRevision.review_id)
+            .where(
                 ReviewRevision.organization_id == organization_id,
                 ReviewRevision.id == review_revision_id,
                 ReviewRevision.review_id == review_id,
+                Review.organization_id == organization_id,
+                Review.location_id == location_id,
             )
         )
         if not revision:
@@ -483,6 +501,8 @@ class ReviewService:
         self,
         session: AsyncSession,
         organization_id: UUID,
+        location_id: UUID,
+        review_id: UUID,
         response_id: UUID,
         user_id: UUID,
         *,
@@ -492,17 +512,29 @@ class ReviewService:
             select(ReviewResponseRevision)
             .where(
                 ReviewResponseRevision.organization_id == organization_id,
+                ReviewResponseRevision.location_id == location_id,
+                ReviewResponseRevision.review_id == review_id,
                 ReviewResponseRevision.id == response_id,
             )
             .with_for_update()
         )
-        if not item or item.status != "awaiting_approval":
+        if not item:
+            raise ReviewResponseNotFoundError
+        if item.status != "awaiting_approval":
             raise ResponseNotApprovalEligibleError
-        review = await session.scalar(select(Review).where(Review.id == item.review_id))
+        review = await session.scalar(
+            select(Review).where(
+                Review.organization_id == organization_id,
+                Review.location_id == location_id,
+                Review.id == review_id,
+            )
+        )
         if not review or review.current_revision_number != (
             await session.scalar(
                 select(ReviewRevision.revision_number).where(
-                    ReviewRevision.id == item.review_revision_id
+                    ReviewRevision.organization_id == organization_id,
+                    ReviewRevision.review_id == review_id,
+                    ReviewRevision.id == item.review_revision_id,
                 )
             )
         ):
@@ -529,6 +561,8 @@ class ReviewService:
         self,
         session: AsyncSession,
         organization_id: UUID,
+        location_id: UUID,
+        review_id: UUID,
         response_id: UUID,
         idempotency_key: str,
         *,
@@ -539,13 +573,23 @@ class ReviewService:
             select(ReviewResponseRevision)
             .where(
                 ReviewResponseRevision.organization_id == organization_id,
+                ReviewResponseRevision.location_id == location_id,
+                ReviewResponseRevision.review_id == review_id,
                 ReviewResponseRevision.id == response_id,
             )
             .with_for_update()
         )
-        if not item or item.status != "approved":
+        if not item:
+            raise ReviewResponseNotFoundError
+        if item.status != "approved":
             raise ResponseNotPublishEligibleError
-        review = await session.scalar(select(Review).where(Review.id == item.review_id))
+        review = await session.scalar(
+            select(Review).where(
+                Review.organization_id == organization_id,
+                Review.location_id == location_id,
+                Review.id == review_id,
+            )
+        )
         if review and review.status == "escalated":
             raise RestrictedReviewCannotAutoPublishError
         item.status = "publishing"
@@ -701,13 +745,18 @@ class ReviewService:
     async def resource_history(
         self,
         session: AsyncSession,
+        organization_id: UUID,
         *,
         resource_type: str,
         resource_id: UUID,
         limit: int = 50,
     ) -> list[dict[str, object]]:
         events = await self.audit_repository.list_for_resource(
-            session, resource_type=resource_type, resource_id=resource_id, limit=limit
+            session,
+            organization_id=organization_id,
+            resource_type=resource_type,
+            resource_id=resource_id,
+            limit=limit,
         )
         return [
             {

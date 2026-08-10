@@ -138,7 +138,19 @@ def gbp_operations_client(
                 is_primary=True,
                 version=1,
             )
-            session.add(location)
+            sibling_location = Location(
+                organization_id=organization.id,
+                name="Uptown",
+                slug="uptown",
+                location_type=LocationType.VIRTUAL,
+                status=LocationStatus.ACTIVE,
+                timezone="UTC",
+                country_code="US",
+                website_url="https://uptown.example.invalid",
+                is_primary=False,
+                version=1,
+            )
+            session.add_all([location, sibling_location])
             await session.flush()
 
             membership = await access.create_membership(
@@ -232,6 +244,7 @@ def gbp_operations_client(
                 "organization": organization.id,
                 "other_organization": other_organization.id,
                 "location": location.id,
+                "sibling_location": sibling_location.id,
                 "assigned_subject": profile.auth_user_id,
                 "gbp_location": gbp_location.id,
                 "workflow_run": workflow_run.id,
@@ -294,6 +307,18 @@ def test_capability_snapshot_change_set_and_completeness_flow(
         _notification_event_exists(postgresql_test_url, org, "gbp.change_set.awaiting_approval")
         is True
     )
+
+    sibling_base = f"/api/v1/organizations/{org}/locations/{ids['sibling_location']}/gbp/operations"
+    wrong_location_list = client.get(
+        f"{sibling_base}/locations/{gbp_location}/change-sets", headers=HEADERS
+    )
+    assert wrong_location_list.status_code == 404
+    wrong_location_decision = client.post(
+        f"{sibling_base}/change-sets/{change_set_id}/decision",
+        headers=HEADERS,
+        json={"approve": True},
+    )
+    assert wrong_location_decision.status_code == 404
 
     unavailable = client.post(
         f"{base}/locations/{gbp_location}/change-sets",

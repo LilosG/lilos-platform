@@ -17,6 +17,13 @@ class ReviewRevisionNotFoundError(NotFoundError):
     public_message = "The requested review revision was not found."
 
 
+class ReviewResponseNotFoundError(NotFoundError):
+    """A response identifier does not exist in the requested location scope."""
+
+    code = "REVIEW_RESPONSE_NOT_FOUND"
+    public_message = "The requested review response was not found."
+
+
 class UnsafeDraftError(ConflictError):
     """A response draft failed policy validation."""
 

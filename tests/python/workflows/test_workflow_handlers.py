@@ -25,6 +25,7 @@ from apps.api.app.authentication.models import UserProfile
 from apps.api.app.execution.contracts import JobOutcome
 from apps.api.app.execution.handlers import (
     _handle_content_publish,
+    _handle_gbp_publish_change,
     _handle_gbp_publish_post,
     _handle_reviews_publish_response,
     get_workflow_handler,
@@ -43,7 +44,13 @@ from apps.api.app.locations.enums import LocationStatus, LocationType
 from apps.api.app.locations.models import Location
 from apps.api.app.organizations.enums import OrganizationStatus, OrganizationType
 from apps.api.app.organizations.models import Organization
-from apps.api.app.products.gbp.models import GBPAccount, GBPLocation
+from apps.api.app.products.gbp.models import (
+    GBPAccount,
+    GBPLocation,
+    GBPProfileChangeRevision,
+    GBPProfileSnapshot,
+    GBPPublication,
+)
 from apps.api.app.products.gbp.operations_models import (
     GBPPostPublication,
     GBPPostRevision,
@@ -290,6 +297,204 @@ async def test_runtime_fails_closed_for_catalog_key_with_no_handler(
             assert refreshed.failure_code == "WORKFLOW_HANDLER_NOT_REGISTERED"
     finally:
         del WORKFLOW_TYPES[test_key]
+
+
+# ---------------------------------------------------------------------------
+# GBP profile-change handler
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+@pytest.mark.anyio
+async def test_gbp_publish_change_resolves_provider_location_from_revision(
+    clean_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """A publication's platform location UUID is never a GBP location UUID."""
+    from apps.api.app.execution import handlers as handler_mod
+
+    patched: dict[str, object] = {}
+
+    class FakeProfileAdapter:
+        async def patch_location(
+            self,
+            access_token: str,
+            location_name: str,
+            fields: dict[str, Any],
+            update_mask: list[str],
+            idempotency_key: str,
+        ) -> dict[str, Any]:
+            patched.update(
+                {
+                    "access_token": access_token,
+                    "location_name": location_name,
+                    "fields": fields,
+                    "update_mask": update_mask,
+                    "idempotency_key": idempotency_key,
+                }
+            )
+            return {"name": location_name, "profile": {"description": "Updated"}}
+
+        async def get_location(self, access_token: str, location_name: str) -> dict[str, Any]:
+            return {"name": location_name, "profile": {"description": "Updated"}}
+
+    original = handler_mod._adapter_factory
+    original_resolver = handler_mod._token_resolver
+    handler_mod._adapter_factory = FakeProfileAdapter  # type: ignore[assignment]
+    handler_mod._token_resolver = _fake_token_resolver
+    try:
+        async with clean_session_factory.begin() as session:
+            org = Organization(
+                name="GBP Profile Handler Test",
+                slug=f"gbp-profile-handler-{uuid4().hex[:8]}",
+                organization_type=OrganizationType.TEST,
+                status=OrganizationStatus.ACTIVE,
+                timezone="UTC",
+                default_currency="USD",
+                version=1,
+            )
+            session.add(org)
+            await session.flush()
+            location = Location(
+                organization_id=org.id,
+                name="GBP Profile Handler Location",
+                slug=f"gbp-profile-handler-location-{uuid4().hex[:8]}",
+                location_type=LocationType.VIRTUAL,
+                status=LocationStatus.ACTIVE,
+                timezone="UTC",
+                country_code="US",
+                website_url="https://example.invalid",
+                is_primary=True,
+                version=1,
+            )
+            provider = Provider(
+                key="google_business_profile",
+                name="Google Business Profile",
+                status="active",
+                capabilities=["profile.read", "profile.write"],
+            )
+            session.add_all([location, provider])
+            await session.flush()
+            connection = IntegrationConnection(
+                organization_id=org.id,
+                provider_id=provider.id,
+                external_account_reference="accounts/123",
+                status="connected",
+            )
+            session.add(connection)
+            await session.flush()
+            account = GBPAccount(
+                organization_id=org.id,
+                connection_id=connection.id,
+                external_account_id="accounts/123",
+                display_name="Profile Handler Account",
+                status="discovered",
+            )
+            session.add(account)
+            await session.flush()
+            gbp_location = GBPLocation(
+                organization_id=org.id,
+                location_id=location.id,
+                connection_id=connection.id,
+                account_id=account.id,
+                external_location_id="locations/456",
+                business_name="Profile Handler Location",
+                mapping_status="confirmed",
+                write_enabled=True,
+            )
+            session.add(gbp_location)
+            await session.flush()
+            snapshot = GBPProfileSnapshot(
+                organization_id=org.id,
+                gbp_location_id=gbp_location.id,
+                normalized_profile={"profile": {"description": "Original"}},
+                content_hash="a" * 64,
+                completeness="full",
+                observed_at=datetime.now(UTC),
+            )
+            definition = WorkflowDefinition(
+                key="gbp.publish_change",
+                name="Publish GBP profile change",
+                owner="gbp",
+                status="active",
+            )
+            session.add_all([snapshot, definition])
+            await session.flush()
+            version = WorkflowVersion(
+                definition_id=definition.id,
+                version=1,
+                status="approved",
+                input_schema={},
+                output_schema={},
+                step_specification=[],
+                retry_policy={},
+                timeout_seconds=30,
+            )
+            session.add(version)
+            await session.flush()
+            run = WorkflowRun(
+                organization_id=org.id,
+                location_id=location.id,
+                workflow_version_id=version.id,
+                product_key="gbp",
+                status="running",
+                trigger_type="api",
+                idempotency_key="gbp-profile-handler-run",
+                request_hash="c" * 64,
+                input_document={},
+                correlation_id="gbp-profile-handler",
+            )
+            session.add(run)
+            await session.flush()
+            revision = GBPProfileChangeRevision(
+                organization_id=org.id,
+                location_id=location.id,
+                gbp_location_id=gbp_location.id,
+                change_identity=uuid4(),
+                revision_number=1,
+                base_snapshot_id=snapshot.id,
+                desired_fields={"profile.description": "Updated"},
+                diff_document={},
+                fact_revision_ids=[],
+                status="approved",
+                risk_level="low",
+                content_hash="b" * 64,
+            )
+            session.add(revision)
+            await session.flush()
+            publication = GBPPublication(
+                organization_id=org.id,
+                location_id=location.id,
+                change_revision_id=revision.id,
+                workflow_run_id=run.id,
+                idempotency_key="gbp-profile-handler-publication",
+                status="reserved",
+                update_mask=["profile.description"],
+            )
+            session.add(publication)
+            await session.flush()
+            publication_id = publication.id
+            organization_id = org.id
+
+            assert location.id != gbp_location.id
+            outcome = await _handle_gbp_publish_change(
+                session,
+                organization_id=organization_id,
+                location_id=location.id,
+                input_document={"publication_id": str(publication_id)},
+                correlation_id="gbp-profile-handler",
+            )
+
+        assert outcome.result == "succeeded"
+        assert patched["location_name"] == "locations/456"
+        assert patched["fields"] == {"profile.description": "Updated"}
+        async with clean_session_factory() as session:
+            refreshed = await session.get(GBPPublication, publication_id)
+            assert refreshed is not None
+            assert refreshed.status == "verified"
+            assert refreshed.safe_error_code is None
+    finally:
+        handler_mod._adapter_factory = original
+        handler_mod._token_resolver = original_resolver
 
 
 # ---------------------------------------------------------------------------

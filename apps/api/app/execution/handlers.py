@@ -145,7 +145,11 @@ async def _handle_gbp_publish_change(
     """
     from sqlalchemy import select
 
-    from apps.api.app.products.gbp.models import GBPLocation, GBPPublication
+    from apps.api.app.products.gbp.models import (
+        GBPLocation,
+        GBPProfileChangeRevision,
+        GBPPublication,
+    )
 
     publication_id = input_document.get("publication_id")
     if not publication_id:
@@ -162,10 +166,23 @@ async def _handle_gbp_publish_change(
     if publication.status != "reserved":
         return JobOutcome(result="permanent_failure", safe_error="PUBLICATION_NOT_RESERVABLE")
 
+    revision = await session.scalar(
+        select(GBPProfileChangeRevision).where(
+            GBPProfileChangeRevision.organization_id == organization_id,
+            GBPProfileChangeRevision.id == publication.change_revision_id,
+            GBPProfileChangeRevision.location_id == publication.location_id,
+        )
+    )
+    if revision is None:
+        publication.status = "failed"
+        publication.safe_error_code = "CHANGE_REVISION_NOT_FOUND"
+        return JobOutcome(result="permanent_failure", safe_error="CHANGE_REVISION_NOT_FOUND")
+
     gbp_location = await session.scalar(
         select(GBPLocation).where(
             GBPLocation.organization_id == organization_id,
-            GBPLocation.id == publication.location_id,
+            GBPLocation.id == revision.gbp_location_id,
+            GBPLocation.location_id == publication.location_id,
         )
     )
     if gbp_location is None:
@@ -208,12 +225,8 @@ async def _handle_gbp_publish_change(
     location_name = v1_location_name(gbp_location.external_location_id)
     update_fields: dict[str, Any] = {}
 
-    from apps.api.app.products.gbp.models import GBPProfileChangeRevision
-
-    revision = await session.get(GBPProfileChangeRevision, publication.change_revision_id)
-    if revision:
-        for key, value in revision.desired_fields.items():
-            update_fields[key] = value
+    for key, value in revision.desired_fields.items():
+        update_fields[key] = value
 
     if not update_fields:
         publication.status = "failed"

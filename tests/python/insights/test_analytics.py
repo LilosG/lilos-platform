@@ -27,6 +27,7 @@ from apps.api.app.products.analytics.adapter import (
     AnalyticsReportRow,
     DiscoveredAnalyticsProperty,
     GoogleAnalyticsAdapter,
+    GoogleAnalyticsAdminAdapter,
 )
 from apps.api.app.products.analytics.service import (
     AnalyticsService,
@@ -169,6 +170,44 @@ def test_recommend_property_matches_display_name_to_website_domain() -> None:
     recommended = recommend_property(properties, site)
     assert recommended is not None
     assert recommended.external_property_id == "properties/111"
+
+
+@pytest.mark.anyio
+async def test_adapter_parses_account_summary_resource_name_shape() -> None:
+    """The Admin API returns ``account`` as a string, not a nested document."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/v1beta/accountSummaries"
+        return httpx.Response(
+            200,
+            json={
+                "accountSummaries": [
+                    {
+                        "name": "accountSummaries/123",
+                        "account": "accounts/123",
+                        "displayName": "Wheyland Group",
+                        "propertySummaries": [
+                            {
+                                "property": "properties/456",
+                                "displayName": "Wheyland Electric",
+                            }
+                        ],
+                    }
+                ]
+            },
+        )
+
+    adapter = GoogleAnalyticsAdminAdapter(http_client_factory=mock_client_factory(handler))
+    properties = await adapter.list_account_summaries("access-token")
+
+    assert properties == [
+        DiscoveredAnalyticsProperty(
+            external_property_id="properties/456",
+            property_number="456",
+            display_name="Wheyland Electric",
+            account_display_name="Wheyland Group",
+        )
+    ]
 
 
 @pytest.mark.integration

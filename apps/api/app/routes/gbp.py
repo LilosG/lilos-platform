@@ -20,7 +20,8 @@ from apps.api.app.products.gbp.contracts import (
     ProfileChangeCreate,
     PublishRequest,
 )
-from apps.api.app.products.gbp.models import GBPProfileSnapshot, GBPPublication
+from apps.api.app.products.gbp.models import GBPLocation, GBPProfileSnapshot, GBPPublication
+from apps.api.app.products.gbp.operations_errors import GBPLocationNotFoundError
 from apps.api.app.products.gbp.service import GBPService, profile_health
 
 router = APIRouter(
@@ -51,6 +52,23 @@ def policy(key: str, aal2: bool = False) -> Any:
 
 def no_store(response: Response) -> None:
     response.headers["Cache-Control"] = "no-store"
+
+
+async def require_gbp_location_scope(
+    session: AsyncSession,
+    organization_id: UUID,
+    location_id: UUID,
+    gbp_location_id: UUID,
+) -> None:
+    scoped_id = await session.scalar(
+        select(GBPLocation.id).where(
+            GBPLocation.organization_id == organization_id,
+            GBPLocation.location_id == location_id,
+            GBPLocation.id == gbp_location_id,
+        )
+    )
+    if scoped_id is None:
+        raise GBPLocationNotFoundError
 
 
 @router.post("/locations/{gbp_location_id}/confirm", dependencies=[Depends(no_store)])
@@ -95,9 +113,15 @@ async def profile(
 ) -> dict[str, object]:
     item = await session.scalar(
         select(GBPProfileSnapshot)
+        .join(
+            GBPLocation,
+            (GBPLocation.organization_id == GBPProfileSnapshot.organization_id)
+            & (GBPLocation.id == GBPProfileSnapshot.gbp_location_id),
+        )
         .where(
             GBPProfileSnapshot.organization_id == organization_id,
             GBPProfileSnapshot.gbp_location_id == gbp_location_id,
+            GBPLocation.location_id == location_id,
         )
         .order_by(GBPProfileSnapshot.observed_at.desc())
         .limit(1)
@@ -129,6 +153,7 @@ async def propose(
     principal: Authenticated,
     _: Annotated[AuthorizationDecision, policy("gbp.propose")],
 ) -> dict[str, object]:
+    await require_gbp_location_scope(session, organization_id, location_id, gbp_location_id)
     item = await service.propose(
         session,
         organization_id,
@@ -155,6 +180,9 @@ async def decide(
     principal: Authenticated,
     _: Annotated[AuthorizationDecision, policy("gbp.approve", True)],
 ) -> dict[str, object]:
+    current = await service.get_revision(session, organization_id, revision_id)
+    if current.location_id != location_id:
+        raise GBPLocationNotFoundError
     item = await service.decide(
         session,
         organization_id,
@@ -236,7 +264,10 @@ async def change_audit(
     if item.location_id != location_id:
         raise LookupError("GBP change revision not found")
     history = await service.resource_history(
-        session, resource_type="gbp_profile_change_revision", resource_id=item.id
+        session,
+        organization_id,
+        resource_type="gbp_profile_change_revision",
+        resource_id=item.id,
     )
     return {"data": history, "meta": {"correlation_id": request_correlation_id(request)}}
 
@@ -285,7 +316,7 @@ async def publication_audit(
     if not item:
         raise LookupError("GBP publication not found")
     history = await service.resource_history(
-        session, resource_type="gbp_publication", resource_id=item.id
+        session, organization_id, resource_type="gbp_publication", resource_id=item.id
     )
     return {"data": history, "meta": {"correlation_id": request_correlation_id(request)}}
 
@@ -299,8 +330,9 @@ async def location_audit(
     session: Session,
     _: Annotated[AuthorizationDecision, policy("audit.read")],
 ) -> dict[str, object]:
+    await require_gbp_location_scope(session, organization_id, location_id, gbp_location_id)
     history = await service.resource_history(
-        session, resource_type="gbp_location", resource_id=gbp_location_id
+        session, organization_id, resource_type="gbp_location", resource_id=gbp_location_id
     )
     return {"data": history, "meta": {"correlation_id": request_correlation_id(request)}}
 
