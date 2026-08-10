@@ -16,6 +16,8 @@ envVarGroups:
         value: 5
       - key: LILOS_INTERNAL_ADMIN_ROUTES_ENABLED
         value: "false"
+      - key: LILOS_PROVIDER_WRITES_ENABLED
+        value: "true"
       - key: UV_CACHE_DIR
         value: /tmp/uv-cache
       - key: LILOS_SUPABASE_AUTH_AUDIENCE

@@ -19,7 +19,7 @@
     "check:dependencies": "npm audit --audit-level=high && uv run pip-audit",
     "check:release": "uv run python scripts/release_gate.py",
     "check:production-preflight": "uv run python -m scripts.production_preflight",
-    "check:render": "uv run check-jsonschema --schemafile https://render.com/schema/render.yaml.json render.yaml && uv run python -m scripts.validate_render_blueprint",
+    "check:render": "uv run check-jsonschema --no-cache --schemafile https://render.com/schema/render.yaml.json render.yaml render.staging.yaml && uv run python -m scripts.validate_render_blueprint",
     "check:secrets": "uv run python scripts/check_secrets.py",
     "db:current": "uv run alembic current --check-heads",
     "db:downgrade": "uv run alembic downgrade base",

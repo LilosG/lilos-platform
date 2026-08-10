@@ -35,6 +35,13 @@ logger = logging.getLogger(__name__)
 _adapter_factory: Callable[[], GBPAdapter] = GoogleBusinessProfileAdapter
 
 
+def _provider_writes_enabled() -> bool:
+    """Resolve the environment-wide provider write kill switch at execution time."""
+    from apps.api.app.config import Settings
+
+    return Settings().provider_writes_enabled
+
+
 # Content publisher factory — production builds the real GitHub adapter from a
 # resolved access token; tests can override to inject a deterministic fake.
 def _production_content_publisher_factory(access_token: str) -> Any:
@@ -165,6 +172,10 @@ async def _handle_gbp_publish_change(
         return JobOutcome(result="permanent_failure", safe_error="PUBLICATION_NOT_FOUND")
     if publication.status != "reserved":
         return JobOutcome(result="permanent_failure", safe_error="PUBLICATION_NOT_RESERVABLE")
+    if not _provider_writes_enabled():
+        publication.status = "failed"
+        publication.safe_error_code = "PROVIDER_WRITES_DISABLED"
+        return JobOutcome(result="permanent_failure", safe_error="PROVIDER_WRITES_DISABLED")
 
     revision = await session.scalar(
         select(GBPProfileChangeRevision).where(
@@ -418,6 +429,10 @@ async def _handle_gbp_publish_post(
         publication.status = "reconciliation_required"
         return JobOutcome(result="retryable_failure", safe_error="POST_NOT_YET_LIVE")
 
+    if not _provider_writes_enabled():
+        publication.status = "failed"
+        return JobOutcome(result="permanent_failure", safe_error="PROVIDER_WRITES_DISABLED")
+
     post_body: dict[str, Any] = {
         "languageCode": "en-US",
         "postType": revision.post_type,
@@ -598,6 +613,10 @@ async def _handle_content_publish(
         return JobOutcome(result="permanent_failure", safe_error="PUBLICATION_NOT_FOUND")
     if publication.status not in ("reserved", "branch_created", "pull_request_created"):
         return JobOutcome(result="permanent_failure", safe_error="PUBLICATION_NOT_RESERVABLE")
+    if not _provider_writes_enabled():
+        publication.status = "failed"
+        publication.safe_error_code = "PROVIDER_WRITES_DISABLED"
+        return JobOutcome(result="permanent_failure", safe_error="PROVIDER_WRITES_DISABLED")
 
     target = await session.scalar(
         select(PublishingTarget).where(
@@ -761,6 +780,10 @@ async def _handle_reviews_publish_response(
         return JobOutcome(result="succeeded", result_reference=f"response:{response.id}")
     if response.status != "publishing":
         return JobOutcome(result="permanent_failure", safe_error="RESPONSE_NOT_PUBLISHING")
+    if not _provider_writes_enabled():
+        response.status = "failed"
+        response.safe_error_code = "PROVIDER_WRITES_DISABLED"
+        return JobOutcome(result="permanent_failure", safe_error="PROVIDER_WRITES_DISABLED")
 
     review = await session.scalar(
         select(Review).where(

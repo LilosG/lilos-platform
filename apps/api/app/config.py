@@ -60,6 +60,7 @@ class Settings(BaseSettings):
     test_database_url: PostgresDsn | None = None
     database_connect_timeout_seconds: Annotated[float, Field(gt=0, le=30)] = 5.0
     internal_admin_routes_enabled: bool = False
+    provider_writes_enabled: bool = False
     web_origins: Annotated[str, Field(max_length=2_048)] = ""
     supabase_auth_issuer: HttpUrl | None = None
     supabase_auth_audience: Annotated[str, Field(min_length=1, max_length=128)] = "authenticated"

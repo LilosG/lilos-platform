@@ -1,0 +1,134 @@
+previews:
+  generation: "off"
+
+projects:
+  - name: lilos-platform-staging
+    environments:
+      - name: staging
+        networking:
+          isolation: enabled
+        permissions:
+          protection: enabled
+        envVarGroups:
+          - name: lilos-staging-runtime
+            envVars:
+              - key: LILOS_ENV
+                value: staging
+              - key: LILOS_LOG_LEVEL
+                value: INFO
+              - key: LILOS_API_VERSION
+                value: 0.1.0
+              - key: LILOS_TRACE_SAMPLE_RATE
+                value: 0.1
+              - key: LILOS_DATABASE_CONNECT_TIMEOUT_SECONDS
+                value: 5
+              - key: LILOS_INTERNAL_ADMIN_ROUTES_ENABLED
+                value: "false"
+              - key: LILOS_PROVIDER_WRITES_ENABLED
+                value: "false"
+              - key: LILOS_SECRET_ENCRYPTION_KEY_VERSION
+                value: 1
+              - key: UV_CACHE_DIR
+                value: /tmp/uv-cache
+              - key: LILOS_SUPABASE_AUTH_AUDIENCE
+                value: authenticated
+              - key: LILOS_SUPABASE_AUTH_ALLOWED_ALGORITHMS
+                value: ES256,RS256
+        databases:
+          - name: lilos-staging-postgres
+            plan: basic-256mb
+            region: oregon
+            postgresMajorVersion: "17"
+            databaseName: lilos_staging
+            user: lilos_staging
+            diskSizeGB: 15
+            storageAutoscalingEnabled: false
+            ipAllowList: []
+        services:
+          - name: lilos-staging-api
+            type: web
+            runtime: docker
+            plan: starter
+            region: oregon
+            branch: worker/backend-closure-2026-08-10
+            autoDeployTrigger: "off"
+            dockerContext: .
+            dockerfilePath: ./infrastructure/docker/backend.Dockerfile
+            dockerCommand: sh /app/scripts/render_start_api.sh
+            preDeployCommand: sh /app/scripts/render_predeploy.sh
+            healthCheckPath: /health/ready
+            maxShutdownDelaySeconds: 30
+            numInstances: 1
+            envVars:
+              - fromGroup: lilos-staging-runtime
+              - key: LILOS_DATABASE_URL
+                fromDatabase:
+                  name: lilos-staging-postgres
+                  property: connectionString
+              - key: LILOS_MIGRATION_DATABASE_URL
+                fromDatabase:
+                  name: lilos-staging-postgres
+                  property: connectionString
+              - key: LILOS_SUPABASE_AUTH_ISSUER
+                sync: false
+              - key: LILOS_SUPABASE_AUTH_JWKS_URL
+                sync: false
+              - key: LILOS_TELEMETRY_EXPORT_ENDPOINT
+                sync: false
+              - key: LILOS_WEB_ORIGINS
+                sync: false
+              - key: LILOS_GOOGLE_OAUTH_CLIENT_ID
+                sync: false
+              - key: LILOS_GOOGLE_OAUTH_CLIENT_SECRET
+                sync: false
+              - key: LILOS_GOOGLE_OAUTH_REDIRECT_URI
+                sync: false
+              - key: LILOS_SECRET_ENCRYPTION_KEY
+                sync: false
+              - key: LILOS_GITHUB_APP_ID
+                sync: false
+              - key: LILOS_GITHUB_APP_CLIENT_ID
+                sync: false
+              - key: LILOS_GITHUB_APP_PRIVATE_KEY
+                sync: false
+              - key: LILOS_GITHUB_APP_INSTALLATION_REDIRECT_URI
+                sync: false
+
+          - name: lilos-staging-worker
+            type: worker
+            runtime: docker
+            plan: starter
+            region: oregon
+            branch: worker/backend-closure-2026-08-10
+            autoDeployTrigger: "off"
+            dockerContext: .
+            dockerfilePath: ./infrastructure/docker/backend.Dockerfile
+            dockerCommand: sh /app/scripts/render_start_worker.sh
+            maxShutdownDelaySeconds: 300
+            numInstances: 1
+            envVars:
+              - fromGroup: lilos-staging-runtime
+              - key: LILOS_DATABASE_URL
+                fromDatabase:
+                  name: lilos-staging-postgres
+                  property: connectionString
+              - key: LILOS_SUPABASE_AUTH_ISSUER
+                sync: false
+              - key: LILOS_SUPABASE_AUTH_JWKS_URL
+                sync: false
+              - key: LILOS_TELEMETRY_EXPORT_ENDPOINT
+                sync: false
+              - key: LILOS_GOOGLE_OAUTH_CLIENT_ID
+                sync: false
+              - key: LILOS_GOOGLE_OAUTH_CLIENT_SECRET
+                sync: false
+              - key: LILOS_GOOGLE_OAUTH_REDIRECT_URI
+                sync: false
+              - key: LILOS_SECRET_ENCRYPTION_KEY
+                sync: false
+              - key: LILOS_GITHUB_APP_ID
+                sync: false
+              - key: LILOS_GITHUB_APP_CLIENT_ID
+                sync: false
+              - key: LILOS_GITHUB_APP_PRIVATE_KEY
+                sync: false
