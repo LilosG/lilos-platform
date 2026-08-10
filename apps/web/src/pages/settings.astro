@@ -167,6 +167,8 @@ import "../styles/global.css";
         fetchMemberships,
         fetchInvitations,
         fetchProducts,
+        businessFactLabel,
+        formatBusinessFactValue,
       } from "../lib/administration";
       import {
         bootWorkspace,
@@ -685,11 +687,9 @@ import "../styles/global.css";
             const item = document.createElement("li");
             const info = document.createElement("div");
             const name = document.createElement("h3");
-            name.textContent = candidate.fact_key
-              .replace(/_/g, " ")
-              .replace(/\b\w/g, (c) => c.toUpperCase());
+            name.textContent = businessFactLabel(candidate.fact_key);
             const detail = document.createElement("p");
-            detail.textContent = String(candidate.value);
+            detail.textContent = formatBusinessFactValue(candidate.value);
             info.append(name, detail);
             const confirmBtn = document.createElement("button");
             confirmBtn.type = "button";

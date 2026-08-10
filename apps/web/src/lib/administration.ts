@@ -46,6 +46,62 @@ export type BusinessFactRevision = {
   authority: string;
 };
 
+const BUSINESS_FACT_LABELS: Record<string, string> = {
+  "business.name": "Business name",
+  "business.address": "Business address",
+  "business.website": "Website",
+  "business.hours": "Business hours",
+  "brand.approved_claims": "Approved claims",
+};
+
+export function businessFactLabel(factKey: string): string {
+  return (
+    BUSINESS_FACT_LABELS[factKey] ??
+    factKey
+      .replace(/[._]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .replace(/\b\w/g, (character) => character.toUpperCase())
+  );
+}
+
+export function formatBusinessFactValue(value: unknown): string {
+  if (value === null || value === undefined || value === "") {
+    return "Not provided";
+  }
+  if (Array.isArray(value)) {
+    return value.map(formatBusinessFactValue).join(", ");
+  }
+  if (typeof value !== "object") {
+    return String(value);
+  }
+
+  const record = value as Record<string, unknown>;
+  if ("address_line_1" in record) {
+    const locality = [record.city, record.region]
+      .filter((part) => typeof part === "string" && part.trim())
+      .join(", ");
+    const localityWithPostal = [locality, record.postal_code]
+      .filter((part) => typeof part === "string" && part.trim())
+      .join(" ");
+    return [
+      record.address_line_1,
+      record.address_line_2,
+      localityWithPostal,
+      record.country_code,
+    ]
+      .filter((part) => typeof part === "string" && part.trim())
+      .join(" · ");
+  }
+
+  return Object.entries(record)
+    .map(
+      ([key, item]) =>
+        `${businessFactLabel(key)}: ${formatBusinessFactValue(item)}`,
+    )
+    .join(" · ");
+}
+
 export type FactResolution = {
   state: "resolved" | "missing" | "ambiguous";
   fact_key: string;
