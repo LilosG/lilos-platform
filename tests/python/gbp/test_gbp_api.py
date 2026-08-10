@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from starlette.testclient import TestClient
 
@@ -18,7 +19,11 @@ from apps.api.app.authentication.enums import AssuranceLevel, UserStatus
 from apps.api.app.authentication.models import UserProfile
 from apps.api.app.config import EnvironmentName, Settings
 from apps.api.app.execution.models import WorkflowDefinition, WorkflowRun, WorkflowVersion
-from apps.api.app.integrations.models import IntegrationConnection, Provider
+from apps.api.app.integrations.models import (
+    IntegrationConnection,
+    Provider,
+    ProviderResourceMapping,
+)
 from apps.api.app.locations.enums import LocationStatus, LocationType
 from apps.api.app.locations.models import Location
 from apps.api.app.main import create_app
@@ -261,6 +266,7 @@ def test_organization_scoped_discovery_lists_are_real_and_tenant_isolated(
 @pytest.mark.integration
 def test_full_vertical_slice_flow_produces_readable_audit_history(
     gbp_client: tuple[TestClient, dict[str, UUID]],
+    gbp_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     client, ids = gbp_client
     org, location, gbp_location = ids["organization"], ids["location"], ids["gbp_location"]
@@ -273,6 +279,25 @@ def test_full_vertical_slice_flow_produces_readable_audit_history(
     )
     assert confirm.status_code == 200
     assert confirm.json()["data"]["mapping_status"] == "confirmed"
+
+    async def confirmed_mapping() -> tuple[ProviderResourceMapping, GBPLocation]:
+        async with gbp_session_factory() as session:
+            mapping = await session.scalar(
+                select(ProviderResourceMapping).where(
+                    ProviderResourceMapping.organization_id == org,
+                    ProviderResourceMapping.platform_resource_id == location,
+                    ProviderResourceMapping.resource_type == "location",
+                )
+            )
+            gbp = await session.get(GBPLocation, gbp_location)
+            assert mapping is not None
+            assert gbp is not None
+            return mapping, gbp
+
+    resource_mapping, confirmed_location = asyncio.run(confirmed_mapping())
+    assert resource_mapping.external_resource_id == "locations/456"
+    assert resource_mapping.status == "active"
+    assert confirmed_location.integration_resource_id == resource_mapping.id
 
     location_audit = client.get(f"{base}/locations/{gbp_location}/audit", headers=HEADERS)
     assert location_audit.status_code == 200
