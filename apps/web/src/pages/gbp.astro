@@ -126,6 +126,7 @@ import "../styles/global.css";
         fetchGBPLocations,
         fetchPlatformLocations,
         confirmLocationMapping,
+        workspaceContextFor,
         type GBPLocationSummary,
         type PlatformLocation,
       } from "../lib/gbp";
@@ -400,11 +401,10 @@ import "../styles/global.css";
       }
 
       async function openWorkspace(loc: GBPLocationSummary): Promise<void> {
-        if (!loc.location_id) return;
-        selectedPlatformLocationId =
-          platformLocationsCache.find((p) => p.name === loc.business_name)
-            ?.id ?? null;
-        selectedGbpLocationId = loc.location_id;
+        const context = workspaceContextFor(loc);
+        if (!context) return;
+        selectedPlatformLocationId = context.platformLocationId;
+        selectedGbpLocationId = context.gbpLocationId;
         document.getElementById("gbp-workspace")!.hidden = false;
         document.getElementById("location-picker-section")!.hidden = true;
 

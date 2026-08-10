@@ -24,6 +24,24 @@ export type GBPLocationSummary = {
   last_synced_at: string | null;
 };
 
+export type GBPWorkspaceContext = {
+  platformLocationId: string;
+  gbpLocationId: string;
+};
+
+export function workspaceContextFor(
+  location: GBPLocationSummary,
+): GBPWorkspaceContext | null {
+  if (location.mapping_status !== "confirmed" || !location.location_id) {
+    return null;
+  }
+
+  return {
+    platformLocationId: location.location_id,
+    gbpLocationId: location.id,
+  };
+}
+
 export function fetchGBPAccounts(
   organizationId: string,
 ): Promise<ApiOutcome<GBPAccountSummary[]>> {
