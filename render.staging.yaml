@@ -28,6 +28,8 @@ projects:
                 value: "false"
               - key: LILOS_SECRET_ENCRYPTION_KEY_VERSION
                 value: 1
+              - key: LILOS_SECRET_ENCRYPTION_KEY
+                generateValue: true
               - key: UV_CACHE_DIR
                 value: /tmp/uv-cache
               - key: LILOS_SUPABASE_AUTH_AUDIENCE
@@ -48,6 +50,7 @@ projects:
           - name: lilos-staging-api
             type: web
             runtime: docker
+            repo: https://github.com/LilosG/lilos-platform.git
             plan: starter
             region: oregon
             branch: worker/backend-closure-2026-08-10
@@ -69,34 +72,11 @@ projects:
                 fromDatabase:
                   name: lilos-staging-postgres
                   property: connectionString
-              - key: LILOS_SUPABASE_AUTH_ISSUER
-                sync: false
-              - key: LILOS_SUPABASE_AUTH_JWKS_URL
-                sync: false
-              - key: LILOS_TELEMETRY_EXPORT_ENDPOINT
-                sync: false
-              - key: LILOS_WEB_ORIGINS
-                sync: false
-              - key: LILOS_GOOGLE_OAUTH_CLIENT_ID
-                sync: false
-              - key: LILOS_GOOGLE_OAUTH_CLIENT_SECRET
-                sync: false
-              - key: LILOS_GOOGLE_OAUTH_REDIRECT_URI
-                sync: false
-              - key: LILOS_SECRET_ENCRYPTION_KEY
-                sync: false
-              - key: LILOS_GITHUB_APP_ID
-                sync: false
-              - key: LILOS_GITHUB_APP_CLIENT_ID
-                sync: false
-              - key: LILOS_GITHUB_APP_PRIVATE_KEY
-                sync: false
-              - key: LILOS_GITHUB_APP_INSTALLATION_REDIRECT_URI
-                sync: false
 
           - name: lilos-staging-worker
             type: worker
             runtime: docker
+            repo: https://github.com/LilosG/lilos-platform.git
             plan: starter
             region: oregon
             branch: worker/backend-closure-2026-08-10
@@ -112,23 +92,3 @@ projects:
                 fromDatabase:
                   name: lilos-staging-postgres
                   property: connectionString
-              - key: LILOS_SUPABASE_AUTH_ISSUER
-                sync: false
-              - key: LILOS_SUPABASE_AUTH_JWKS_URL
-                sync: false
-              - key: LILOS_TELEMETRY_EXPORT_ENDPOINT
-                sync: false
-              - key: LILOS_GOOGLE_OAUTH_CLIENT_ID
-                sync: false
-              - key: LILOS_GOOGLE_OAUTH_CLIENT_SECRET
-                sync: false
-              - key: LILOS_GOOGLE_OAUTH_REDIRECT_URI
-                sync: false
-              - key: LILOS_SECRET_ENCRYPTION_KEY
-                sync: false
-              - key: LILOS_GITHUB_APP_ID
-                sync: false
-              - key: LILOS_GITHUB_APP_CLIENT_ID
-                sync: false
-              - key: LILOS_GITHUB_APP_PRIVATE_KEY
-                sync: false
