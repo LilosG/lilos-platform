@@ -99,6 +99,7 @@ import "../styles/global.css";
         fetchSearchProperties,
         runCrawl,
         normalizeCrawlPageLimit,
+        describeCrawlResult,
       } from "../lib/seo";
       import { fetchSearchConsoleSummary } from "../lib/search-console";
       import { startWorkflowRun } from "../lib/workflows";
@@ -195,12 +196,7 @@ import "../styles/global.css";
           grid.append(
             metricCard(
               "Crawl runs",
-              String(
-                Object.values(summary.data.by_status ?? {}).reduce(
-                  (a, b) => a + b,
-                  0,
-                ),
-              ),
+              String(summary.data.crawl_run_count),
               "Total",
             ),
           );
@@ -365,30 +361,43 @@ import "../styles/global.css";
           status.setAttribute("role", "status");
           status.setAttribute("aria-live", "polite");
           crawlBtn.addEventListener("click", async () => {
+            const crawlOrganizationId = organizationId;
+            const requestTimestamp = Date.now();
             crawlBtn.disabled = true;
             crawlBtn.textContent = "Starting…";
             const workflowStart = await startWorkflowRun(
-              organizationId,
+              crawlOrganizationId,
               "seo.crawl_or_analysis",
               {
-                idempotencyKey: `web-crawl-${website.id}-${Date.now()}`,
+                idempotencyKey: `web-crawl-${website.id}-${requestTimestamp}`,
               },
             );
+            if (organizationId !== crawlOrganizationId) return;
             if (workflowStart.kind !== "ok") {
               status.textContent = describeFailure(workflowStart, "Crawl");
               crawlBtn.disabled = false;
               crawlBtn.textContent = "Run crawl";
               return;
             }
-            const result = await runCrawl(organizationId, website.id, {
+            const result = await runCrawl(crawlOrganizationId, website.id, {
               workflowRunId: workflowStart.data.workflow_run_id,
               seedPaths: ["/"],
               maxPages: normalizeCrawlPageLimit(Number(maxPagesInput.value)),
-              idempotencyKey: `web-crawl-${website.id}-${Date.now()}`,
+              idempotencyKey: `web-crawl-run-${website.id}-${requestTimestamp}`,
             });
+            if (organizationId !== crawlOrganizationId) return;
             if (result.kind === "ok") {
-              crawlBtn.textContent = "Crawl started";
-              status.textContent = `Status: ${result.data.status}`;
+              crawlBtn.disabled = false;
+              crawlBtn.textContent = "Run again";
+              status.textContent = describeCrawlResult(result.data);
+              const [updatedSummary, updatedOpps] = await Promise.all([
+                fetchSEOSummary(crawlOrganizationId),
+                fetchOpportunities(crawlOrganizationId),
+              ]);
+              if (organizationId !== crawlOrganizationId) return;
+              renderMetrics(updatedSummary, websites, updatedOpps);
+              renderOverview(websites, updatedOpps);
+              renderOpportunities(updatedOpps);
             } else {
               crawlBtn.disabled = false;
               crawlBtn.textContent = "Run crawl";

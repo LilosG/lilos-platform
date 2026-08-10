@@ -878,9 +878,13 @@ class SEOService:
         website_count = await session.scalar(
             select(func.count()).where(SEOWebsite.organization_id == organization_id)
         )
+        crawl_run_count = await session.scalar(
+            select(func.count()).where(SEOCrawlRun.organization_id == organization_id)
+        )
         return {
             "by_status": {status: count for status, count in rows},
             "website_count": int(website_count or 0),
+            "crawl_run_count": int(crawl_run_count or 0),
         }
 
     async def resource_history(
