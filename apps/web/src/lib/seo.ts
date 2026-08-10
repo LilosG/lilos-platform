@@ -1,5 +1,12 @@
 import { apiGet, apiRequest, type ApiOutcome } from "./api-client";
 
+export const MAX_CRAWL_PAGES = 20;
+
+export function normalizeCrawlPageLimit(value: number): number {
+  if (!Number.isFinite(value)) return MAX_CRAWL_PAGES;
+  return Math.min(MAX_CRAWL_PAGES, Math.max(1, Math.trunc(value)));
+}
+
 export type SEOWebsite = {
   id: string;
   location_id: string | null;
@@ -150,7 +157,7 @@ export function runCrawl(
     body: {
       workflow_run_id: crawl.workflowRunId,
       seed_paths: crawl.seedPaths,
-      max_pages: crawl.maxPages,
+      max_pages: normalizeCrawlPageLimit(crawl.maxPages),
       idempotency_key: crawl.idempotencyKey,
     },
   });

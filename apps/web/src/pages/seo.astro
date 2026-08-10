@@ -92,11 +92,13 @@ import "../styles/global.css";
     </AppShell>
     <script>
       import {
+        MAX_CRAWL_PAGES,
         fetchWebsites,
         fetchSEOSummary,
         fetchOpportunities,
         fetchSearchProperties,
         runCrawl,
+        normalizeCrawlPageLimit,
       } from "../lib/seo";
       import { fetchSearchConsoleSummary } from "../lib/search-console";
       import { startWorkflowRun } from "../lib/workflows";
@@ -348,7 +350,9 @@ import "../styles/global.css";
           const maxPagesInput = document.createElement("input");
           maxPagesInput.id = `crawl-max-pages-${website.id}`;
           maxPagesInput.type = "number";
-          maxPagesInput.value = "100";
+          maxPagesInput.min = "1";
+          maxPagesInput.max = String(MAX_CRAWL_PAGES);
+          maxPagesInput.value = String(MAX_CRAWL_PAGES);
           maxPagesField.append(maxPagesInput);
           body.append(maxPagesField);
 
@@ -379,7 +383,7 @@ import "../styles/global.css";
             const result = await runCrawl(organizationId, website.id, {
               workflowRunId: workflowStart.data.workflow_run_id,
               seedPaths: ["/"],
-              maxPages: Number(maxPagesInput.value) || 100,
+              maxPages: normalizeCrawlPageLimit(Number(maxPagesInput.value)),
               idempotencyKey: `web-crawl-${website.id}-${Date.now()}`,
             });
             if (result.kind === "ok") {
