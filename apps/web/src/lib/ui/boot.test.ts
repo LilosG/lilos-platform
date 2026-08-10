@@ -1,5 +1,10 @@
-import { describe, expect, it } from "vitest";
-import { applyBootResult, type BootRegions, type BootResult } from "./boot";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  applyBootResult,
+  setActiveOrganization,
+  type BootRegions,
+  type BootResult,
+} from "./boot";
 
 function element(hidden: boolean): HTMLElement {
   return { hidden, textContent: "" } as HTMLElement;
@@ -50,5 +55,54 @@ describe("applyBootResult", () => {
     expect(bootRegions.loading.hidden).toBe(true);
     expect(bootRegions.error.hidden).toBe(false);
     expect(bootRegions.error.textContent).toBe("Workspace failed to load.");
+  });
+});
+
+describe("setActiveOrganization", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("keeps the visible switcher synchronized with the governed active organization", () => {
+    const switcher = { value: "lilos-growth-id" } as HTMLSelectElement;
+    const name = { textContent: "" } as HTMLElement;
+    const stored = new Map<string, string>();
+    let replacedUrl = "";
+
+    vi.stubGlobal("localStorage", {
+      setItem: (key: string, value: string) => stored.set(key, value),
+    });
+    vi.stubGlobal("window", {
+      location: {
+        href: "https://app.lilos.invalid/settings?org=wheyland-id",
+      },
+      history: {
+        replaceState: (_state: object, _unused: string, url: string) => {
+          replacedUrl = url;
+        },
+      },
+    });
+    vi.stubGlobal("document", {
+      getElementById: (id: string) => {
+        if (id === "organization-switcher") return switcher;
+        if (id === "active-organization-name") return name;
+        return null;
+      },
+    });
+
+    setActiveOrganization({
+      organization_id: "wheyland-id",
+      organization_name: "Wheyland Electric",
+      organization_slug: "wheyland-electric",
+      organization_status: "active",
+      membership_id: "membership-id",
+      membership_status: "active",
+      membership_type: "owner",
+    });
+
+    expect(switcher.value).toBe("wheyland-id");
+    expect(name.textContent).toBe("Wheyland Electric");
+    expect(stored.get("selected_org_id")).toBe("wheyland-id");
+    expect(replacedUrl).toBe("");
   });
 });

@@ -91,6 +91,10 @@ export function setActiveOrganization(
       window.history.replaceState({}, "", url.toString());
     }
   }
+  const switcher = document.getElementById(
+    "organization-switcher",
+  ) as HTMLSelectElement | null;
+  if (switcher) switcher.value = organization.organization_id;
   const nameEl = document.getElementById("active-organization-name");
   if (nameEl) nameEl.textContent = organization.organization_name;
 }
