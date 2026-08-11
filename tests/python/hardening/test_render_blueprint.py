@@ -24,6 +24,20 @@ def test_render_blueprint_rejects_managed_database(tmp_path: Path) -> None:
     assert "prohibited-root:databases" in validate_blueprint(candidate)
 
 
+def test_render_blueprint_rejects_provider_writes_enabled(tmp_path: Path) -> None:
+    candidate = tmp_path / "render.yaml"
+    source = Path("render.yaml").read_text(encoding="utf-8")
+    candidate.write_text(
+        source.replace(
+            '      - key: LILOS_PROVIDER_WRITES_ENABLED\n        value: "false"',
+            '      - key: LILOS_PROVIDER_WRITES_ENABLED\n        value: "true"',
+        ),
+        encoding="utf-8",
+    )
+
+    assert "production:provider-writes-enabled" in validate_blueprint(candidate)
+
+
 def test_staging_blueprint_is_isolated_manual_and_write_disabled() -> None:
     assert validate_staging_blueprint() == ()
     blueprint = load_blueprint(STAGING_BLUEPRINT)
