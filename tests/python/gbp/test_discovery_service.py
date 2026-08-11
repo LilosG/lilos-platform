@@ -33,6 +33,7 @@ from apps.api.app.organizations.enums import OrganizationStatus, OrganizationTyp
 from apps.api.app.organizations.models import Organization
 from apps.api.app.products.gbp.discovery_service import GBPDiscoveryService
 from apps.api.app.products.gbp.models import GBPAccount, GBPLocation, GBPProfileSnapshot
+from apps.api.app.products.gbp.operations_models import GBPProviderPost
 
 
 class FakeGBPAdapter:
@@ -44,6 +45,7 @@ class FakeGBPAdapter:
         accounts: list[dict[str, Any]] | None = None,
         locations_by_account: dict[str, list[dict[str, Any]]] | None = None,
         location_details: dict[str, dict[str, Any]] | None = None,
+        local_posts: list[dict[str, Any]] | None = None,
         account_error: Exception | None = None,
         location_error: Exception | None = None,
         location_detail_error: Exception | None = None,
@@ -51,6 +53,7 @@ class FakeGBPAdapter:
         self._accounts = accounts or []
         self._locations_by_account = locations_by_account or {}
         self._location_details = location_details or {}
+        self.local_posts = local_posts or []
         self._account_error = account_error
         self._location_error = location_error
         self._location_detail_error = location_detail_error
@@ -105,7 +108,9 @@ class FakeGBPAdapter:
         raise NotImplementedError
 
     async def list_local_posts(self, access_token: str, location_name: str) -> list[dict[str, Any]]:
-        raise NotImplementedError
+        del access_token
+        self.local_posts_location_name = location_name
+        return list(self.local_posts)
 
 
 class FakeConnectionService(GBPConnectionService):
@@ -839,6 +844,60 @@ class TestGBPProfileSync:
         events = asyncio.run(check_audit())
         assert len(events) == 1
         assert events[0].result.value == "failed"
+
+    def test_reconcile_local_posts_persists_provider_truth_idempotently(
+        self, setup: SyncSetupTuple
+    ) -> None:
+        factory, db_url, org_id, _, loc_id = setup
+        adapter = FakeGBPAdapter(
+            local_posts=[
+                {
+                    "name": "accounts/111/locations/loc-a/localPosts/1",
+                    "topicType": "STANDARD",
+                    "summary": "One",
+                },
+                {
+                    "name": "accounts/111/locations/loc-a/localPosts/2",
+                    "topicType": "EVENT",
+                    "summary": "Two",
+                },
+            ]
+        )
+        service = GBPDiscoveryService(adapter=adapter, connection=FakeConnectionService())
+
+        async def run() -> dict[str, int | str]:
+            async with factory() as session, session.begin():
+                return await service.reconcile_local_posts(
+                    session,
+                    _settings(db_url),
+                    org_id,
+                    loc_id,
+                    actor_id=None,
+                    correlation_id="test-reconcile-local-posts",
+                )
+
+        first = asyncio.run(run())
+        second = asyncio.run(run())
+        assert first["provider_count"] == 2
+        assert first["inserted_count"] == 2
+        assert second["inserted_count"] == 0
+        assert second["updated_count"] == 0
+        assert adapter.local_posts_location_name == "accounts/111/locations/loc-a"
+
+        async def read_rows() -> list[GBPProviderPost]:
+            async with factory() as session:
+                return list(
+                    await session.scalars(
+                        select(GBPProviderPost).where(
+                            GBPProviderPost.organization_id == org_id,
+                            GBPProviderPost.gbp_location_id == loc_id,
+                        )
+                    )
+                )
+
+        rows = asyncio.run(read_rows())
+        assert len(rows) == 2
+        assert {row.status for row in rows} == {"present"}
 
 
 @pytest.mark.integration

@@ -19,6 +19,7 @@ from apps.api.app.authorization.contracts import AuthorizationDecision
 from apps.api.app.authorization.dependencies import require_authorization
 from apps.api.app.database.session import get_database_session
 from apps.api.app.errors import request_correlation_id
+from apps.api.app.products.gbp.discovery_service import GBPDiscoveryService
 from apps.api.app.products.gbp.models import GBPLocation
 from apps.api.app.products.gbp.operations_contracts import (
     CapabilitySnapshotRecord,
@@ -37,10 +38,12 @@ from apps.api.app.products.gbp.operations_models import (
     GBPMedia,
     GBPPostPublication,
     GBPPostRevision,
+    GBPProviderPost,
     GBPSpecialHours,
     GBPSuspensionCase,
 )
 from apps.api.app.products.gbp.operations_service import GBPOperationsService
+from apps.api.app.routes.health import settings_from_request
 
 router = APIRouter(
     prefix="/api/v1/organizations/{organization_id}/locations/{location_id}/gbp/operations",
@@ -48,6 +51,7 @@ router = APIRouter(
     dependencies=[Depends(get_authenticated_principal)],
 )
 service = GBPOperationsService()
+discovery_service = GBPDiscoveryService()
 Session = Annotated[AsyncSession, Depends(get_database_session)]
 
 
@@ -163,6 +167,21 @@ def post_publication_row(item: GBPPostPublication) -> dict[str, object]:
         "scheduled_for": item.scheduled_for,
         "provider_post_id": item.provider_post_id,
         "verified_at": item.verified_at,
+    }
+
+
+def provider_post_row(item: GBPProviderPost) -> dict[str, object]:
+    return {
+        "id": str(item.id),
+        "provider_post_name": item.provider_post_name,
+        "post_type": item.post_type,
+        "state": item.state,
+        "summary": item.summary,
+        "content_hash": item.content_hash,
+        "status": item.status,
+        "first_seen_at": item.first_seen_at,
+        "last_seen_at": item.last_seen_at,
+        "observed_at": item.observed_at,
     }
 
 
@@ -428,6 +447,57 @@ async def list_post_revisions(
     await require_gbp_location_scope(session, organization_id, location_id, gbp_location_id)
     items = await service.list_post_revisions(session, organization_id, gbp_location_id)
     return {"data": [post_revision_row(item) for item in items], "meta": meta(request)}
+
+
+@router.get(
+    "/locations/{gbp_location_id}/posts/provider",
+    dependencies=[Depends(no_store)],
+)
+async def list_provider_posts(
+    request: Request,
+    organization_id: UUID,
+    location_id: UUID,
+    gbp_location_id: UUID,
+    session: Session,
+    _: Annotated[AuthorizationDecision, policy("gbp.read")],
+) -> dict[str, object]:
+    await require_gbp_location_scope(session, organization_id, location_id, gbp_location_id)
+    items = list(
+        await session.scalars(
+            select(GBPProviderPost)
+            .where(
+                GBPProviderPost.organization_id == organization_id,
+                GBPProviderPost.gbp_location_id == gbp_location_id,
+            )
+            .order_by(GBPProviderPost.status.asc(), GBPProviderPost.observed_at.desc())
+        )
+    )
+    return {"data": [provider_post_row(item) for item in items], "meta": meta(request)}
+
+
+@router.post(
+    "/locations/{gbp_location_id}/posts/reconcile",
+    dependencies=[Depends(no_store)],
+)
+async def reconcile_provider_posts(
+    request: Request,
+    organization_id: UUID,
+    location_id: UUID,
+    gbp_location_id: UUID,
+    session: Session,
+    principal: Authenticated,
+    _: Annotated[AuthorizationDecision, policy("gbp.read")],
+) -> dict[str, object]:
+    await require_gbp_location_scope(session, organization_id, location_id, gbp_location_id)
+    result = await discovery_service.reconcile_local_posts(
+        session,
+        settings_from_request(request),
+        organization_id,
+        gbp_location_id,
+        actor_id=principal.platform_user_id,
+        correlation_id=request_correlation_id(request),
+    )
+    return {"data": result, "meta": meta(request)}
 
 
 @router.post(

@@ -360,6 +360,41 @@ class GitHubAppService:
         )
         return result
 
+    async def disconnect_installation(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        *,
+        actor_id: UUID | None,
+        correlation_id: str,
+    ) -> IntegrationConnection:
+        """Revoke the local installation binding without a GitHub write.
+
+        GitHub App uninstall is controlled by GitHub and can affect other
+        organizations using the same installation. LILOs therefore removes
+        its local authorization immediately; the operator can uninstall the
+        App in GitHub separately when remote revocation is desired.
+        """
+        connection = await self.find_connection(session, organization_id)
+        if connection is None:
+            raise IntegrationNotFoundError
+        connection.external_account_reference = None
+        connection.credential_reference = None
+        connection.status = "disconnected"
+        await session.flush()
+        await self._audit(
+            session,
+            event="content.github_app.disconnected",
+            organization_id=organization_id,
+            actor_id=actor_id,
+            resource_type="integration_connection",
+            resource_id=connection.id,
+            correlation_id=correlation_id,
+            summary="GitHub App installation disconnected locally.",
+            metadata={"remote_uninstall_required": True},
+        )
+        return connection
+
     async def _get_or_create_pending_connection(
         self, session: AsyncSession, organization_id: UUID, provider: Provider
     ) -> IntegrationConnection:

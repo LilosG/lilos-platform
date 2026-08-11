@@ -6,6 +6,21 @@ export type GoogleServices = {
   analytics: boolean;
 };
 
+export type GoogleProduct = keyof GoogleServices;
+
+export const ALL_GOOGLE_PRODUCTS: GoogleProduct[] = [
+  "gbp",
+  "search_console",
+  "analytics",
+];
+
+export function missingGoogleProducts(
+  services: GoogleServices | undefined,
+): GoogleProduct[] {
+  if (!services) return [...ALL_GOOGLE_PRODUCTS];
+  return ALL_GOOGLE_PRODUCTS.filter((product) => !services[product]);
+}
+
 export type GBPConnectionStatus = {
   status:
     | "pending"

@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { describeGbpConnectFailure } from "./gbp-connection";
+import {
+  describeGbpConnectFailure,
+  missingGoogleProducts,
+} from "./gbp-connection";
 import type { ApiOutcome } from "./api-client";
 
 const genericError: ApiOutcome<unknown> = {
@@ -74,5 +77,25 @@ describe("describeGbpConnectFailure — /gbp actionable error regression", () =>
     };
     expect(describeGbpConnectFailure(ok, "org-1").kind).toBe("generic");
     expect(describeGbpConnectFailure(ok, "org-1").message).toBe("");
+  });
+});
+
+describe("Google product authorization", () => {
+  it("identifies only the services not present on an existing connection", () => {
+    expect(
+      missingGoogleProducts({
+        gbp: true,
+        search_console: false,
+        analytics: false,
+      }),
+    ).toEqual(["search_console", "analytics"]);
+  });
+
+  it("requests all approved services for a new connection", () => {
+    expect(missingGoogleProducts(undefined)).toEqual([
+      "gbp",
+      "search_console",
+      "analytics",
+    ]);
   });
 });

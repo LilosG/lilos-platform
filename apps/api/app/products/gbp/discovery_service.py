@@ -6,6 +6,8 @@ after an OAuth connection is established.  Every mutation writes a real audit
 event through the shared AuditEventService.
 """
 
+import hashlib
+import json
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, cast
@@ -23,8 +25,25 @@ from apps.api.app.integrations.connection_service import GBPConnectionService
 from apps.api.app.integrations.contracts import MappingCreate
 from apps.api.app.products.gbp.adapter import GBPAdapter, GoogleBusinessProfileAdapter
 from apps.api.app.products.gbp.models import GBPAccount, GBPLocation, GBPProfileSnapshot
-from apps.api.app.products.gbp.resource_names import normalize_location_name, v1_location_name
+from apps.api.app.products.gbp.operations_models import GBPProviderPost
+from apps.api.app.products.gbp.resource_names import (
+    normalize_location_name,
+    v1_location_name,
+    v4_localposts_parent,
+)
 from apps.api.app.products.gbp.service import GBPService
+
+
+def _content_hash(value: dict[str, object]) -> str:
+    return hashlib.sha256(
+        json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
+    ).hexdigest()
+
+
+def _bounded_string(value: object, limit: int) -> str | None:
+    if not isinstance(value, str):
+        return None
+    return value[:limit]
 
 
 @dataclass(slots=True)
@@ -411,6 +430,136 @@ class GBPDiscoveryService:
         )
 
         return snapshot
+
+    async def reconcile_local_posts(
+        self,
+        session: AsyncSession,
+        settings: Settings,
+        organization_id: UUID,
+        gbp_location_id: UUID,
+        *,
+        actor_id: UUID | None,
+        correlation_id: str,
+    ) -> dict[str, int | str]:
+        """Read and persist the complete provider Local Posts collection.
+
+        Provider posts are stored as an observed snapshot, independently from
+        LILOs' governed draft/revision/publication records.  Repeating this
+        action is idempotent by provider resource name and content hash; posts
+        no longer returned by Google remain as ``not_seen`` history instead of
+        being deleted.
+        """
+        token = await self._fresh_token(session, settings, organization_id)
+        location = await session.scalar(
+            select(GBPLocation).where(
+                GBPLocation.organization_id == organization_id,
+                GBPLocation.id == gbp_location_id,
+            )
+        )
+        if location is None:
+            raise LookupError("GBP location not found")
+        account = await session.get(GBPAccount, location.account_id)
+        if account is None or account.organization_id != organization_id:
+            raise LookupError("GBP account not found")
+
+        provider_location_name = v4_localposts_parent(
+            account.external_account_id, normalize_location_name(location.external_location_id)
+        )
+        try:
+            raw_posts = await self.adapter.list_local_posts(token, provider_location_name)
+        except Exception as exc:
+            await self._audit(
+                session,
+                event="gbp.sync.local_posts_failed",
+                organization_id=organization_id,
+                actor_id=actor_id,
+                resource_type="gbp_location",
+                resource_id=location.id,
+                correlation_id=correlation_id,
+                summary="GBP Local Posts reconciliation failed.",
+                metadata={"error": str(exc)[:200]},
+                result=AuditResult.FAILED,
+            )
+            raise
+
+        now = datetime.now(UTC)
+        existing = list(
+            await session.scalars(
+                select(GBPProviderPost).where(
+                    GBPProviderPost.organization_id == organization_id,
+                    GBPProviderPost.gbp_location_id == location.id,
+                )
+            )
+        )
+        by_name = {item.provider_post_name: item for item in existing}
+        for existing_item in existing:
+            existing_item.status = "not_seen"
+
+        inserted = 0
+        updated = 0
+        for raw in raw_posts:
+            provider_name = raw.get("name")
+            if not isinstance(provider_name, str) or not provider_name.strip():
+                raise ValueError("provider local post is missing a resource name")
+            payload = cast(dict[str, object], raw)
+            content_hash = _content_hash(payload)
+            provider_item = by_name.get(provider_name)
+            if provider_item is None:
+                provider_item = GBPProviderPost(
+                    organization_id=organization_id,
+                    gbp_location_id=location.id,
+                    provider_post_name=provider_name,
+                    first_seen_at=now,
+                    provider_payload=payload,
+                    content_hash=content_hash,
+                    status="present",
+                    observed_at=now,
+                )
+                session.add(provider_item)
+                by_name[provider_name] = provider_item
+                inserted += 1
+            elif provider_item.content_hash != content_hash:
+                provider_item.provider_payload = payload
+                provider_item.content_hash = content_hash
+                updated += 1
+            provider_item.post_type = _bounded_string(
+                raw.get("topicType") or raw.get("postType"), 32
+            )
+            provider_item.state = _bounded_string(raw.get("state"), 32)
+            provider_item.summary = _bounded_string(raw.get("summary"), 1500)
+            provider_item.status = "present"
+            provider_item.last_seen_at = now
+            provider_item.observed_at = now
+
+        await session.flush()
+        present_count = sum(item.status == "present" for item in by_name.values())
+        missing_count = sum(item.status == "not_seen" for item in by_name.values())
+        await self._audit(
+            session,
+            event="gbp.sync.local_posts_reconciled",
+            organization_id=organization_id,
+            actor_id=actor_id,
+            resource_type="gbp_location",
+            resource_id=location.id,
+            correlation_id=correlation_id,
+            summary=f"Reconciled {present_count} GBP Local Posts.",
+            metadata={
+                "provider_count": len(raw_posts),
+                "persisted_count": len(by_name),
+                "inserted_count": inserted,
+                "updated_count": updated,
+                "missing_count": missing_count,
+            },
+        )
+        return {
+            "provider_count": len(raw_posts),
+            "persisted_count": len(by_name),
+            "present_count": present_count,
+            "inserted_count": inserted,
+            "updated_count": updated,
+            "missing_count": missing_count,
+            "observed_at": now.isoformat(),
+        }
 
     async def _record_sync_capability_snapshot(
         self,

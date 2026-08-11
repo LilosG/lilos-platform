@@ -25,3 +25,11 @@ export function fetchGitHubRepositories(
 ): Promise<ApiOutcome<GitHubRepository[]>> {
   return apiGet<GitHubRepository[]>(`${base(organizationId)}/repositories`);
 }
+
+export function disconnectGitHub(
+  organizationId: string,
+): Promise<ApiOutcome<{ status: string }>> {
+  return apiRequest<{ status: string }>(`${base(organizationId)}/disconnect`, {
+    method: "POST",
+  });
+}

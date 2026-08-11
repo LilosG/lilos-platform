@@ -103,6 +103,7 @@ from apps.api.app.products.gbp.operations_models import (
     GBPMedia,
     GBPPostPublication,
     GBPPostRevision,
+    GBPProviderPost,
     GBPSpecialHours,
     GBPSuspensionCase,
 )
@@ -245,6 +246,7 @@ for gbp_operation_model in (
     GBPMedia,
     GBPPostRevision,
     GBPPostPublication,
+    GBPProviderPost,
     GBPSuspensionCase,
 ):
     assert gbp_operation_model.metadata is target_metadata

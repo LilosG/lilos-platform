@@ -80,12 +80,57 @@ async def test_begin_connection_returns_authorization_url_with_business_manage_s
         assert url.startswith("https://accounts.google.com/o/oauth2/v2/auth?")
         assert "scope=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fbusiness.manage" in url
         assert "access_type=offline" in url
+        assert "include_granted_scopes=true" in url
         assert "prompt=consent" in url
         assert "response_type=code" in url
 
         connection = await service.find_connection(session, organization.id)
         assert connection is not None
         assert connection.status == "pending"
+
+
+@pytest.mark.integration
+@pytest.mark.anyio
+async def test_incremental_authorization_preserves_legacy_gbp_scope(
+    integrations_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """A legacy GBP row must keep business.manage during product upgrade."""
+    async with integrations_session_factory.begin() as session:
+        await ProviderCatalogSeeder().run(session)
+        organization = await make_organization(session)
+        service = GBPConnectionService()
+        initial_url = await service.begin_connection(
+            session,
+            make_settings(),
+            organization.id,
+            actor_id=None,
+            correlation_id="test-legacy-initial",
+        )
+        connection = await service.find_connection(session, organization.id)
+        assert connection is not None
+        connection.granted_capabilities = []
+
+        upgraded_url = await service.begin_connection(
+            session,
+            make_settings(),
+            organization.id,
+            actor_id=None,
+            correlation_id="test-legacy-upgrade",
+            products=("analytics",),
+        )
+
+        assert state_from_authorization_url(initial_url) != state_from_authorization_url(
+            upgraded_url
+        )
+        query = parse_qs(urlsplit(upgraded_url).query)
+        assert set(query["scope"][0].split()) == {
+            "https://www.googleapis.com/auth/business.manage",
+            "https://www.googleapis.com/auth/analytics.readonly",
+        }
+        assert "include_granted_scopes=true" in upgraded_url
+        same_connection = await service.find_connection(session, organization.id)
+        assert same_connection is not None
+        assert same_connection.id == connection.id
 
 
 @pytest.mark.integration

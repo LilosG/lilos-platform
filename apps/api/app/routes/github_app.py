@@ -133,6 +133,30 @@ async def list_repositories(
     }
 
 
+@router.post(
+    "/disconnect",
+    dependencies=[Depends(no_store)],
+    summary="Disconnect the local GitHub App installation binding",
+)
+async def disconnect_installation(
+    request: Request,
+    organization_id: UUID,
+    session: Session,
+    principal: Authenticated,
+    _: GitHubManage,
+) -> dict[str, object]:
+    item = await service.disconnect_installation(
+        session,
+        organization_id,
+        actor_id=principal.platform_user_id,
+        correlation_id=request_correlation_id(request),
+    )
+    return {
+        "data": {"status": item.status},
+        "meta": ResponseMeta(correlation_id=request_correlation_id(request)).model_dump(),
+    }
+
+
 @callback_router.get(
     "/callback",
     include_in_schema=True,

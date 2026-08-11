@@ -60,6 +60,29 @@ export type GBPPostPublicationItem = {
   verified_at: string | null;
 };
 
+export type GBPProviderPostItem = {
+  id: string;
+  provider_post_name: string;
+  post_type: string | null;
+  state: string | null;
+  summary: string | null;
+  content_hash: string;
+  status: "present" | "not_seen";
+  first_seen_at: string;
+  last_seen_at: string | null;
+  observed_at: string;
+};
+
+export type GBPProviderPostReconciliation = {
+  provider_count: number;
+  persisted_count: number;
+  present_count: number;
+  inserted_count: number;
+  updated_count: number;
+  missing_count: number;
+  observed_at: string;
+};
+
 export type SuspensionCase = {
   id: string;
   provider_status: string;
@@ -246,6 +269,27 @@ export function fetchPostRevisions(
 ): Promise<ApiOutcome<GBPPostRevisionItem[]>> {
   return apiGet(
     `${base(organizationId, locationId)}/locations/${gbpLocationId}/posts`,
+  );
+}
+
+export function fetchProviderPosts(
+  organizationId: string,
+  locationId: string,
+  gbpLocationId: string,
+): Promise<ApiOutcome<GBPProviderPostItem[]>> {
+  return apiGet(
+    `${base(organizationId, locationId)}/locations/${gbpLocationId}/posts/provider`,
+  );
+}
+
+export function reconcileProviderPosts(
+  organizationId: string,
+  locationId: string,
+  gbpLocationId: string,
+): Promise<ApiOutcome<GBPProviderPostReconciliation>> {
+  return apiRequest(
+    `${base(organizationId, locationId)}/locations/${gbpLocationId}/posts/reconcile`,
+    { method: "POST" },
   );
 }
 

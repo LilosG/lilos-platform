@@ -82,9 +82,6 @@ import "../styles/global.css";
         <div id="tab-opportunities" class="tab-panel" hidden></div>
         <div id="tab-publishing" class="tab-panel" hidden>
           <div class="sr-only" aria-hidden="true">
-            <button type="button" id="register-connection-button" hidden
-              >Register connection</button
-            >
             <button type="button" id="create-target-button" hidden
               >Create target</button
             >
@@ -100,7 +97,7 @@ import "../styles/global.css";
         decideOpportunity,
         fetchPublishingTargets,
         fetchGitHubConnections,
-        registerGitHubConnection,
+        isGitHubAppConnection,
         createPublishingTarget,
       } from "../lib/content";
       import {
@@ -338,7 +335,9 @@ import "../styles/global.css";
             ),
           );
 
-          // Publishing setup form (kept for test compatibility)
+          // The production publishing path is the GitHub App installation.
+          // The API retains a separate advanced PAT fallback for controlled
+          // migrations, but the normal product UI must not invite PAT use.
           const setupCard = document.createElement("div");
           setupCard.className = "card";
           setupCard.style.marginTop = "1rem";
@@ -354,45 +353,17 @@ import "../styles/global.css";
           const setupBody = document.createElement("div");
           setupBody.className = "card__body";
 
-          const tokenField = document.createElement("div");
-          tokenField.className = "field";
-          tokenField.append(
-            Object.assign(document.createElement("label"), {
-              htmlFor: "github-token",
-              textContent: "GitHub access token",
-            }),
-          );
-          const tokenInput = document.createElement("input");
-          tokenInput.id = "github-token";
-          tokenInput.type = "password";
-          tokenInput.placeholder = "ghp_…";
-          tokenField.append(tokenInput);
-          setupBody.append(tokenField);
-
-          const registerBtn = document.createElement("button");
-          registerBtn.type = "button";
-          registerBtn.className = "button";
-          registerBtn.textContent = "Register connection";
-          registerBtn.id = "register-connection-button";
+          const installLink = document.createElement("a");
+          installLink.className = "button";
+          installLink.href = "/integrations";
+          installLink.textContent = "Install GitHub App";
           const status = document.createElement("p");
           status.className = "text-sm muted";
           status.setAttribute("role", "status");
           status.setAttribute("aria-live", "polite");
-          registerBtn.addEventListener("click", async () => {
-            const token = tokenInput.value.trim();
-            if (!token) {
-              status.textContent = "Enter a token first.";
-              return;
-            }
-            const result = await registerGitHubConnection(organizationId, {
-              accessToken: token,
-            });
-            status.textContent =
-              result.kind === "ok"
-                ? "Connection registered."
-                : describeFailure(result, "Register");
-          });
-          setupBody.append(registerBtn, status);
+          status.textContent =
+            "Install and authorize the LILOs GitHub App before configuring a repository target.";
+          setupBody.append(installLink, status);
 
           // Target creation form
           const targetField = document.createElement("div");
@@ -419,13 +390,17 @@ import "../styles/global.css";
           createBtn.addEventListener("click", async () => {
             status.textContent = "Creating…";
             const connResult = await fetchGitHubConnections(organizationId);
-            if (connResult.kind !== "ok" || connResult.data.length === 0) {
-              status.textContent = "Register a connection first.";
+            const appConnections =
+              connResult.kind === "ok"
+                ? connResult.data.filter(isGitHubAppConnection)
+                : [];
+            if (connResult.kind !== "ok" || appConnections.length === 0) {
+              status.textContent = "Install the GitHub App first.";
               return;
             }
             const result = await createPublishingTarget(organizationId, {
               key: "default",
-              connectionId: connResult.data[0].id,
+              connectionId: appConnections[0].id,
               repositoryId: repoInput.value,
               baseBranch: "main",
               allowedPathPrefix: "content/",
