@@ -10,7 +10,7 @@ marking, and truthful error/empty-state handling.
 
 import asyncio
 from collections.abc import Iterator
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -804,9 +804,31 @@ class TestGBPProfileSync:
                 )
 
         first = asyncio.run(run())
+
+        async def get_state() -> tuple[datetime | None, int]:
+            async with factory() as session:
+                location = await session.get(GBPLocation, loc_id)
+                snapshots = list(
+                    await session.scalars(
+                        select(GBPProfileSnapshot).where(
+                            GBPProfileSnapshot.organization_id == org_id,
+                            GBPProfileSnapshot.gbp_location_id == loc_id,
+                        )
+                    )
+                )
+                assert location is not None
+                return location.last_synced_at, len(snapshots)
+
+        first_synced_at, first_snapshot_count = asyncio.run(get_state())
+        assert first_synced_at is not None
+        assert first_synced_at <= datetime.now(UTC)
         second = asyncio.run(run())
+        second_synced_at, second_snapshot_count = asyncio.run(get_state())
         assert first.id == second.id
         assert first.content_hash == second.content_hash
+        assert second_synced_at is not None
+        assert second_synced_at > first_synced_at
+        assert first_snapshot_count == second_snapshot_count == 1
 
     def test_sync_profile_provider_error_audits_failure(self, setup: SyncSetupTuple) -> None:
         factory, db_url, org_id, _, loc_id = setup
