@@ -126,6 +126,49 @@ async def _sync(
         )
 
 
+async def _seed_lilos_published_response(
+    factory: async_sessionmaker[AsyncSession],
+    organization_id: UUID,
+    location_id: UUID,
+    *,
+    response_text: str = "LILOs-published response",
+    generated_by_type: str = "user",
+) -> tuple[UUID, UUID, datetime]:
+    approval_reference_id = uuid4()
+    approved_at = datetime(2026, 1, 1, 12, tzinfo=UTC)
+    published_at = datetime(2026, 1, 2, tzinfo=UTC)
+    async with factory() as session, session.begin():
+        review = (
+            await session.scalars(select(Review).where(Review.organization_id == organization_id))
+        ).one()
+        revision = (
+            await session.scalars(
+                select(ReviewRevision).where(ReviewRevision.review_id == review.id)
+            )
+        ).one()
+        review.status = "responded"
+        response = ReviewResponseRevision(
+            organization_id=organization_id,
+            location_id=location_id,
+            review_id=review.id,
+            review_revision_id=revision.id,
+            revision_number=1,
+            response_text=response_text,
+            content_hash="a" * 64,
+            status="published",
+            generated_by_type=generated_by_type,
+            approved_fact_revision_ids=[str(uuid4())],
+            approval_reference_id=approval_reference_id,
+            approved_at=approved_at,
+            external_response_id="accounts/123/locations/456/reviews/review-provider-reply",
+            published_at=published_at,
+            idempotency_key="lilos-published-response",
+        )
+        session.add(response)
+        await session.flush()
+        return response.id, approval_reference_id, published_at
+
+
 async def _seed_review_location(
     factory: async_sessionmaker[AsyncSession],
 ) -> tuple[UUID, UUID]:
@@ -603,6 +646,257 @@ def test_provider_moderation_states_map_truthfully(
         reply.get("reviewReplyState") or "REVIEW_REPLY_STATE_UNSPECIFIED"
     )
     assert metadata["policy_violation"] == reply.get("policyViolation")
+
+
+@pytest.mark.integration
+def test_identical_google_reply_confirms_lilos_publication_without_import_duplicate(
+    ingestion_setup: tuple[async_sessionmaker[AsyncSession], UUID, UUID],
+    postgresql_test_url: str,
+) -> None:
+    factory, organization_id, location_id = ingestion_setup
+    settings = _settings(postgresql_test_url)
+
+    async def scenario() -> tuple[
+        Review,
+        ReviewResponseRevision,
+        UUID,
+        datetime,
+        int,
+        int,
+    ]:
+        await _sync(
+            factory,
+            settings,
+            organization_id,
+            location_id,
+            [_raw_review()],
+            "lilos-publication-review",
+        )
+        response_id, approval_reference_id, published_at = await _seed_lilos_published_response(
+            factory,
+            organization_id,
+            location_id,
+            generated_by_type="template",
+        )
+        provider_review = _raw_review(reply=_reply("LILOs-published response"))
+        await _sync(
+            factory,
+            settings,
+            organization_id,
+            location_id,
+            [provider_review],
+            "lilos-publication-confirmed",
+        )
+        await _sync(
+            factory,
+            settings,
+            organization_id,
+            location_id,
+            [provider_review],
+            "lilos-publication-confirmed-repeat",
+        )
+        async with factory() as session:
+            review = (
+                await session.scalars(
+                    select(Review).where(Review.organization_id == organization_id)
+                )
+            ).one()
+            responses = list(
+                await session.scalars(
+                    select(ReviewResponseRevision).where(
+                        ReviewResponseRevision.review_id == review.id
+                    )
+                )
+            )
+            confirmation_audits = int(
+                await session.scalar(
+                    select(func.count(AuditEvent.id)).where(
+                        AuditEvent.resource_id == response_id,
+                        AuditEvent.event_type == "reviews.response.provider_confirmed",
+                    )
+                )
+                or 0
+            )
+            imported_count = sum(response.generated_by_type == "imported" for response in responses)
+            return (
+                review,
+                responses[0],
+                approval_reference_id,
+                published_at,
+                confirmation_audits,
+                imported_count,
+            )
+
+    (
+        review,
+        response,
+        approval_reference_id,
+        published_at,
+        confirmation_audits,
+        imported_count,
+    ) = asyncio.run(scenario())
+
+    assert review.status == "responded"
+    assert response.status == "published"
+    assert response.generated_by_type == "template"
+    assert response.approval_reference_id == approval_reference_id
+    assert response.approved_at == datetime(2026, 1, 1, 12, tzinfo=UTC)
+    assert response.approved_fact_revision_ids
+    assert response.published_at == published_at
+    assert response.idempotency_key == "lilos-published-response"
+    assert confirmation_audits == 1
+    assert imported_count == 0
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    ("state", "expected_response_status", "expected_review_status", "expected_error"),
+    [
+        (
+            "PENDING",
+            "reconciliation_required",
+            "publishing",
+            "GOOGLE_REVIEW_REPLY_PENDING_MODERATION",
+        ),
+        (
+            "REJECTED",
+            "rejected",
+            "publication_failed",
+            "GOOGLE_REVIEW_REPLY_REJECTED",
+        ),
+    ],
+)
+def test_google_moderation_reconciles_onto_lilos_publication_without_import(
+    ingestion_setup: tuple[async_sessionmaker[AsyncSession], UUID, UUID],
+    postgresql_test_url: str,
+    state: str,
+    expected_response_status: str,
+    expected_review_status: str,
+    expected_error: str,
+) -> None:
+    factory, organization_id, location_id = ingestion_setup
+    settings = _settings(postgresql_test_url)
+
+    async def scenario() -> tuple[Review, ReviewResponseRevision, UUID, datetime, int]:
+        await _sync(
+            factory,
+            settings,
+            organization_id,
+            location_id,
+            [_raw_review()],
+            f"lilos-publication-{state.casefold()}",
+        )
+        _response_id, approval_reference_id, published_at = await _seed_lilos_published_response(
+            factory, organization_id, location_id
+        )
+        await _sync(
+            factory,
+            settings,
+            organization_id,
+            location_id,
+            [
+                _raw_review(
+                    reply=_reply(
+                        "LILOs-published response",
+                        state=state,
+                        policy_violation="OFF_TOPIC" if state == "REJECTED" else None,
+                    )
+                )
+            ],
+            f"lilos-publication-{state.casefold()}-observed",
+        )
+        async with factory() as session:
+            review = (
+                await session.scalars(
+                    select(Review).where(Review.organization_id == organization_id)
+                )
+            ).one()
+            responses = list(
+                await session.scalars(
+                    select(ReviewResponseRevision).where(
+                        ReviewResponseRevision.review_id == review.id
+                    )
+                )
+            )
+            return review, responses[0], approval_reference_id, published_at, len(responses)
+
+    review, response, approval_reference_id, published_at, response_count = asyncio.run(scenario())
+
+    assert review.status == expected_review_status
+    assert response.status == expected_response_status
+    assert response.safe_error_code == expected_error
+    assert response.generated_by_type == "user"
+    assert response.approval_reference_id == approval_reference_id
+    assert response.published_at == published_at
+    assert response_count == 1
+
+
+@pytest.mark.integration
+def test_external_google_edit_preserves_lilos_history_and_imports_only_current_truth(
+    ingestion_setup: tuple[async_sessionmaker[AsyncSession], UUID, UUID],
+    postgresql_test_url: str,
+) -> None:
+    factory, organization_id, location_id = ingestion_setup
+    settings = _settings(postgresql_test_url)
+
+    async def scenario() -> tuple[Review, list[ReviewResponseRevision], UUID]:
+        await _sync(
+            factory,
+            settings,
+            organization_id,
+            location_id,
+            [_raw_review()],
+            "lilos-publication-before-external-edit",
+        )
+        _response_id, approval_reference_id, _published_at = await _seed_lilos_published_response(
+            factory, organization_id, location_id
+        )
+        await _sync(
+            factory,
+            settings,
+            organization_id,
+            location_id,
+            [
+                _raw_review(
+                    reply=_reply(
+                        "Response edited directly in Google",
+                        update_time="2026-01-03T00:00:00Z",
+                    )
+                )
+            ],
+            "lilos-publication-externally-edited",
+        )
+        async with factory() as session:
+            review = (
+                await session.scalars(
+                    select(Review).where(Review.organization_id == organization_id)
+                )
+            ).one()
+            responses = list(
+                await session.scalars(
+                    select(ReviewResponseRevision)
+                    .where(ReviewResponseRevision.review_id == review.id)
+                    .order_by(ReviewResponseRevision.revision_number)
+                )
+            )
+            return review, responses, approval_reference_id
+
+    review, responses, approval_reference_id = asyncio.run(scenario())
+
+    assert review.status == "responded"
+    assert len(responses) == 2
+    assert responses[0].generated_by_type == "user"
+    assert responses[0].status == "superseded"
+    assert responses[0].response_text == "LILOs-published response"
+    assert responses[0].approval_reference_id == approval_reference_id
+    assert responses[0].published_at == datetime(2026, 1, 2, tzinfo=UTC)
+    assert responses[1].generated_by_type == "imported"
+    assert responses[1].status == "published"
+    assert responses[1].response_text == "Response edited directly in Google"
+    assert responses[1].approval_reference_id is None
+    assert responses[1].approved_at is None
+    assert responses[1].idempotency_key is None
+    assert sum(response.status != "superseded" for response in responses) == 1
 
 
 @pytest.mark.integration

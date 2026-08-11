@@ -15,6 +15,7 @@ from apps.api.app.ai.models import AIExecution, AITaskDefinition
 from apps.api.app.audit.contracts import AuditEventCreate
 from apps.api.app.audit.enums import AuditActorType, AuditResult
 from apps.api.app.audit.metadata import JsonValue
+from apps.api.app.audit.models import AuditEvent
 from apps.api.app.audit.repository import AuditEventRepository
 from apps.api.app.audit.service import AuditEventService
 from apps.api.app.execution.service import ExecutionService
@@ -123,6 +124,21 @@ def provider_reply_lifecycle(
         "GOOGLE_REVIEW_REPLY_STATE_UNRESOLVED",
         None,
     )
+
+
+def lilos_publication_confirmation_lifecycle(
+    reply: ProviderReplyObservation,
+) -> tuple[str, str, str | None]:
+    """Map provider moderation without making a confirmed write retryable."""
+
+    response_status, review_status, safe_error_code, _published_at = provider_reply_lifecycle(reply)
+    if response_status == "publishing":
+        return (
+            "reconciliation_required",
+            review_status,
+            "GOOGLE_REVIEW_REPLY_PENDING_MODERATION",
+        )
+    return response_status, review_status, safe_error_code
 
 
 def review_hash(rating: float | None, title: str | None, body: str | None) -> str:
@@ -247,6 +263,63 @@ class ReviewService:
         review.status = "escalated" if result["restricted"] else "classified"
         review.risk_level = "high" if result["restricted"] else "low"
 
+    @staticmethod
+    def _is_lilos_publication(response: ReviewResponseRevision) -> bool:
+        return (
+            response.generated_by_type != PROVIDER_OBSERVED_TYPE
+            and response.external_response_id is not None
+            and response.published_at is not None
+        )
+
+    async def _audit_provider_confirmation_once(
+        self,
+        session: AsyncSession,
+        *,
+        response: ReviewResponseRevision,
+        review: Review,
+        provider_reply: ProviderReplyObservation,
+        provider_observation_hash: str,
+        correlation_id: str,
+    ) -> None:
+        existing = await session.scalar(
+            select(AuditEvent.id)
+            .where(
+                AuditEvent.organization_id == review.organization_id,
+                AuditEvent.resource_type == "review_response_revision",
+                AuditEvent.resource_id == response.id,
+                AuditEvent.event_type == "reviews.response.provider_confirmed",
+                AuditEvent.event_metadata.contains(
+                    {"provider_observation_hash": provider_observation_hash}
+                ),
+            )
+            .limit(1)
+        )
+        if existing is not None:
+            return
+        await self._audit(
+            session,
+            event="reviews.response.provider_confirmed",
+            organization_id=review.organization_id,
+            location_id=review.location_id,
+            actor_id=None,
+            resource_type="review_response_revision",
+            resource_id=response.id,
+            correlation_id=correlation_id,
+            summary="A response published through LILOs was confirmed by Google.",
+            metadata={
+                "external_response_id": provider_reply.external_response_id,
+                "policy_violation": provider_reply.policy_violation,
+                "provider_observation_hash": provider_observation_hash,
+                "provider_reply_state": provider_reply.state,
+                "provider_updated_at": provider_reply.updated_at.isoformat()
+                if provider_reply.updated_at
+                else None,
+                "response_status": response.status,
+                "review_status": review.status,
+                "revision": response.revision_number,
+            },
+        )
+
     async def _reconcile_provider_reply(
         self,
         session: AsyncSession,
@@ -276,16 +349,21 @@ class ReviewService:
             if response.generated_by_type == PROVIDER_OBSERVED_TYPE
             and response.status != "superseded"
         ]
-        published_local = [
+        lilos_publications = [
+            response for response in responses if self._is_lilos_publication(response)
+        ]
+        active_lilos_publications = [
             response
-            for response in responses
-            if response.generated_by_type != PROVIDER_OBSERVED_TYPE
-            and response.status == "published"
-            and response.external_response_id is not None
+            for response in lilos_publications
+            if response.status != "superseded"
+            and not (
+                response.status == "reconciliation_required"
+                and response.safe_error_code == "GOOGLE_REVIEW_REPLY_MISSING"
+            )
         ]
 
         if provider_reply is None:
-            if not active_provider and not published_local:
+            if not active_provider and not active_lilos_publications:
                 return
             for response in active_provider:
                 response.status = "superseded"
@@ -304,7 +382,7 @@ class ReviewService:
                         "revision": response.revision_number,
                     },
                 )
-            for response in published_local:
+            for response in active_lilos_publications:
                 response.status = "reconciliation_required"
                 response.safe_error_code = "GOOGLE_REVIEW_REPLY_MISSING"
                 await self._audit(
@@ -325,62 +403,89 @@ class ReviewService:
             self._restore_actionable_status(review, review_revision)
             return
 
-        response_status, review_status, safe_error_code, published_at = provider_reply_lifecycle(
-            provider_reply
-        )
         digest = provider_reply_hash(provider_reply)
-        current = next(
+        matching_lilos = next(
             (
                 response
-                for response in reversed(active_provider)
-                if response.content_hash == digest
-                and response.external_response_id == provider_reply.external_response_id
+                for response in reversed(lilos_publications)
+                if response.external_response_id == provider_reply.external_response_id
+                and response.response_text.strip() == provider_reply.comment.strip()
             ),
             None,
         )
-        created = current is None
-        if current is None:
-            for response in active_provider:
-                response.status = "superseded"
-            current = ReviewResponseRevision(
-                organization_id=review.organization_id,
-                location_id=review.location_id,
-                review_id=review.id,
-                review_revision_id=review_revision.id,
-                revision_number=(responses[-1].revision_number if responses else 0) + 1,
-                response_text=provider_reply.comment,
-                content_hash=digest,
-                status=response_status,
-                generated_by_type=PROVIDER_OBSERVED_TYPE,
-                ai_execution_id=None,
-                approved_fact_revision_ids=[],
-                approval_reference_id=None,
-                approved_by_user_id=None,
-                approved_at=None,
-                external_response_id=provider_reply.external_response_id,
-                published_at=published_at,
-                idempotency_key=None,
-                safe_error_code=safe_error_code,
+        provider_confirmation = matching_lilos is not None
+        if matching_lilos is not None:
+            response_status, review_status, safe_error_code = (
+                lilos_publication_confirmation_lifecycle(provider_reply)
             )
-            session.add(current)
-            await session.flush()
-        else:
-            # Re-assert deterministic current truth if an earlier workflow state
-            # transition touched the provider-observation row.
+            current = matching_lilos
             current.status = response_status
             current.safe_error_code = safe_error_code
-            current.published_at = published_at
             for response in active_provider:
-                if response.id != current.id:
+                response.status = "superseded"
+            created = False
+        else:
+            response_status, review_status, safe_error_code, published_at = (
+                provider_reply_lifecycle(provider_reply)
+            )
+            imported_current = next(
+                (
+                    response
+                    for response in reversed(active_provider)
+                    if response.content_hash == digest
+                    and response.external_response_id == provider_reply.external_response_id
+                ),
+                None,
+            )
+            created = imported_current is None
+            if imported_current is None:
+                for response in active_provider:
                     response.status = "superseded"
+                current = ReviewResponseRevision(
+                    organization_id=review.organization_id,
+                    location_id=review.location_id,
+                    review_id=review.id,
+                    review_revision_id=review_revision.id,
+                    revision_number=(responses[-1].revision_number if responses else 0) + 1,
+                    response_text=provider_reply.comment,
+                    content_hash=digest,
+                    status=response_status,
+                    generated_by_type=PROVIDER_OBSERVED_TYPE,
+                    ai_execution_id=None,
+                    approved_fact_revision_ids=[],
+                    approval_reference_id=None,
+                    approved_by_user_id=None,
+                    approved_at=None,
+                    external_response_id=provider_reply.external_response_id,
+                    published_at=published_at,
+                    idempotency_key=None,
+                    safe_error_code=safe_error_code,
+                )
+                session.add(current)
+                await session.flush()
+            else:
+                current = imported_current
+                # Re-assert deterministic current truth if an earlier workflow state
+                # transition touched the provider-observation row.
+                current.status = response_status
+                current.safe_error_code = safe_error_code
+                current.published_at = published_at
+                for response in active_provider:
+                    if response.id != current.id:
+                        response.status = "superseded"
 
         superseded_local = [
             response
             for response in responses
-            if response.generated_by_type != PROVIDER_OBSERVED_TYPE
-            and response.status in ACTIVE_LOCAL_RESPONSE_STATUSES
+            if response.id != current.id
+            and response.generated_by_type != PROVIDER_OBSERVED_TYPE
+            and (
+                response.status in ACTIVE_LOCAL_RESPONSE_STATUSES
+                or (self._is_lilos_publication(response) and response.status != "superseded")
+            )
         ]
         for response in superseded_local:
+            was_published = self._is_lilos_publication(response)
             response.status = "superseded"
             await self._audit(
                 session,
@@ -391,14 +496,31 @@ class ReviewService:
                 resource_type="review_response_revision",
                 resource_id=response.id,
                 correlation_id=correlation_id,
-                summary="Local response work was superseded by an existing Google response.",
+                summary=(
+                    "A LILOs-published response was superseded by current Google content."
+                    if was_published
+                    else "Local response work was superseded by an existing Google response."
+                ),
                 metadata={
                     "provider_response_revision_id": str(current.id),
+                    "reason": "provider_content_changed"
+                    if was_published
+                    else "provider_reply_exists",
                     "revision": response.revision_number,
                 },
             )
 
         review.status = review_status
+        if provider_confirmation:
+            await self._audit_provider_confirmation_once(
+                session,
+                response=current,
+                review=review,
+                provider_reply=provider_reply,
+                provider_observation_hash=digest,
+                correlation_id=correlation_id,
+            )
+            return
         if created:
             await self._audit(
                 session,
