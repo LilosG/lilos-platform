@@ -59,7 +59,7 @@ STAGING_SERVICE_POLICY = {
     "lilos-staging-api": ("web", "/health/ready", "/app/scripts/render_start_api.sh", 30),
     "lilos-staging-worker": ("worker", None, "/app/scripts/render_start_worker.sh", 300),
 }
-STAGING_SECRET_POLICY = {
+STAGING_SECRET_POLICY: dict[str, set[str]] = {
     "lilos-staging-api": set(),
     "lilos-staging-worker": set(),
 }
