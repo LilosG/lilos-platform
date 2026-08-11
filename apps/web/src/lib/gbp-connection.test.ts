@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   describeGbpConnectFailure,
+  googleAuthorizationAction,
   missingGoogleProducts,
 } from "./gbp-connection";
 import type { ApiOutcome } from "./api-client";
@@ -91,11 +92,57 @@ describe("Google product authorization", () => {
     ).toEqual(["search_console", "analytics"]);
   });
 
+  it("identifies no missing products for a fully-scoped connection", () => {
+    expect(
+      missingGoogleProducts({
+        gbp: true,
+        search_console: true,
+        analytics: true,
+      }),
+    ).toEqual([]);
+  });
+
   it("requests all approved services for a new connection", () => {
     expect(missingGoogleProducts(undefined)).toEqual([
       "gbp",
       "search_console",
       "analytics",
     ]);
+  });
+
+  it("uses credential reconnect even when the connection is fully scoped", () => {
+    expect(
+      googleAuthorizationAction({
+        status: "reconnect_required",
+        token_expires_at: null,
+        last_verified_at: null,
+        services: { gbp: true, search_console: true, analytics: true },
+      }),
+    ).toEqual({ kind: "reconnect" });
+  });
+
+  it("offers no OAuth action for a healthy fully-scoped connection", () => {
+    expect(
+      googleAuthorizationAction({
+        status: "connected",
+        token_expires_at: null,
+        last_verified_at: null,
+        services: { gbp: true, search_console: true, analytics: true },
+      }),
+    ).toEqual({ kind: "none" });
+  });
+
+  it("offers only genuinely missing services for incremental authorization", () => {
+    expect(
+      googleAuthorizationAction({
+        status: "connected",
+        token_expires_at: null,
+        last_verified_at: null,
+        services: { gbp: true, search_console: false, analytics: true },
+      }),
+    ).toEqual({
+      kind: "authorize_missing",
+      products: ["search_console"],
+    });
   });
 });

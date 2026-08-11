@@ -317,6 +317,34 @@ class GBPConnectionService:
             "refresh_token": str(payload["refresh_token"]),
         }
 
+    async def _replace_tokens(
+        self,
+        session: AsyncSession,
+        settings: Settings,
+        connection: IntegrationConnection,
+        *,
+        access_token: str,
+        refresh_token: str,
+    ) -> None:
+        """Atomically replace a connection's encrypted credential reference.
+
+        The new secret is persisted and referenced before the superseded row is
+        removed. All operations use the caller's transaction-bound session, so
+        a later failure rolls back both the reference update and secret changes.
+        """
+        old_reference = connection.credential_reference
+        new_reference = await self._store_tokens(
+            session,
+            settings,
+            access_token=access_token,
+            refresh_token=refresh_token,
+        )
+        connection.credential_reference = new_reference
+        await session.flush()
+        if old_reference is not None:
+            store = FernetSecretStore.create(session, settings)
+            await store.delete(old_reference)
+
     # -- audit ----------------------------------------------------------------
 
     async def _audit(
@@ -454,15 +482,18 @@ class GBPConnectionService:
                 result=AuditResult.FAILED,
             )
             raise
-        expires_in = int(cast(int, tokens.get("expires_in", DEFAULT_TOKEN_LIFETIME_SECONDS)))
-        reference = await self._store_tokens(
-            session, settings, access_token=access_token, refresh_token=str(refresh_token)
-        )
         connection = await session.get(IntegrationConnection, intent.connection_id)
         if connection is None:
             raise IntegrationNotFoundError
+        expires_in = int(cast(int, tokens.get("expires_in", DEFAULT_TOKEN_LIFETIME_SECONDS)))
+        await self._replace_tokens(
+            session,
+            settings,
+            connection,
+            access_token=access_token,
+            refresh_token=str(refresh_token),
+        )
         now = datetime.now(UTC)
-        connection.credential_reference = reference
         connection.status = "connected"
         connection.token_expires_at = now + timedelta(seconds=expires_in)
         connection.last_verified_at = now
@@ -588,16 +619,13 @@ class GBPConnectionService:
         new_refresh_token = str(payload.get("refresh_token") or tokens["refresh_token"])
         expires_in = int(cast(int, payload.get("expires_in", DEFAULT_TOKEN_LIFETIME_SECONDS)))
         refreshed_scope = payload.get("scope")
-        old_reference = connection.credential_reference
-        new_reference = await self._store_tokens(
+        await self._replace_tokens(
             session,
             settings,
+            connection,
             access_token=new_access_token,
             refresh_token=new_refresh_token,
         )
-        store = FernetSecretStore.create(session, settings)
-        await store.delete(old_reference)
-        connection.credential_reference = new_reference
         connection.token_expires_at = now + timedelta(seconds=expires_in)
         connection.last_verified_at = now
         connection.status = "connected"

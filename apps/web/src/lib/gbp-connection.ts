@@ -33,6 +33,29 @@ export type GBPConnectionStatus = {
   services?: GoogleServices;
 } | null;
 
+export type GoogleAuthorizationAction =
+  | { kind: "reconnect" }
+  | { kind: "authorize_missing"; products: GoogleProduct[] }
+  | { kind: "none" };
+
+/**
+ * Keep credential repair distinct from incremental product authorization.
+ * Reconnect uses the existing no-body route, whose backend preserves the
+ * connection's recorded scope union. Healthy connections request only truly
+ * missing services and fully-scoped healthy connections offer no OAuth action.
+ */
+export function googleAuthorizationAction(
+  connection: Exclude<GBPConnectionStatus, null>,
+): GoogleAuthorizationAction {
+  if (connection.status === "reconnect_required") {
+    return { kind: "reconnect" };
+  }
+  const products = missingGoogleProducts(connection.services);
+  return products.length > 0
+    ? { kind: "authorize_missing", products }
+    : { kind: "none" };
+}
+
 function base(organizationId: string): string {
   return `/api/v1/organizations/${organizationId}/integrations/google`;
 }
