@@ -22,7 +22,13 @@ from sqlalchemy.pool import NullPool
 from apps.api.app.audit.models import AuditEvent
 from apps.api.app.config import EnvironmentName, Settings
 from apps.api.app.integrations.connection_service import GBPConnectionService
-from apps.api.app.integrations.models import IntegrationConnection, Provider
+from apps.api.app.integrations.models import (
+    IntegrationConnection,
+    Provider,
+    ProviderResourceMapping,
+)
+from apps.api.app.locations.enums import LocationStatus, LocationType
+from apps.api.app.locations.models import Location
 from apps.api.app.organizations.enums import OrganizationStatus, OrganizationType
 from apps.api.app.organizations.models import Organization
 from apps.api.app.products.gbp.discovery_service import GBPDiscoveryService
@@ -501,6 +507,82 @@ class TestGBPDiscoveryLocations:
         assert len(first) == 1
         assert len(second) == 1
         assert first[0].id == second[0].id
+
+    def test_discovery_reconciles_confirmed_legacy_mapping(self, setup: SetupTuple) -> None:
+        factory, db_url, org_id, connection_id = setup
+
+        async def seed_legacy_mapping() -> tuple[UUID, UUID]:
+            async with factory.begin() as session:
+                account = await session.scalar(
+                    select(GBPAccount).where(GBPAccount.organization_id == org_id)
+                )
+                assert account is not None
+                platform_location = Location(
+                    organization_id=org_id,
+                    name="Main Location",
+                    slug="main-location",
+                    location_type=LocationType.VIRTUAL,
+                    status=LocationStatus.ACTIVE,
+                    timezone="UTC",
+                    country_code="US",
+                    website_url="https://example.invalid",
+                    is_primary=True,
+                    version=1,
+                )
+                session.add(platform_location)
+                await session.flush()
+                gbp_location = GBPLocation(
+                    organization_id=org_id,
+                    connection_id=connection_id,
+                    account_id=account.id,
+                    external_location_id="accounts/111/locations/loc-a",
+                    business_name="Historical Name",
+                    location_id=platform_location.id,
+                    mapping_status="confirmed",
+                    write_enabled=False,
+                )
+                session.add(gbp_location)
+                await session.flush()
+                return platform_location.id, gbp_location.id
+
+        platform_location_id, gbp_location_id = asyncio.run(seed_legacy_mapping())
+        service = GBPDiscoveryService(
+            adapter=FakeGBPAdapter(
+                locations_by_account={
+                    "accounts/111": [{"name": "locations/loc-a", "title": "Wheyland Electric"}]
+                }
+            ),
+            connection=FakeConnectionService(),
+        )
+
+        async def discover_and_read() -> tuple[ProviderResourceMapping, GBPLocation]:
+            async with factory() as session, session.begin():
+                await service.discover_locations(
+                    session,
+                    _settings(db_url),
+                    org_id,
+                    actor_id=uuid4(),
+                    correlation_id="test-reconcile-confirmed-legacy-mapping",
+                )
+            async with factory() as session:
+                mapping = await session.scalar(
+                    select(ProviderResourceMapping).where(
+                        ProviderResourceMapping.organization_id == org_id,
+                        ProviderResourceMapping.platform_resource_id == platform_location_id,
+                        ProviderResourceMapping.resource_type == "location",
+                    )
+                )
+                location = await session.get(GBPLocation, gbp_location_id)
+                assert mapping is not None
+                assert location is not None
+                return mapping, location
+
+        mapping, location = asyncio.run(discover_and_read())
+        assert mapping.external_resource_id == "locations/loc-a"
+        assert mapping.status == "active"
+        assert location.integration_resource_id == mapping.id
+        assert location.external_location_id == "locations/loc-a"
+        assert location.business_name == "Wheyland Electric"
 
     def test_discover_locations_no_accounts_returns_empty(
         self, discovery_session_factory: async_sessionmaker[AsyncSession], postgresql_test_url: str

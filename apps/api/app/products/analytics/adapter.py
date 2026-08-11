@@ -123,7 +123,7 @@ class GoogleAnalyticsAdminAdapter:
         summaries = payload.get("accountSummaries") or []
         properties: list[DiscoveredAnalyticsProperty] = []
         for summary in summaries:
-            account_name = str(summary.get("account", {}).get("displayName", ""))
+            account_name = str(summary.get("displayName", ""))
             for prop_summary in summary.get("propertySummaries") or []:
                 resource_name = str(prop_summary.get("property", ""))
                 properties.append(

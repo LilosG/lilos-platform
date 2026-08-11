@@ -119,10 +119,20 @@ async def _reconcile_derives_candidates(factory: async_sessionmaker[AsyncSession
     assert "business.address" in proposed_keys
     assert "business.website" in proposed_keys
     assert "brand.approved_claims" in proposed_keys
+    address_candidate = next(item for item in proposed if item["fact_key"] == "business.address")
+    assert address_candidate["location_id"] == str(location_id)
     # Candidates are proposed, NOT auto-approved.
     async with factory() as session:
         name_resolution = await service.resolve_fact(session, org_id, "business.name")
+        address_at_organization = await service.resolve_fact(session, org_id, "business.address")
+        address_at_location = await service.resolve_fact(
+            session, org_id, "business.address", location_id=location_id
+        )
     assert name_resolution.state == "missing"
+    assert address_at_organization.state == "missing"
+    # The derived address intentionally remains a location-scoped candidate;
+    # rendering it correctly never promotes or approves it.
+    assert address_at_location.state == "missing"
 
     # Idempotent: a second reconciliation proposes no new duplicates.
     async with factory() as session, session.begin():

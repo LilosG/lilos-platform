@@ -36,14 +36,16 @@ import "../styles/global.css";
       </div>
 
       <div id="administration-content" hidden>
-        <section id="overview" aria-labelledby="page-title">
-          <p class="eyebrow">Administration</p><h1 id="page-title">
-            Administration
-          </h1><p>
-            Manage client organizations, locations, and product access for this
-            workspace.
-          </p>
-        </section>
+        <div class="page-head">
+          <div class="page-head__intro">
+            <p class="eyebrow">Admin</p>
+            <h1>Administration</h1>
+            <p>
+              Manage client organizations, locations, and product access for
+              this workspace.
+            </p>
+          </div>
+        </div>
 
         <section
           id="platform-admin-section"
@@ -52,9 +54,8 @@ import "../styles/global.css";
         >
           <div class="section-heading">
             <div>
-              <p class="eyebrow">Client organizations</p><h2 id="clients-title">
-                Onboard and manage clients
-              </h2>
+              <p class="eyebrow">Client organizations</p>
+              <h2 id="clients-title">Onboard and manage clients</h2>
             </div>
             <a href="/onboarding" class="button button--secondary button--sm"
               >Open guided onboarding</a

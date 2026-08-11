@@ -878,16 +878,30 @@ class SEOService:
         website_count = await session.scalar(
             select(func.count()).where(SEOWebsite.organization_id == organization_id)
         )
+        crawl_run_count = await session.scalar(
+            select(func.count()).where(SEOCrawlRun.organization_id == organization_id)
+        )
         return {
             "by_status": {status: count for status, count in rows},
             "website_count": int(website_count or 0),
+            "crawl_run_count": int(crawl_run_count or 0),
         }
 
     async def resource_history(
-        self, session: AsyncSession, *, resource_type: str, resource_id: UUID, limit: int = 50
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        *,
+        resource_type: str,
+        resource_id: UUID,
+        limit: int = 50,
     ) -> list[dict[str, object]]:
         events = await self.audit_repository.list_for_resource(
-            session, resource_type=resource_type, resource_id=resource_id, limit=limit
+            session,
+            organization_id=organization_id,
+            resource_type=resource_type,
+            resource_id=resource_id,
+            limit=limit,
         )
         return [
             {

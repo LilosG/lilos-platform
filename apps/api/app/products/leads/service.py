@@ -10,6 +10,7 @@ from uuid import UUID
 from sqlalchemy import Select, func, or_, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from apps.api.app.access_control.service import AccessControlService
 from apps.api.app.audit.contracts import AuditEventCreate
 from apps.api.app.audit.enums import AuditActorType, AuditResult
 from apps.api.app.audit.metadata import JsonValue
@@ -21,6 +22,7 @@ from apps.api.app.products.leads.contracts import CommunicationCreate, ConsentRe
 from apps.api.app.products.leads.errors import (
     InvalidLeadQueryError,
     InvalidLeadTransitionError,
+    LeadAssigneeNotFoundError,
     LeadNotFoundError,
     LeadSourceNotFoundError,
     LeadTaskNotFoundError,
@@ -46,7 +48,7 @@ TERMINAL_STATUSES = {
     "cancelled",
     "archived",
 }
-FIRST_CONTACT_STATUSES = {"contact_attempted", "contacted"}
+FIRST_CONTACT_STATUSES = {"contacted"}
 NOTIFICATION_TEMPLATES = {
     "leads.lead.assigned": ("in_app", "A lead was assigned to you."),
     "leads.lead.converted": ("in_app", "A lead was marked as converted."),
@@ -89,6 +91,7 @@ async def set_tenant(session: AsyncSession, organization_id: UUID) -> None:
 
 class LeadService:
     def __init__(self) -> None:
+        self.access = AccessControlService()
         self.audit = AuditEventService()
         self.audit_repository = AuditEventRepository()
         self.notifications = NotificationService()
@@ -436,6 +439,8 @@ class LeadService:
         now = datetime.now(UTC)
         if to_status == "acknowledged" and lead.acknowledged_at is None:
             lead.acknowledged_at = now
+        if to_status == "contact_attempted" and lead.first_outbound_attempt_at is None:
+            lead.first_outbound_attempt_at = now
         if to_status in FIRST_CONTACT_STATUSES and lead.first_human_contact_at is None:
             lead.first_human_contact_at = now
         if to_status == "converted":
@@ -487,6 +492,9 @@ class LeadService:
     ) -> Lead:
         await set_tenant(session, organization_id)
         lead = await self._load_lead(session, organization_id, lead_id)
+        assignable_members = await self.access.list_assignable_members(session, organization_id)
+        if not any(member.user_profile_id == assignee_user_id for member in assignable_members):
+            raise LeadAssigneeNotFoundError
         lead.assigned_to_user_id = assignee_user_id
         if lead.status in {"new", "unassigned", "validating"}:
             previous_status = lead.status
@@ -859,13 +867,18 @@ class LeadService:
     async def resource_history(
         self,
         session: AsyncSession,
+        organization_id: UUID,
         *,
         resource_type: str,
         resource_id: UUID,
         limit: int = 50,
     ) -> list[dict[str, object]]:
         events = await self.audit_repository.list_for_resource(
-            session, resource_type=resource_type, resource_id=resource_id, limit=limit
+            session,
+            organization_id=organization_id,
+            resource_type=resource_type,
+            resource_id=resource_id,
+            limit=limit,
         )
         return [
             {

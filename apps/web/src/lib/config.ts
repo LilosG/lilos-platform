@@ -15,7 +15,12 @@ type PublicEnv = Partial<
 
 /** Returns null when required deployment configuration is absent, never a fabricated default. */
 export function readPublicConfig(
-  env: PublicEnv = import.meta.env,
+  env: PublicEnv = {
+    PUBLIC_LILOS_API_BASE_URL: import.meta.env.PUBLIC_LILOS_API_BASE_URL,
+    PUBLIC_LILOS_SUPABASE_URL: import.meta.env.PUBLIC_LILOS_SUPABASE_URL,
+    PUBLIC_LILOS_SUPABASE_ANON_KEY: import.meta.env
+      .PUBLIC_LILOS_SUPABASE_ANON_KEY,
+  },
 ): PublicConfig | null {
   const apiBaseUrl = env.PUBLIC_LILOS_API_BASE_URL;
   const supabaseUrl = env.PUBLIC_LILOS_SUPABASE_URL;

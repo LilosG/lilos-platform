@@ -38,12 +38,14 @@ class AuditEventRepository:
         self,
         session: AsyncSession,
         *,
+        organization_id: UUID,
         resource_type: str,
         resource_id: UUID,
         limit: int = 50,
     ) -> list[AuditEvent]:
-        """Retrieve a bounded resource history in deterministic descending order."""
+        """Retrieve tenant-scoped resource history in deterministic descending order."""
         statement = self._ordered_query().where(
+            AuditEvent.organization_id == organization_id,
             AuditEvent.resource_type == resource_type,
             AuditEvent.resource_id == resource_id,
         )

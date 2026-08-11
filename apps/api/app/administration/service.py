@@ -78,6 +78,7 @@ from apps.api.app.audit.enums import AuditActorType, AuditResult
 from apps.api.app.audit.metadata import JsonValue
 from apps.api.app.audit.service import AuditEventService
 from apps.api.app.database.base import utc_now
+from apps.api.app.locations.enums import LocationStatus
 from apps.api.app.locations.errors import LocationNotFoundError
 from apps.api.app.locations.models import Location
 from apps.api.app.organizations.errors import OrganizationNotFoundError
@@ -1670,9 +1671,29 @@ class AdministrationService:
             if entitlement
             else []
         )
+        evaluation_locations = (
+            [
+                await _location(session, organization_id, selected_location.location_id)
+                for selected_location in selected
+            ]
+            if selected
+            else list(
+                await session.scalars(
+                    select(Location)
+                    .where(
+                        Location.organization_id == organization_id,
+                        Location.status.notin_(
+                            (LocationStatus.CLOSED_PERMANENTLY, LocationStatus.ARCHIVED)
+                        ),
+                    )
+                    .order_by(Location.is_primary.desc(), Location.created_at, Location.id)
+                )
+            )
+        )
         findings: list[ReadinessFinding] = []
         config_ids: list[UUID] = []
         fact_ids: list[UUID] = []
+        seen_fact_ids: set[UUID] = set()
         policy_ids: list[UUID] = []
         if entitlement is None or entitlement.status in {"not_enabled", "archived", "suspended"}:
             findings.append(
@@ -1709,8 +1730,7 @@ class AdministrationService:
                     remediation="Create the organization profile.",
                 )
             )
-        for selected_location in selected:
-            location = await _location(session, organization_id, selected_location.location_id)
+        for location in evaluation_locations:
             if location.status.value in {"closed_permanently", "archived"}:
                 findings.append(
                     ReadinessFinding(
@@ -1758,11 +1778,22 @@ class AdministrationService:
             )
         unresolved_fact_keys: list[str] = []
         for key in product.required_business_fact_keys:
-            fact_resolution = await self.resolve_fact(session, organization_id, key)
-            if fact_resolution.state != "resolved":
+            fact_resolutions = (
+                [
+                    await self.resolve_fact(session, organization_id, key, location_id=location.id)
+                    for location in evaluation_locations
+                ]
+                if evaluation_locations
+                else [await self.resolve_fact(session, organization_id, key)]
+            )
+            if any(resolution.state != "resolved" for resolution in fact_resolutions):
                 unresolved_fact_keys.append(key)
-            elif fact_resolution.selected_revision_id:
-                fact_ids.append(fact_resolution.selected_revision_id)
+            else:
+                for resolution in fact_resolutions:
+                    revision_id = resolution.selected_revision_id
+                    if revision_id is not None and revision_id not in seen_fact_ids:
+                        seen_fact_ids.add(revision_id)
+                        fact_ids.append(revision_id)
         if unresolved_fact_keys:
             count = len(unresolved_fact_keys)
             findings.append(

@@ -4,6 +4,7 @@ from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request, Response, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.app.access_control.enums import ScopeType
@@ -19,7 +20,7 @@ from apps.api.app.products.reviews.errors import (
     ReviewNotFoundError,
 )
 from apps.api.app.products.reviews.ingestion_service import ReviewIngestionService
-from apps.api.app.products.reviews.models import Review, ReviewRevision
+from apps.api.app.products.reviews.models import Review, ReviewResponseRevision, ReviewRevision
 from apps.api.app.products.reviews.service import ReviewService
 from apps.api.app.routes.health import settings_from_request
 
@@ -187,7 +188,9 @@ async def review_audit(
     review, _revisions = await service.get(session, organization_id, review_id)
     if review.location_id != location_id:
         raise ReviewNotFoundError
-    history = await service.resource_history(session, resource_type="review", resource_id=review_id)
+    history = await service.resource_history(
+        session, organization_id, resource_type="review", resource_id=review_id
+    )
     return {"data": history, "meta": meta(request)}
 
 
@@ -200,9 +203,20 @@ async def response_audit(
     session: Session,
     _: Annotated[AuthorizationDecision, policy("audit.read")],
 ) -> dict[str, object]:
-    del location_id
+    response = await session.scalar(
+        select(ReviewResponseRevision.id).where(
+            ReviewResponseRevision.organization_id == organization_id,
+            ReviewResponseRevision.location_id == location_id,
+            ReviewResponseRevision.id == response_id,
+        )
+    )
+    if response is None:
+        raise ReviewNotFoundError
     history = await service.resource_history(
-        session, resource_type="review_response_revision", resource_id=response_id
+        session,
+        organization_id,
+        resource_type="review_response_revision",
+        resource_id=response_id,
     )
     return {"data": history, "meta": meta(request)}
 
@@ -290,10 +304,11 @@ async def approve(
     principal: Authenticated,
     _: Annotated[AuthorizationDecision, policy("reviews.approve_response", True)],
 ) -> dict[str, object]:
-    del location_id, review_id
     item = await service.approve(
         session,
         organization_id,
+        location_id,
+        review_id,
         response_id,
         principal.platform_user_id,
         correlation_id=request_correlation_id(request),
@@ -320,10 +335,11 @@ async def publish(
     principal: Authenticated,
     _: Annotated[AuthorizationDecision, policy("reviews.publish_response", True)],
 ) -> dict[str, object]:
-    del location_id, review_id
     item = await service.reserve_publication(
         session,
         organization_id,
+        location_id,
+        review_id,
         response_id,
         command.idempotency_key,
         actor_id=principal.platform_user_id,

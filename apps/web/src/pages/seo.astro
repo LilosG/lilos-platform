@@ -5,217 +5,121 @@ import "../styles/global.css";
 
 <!doctype html>
 <html lang="en">
-  <head
-    ><meta charset="UTF-8" /><meta
-      name="viewport"
-      content="width=device-width, initial-scale=1"
-    /><meta name="description" content="LILOs SEO workspace" /><title>
-      SEO · LILOs
-    </title></head
-  >
-  <body
-    ><AppShell>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="LILOs SEO" />
+    <title>SEO · LILOs</title>
+  </head>
+  <body>
+    <AppShell>
       <div id="boot-not-configured" role="status">
-        <h1>This deployment is not configured</h1><p>
-          No Supabase or API connection is configured for this build.
-        </p>
+        <h1>This deployment is not configured</h1>
+        <p>No Supabase or API connection is configured for this build.</p>
       </div>
 
       <div id="boot-loading" role="status" aria-live="polite" hidden>
-        <p>Loading SEO…</p>
+        <p class="loading-state">Loading SEO…</p>
       </div>
 
-      <div id="boot-error" class="alert alert--error" role="alert" hidden></div>
+      <div id="boot-error" role="alert" hidden></div>
 
       <div id="workspace-empty" role="status" hidden>
-        <h1>No organization access yet</h1><p>
-          Your account is not a member of any organization. Ask an administrator
-          to invite you.
-        </p>
+        <div class="empty-state">
+          <span class="empty-state__icon" aria-hidden="true">○</span>
+          <h3>No organization access yet</h3>
+          <p>
+            Your account is not a member of any organization. Ask an
+            administrator to invite you.
+          </p>
+        </div>
       </div>
 
       <div id="seo-content" hidden>
-        <section id="overview" aria-labelledby="page-title">
-          <p class="eyebrow">SEO</p><h1 id="page-title">SEO</h1>
-        </section>
-
-        <section aria-labelledby="readiness-title">
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow">Product readiness</p><h2 id="readiness-title">
-                Setup status
-              </h2>
-            </div>
-          </div><div class="attention-card" id="readiness-panel">
-            <p>Checking readiness…</p>
+        <div class="page-head">
+          <div class="page-head__intro">
+            <p class="eyebrow">Operations</p>
+            <h1>SEO</h1>
+            <p>
+              Crawl your website, identify opportunities, and track Search
+              Console performance.
+            </p>
           </div>
-        </section>
-
-        <section aria-labelledby="summary-title">
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow">Insights</p><h2 id="summary-title">
-                SEO summary
-              </h2>
+          <div class="page-head__meta">
+            <div class="page-head__actions">
+              <a
+                class="button button--secondary button--sm"
+                href="/integrations">Manage integrations</a
+              >
             </div>
-          </div><div class="metric-grid" id="summary-panel"></div>
-        </section>
+          </div>
+        </div>
 
-        <section aria-labelledby="websites-title">
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow">Scope</p><h2 id="websites-title">
-                Confirmed websites
-              </h2>
-            </div>
-          </div><label class="sr-only" for="website-name">Website name</label
-          ><input
-            id="website-name"
-            type="text"
-            placeholder="Website name"
-          /><label class="sr-only" for="website-origin">Canonical origin</label
-          ><input
-            id="website-origin"
-            type="text"
-            placeholder="https://example.com"
-          /><button type="button" class="button" id="create-website-button"
-            >Confirm website</button
-          ><p id="website-hint" class="field-hint"></p><ul
-            class="product-list"
-            id="websites-list"
+        <div class="metric-grid" id="seo-metrics"></div>
+
+        <div class="tabs" role="tablist" id="seo-tabs">
+          <button
+            class="tabs__tab"
+            role="tab"
+            aria-selected="true"
+            data-tab="overview">Overview</button
           >
-          </ul>
-        </section>
+          <button
+            class="tabs__tab"
+            role="tab"
+            aria-selected="false"
+            data-tab="crawl">Crawl</button
+          >
+          <button
+            class="tabs__tab"
+            role="tab"
+            aria-selected="false"
+            data-tab="opportunities">Opportunities</button
+          >
+          <button
+            class="tabs__tab"
+            role="tab"
+            aria-selected="false"
+            data-tab="search-console">Search Console</button
+          >
+        </div>
 
-        <section id="detail-section" aria-labelledby="detail-title" hidden>
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow">Website detail</p><h2 id="detail-title">
-                Selected website
-              </h2>
-            </div>
-          </div><div class="split">
-            <article>
-              <p class="eyebrow">Search Console</p><ul
-                class="product-list"
-                id="search-properties-list"
-              >
-              </ul><p class="eyebrow">Local landing-page gaps</p><ul
-                class="product-list"
-                id="landing-gaps-list"
-              >
-              </ul><h3>Run crawl</h3><label class="sr-only" for="crawl-paths"
-                >Seed paths (comma separated)</label
-              ><input
-                id="crawl-paths"
-                type="text"
-                placeholder="/, /services, /contact"
-              /><button type="button" class="button" id="crawl-button"
-                >Run crawl</button
-              ><p id="action-status" role="status" aria-live="polite"></p>
-            </article><article id="activity">
-              <p class="eyebrow">Audit history</p><ol
-                class="timeline"
-                id="audit-history"
-              >
-              </ol>
-            </article>
-          </div>
-        </section>
-
-        <section aria-labelledby="opportunities-title">
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow">Opportunities</p><h2 id="opportunities-title">
-                SEO opportunities
-              </h2>
-            </div>
-          </div><ul class="product-list" id="opportunities-list"></ul>
-        </section>
-
-        <section
-          id="opportunity-detail-section"
-          aria-labelledby="opportunity-detail-title"
-          hidden
-        >
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow">Opportunity detail</p><h2
-                id="opportunity-detail-title"
-              >
-                Selected opportunity
-              </h2>
-            </div>
-          </div><div class="split">
-            <article>
-              <p class="eyebrow">Evidence</p><div id="opportunity-body">
-              </div><h3>Recommendation</h3><label
-                class="sr-only"
-                for="recommendation-action">Proposed action</label
-              ><textarea
-                id="recommendation-action"
-                rows="3"
-                placeholder="Proposed action"></textarea><label
-                class="sr-only"
-                for="recommendation-hypothesis">Expected result</label
-              ><input
-                id="recommendation-hypothesis"
-                type="text"
-                placeholder="Expected result hypothesis"
-              /><button
-                type="button"
-                class="button"
-                id="create-recommendation-button">Propose recommendation</button
-              >
-            </article><article>
-              <p class="eyebrow">Recommendations</p><ol
-                class="timeline"
-                id="recommendations-list"
-              >
-              </ol><p class="eyebrow">Implementation tasks</p><ol
-                class="timeline"
-                id="tasks-list"
-              >
-              </ol>
-            </article>
-          </div>
-        </section>
+        <div id="tab-overview" class="tab-panel"></div>
+        <div id="tab-crawl" class="tab-panel" hidden></div>
+        <div id="tab-opportunities" class="tab-panel" hidden></div>
+        <div id="tab-search-console" class="tab-panel" hidden></div>
       </div>
     </AppShell>
     <script>
       import {
-        fetchMyOrganizations,
-        fetchPrincipal,
-        fetchProductReadiness,
-      } from "../lib/workspace";
-      import {
-        createImplementationTask,
-        createRecommendation,
-        createWebsite,
-        decideRecommendation,
-        fetchImplementationTasks,
-        fetchLandingPageGaps,
-        fetchOpportunities,
-        fetchRecommendations,
-        fetchSearchProperties,
-        fetchSEOSummary,
-        fetchWebsiteAudit,
+        MAX_CRAWL_PAGES,
         fetchWebsites,
+        fetchSEOSummary,
+        fetchOpportunities,
+        fetchSearchProperties,
         runCrawl,
-        verifyImplementationTask,
-        type SEOOpportunity,
-        type SEORecommendation,
-        type SEOImplementationTask,
-        type SEOWebsite,
+        normalizeCrawlPageLimit,
+        describeCrawlResult,
       } from "../lib/seo";
-      import { selectDefaultOrganization } from "../lib/dashboard-logic";
-      import { getCurrentSession, signOut } from "../lib/session";
-      import { readPublicConfig } from "../lib/config";
+      import { fetchSearchConsoleSummary } from "../lib/search-console";
       import { startWorkflowRun } from "../lib/workflows";
-      import { fetchOrganizationDomains } from "../lib/settings";
-      import type { ApiOutcome } from "../lib/api-client";
+      import {
+        bootWorkspace,
+        applyBootResult,
+        populateSwitcher,
+        setActiveOrganization,
+        statusBadge,
+        metricCard,
+        emptyState,
+        errorAlert,
+        describeFailure,
+        formatTimestamp,
+        type BootRegions,
+      } from "../lib/ui";
 
-      const regions = {
+      let organizationId = "";
+
+      const regions: BootRegions = {
         notConfigured: document.getElementById("boot-not-configured")!,
         loading: document.getElementById("boot-loading")!,
         error: document.getElementById("boot-error")!,
@@ -223,688 +127,434 @@ import "../styles/global.css";
         content: document.getElementById("seo-content")!,
       };
 
-      let organizationId = "";
-      let selectedWebsiteId: string | null = null;
-      let selectedOpportunityId: string | null = null;
-      let selectedRevisionId: string | null = null;
-
-      function showOnly(region: HTMLElement): void {
-        for (const key of Object.keys(regions) as (keyof typeof regions)[]) {
-          regions[key].hidden = regions[key] !== region;
-        }
-      }
-
-      function describeFailure(outcome: ApiOutcome<unknown>): string {
-        switch (outcome.kind) {
-          case "forbidden":
-            return "You do not have permission to view SEO for this organization.";
-          case "not-found":
-            return "The requested resource could not be found.";
-          case "disconnected":
-            return "Could not reach the platform API.";
-          case "unauthenticated":
-            return "Your session has expired. Sign in again.";
-          case "not-configured":
-            return "This deployment is not configured.";
-          case "error":
-            return outcome.message;
-          case "ok":
-            return "";
-        }
-      }
-
-      function goToLogin(): void {
-        const next = encodeURIComponent(window.location.pathname);
-        window.location.assign(`/login?next=${next}`);
-      }
-
-      function wireSignOut(): void {
-        document
-          .getElementById("sign-out-button")
-          ?.addEventListener("click", async () => {
-            await signOut();
-            goToLogin();
+      document.querySelectorAll<HTMLElement>("[data-tab]").forEach((tab) => {
+        tab.addEventListener("click", () => {
+          document.querySelectorAll<HTMLElement>("[data-tab]").forEach((t) => {
+            t.setAttribute("aria-selected", t === tab ? "true" : "false");
           });
+          document
+            .querySelectorAll<HTMLElement>(".tab-panel")
+            .forEach((panel) => {
+              panel.hidden = !panel.id.endsWith(tab.dataset.tab!);
+            });
+        });
+      });
+
+      async function loadOrganization(
+        org: import("../lib/workspace").MyOrganization,
+      ): Promise<void> {
+        setActiveOrganization(org);
+        organizationId = org.organization_id;
+
+        const [summaryResult, websitesResult, oppsResult] = await Promise.all([
+          fetchSEOSummary(organizationId),
+          fetchWebsites(organizationId),
+          fetchOpportunities(organizationId),
+        ]);
+
+        renderMetrics(summaryResult, websitesResult, oppsResult);
+        renderOverview(websitesResult, oppsResult);
+        renderCrawl(websitesResult);
+        renderOpportunities(oppsResult);
+        renderSearchConsole(websitesResult);
       }
 
-      function badge(status: string, label = status): HTMLSpanElement {
-        const el = document.createElement("span");
-        el.className = `status status--${status}`;
-        const dot = document.createElement("span");
-        dot.setAttribute("aria-hidden", "true");
-        dot.className = "status__dot";
-        el.append(dot, document.createTextNode(label));
-        return el;
-      }
+      function renderMetrics(
+        summary: Awaited<ReturnType<typeof fetchSEOSummary>>,
+        websites: Awaited<ReturnType<typeof fetchWebsites>>,
+        opps: Awaited<ReturnType<typeof fetchOpportunities>>,
+      ): void {
+        const grid = document.getElementById("seo-metrics")!;
+        grid.replaceChildren();
 
-      function errorAlert(message: string): HTMLDivElement {
-        const alert = document.createElement("div");
-        alert.className = "alert alert--error";
-        const text = document.createElement("p");
-        text.textContent = message;
-        alert.append(text);
-        return alert;
-      }
+        const websiteCount = websites.kind === "ok" ? websites.data.length : 0;
+        const oppCount = opps.kind === "ok" ? opps.data.length : 0;
+        const openOpps =
+          opps.kind === "ok"
+            ? opps.data.filter((o) => o.status === "open" || o.status === "new")
+                .length
+            : 0;
+        const highPriority =
+          opps.kind === "ok"
+            ? opps.data.filter((o) => o.priority_score >= 70).length
+            : 0;
 
-      function emptyState(
-        heading: string,
-        description: string,
-      ): HTMLDivElement {
-        const wrap = document.createElement("div");
-        wrap.className = "empty-state";
-        const title = document.createElement("h3");
-        title.textContent = heading;
-        const body = document.createElement("p");
-        body.textContent = description;
-        wrap.append(title, body);
-        return wrap;
-      }
-
-      function statusBadgeKind(status: string): string {
-        if (["approved", "verified", "active"].includes(status)) return "ready";
-        if (["rejected"].includes(status)) return "blocked";
-        if (["identified"].includes(status)) return "missing";
-        return "setup";
-      }
-
-      async function renderReadiness(): Promise<void> {
-        const panel = document.getElementById("readiness-panel")!;
-        panel.replaceChildren();
-        const outcome = await fetchProductReadiness(organizationId, "seo");
-        if (outcome.kind !== "ok") {
-          panel.append(errorAlert(describeFailure(outcome)));
-          return;
-        }
-        const state = outcome.data.readiness_state;
-        const label = state === "not_entitled" ? "setup" : state;
-        panel.append(badge(label));
-        for (const finding of outcome.data.blocking_requirements) {
-          const reason = document.createElement("p");
-          reason.textContent = finding.remediation;
-          panel.append(reason);
-        }
-        if (
-          outcome.data.blocking_requirements.length === 0 &&
-          state === "ready"
-        ) {
-          const ready = document.createElement("p");
-          ready.textContent = "SEO is ready to use.";
-          panel.append(ready);
-        }
-      }
-
-      async function renderSummary(): Promise<void> {
-        const panel = document.getElementById("summary-panel")!;
-        panel.replaceChildren();
-        const outcome = await fetchSEOSummary(organizationId);
-        if (outcome.kind !== "ok") {
-          panel.append(errorAlert(describeFailure(outcome)));
-          return;
-        }
-        const metrics: Array<[string, string]> = [
-          ["Websites", String(outcome.data.website_count)],
-          ...Object.entries(outcome.data.by_status).map(
-            ([status, count]) =>
-              [`Status: ${status}`, String(count)] as [string, string],
+        grid.append(
+          metricCard(
+            "Websites",
+            String(websiteCount),
+            websites.kind === "ok" ? "Configured" : "Unable to load",
           ),
-        ];
-        for (const [label, value] of metrics) {
-          const article = document.createElement("article");
-          article.className = "metric";
-          const eyebrow = document.createElement("p");
-          eyebrow.className = "eyebrow";
-          eyebrow.textContent = label;
-          const valueEl = document.createElement("p");
-          valueEl.className = "metric__value";
-          valueEl.textContent = value;
-          article.append(eyebrow, valueEl);
-          panel.append(article);
-        }
-      }
-
-      async function renderWebsites(): Promise<void> {
-        const list = document.getElementById("websites-list")!;
-        list.replaceChildren();
-        const outcome = await fetchWebsites(organizationId);
-        if (outcome.kind !== "ok") {
-          const item = document.createElement("li");
-          item.append(errorAlert(describeFailure(outcome)));
-          list.append(item);
-          return;
-        }
-        if (outcome.data.length === 0) {
-          const item = document.createElement("li");
-          item.append(
-            emptyState(
-              "No confirmed websites yet",
-              "Add your first website using the form above to start tracking Search Console data, landing-page gaps, and crawl results.",
+          metricCard("Opportunities", String(oppCount), `${openOpps} open`),
+          metricCard(
+            "High priority",
+            String(highPriority),
+            "Priority score ≥ 70",
+          ),
+        );
+        if (summary.kind === "ok") {
+          grid.append(
+            metricCard(
+              "Crawl runs",
+              String(summary.data.crawl_run_count),
+              "Total",
             ),
           );
-          list.append(item);
+        }
+      }
+
+      function renderOverview(
+        websites: Awaited<ReturnType<typeof fetchWebsites>>,
+        opps: Awaited<ReturnType<typeof fetchOpportunities>>,
+      ): void {
+        const panel = document.getElementById("tab-overview")!;
+        panel.replaceChildren();
+
+        if (websites.kind !== "ok" || websites.data.length === 0) {
+          panel.append(
+            emptyState(
+              "No websites configured",
+              "Add a website to start crawling and identifying SEO opportunities.",
+            ),
+          );
           return;
         }
-        for (const website of outcome.data) {
-          list.append(websiteRow(website));
-        }
-      }
 
-      function websiteRow(website: SEOWebsite): HTMLLIElement {
-        const item = document.createElement("li");
-        const info = document.createElement("div");
-        const title = document.createElement("h3");
-        title.textContent = website.name;
-        const meta = document.createElement("p");
-        meta.textContent = website.canonical_origin;
-        info.append(title, meta);
-        const actions = document.createElement("div");
-        actions.append(badge(statusBadgeKind(website.status), website.status));
-        const openButton = document.createElement("button");
-        openButton.type = "button";
-        openButton.className = "button button--secondary";
-        openButton.textContent = "Open";
-        openButton.addEventListener(
-          "click",
-          () => void openWebsite(website.id),
-        );
-        actions.append(openButton);
-        item.append(info, actions);
-        return item;
-      }
-
-      async function openWebsite(websiteId: string): Promise<void> {
-        selectedWebsiteId = websiteId;
-        document.getElementById("detail-section")!.hidden = false;
-        await Promise.all([
-          renderSearchProperties(websiteId),
-          renderLandingGaps(websiteId),
-          renderWebsiteAudit(websiteId),
-        ]);
-        await renderOpportunities();
-      }
-
-      async function renderSearchProperties(websiteId: string): Promise<void> {
-        const list = document.getElementById("search-properties-list")!;
-        list.replaceChildren();
-        const outcome = await fetchSearchProperties(organizationId, websiteId);
-        if (outcome.kind !== "ok") {
-          const item = document.createElement("li");
-          item.textContent = describeFailure(outcome);
-          list.append(item);
-          return;
-        }
-        if (outcome.data.length === 0) {
-          const item = document.createElement("li");
-          item.textContent =
-            "No Search Console property connected yet. Query and page performance metrics require a connected Search Console property.";
-          list.append(item);
-          return;
-        }
-        for (const property of outcome.data) {
-          const item = document.createElement("li");
-          const info = document.createElement("div");
-          const name = document.createElement("h3");
-          name.textContent = property.external_property_id;
-          const meta = document.createElement("p");
-          meta.textContent = property.freshness_status;
-          info.append(name, meta);
-          item.append(info);
-          list.append(item);
-        }
-      }
-
-      async function renderLandingGaps(websiteId: string): Promise<void> {
-        const list = document.getElementById("landing-gaps-list")!;
-        list.replaceChildren();
-        const outcome = await fetchLandingPageGaps(organizationId, websiteId);
-        if (outcome.kind !== "ok") {
-          const item = document.createElement("li");
-          item.textContent = describeFailure(outcome);
-          list.append(item);
-          return;
-        }
-        if (outcome.data.length === 0) {
-          const item = document.createElement("li");
-          item.textContent = "No local landing-page gaps detected.";
-          list.append(item);
-          return;
-        }
-        for (const gap of outcome.data) {
-          const item = document.createElement("li");
-          item.textContent = `No crawled page found for location: ${gap.location_name}`;
-          list.append(item);
-        }
-      }
-
-      async function renderWebsiteAudit(websiteId: string): Promise<void> {
-        const list = document.getElementById("audit-history")!;
-        list.replaceChildren();
-        const outcome = await fetchWebsiteAudit(organizationId, websiteId);
-        if (outcome.kind !== "ok") {
-          const item = document.createElement("li");
-          item.textContent = describeFailure(outcome);
-          list.append(item);
-          return;
-        }
-        if (outcome.data.length === 0) {
-          const item = document.createElement("li");
-          item.textContent = "No audit history yet.";
-          list.append(item);
-          return;
-        }
-        for (const event of outcome.data) {
-          const item = document.createElement("li");
-          const strong = document.createElement("strong");
-          strong.textContent = event.summary;
-          const span = document.createElement("span");
-          span.textContent = `${event.event_type} · ${new Date(event.occurred_at).toLocaleString()}`;
-          item.append(strong, span);
-          list.append(item);
-        }
-      }
-
-      function setActionStatus(message: string): void {
-        document.getElementById("action-status")!.textContent = message;
-      }
-
-      function wireCrawlButton(): void {
-        document
-          .getElementById("crawl-button")
-          ?.addEventListener("click", async () => {
-            if (!selectedWebsiteId) return;
-            const raw = (
-              document.getElementById("crawl-paths") as HTMLInputElement
-            ).value.trim();
-            const seedPaths = raw
-              ? raw
-                  .split(",")
-                  .map((path) => path.trim())
-                  .filter(Boolean)
-              : ["/"];
-            setActionStatus("Starting crawl workflow…");
-            const workflowStart = await startWorkflowRun(
-              organizationId,
-              "seo.crawl_or_analysis",
-              {
-                idempotencyKey: `web-crawl-start-${selectedWebsiteId}-${Date.now()}`,
-              },
-            );
-            if (workflowStart.kind !== "ok") {
-              setActionStatus(describeFailure(workflowStart));
-              return;
-            }
-            setActionStatus("Running crawl…");
-            const result = await runCrawl(organizationId, selectedWebsiteId, {
-              workflowRunId: workflowStart.data.workflow_run_id,
-              seedPaths,
-              maxPages: Math.min(seedPaths.length, 20),
-              idempotencyKey: `web-crawl-${selectedWebsiteId}-${Date.now()}`,
-            });
-            if (result.kind === "ok") {
-              setActionStatus(
-                `Crawl completed: ${result.data.safe_result.pages_crawled} pages, ` +
-                  `${result.data.safe_result.opportunities_found} opportunities found.`,
-              );
-              await Promise.all([
-                renderOpportunities(),
-                renderSummary(),
-                renderWebsiteAudit(selectedWebsiteId),
-              ]);
-            } else {
-              setActionStatus(describeFailure(result));
-            }
-          });
-      }
-
-      function wireCreateWebsiteButton(): void {
-        document
-          .getElementById("create-website-button")
-          ?.addEventListener("click", async () => {
-            const name = (
-              document.getElementById("website-name") as HTMLInputElement
-            ).value.trim();
-            const origin = (
-              document.getElementById("website-origin") as HTMLInputElement
-            ).value.trim();
-            if (!name || !origin) {
-              setActionStatus("Enter a website name and canonical origin.");
-              return;
-            }
-            const result = await createWebsite(organizationId, {
-              key: "primary",
-              name,
-              canonicalOrigin: origin,
-            });
-            if (result.kind === "ok") {
-              (
-                document.getElementById("website-name") as HTMLInputElement
-              ).value = "";
-              (
-                document.getElementById("website-origin") as HTMLInputElement
-              ).value = "";
-              await renderWebsites();
-            } else {
-              setActionStatus(describeFailure(result));
-            }
-          });
-      }
-
-      async function prefillWebsiteFromDomain(): Promise<void> {
-        const originInput = document.getElementById(
-          "website-origin",
-        ) as HTMLInputElement | null;
-        const nameInput = document.getElementById(
-          "website-name",
-        ) as HTMLInputElement | null;
-        const hint = document.getElementById("website-hint");
-        if (!originInput || !nameInput) return;
-        const result = await fetchOrganizationDomains(organizationId);
-        if (result.kind !== "ok") return;
-        const primary = result.data.find(
-          (d) => d.is_primary && d.status === "active",
-        );
-        if (primary) {
-          originInput.value = `https://${primary.domain}`;
-          if (!nameInput.value) nameInput.value = primary.domain;
-          if (hint)
-            hint.textContent = `Pre-filled from the primary domain ${primary.domain}.`;
-        }
-      }
-
-      async function renderOpportunities(): Promise<void> {
-        const list = document.getElementById("opportunities-list")!;
-        list.replaceChildren();
-        const outcome = await fetchOpportunities(organizationId, {
-          websiteId: selectedWebsiteId ?? undefined,
-        });
-        if (outcome.kind !== "ok") {
-          const item = document.createElement("li");
-          item.textContent = describeFailure(outcome);
-          list.append(item);
-          return;
-        }
-        if (outcome.data.length === 0) {
-          const item = document.createElement("li");
-          item.textContent =
-            "No SEO opportunities identified yet. Run a crawl to detect issues.";
-          list.append(item);
-          return;
-        }
-        for (const opportunity of outcome.data) {
-          list.append(opportunityRow(opportunity));
-        }
-      }
-
-      function opportunityRow(opportunity: SEOOpportunity): HTMLLIElement {
-        const item = document.createElement("li");
-        const info = document.createElement("div");
-        const title = document.createElement("h3");
-        title.textContent = opportunity.opportunity_type.replaceAll("_", " ");
-        const meta = document.createElement("p");
-        meta.textContent = `Priority ${opportunity.priority_score}`;
-        info.append(title, meta);
-        const actions = document.createElement("div");
-        actions.append(
-          badge(statusBadgeKind(opportunity.status), opportunity.status),
-        );
-        const openButton = document.createElement("button");
-        openButton.type = "button";
-        openButton.className = "button button--secondary";
-        openButton.textContent = "Open";
-        openButton.addEventListener(
-          "click",
-          () => void openOpportunity(opportunity),
-        );
-        actions.append(openButton);
-        item.append(info, actions);
-        return item;
-      }
-
-      async function openOpportunity(
-        opportunity: SEOOpportunity,
-      ): Promise<void> {
-        selectedOpportunityId = opportunity.id;
-        document.getElementById("opportunity-detail-section")!.hidden = false;
-        const bodyPanel = document.getElementById("opportunity-body")!;
-        bodyPanel.replaceChildren();
-        const evidence = document.createElement("p");
-        evidence.textContent = JSON.stringify(opportunity.evidence);
-        bodyPanel.append(evidence);
-        await Promise.all([renderRecommendations(opportunity.id)]);
-      }
-
-      async function renderRecommendations(
-        opportunityId: string,
-      ): Promise<void> {
-        const list = document.getElementById("recommendations-list")!;
-        list.replaceChildren();
-        const outcome = await fetchRecommendations(
-          organizationId,
-          opportunityId,
-        );
-        if (outcome.kind !== "ok") {
-          const item = document.createElement("li");
-          item.textContent = describeFailure(outcome);
-          list.append(item);
-          return;
-        }
-        if (outcome.data.length === 0) {
-          const item = document.createElement("li");
-          item.textContent = "No recommendation proposed yet.";
-          list.append(item);
-          return;
-        }
-        for (const recommendation of outcome.data) {
-          list.append(recommendationRow(recommendation));
-        }
-        selectedRevisionId = outcome.data[0]?.id ?? null;
-        if (selectedRevisionId) await renderTasks(selectedRevisionId);
-      }
-
-      function recommendationRow(
-        recommendation: SEORecommendation,
-      ): HTMLLIElement {
-        const item = document.createElement("li");
-        const strong = document.createElement("strong");
-        strong.textContent = `${recommendation.proposed_action} — ${recommendation.status}`;
-        const span = document.createElement("span");
-        span.textContent = `Risk: ${recommendation.risk}, effort: ${recommendation.effort}`;
-        item.append(strong, span);
-        if (recommendation.status === "awaiting_approval") {
-          const approveButton = document.createElement("button");
-          approveButton.type = "button";
-          approveButton.textContent = "Approve";
-          approveButton.addEventListener("click", async () => {
-            await decideRecommendation(organizationId, recommendation.id, true);
-            if (selectedOpportunityId)
-              await renderRecommendations(selectedOpportunityId);
-          });
-          const rejectButton = document.createElement("button");
-          rejectButton.type = "button";
-          rejectButton.textContent = "Reject";
-          rejectButton.addEventListener("click", async () => {
-            await decideRecommendation(
-              organizationId,
-              recommendation.id,
-              false,
-            );
-            if (selectedOpportunityId)
-              await renderRecommendations(selectedOpportunityId);
-          });
-          item.append(approveButton, rejectButton);
-        }
-        if (recommendation.status === "approved") {
-          const taskButton = document.createElement("button");
-          taskButton.type = "button";
-          taskButton.textContent = "Create implementation task";
-          taskButton.addEventListener("click", async () => {
-            const workflowStart = await startWorkflowRun(
-              organizationId,
-              "seo.crawl_or_analysis",
-              {
-                idempotencyKey: `web-task-start-${recommendation.id}-${Date.now()}`,
-              },
-            );
-            if (workflowStart.kind !== "ok") {
-              setActionStatus(describeFailure(workflowStart));
-              return;
-            }
-            await createImplementationTask(organizationId, recommendation.id, {
-              workflowRunId: workflowStart.data.workflow_run_id,
-              targetType: "page",
-              targetReference: recommendation.proposed_action,
-            });
-            await renderTasks(recommendation.id);
-          });
-          item.append(taskButton);
-        }
-        return item;
-      }
-
-      async function renderTasks(revisionId: string): Promise<void> {
-        const list = document.getElementById("tasks-list")!;
-        list.replaceChildren();
-        const outcome = await fetchImplementationTasks(
-          organizationId,
-          revisionId,
-        );
-        if (outcome.kind !== "ok") {
-          const item = document.createElement("li");
-          item.textContent = describeFailure(outcome);
-          list.append(item);
-          return;
-        }
-        if (outcome.data.length === 0) {
-          const item = document.createElement("li");
-          item.textContent = "No implementation tasks yet.";
-          list.append(item);
-          return;
-        }
-        for (const task of outcome.data as SEOImplementationTask[]) {
-          const item = document.createElement("li");
-          const strong = document.createElement("strong");
-          strong.textContent = `${task.target_reference} — ${task.status}`;
-          item.append(strong);
-          if (task.status === "pending") {
-            const verifyButton = document.createElement("button");
-            verifyButton.type = "button";
-            verifyButton.textContent = "Verify";
-            verifyButton.addEventListener("click", async () => {
-              await verifyImplementationTask(organizationId, task.id);
-              await renderTasks(revisionId);
-            });
-            item.append(verifyButton);
+        // Website status
+        for (const website of websites.data) {
+          const card = document.createElement("div");
+          card.className = "card";
+          const header = document.createElement("div");
+          header.className = "card__header";
+          header.append(
+            Object.assign(document.createElement("h3"), {
+              className: "card__title",
+              textContent: website.name,
+            }),
+          );
+          header.append(
+            Object.assign(document.createElement("p"), {
+              className: "card__description",
+              textContent: website.canonical_origin,
+            }),
+          );
+          card.append(header);
+          const body = document.createElement("div");
+          body.className = "card__body";
+          body.append(
+            statusBadge(
+              website.status === "verified" || website.status === "active"
+                ? "ready"
+                : "setup",
+              website.status,
+            ),
+          );
+          if (website.verified_at) {
+            const verified = document.createElement("p");
+            verified.className = "text-sm muted";
+            verified.style.marginTop = "0.5rem";
+            verified.textContent = `Verified ${formatTimestamp(website.verified_at)}`;
+            body.append(verified);
           }
-          list.append(item);
+          card.append(body);
+          panel.append(card);
+        }
+
+        // Recent opportunities
+        if (opps.kind === "ok" && opps.data.length > 0) {
+          const card = document.createElement("div");
+          card.className = "card";
+          const header = document.createElement("div");
+          header.className = "card__header";
+          header.append(
+            Object.assign(document.createElement("h3"), {
+              className: "card__title",
+              textContent: "Recent opportunities",
+            }),
+          );
+          card.append(header);
+          const body = document.createElement("div");
+          body.className = "card__body";
+          const list = document.createElement("ul");
+          list.className = "product-list";
+          for (const opp of opps.data.slice(0, 5)) {
+            const item = document.createElement("li");
+            const info = document.createElement("div");
+            const name = document.createElement("h3");
+            name.textContent = opp.opportunity_type
+              .replace(/_/g, " ")
+              .replace(/\b\w/g, (c) => c.toUpperCase());
+            const detail = document.createElement("p");
+            detail.textContent = `Priority ${opp.priority_score} · ${opp.status}`;
+            info.append(name, detail);
+            item.append(
+              info,
+              statusBadge(
+                opp.status === "open" || opp.status === "new"
+                  ? "setup"
+                  : "neutral",
+                opp.status,
+              ),
+            );
+            list.append(item);
+          }
+          body.append(list);
+          card.append(body);
+          panel.append(card);
         }
       }
 
-      function wireRecommendationButton(): void {
-        document
-          .getElementById("create-recommendation-button")
-          ?.addEventListener("click", async () => {
-            if (!selectedOpportunityId) return;
-            const action = (
-              document.getElementById(
-                "recommendation-action",
-              ) as HTMLTextAreaElement
-            ).value.trim();
-            const hypothesis = (
-              document.getElementById(
-                "recommendation-hypothesis",
-              ) as HTMLInputElement
-            ).value.trim();
-            if (!action || !hypothesis) {
-              setActionStatus(
-                "Enter a proposed action and expected result first.",
-              );
-              return;
-            }
-            const result = await createRecommendation(
-              organizationId,
-              selectedOpportunityId,
+      function renderCrawl(
+        websites: Awaited<ReturnType<typeof fetchWebsites>>,
+      ): void {
+        const panel = document.getElementById("tab-crawl")!;
+        panel.replaceChildren();
+
+        if (websites.kind !== "ok" || websites.data.length === 0) {
+          panel.append(
+            emptyState(
+              "No websites to crawl",
+              "Add a website first to enable crawling.",
+            ),
+          );
+          return;
+        }
+
+        for (const website of websites.data) {
+          const card = document.createElement("div");
+          card.className = "card";
+          const header = document.createElement("div");
+          header.className = "card__header";
+          header.append(
+            Object.assign(document.createElement("h3"), {
+              className: "card__title",
+              textContent: `Crawl ${website.name}`,
+            }),
+          );
+          card.append(header);
+          const body = document.createElement("div");
+          body.className = "card__body";
+
+          const maxPagesField = document.createElement("div");
+          maxPagesField.className = "field";
+          maxPagesField.append(
+            Object.assign(document.createElement("label"), {
+              htmlFor: `crawl-max-pages-${website.id}`,
+              textContent: "Max pages",
+            }),
+          );
+          const maxPagesInput = document.createElement("input");
+          maxPagesInput.id = `crawl-max-pages-${website.id}`;
+          maxPagesInput.type = "number";
+          maxPagesInput.min = "1";
+          maxPagesInput.max = String(MAX_CRAWL_PAGES);
+          maxPagesInput.value = String(MAX_CRAWL_PAGES);
+          maxPagesField.append(maxPagesInput);
+          body.append(maxPagesField);
+
+          const crawlBtn = document.createElement("button");
+          crawlBtn.type = "button";
+          crawlBtn.className = "button";
+          crawlBtn.textContent = "Run crawl";
+          const status = document.createElement("p");
+          status.className = "text-sm muted";
+          status.setAttribute("role", "status");
+          status.setAttribute("aria-live", "polite");
+          crawlBtn.addEventListener("click", async () => {
+            const crawlOrganizationId = organizationId;
+            const requestTimestamp = Date.now();
+            crawlBtn.disabled = true;
+            crawlBtn.textContent = "Starting…";
+            const workflowStart = await startWorkflowRun(
+              crawlOrganizationId,
+              "seo.crawl_or_analysis",
               {
-                proposedAction: action,
-                expectedResultHypothesis: hypothesis,
-                risk: "low",
-                effort: "low",
+                idempotencyKey: `web-crawl-${website.id}-${requestTimestamp}`,
               },
             );
+            if (organizationId !== crawlOrganizationId) return;
+            if (workflowStart.kind !== "ok") {
+              status.textContent = describeFailure(workflowStart, "Crawl");
+              crawlBtn.disabled = false;
+              crawlBtn.textContent = "Run crawl";
+              return;
+            }
+            const result = await runCrawl(crawlOrganizationId, website.id, {
+              workflowRunId: workflowStart.data.workflow_run_id,
+              seedPaths: ["/"],
+              maxPages: normalizeCrawlPageLimit(Number(maxPagesInput.value)),
+              idempotencyKey: `web-crawl-run-${website.id}-${requestTimestamp}`,
+            });
+            if (organizationId !== crawlOrganizationId) return;
             if (result.kind === "ok") {
-              await renderRecommendations(selectedOpportunityId);
+              crawlBtn.disabled = false;
+              crawlBtn.textContent = "Run again";
+              status.textContent = describeCrawlResult(result.data);
+              const [updatedSummary, updatedOpps] = await Promise.all([
+                fetchSEOSummary(crawlOrganizationId),
+                fetchOpportunities(crawlOrganizationId),
+              ]);
+              if (organizationId !== crawlOrganizationId) return;
+              renderMetrics(updatedSummary, websites, updatedOpps);
+              renderOverview(websites, updatedOpps);
+              renderOpportunities(updatedOpps);
             } else {
-              setActionStatus(describeFailure(result));
+              crawlBtn.disabled = false;
+              crawlBtn.textContent = "Run crawl";
+              status.textContent = describeFailure(result, "Crawl");
             }
           });
+          const actions = document.createElement("div");
+          actions.className = "form-actions";
+          actions.style.borderTop = "none";
+          actions.style.paddingTop = "0.5rem";
+          actions.append(crawlBtn, status);
+          body.append(actions);
+          card.append(body);
+          panel.append(card);
+        }
+      }
+
+      function renderOpportunities(
+        opps: Awaited<ReturnType<typeof fetchOpportunities>>,
+      ): void {
+        const panel = document.getElementById("tab-opportunities")!;
+        panel.replaceChildren();
+
+        if (opps.kind !== "ok") {
+          panel.append(errorAlert(describeFailure(opps, "Opportunities")));
+          return;
+        }
+        if (opps.data.length === 0) {
+          panel.append(
+            emptyState(
+              "No opportunities found",
+              "Run a crawl to identify SEO improvement opportunities.",
+            ),
+          );
+          return;
+        }
+
+        const table = document.createElement("div");
+        table.className = "data-table";
+        const t = document.createElement("table");
+        const thead = document.createElement("thead");
+        thead.innerHTML =
+          "<tr><th>Type</th><th>Priority</th><th>Status</th></tr>";
+        t.append(thead);
+        const tbody = document.createElement("tbody");
+        for (const opp of opps.data) {
+          const tr = document.createElement("tr");
+          const typeTd = document.createElement("td");
+          typeTd.textContent = opp.opportunity_type
+            .replace(/_/g, " ")
+            .replace(/\b\w/g, (c) => c.toUpperCase());
+          const priorityTd = document.createElement("td");
+          const priorityBadge = statusBadge(
+            opp.priority_score >= 70
+              ? "blocked"
+              : opp.priority_score >= 40
+                ? "setup"
+                : "neutral",
+            String(opp.priority_score),
+          );
+          priorityTd.append(priorityBadge);
+          const statusTd = document.createElement("td");
+          statusTd.append(
+            statusBadge(
+              opp.status === "resolved" || opp.status === "closed"
+                ? "ready"
+                : "setup",
+              opp.status,
+            ),
+          );
+          tr.append(typeTd, priorityTd, statusTd);
+          tbody.append(tr);
+        }
+        t.append(tbody);
+        table.append(t);
+        panel.append(table);
+      }
+
+      async function renderSearchConsole(
+        websites: Awaited<ReturnType<typeof fetchWebsites>>,
+      ): Promise<void> {
+        const panel = document.getElementById("tab-search-console")!;
+        panel.replaceChildren();
+
+        if (websites.kind !== "ok" || websites.data.length === 0) {
+          panel.append(
+            emptyState(
+              "No websites configured",
+              "Add a website to enable Search Console integration.",
+            ),
+          );
+          return;
+        }
+
+        for (const website of websites.data) {
+          const card = document.createElement("div");
+          card.className = "card";
+          const header = document.createElement("div");
+          header.className = "card__header";
+          header.append(
+            Object.assign(document.createElement("h3"), {
+              className: "card__title",
+              textContent: website.name,
+            }),
+          );
+          card.append(header);
+          const body = document.createElement("div");
+          body.className = "card__body";
+
+          const propsResult = await fetchSearchProperties(
+            organizationId,
+            website.id,
+          );
+          if (propsResult.kind !== "ok" || propsResult.data.length === 0) {
+            body.append(
+              emptyState(
+                "No Search Console properties",
+                "Map a Search Console property in Integrations to see performance data.",
+                "Go to Integrations",
+                "/integrations",
+              ),
+            );
+          } else {
+            const summaryResult = await fetchSearchConsoleSummary(
+              organizationId,
+              website.id,
+            );
+            if (summaryResult.kind === "ok") {
+              const grid = document.createElement("div");
+              grid.className = "metric-grid";
+              grid.append(
+                metricCard(
+                  "Clicks",
+                  String(summaryResult.data.total_clicks ?? 0),
+                ),
+                metricCard(
+                  "Impressions",
+                  String(summaryResult.data.total_impressions ?? 0),
+                ),
+              );
+              body.append(grid);
+            }
+          }
+          card.append(body);
+          panel.append(card);
+        }
       }
 
       async function boot(): Promise<void> {
-        if (!readPublicConfig()) {
-          showOnly(regions.notConfigured);
-          return;
-        }
-        showOnly(regions.loading);
-
-        const session = await getCurrentSession();
-        if (session.status !== "signed-in") {
-          goToLogin();
-          return;
-        }
-
-        const principal = await fetchPrincipal();
-        if (principal.kind === "unauthenticated") {
-          goToLogin();
-          return;
-        }
-        if (principal.kind !== "ok") {
-          regions.error.textContent = describeFailure(principal);
-          showOnly(regions.error);
-          return;
-        }
-        document.getElementById("current-user-label")!.textContent =
-          principal.data.auth_user_id;
-        document.getElementById("current-user-initial")!.textContent =
-          principal.data.auth_user_id.slice(0, 1).toUpperCase();
-        document.getElementById("current-assurance-label")!.textContent =
-          principal.data.assurance_level;
-        const signOutButton = document.getElementById("sign-out-button")!;
-        signOutButton.hidden = false;
-        wireSignOut();
-
-        const organizations = await fetchMyOrganizations();
-        if (organizations.kind === "unauthenticated") {
-          goToLogin();
-          return;
-        }
-        if (organizations.kind !== "ok") {
-          regions.error.textContent = describeFailure(organizations);
-          showOnly(regions.error);
-          return;
-        }
-        if (organizations.data.length === 0) {
-          showOnly(regions.empty);
-          return;
-        }
-        const organization = selectDefaultOrganization(organizations.data);
-        if (!organization) {
-          showOnly(regions.empty);
-          return;
-        }
-        organizationId = organization.organization_id;
-        document.getElementById("active-organization-name")!.textContent =
-          organization.organization_name;
-
-        wireCreateWebsiteButton();
-        wireCrawlButton();
-        wireRecommendationButton();
-        await renderReadiness();
-        await Promise.all([
-          renderSummary(),
-          renderWebsites(),
-          renderOpportunities(),
-          prefillWebsiteFromDomain(),
-        ]);
-
-        showOnly(regions.content);
+        const result = await bootWorkspace("SEO");
+        if (!applyBootResult(regions, result)) return;
+        populateSwitcher(result.organizations, (o) => void loadOrganization(o));
+        const org =
+          result.organizations.find(
+            (o) => o.organization_id === result.context.organizationId,
+          ) ?? result.organizations[0];
+        await loadOrganization(org);
       }
 
       void boot();

@@ -20,6 +20,7 @@ from apps.api.app.audit.metadata import JsonValue
 from apps.api.app.audit.service import AuditEventService
 from apps.api.app.config import Settings
 from apps.api.app.integrations.connection_service import GBPConnectionService
+from apps.api.app.integrations.contracts import MappingCreate
 from apps.api.app.products.gbp.adapter import GBPAdapter, GoogleBusinessProfileAdapter
 from apps.api.app.products.gbp.models import GBPAccount, GBPLocation, GBPProfileSnapshot
 from apps.api.app.products.gbp.resource_names import normalize_location_name, v1_location_name
@@ -284,6 +285,24 @@ class GBPDiscoveryService:
                     )
                     session.add(loc)
                     existing_by_ext[ext_id] = loc
+
+                # A confirmed legacy GBP row may predate the shared provider
+                # resource mapping used by Reviews and publication workflows.
+                # Only reconcile it after the same canonical resource has been
+                # returned by a current provider discovery pass.
+                if loc.mapping_status == "confirmed" and loc.location_id is not None:
+                    mapping = await self.connection.upsert_mapping(
+                        session,
+                        organization_id,
+                        MappingCreate(
+                            connection_id=connection.id,
+                            external_resource_id=ext_id,
+                            platform_resource_id=loc.location_id,
+                        ),
+                        actor_id=actor_id,
+                        correlation_id=correlation_id,
+                    )
+                    loc.integration_resource_id = mapping.id
 
         # Mark locations no longer accessible
         for ext_id, loc in existing_by_ext.items():

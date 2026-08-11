@@ -9,6 +9,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 BLUEPRINT = ROOT / "render.yaml"
+STAGING_BLUEPRINT = ROOT / "render.staging.yaml"
 SERVICE_POLICY = {
     "lilos-api": ("web", "/health/ready", "/app/scripts/render_start_api.sh", 30),
     "lilos-worker": ("worker", None, "/app/scripts/render_start_worker.sh", 300),
@@ -48,6 +49,20 @@ SECRET_POLICY = {
 }
 PROHIBITED_ROOT_KEYS = {"databases", "projects"}
 PROHIBITED_SERVICE_TYPES = {"cron", "keyvalue", "redis"}
+STAGING_BRANCH = "worker/backend-closure-2026-08-10"
+STAGING_REPOSITORY = "https://github.com/LilosG/lilos-platform.git"
+STAGING_PROJECT = "lilos-platform-staging"
+STAGING_ENVIRONMENT = "staging"
+STAGING_GROUP = "lilos-staging-runtime"
+STAGING_DATABASE = "lilos-staging-postgres"
+STAGING_SERVICE_POLICY = {
+    "lilos-staging-api": ("web", "/health/ready", "/app/scripts/render_start_api.sh", 30),
+    "lilos-staging-worker": ("worker", None, "/app/scripts/render_start_worker.sh", 300),
+}
+STAGING_SECRET_POLICY: dict[str, set[str]] = {
+    "lilos-staging-api": set(),
+    "lilos-staging-worker": set(),
+}
 
 
 def load_blueprint(path: Path = BLUEPRINT) -> dict[str, Any]:
@@ -147,11 +162,167 @@ def validate_blueprint(path: Path = BLUEPRINT) -> tuple[str, ...]:
     for prohibited in ("render postgres", "key value", "render workflow", "type: cron"):
         if prohibited in serialized:
             errors.append(f"prohibited-text:{prohibited}")
+    groups = {
+        group.get("name"): group
+        for group in blueprint.get("envVarGroups", [])
+        if isinstance(group, dict)
+    }
+    production_group = groups.get(SHARED_GROUP, {})
+    production_values = {
+        item.get("key"): item.get("value")
+        for item in production_group.get("envVars", [])
+        if isinstance(item, dict)
+    }
+    if production_values.get("LILOS_PROVIDER_WRITES_ENABLED") != "false":
+        errors.append("production:provider-writes-enabled")
+    return tuple(sorted(errors))
+
+
+def validate_staging_blueprint(path: Path = STAGING_BLUEPRINT) -> tuple[str, ...]:
+    """Validate the isolated, manual-deploy staging projection."""
+    blueprint = load_blueprint(path)
+    errors: list[str] = []
+    if blueprint.get("previews") != {"generation": "off"}:
+        errors.append("staging:previews")
+
+    projects = blueprint.get("projects")
+    if not isinstance(projects, list) or len(projects) != 1:
+        return ("staging:project-exact-set",)
+    project = projects[0]
+    if not isinstance(project, dict) or project.get("name") != STAGING_PROJECT:
+        errors.append("staging:project")
+    environments = project.get("environments", []) if isinstance(project, dict) else []
+    if not isinstance(environments, list) or len(environments) != 1:
+        return tuple(sorted({*errors, "staging:environment-exact-set"}))
+    environment = environments[0]
+    if not isinstance(environment, dict) or environment.get("name") != STAGING_ENVIRONMENT:
+        errors.append("staging:environment")
+    if environment.get("networking") != {"isolation": "enabled"}:
+        errors.append("staging:network-isolation")
+    if environment.get("permissions") != {"protection": "enabled"}:
+        errors.append("staging:protection")
+
+    databases = environment.get("databases", [])
+    if not isinstance(databases, list) or len(databases) != 1:
+        errors.append("staging:database-exact-set")
+        database: dict[str, Any] = {}
+    else:
+        database = databases[0] if isinstance(databases[0], dict) else {}
+    database_policy = {
+        "name": STAGING_DATABASE,
+        "plan": "basic-256mb",
+        "region": "oregon",
+        "postgresMajorVersion": "17",
+        "databaseName": "lilos_staging",
+        "user": "lilos_staging",
+        "diskSizeGB": 15,
+        "storageAutoscalingEnabled": False,
+        "ipAllowList": [],
+    }
+    if database != database_policy:
+        errors.append("staging:database-policy")
+
+    groups = environment.get("envVarGroups", [])
+    if not isinstance(groups, list) or len(groups) != 1:
+        errors.append("staging:environment-group-exact-set")
+        group: dict[str, Any] = {}
+    else:
+        group = groups[0] if isinstance(groups[0], dict) else {}
+    if group.get("name") != STAGING_GROUP:
+        errors.append("staging:environment-group")
+    shared_values = {
+        item.get("key"): item.get("value")
+        for item in group.get("envVars", [])
+        if isinstance(item, dict)
+    }
+    if shared_values.get("LILOS_ENV") != "staging":
+        errors.append("staging:runtime-environment")
+    if shared_values.get("LILOS_INTERNAL_ADMIN_ROUTES_ENABLED") != "false":
+        errors.append("staging:internal-routes")
+    if shared_values.get("LILOS_PROVIDER_WRITES_ENABLED") != "false":
+        errors.append("staging:provider-writes")
+    shared_items = {
+        item.get("key"): item
+        for item in group.get("envVars", [])
+        if isinstance(item, dict) and isinstance(item.get("key"), str)
+    }
+    if shared_items.get("LILOS_SECRET_ENCRYPTION_KEY") != {
+        "key": "LILOS_SECRET_ENCRYPTION_KEY",
+        "generateValue": True,
+    }:
+        errors.append("staging:generated-encryption-key")
+    if any("sync" in item for item in group.get("envVars", []) if isinstance(item, dict)):
+        errors.append("staging:group-placeholder")
+
+    services = environment.get("services", [])
+    if not isinstance(services, list):
+        return tuple(sorted({*errors, "staging:services-missing"}))
+    by_name = {
+        service.get("name"): service
+        for service in services
+        if isinstance(service, dict) and isinstance(service.get("name"), str)
+    }
+    if set(by_name) != set(STAGING_SERVICE_POLICY):
+        errors.append("staging:services-exact-set")
+
+    database_reference = {"name": STAGING_DATABASE, "property": "connectionString"}
+    for name, (
+        service_type,
+        health_path,
+        command_fragment,
+        shutdown_delay,
+    ) in STAGING_SERVICE_POLICY.items():
+        service = by_name.get(name, {})
+        if service.get("type") != service_type:
+            errors.append(f"{name}:type")
+        if service.get("runtime") != "docker" or service.get("region") != "oregon":
+            errors.append(f"{name}:runtime-region")
+        if service.get("plan") != "starter" or service.get("numInstances") != 1:
+            errors.append(f"{name}:capacity")
+        if service.get("repo") != STAGING_REPOSITORY:
+            errors.append(f"{name}:repository")
+        if service.get("branch") != STAGING_BRANCH or service.get("autoDeployTrigger") != "off":
+            errors.append(f"{name}:deploy-governance")
+        if service.get("dockerContext") != "." or service.get("dockerfilePath") != DOCKERFILE:
+            errors.append(f"{name}:docker-paths")
+        if command_fragment not in str(service.get("dockerCommand", "")):
+            errors.append(f"{name}:command")
+        if service.get("maxShutdownDelaySeconds") != shutdown_delay:
+            errors.append(f"{name}:shutdown-delay")
+        if health_path is not None and service.get("healthCheckPath") != health_path:
+            errors.append(f"{name}:health")
+
+        env_vars = service.get("envVars", [])
+        if {"fromGroup": STAGING_GROUP} not in env_vars:
+            errors.append(f"{name}:shared-environment")
+        by_key = {
+            item.get("key"): item
+            for item in env_vars
+            if isinstance(item, dict) and isinstance(item.get("key"), str)
+        }
+        if by_key.get("LILOS_DATABASE_URL", {}).get("fromDatabase") != database_reference:
+            errors.append(f"{name}:application-database")
+        migration = by_key.get("LILOS_MIGRATION_DATABASE_URL")
+        if name == "lilos-staging-api":
+            if migration is None or migration.get("fromDatabase") != database_reference:
+                errors.append(f"{name}:migration-database")
+            if service.get("preDeployCommand") != "sh /app/scripts/render_predeploy.sh":
+                errors.append(f"{name}:predeploy")
+        elif migration is not None or "preDeployCommand" in service:
+            errors.append(f"{name}:worker-migration")
+
+        secret_keys = {key for key, item in by_key.items() if item.get("sync") is False}
+        if secret_keys != STAGING_SECRET_POLICY[name]:
+            errors.append(f"{name}:secret-policy")
+        for item in by_key.values():
+            if item.get("sync") is False and "value" in item:
+                errors.append(f"{name}:secret-value")
+
     return tuple(sorted(errors))
 
 
 def main() -> int:
-    errors = validate_blueprint()
+    errors = (*validate_blueprint(), *validate_staging_blueprint())
     if errors:
         print("Render Blueprint policy validation failed: " + ", ".join(errors))
         return 1

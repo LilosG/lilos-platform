@@ -15,6 +15,8 @@ from apps.api.app.audit.metadata import JsonValue
 from apps.api.app.audit.repository import AuditEventRepository
 from apps.api.app.audit.service import AuditEventService
 from apps.api.app.execution.service import ExecutionService
+from apps.api.app.integrations.connection_service import GBPConnectionService
+from apps.api.app.integrations.contracts import MappingCreate
 from apps.api.app.products.gbp.adapter import SUPPORTED_WRITE_FIELDS
 from apps.api.app.products.gbp.contracts import MappingConfirm, ProfileChangeCreate, PublishRequest
 from apps.api.app.products.gbp.models import (
@@ -85,6 +87,7 @@ class GBPService:
         self.audit = AuditEventService()
         self.audit_repository = AuditEventRepository()
         self.execution = ExecutionService()
+        self.connection = GBPConnectionService()
 
     async def _audit(
         self,
@@ -141,6 +144,18 @@ class GBPService:
         item.location_id = command.location_id
         item.mapping_status = "confirmed"
         item.write_enabled = command.write_enabled
+        resource_mapping = await self.connection.upsert_mapping(
+            session,
+            organization_id,
+            MappingCreate(
+                connection_id=item.connection_id,
+                external_resource_id=item.external_location_id,
+                platform_resource_id=command.location_id,
+            ),
+            actor_id=user_id,
+            correlation_id=correlation_id,
+        )
+        item.integration_resource_id = resource_mapping.id
         item.confirmed_by_user_id = user_id
         item.confirmed_at = datetime.now(UTC)
         await session.flush()
@@ -401,13 +416,18 @@ class GBPService:
     async def resource_history(
         self,
         session: AsyncSession,
+        organization_id: UUID,
         *,
         resource_type: str,
         resource_id: UUID,
         limit: int = 50,
     ) -> list[dict[str, object]]:
         events = await self.audit_repository.list_for_resource(
-            session, resource_type=resource_type, resource_id=resource_id, limit=limit
+            session,
+            organization_id=organization_id,
+            resource_type=resource_type,
+            resource_id=resource_id,
+            limit=limit,
         )
         return [
             {

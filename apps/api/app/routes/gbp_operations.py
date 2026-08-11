@@ -9,6 +9,7 @@ from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request, Response, status
+from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.app.access_control.enums import ScopeType
@@ -18,6 +19,7 @@ from apps.api.app.authorization.contracts import AuthorizationDecision
 from apps.api.app.authorization.dependencies import require_authorization
 from apps.api.app.database.session import get_database_session
 from apps.api.app.errors import request_correlation_id
+from apps.api.app.products.gbp.models import GBPLocation
 from apps.api.app.products.gbp.operations_contracts import (
     CapabilitySnapshotRecord,
     ChangeSetDecision,
@@ -29,6 +31,7 @@ from apps.api.app.products.gbp.operations_contracts import (
     SpecialHoursPropose,
     SuspensionCaseReport,
 )
+from apps.api.app.products.gbp.operations_errors import GBPLocationNotFoundError
 from apps.api.app.products.gbp.operations_models import (
     GBPChangeSet,
     GBPMedia,
@@ -62,6 +65,49 @@ def no_store(response: Response) -> None:
 
 def meta(request: Request) -> dict[str, object]:
     return {"correlation_id": request_correlation_id(request)}
+
+
+async def require_gbp_location_scope(
+    session: AsyncSession,
+    organization_id: UUID,
+    location_id: UUID,
+    gbp_location_id: UUID,
+) -> None:
+    scoped_id = await session.scalar(
+        select(GBPLocation.id).where(
+            GBPLocation.organization_id == organization_id,
+            GBPLocation.location_id == location_id,
+            GBPLocation.id == gbp_location_id,
+        )
+    )
+    if scoped_id is None:
+        raise GBPLocationNotFoundError
+
+
+async def require_child_location_scope(
+    session: AsyncSession,
+    organization_id: UUID,
+    location_id: UUID,
+    resource_model: Any,
+    resource_id: UUID,
+) -> None:
+    scoped_id = await session.scalar(
+        select(resource_model.id)
+        .join(
+            GBPLocation,
+            and_(
+                GBPLocation.organization_id == resource_model.organization_id,
+                GBPLocation.id == resource_model.gbp_location_id,
+            ),
+        )
+        .where(
+            resource_model.organization_id == organization_id,
+            resource_model.id == resource_id,
+            GBPLocation.location_id == location_id,
+        )
+    )
+    if scoped_id is None:
+        raise GBPLocationNotFoundError
 
 
 def change_set_row(item: GBPChangeSet) -> dict[str, object]:
@@ -145,7 +191,7 @@ async def record_capability_snapshot(
     principal: Authenticated,
     _: Annotated[AuthorizationDecision, policy("gbp.sync")],
 ) -> dict[str, object]:
-    del location_id
+    await require_gbp_location_scope(session, organization_id, location_id, gbp_location_id)
     snapshot = await service.record_capability_snapshot(
         session,
         organization_id,
@@ -173,7 +219,7 @@ async def completeness_report(
     session: Session,
     _: Annotated[AuthorizationDecision, policy("gbp.read")],
 ) -> dict[str, object]:
-    del location_id
+    await require_gbp_location_scope(session, organization_id, location_id, gbp_location_id)
     report = await service.completeness_report(session, organization_id, gbp_location_id)
     return {"data": report, "meta": meta(request)}
 
@@ -190,7 +236,7 @@ async def list_change_sets(
     session: Session,
     _: Annotated[AuthorizationDecision, policy("gbp.read")],
 ) -> dict[str, object]:
-    del location_id
+    await require_gbp_location_scope(session, organization_id, location_id, gbp_location_id)
     items = await service.list_change_sets(session, organization_id, gbp_location_id)
     return {"data": [change_set_row(item) for item in items], "meta": meta(request)}
 
@@ -210,7 +256,7 @@ async def propose_change_set(
     principal: Authenticated,
     _: Annotated[AuthorizationDecision, policy("gbp.propose")],
 ) -> dict[str, object]:
-    del location_id
+    await require_gbp_location_scope(session, organization_id, location_id, gbp_location_id)
     item = await service.propose_change_set(
         session,
         organization_id,
@@ -237,7 +283,9 @@ async def decide_change_set(
     principal: Authenticated,
     _: Annotated[AuthorizationDecision, policy("gbp.approve", True)],
 ) -> dict[str, object]:
-    del location_id
+    await require_child_location_scope(
+        session, organization_id, location_id, GBPChangeSet, change_set_id
+    )
     item = await service.decide_change_set(
         session,
         organization_id,
@@ -261,7 +309,7 @@ async def list_special_hours(
     session: Session,
     _: Annotated[AuthorizationDecision, policy("gbp.read")],
 ) -> dict[str, object]:
-    del location_id
+    await require_gbp_location_scope(session, organization_id, location_id, gbp_location_id)
     items = await service.list_special_hours(session, organization_id, gbp_location_id)
     return {"data": [special_hours_row(item) for item in items], "meta": meta(request)}
 
@@ -281,7 +329,7 @@ async def propose_special_hours(
     principal: Authenticated,
     _: Annotated[AuthorizationDecision, policy("gbp.propose")],
 ) -> dict[str, object]:
-    del location_id
+    await require_gbp_location_scope(session, organization_id, location_id, gbp_location_id)
     item = await service.propose_special_hours(
         session,
         organization_id,
@@ -307,7 +355,9 @@ async def decide_special_hours(
     principal: Authenticated,
     _: Annotated[AuthorizationDecision, policy("gbp.approve", True)],
 ) -> dict[str, object]:
-    del location_id
+    await require_child_location_scope(
+        session, organization_id, location_id, GBPSpecialHours, special_hours_id
+    )
     item = await service.decide_special_hours(
         session,
         organization_id,
@@ -331,7 +381,7 @@ async def list_media(
     session: Session,
     _: Annotated[AuthorizationDecision, policy("gbp.read")],
 ) -> dict[str, object]:
-    del location_id
+    await require_gbp_location_scope(session, organization_id, location_id, gbp_location_id)
     items = await service.list_media(session, organization_id, gbp_location_id)
     return {"data": [media_row(item) for item in items], "meta": meta(request)}
 
@@ -351,7 +401,7 @@ async def propose_media(
     principal: Authenticated,
     _: Annotated[AuthorizationDecision, policy("gbp.propose")],
 ) -> dict[str, object]:
-    del location_id
+    await require_gbp_location_scope(session, organization_id, location_id, gbp_location_id)
     item = await service.propose_media(
         session,
         organization_id,
@@ -375,7 +425,7 @@ async def list_post_revisions(
     session: Session,
     _: Annotated[AuthorizationDecision, policy("gbp.read")],
 ) -> dict[str, object]:
-    del location_id
+    await require_gbp_location_scope(session, organization_id, location_id, gbp_location_id)
     items = await service.list_post_revisions(session, organization_id, gbp_location_id)
     return {"data": [post_revision_row(item) for item in items], "meta": meta(request)}
 
@@ -395,7 +445,7 @@ async def create_post_revision(
     principal: Authenticated,
     _: Annotated[AuthorizationDecision, policy("gbp.propose")],
 ) -> dict[str, object]:
-    del location_id
+    await require_gbp_location_scope(session, organization_id, location_id, gbp_location_id)
     item = await service.create_post_revision(
         session,
         organization_id,
@@ -421,7 +471,9 @@ async def decide_post_revision(
     principal: Authenticated,
     _: Annotated[AuthorizationDecision, policy("gbp.approve", True)],
 ) -> dict[str, object]:
-    del location_id
+    await require_child_location_scope(
+        session, organization_id, location_id, GBPPostRevision, revision_id
+    )
     item = await service.decide_post_revision(
         session,
         organization_id,
@@ -448,7 +500,9 @@ async def publish_post(
     principal: Authenticated,
     _: Annotated[AuthorizationDecision, policy("gbp.publish", True)],
 ) -> dict[str, object]:
-    del location_id
+    await require_child_location_scope(
+        session, organization_id, location_id, GBPPostRevision, revision_id
+    )
     item = await service.reserve_post_publication(
         session,
         organization_id,
@@ -473,7 +527,7 @@ async def list_suspension_cases(
     session: Session,
     _: Annotated[AuthorizationDecision, policy("gbp.read")],
 ) -> dict[str, object]:
-    del location_id
+    await require_gbp_location_scope(session, organization_id, location_id, gbp_location_id)
     items = await service.list_suspension_cases(session, organization_id, gbp_location_id)
     return {"data": [suspension_case_row(item) for item in items], "meta": meta(request)}
 
@@ -493,7 +547,7 @@ async def report_suspension_case(
     principal: Authenticated,
     _: Annotated[AuthorizationDecision, policy("gbp.diagnostics")],
 ) -> dict[str, object]:
-    del location_id
+    await require_gbp_location_scope(session, organization_id, location_id, gbp_location_id)
     item = await service.report_suspension_case(
         session,
         organization_id,
@@ -517,8 +571,8 @@ async def location_operations_audit(
     session: Session,
     _: Annotated[AuthorizationDecision, policy("audit.read")],
 ) -> dict[str, object]:
-    del location_id, organization_id
+    await require_gbp_location_scope(session, organization_id, location_id, gbp_location_id)
     history = await service.resource_history(
-        session, resource_type="gbp_location", resource_id=gbp_location_id
+        session, organization_id, resource_type="gbp_location", resource_id=gbp_location_id
     )
     return {"data": history, "meta": meta(request)}

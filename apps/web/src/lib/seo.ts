@@ -1,5 +1,12 @@
 import { apiGet, apiRequest, type ApiOutcome } from "./api-client";
 
+export const MAX_CRAWL_PAGES = 20;
+
+export function normalizeCrawlPageLimit(value: number): number {
+  if (!Number.isFinite(value)) return MAX_CRAWL_PAGES;
+  return Math.min(MAX_CRAWL_PAGES, Math.max(1, Math.trunc(value)));
+}
+
 export type SEOWebsite = {
   id: string;
   location_id: string | null;
@@ -55,7 +62,30 @@ export type SEOImplementationTask = {
 export type SEOSummaryStats = {
   by_status: Record<string, number>;
   website_count: number;
+  crawl_run_count: number;
 };
+
+export type SEOCrawlResult = {
+  crawl_run_id: string;
+  status: string;
+  safe_result: Record<string, number>;
+  opportunities_created: SEOOpportunity[];
+};
+
+export function describeCrawlResult(result: SEOCrawlResult): string {
+  const pages = result.safe_result.pages_crawled;
+  const opportunities = result.safe_result.opportunities_found;
+  const details: string[] = [`Status: ${result.status}`];
+  if (Number.isFinite(pages)) {
+    details.push(`${pages} page${pages === 1 ? "" : "s"} crawled`);
+  }
+  if (Number.isFinite(opportunities)) {
+    details.push(
+      `${opportunities} opportunit${opportunities === 1 ? "y" : "ies"} found`,
+    );
+  }
+  return details.join(" · ");
+}
 
 export type LandingPageGap = {
   location_id: string;
@@ -138,19 +168,13 @@ export function runCrawl(
     maxPages: number;
     idempotencyKey: string;
   },
-): Promise<
-  ApiOutcome<{
-    crawl_run_id: string;
-    status: string;
-    safe_result: Record<string, number>;
-  }>
-> {
+): Promise<ApiOutcome<SEOCrawlResult>> {
   return apiRequest(`${base(organizationId)}/websites/${websiteId}/crawl`, {
     method: "POST",
     body: {
       workflow_run_id: crawl.workflowRunId,
       seed_paths: crawl.seedPaths,
-      max_pages: crawl.maxPages,
+      max_pages: normalizeCrawlPageLimit(crawl.maxPages),
       idempotency_key: crawl.idempotencyKey,
     },
   });

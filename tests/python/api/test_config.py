@@ -39,6 +39,17 @@ def test_settings_load_prefixed_environment_values(
     assert settings.application_database_url() is None
 
 
+def test_provider_writes_fail_closed_and_require_explicit_enablement(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    assert Settings().provider_writes_enabled is False
+
+    monkeypatch.setenv("LILOS_PROVIDER_WRITES_ENABLED", "true")
+    assert Settings().provider_writes_enabled is True
+
+
 def test_invalid_environment_is_rejected(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

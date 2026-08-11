@@ -274,6 +274,8 @@ def test_website_crawl_generates_opportunities_and_landing_page_gaps(
     summary = client.get(f"{base}/summary", headers=HEADERS)
     assert summary.status_code == 200
     assert summary.json()["data"]["website_count"] == 1
+    assert summary.json()["data"]["crawl_run_count"] == 1
+    assert sum(summary.json()["data"]["by_status"].values()) == len(opportunities)
 
     gaps = client.get(f"{base}/websites/{website_id}/landing-page-gaps", headers=HEADERS)
     assert gaps.status_code == 200

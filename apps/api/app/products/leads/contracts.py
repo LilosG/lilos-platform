@@ -1,8 +1,14 @@
 from datetime import datetime
-from typing import Literal
+from typing import Literal, Self
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+CONSENT_TYPES_BY_CHANNEL = {
+    "email": frozenset({"transactional_email", "marketing_email"}),
+    "sms": frozenset({"transactional_sms", "marketing_sms"}),
+    "phone": frozenset({"phone_call", "automated_call"}),
+}
 
 
 class LeadIntake(BaseModel):
@@ -36,6 +42,12 @@ class ConsentRecord(BaseModel):
     evidence_reference: str = Field(min_length=1, max_length=500)
     captured_at: datetime
 
+    @model_validator(mode="after")
+    def consent_type_matches_channel(self) -> Self:
+        if self.consent_type not in CONSENT_TYPES_BY_CHANNEL[self.channel]:
+            raise ValueError("consent_type is not valid for the selected channel")
+        return self
+
 
 class CommunicationCreate(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -46,6 +58,12 @@ class CommunicationCreate(BaseModel):
     message_reference: str = Field(min_length=1, max_length=500)
     workflow_run_id: UUID
     idempotency_key: str = Field(min_length=8, max_length=128)
+
+    @model_validator(mode="after")
+    def consent_type_matches_channel(self) -> Self:
+        if self.consent_type not in CONSENT_TYPES_BY_CHANNEL[self.channel]:
+            raise ValueError("consent_type is not valid for the selected channel")
+        return self
 
 
 class LeadAssignment(BaseModel):

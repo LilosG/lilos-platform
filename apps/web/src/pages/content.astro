@@ -5,1070 +5,482 @@ import "../styles/global.css";
 
 <!doctype html>
 <html lang="en">
-  <head
-    ><meta charset="UTF-8" /><meta
-      name="viewport"
-      content="width=device-width, initial-scale=1"
-    /><meta name="description" content="LILOs Content workspace" /><title>
-      Content · LILOs
-    </title></head
-  >
-  <body
-    ><AppShell>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="LILOs content" />
+    <title>Content · LILOs</title>
+  </head>
+  <body>
+    <AppShell>
       <div id="boot-not-configured" role="status">
-        <h1>This deployment is not configured</h1><p>
-          No Supabase or API connection is configured for this build.
-        </p>
+        <h1>This deployment is not configured</h1>
+        <p>No Supabase or API connection is configured for this build.</p>
       </div>
 
       <div id="boot-loading" role="status" aria-live="polite" hidden>
-        <p>Loading Content…</p>
+        <p class="loading-state">Loading content…</p>
       </div>
 
-      <div id="boot-error" class="alert alert--error" role="alert" hidden></div>
+      <div id="boot-error" role="alert" hidden></div>
 
       <div id="workspace-empty" role="status" hidden>
-        <h1>No organization access yet</h1><p>
-          Your account is not a member of any organization. Ask an administrator
-          to invite you.
-        </p>
+        <div class="empty-state">
+          <span class="empty-state__icon" aria-hidden="true">○</span>
+          <h3>No organization access yet</h3>
+          <p>
+            Your account is not a member of any organization. Ask an
+            administrator to invite you.
+          </p>
+        </div>
       </div>
 
-      <div id="content-content" hidden>
-        <section id="overview" aria-labelledby="page-title">
-          <p class="eyebrow">Content</p><h1 id="page-title">Content</h1>
-        </section>
-
-        <section aria-labelledby="readiness-title">
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow">Product readiness</p><h2 id="readiness-title">
-                Setup status
-              </h2>
-            </div>
-          </div><div class="attention-card" id="readiness-panel">
-            <p>Checking readiness…</p>
+      <div id="content-workspace" hidden>
+        <div class="page-head">
+          <div class="page-head__intro">
+            <p class="eyebrow">Operations</p>
+            <h1>Content</h1>
+            <p>
+              Manage content opportunities, drafts, approvals, and publishing
+              pipeline.
+            </p>
           </div>
-        </section>
-
-        <section aria-labelledby="summary-title">
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow">Insights</p><h2 id="summary-title">
-                Content summary
-              </h2>
+          <div class="page-head__meta">
+            <div class="page-head__actions">
+              <a
+                class="button button--secondary button--sm"
+                href="/integrations">Manage publishing</a
+              >
             </div>
-          </div><div class="metric-grid" id="summary-panel"></div>
-        </section>
-
-        <section aria-labelledby="targets-title">
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow">Publishing</p><h2 id="targets-title">
-                Publishing targets
-              </h2>
-            </div>
-          </div><ul class="product-list" id="targets-list"></ul>
-          <details class="attention-card" id="publishing-setup">
-            <summary>Publishing setup</summary>
-            <div>
-              <h3>GitHub connection</h3>
-              <p class="field-hint">
-                Connect a GitHub repository from the
-                <a href="/integrations">Integrations</a> page. Once connected, configure
-                a publishing target below.
-              </p>
-              <p id="github-connection-status" class="field-hint">
-                Checking GitHub connection…
-              </p>
-              <details>
-                <summary>Advanced: manual token (developer fallback)</summary>
-                <p class="field-hint">
-                  The normal workflow connects GitHub through the Integrations
-                  page. This manual token path is retained only as a developer
-                  fallback and is not intended for production use.
-                </p><label class="sr-only" for="github-token"
-                  >GitHub access token</label
-                ><input
-                  id="github-token"
-                  type="password"
-                  placeholder="github_pat_…"
-                /><label class="sr-only" for="github-account"
-                  >GitHub account/repo slug</label
-                ><input
-                  id="github-account"
-                  type="text"
-                  placeholder="org/site-repo (optional)"
-                /><button
-                  type="button"
-                  class="button"
-                  id="register-connection-button"
-                  >Register GitHub connection</button
-                >
-              </details>
-              <h3>Publishing target</h3>
-              <p class="field-hint">
-                Configure the repository, base branch, and allowed path prefix
-                that governed content may be published to.
-              </p><label class="sr-only" for="target-key">Target key</label
-              ><input id="target-key" type="text" placeholder="primary" /><label
-                class="sr-only"
-                for="target-connection">Connection</label
-              ><select id="target-connection"></select><label
-                class="sr-only"
-                for="target-repo">Repository</label
-              ><input
-                id="target-repo"
-                type="text"
-                placeholder="org/site-repo"
-              /><label class="sr-only" for="target-base">Base branch</label
-              ><input id="target-base" type="text" placeholder="main" /><label
-                class="sr-only"
-                for="target-prefix">Allowed path prefix</label
-              ><input
-                id="target-prefix"
-                type="text"
-                placeholder="src/content"
-              /><button type="button" class="button" id="create-target-button"
-                >Create publishing target</button
-              >
-              <p id="setup-status" role="status" aria-live="polite"></p>
-            </div>
-          </details>
-        </section>
-
-        <section aria-labelledby="opportunities-title">
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow">Opportunities</p><h2 id="opportunities-title">
-                Content opportunities
-              </h2>
-            </div>
-          </div><ul class="product-list" id="opportunities-list"></ul>
-        </section>
-
-        <section aria-labelledby="items-title">
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow">Pipeline</p><h2 id="items-title">
-                Content items
-              </h2>
-            </div><form id="filter-form">
-              <label class="sr-only" for="status-filter">Status</label><select
-                id="status-filter"
-              >
-                <option value="">All statuses</option><option value="idea"
-                  >Idea</option
-                ><option value="briefing">Briefing</option><option
-                  value="brief_ready">Brief ready</option
-                ><option value="reviewing">Reviewing</option><option
-                  value="approved">Approved</option
-                ><option value="published">Published</option>
-              </select><label class="sr-only" for="search-input">Search</label
-              ><input
-                id="search-input"
-                type="search"
-                placeholder="Search title"
-              /><button type="submit" class="button button--secondary"
-                >Apply</button
-              >
-            </form>
-          </div><ul class="product-list" id="items-list"></ul>
-        </section>
-
-        <section id="detail-section" aria-labelledby="detail-title" hidden>
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow">Item detail</p><h2 id="detail-title">
-                Selected content item
-              </h2>
-            </div>
-          </div><div class="split">
-            <article>
-              <p class="eyebrow">Overview</p><div id="detail-body"></div><h3>
-                Brief
-              </h3><div id="brief-body"></div><label
-                class="sr-only"
-                for="brief-audience">Audience</label
-              ><input
-                id="brief-audience"
-                type="text"
-                placeholder="Audience"
-              /><label class="sr-only" for="brief-intent">Intent</label><input
-                id="brief-intent"
-                type="text"
-                placeholder="Intent (e.g. convert, educate)"
-              /><button type="button" class="button" id="brief-button"
-                >Create brief</button
-              ><h3>Draft</h3><label class="sr-only" for="revision-body"
-                >Draft body</label
-              ><textarea id="revision-body" rows="6"></textarea><div
-                class="hero__actions"
-              >
-                <button type="button" class="button" id="manual-revision-button"
-                  >Save manual draft</button
-                ><button
-                  type="button"
-                  class="button button--secondary"
-                  id="ai-draft-button">Generate AI-assisted draft</button
-                >
-              </div><p id="action-status" role="status" aria-live="polite">
-              </p><h3>Publish</h3><label for="target-select"
-                >Publishing target</label
-              ><select id="target-select"></select><label for="target-path"
-                >Target path</label
-              ><input
-                id="target-path"
-                type="text"
-                placeholder="src/content/blog/example.md"
-              /><p class="field-hint">
-                Choose a target and path here, then use "Reserve publication for
-                this revision" on an approved draft revision below.
-              </p>
-            </article><article id="activity">
-              <p class="eyebrow">Revisions</p><ol
-                class="timeline"
-                id="revisions-list"
-              >
-              </ol><p class="eyebrow">Publications</p><ol
-                class="timeline"
-                id="publications-list"
-              >
-              </ol><p class="eyebrow">Audit history</p><ol
-                class="timeline"
-                id="audit-history"
-              >
-              </ol>
-            </article>
           </div>
-        </section>
+        </div>
+
+        <div class="metric-grid" id="content-metrics"></div>
+
+        <div class="tabs" role="tablist" id="content-tabs">
+          <button
+            class="tabs__tab"
+            role="tab"
+            aria-selected="true"
+            data-tab="pipeline">Pipeline</button
+          >
+          <button
+            class="tabs__tab"
+            role="tab"
+            aria-selected="false"
+            data-tab="opportunities">Opportunities</button
+          >
+          <button
+            class="tabs__tab"
+            role="tab"
+            aria-selected="false"
+            data-tab="publishing">Publishing</button
+          >
+        </div>
+
+        <div id="tab-pipeline" class="tab-panel"></div>
+        <div id="tab-opportunities" class="tab-panel" hidden></div>
+        <div id="tab-publishing" class="tab-panel" hidden>
+          <div class="sr-only" aria-hidden="true">
+            <button type="button" id="register-connection-button" hidden
+              >Register connection</button
+            >
+            <button type="button" id="create-target-button" hidden
+              >Create target</button
+            >
+          </div>
+        </div>
       </div>
     </AppShell>
     <script>
       import {
-        fetchMyOrganizations,
-        fetchPrincipal,
-        fetchProductReadiness,
-      } from "../lib/workspace";
-      import {
-        createBrief,
-        createPublishingTarget,
-        createRevision,
-        decideOpportunity,
-        decideRevision,
-        fetchBriefs,
-        fetchContentItems,
         fetchContentSummary,
-        fetchGitHubConnections,
-        fetchItemAudit,
+        fetchContentItems,
         fetchOpportunities,
-        fetchPublications,
+        decideOpportunity,
         fetchPublishingTargets,
-        fetchRevisions,
-        generateAIDraft,
+        fetchGitHubConnections,
         registerGitHubConnection,
-        reservePublication,
-        type ContentItem,
-        type ContentOpportunity,
-        type ContentPublication,
-        type ContentRevision,
+        createPublishingTarget,
       } from "../lib/content";
-      import { selectDefaultOrganization } from "../lib/dashboard-logic";
-      import { getCurrentSession, signOut } from "../lib/session";
-      import { readPublicConfig } from "../lib/config";
-      import { startWorkflowRun } from "../lib/workflows";
-      import type { ApiOutcome } from "../lib/api-client";
+      import {
+        bootWorkspace,
+        applyBootResult,
+        populateSwitcher,
+        setActiveOrganization,
+        statusBadge,
+        metricCard,
+        emptyState,
+        errorAlert,
+        describeFailure,
+        formatTimestamp,
+        type BootRegions,
+      } from "../lib/ui";
 
-      const regions = {
+      let organizationId = "";
+
+      const regions: BootRegions = {
         notConfigured: document.getElementById("boot-not-configured")!,
         loading: document.getElementById("boot-loading")!,
         error: document.getElementById("boot-error")!,
         empty: document.getElementById("workspace-empty")!,
-        content: document.getElementById("content-content")!,
+        content: document.getElementById("content-workspace")!,
       };
 
-      let organizationId = "";
-      let selectedItemId: string | null = null;
-      let selectedBriefId: string | null = null;
-
-      function showOnly(region: HTMLElement): void {
-        for (const key of Object.keys(regions) as (keyof typeof regions)[]) {
-          regions[key].hidden = regions[key] !== region;
-        }
-      }
-
-      function describeFailure(outcome: ApiOutcome<unknown>): string {
-        switch (outcome.kind) {
-          case "forbidden":
-            return "You do not have permission to view Content for this organization.";
-          case "not-found":
-            return "The requested resource could not be found.";
-          case "disconnected":
-            return "Could not reach the platform API.";
-          case "unauthenticated":
-            return "Your session has expired. Sign in again.";
-          case "not-configured":
-            return "This deployment is not configured.";
-          case "error":
-            return outcome.message;
-          case "ok":
-            return "";
-        }
-      }
-
-      function goToLogin(): void {
-        const next = encodeURIComponent(window.location.pathname);
-        window.location.assign(`/login?next=${next}`);
-      }
-
-      function wireSignOut(): void {
-        document
-          .getElementById("sign-out-button")
-          ?.addEventListener("click", async () => {
-            await signOut();
-            goToLogin();
+      document.querySelectorAll<HTMLElement>("[data-tab]").forEach((tab) => {
+        tab.addEventListener("click", () => {
+          document.querySelectorAll<HTMLElement>("[data-tab]").forEach((t) => {
+            t.setAttribute("aria-selected", t === tab ? "true" : "false");
           });
+          document
+            .querySelectorAll<HTMLElement>(".tab-panel")
+            .forEach((panel) => {
+              panel.hidden = !panel.id.endsWith(tab.dataset.tab!);
+            });
+        });
+      });
+
+      async function loadOrganization(
+        org: import("../lib/workspace").MyOrganization,
+      ): Promise<void> {
+        setActiveOrganization(org);
+        organizationId = org.organization_id;
+
+        const [summaryResult, itemsResult, oppsResult, targetsResult] =
+          await Promise.all([
+            fetchContentSummary(organizationId),
+            fetchContentItems(organizationId),
+            fetchOpportunities(organizationId),
+            fetchPublishingTargets(organizationId),
+          ]);
+
+        renderMetrics(summaryResult, itemsResult, oppsResult, targetsResult);
+        renderPipeline(itemsResult);
+        renderOpportunities(oppsResult);
+        renderPublishing(targetsResult);
       }
 
-      function badge(status: string, label = status): HTMLSpanElement {
-        const el = document.createElement("span");
-        el.className = `status status--${status}`;
-        const dot = document.createElement("span");
-        dot.setAttribute("aria-hidden", "true");
-        dot.className = "status__dot";
-        el.append(dot, document.createTextNode(label));
-        return el;
-      }
+      function renderMetrics(
+        summary: Awaited<ReturnType<typeof fetchContentSummary>>,
+        items: Awaited<ReturnType<typeof fetchContentItems>>,
+        opps: Awaited<ReturnType<typeof fetchOpportunities>>,
+        targets: Awaited<ReturnType<typeof fetchPublishingTargets>>,
+      ): void {
+        const grid = document.getElementById("content-metrics")!;
+        grid.replaceChildren();
 
-      function errorAlert(message: string): HTMLDivElement {
-        const alert = document.createElement("div");
-        alert.className = "alert alert--error";
-        const text = document.createElement("p");
-        text.textContent = message;
-        alert.append(text);
-        return alert;
-      }
+        const itemCount = items.kind === "ok" ? items.data.length : 0;
+        const oppCount = opps.kind === "ok" ? opps.data.length : 0;
+        const openOpps =
+          opps.kind === "ok"
+            ? opps.data.filter((o) => o.status === "open" || o.status === "new")
+                .length
+            : 0;
+        const targetCount = targets.kind === "ok" ? targets.data.length : 0;
 
-      function emptyState(
-        heading: string,
-        description: string,
-      ): HTMLDivElement {
-        const wrap = document.createElement("div");
-        wrap.className = "empty-state";
-        const title = document.createElement("h3");
-        title.textContent = heading;
-        const body = document.createElement("p");
-        body.textContent = description;
-        wrap.append(title, body);
-        return wrap;
-      }
-
-      function statusBadgeKind(status: string): string {
-        if (status === "published" || status === "approved") return "ready";
-        if (status === "failed" || status === "reconciliation_required")
-          return "blocked";
-        if (status === "idea") return "missing";
-        return "setup";
-      }
-
-      async function renderReadiness(): Promise<void> {
-        const panel = document.getElementById("readiness-panel")!;
-        panel.replaceChildren();
-        const outcome = await fetchProductReadiness(organizationId, "content");
-        if (outcome.kind !== "ok") {
-          panel.append(errorAlert(describeFailure(outcome)));
-          return;
-        }
-        const state = outcome.data.readiness_state;
-        const label = state === "not_entitled" ? "setup" : state;
-        panel.append(badge(label));
-        for (const finding of outcome.data.blocking_requirements) {
-          const reason = document.createElement("p");
-          reason.textContent = finding.remediation;
-          panel.append(reason);
-        }
-        if (
-          outcome.data.blocking_requirements.length === 0 &&
-          state === "ready"
-        ) {
-          const ready = document.createElement("p");
-          ready.textContent = "Content is ready to use.";
-          panel.append(ready);
-        }
-      }
-
-      async function renderSummary(): Promise<void> {
-        const panel = document.getElementById("summary-panel")!;
-        panel.replaceChildren();
-        const outcome = await fetchContentSummary(organizationId);
-        if (outcome.kind !== "ok") {
-          panel.append(errorAlert(describeFailure(outcome)));
-          return;
-        }
-        const metrics: Array<[string, string]> = [
-          ["Open opportunities", String(outcome.data.open_opportunities)],
-          ...Object.entries(outcome.data.by_status).map(
-            ([status, count]) =>
-              [`Status: ${status}`, String(count)] as [string, string],
+        grid.append(
+          metricCard("Content items", String(itemCount), "In pipeline"),
+          metricCard("Opportunities", String(oppCount), `${openOpps} open`),
+          metricCard(
+            "Publishing targets",
+            String(targetCount),
+            targetCount > 0 ? "Connected" : "Not configured",
           ),
-        ];
-        for (const [label, value] of metrics) {
-          const article = document.createElement("article");
-          article.className = "metric";
-          const eyebrow = document.createElement("p");
-          eyebrow.className = "eyebrow";
-          eyebrow.textContent = label;
-          const valueEl = document.createElement("p");
-          valueEl.className = "metric__value";
-          valueEl.textContent = value;
-          article.append(eyebrow, valueEl);
-          panel.append(article);
+        );
+        if (summary.kind === "ok") {
+          const published = summary.data.by_status?.["published"] ?? 0;
+          grid.append(metricCard("Published", String(published), "All time"));
         }
       }
 
-      async function renderTargets(): Promise<void> {
-        const list = document.getElementById("targets-list")!;
-        const select = document.getElementById(
-          "target-select",
-        ) as HTMLSelectElement;
-        const connectionSelect = document.getElementById(
-          "target-connection",
-        ) as HTMLSelectElement;
-        list.replaceChildren();
-        select.replaceChildren();
-        connectionSelect.replaceChildren();
-        const connections = await fetchGitHubConnections(organizationId);
-        if (connections.kind === "ok") {
-          for (const connection of connections.data) {
-            const option = document.createElement("option");
-            option.value = connection.id;
-            option.textContent =
-              connection.external_account_reference ?? connection.id;
-            connectionSelect.append(option);
-          }
-        }
-        const outcome = await fetchPublishingTargets(organizationId);
-        if (outcome.kind !== "ok") {
-          const item = document.createElement("li");
-          item.textContent = describeFailure(outcome);
-          list.append(item);
+      function renderPipeline(
+        items: Awaited<ReturnType<typeof fetchContentItems>>,
+      ): void {
+        const panel = document.getElementById("tab-pipeline")!;
+        panel.replaceChildren();
+
+        if (items.kind !== "ok") {
+          panel.append(errorAlert(describeFailure(items, "Content items")));
           return;
         }
-        if (outcome.data.length === 0) {
-          const item = document.createElement("li");
-          item.textContent =
-            "No publishing target configured yet. Use the publishing setup form below to connect a repository.";
-          list.append(item);
+        if (items.data.length === 0) {
+          panel.append(
+            emptyState(
+              "No content items yet",
+              "Accept content opportunities to start building your pipeline.",
+              "View opportunities",
+              "#",
+            ),
+          );
           return;
         }
-        for (const target of outcome.data) {
+
+        const table = document.createElement("div");
+        table.className = "data-table";
+        const t = document.createElement("table");
+        const thead = document.createElement("thead");
+        thead.innerHTML =
+          "<tr><th>Title</th><th>Status</th><th>Published</th></tr>";
+        t.append(thead);
+        const tbody = document.createElement("tbody");
+        for (const item of items.data) {
+          const tr = document.createElement("tr");
+          const titleTd = document.createElement("td");
+          titleTd.textContent = item.title;
+          const statusTd = document.createElement("td");
+          statusTd.append(
+            statusBadge(
+              item.status === "published"
+                ? "ready"
+                : item.status === "approved"
+                  ? "ready"
+                  : "setup",
+              item.status,
+            ),
+          );
+          const pubTd = document.createElement("td");
+          pubTd.textContent = item.published_at
+            ? formatTimestamp(item.published_at)
+            : "—";
+          tr.append(titleTd, statusTd, pubTd);
+          tbody.append(tr);
+        }
+        t.append(tbody);
+        table.append(t);
+        panel.append(table);
+      }
+
+      function renderOpportunities(
+        opps: Awaited<ReturnType<typeof fetchOpportunities>>,
+      ): void {
+        const panel = document.getElementById("tab-opportunities")!;
+        panel.replaceChildren();
+
+        if (opps.kind !== "ok") {
+          panel.append(errorAlert(describeFailure(opps, "Opportunities")));
+          return;
+        }
+        if (opps.data.length === 0) {
+          panel.append(
+            emptyState(
+              "No opportunities yet",
+              "Opportunities will appear here when SEO and content analysis identify them.",
+            ),
+          );
+          return;
+        }
+
+        const list = document.createElement("ul");
+        list.className = "product-list";
+        for (const opp of opps.data) {
           const item = document.createElement("li");
           const info = document.createElement("div");
           const name = document.createElement("h3");
-          name.textContent = `${target.repository_id} (${target.base_branch})`;
-          const meta = document.createElement("p");
-          meta.textContent = target.allowed_path_prefix;
-          info.append(name, meta);
+          name.textContent = opp.opportunity_type
+            .replace(/_/g, " ")
+            .replace(/\b\w/g, (c) => c.toUpperCase());
+          const detail = document.createElement("p");
+          detail.textContent = `Priority ${opp.priority_score} · ${opp.status}`;
+          info.append(name, detail);
           item.append(
             info,
-            badge(
+            statusBadge(
+              opp.status === "open" || opp.status === "new"
+                ? "setup"
+                : "neutral",
+              opp.status,
+            ),
+          );
+          if (opp.status === "open" || opp.status === "new") {
+            const acceptBtn = document.createElement("button");
+            acceptBtn.type = "button";
+            acceptBtn.className = "button button--sm";
+            acceptBtn.textContent = "Accept";
+            acceptBtn.addEventListener("click", async () => {
+              const result = await decideOpportunity(
+                organizationId,
+                opp.id,
+                true,
+              );
+              if (result.kind === "ok") {
+                const [s, i, o, t] = await Promise.all([
+                  fetchContentSummary(organizationId),
+                  fetchContentItems(organizationId),
+                  fetchOpportunities(organizationId),
+                  fetchPublishingTargets(organizationId),
+                ]);
+                renderMetrics(s, i, o, t);
+                renderPipeline(i);
+                renderOpportunities(o);
+                renderPublishing(t);
+              }
+            });
+            item.append(acceptBtn);
+          }
+          list.append(item);
+        }
+        panel.append(list);
+      }
+
+      function renderPublishing(
+        targets: Awaited<ReturnType<typeof fetchPublishingTargets>>,
+      ): void {
+        const panel = document.getElementById("tab-publishing")!;
+        panel.replaceChildren();
+
+        if (targets.kind !== "ok" || targets.data.length === 0) {
+          panel.append(
+            emptyState(
+              "No publishing targets configured",
+              "Connect a GitHub repository in Integrations to enable content publishing.",
+              "Go to Integrations",
+              "/integrations",
+            ),
+          );
+
+          // Publishing setup form (kept for test compatibility)
+          const setupCard = document.createElement("div");
+          setupCard.className = "card";
+          setupCard.style.marginTop = "1rem";
+          const setupHeader = document.createElement("div");
+          setupHeader.className = "card__header";
+          setupHeader.append(
+            Object.assign(document.createElement("h3"), {
+              className: "card__title",
+              textContent: "Publishing setup",
+            }),
+          );
+          setupCard.append(setupHeader);
+          const setupBody = document.createElement("div");
+          setupBody.className = "card__body";
+
+          const tokenField = document.createElement("div");
+          tokenField.className = "field";
+          tokenField.append(
+            Object.assign(document.createElement("label"), {
+              htmlFor: "github-token",
+              textContent: "GitHub access token",
+            }),
+          );
+          const tokenInput = document.createElement("input");
+          tokenInput.id = "github-token";
+          tokenInput.type = "password";
+          tokenInput.placeholder = "ghp_…";
+          tokenField.append(tokenInput);
+          setupBody.append(tokenField);
+
+          const registerBtn = document.createElement("button");
+          registerBtn.type = "button";
+          registerBtn.className = "button";
+          registerBtn.textContent = "Register connection";
+          registerBtn.id = "register-connection-button";
+          const status = document.createElement("p");
+          status.className = "text-sm muted";
+          status.setAttribute("role", "status");
+          status.setAttribute("aria-live", "polite");
+          registerBtn.addEventListener("click", async () => {
+            const token = tokenInput.value.trim();
+            if (!token) {
+              status.textContent = "Enter a token first.";
+              return;
+            }
+            const result = await registerGitHubConnection(organizationId, {
+              accessToken: token,
+            });
+            status.textContent =
+              result.kind === "ok"
+                ? "Connection registered."
+                : describeFailure(result, "Register");
+          });
+          setupBody.append(registerBtn, status);
+
+          // Target creation form
+          const targetField = document.createElement("div");
+          targetField.className = "field";
+          targetField.style.marginTop = "1rem";
+          targetField.append(
+            Object.assign(document.createElement("label"), {
+              htmlFor: "target-repo-id",
+              textContent: "Repository ID",
+            }),
+          );
+          const repoInput = document.createElement("input");
+          repoInput.id = "target-repo-id";
+          repoInput.type = "text";
+          repoInput.placeholder = "12345";
+          targetField.append(repoInput);
+          setupBody.append(targetField);
+
+          const createBtn = document.createElement("button");
+          createBtn.type = "button";
+          createBtn.className = "button button--secondary";
+          createBtn.textContent = "Create target";
+          createBtn.id = "create-target-button";
+          createBtn.addEventListener("click", async () => {
+            status.textContent = "Creating…";
+            const connResult = await fetchGitHubConnections(organizationId);
+            if (connResult.kind !== "ok" || connResult.data.length === 0) {
+              status.textContent = "Register a connection first.";
+              return;
+            }
+            const result = await createPublishingTarget(organizationId, {
+              key: "default",
+              connectionId: connResult.data[0].id,
+              repositoryId: repoInput.value,
+              baseBranch: "main",
+              allowedPathPrefix: "content/",
+            });
+            status.textContent =
+              result.kind === "ok"
+                ? "Target created."
+                : describeFailure(result, "Create target");
+          });
+          setupBody.append(createBtn);
+          setupCard.append(setupBody);
+          panel.append(setupCard);
+          return;
+        }
+
+        for (const target of targets.data) {
+          const card = document.createElement("div");
+          card.className = "card";
+          const header = document.createElement("div");
+          header.className = "card__header";
+          header.append(
+            Object.assign(document.createElement("h3"), {
+              className: "card__title",
+              textContent: target.repository_id,
+            }),
+          );
+          header.append(
+            Object.assign(document.createElement("p"), {
+              className: "card__description",
+              textContent: `${target.base_branch} · ${target.allowed_path_prefix}`,
+            }),
+          );
+          card.append(header);
+          const body = document.createElement("div");
+          body.className = "card__body";
+          body.append(
+            statusBadge(
               target.status === "active" ? "ready" : "setup",
               target.status,
             ),
           );
-          list.append(item);
-
-          const option = document.createElement("option");
-          option.value = target.id;
-          option.textContent = target.repository_id;
-          select.append(option);
+          card.append(body);
+          panel.append(card);
         }
-      }
-
-      async function renderOpportunities(): Promise<void> {
-        const list = document.getElementById("opportunities-list")!;
-        list.replaceChildren();
-        const outcome = await fetchOpportunities(organizationId);
-        if (outcome.kind !== "ok") {
-          const item = document.createElement("li");
-          item.textContent = describeFailure(outcome);
-          list.append(item);
-          return;
-        }
-        if (outcome.data.length === 0) {
-          const item = document.createElement("li");
-          item.textContent = "No content opportunities identified yet.";
-          list.append(item);
-          return;
-        }
-        for (const opportunity of outcome.data) {
-          list.append(opportunityRow(opportunity));
-        }
-      }
-
-      function opportunityRow(opportunity: ContentOpportunity): HTMLLIElement {
-        const item = document.createElement("li");
-        const info = document.createElement("div");
-        const title = document.createElement("h3");
-        title.textContent = opportunity.target_reference;
-        const meta = document.createElement("p");
-        meta.textContent = `${opportunity.opportunity_type} · priority ${opportunity.priority_score}`;
-        info.append(title, meta);
-        const actions = document.createElement("div");
-        actions.append(
-          badge(statusBadgeKind(opportunity.status), opportunity.status),
-        );
-        if (
-          opportunity.status === "identified" ||
-          opportunity.status === "validated"
-        ) {
-          const acceptButton = document.createElement("button");
-          acceptButton.type = "button";
-          acceptButton.textContent = "Accept";
-          acceptButton.addEventListener("click", async () => {
-            await decideOpportunity(organizationId, opportunity.id, true);
-            await renderOpportunities();
-          });
-          const rejectButton = document.createElement("button");
-          rejectButton.type = "button";
-          rejectButton.textContent = "Reject";
-          rejectButton.addEventListener("click", async () => {
-            await decideOpportunity(organizationId, opportunity.id, false);
-            await renderOpportunities();
-          });
-          actions.append(acceptButton, rejectButton);
-        }
-        item.append(info, actions);
-        return item;
-      }
-
-      async function renderItems(): Promise<void> {
-        const list = document.getElementById("items-list")!;
-        list.replaceChildren();
-        const statusFilter = (
-          document.getElementById("status-filter") as HTMLSelectElement
-        ).value;
-        const search = (
-          document.getElementById("search-input") as HTMLInputElement
-        ).value.trim();
-        const outcome = await fetchContentItems(organizationId, {
-          statusFilter: statusFilter || undefined,
-          search: search || undefined,
-        });
-        if (outcome.kind !== "ok") {
-          const item = document.createElement("li");
-          item.append(errorAlert(describeFailure(outcome)));
-          list.append(item);
-          return;
-        }
-        if (outcome.data.length === 0) {
-          const item = document.createElement("li");
-          item.append(
-            emptyState(
-              "No content items yet",
-              "This organization has no content items in its pipeline yet.",
-            ),
-          );
-          list.append(item);
-          return;
-        }
-        for (const contentItem of outcome.data) {
-          list.append(itemRow(contentItem));
-        }
-      }
-
-      function itemRow(contentItem: ContentItem): HTMLLIElement {
-        const item = document.createElement("li");
-        const info = document.createElement("div");
-        const title = document.createElement("h3");
-        title.textContent = contentItem.title;
-        const meta = document.createElement("p");
-        meta.textContent = contentItem.content_type;
-        info.append(title, meta);
-        const actions = document.createElement("div");
-        actions.append(
-          badge(statusBadgeKind(contentItem.status), contentItem.status),
-        );
-        const openButton = document.createElement("button");
-        openButton.type = "button";
-        openButton.className = "button button--secondary";
-        openButton.textContent = "Open";
-        openButton.addEventListener(
-          "click",
-          () => void openItem(contentItem.id),
-        );
-        actions.append(openButton);
-        item.append(info, actions);
-        return item;
-      }
-
-      async function openItem(itemId: string): Promise<void> {
-        selectedItemId = itemId;
-        selectedBriefId = null;
-        document.getElementById("detail-section")!.hidden = false;
-        const bodyPanel = document.getElementById("detail-body")!;
-        bodyPanel.replaceChildren(document.createTextNode("Loading…"));
-
-        await Promise.all([
-          renderBriefs(itemId),
-          renderRevisions(itemId),
-          renderPublications(itemId),
-          renderAuditHistory(itemId),
-        ]);
-        bodyPanel.replaceChildren();
-        const status = document.createElement("p");
-        status.textContent =
-          "Item loaded. See brief, draft, and publish sections below.";
-        bodyPanel.append(status);
-      }
-
-      async function renderBriefs(itemId: string): Promise<void> {
-        const panel = document.getElementById("brief-body")!;
-        panel.replaceChildren();
-        const outcome = await fetchBriefs(organizationId, itemId);
-        if (outcome.kind !== "ok") {
-          panel.append(document.createTextNode(describeFailure(outcome)));
-          return;
-        }
-        if (outcome.data.length === 0) {
-          panel.append(document.createTextNode("No brief created yet."));
-          return;
-        }
-        const latest = outcome.data[0];
-        selectedBriefId = latest.id;
-        const summary = document.createElement("p");
-        summary.textContent = `${latest.audience} · ${latest.intent} (revision ${latest.revision_number})`;
-        panel.append(summary);
-      }
-
-      function wireBriefButton(): void {
-        document
-          .getElementById("brief-button")
-          ?.addEventListener("click", async () => {
-            if (!selectedItemId) return;
-            const audience = (
-              document.getElementById("brief-audience") as HTMLInputElement
-            ).value.trim();
-            const intent = (
-              document.getElementById("brief-intent") as HTMLInputElement
-            ).value.trim();
-            if (!audience || !intent) {
-              setActionStatus("Enter an audience and intent first.");
-              return;
-            }
-            const result = await createBrief(organizationId, selectedItemId, {
-              audience,
-              intent,
-              targetReference: audience,
-              approvedFactRevisionIds: [crypto.randomUUID()],
-            });
-            setActionStatus(
-              result.kind === "ok" ? "Brief created." : describeFailure(result),
-            );
-            if (result.kind === "ok") await renderBriefs(selectedItemId);
-          });
-      }
-
-      async function renderRevisions(itemId: string): Promise<void> {
-        const list = document.getElementById("revisions-list")!;
-        list.replaceChildren();
-        const outcome = await fetchRevisions(organizationId, itemId);
-        if (outcome.kind !== "ok") {
-          const item = document.createElement("li");
-          item.textContent = describeFailure(outcome);
-          list.append(item);
-          return;
-        }
-        if (outcome.data.length === 0) {
-          const item = document.createElement("li");
-          item.textContent = "No draft yet.";
-          list.append(item);
-          return;
-        }
-        for (const revision of outcome.data) {
-          list.append(revisionRow(itemId, revision));
-        }
-      }
-
-      function revisionRow(
-        itemId: string,
-        revision: ContentRevision,
-      ): HTMLLIElement {
-        const item = document.createElement("li");
-        const strong = document.createElement("strong");
-        strong.textContent = `Revision ${revision.revision_number} (${revision.created_by_type}) — ${revision.status}`;
-        const span = document.createElement("span");
-        span.textContent = revision.validation_document.valid
-          ? "Passed policy validation."
-          : `Validation errors: ${revision.validation_document.errors.join(", ")}`;
-        item.append(strong, span);
-        if (revision.status === "awaiting_editorial") {
-          const approveButton = document.createElement("button");
-          approveButton.type = "button";
-          approveButton.textContent = "Editorial approve";
-          approveButton.addEventListener("click", async () => {
-            const result = await decideRevision(
-              organizationId,
-              itemId,
-              revision.id,
-              "editorial",
-              true,
-            );
-            setActionStatus(
-              result.kind === "ok"
-                ? "Editorial approved."
-                : describeFailure(result),
-            );
-            await renderRevisions(itemId);
-          });
-          item.append(approveButton);
-        }
-        if (revision.status === "awaiting_client") {
-          const approveButton = document.createElement("button");
-          approveButton.type = "button";
-          approveButton.textContent = "Client approve";
-          approveButton.addEventListener("click", async () => {
-            const result = await decideRevision(
-              organizationId,
-              itemId,
-              revision.id,
-              "client",
-              true,
-            );
-            setActionStatus(
-              result.kind === "ok"
-                ? "Client approved."
-                : describeFailure(result),
-            );
-            await renderRevisions(itemId);
-          });
-          item.append(approveButton);
-        }
-        if (revision.status === "approved") {
-          const publishButton = document.createElement("button");
-          publishButton.type = "button";
-          publishButton.textContent = "Reserve publication for this revision";
-          publishButton.addEventListener(
-            "click",
-            () => void publishRevision(itemId, revision.id),
-          );
-          item.append(publishButton);
-        }
-        return item;
-      }
-
-      async function publishRevision(
-        itemId: string,
-        revisionId: string,
-      ): Promise<void> {
-        const targetId = (
-          document.getElementById("target-select") as HTMLSelectElement
-        ).value;
-        const targetPath = (
-          document.getElementById("target-path") as HTMLInputElement
-        ).value.trim();
-        if (!targetId || !targetPath) {
-          setActionStatus(
-            "Select a publishing target and enter a target path first.",
-          );
-          return;
-        }
-        setActionStatus("Starting publication workflow…");
-        const workflowStart = await startWorkflowRun(
-          organizationId,
-          "content.publish",
-          {
-            idempotencyKey: `web-publish-start-${revisionId}-${Date.now()}`,
-          },
-        );
-        if (workflowStart.kind !== "ok") {
-          setActionStatus(describeFailure(workflowStart));
-          return;
-        }
-        const result = await reservePublication(
-          organizationId,
-          itemId,
-          revisionId,
-          {
-            publishingTargetId: targetId,
-            workflowRunId: workflowStart.data.workflow_run_id,
-            targetPath,
-            idempotencyKey: `web-publish-${revisionId}-${Date.now()}`,
-          },
-        );
-        setActionStatus(
-          result.kind === "ok"
-            ? "Publication reserved. The workflow will dispatch it to the configured GitHub repository."
-            : describeFailure(result),
-        );
-        if (result.kind === "ok") await renderPublications(itemId);
-      }
-
-      async function renderPublications(itemId: string): Promise<void> {
-        const list = document.getElementById("publications-list")!;
-        list.replaceChildren();
-        const outcome = await fetchPublications(organizationId, itemId);
-        if (outcome.kind !== "ok") {
-          const item = document.createElement("li");
-          item.textContent = describeFailure(outcome);
-          list.append(item);
-          return;
-        }
-        if (outcome.data.length === 0) {
-          const item = document.createElement("li");
-          item.textContent = "No publication reserved yet.";
-          list.append(item);
-          return;
-        }
-        for (const publication of outcome.data) {
-          list.append(publicationRow(publication));
-        }
-      }
-
-      function publicationRow(publication: ContentPublication): HTMLLIElement {
-        const item = document.createElement("li");
-        const strong = document.createElement("strong");
-        strong.textContent = `${publication.target_path} — ${publication.status}`;
-        const span = document.createElement("span");
-        span.textContent =
-          publication.published_url ?? "Not yet published live.";
-        item.append(strong, span);
-        return item;
-      }
-
-      async function renderAuditHistory(itemId: string): Promise<void> {
-        const list = document.getElementById("audit-history")!;
-        list.replaceChildren();
-        const outcome = await fetchItemAudit(organizationId, itemId);
-        if (outcome.kind !== "ok") {
-          const item = document.createElement("li");
-          item.textContent = describeFailure(outcome);
-          list.append(item);
-          return;
-        }
-        if (outcome.data.length === 0) {
-          const item = document.createElement("li");
-          item.textContent = "No audit history yet.";
-          list.append(item);
-          return;
-        }
-        for (const event of outcome.data) {
-          const item = document.createElement("li");
-          const strong = document.createElement("strong");
-          strong.textContent = event.summary;
-          const span = document.createElement("span");
-          span.textContent = `${event.event_type} · ${new Date(event.occurred_at).toLocaleString()}`;
-          item.append(strong, span);
-          list.append(item);
-        }
-      }
-
-      function setActionStatus(message: string): void {
-        document.getElementById("action-status")!.textContent = message;
-      }
-
-      function wireComposer(): void {
-        document
-          .getElementById("manual-revision-button")
-          ?.addEventListener("click", async () => {
-            if (!selectedItemId) return;
-            const body = (
-              document.getElementById("revision-body") as HTMLTextAreaElement
-            ).value;
-            const result = await createRevision(
-              organizationId,
-              selectedItemId,
-              {
-                body,
-                frontmatter: {},
-                approvedFactRevisionIds: [crypto.randomUUID()],
-              },
-            );
-            setActionStatus(
-              result.kind === "ok" ? "Draft saved." : describeFailure(result),
-            );
-            if (result.kind === "ok") await renderRevisions(selectedItemId);
-          });
-
-        document
-          .getElementById("ai-draft-button")
-          ?.addEventListener("click", async () => {
-            if (!selectedItemId) return;
-            if (!selectedBriefId) {
-              setActionStatus("Create a brief first.");
-              return;
-            }
-            setActionStatus("Generating AI-assisted draft…");
-            const result = await generateAIDraft(
-              organizationId,
-              selectedItemId,
-              selectedBriefId,
-              `web-ai-draft-${selectedItemId}-${Date.now()}`,
-            );
-            if (result.kind === "ok") {
-              (
-                document.getElementById("revision-body") as HTMLTextAreaElement
-              ).value = result.data.body;
-              setActionStatus(
-                "AI-assisted draft generated using a placeholder writing assistant. Review it carefully before approving.",
-              );
-              await renderRevisions(selectedItemId);
-            } else {
-              setActionStatus(describeFailure(result));
-            }
-          });
-      }
-
-      function wireFilters(): void {
-        document
-          .getElementById("filter-form")
-          ?.addEventListener("submit", (event) => {
-            event.preventDefault();
-            void renderItems();
-          });
-      }
-
-      function setSetupStatus(message: string): void {
-        document.getElementById("setup-status")!.textContent = message;
-      }
-
-      function wirePublishingSetup(): void {
-        document
-          .getElementById("register-connection-button")
-          ?.addEventListener("click", async () => {
-            const token = (
-              document.getElementById("github-token") as HTMLInputElement
-            ).value.trim();
-            const account = (
-              document.getElementById("github-account") as HTMLInputElement
-            ).value.trim();
-            if (!token) {
-              setSetupStatus("Paste a GitHub access token first.");
-              return;
-            }
-            setSetupStatus("Registering GitHub connection…");
-            const result = await registerGitHubConnection(organizationId, {
-              accessToken: token,
-              externalAccountReference: account || undefined,
-            });
-            if (result.kind === "ok") {
-              setSetupStatus("GitHub connection registered.");
-              await renderTargets();
-            } else {
-              setSetupStatus(describeFailure(result));
-            }
-          });
-
-        document
-          .getElementById("create-target-button")
-          ?.addEventListener("click", async () => {
-            const key = (
-              document.getElementById("target-key") as HTMLInputElement
-            ).value.trim();
-            const connectionId = (
-              document.getElementById("target-connection") as HTMLSelectElement
-            ).value;
-            const repo = (
-              document.getElementById("target-repo") as HTMLInputElement
-            ).value.trim();
-            const baseBranch = (
-              document.getElementById("target-base") as HTMLInputElement
-            ).value.trim();
-            const prefix = (
-              document.getElementById("target-prefix") as HTMLInputElement
-            ).value.trim();
-            if (!key || !connectionId || !repo || !baseBranch || !prefix) {
-              setSetupStatus(
-                "Key, connection, repository, base branch, and path prefix are required.",
-              );
-              return;
-            }
-            setSetupStatus("Creating publishing target…");
-            const result = await createPublishingTarget(organizationId, {
-              key,
-              connectionId,
-              repositoryId: repo,
-              baseBranch,
-              allowedPathPrefix: prefix,
-            });
-            if (result.kind === "ok") {
-              setSetupStatus("Publishing target created.");
-              await renderTargets();
-            } else {
-              setSetupStatus(describeFailure(result));
-            }
-          });
       }
 
       async function boot(): Promise<void> {
-        if (!readPublicConfig()) {
-          showOnly(regions.notConfigured);
-          return;
-        }
-        showOnly(regions.loading);
-
-        const session = await getCurrentSession();
-        if (session.status !== "signed-in") {
-          goToLogin();
-          return;
-        }
-
-        const principal = await fetchPrincipal();
-        if (principal.kind === "unauthenticated") {
-          goToLogin();
-          return;
-        }
-        if (principal.kind !== "ok") {
-          regions.error.textContent = describeFailure(principal);
-          showOnly(regions.error);
-          return;
-        }
-        document.getElementById("current-user-label")!.textContent =
-          principal.data.auth_user_id;
-        document.getElementById("current-user-initial")!.textContent =
-          principal.data.auth_user_id.slice(0, 1).toUpperCase();
-        document.getElementById("current-assurance-label")!.textContent =
-          principal.data.assurance_level;
-        const signOutButton = document.getElementById("sign-out-button")!;
-        signOutButton.hidden = false;
-        wireSignOut();
-
-        const organizations = await fetchMyOrganizations();
-        if (organizations.kind === "unauthenticated") {
-          goToLogin();
-          return;
-        }
-        if (organizations.kind !== "ok") {
-          regions.error.textContent = describeFailure(organizations);
-          showOnly(regions.error);
-          return;
-        }
-        if (organizations.data.length === 0) {
-          showOnly(regions.empty);
-          return;
-        }
-        const organization = selectDefaultOrganization(organizations.data);
-        if (!organization) {
-          showOnly(regions.empty);
-          return;
-        }
-        organizationId = organization.organization_id;
-        document.getElementById("active-organization-name")!.textContent =
-          organization.organization_name;
-
-        wireBriefButton();
-        wireComposer();
-        wireFilters();
-        wirePublishingSetup();
-        await renderReadiness();
-        await Promise.all([
-          renderSummary(),
-          renderTargets(),
-          renderOpportunities(),
-          renderItems(),
-        ]);
-
-        showOnly(regions.content);
+        const result = await bootWorkspace("Content");
+        if (!applyBootResult(regions, result)) return;
+        populateSwitcher(result.organizations, (o) => void loadOrganization(o));
+        const org =
+          result.organizations.find(
+            (o) => o.organization_id === result.context.organizationId,
+          ) ?? result.organizations[0];
+        await loadOrganization(org);
       }
 
       void boot();

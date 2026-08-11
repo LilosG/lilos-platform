@@ -126,7 +126,19 @@ def reviews_client(
                 is_primary=True,
                 version=1,
             )
-            session.add(location)
+            sibling_location = Location(
+                organization_id=organization.id,
+                name="Uptown",
+                slug="uptown",
+                location_type=LocationType.VIRTUAL,
+                status=LocationStatus.ACTIVE,
+                timezone="UTC",
+                country_code="US",
+                website_url="https://uptown.example.invalid",
+                is_primary=False,
+                version=1,
+            )
+            session.add_all([location, sibling_location])
             await session.flush()
 
             membership = await access.create_membership(
@@ -176,6 +188,7 @@ def reviews_client(
                 "organization": organization.id,
                 "other_organization": other_organization.id,
                 "location": location.id,
+                "sibling_location": sibling_location.id,
                 "assigned_subject": profile.auth_user_id,
                 "integration_resource": resource_mapping.id,
             }
@@ -365,6 +378,16 @@ def test_manual_and_ai_draft_full_flow_produces_audit_and_notification(
     assert ai.json()["data"]["requires_human_review"] is True
     assert ai.json()["data"]["response_text"]
     ai_response_id = ai.json()["data"]["id"]
+
+    sibling_base = f"/api/v1/organizations/{org}/locations/{ids['sibling_location']}/reviews"
+    wrong_location_audit = client.get(
+        f"{sibling_base}/responses/{ai_response_id}/audit", headers=HEADERS
+    )
+    assert wrong_location_audit.status_code == 404
+    wrong_location_approve = client.post(
+        f"{sibling_base}/{review_id}/responses/{ai_response_id}/approve", headers=HEADERS
+    )
+    assert wrong_location_approve.status_code == 404
 
     approve = client.post(f"{base}/{review_id}/responses/{ai_response_id}/approve", headers=HEADERS)
     assert approve.status_code == 200

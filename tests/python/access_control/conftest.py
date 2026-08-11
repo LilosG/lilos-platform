@@ -9,6 +9,7 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -38,7 +39,7 @@ def access_session_factory(
     command.upgrade(config, "head")
     command.downgrade(config, "20260801_0001")
     command.upgrade(config, "head")
-    engine = create_async_engine(postgresql_test_url)
+    engine = create_async_engine(postgresql_test_url, poolclass=NullPool)
     try:
         yield async_sessionmaker(engine, expire_on_commit=False)
     finally:

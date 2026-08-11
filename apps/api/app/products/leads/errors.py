@@ -24,6 +24,13 @@ class LeadTaskNotFoundError(NotFoundError):
     public_message = "The requested lead task was not found."
 
 
+class LeadAssigneeNotFoundError(NotFoundError):
+    """The requested user is not an active member of this organization."""
+
+    code = "LEAD_ASSIGNEE_NOT_FOUND"
+    public_message = "The requested lead assignee was not found."
+
+
 class InvalidLeadTransitionError(ConflictError):
     """A lead status transition is not permitted from its current state."""
 
