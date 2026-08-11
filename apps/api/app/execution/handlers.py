@@ -908,8 +908,8 @@ async def _handle_reviews_publish_response(
 
 
 # ---------------------------------------------------------------------------
-    # GBP upload-media handler
-    # ---------------------------------------------------------------------------
+# GBP upload-media handler
+# ---------------------------------------------------------------------------
 
 
 async def _handle_gbp_upload_media(
@@ -1082,6 +1082,282 @@ async def _handle_gbp_upload_media(
 
 
 # ---------------------------------------------------------------------------
+# Leads send-communication handler
+# ---------------------------------------------------------------------------
+
+
+async def _handle_leads_send_communication(
+    session: AsyncSession,
+    *,
+    organization_id: UUID,
+    location_id: UUID | None,
+    input_document: dict[str, Any],
+    correlation_id: str,
+) -> JobOutcome:
+    """Dispatch a planned lead communication through the notification system.
+
+    Resolves the communication record, validates it is planned, creates a
+    notification event and delivery, and marks the communication as sent.
+    Actual provider dispatch (email/SMS gateway) is handled by durable
+    notification delivery jobs.
+    """
+    from datetime import UTC, datetime
+
+    from sqlalchemy import select
+
+    from apps.api.app.notifications.service import NotificationService
+    from apps.api.app.products.leads.models import Lead, LeadCommunication
+
+    comm_id_raw = input_document.get("communication_id")
+    if not comm_id_raw:
+        return JobOutcome(result="permanent_failure", safe_error="COMMUNICATION_ID_MISSING")
+
+    try:
+        comm_id = UUID(str(comm_id_raw))
+    except (ValueError, TypeError):
+        return JobOutcome(result="permanent_failure", safe_error="COMMUNICATION_ID_INVALID")
+
+    communication = await session.scalar(
+        select(LeadCommunication).where(
+            LeadCommunication.organization_id == organization_id,
+            LeadCommunication.id == comm_id,
+        )
+    )
+    if not communication:
+        return JobOutcome(result="permanent_failure", safe_error="COMMUNICATION_NOT_FOUND")
+
+    if communication.status != "planned":
+        return JobOutcome(result="permanent_failure", safe_error="COMMUNICATION_NOT_PLANNED")
+
+    if communication.status == "sent":
+        return JobOutcome(
+            result="succeeded",
+            result_reference=f"communication:{communication.id}",
+        )
+
+    lead = await session.scalar(
+        select(Lead).where(
+            Lead.organization_id == organization_id,
+            Lead.id == communication.lead_id,
+        )
+    )
+    if not lead:
+        communication.status = "failed"
+        return JobOutcome(result="permanent_failure", safe_error="LEAD_NOT_FOUND")
+
+    recipient = lead.normalized_email if communication.channel == "email" else lead.normalized_phone
+    if not recipient:
+        communication.status = "failed"
+        return JobOutcome(result="permanent_failure", safe_error="RECIPIENT_NOT_FOUND")
+
+    notification_svc = NotificationService()
+
+    try:
+        event = await notification_svc.create_event(
+            session,
+            organization_id=organization_id,
+            template_id=UUID("00000000-0000-0000-0000-000000000001"),
+            event_type="leads.communication.send",
+            idempotency_key=f"lead-comm-{communication.id}",
+            context={
+                "lead_id": str(lead.id),
+                "communication_id": str(communication.id),
+                "channel": communication.channel,
+                "message_reference": communication.message_reference,
+            },
+            location_id=communication.location_id,
+        )
+        await notification_svc.add_delivery(
+            session,
+            event,
+            recipient_reference=recipient,
+            channel=communication.channel,
+        )
+    except Exception as exc:
+        communication.status = "failed"
+        logger.warning(
+            "Lead communication notification failed",
+            extra={
+                "event_name": "leads.communication.failed",
+                "communication_id": str(communication.id),
+                "error": str(exc)[:200],
+            },
+        )
+        return JobOutcome(
+            result="retryable_failure",
+            safe_error="NOTIFICATION_CREATE_FAILED",
+        )
+
+    communication.status = "sent"
+    communication.sent_at = datetime.now(UTC)
+
+    return JobOutcome(
+        result="succeeded",
+        result_reference=f"communication:{communication.id}",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Scheduled sync handlers
+# ---------------------------------------------------------------------------
+
+
+async def _handle_gbp_sync(
+    session: AsyncSession,
+    *,
+    organization_id: UUID,
+    location_id: UUID | None,
+    input_document: dict[str, Any],
+    correlation_id: str,
+) -> JobOutcome:
+    """Scheduled GBP discovery and profile sync for a location.
+
+    Performs a read-only discover-and-sync pass against the Google
+    Business Profile provider for the configured location. This is
+    a scheduled refresh operation — it does not perform writes.
+    """
+    from uuid import UUID as _UUID
+
+    from sqlalchemy import select
+
+    from apps.api.app.config import Settings
+    from apps.api.app.integrations.connection_service import GBPConnectionService
+    from apps.api.app.products.gbp.discovery_service import GBPDiscoveryService
+    from apps.api.app.products.gbp.models import GBPLocation
+
+    gbp_location_id_raw = input_document.get("gbp_location_id")
+    if not gbp_location_id_raw:
+        return JobOutcome(result="permanent_failure", safe_error="LOCATION_ID_MISSING")
+
+    try:
+        gbp_loc_id = _UUID(str(gbp_location_id_raw))
+    except (ValueError, TypeError):
+        return JobOutcome(result="permanent_failure", safe_error="LOCATION_ID_INVALID")
+
+    location = await session.scalar(
+        select(GBPLocation).where(
+            GBPLocation.organization_id == organization_id,
+            GBPLocation.id == gbp_loc_id,
+        )
+    )
+    if not location:
+        return JobOutcome(result="permanent_failure", safe_error="GBP_LOCATION_NOT_FOUND")
+
+    try:
+        token, _ = await _token_resolver(session, organization_id)
+    except Exception:
+        return JobOutcome(result="retryable_failure", safe_error="TOKEN_REFRESH_FAILED")
+
+    adapter = _adapter_factory()
+    discovery_svc = GBPDiscoveryService()
+    connection_svc = GBPConnectionService()
+    settings = Settings()
+
+    try:
+        connection = await connection_svc.get_connection(session, organization_id)
+        await discovery_svc.discover_and_sync(
+            session,
+            adapter,
+            connection,
+            settings,
+            organization_id,
+            correlation_id=correlation_id,
+        )
+    except Exception as exc:
+        logger.warning(
+            "Scheduled GBP sync failed",
+            extra={
+                "event_name": "gbp.sync.failed",
+                "organization_id": str(organization_id),
+                "error": str(exc)[:200],
+            },
+        )
+        return JobOutcome(
+            result="retryable_failure",
+            safe_error="GBP_SYNC_FAILED",
+        )
+
+    return JobOutcome(
+        result="succeeded",
+        result_reference=f"gbp-sync:{organization_id}",
+    )
+
+
+async def _handle_reviews_ingest(
+    session: AsyncSession,
+    *,
+    organization_id: UUID,
+    location_id: UUID | None,
+    input_document: dict[str, Any],
+    correlation_id: str,
+) -> JobOutcome:
+    """Scheduled reviews ingestion for a location.
+
+    Performs a read-only ingest pass against the Google Business
+    Profile reviews API for the configured location.
+    """
+    from uuid import UUID as _UUID
+
+    from sqlalchemy import select
+
+    from apps.api.app.config import Settings
+    from apps.api.app.products.gbp.models import GBPLocation
+    from apps.api.app.products.reviews.ingestion_service import ReviewIngestionService
+
+    gbp_location_id_raw = input_document.get("gbp_location_id")
+    if not gbp_location_id_raw:
+        return JobOutcome(result="permanent_failure", safe_error="LOCATION_ID_MISSING")
+
+    try:
+        gbp_loc_id = _UUID(str(gbp_location_id_raw))
+    except (ValueError, TypeError):
+        return JobOutcome(result="permanent_failure", safe_error="LOCATION_ID_INVALID")
+
+    location = await session.scalar(
+        select(GBPLocation).where(
+            GBPLocation.organization_id == organization_id,
+            GBPLocation.id == gbp_loc_id,
+        )
+    )
+    if not location:
+        return JobOutcome(result="permanent_failure", safe_error="GBP_LOCATION_NOT_FOUND")
+
+    try:
+        _, _ = await _token_resolver(session, organization_id)
+    except Exception:
+        return JobOutcome(result="retryable_failure", safe_error="TOKEN_REFRESH_FAILED")
+
+    try:
+        ingestion_svc = ReviewIngestionService()
+        await ingestion_svc.ingest_for_location(
+            session,
+            Settings(),
+            organization_id,
+            gbp_loc_id,
+            actor_id=None,
+            correlation_id=correlation_id,
+        )
+    except Exception as exc:
+        logger.warning(
+            "Scheduled reviews ingest failed",
+            extra={
+                "event_name": "reviews.ingest.failed",
+                "organization_id": str(organization_id),
+                "error": str(exc)[:200],
+            },
+        )
+        return JobOutcome(
+            result="retryable_failure",
+            safe_error="REVIEWS_INGEST_FAILED",
+        )
+
+    return JobOutcome(
+        result="succeeded",
+        result_reference=f"reviews-ingest:{organization_id}",
+    )
+
+
+# ---------------------------------------------------------------------------
 # Register all handlers
 # ---------------------------------------------------------------------------
 
@@ -1093,6 +1369,9 @@ def _register_all() -> None:
     register_workflow_handler("seo.crawl_or_analysis", _handle_seo_crawl)
     register_workflow_handler("content.publish", _handle_content_publish)
     register_workflow_handler("reviews.publish_response", _handle_reviews_publish_response)
+    register_workflow_handler("leads.send_communication", _handle_leads_send_communication)
+    register_workflow_handler("gbp.sync", _handle_gbp_sync)
+    register_workflow_handler("reviews.ingest", _handle_reviews_ingest)
 
 
 _register_all()

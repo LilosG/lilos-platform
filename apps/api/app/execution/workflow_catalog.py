@@ -13,6 +13,9 @@ WORKFLOW_TYPES: dict[str, tuple[str, str]] = {
     "gbp.publish_post": ("Publish an approved Business Profile post", "gbp"),
     "gbp.upload_media": ("Upload an approved Business Profile media item", "gbp"),
     "reviews.publish_response": ("Publish an approved review response to the provider", "reviews"),
+    "leads.send_communication": ("Send a planned lead communication", "leads"),
+    "gbp.sync": ("Scheduled GBP profile discovery and sync", "gbp"),
+    "reviews.ingest": ("Scheduled reviews ingestion", "reviews"),
 }
 
 
