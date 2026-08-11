@@ -47,6 +47,9 @@ describe("review provider-reply presentation", () => {
   it("does not offer duplicate response composition for provider-replied reviews", () => {
     expect(canDraftReviewResponse("responded")).toBe(false);
     expect(canDraftReviewResponse("publishing")).toBe(false);
+    expect(canDraftReviewResponse("removed")).toBe(false);
+    expect(canDraftReviewResponse("closed")).toBe(false);
+    expect(canDraftReviewResponse("archived")).toBe(false);
     expect(canDraftReviewResponse("publication_failed")).toBe(true);
     expect(canDraftReviewResponse("classified")).toBe(true);
   });

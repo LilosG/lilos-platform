@@ -38,21 +38,16 @@ import "../styles/global.css";
             administrator to invite you.
           </p>
         </div>
-        <button
-          type="button"
-          class="button button--secondary"
-          id="empty-sign-out"
-          style="margin-top:1rem">Sign out</button
-        >
       </div>
 
       <div id="workspace-content" hidden>
         <div class="page-head">
           <div class="page-head__intro">
             <p class="eyebrow" id="active-organization-status"></p>
-            <h1>Overview</h1>
-            <p>
-              Operational health and activity for your selected organization.
+            <h1 id="overview-title">Operating overview</h1>
+            <p id="overview-description">
+              Current performance, urgent work, and recent results for this
+              organization.
             </p>
           </div>
         </div>
@@ -81,32 +76,47 @@ import "../styles/global.css";
 
         <div class="section-heading">
           <div>
-            <p class="eyebrow">Organization</p>
-            <h2>Locations</h2>
+            <p class="eyebrow" id="work-eyebrow">Priority queue</p>
+            <h2 id="work-title">Today's work</h2>
           </div>
         </div>
-        <div id="locations-panel">
-          <div class="loading-state">Loading locations…</div>
+        <div id="work-panel">
+          <div class="loading-state">Loading current work…</div>
         </div>
 
         <div class="section-heading">
           <div>
-            <p class="eyebrow">Shared operations</p>
-            <h2>Product readiness</h2>
+            <p class="eyebrow">Performance</p>
+            <h2>Latest connected results</h2>
           </div>
         </div>
-        <div id="products-panel">
-          <div class="loading-state">Loading products…</div>
+        <div id="performance-panel">
+          <div class="loading-state">Loading performance…</div>
         </div>
 
         <div class="section-heading">
           <div>
-            <p class="eyebrow">Reporting</p>
-            <h2>Cross-product activity</h2>
+            <p class="eyebrow">Across products</p>
+            <h2>Operational activity</h2>
           </div>
         </div>
         <div id="activity-panel">
           <div class="loading-state">Loading activity…</div>
+        </div>
+
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Account health</p>
+            <h2>Locations and product status</h2>
+          </div>
+        </div>
+        <div class="dashboard-health-grid">
+          <div id="locations-panel">
+            <div class="loading-state">Loading locations…</div>
+          </div>
+          <div id="products-panel">
+            <div class="loading-state">Loading products…</div>
+          </div>
         </div>
       </div>
     </AppShell>
@@ -119,7 +129,12 @@ import "../styles/global.css";
         PRODUCT_LABELS,
       } from "../lib/workspace";
       import { summarizeReadiness } from "../lib/dashboard-logic";
-      import { signOut } from "../lib/session";
+      import {
+        dashboardMetrics,
+        requiresAttention,
+        todaysWork,
+        type WorkItem,
+      } from "../lib/operating-dashboard";
       import {
         bootWorkspace,
         applyBootResult,
@@ -130,7 +145,6 @@ import "../styles/global.css";
         emptyState,
         errorAlert,
         describeFailure,
-        goToLogin,
         type BootRegions,
       } from "../lib/ui";
 
@@ -149,7 +163,22 @@ import "../styles/global.css";
       ): Promise<void> {
         setActiveOrganization(organization);
         document.getElementById("active-organization-status")!.textContent =
-          `${organization.organization_status} · ${organization.membership_type}`;
+          organization.organization_status.replace(/_/g, " ");
+        const isAgency = ["internal", "partner", "support"].includes(
+          organization.membership_type,
+        );
+        document.getElementById("overview-title")!.textContent = isAgency
+          ? "Operating overview"
+          : "Your account overview";
+        document.getElementById("overview-description")!.textContent = isAgency
+          ? "Current performance, urgent work, and today’s priorities for this client."
+          : "Account status, current results, and anything that needs your attention.";
+        document.getElementById("work-eyebrow")!.textContent = isAgency
+          ? "Priority queue"
+          : "Upcoming";
+        document.getElementById("work-title")!.textContent = isAgency
+          ? "Today’s work"
+          : "Work in progress";
         organizationId = organization.organization_id;
 
         const [locationsResult, readinessPromises, insightsResult] =
@@ -169,162 +198,179 @@ import "../styles/global.css";
           summaries[key] = summarizeReadiness(readinessPromises[index]);
         });
 
-        renderKPIs(summaries, locationsResult, insightsResult);
-        renderAttention(summaries);
+        const insightData =
+          insightsResult.kind === "ok" ? insightsResult.data : null;
+        renderKPIs(insightData);
+        renderAttention(insightData, summaries, isAgency);
+        renderWork(insightData, isAgency);
+        renderPerformance(insightData);
         renderLocations(locationsResult);
         renderProducts(summaries);
         renderActivity(insightsResult);
       }
 
       function renderKPIs(
-        summaries: Record<string, { status: string; detail: string }>,
-        locationsResult: typeof fetchLocations extends never
-          ? never
-          : Awaited<ReturnType<typeof fetchLocations>>,
-        insightsResult: Awaited<ReturnType<typeof fetchInsightsSummary>>,
+        summary: import("../lib/workspace").InsightsSummary | null,
       ): void {
         const grid = document.getElementById("kpi-grid")!;
         grid.replaceChildren();
-
-        const readyCount = Object.values(summaries).filter(
-          (s) => s.status === "ready",
-        ).length;
-        const blockedCount = Object.values(summaries).filter(
-          (s) => s.status === "blocked",
-        ).length;
-        const setupCount = Object.values(summaries).filter(
-          (s) => s.status === "setup",
-        ).length;
-
-        grid.append(
-          metricCard(
-            "Products ready",
-            String(readyCount),
-            `of ${PRODUCT_KEYS.length} products`,
-          ),
-        );
-        grid.append(
-          metricCard(
-            "Needs attention",
-            String(blockedCount + setupCount),
-            blockedCount > 0 ? `${blockedCount} blocked` : "All on track",
-          ),
-        );
-
-        const locationCount =
-          locationsResult.kind === "ok" ? locationsResult.data.length : 0;
-        grid.append(
-          metricCard(
-            "Locations",
-            String(locationCount),
-            locationsResult.kind === "ok"
-              ? `${locationsResult.data.filter((l) => l.is_primary).length} primary`
-              : "Unable to load",
-          ),
-        );
-
-        if (insightsResult.kind === "ok") {
-          const reviewCount = Object.values(
-            insightsResult.data.reviews ?? {},
-          ).reduce((a, b) => a + b, 0);
-          grid.append(
-            metricCard(
-              "Total reviews",
-              String(reviewCount),
-              "Across all locations",
-            ),
+        for (const item of dashboardMetrics(summary)) {
+          const link = document.createElement("a");
+          link.className = "metric-card metric-card--link";
+          link.href = item.href;
+          link.append(
+            Object.assign(document.createElement("p"), {
+              className: "metric-card__label",
+              textContent: item.label,
+            }),
+            Object.assign(document.createElement("p"), {
+              className: "metric-card__value",
+              textContent: item.value === null ? "—" : String(item.value),
+            }),
+            Object.assign(document.createElement("p"), {
+              className: "metric-card__meta",
+              textContent: item.meta,
+            }),
           );
-          const leadCount = Object.values(
-            insightsResult.data.leads ?? {},
-          ).reduce((a, b) => a + b, 0);
-          grid.append(metricCard("Total leads", String(leadCount), "All time"));
-          const contentCount = Object.values(
-            insightsResult.data.content_publications ?? {},
-          ).reduce((a, b) => a + b, 0);
-          grid.append(
-            metricCard(
-              "Content published",
-              String(contentCount),
-              "Pipeline output",
-            ),
-          );
-          const seoOpps = Object.values(
-            insightsResult.data.seo?.opportunities ?? {},
-          ).reduce((a, b) => a + b, 0);
-          grid.append(
-            metricCard(
-              "SEO opportunities",
-              String(seoOpps),
-              "Open and resolved",
-            ),
-          );
-        } else {
-          grid.append(
-            metricCard("Activity", "—", "Connect insights to see activity"),
-          );
+          grid.append(link);
         }
       }
 
       function renderAttention(
+        insightData: import("../lib/workspace").InsightsSummary | null,
         summaries: Record<string, { status: string; detail: string }>,
+        isAgency: boolean,
       ): void {
         const panel = document.getElementById("attention-panel")!;
         panel.replaceChildren();
-
+        const operational = requiresAttention(insightData).filter(
+          (item) => isAgency || item.href !== "/administration",
+        );
         const blocked = PRODUCT_KEYS.filter(
           (key) => summaries[key].status === "blocked",
-        );
-        const setup = PRODUCT_KEYS.filter(
-          (key) => summaries[key].status === "setup",
+        ).map<WorkItem>((key) => ({
+          key: `readiness-${key}`,
+          label: PRODUCT_LABELS[key],
+          detail: summaries[key].detail,
+          count: 1,
+          severity: "urgent",
+          href: `/${key}`,
+        }));
+        const items = [...operational, ...blocked].filter(
+          (item, index, all) =>
+            all.findIndex((candidate) => candidate.href === item.href) ===
+            index,
         );
 
-        if (blocked.length === 0 && setup.length === 0) {
+        if (items.length === 0) {
           panel.append(
             emptyState(
               "Everything is on track",
-              "No products need immediate attention. All products are ready or in progress.",
+              "No failures, unresolved provider actions, or blocking product issues are recorded.",
             ),
           );
           return;
         }
+        panel.append(renderWorkItems(items, isAgency ? "Resolve" : "Review"));
+      }
 
+      function renderWork(
+        summary: import("../lib/workspace").InsightsSummary | null,
+        isAgency: boolean,
+      ): void {
+        const panel = document.getElementById("work-panel")!;
+        panel.replaceChildren();
+        const items = todaysWork(summary);
+        if (items.length === 0) {
+          panel.append(
+            emptyState(
+              isAgency
+                ? "No queued work right now"
+                : "Nothing is waiting on you",
+              isAgency
+                ? "New reviews, leads, publishing work, and SEO opportunities will appear here."
+                : "Approvals and other account actions will appear here when they are ready.",
+            ),
+          );
+          return;
+        }
+        panel.append(renderWorkItems(items, isAgency ? "Open queue" : "View"));
+      }
+
+      function renderWorkItems(
+        items: WorkItem[],
+        actionLabel: string,
+      ): HTMLDivElement {
         const grid = document.createElement("div");
         grid.className = "attention-grid";
-
-        for (const key of blocked) {
-          const card = document.createElement("div");
-          card.className = "attention-card attention-card--urgent";
+        for (const item of items) {
+          const card = document.createElement("article");
+          card.className = `attention-card${item.severity === "urgent" ? " attention-card--urgent" : ""}`;
           const header = document.createElement("div");
-          header.className = "flex-row";
-          header.append(statusBadge("blocked", PRODUCT_LABELS[key]));
+          header.className = "attention-card__header";
+          const title = document.createElement("h3");
+          title.textContent = item.label;
+          header.append(
+            title,
+            statusBadge(
+              item.severity === "urgent" ? "blocked" : "setup",
+              String(item.count),
+            ),
+          );
           const body = document.createElement("p");
           body.className = "text-sm muted";
-          body.textContent = summaries[key].detail;
+          body.textContent = item.detail;
           const action = document.createElement("a");
           action.className = "button button--secondary button--sm";
-          action.href = `/${key}`;
-          action.textContent = "Resolve";
+          action.href = item.href;
+          action.textContent = actionLabel;
           card.append(header, body, action);
           grid.append(card);
         }
+        return grid;
+      }
 
-        for (const key of setup) {
-          const card = document.createElement("div");
-          card.className = "attention-card";
-          const header = document.createElement("div");
-          header.className = "flex-row";
-          header.append(statusBadge("setup", PRODUCT_LABELS[key]));
-          const body = document.createElement("p");
-          body.className = "text-sm muted";
-          body.textContent = summaries[key].detail;
-          const action = document.createElement("a");
-          action.className = "button button--secondary button--sm";
-          action.href = `/onboarding`;
-          action.textContent = "Complete setup";
-          card.append(header, body, action);
-          grid.append(card);
+      function renderPerformance(
+        summary: import("../lib/workspace").InsightsSummary | null,
+      ): void {
+        const panel = document.getElementById("performance-panel")!;
+        panel.replaceChildren();
+        const ga4 = summary?.ga4;
+        if (!ga4?.connected || Object.keys(ga4.metrics ?? {}).length === 0) {
+          panel.append(
+            emptyState(
+              "No connected performance data yet",
+              "Connect and sync Google Analytics to show real website results. Period comparisons will appear only when the API supplies comparable history.",
+              "Manage data sources",
+              "/integrations",
+            ),
+          );
+          return;
         }
-
+        const labels: Record<string, string> = {
+          "ga4.sessions": "Sessions",
+          "ga4.totalUsers": "Users",
+          "ga4.screenPageViews": "Page views",
+          "ga4.conversions": "Conversions",
+        };
+        const grid = document.createElement("div");
+        grid.className = "metric-grid";
+        const synced = ga4.properties
+          .map((property) => property.last_synced_at)
+          .filter((value): value is string => Boolean(value))
+          .sort()
+          .at(-1);
+        for (const [key, value] of Object.entries(ga4.metrics)) {
+          grid.append(
+            metricCard(
+              labels[key] ?? key.replace(/^ga4\./, "").replace(/_/g, " "),
+              String(value),
+              synced
+                ? `Latest sync ${new Date(synced).toLocaleString()}`
+                : "Latest synced observation",
+            ),
+          );
+        }
         panel.append(grid);
       }
 
@@ -366,8 +412,10 @@ import "../styles/global.css";
             : location.status;
           info.append(name, detail);
           const badge = statusBadge(
-            location.is_primary ? "primary" : "neutral",
-            location.status,
+            location.status === "active" ? "ready" : location.status,
+            location.is_primary
+              ? `${location.status.replace(/_/g, " ")} · Primary`
+              : location.status.replace(/_/g, " "),
           );
           item.append(info, badge);
           list.append(item);
@@ -392,10 +440,24 @@ import "../styles/global.css";
           const detail = document.createElement("p");
           detail.textContent = summary.detail;
           info.append(name, detail);
+          const actions = document.createElement("div");
+          actions.className = "list-actions";
+          actions.append(
+            statusBadge(
+              summary.status,
+              summary.status === "ready"
+                ? "Operational"
+                : summary.status === "blocked"
+                  ? "Needs attention"
+                  : "Setup required",
+            ),
+          );
           const link = document.createElement("a");
+          link.className = "button button--secondary button--sm";
           link.href = `/${key}`;
-          link.textContent = "Open →";
-          item.append(info, link);
+          link.textContent = "Open";
+          actions.append(link);
+          item.append(info, actions);
           list.append(item);
         }
         panel.append(list);
@@ -515,20 +577,9 @@ import "../styles/global.css";
         panel.append(grid);
       }
 
-      function wireSignOut(button: HTMLElement | null): void {
-        button?.addEventListener("click", async () => {
-          await signOut();
-          goToLogin();
-        });
-      }
-
       async function boot(): Promise<void> {
         const result = await bootWorkspace("Workspace");
-        if (result.kind === "empty") {
-          wireSignOut(document.getElementById("empty-sign-out"));
-        }
         if (!applyBootResult(regions, result)) return;
-        wireSignOut(document.getElementById("sign-out-button"));
 
         populateSwitcher(
           result.organizations,

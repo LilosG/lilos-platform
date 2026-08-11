@@ -1,3 +1,5 @@
 # Frontend Architecture
 
 The Astro application consumes typed API contracts only. Session bootstrap, membership selection, organization/location context, permission policy, entitlement, readiness, feature flags, lifecycle, and runtime controls originate from server responses; local visibility never grants access. Tokens and secrets are not persisted in local storage. Every critical state has explicit loading, empty, blocked, degraded, unauthorized, not-found, stale, conflict, and step-up guidance.
+
+The shared `apps/web/src/lib/ui` layer owns dynamic cards, metrics, detail facts, forms, statuses, tables, tabs, and boot/error regions. Product pages compose those primitives and may keep domain orchestration locally, but must not recreate status mappings, account bootstrap, organization switching, or keyboard interaction systems. `AppShell.astro` owns responsive navigation and organization/session context; agency-only navigation is revealed only from the platform-administrator self-status contract, while the backend remains the authorization authority.

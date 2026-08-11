@@ -10,6 +10,24 @@ export type ContentOpportunity = {
   status: string;
 };
 
+/** Statuses accepted by the opportunity decision endpoint. */
+export const CONTENT_ACTIONABLE_OPPORTUNITY_STATUSES = [
+  "identified",
+  "validated",
+] as const;
+
+/** Governed facts required by the current Content product catalog. */
+export const CONTENT_REQUIRED_FACT_KEYS = [
+  "business.name",
+  "brand.approved_claims",
+] as const;
+
+export function isContentOpportunityActionable(status: string): boolean {
+  return (
+    CONTENT_ACTIONABLE_OPPORTUNITY_STATUSES as readonly string[]
+  ).includes(status);
+}
+
 export type ContentItem = {
   id: string;
   opportunity_id: string | null;

@@ -310,6 +310,7 @@ export const LEAD_STATUS_VALUES = [
   "lost",
   "spam",
   "duplicate",
+  "cancelled",
   "archived",
 ] as const;
 

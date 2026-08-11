@@ -1,6 +1,17 @@
 import { apiGet, apiRequest, type ApiOutcome } from "./api-client";
 
 export const MAX_CRAWL_PAGES = 20;
+export const SEO_ACTIONABLE_OPPORTUNITY_STATUSES = [
+  "identified",
+  "recommended",
+  "approved",
+] as const;
+
+export function isSEOOpportunityActionable(status: string): boolean {
+  return (SEO_ACTIONABLE_OPPORTUNITY_STATUSES as readonly string[]).includes(
+    status,
+  );
+}
 
 export function normalizeCrawlPageLimit(value: number): number {
   if (!Number.isFinite(value)) return MAX_CRAWL_PAGES;

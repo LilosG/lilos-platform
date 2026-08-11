@@ -110,7 +110,8 @@ import "../styles/global.css";
                 </div>
               </div>
               <p class="settings-card__desc">
-                Approval policies, business facts, and notification rules.
+                Approval policies, verified business details, and notification
+                rules.
               </p>
             </button>
 
@@ -122,7 +123,7 @@ import "../styles/global.css";
                 </div>
               </div>
               <p class="settings-card__desc">
-                Enabled products and their readiness state.
+                Product access and operational readiness.
               </p>
             </button>
           </div>
@@ -157,7 +158,13 @@ import "../styles/global.css";
         fetchOrganizationDomains,
         type OrganizationProfile,
       } from "../lib/settings";
-      import { fetchLocations } from "../lib/workspace";
+      import {
+        fetchLocations,
+        fetchProductReadiness,
+        PRODUCT_KEYS,
+        PRODUCT_LABELS,
+      } from "../lib/workspace";
+      import { summarizeReadiness } from "../lib/dashboard-logic";
       import {
         fetchBusinessFactCandidates,
         decideBusinessFact,
@@ -166,7 +173,6 @@ import "../styles/global.css";
         fetchEffectivePolicies,
         fetchMemberships,
         fetchInvitations,
-        fetchProducts,
         businessFactLabel,
         formatBusinessFactValue,
       } from "../lib/administration";
@@ -183,6 +189,7 @@ import "../styles/global.css";
       } from "../lib/ui";
 
       let organizationId = "";
+      let isAgencyWorkspace = false;
 
       const regions: BootRegions = {
         notConfigured: document.getElementById("boot-not-configured")!,
@@ -396,7 +403,7 @@ import "../styles/global.css";
           if (result.kind === "ok") {
             profile.version = result.data.version;
             status.textContent =
-              "Saved. Run \u201cGenerate facts\u201d to candidate the updated details.";
+              "Saved. Refresh business details in Governance to review the updated information.";
           } else {
             status.textContent = describeFailure(result, "Save");
           }
@@ -421,9 +428,11 @@ import "../styles/global.css";
           domainContent.replaceChildren(
             emptyState(
               "No locations yet",
-              "Add locations for this organization to start managing business profiles and operations.",
-              "Add in Onboarding",
-              "/onboarding",
+              isAgencyWorkspace
+                ? "Add this client’s first location in guided onboarding."
+                : "Your account team has not added a business location yet.",
+              isAgencyWorkspace ? "Open guided onboarding" : undefined,
+              isAgencyWorkspace ? "/onboarding" : undefined,
             ),
           );
           return;
@@ -467,9 +476,11 @@ import "../styles/global.css";
           domainContent.replaceChildren(
             emptyState(
               "No domains yet",
-              "Add a domain for this organization during onboarding.",
-              "Go to Onboarding",
-              "/onboarding",
+              isAgencyWorkspace
+                ? "Add the client’s website in guided onboarding."
+                : "Your account team has not added a website yet.",
+              isAgencyWorkspace ? "Open guided onboarding" : undefined,
+              isAgencyWorkspace ? "/onboarding" : undefined,
             ),
           );
           return;
@@ -529,9 +540,10 @@ import "../styles/global.css";
             const item = document.createElement("li");
             const info = document.createElement("div");
             const name = document.createElement("h3");
-            name.textContent = member.membership_type;
+            name.textContent = `${member.membership_type.replace(/_/g, " ")} member`;
             const detail = document.createElement("p");
-            detail.textContent = member.user_profile_id;
+            detail.textContent =
+              "Identity details are protected; access is managed by membership status.";
             info.append(name, detail);
             const badge = statusBadge(
               member.status === "active" ? "ready" : "blocked",
@@ -588,9 +600,11 @@ import "../styles/global.css";
           domainContent.replaceChildren(
             emptyState(
               "No team members yet",
-              "Add or invite team members during onboarding.",
-              "Go to Onboarding",
-              "/onboarding",
+              isAgencyWorkspace
+                ? "Add or invite team members in guided onboarding."
+                : "Ask your account team to add or invite users.",
+              isAgencyWorkspace ? "Open guided onboarding" : undefined,
+              isAgencyWorkspace ? "/onboarding" : undefined,
             ),
           );
           return;
@@ -658,7 +672,15 @@ import "../styles/global.css";
               policyBody.append(errorAlert(describeFailure(result, "Policy")));
             }
           });
-          policyBody.append(provisionBtn);
+          if (isAgencyWorkspace) {
+            policyBody.append(provisionBtn);
+          } else {
+            const contact = document.createElement("p");
+            contact.className = "text-sm muted";
+            contact.textContent =
+              "Ask your account team to configure the approval policy.";
+            policyBody.append(contact);
+          }
         } else {
           policyBody.append(
             errorAlert(describeFailure(policyResult, "Policy")),
@@ -674,7 +696,7 @@ import "../styles/global.css";
         factsHeader.className = "card__header";
         const factsTitle = document.createElement("h3");
         factsTitle.className = "card__title";
-        factsTitle.textContent = "Business Facts";
+        factsTitle.textContent = "Verified Business Details";
         factsHeader.append(factsTitle);
         factsCard.append(factsHeader);
         const factsBody = document.createElement("div");
@@ -719,7 +741,7 @@ import "../styles/global.css";
           const reconcileBtn = document.createElement("button");
           reconcileBtn.type = "button";
           reconcileBtn.className = "button button--secondary button--sm";
-          reconcileBtn.textContent = "Generate facts from client data";
+          reconcileBtn.textContent = "Refresh business details";
           reconcileBtn.addEventListener("click", async () => {
             reconcileBtn.disabled = true;
             reconcileBtn.textContent = "Generating…";
@@ -728,17 +750,17 @@ import "../styles/global.css";
               await openGovernance();
             } else {
               reconcileBtn.disabled = false;
-              reconcileBtn.textContent = "Generate facts from client data";
+              reconcileBtn.textContent = "Refresh business details";
               factsBody.append(errorAlert(describeFailure(result, "Facts")));
             }
           });
           factsBody.append(
             emptyState(
               "No business details awaiting confirmation",
-              "Generate candidates from this client's business profile, location, and domain.",
+              "Refresh details from this client’s business profile, location, and website.",
             ),
           );
-          factsBody.append(reconcileBtn);
+          if (isAgencyWorkspace) factsBody.append(reconcileBtn);
         } else {
           factsBody.append(errorAlert(describeFailure(factsResult, "Facts")));
         }
@@ -750,40 +772,42 @@ import "../styles/global.css";
 
       // ---- Products ----
       async function openProducts(): Promise<void> {
-        showDomain("Products", "Enabled products and their readiness state.");
-        const result = await fetchProducts(organizationId);
-        if (result.kind !== "ok") {
-          domainContent.replaceChildren(
-            errorAlert(describeFailure(result, "Products")),
-          );
-          return;
-        }
-        if (result.data.length === 0) {
-          domainContent.replaceChildren(
-            emptyState(
-              "No products available",
-              "Products will appear here once configured.",
-            ),
-          );
-          return;
-        }
+        showDomain(
+          "Products",
+          "Operational readiness for each product in this organization.",
+        );
+        const results = await Promise.all(
+          PRODUCT_KEYS.map((key) => fetchProductReadiness(organizationId, key)),
+        );
         const list = document.createElement("ul");
         list.className = "product-list";
-        for (const product of result.data) {
+        PRODUCT_KEYS.forEach((key, index) => {
+          const readiness = summarizeReadiness(results[index]);
           const item = document.createElement("li");
           const info = document.createElement("div");
           const name = document.createElement("h3");
-          name.textContent = product.name;
+          name.textContent = PRODUCT_LABELS[key];
           const detail = document.createElement("p");
-          detail.textContent = product.description || product.key;
+          detail.textContent = readiness.detail;
           info.append(name, detail);
+          const actions = document.createElement("div");
+          actions.className = "list-actions";
           const badge = statusBadge(
-            product.status === "active" ? "ready" : "neutral",
-            product.status,
+            readiness.status,
+            readiness.status === "ready"
+              ? "Operational"
+              : readiness.status === "blocked"
+                ? "Needs attention"
+                : "Setup required",
           );
-          item.append(info, badge);
+          const link = document.createElement("a");
+          link.className = "button button--secondary button--sm";
+          link.href = `/${key}`;
+          link.textContent = "Open";
+          actions.append(badge, link);
+          item.append(info, actions);
           list.append(item);
-        }
+        });
         domainContent.replaceChildren(list);
       }
 
@@ -792,6 +816,9 @@ import "../styles/global.css";
       ): Promise<void> {
         setActiveOrganization(org);
         organizationId = org.organization_id;
+        isAgencyWorkspace = ["internal", "partner", "support"].includes(
+          org.membership_type,
+        );
         showDirectory();
       }
 

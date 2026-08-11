@@ -295,19 +295,28 @@ import "../styles/global.css";
           );
           return;
         }
+        const latestSync = reviews.data
+          .map((review) => review.last_synced_at)
+          .filter(Boolean)
+          .sort()
+          .at(-1);
+        const freshness = document.createElement("div");
+        freshness.className = "source-note source-note--inline";
+        freshness.setAttribute("role", "status");
+        freshness.textContent = latestSync
+          ? `Google review data last synced ${formatTimestamp(latestSync)}`
+          : "Review freshness is not yet available.";
+        panel.append(freshness);
         const table = document.createElement("div");
         table.className = "data-table";
         const t = document.createElement("table");
         const thead = document.createElement("thead");
         thead.innerHTML =
-          "<tr><th>Rating</th><th>Status</th><th>Provider</th><th>Date</th><th></th></tr>";
+          "<tr><th>Rating</th><th>Status</th><th>Sentiment</th><th>Risk</th><th>Date</th><th><span class='sr-only'>Actions</span></th></tr>";
         t.append(thead);
         const tbody = document.createElement("tbody");
         for (const review of reviews.data) {
           const tr = document.createElement("tr");
-          tr.classList.add("data-table__row--clickable");
-          tr.addEventListener("click", () => void openReview(review));
-
           const ratingTd = document.createElement("td");
           ratingTd.textContent = review.rating ? `${review.rating}★` : "—";
 
@@ -323,13 +332,33 @@ import "../styles/global.css";
             ),
           );
 
-          const providerTd = document.createElement("td");
-          providerTd.textContent = review.provider;
+          const sentimentTd = document.createElement("td");
+          sentimentTd.textContent = review.sentiment.replace(/_/g, " ");
+
+          const riskTd = document.createElement("td");
+          riskTd.append(
+            statusBadge(
+              review.risk_level === "high" || review.risk_level === "critical"
+                ? "blocked"
+                : review.risk_level === "medium"
+                  ? "setup"
+                  : "neutral",
+              review.risk_level.replace(/_/g, " "),
+            ),
+          );
 
           const dateTd = document.createElement("td");
           dateTd.textContent = formatTimestamp(review.review_created_at);
 
-          tr.append(ratingTd, statusTd, providerTd, dateTd);
+          const actionTd = document.createElement("td");
+          const openButton = document.createElement("button");
+          openButton.type = "button";
+          openButton.className = "button button--secondary button--sm";
+          openButton.textContent = "Review";
+          openButton.addEventListener("click", () => void openReview(review));
+          actionTd.append(openButton);
+
+          tr.append(ratingTd, statusTd, sentimentTd, riskTd, dateTd, actionTd);
           tbody.append(tr);
         }
         t.append(tbody);
@@ -374,8 +403,7 @@ import "../styles/global.css";
         reviewCard.append(reviewHeader);
         const reviewBody = document.createElement("div");
         reviewBody.className = "card__body";
-        const latestRevision =
-          detailResult.data.revisions[detailResult.data.revisions.length - 1];
+        const latestRevision = detailResult.data.revisions[0];
         if (latestRevision) {
           if (latestRevision.title) {
             const title = document.createElement("h3");
@@ -413,9 +441,14 @@ import "../styles/global.css";
         const composeBody = document.createElement("div");
         composeBody.className = "card__body";
         const textarea = document.createElement("textarea");
+        textarea.id = "review-response-draft";
         textarea.rows = 4;
         textarea.placeholder = "Write a response…";
-        composeBody.append(textarea);
+        const textareaLabel = document.createElement("label");
+        textareaLabel.htmlFor = textarea.id;
+        textareaLabel.className = "field-label";
+        textareaLabel.textContent = "Response draft";
+        composeBody.append(textareaLabel, textarea);
         const btnRow = document.createElement("div");
         btnRow.className = "flex-row gap-2";
         btnRow.style.marginTop = "0.5rem";
@@ -455,8 +488,7 @@ import "../styles/global.css";
             status.textContent = "Enter a response first.";
             return;
           }
-          const latestRev =
-            detailResult.data.revisions[detailResult.data.revisions.length - 1];
+          const latestRev = detailResult.data.revisions[0];
           if (!latestRev) {
             status.textContent = "No revision to respond to.";
             return;
@@ -487,8 +519,7 @@ import "../styles/global.css";
         aiBtn.addEventListener("click", async () => {
           aiBtn.disabled = true;
           aiBtn.textContent = "Generating…";
-          const latestRev =
-            detailResult.data.revisions[detailResult.data.revisions.length - 1];
+          const latestRev = detailResult.data.revisions[0];
           if (!latestRev) {
             status.textContent = "No revision to respond to.";
             return;
@@ -543,6 +574,24 @@ import "../styles/global.css";
           historyCard.append(historyHeader);
           const historyBody = document.createElement("div");
           historyBody.className = "card__body";
+          if (
+            review.status === "responded" ||
+            responsesResult.data.some(
+              (response) => response.generated_by_type === "imported",
+            )
+          ) {
+            const providerNotice = document.createElement("div");
+            providerNotice.className = "alert alert--success";
+            providerNotice.append(
+              statusBadge("ready", "Observed on Google"),
+              Object.assign(document.createElement("p"), {
+                className: "text-sm",
+                textContent:
+                  "Google reports a public response for this review. LILOs will not invite a duplicate reply.",
+              }),
+            );
+            historyBody.append(providerNotice);
+          }
           const list = document.createElement("ul");
           list.className = "product-list";
           for (const resp of responsesResult.data) {
@@ -573,13 +622,18 @@ import "../styles/global.css";
               approveBtn.className = "button button--sm";
               approveBtn.textContent = "Approve";
               approveBtn.addEventListener("click", async () => {
-                await approveResponse(
+                approveBtn.disabled = true;
+                const result = await approveResponse(
                   organizationId,
                   selectedLocationId,
                   review.id,
                   resp.id,
                 );
-                await openReview(review);
+                if (result.kind === "ok") await openReview(review);
+                else {
+                  approveBtn.disabled = false;
+                  info.append(errorAlert(describeFailure(result, "Approval")));
+                }
               });
               item.append(approveBtn);
             }
@@ -589,14 +643,23 @@ import "../styles/global.css";
               publishBtn.className = "button button--sm";
               publishBtn.textContent = "Publish";
               publishBtn.addEventListener("click", async () => {
-                await publishResponse(
+                publishBtn.disabled = true;
+                publishBtn.textContent = "Publishing…";
+                const result = await publishResponse(
                   organizationId,
                   selectedLocationId,
                   review.id,
                   resp.id,
                   `web-publish-${resp.id}-${Date.now()}`,
                 );
-                await openReview(review);
+                if (result.kind === "ok") await openReview(review);
+                else {
+                  publishBtn.disabled = false;
+                  publishBtn.textContent = "Publish";
+                  info.append(
+                    errorAlert(describeFailure(result, "Publish response")),
+                  );
+                }
               });
               item.append(publishBtn);
             }

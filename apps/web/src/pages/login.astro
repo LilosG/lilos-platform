@@ -16,7 +16,16 @@ import "../styles/global.css";
   <body>
     <main class="auth-page">
       <section aria-labelledby="login-title" class="auth-card">
-        <p class="eyebrow">LILOs</p><h1 id="login-title">Sign in</h1>
+        <div class="auth-brand">
+          <span class="brand__mark" aria-hidden="true">L</span>
+          <div><strong>LILOs</strong><span>Growth operations</span></div>
+        </div>
+        <p class="eyebrow">Secure workspace</p><h1 id="login-title">
+          Welcome back
+        </h1>
+        <p class="auth-card__intro" id="login-description">
+          Sign in to manage client performance, work, and approvals.
+        </p>
 
         <div id="login-not-configured" hidden role="status">
           <p>
@@ -25,7 +34,7 @@ import "../styles/global.css";
           </p>
         </div>
 
-        <form id="login-form">
+        <form id="login-form" aria-describedby="login-description">
           <label for="email">Email</label><input
             type="email"
             id="email"

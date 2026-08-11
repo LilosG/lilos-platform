@@ -25,6 +25,44 @@ export function cardBody(): HTMLDivElement {
   return body;
 }
 
+export function sectionCard(title: string, description?: string): HTMLElement {
+  const section = document.createElement("section");
+  section.className = "card";
+  const header = document.createElement("div");
+  header.className = "card__header";
+  const titleElement = document.createElement("h3");
+  titleElement.className = "card__title";
+  titleElement.textContent = title;
+  header.append(titleElement);
+  if (description) {
+    const descriptionElement = document.createElement("p");
+    descriptionElement.className = "card__description";
+    descriptionElement.textContent = description;
+    header.append(descriptionElement);
+  }
+  section.append(header, cardBody());
+  return section;
+}
+
+export function detailFact(label: string, value: string): HTMLDivElement {
+  const row = document.createElement("div");
+  row.className = "detail-fact";
+  const labelElement = document.createElement("strong");
+  labelElement.textContent = label;
+  const valueElement = document.createElement("span");
+  valueElement.textContent = value;
+  row.append(labelElement, valueElement);
+  return row;
+}
+
+export function liveStatus(): HTMLParagraphElement {
+  const status = document.createElement("p");
+  status.className = "text-sm muted";
+  status.setAttribute("role", "status");
+  status.setAttribute("aria-live", "polite");
+  return status;
+}
+
 export function metricCard(
   label: string,
   value: string | null,

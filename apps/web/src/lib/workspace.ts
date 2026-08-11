@@ -117,6 +117,17 @@ export type InsightsSummary = {
     opportunities: Record<string, number>;
   };
   leads: Record<string, number>;
+  ga4?: {
+    connected: boolean;
+    properties: {
+      id: string;
+      display_name: string;
+      external_property_id: string;
+      freshness_status: string;
+      last_synced_at: string | null;
+    }[];
+    metrics: Record<string, number>;
+  };
 };
 
 export function fetchInsightsSummary(
