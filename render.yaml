@@ -91,6 +91,22 @@ services:
         sync: false
       - key: LILOS_TELEMETRY_EXPORT_ENDPOINT
         sync: false
+      - key: LILOS_SECRET_ENCRYPTION_KEY
+        sync: false
+      - key: LILOS_GOOGLE_OAUTH_CLIENT_ID
+        sync: false
+      - key: LILOS_GOOGLE_OAUTH_CLIENT_SECRET
+        sync: false
+      - key: LILOS_GOOGLE_OAUTH_REDIRECT_URI
+        sync: false
+      - key: LILOS_GITHUB_APP_ID
+        sync: false
+      - key: LILOS_GITHUB_APP_CLIENT_ID
+        sync: false
+      - key: LILOS_GITHUB_APP_PRIVATE_KEY
+        sync: false
+      - key: LILOS_GITHUB_APP_INSTALLATION_REDIRECT_URI
+        sync: false
 
   - name: lilos-scheduler
     type: worker
@@ -112,4 +128,20 @@ services:
       - key: LILOS_SUPABASE_AUTH_JWKS_URL
         sync: false
       - key: LILOS_TELEMETRY_EXPORT_ENDPOINT
+        sync: false
+      - key: LILOS_SECRET_ENCRYPTION_KEY
+        sync: false
+      - key: LILOS_GOOGLE_OAUTH_CLIENT_ID
+        sync: false
+      - key: LILOS_GOOGLE_OAUTH_CLIENT_SECRET
+        sync: false
+      - key: LILOS_GOOGLE_OAUTH_REDIRECT_URI
+        sync: false
+      - key: LILOS_GITHUB_APP_ID
+        sync: false
+      - key: LILOS_GITHUB_APP_CLIENT_ID
+        sync: false
+      - key: LILOS_GITHUB_APP_PRIVATE_KEY
+        sync: false
+      - key: LILOS_GITHUB_APP_INSTALLATION_REDIRECT_URI
         sync: false
