@@ -76,12 +76,13 @@ import "../styles/global.css";
     </AppShell>
     <script>
       import {
+        beginConnection,
         connectGoogle,
         disconnectConnection,
         fetchConnectionStatus,
         discoverResources,
         describeGbpConnectFailure,
-        missingGoogleProducts,
+        googleAuthorizationAction,
       } from "../lib/gbp-connection";
       import {
         beginGitHubInstall,
@@ -406,16 +407,14 @@ import "../styles/global.css";
         actions.style.paddingTop = "0";
         actions.style.marginTop = "0.5rem";
 
-        if (state.status === "reconnect_required") {
+        const authorizationAction = googleAuthorizationAction(state);
+        if (authorizationAction.kind === "reconnect") {
           const reconnectBtn = document.createElement("button");
           reconnectBtn.type = "button";
           reconnectBtn.className = "button";
           reconnectBtn.textContent = "Reconnect Google";
           reconnectBtn.addEventListener("click", async () => {
-            const result = await connectGoogle(
-              organizationId,
-              missingGoogleProducts(state.services),
-            );
+            const result = await beginConnection(organizationId);
             if (result.kind === "ok")
               window.location.assign(result.data.authorization_url);
             else panel.append(errorAlert(describeFailure(result, "Reconnect")));
@@ -423,11 +422,7 @@ import "../styles/global.css";
           actions.append(reconnectBtn);
         }
 
-        const missingProducts = missingGoogleProducts(state.services);
-        if (
-          missingProducts.length > 0 &&
-          state.status !== "reconnect_required"
-        ) {
+        if (authorizationAction.kind === "authorize_missing") {
           const authorizeBtn = document.createElement("button");
           authorizeBtn.type = "button";
           authorizeBtn.className = "button";
@@ -435,7 +430,10 @@ import "../styles/global.css";
           authorizeBtn.addEventListener("click", async () => {
             authorizeBtn.disabled = true;
             authorizeBtn.textContent = "Redirecting…";
-            const result = await connectGoogle(organizationId, missingProducts);
+            const result = await connectGoogle(
+              organizationId,
+              authorizationAction.products,
+            );
             if (result.kind === "ok") {
               window.location.assign(result.data.authorization_url);
             } else {

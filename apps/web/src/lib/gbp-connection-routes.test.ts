@@ -7,7 +7,7 @@ vi.mock("./api-client", () => ({
   apiRequest: (...args: unknown[]) => apiRequest(...args),
 }));
 
-import { connectGoogle } from "./gbp-connection";
+import { beginConnection, connectGoogle } from "./gbp-connection";
 
 describe("Google connection product route", () => {
   beforeEach(() => {
@@ -23,6 +23,14 @@ describe("Google connection product route", () => {
         method: "POST",
         body: { products: ["search_console", "analytics"] },
       },
+    );
+  });
+
+  it("uses the no-body shared connection path for credential reconnect", async () => {
+    await beginConnection("org-1");
+    expect(apiRequest).toHaveBeenCalledWith(
+      "/api/v1/organizations/org-1/integrations/google/connect",
+      { method: "POST" },
     );
   });
 });

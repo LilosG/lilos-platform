@@ -11,13 +11,20 @@ from cryptography.fernet import Fernet
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from apps.api.app.config import EnvironmentName, Settings
-from apps.api.app.integrations.connection_service import GBPConnectionService
+from apps.api.app.integrations.connection_service import (
+    ANALYTICS_SCOPE,
+    BUSINESS_MANAGE_SCOPE,
+    SEARCH_CONSOLE_SCOPE,
+    GBPConnectionService,
+)
 from apps.api.app.integrations.errors import (
     IntegrationNotConfiguredError,
     IntegrationReconnectRequiredError,
     IntegrationStateInvalidError,
+    IntegrationTokenExchangeFailedError,
 )
 from apps.api.app.integrations.provider_seed import ProviderCatalogSeeder
+from apps.api.app.integrations.secrets import SecretUnavailableError
 from apps.api.app.organizations.enums import OrganizationStatus, OrganizationType
 from apps.api.app.organizations.models import Organization
 
@@ -135,6 +142,89 @@ async def test_incremental_authorization_preserves_legacy_gbp_scope(
 
 @pytest.mark.integration
 @pytest.mark.anyio
+@pytest.mark.parametrize(
+    "recorded_scopes",
+    [
+        (BUSINESS_MANAGE_SCOPE,),
+        (BUSINESS_MANAGE_SCOPE, SEARCH_CONSOLE_SCOPE),
+        (BUSINESS_MANAGE_SCOPE, ANALYTICS_SCOPE),
+        (BUSINESS_MANAGE_SCOPE, SEARCH_CONSOLE_SCOPE, ANALYTICS_SCOPE),
+    ],
+)
+async def test_reconnect_default_preserves_every_recorded_google_scope(
+    integrations_session_factory: async_sessionmaker[AsyncSession],
+    recorded_scopes: tuple[str, ...],
+) -> None:
+    """The no-body/default-GBP path is credential reconnect, not a scope downgrade."""
+    async with integrations_session_factory.begin() as session:
+        await ProviderCatalogSeeder().run(session)
+        organization = await make_organization(session)
+        service = GBPConnectionService()
+        await service.begin_connection(
+            session,
+            make_settings(),
+            organization.id,
+            actor_id=None,
+            correlation_id="test-reconnect-initial",
+        )
+        connection = await service.get_connection(session, organization.id)
+        connection.status = "reconnect_required"
+        connection.granted_capabilities = list(recorded_scopes)
+        await session.flush()
+
+        reconnect_url = await service.begin_connection(
+            session,
+            make_settings(),
+            organization.id,
+            actor_id=None,
+            correlation_id="test-reconnect",
+        )
+
+        query = parse_qs(urlsplit(reconnect_url).query)
+        assert set(query["scope"][0].split()) == set(recorded_scopes)
+        same_connection = await service.get_connection(session, organization.id)
+        assert same_connection.id == connection.id
+
+
+@pytest.mark.integration
+@pytest.mark.anyio
+async def test_incremental_authorization_unions_missing_product_with_existing_grants(
+    integrations_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with integrations_session_factory.begin() as session:
+        await ProviderCatalogSeeder().run(session)
+        organization = await make_organization(session)
+        service = GBPConnectionService()
+        await service.begin_connection(
+            session,
+            make_settings(),
+            organization.id,
+            actor_id=None,
+            correlation_id="test-incremental-initial",
+        )
+        connection = await service.get_connection(session, organization.id)
+        connection.granted_capabilities = [BUSINESS_MANAGE_SCOPE, ANALYTICS_SCOPE]
+        await session.flush()
+
+        incremental_url = await service.begin_connection(
+            session,
+            make_settings(),
+            organization.id,
+            actor_id=None,
+            correlation_id="test-incremental-missing",
+            products=("search_console",),
+        )
+
+        query = parse_qs(urlsplit(incremental_url).query)
+        assert set(query["scope"][0].split()) == {
+            BUSINESS_MANAGE_SCOPE,
+            SEARCH_CONSOLE_SCOPE,
+            ANALYTICS_SCOPE,
+        }
+
+
+@pytest.mark.integration
+@pytest.mark.anyio
 async def test_begin_connection_without_provider_seed_raises(
     integrations_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
@@ -189,6 +279,7 @@ async def test_complete_connection_exchanges_code_and_stores_encrypted_tokens(
                     "access_token": "real-looking-access-token",
                     "refresh_token": "real-looking-refresh-token",
                     "expires_in": 3600,
+                    "scope": f"{BUSINESS_MANAGE_SCOPE} {SEARCH_CONSOLE_SCOPE}",
                 },
             )
 
@@ -211,12 +302,161 @@ async def test_complete_connection_exchanges_code_and_stores_encrypted_tokens(
         assert connection.status == "connected"
         assert connection.credential_reference is not None
         assert connection.token_expires_at is not None
+        assert connection.granted_capabilities == [BUSINESS_MANAGE_SCOPE, SEARCH_CONSOLE_SCOPE]
 
         tokens = await service._read_tokens(  # noqa: SLF001
             session, settings, connection.credential_reference
         )
         assert tokens["access_token"] == "real-looking-access-token"
         assert tokens["refresh_token"] == "real-looking-refresh-token"
+
+
+@pytest.mark.integration
+@pytest.mark.anyio
+async def test_successful_reconsent_replaces_and_deletes_superseded_credential(
+    integrations_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with integrations_session_factory.begin() as session:
+        await ProviderCatalogSeeder().run(session)
+        organization = await make_organization(session)
+        settings = make_settings()
+        exchanges = 0
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            nonlocal exchanges
+            exchanges += 1
+            if exchanges == 1:
+                return httpx.Response(
+                    200,
+                    json={
+                        "access_token": "initial-access",
+                        "refresh_token": "initial-refresh",
+                        "expires_in": 3600,
+                        "scope": BUSINESS_MANAGE_SCOPE,
+                    },
+                )
+            return httpx.Response(
+                200,
+                json={
+                    "access_token": "replacement-access",
+                    "refresh_token": "replacement-refresh",
+                    "expires_in": 3600,
+                    "scope": (f"{BUSINESS_MANAGE_SCOPE} {SEARCH_CONSOLE_SCOPE} {ANALYTICS_SCOPE}"),
+                },
+            )
+
+        service = GBPConnectionService(http_client_factory=mock_client_factory(handler))
+        initial_url = await service.begin_connection(
+            session, settings, organization.id, actor_id=None, correlation_id="initial-start"
+        )
+        connection = await service.complete_connection(
+            session,
+            settings,
+            organization.id,
+            state=state_from_authorization_url(initial_url),
+            code="initial-code",
+            correlation_id="initial-complete",
+        )
+        old_reference = connection.credential_reference
+        assert old_reference is not None
+        connection.status = "reconnect_required"
+        connection.granted_capabilities = [
+            BUSINESS_MANAGE_SCOPE,
+            SEARCH_CONSOLE_SCOPE,
+            ANALYTICS_SCOPE,
+        ]
+
+        reconnect_url = await service.begin_connection(
+            session, settings, organization.id, actor_id=None, correlation_id="reconnect-start"
+        )
+        reconnected = await service.complete_connection(
+            session,
+            settings,
+            organization.id,
+            state=state_from_authorization_url(reconnect_url),
+            code="replacement-code",
+            correlation_id="reconnect-complete",
+        )
+
+        assert reconnected.credential_reference is not None
+        assert reconnected.credential_reference != old_reference
+        with pytest.raises(SecretUnavailableError):
+            await service._read_tokens(session, settings, old_reference)  # noqa: SLF001
+        replacement = await service._read_tokens(  # noqa: SLF001
+            session, settings, reconnected.credential_reference
+        )
+        assert replacement == {
+            "access_token": "replacement-access",
+            "refresh_token": "replacement-refresh",
+        }
+        assert reconnected.granted_capabilities == [
+            ANALYTICS_SCOPE,
+            BUSINESS_MANAGE_SCOPE,
+            SEARCH_CONSOLE_SCOPE,
+        ]
+
+
+@pytest.mark.integration
+@pytest.mark.anyio
+async def test_failed_reconsent_keeps_existing_credential(
+    integrations_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with integrations_session_factory.begin() as session:
+        await ProviderCatalogSeeder().run(session)
+        organization = await make_organization(session)
+        settings = make_settings()
+        exchanges = 0
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            nonlocal exchanges
+            exchanges += 1
+            if exchanges == 1:
+                return httpx.Response(
+                    200,
+                    json={
+                        "access_token": "existing-access",
+                        "refresh_token": "existing-refresh",
+                        "expires_in": 3600,
+                        "scope": BUSINESS_MANAGE_SCOPE,
+                    },
+                )
+            return httpx.Response(400, json={"error": "invalid_grant"})
+
+        service = GBPConnectionService(http_client_factory=mock_client_factory(handler))
+        initial_url = await service.begin_connection(
+            session, settings, organization.id, actor_id=None, correlation_id="initial-start"
+        )
+        connection = await service.complete_connection(
+            session,
+            settings,
+            organization.id,
+            state=state_from_authorization_url(initial_url),
+            code="initial-code",
+            correlation_id="initial-complete",
+        )
+        old_reference = connection.credential_reference
+        assert old_reference is not None
+        connection.status = "reconnect_required"
+
+        reconnect_url = await service.begin_connection(
+            session, settings, organization.id, actor_id=None, correlation_id="reconnect-start"
+        )
+        with pytest.raises(IntegrationTokenExchangeFailedError):
+            await service.complete_connection(
+                session,
+                settings,
+                organization.id,
+                state=state_from_authorization_url(reconnect_url),
+                code="failed-code",
+                correlation_id="reconnect-failed",
+            )
+
+        assert connection.credential_reference == old_reference
+        assert connection.status == "reconnect_required"
+        assert await service._read_tokens(session, settings, old_reference) == {  # noqa: SLF001
+            "access_token": "existing-access",
+            "refresh_token": "existing-refresh",
+        }
 
 
 @pytest.mark.integration
@@ -240,9 +480,11 @@ async def test_complete_connection_with_reused_state_raises(
             session, settings, organization.id, actor_id=None, correlation_id="c1"
         )
         state = state_from_authorization_url(url)
-        await service.complete_connection(
+        connection = await service.complete_connection(
             session, settings, organization.id, state=state, code="code-1", correlation_id="c2"
         )
+        credential_reference = connection.credential_reference
+        assert credential_reference is not None
         with pytest.raises(IntegrationStateInvalidError):
             await service.complete_connection(
                 session,
@@ -252,6 +494,10 @@ async def test_complete_connection_with_reused_state_raises(
                 code="code-2",
                 correlation_id="c3",
             )
+        assert connection.credential_reference == credential_reference
+        assert await service._read_tokens(  # noqa: SLF001
+            session, settings, credential_reference
+        ) == {"access_token": "a", "refresh_token": "r"}
 
 
 @pytest.mark.integration
@@ -356,6 +602,8 @@ async def test_ensure_fresh_token_refreshes_when_near_expiry(
         connection = await service.complete_connection(
             session, settings, organization.id, state=state, code="code", correlation_id="c2"
         )
+        old_reference = connection.credential_reference
+        assert old_reference is not None
         # Force the stored expiry to be within the refresh skew window.
         connection.token_expires_at = datetime.now(UTC) + timedelta(minutes=1)
         await session.flush()
@@ -374,6 +622,9 @@ async def test_ensure_fresh_token_refreshes_when_near_expiry(
         token = await service.ensure_fresh_token(session, settings, connection)
         assert token == "new-token"
         assert connection.status == "connected"
+        assert connection.credential_reference != old_reference
+        with pytest.raises(SecretUnavailableError):
+            await service._read_tokens(session, settings, old_reference)  # noqa: SLF001
 
 
 @pytest.mark.integration
