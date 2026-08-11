@@ -210,6 +210,55 @@ async def test_adapter_parses_account_summary_resource_name_shape() -> None:
     ]
 
 
+@pytest.mark.anyio
+async def test_adapter_paginates_all_account_summaries() -> None:
+    requests: list[str | None] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/v1beta/accountSummaries"
+        assert request.url.params["pageSize"] == "200"
+        page_token = request.url.params.get("pageToken")
+        requests.append(page_token)
+        account_id = "123" if page_token is None else "456"
+        payload: dict[str, object] = {
+            "accountSummaries": [
+                {
+                    "displayName": f"Account {account_id}",
+                    "propertySummaries": [
+                        {
+                            "property": f"properties/{account_id}",
+                            "displayName": f"Property {account_id}",
+                        }
+                    ],
+                }
+            ]
+        }
+        if page_token is None:
+            payload["nextPageToken"] = "account-page-2"
+        return httpx.Response(200, json=payload)
+
+    adapter = GoogleAnalyticsAdminAdapter(http_client_factory=mock_client_factory(handler))
+    properties = await adapter.list_account_summaries("access-token")
+
+    assert [item.property_number for item in properties] == ["123", "456"]
+    assert requests == [None, "account-page-2"]
+
+
+@pytest.mark.anyio
+async def test_adapter_rejects_repeated_account_summary_token() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/v1beta/accountSummaries"
+        return httpx.Response(
+            200,
+            json={"accountSummaries": [], "nextPageToken": "same-token"},
+        )
+
+    adapter = GoogleAnalyticsAdminAdapter(http_client_factory=mock_client_factory(handler))
+
+    with pytest.raises(RuntimeError, match="token repeated"):
+        await adapter.list_account_summaries("access-token")
+
+
 @pytest.mark.integration
 @pytest.mark.anyio
 async def test_ga4_discover_map_sync_and_insights_consumption(

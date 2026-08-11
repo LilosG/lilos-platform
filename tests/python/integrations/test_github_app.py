@@ -209,6 +209,47 @@ async def test_github_app_repository_discovery(
         assert repos[0].default_branch == "main"
 
 
+@pytest.mark.anyio
+async def test_github_app_repository_discovery_paginates_all_repositories() -> None:
+    settings = make_github_settings()
+    requested_pages: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path == "/app/installations/99999/access_tokens":
+            return httpx.Response(
+                201,
+                json={
+                    "token": "ghs_test_installation_token",
+                    "expires_at": (datetime.now(UTC) + timedelta(hours=1)).isoformat(),
+                },
+            )
+        if path == "/installation/repositories":
+            page = int(request.url.params.get("page", "1"))
+            assert request.url.params["per_page"] == "100"
+            requested_pages.append(page)
+            start = 0 if page == 1 else 100
+            count = 100 if page == 1 else 1
+            repositories = [
+                {
+                    "full_name": f"owner/repo-{index}",
+                    "name": f"repo-{index}",
+                    "default_branch": "main",
+                    "private": False,
+                }
+                for index in range(start, start + count)
+            ]
+            return httpx.Response(200, json={"repositories": repositories, "total_count": 101})
+        return httpx.Response(404, text=f"unexpected: {path}")
+
+    service = GitHubAppService(http_client_factory=mock_client_factory(handler))
+    repositories = await service.list_installation_repositories(settings, "99999")
+
+    assert len(repositories) == 101
+    assert repositories[-1].repository_id == "owner/repo-100"
+    assert requested_pages == [1, 2]
+
+
 @pytest.mark.integration
 @pytest.mark.anyio
 async def test_publisher_resolves_installation_token_not_pat(

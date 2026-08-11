@@ -6,6 +6,7 @@ deterministic fake and the Google OAuth token is short-circuited by writing a
 connected connection with the Search Console scope granted directly.
 """
 
+import json
 from collections.abc import Callable, Sequence
 from urllib.parse import parse_qs, urlsplit
 from uuid import UUID, uuid4
@@ -29,6 +30,7 @@ from apps.api.app.organizations.models import Organization
 from apps.api.app.products.seo.models import SEOSearchObservation, SEOWebsite
 from apps.api.app.products.seo.search_console_adapter import (
     DiscoveredSearchProperty,
+    GoogleSearchConsoleAdapter,
     SearchAnalyticsRow,
     SearchConsoleAdapter,
 )
@@ -181,6 +183,40 @@ def test_recommend_property_prefers_domain_match_over_url_prefix() -> None:
 def test_recommend_property_returns_none_when_no_match() -> None:
     properties = [DiscoveredSearchProperty("https://other.example/", "url_prefix", "siteOwner")]
     assert recommend_property(properties, "https://wheylandelectric.com/") is None
+
+
+@pytest.mark.anyio
+async def test_search_console_adapter_paginates_search_analytics_rows() -> None:
+    starts: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path.endswith("/searchAnalytics/query")
+        parsed = json.loads(request.content)
+        starts.append(int(parsed["startRow"]))
+        start = int(parsed["startRow"])
+        rows = [
+            {
+                "keys": [f"query-{index}"],
+                "clicks": index,
+                "impressions": index + 10,
+                "ctr": 0.5,
+                "position": 2.0,
+            }
+            for index in range(start, start + (2 if start == 0 else 1))
+        ]
+        return httpx.Response(200, json={"rows": rows})
+
+    adapter = GoogleSearchConsoleAdapter(http_client_factory=mock_client_factory(handler))
+    rows = await adapter.query_search_analytics(
+        "access-token",
+        "https://example.com/",
+        start_date="2026-01-01",
+        end_date="2026-01-31",
+        row_limit=2,
+    )
+
+    assert [row.keys for row in rows] == [("query-0",), ("query-1",), ("query-2",)]
+    assert starts == [0, 2]
 
 
 @pytest.mark.integration

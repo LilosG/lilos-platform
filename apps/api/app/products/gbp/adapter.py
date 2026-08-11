@@ -1,7 +1,7 @@
 """Narrow Google Business Profile adapter and deterministic contract."""
 
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 import httpx
 
@@ -28,6 +28,12 @@ SUPPORTED_READ_MASK = ",".join(
     ]
 )
 SUPPORTED_WRITE_FIELDS = frozenset({"profile.description", "regularHours"})
+
+ACCOUNT_PAGE_SIZE = 20
+LOCATION_PAGE_SIZE = 100
+REVIEW_PAGE_SIZE = 50
+LOCAL_POST_PAGE_SIZE = 100
+MAX_PROVIDER_PAGES = 1_000
 
 SUPPORTED_POST_TYPES = frozenset({"STANDARD", "OFFER", "EVENT"})
 SUPPORTED_CTA_TYPES = frozenset({"BOOK", "ORDER", "SHOP", "LEARN_MORE", "SIGN_UP", "CALL", "MENU"})
@@ -87,21 +93,62 @@ class GoogleBusinessProfileAdapter:
             raise ValueError("invalid provider response")
         return payload
 
+    @staticmethod
+    def _page_items(payload: dict[str, Any], key: str) -> list[dict[str, Any]]:
+        raw_items = payload.get(key, [])
+        if not isinstance(raw_items, list) or not all(isinstance(item, dict) for item in raw_items):
+            raise ValueError(f"invalid provider {key} page")
+        return cast(list[dict[str, Any]], raw_items)
+
+    @staticmethod
+    def _next_page_token(payload: dict[str, Any]) -> str | None:
+        raw_token = payload.get("nextPageToken")
+        if raw_token is None or raw_token == "":
+            return None
+        if not isinstance(raw_token, str) or not raw_token.strip():
+            raise ValueError("invalid provider pagination token")
+        return raw_token
+
     async def list_accounts(self, access_token: str) -> list[dict[str, Any]]:
-        return list(
-            (await self._request("GET", f"{ACCOUNT_BASE}/accounts", access_token)).get(
-                "accounts", []
-            )
-        )
+        url = f"{ACCOUNT_BASE}/accounts"
+        params: dict[str, int | str] = {"pageSize": ACCOUNT_PAGE_SIZE}
+        accounts: list[dict[str, Any]] = []
+        seen_tokens: set[str] = set()
+        for _page_number in range(MAX_PROVIDER_PAGES):
+            payload = await self._request("GET", url, access_token, params=params)
+            accounts.extend(self._page_items(payload, "accounts"))
+            token = self._next_page_token(payload)
+            if token is None:
+                return accounts
+            if token in seen_tokens:
+                raise ValueError("provider pagination token repeated")
+            seen_tokens.add(token)
+            params = {"pageSize": ACCOUNT_PAGE_SIZE, "pageToken": token}
+        raise ValueError("provider account pagination exceeded safety limit")
 
     async def list_locations(self, access_token: str, account_name: str) -> list[dict[str, Any]]:
-        payload = await self._request(
-            "GET",
-            f"{INFO_BASE}/{account_name}/locations",
-            access_token,
-            params={"readMask": SUPPORTED_READ_MASK, "pageSize": 100},
-        )
-        return list(payload.get("locations", []))
+        url = f"{INFO_BASE}/{account_name}/locations"
+        params: dict[str, int | str] = {
+            "readMask": SUPPORTED_READ_MASK,
+            "pageSize": LOCATION_PAGE_SIZE,
+        }
+        locations: list[dict[str, Any]] = []
+        seen_tokens: set[str] = set()
+        for _page_number in range(MAX_PROVIDER_PAGES):
+            payload = await self._request("GET", url, access_token, params=params)
+            locations.extend(self._page_items(payload, "locations"))
+            token = self._next_page_token(payload)
+            if token is None:
+                return locations
+            if token in seen_tokens:
+                raise ValueError("provider pagination token repeated")
+            seen_tokens.add(token)
+            params = {
+                "readMask": SUPPORTED_READ_MASK,
+                "pageSize": LOCATION_PAGE_SIZE,
+                "pageToken": token,
+            }
+        raise ValueError("provider location pagination exceeded safety limit")
 
     async def get_location(self, access_token: str, location_name: str) -> dict[str, Any]:
         return await self._request(
@@ -156,14 +203,38 @@ class GoogleBusinessProfileAdapter:
         ``accounts/{accountId}/locations/{locationId}``.  Returns the raw
         ``reviews`` array (each entry has ``name``, ``reviewId``,
         ``starRating``, ``comment``, ``createTime``, ``updateTime``).
+
+        Google caps this endpoint at 50 reviews per page.  Follow the
+        provider's opaque page token until the collection is complete while
+        guarding against malformed, repeated, or unbounded token sequences.
         """
-        payload = await self._request(
-            "GET",
-            f"{MYBUSINESS_BASE}/{location_name}/reviews",
-            access_token,
-            params={"pageSize": 100},
-        )
-        return list(payload.get("reviews", []))
+        url = f"{MYBUSINESS_BASE}/{location_name}/reviews"
+        params: dict[str, int | str] = {"pageSize": REVIEW_PAGE_SIZE}
+        reviews: list[dict[str, Any]] = []
+        seen_tokens: set[str] = set()
+        provider_total: int | None = None
+
+        for _page_number in range(MAX_PROVIDER_PAGES):
+            payload = await self._request("GET", url, access_token, params=params)
+            reviews.extend(self._page_items(payload, "reviews"))
+
+            raw_total = payload.get("totalReviewCount")
+            if raw_total is not None:
+                if isinstance(raw_total, bool) or not isinstance(raw_total, int) or raw_total < 0:
+                    raise ValueError("invalid provider totalReviewCount")
+                provider_total = max(provider_total or 0, raw_total)
+
+            raw_token = self._next_page_token(payload)
+            if raw_token is None:
+                if provider_total is not None and len(reviews) != provider_total:
+                    raise ValueError("provider review pagination is incomplete")
+                return reviews
+            if raw_token in seen_tokens:
+                raise ValueError("provider review pagination token repeated")
+            seen_tokens.add(raw_token)
+            params = {"pageSize": REVIEW_PAGE_SIZE, "pageToken": raw_token}
+
+        raise ValueError("provider review pagination exceeded safety limit")
 
     async def create_local_post(
         self, access_token: str, location_name: str, post_body: dict[str, Any]
@@ -194,10 +265,18 @@ class GoogleBusinessProfileAdapter:
 
     async def list_local_posts(self, access_token: str, location_name: str) -> list[dict[str, Any]]:
         """List Local Posts for a location (for reconciliation)."""
-        payload = await self._request(
-            "GET",
-            f"{MYBUSINESS_BASE}/{location_name}/localPosts",
-            access_token,
-            params={"pageSize": 100},
-        )
-        return list(payload.get("localPosts", []))
+        url = f"{MYBUSINESS_BASE}/{location_name}/localPosts"
+        params: dict[str, int | str] = {"pageSize": LOCAL_POST_PAGE_SIZE}
+        posts: list[dict[str, Any]] = []
+        seen_tokens: set[str] = set()
+        for _page_number in range(MAX_PROVIDER_PAGES):
+            payload = await self._request("GET", url, access_token, params=params)
+            posts.extend(self._page_items(payload, "localPosts"))
+            token = self._next_page_token(payload)
+            if token is None:
+                return posts
+            if token in seen_tokens:
+                raise ValueError("provider pagination token repeated")
+            seen_tokens.add(token)
+            params = {"pageSize": LOCAL_POST_PAGE_SIZE, "pageToken": token}
+        raise ValueError("provider local post pagination exceeded safety limit")

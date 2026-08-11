@@ -18,6 +18,8 @@ from typing import Any
 import httpx
 
 GITHUB_API = "https://api.github.com"
+GITHUB_PAGE_SIZE = 100
+MAX_GITHUB_PAGES = 1_000
 
 
 @dataclass(slots=True)
@@ -34,9 +36,9 @@ class GitHubRepositoryPublisher:
             "X-GitHub-Api-Version": "2022-11-28",
         }
 
-    async def _request(
+    async def _request_json(
         self, method: str, path: str, *, expected_status: int = 200, **kwargs: Any
-    ) -> dict[str, Any]:
+    ) -> Any:
         async with httpx.AsyncClient(
             timeout=self.timeout_seconds, follow_redirects=False
         ) as client:
@@ -49,7 +51,12 @@ class GitHubRepositoryPublisher:
             )
         if not response.content:
             return {}
-        payload = response.json()
+        return response.json()
+
+    async def _request(
+        self, method: str, path: str, *, expected_status: int = 200, **kwargs: Any
+    ) -> dict[str, Any]:
+        payload = await self._request_json(method, path, expected_status=expected_status, **kwargs)
         if not isinstance(payload, dict):
             raise RuntimeError("invalid GitHub response")
         return payload
@@ -120,11 +127,35 @@ class GitHubRepositoryPublisher:
         return await self._request("GET", f"/repos/{repository_id}/pulls/{pr_number}")
 
     async def checks(self, repository_id: str, revision_id: str) -> dict[str, str]:
-        payload = await self._request(
-            "GET",
-            f"/repos/{repository_id}/commits/{revision_id}/check-runs",
-        )
-        runs = list(payload.get("check_runs", []))
+        runs: list[dict[str, Any]] = []
+        provider_total: int | None = None
+        for page_number in range(1, MAX_GITHUB_PAGES + 1):
+            payload = await self._request(
+                "GET",
+                f"/repos/{repository_id}/commits/{revision_id}/check-runs",
+                params={"page": page_number, "per_page": GITHUB_PAGE_SIZE},
+            )
+            raw_runs = payload.get("check_runs", [])
+            if not isinstance(raw_runs, list) or not all(isinstance(run, dict) for run in raw_runs):
+                raise RuntimeError("invalid GitHub check-runs page")
+            page_runs = list(raw_runs)
+            runs.extend(page_runs)
+            raw_total = payload.get("total_count")
+            if raw_total is not None:
+                if isinstance(raw_total, bool) or not isinstance(raw_total, int) or raw_total < 0:
+                    raise RuntimeError("invalid GitHub check-runs total_count")
+                provider_total = max(provider_total or 0, raw_total)
+            if provider_total is not None and len(runs) > provider_total:
+                raise RuntimeError("GitHub check-runs exceeded provider total")
+            if provider_total is not None and len(runs) == provider_total:
+                break
+            if provider_total is None and len(page_runs) < GITHUB_PAGE_SIZE:
+                break
+            if provider_total is not None and len(page_runs) < GITHUB_PAGE_SIZE:
+                raise RuntimeError("GitHub check-runs pagination is incomplete")
+        else:
+            raise RuntimeError("GitHub check-runs pagination exceeded safety limit")
+
         if not runs:
             return {"state": "none"}
         states = {str(run.get("conclusion") or run.get("status", "")).lower() for run in runs}
@@ -135,12 +166,28 @@ class GitHubRepositoryPublisher:
         return {"state": "pending"}
 
     async def deployment(self, repository_id: str, revision_id: str) -> dict[str, str]:
-        payload = await self._request(
-            "GET",
-            f"/repos/{repository_id}/deployments",
-            params={"sha": revision_id},
-        )
-        deployments: list[dict[str, Any]] = list(payload) if isinstance(payload, list) else []
+        deployments: list[dict[str, Any]] = []
+        for page_number in range(1, MAX_GITHUB_PAGES + 1):
+            payload = await self._request_json(
+                "GET",
+                f"/repos/{repository_id}/deployments",
+                params={
+                    "sha": revision_id,
+                    "page": page_number,
+                    "per_page": GITHUB_PAGE_SIZE,
+                },
+            )
+            if not isinstance(payload, list) or not all(
+                isinstance(deployment, dict) for deployment in payload
+            ):
+                raise RuntimeError("invalid GitHub deployments page")
+            page_deployments = list(payload)
+            deployments.extend(page_deployments)
+            if len(page_deployments) < GITHUB_PAGE_SIZE:
+                break
+        else:
+            raise RuntimeError("GitHub deployment pagination exceeded safety limit")
+
         if not deployments:
             return {"state": "none", "url": ""}
         latest = deployments[0]

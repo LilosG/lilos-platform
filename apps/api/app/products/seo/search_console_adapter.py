@@ -16,12 +16,14 @@ Search Console searchAnalytics report returns.
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 from urllib.parse import quote
 
 import httpx
 
 SEARCH_CONSOLE_API = "https://www.googleapis.com/webmasters/v3"
+SEARCH_ANALYTICS_MAX_ROW_LIMIT = 25_000
+MAX_SEARCH_ANALYTICS_PAGES = 1_000
 
 
 @dataclass(frozen=True, slots=True)
@@ -149,33 +151,45 @@ class GoogleSearchConsoleAdapter:
         dimensions: Sequence[str] = ("query",),
         row_limit: int = 1000,
     ) -> list[SearchAnalyticsRow]:
-        body = {
-            "startDate": start_date,
-            "endDate": end_date,
-            "dimensions": list(dimensions),
-            "rowLimit": row_limit,
-        }
+        if not 1 <= row_limit <= SEARCH_ANALYTICS_MAX_ROW_LIMIT:
+            raise ValueError("Search Console row_limit must be between 1 and 25,000")
         # The ``siteUrl`` path parameter must be fully URL-encoded; URL-prefix
         # properties contain slashes and a scheme, and domain properties contain
         # a colon (``sc-domain:``).
         encoded_site = quote(site_url, safe="")
-        payload = await self._post(
-            access_token,
-            f"/sites/{encoded_site}/searchAnalytics/query",
-            body,
-            expected_status=200,
-        )
-        rows = payload.get("rows") or []
         results: list[SearchAnalyticsRow] = []
-        for row in rows:
-            keys = tuple(str(key) for key in (row.get("keys") or []))
-            results.append(
-                SearchAnalyticsRow(
-                    keys=keys,
-                    clicks=int(row.get("clicks", 0)),
-                    impressions=int(row.get("impressions", 0)),
-                    ctr=float(row.get("ctr", 0.0)),
-                    position=float(row.get("position", 0.0)),
-                )
+        start_row = 0
+        for _page_number in range(MAX_SEARCH_ANALYTICS_PAGES):
+            body = {
+                "startDate": start_date,
+                "endDate": end_date,
+                "dimensions": list(dimensions),
+                "rowLimit": row_limit,
+                "startRow": start_row,
+            }
+            payload = await self._post(
+                access_token,
+                f"/sites/{encoded_site}/searchAnalytics/query",
+                body,
+                expected_status=200,
             )
-        return results
+            raw_rows = payload.get("rows", [])
+            if not isinstance(raw_rows, list) or not all(isinstance(row, dict) for row in raw_rows):
+                raise RuntimeError("invalid Search Console analytics page")
+            rows = cast(list[dict[str, Any]], raw_rows)
+            for row in rows:
+                keys = tuple(str(key) for key in (row.get("keys") or []))
+                results.append(
+                    SearchAnalyticsRow(
+                        keys=keys,
+                        clicks=int(row.get("clicks", 0)),
+                        impressions=int(row.get("impressions", 0)),
+                        ctr=float(row.get("ctr", 0.0)),
+                        position=float(row.get("position", 0.0)),
+                    )
+                )
+            if len(rows) < row_limit:
+                return results
+            start_row += len(rows)
+
+        raise RuntimeError("Search Console analytics pagination exceeded safety limit")

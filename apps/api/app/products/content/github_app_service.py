@@ -47,6 +47,8 @@ GITHUB_AUTHORIZE_ENDPOINT = "https://github.com/login/oauth/authorize"
 GITHUB_INSTALLATION_PREFIX = "installation:"
 INSTALLATION_TOKEN_LIFETIME = timedelta(hours=1)
 APP_JWT_LIFETIME = timedelta(minutes=10)
+GITHUB_PAGE_SIZE = 100
+MAX_GITHUB_PAGES = 1_000
 
 
 @dataclass(frozen=True, slots=True)
@@ -279,37 +281,67 @@ class GitHubAppService:
         self, settings: Settings, installation_id: str
     ) -> list[DiscoveredRepository]:
         token = await self.create_installation_token(settings, installation_id)
-        async with self.http_client_factory() as client:
-            response = await client.get(
-                f"{GITHUB_API}/installation/repositories",
-                headers={
-                    "Authorization": f"Bearer {token.token}",
-                    "Accept": "application/vnd.github+json",
-                    "X-GitHub-Api-Version": "2022-11-28",
-                },
-                timeout=self.timeout_seconds,
-            )
-        if response.status_code != 200:
-            raise RuntimeError(
-                f"GitHub installation repositories returned {response.status_code}: "
-                f"{response.text[:200]}"
-            )
-        payload = response.json()
-        repositories = payload.get("repositories") or []
+        url = f"{GITHUB_API}/installation/repositories"
         results: list[DiscoveredRepository] = []
-        for repo in repositories:
-            full_name = str(repo.get("full_name", ""))
-            if not full_name:
-                continue
-            results.append(
-                DiscoveredRepository(
-                    repository_id=full_name,
-                    name=str(repo.get("name", "")),
-                    default_branch=str(repo.get("default_branch", "main")),
-                    private=bool(repo.get("private", False)),
+        raw_count = 0
+        provider_total: int | None = None
+        for page_number in range(1, MAX_GITHUB_PAGES + 1):
+            async with self.http_client_factory() as client:
+                response = await client.get(
+                    url,
+                    headers={
+                        "Authorization": f"Bearer {token.token}",
+                        "Accept": "application/vnd.github+json",
+                        "X-GitHub-Api-Version": "2022-11-28",
+                    },
+                    params={"page": page_number, "per_page": GITHUB_PAGE_SIZE},
+                    timeout=self.timeout_seconds,
                 )
-            )
-        return results
+            if response.status_code != 200:
+                raise RuntimeError(
+                    f"GitHub installation repositories returned {response.status_code}: "
+                    f"{response.text[:200]}"
+                )
+            payload = response.json()
+            if not isinstance(payload, dict):
+                raise RuntimeError("invalid GitHub installation repositories response")
+            repositories = payload.get("repositories", [])
+            if not isinstance(repositories, list) or not all(
+                isinstance(repo, dict) for repo in repositories
+            ):
+                raise RuntimeError("invalid GitHub repositories page")
+            raw_repositories = cast(list[dict[str, Any]], repositories)
+            raw_count += len(raw_repositories)
+
+            raw_total = payload.get("total_count")
+            if raw_total is not None:
+                if isinstance(raw_total, bool) or not isinstance(raw_total, int) or raw_total < 0:
+                    raise RuntimeError("invalid GitHub repository total_count")
+                provider_total = max(provider_total or 0, raw_total)
+            if provider_total is not None and raw_count > provider_total:
+                raise RuntimeError("GitHub repository pagination exceeded provider total")
+
+            for repo in raw_repositories:
+                full_name = str(repo.get("full_name", ""))
+                if not full_name:
+                    continue
+                results.append(
+                    DiscoveredRepository(
+                        repository_id=full_name,
+                        name=str(repo.get("name", "")),
+                        default_branch=str(repo.get("default_branch", "main")),
+                        private=bool(repo.get("private", False)),
+                    )
+                )
+
+            if provider_total is not None and raw_count == provider_total:
+                return results
+            if provider_total is None and len(raw_repositories) < GITHUB_PAGE_SIZE:
+                return results
+            if provider_total is not None and len(raw_repositories) < GITHUB_PAGE_SIZE:
+                raise RuntimeError("GitHub repository pagination is incomplete")
+
+        raise RuntimeError("GitHub repository pagination exceeded safety limit")
 
     # -- connection lookup ---------------------------------------------------
 
