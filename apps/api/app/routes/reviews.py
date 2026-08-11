@@ -58,6 +58,7 @@ def review_row(item: Review) -> dict[str, object]:
         "risk_level": item.risk_level,
         "provider": item.provider,
         "review_created_at": item.review_created_at,
+        "last_synced_at": item.last_synced_at,
         "current_revision_number": item.current_revision_number,
     }
 

@@ -118,6 +118,28 @@ async def test_list_reviews_uses_provider_maximum_and_one_page_for_50_reviews() 
 
 
 @pytest.mark.anyio
+async def test_list_reviews_preserves_provider_reply_moderation_payload() -> None:
+    provider_reply = {
+        "comment": "Thank you!",
+        "updateTime": "2026-08-11T12:00:00Z",
+        "reviewReplyState": "REJECTED",
+        "policyViolation": "OFF_TOPIC",
+    }
+    adapter = StubGoogleBusinessProfileAdapter(
+        [
+            {
+                "reviews": [{"reviewId": "review-1", "reviewReply": provider_reply}],
+                "totalReviewCount": 1,
+            }
+        ]
+    )
+
+    result = await adapter.list_reviews("token", "accounts/1/locations/2")
+
+    assert result == [{"reviewId": "review-1", "reviewReply": provider_reply}]
+
+
+@pytest.mark.anyio
 async def test_list_reviews_follows_token_and_returns_all_90_in_page_order() -> None:
     adapter = StubGoogleBusinessProfileAdapter(
         [

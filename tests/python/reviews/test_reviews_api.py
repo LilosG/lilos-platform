@@ -299,6 +299,7 @@ def test_ingest_classifies_and_lists_with_filters_search_and_pagination(
     assert listing.headers["Cache-Control"] == "no-store"
     assert len(listing.json()["data"]) == 2
     assert listing.json()["pagination"]["limit"] == 50
+    assert all(item["last_synced_at"] for item in listing.json()["data"])
 
     restricted = [item for item in listing.json()["data"] if item["risk_level"] == "high"]
     assert len(restricted) == 1

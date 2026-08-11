@@ -94,6 +94,8 @@ import "../styles/global.css";
                 <option value="new">New</option>
                 <option value="classified">Classified</option>
                 <option value="escalated">Escalated</option>
+                <option value="publishing">Pending Google moderation</option>
+                <option value="publication_failed">Response failed</option>
                 <option value="responded">Responded</option>
                 <option value="restricted">Restricted</option>
               </select>
@@ -144,6 +146,9 @@ import "../styles/global.css";
         approveResponse,
         publishResponse,
         ingestReviews,
+        canDraftReviewResponse,
+        reviewResponseSourceLabel,
+        summarizeReviewStatuses,
         type ReviewSummary,
       } from "../lib/reviews";
       import { resolveBusinessFact } from "../lib/administration";
@@ -254,25 +259,19 @@ import "../styles/global.css";
           return;
         }
         const stats = summary.data;
-        const total = Object.values(stats.by_status ?? {}).reduce(
-          (a, b) => a + b,
-          0,
-        );
-        const newCount = stats.by_status?.["new"] ?? 0;
-        const needsResponse =
-          (stats.by_status?.["new"] ?? 0) +
-          (stats.by_status?.["classified"] ?? 0);
+        const counts = summarizeReviewStatuses(stats);
         grid.append(
           metricCard(
             "Average rating",
             stats.average_rating ? stats.average_rating.toFixed(1) : "—",
             "Out of 5",
           ),
-          metricCard("Total reviews", String(total), "All time"),
-          metricCard("New", String(newCount), "Awaiting review"),
+          metricCard("Total reviews", String(counts.total), "All time"),
+          metricCard("Responded", String(counts.responded), "Provider truth"),
+          metricCard("New", String(counts.newCount), "Awaiting review"),
           metricCard(
             "Needs response",
-            String(needsResponse),
+            String(counts.needsResponse),
             "Action required",
           ),
         );
@@ -393,7 +392,7 @@ import "../styles/global.css";
         reviewBody.append(
           Object.assign(document.createElement("p"), {
             className: "text-xs muted",
-            textContent: `Provider: ${review.provider} · ${formatTimestamp(review.review_created_at)}`,
+            textContent: `Provider: ${review.provider} · ${formatTimestamp(review.review_created_at)} · Last synced ${formatTimestamp(detailResult.data.last_synced_at)}`,
           }),
         );
         reviewCard.append(reviewBody);
@@ -525,7 +524,9 @@ import "../styles/global.css";
         btnRow.append(saveBtn, aiBtn, status);
         composeBody.append(btnRow);
         composeCard.append(composeBody);
-        content.append(composeCard);
+        if (canDraftReviewResponse(review.status)) {
+          content.append(composeCard);
+        }
 
         // Response history
         if (responsesResult.kind === "ok" && responsesResult.data.length > 0) {
@@ -548,7 +549,7 @@ import "../styles/global.css";
             const item = document.createElement("li");
             const info = document.createElement("div");
             const name = document.createElement("h3");
-            name.textContent = `${resp.generated_by_type} · ${resp.status}`;
+            name.textContent = `${reviewResponseSourceLabel(resp.generated_by_type)} · ${resp.status}`;
             const detail = document.createElement("p");
             detail.textContent =
               resp.response_text.length > 100
