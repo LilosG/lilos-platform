@@ -1,6 +1,8 @@
 """Deterministic review ingestion, risk, drafting, approval, and publication intent."""
 
 import hashlib
+import json
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TypedDict, cast
 from uuid import UUID
@@ -61,6 +63,9 @@ NOTIFICATION_TEMPLATES = {
         "A review response was reserved for publication.",
     ),
 }
+PROVIDER_OBSERVED_TYPE = "imported"
+ACTIVE_LOCAL_RESPONSE_STATUSES = ("draft", "generated", "awaiting_approval", "approved")
+PROVIDER_REPLY_STATE_UNSPECIFIED = "REVIEW_REPLY_STATE_UNSPECIFIED"
 
 
 class ReviewClassification(TypedDict):
@@ -68,6 +73,56 @@ class ReviewClassification(TypedDict):
     restricted: bool
     sentiment: str
     rating_band: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class ProviderReplyObservation:
+    """Normalized, read-only provider truth for an observed review reply."""
+
+    comment: str
+    updated_at: datetime | None
+    state: str
+    policy_violation: str | None
+    external_response_id: str
+
+
+def provider_reply_hash(reply: ProviderReplyObservation) -> str:
+    """Fingerprint every provider-owned field that can change independently."""
+
+    payload = {
+        "comment": reply.comment,
+        "external_response_id": reply.external_response_id,
+        "policy_violation": reply.policy_violation,
+        "state": reply.state,
+        "updated_at": reply.updated_at.isoformat() if reply.updated_at else None,
+    }
+    return hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+
+
+def provider_reply_lifecycle(
+    reply: ProviderReplyObservation,
+) -> tuple[str, str, str | None, datetime | None]:
+    """Map Google moderation truth to response and review lifecycle states."""
+
+    state = reply.state
+    if state == "APPROVED":
+        return "published", "responded", None, reply.updated_at
+    if state == "PENDING":
+        return "publishing", "publishing", None, None
+    if state == "REJECTED":
+        return "rejected", "publication_failed", "GOOGLE_REVIEW_REPLY_REJECTED", None
+    if state == PROVIDER_REPLY_STATE_UNSPECIFIED and reply.comment.strip():
+        # Compatibility for legacy responses returned before moderation state
+        # was available, and for accounts that omit the optional state.
+        return "published", "responded", None, reply.updated_at
+    return (
+        "reconciliation_required",
+        "publication_failed",
+        "GOOGLE_REVIEW_REPLY_STATE_UNRESOLVED",
+        None,
+    )
 
 
 def review_hash(rating: float | None, title: str | None, body: str | None) -> str:
@@ -180,6 +235,194 @@ class ReviewService:
             location_id=location_id,
         )
 
+    @staticmethod
+    def _restore_actionable_status(review: Review, revision: ReviewRevision) -> None:
+        """Restore the review's content-derived state after a provider reply disappears."""
+
+        result = classify(
+            revision.body,
+            float(revision.rating) if revision.rating is not None else None,
+        )
+        review.sentiment = str(result["sentiment"])
+        review.status = "escalated" if result["restricted"] else "classified"
+        review.risk_level = "high" if result["restricted"] else "low"
+
+    async def _reconcile_provider_reply(
+        self,
+        session: AsyncSession,
+        *,
+        review: Review,
+        review_revision: ReviewRevision,
+        provider_reply: ProviderReplyObservation | None,
+        correlation_id: str,
+    ) -> None:
+        """Reconcile provider-owned reply truth independently from review content."""
+
+        responses = list(
+            await session.scalars(
+                select(ReviewResponseRevision)
+                .where(
+                    ReviewResponseRevision.organization_id == review.organization_id,
+                    ReviewResponseRevision.location_id == review.location_id,
+                    ReviewResponseRevision.review_id == review.id,
+                )
+                .order_by(ReviewResponseRevision.revision_number)
+                .with_for_update()
+            )
+        )
+        active_provider = [
+            response
+            for response in responses
+            if response.generated_by_type == PROVIDER_OBSERVED_TYPE
+            and response.status != "superseded"
+        ]
+        published_local = [
+            response
+            for response in responses
+            if response.generated_by_type != PROVIDER_OBSERVED_TYPE
+            and response.status == "published"
+            and response.external_response_id is not None
+        ]
+
+        if provider_reply is None:
+            if not active_provider and not published_local:
+                return
+            for response in active_provider:
+                response.status = "superseded"
+                await self._audit(
+                    session,
+                    event="reviews.response.provider_removed",
+                    organization_id=review.organization_id,
+                    location_id=review.location_id,
+                    actor_id=None,
+                    resource_type="review_response_revision",
+                    resource_id=response.id,
+                    correlation_id=correlation_id,
+                    summary="A previously observed Google response is no longer present.",
+                    metadata={
+                        "external_response_id": response.external_response_id,
+                        "revision": response.revision_number,
+                    },
+                )
+            for response in published_local:
+                response.status = "reconciliation_required"
+                response.safe_error_code = "GOOGLE_REVIEW_REPLY_MISSING"
+                await self._audit(
+                    session,
+                    event="reviews.response.provider_removed",
+                    organization_id=review.organization_id,
+                    location_id=review.location_id,
+                    actor_id=None,
+                    resource_type="review_response_revision",
+                    resource_id=response.id,
+                    correlation_id=correlation_id,
+                    summary="A LILOs-published response is no longer present on Google.",
+                    metadata={
+                        "external_response_id": response.external_response_id,
+                        "revision": response.revision_number,
+                    },
+                )
+            self._restore_actionable_status(review, review_revision)
+            return
+
+        response_status, review_status, safe_error_code, published_at = provider_reply_lifecycle(
+            provider_reply
+        )
+        digest = provider_reply_hash(provider_reply)
+        current = next(
+            (
+                response
+                for response in reversed(active_provider)
+                if response.content_hash == digest
+                and response.external_response_id == provider_reply.external_response_id
+            ),
+            None,
+        )
+        created = current is None
+        if current is None:
+            for response in active_provider:
+                response.status = "superseded"
+            current = ReviewResponseRevision(
+                organization_id=review.organization_id,
+                location_id=review.location_id,
+                review_id=review.id,
+                review_revision_id=review_revision.id,
+                revision_number=(responses[-1].revision_number if responses else 0) + 1,
+                response_text=provider_reply.comment,
+                content_hash=digest,
+                status=response_status,
+                generated_by_type=PROVIDER_OBSERVED_TYPE,
+                ai_execution_id=None,
+                approved_fact_revision_ids=[],
+                approval_reference_id=None,
+                approved_by_user_id=None,
+                approved_at=None,
+                external_response_id=provider_reply.external_response_id,
+                published_at=published_at,
+                idempotency_key=None,
+                safe_error_code=safe_error_code,
+            )
+            session.add(current)
+            await session.flush()
+        else:
+            # Re-assert deterministic current truth if an earlier workflow state
+            # transition touched the provider-observation row.
+            current.status = response_status
+            current.safe_error_code = safe_error_code
+            current.published_at = published_at
+            for response in active_provider:
+                if response.id != current.id:
+                    response.status = "superseded"
+
+        superseded_local = [
+            response
+            for response in responses
+            if response.generated_by_type != PROVIDER_OBSERVED_TYPE
+            and response.status in ACTIVE_LOCAL_RESPONSE_STATUSES
+        ]
+        for response in superseded_local:
+            response.status = "superseded"
+            await self._audit(
+                session,
+                event="reviews.response.superseded_by_provider",
+                organization_id=review.organization_id,
+                location_id=review.location_id,
+                actor_id=None,
+                resource_type="review_response_revision",
+                resource_id=response.id,
+                correlation_id=correlation_id,
+                summary="Local response work was superseded by an existing Google response.",
+                metadata={
+                    "provider_response_revision_id": str(current.id),
+                    "revision": response.revision_number,
+                },
+            )
+
+        review.status = review_status
+        if created:
+            await self._audit(
+                session,
+                event="reviews.response.provider_observed",
+                organization_id=review.organization_id,
+                location_id=review.location_id,
+                actor_id=None,
+                resource_type="review_response_revision",
+                resource_id=current.id,
+                correlation_id=correlation_id,
+                summary="Google review response state was observed and reconciled.",
+                metadata={
+                    "external_response_id": provider_reply.external_response_id,
+                    "policy_violation": provider_reply.policy_violation,
+                    "provider_reply_state": provider_reply.state,
+                    "provider_updated_at": provider_reply.updated_at.isoformat()
+                    if provider_reply.updated_at
+                    else None,
+                    "response_status": response_status,
+                    "review_status": review_status,
+                    "revision": current.revision_number,
+                },
+            )
+
     async def ingest(
         self,
         session: AsyncSession,
@@ -195,8 +438,11 @@ class ReviewService:
         created_at: datetime,
         updated_at: datetime | None,
         correlation_id: str,
+        provider_reply: ProviderReplyObservation | None = None,
     ) -> tuple[Review, ReviewRevision, bool]:
         digest = review_hash(rating, title, body)
+        observed_at = datetime.now(UTC)
+        content_changed = False
         review = await session.scalar(
             select(Review)
             .where(
@@ -207,26 +453,41 @@ class ReviewService:
             .with_for_update()
         )
         if review:
+            review.last_synced_at = observed_at
             current = await session.scalar(
                 select(ReviewRevision).where(
                     ReviewRevision.review_id == review.id, ReviewRevision.content_hash == digest
                 )
             )
             if current:
-                return review, current, False
-            number = review.current_revision_number + 1
-            review.current_revision_number = number
-            review.status = "new"
-            review.review_updated_at = updated_at
-            for response in (
-                await session.scalars(
-                    select(ReviewResponseRevision).where(
-                        ReviewResponseRevision.review_id == review.id,
-                        ReviewResponseRevision.status.in_(("approved", "awaiting_approval")),
+                revision = current
+            else:
+                number = review.current_revision_number + 1
+                review.current_revision_number = number
+                review.rating = rating
+                review.status = "new"
+                review.review_updated_at = updated_at
+                for response in (
+                    await session.scalars(
+                        select(ReviewResponseRevision).where(
+                            ReviewResponseRevision.review_id == review.id,
+                            ReviewResponseRevision.status.in_(("approved", "awaiting_approval")),
+                        )
                     )
+                ).all():
+                    response.status = "superseded"
+                revision = ReviewRevision(
+                    organization_id=organization_id,
+                    review_id=review.id,
+                    revision_number=number,
+                    rating=rating,
+                    title=title,
+                    body=body,
+                    content_hash=digest,
+                    change_summary="provider content changed",
                 )
-            ).all():
-                response.status = "superseded"
+                session.add(revision)
+                content_changed = True
         else:
             number = 1
             review = Review(
@@ -243,66 +504,77 @@ class ReviewService:
                 current_revision_number=1,
                 review_created_at=created_at,
                 review_updated_at=updated_at,
+                last_synced_at=observed_at,
             )
             session.add(review)
             await session.flush()
-        revision = ReviewRevision(
-            organization_id=organization_id,
-            review_id=review.id,
-            revision_number=number,
-            rating=rating,
-            title=title,
-            body=body,
-            content_hash=digest,
-            change_summary="provider content changed"
-            if number > 1
-            else "initial provider observation",
-        )
-        session.add(revision)
-        await session.flush()
-        result = classify(body, rating)
-        review.sentiment = str(result["sentiment"])
-        review.status = "escalated" if result["restricted"] else "classified"
-        review.risk_level = "high" if result["restricted"] else "low"
-        if result["restricted"]:
-            session.add(
-                ReviewEscalation(
-                    organization_id=organization_id,
-                    review_id=review.id,
-                    case_type=str(result["risks"][0]),
-                    severity="high",
-                    status="open",
-                    restricted=True,
-                    safe_reason="Deterministic restricted-risk candidate.",
-                )
+            revision = ReviewRevision(
+                organization_id=organization_id,
+                review_id=review.id,
+                revision_number=number,
+                rating=rating,
+                title=title,
+                body=body,
+                content_hash=digest,
+                change_summary="initial provider observation",
             )
-            await self._notify(
+            session.add(revision)
+            content_changed = True
+
+        if content_changed:
+            await session.flush()
+            result = classify(body, rating)
+            review.sentiment = str(result["sentiment"])
+            review.status = "escalated" if result["restricted"] else "classified"
+            review.risk_level = "high" if result["restricted"] else "low"
+            if result["restricted"]:
+                session.add(
+                    ReviewEscalation(
+                        organization_id=organization_id,
+                        review_id=review.id,
+                        case_type=str(result["risks"][0]),
+                        severity="high",
+                        status="open",
+                        restricted=True,
+                        safe_reason="Deterministic restricted-risk candidate.",
+                    )
+                )
+                await self._notify(
+                    session,
+                    organization_id=organization_id,
+                    location_id=location_id,
+                    event_type="reviews.restricted_case_created",
+                    idempotency_key=f"reviews.restricted.{review.id}.{revision.revision_number}",
+                    context={"review_id": str(review.id), "risk_types": result["risks"]},
+                    priority="high",
+                )
+            await session.flush()
+            await self._audit(
                 session,
+                event="reviews.review.ingested",
                 organization_id=organization_id,
                 location_id=location_id,
-                event_type="reviews.restricted_case_created",
-                idempotency_key=f"reviews.restricted.{review.id}.{revision.revision_number}",
-                context={"review_id": str(review.id), "risk_types": result["risks"]},
-                priority="high",
+                actor_id=None,
+                resource_type="review",
+                resource_id=review.id,
+                correlation_id=correlation_id,
+                summary="Review ingested and classified.",
+                metadata={
+                    "status": review.status,
+                    "risk_level": review.risk_level,
+                    "revision_number": revision.revision_number,
+                },
             )
-        await session.flush()
-        await self._audit(
+
+        await self._reconcile_provider_reply(
             session,
-            event="reviews.review.ingested",
-            organization_id=organization_id,
-            location_id=location_id,
-            actor_id=None,
-            resource_type="review",
-            resource_id=review.id,
+            review=review,
+            review_revision=revision,
+            provider_reply=provider_reply,
             correlation_id=correlation_id,
-            summary="Review ingested and classified.",
-            metadata={
-                "status": review.status,
-                "risk_level": review.risk_level,
-                "revision_number": revision.revision_number,
-            },
         )
-        return review, revision, True
+        await session.flush()
+        return review, revision, content_changed
 
     async def draft(
         self,

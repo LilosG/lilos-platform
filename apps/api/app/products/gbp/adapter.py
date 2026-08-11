@@ -202,7 +202,9 @@ class GoogleBusinessProfileAdapter:
         ``location_name`` must be the v4 account-qualified parent
         ``accounts/{accountId}/locations/{locationId}``.  Returns the raw
         ``reviews`` array (each entry has ``name``, ``reviewId``,
-        ``starRating``, ``comment``, ``createTime``, ``updateTime``).
+        ``starRating``, ``comment``, ``createTime``, ``updateTime``, and any
+        provider-owned ``reviewReply`` moderation data). The adapter preserves
+        that reply object for the Reviews domain to normalize and reconcile.
 
         Google caps this endpoint at 50 reviews per page.  Follow the
         provider's opaque page token until the collection is complete while

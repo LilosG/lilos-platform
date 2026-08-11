@@ -25,7 +25,11 @@ from apps.api.app.integrations.models import ProviderResourceMapping
 from apps.api.app.products.gbp.adapter import GBPAdapter, GoogleBusinessProfileAdapter
 from apps.api.app.products.gbp.models import GBPAccount, GBPLocation
 from apps.api.app.products.gbp.resource_names import v4_location_parent
-from apps.api.app.products.reviews.service import ReviewService
+from apps.api.app.products.reviews.service import (
+    PROVIDER_REPLY_STATE_UNSPECIFIED,
+    ProviderReplyObservation,
+    ReviewService,
+)
 
 _STAR_RATING = {
     "STAR_RATING_UNSPECIFIED": None,
@@ -48,10 +52,61 @@ def _parse_rating(raw: Any) -> float | None:
 
 def _parse_time(raw: Any) -> datetime:
     if isinstance(raw, datetime):
-        return raw
+        return raw.replace(tzinfo=UTC) if raw.tzinfo is None else raw.astimezone(UTC)
     if isinstance(raw, str):
-        return datetime.fromisoformat(raw.rstrip("Z")).replace(tzinfo=UTC)
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        return parsed.replace(tzinfo=UTC) if parsed.tzinfo is None else parsed.astimezone(UTC)
     return datetime.now(UTC)
+
+
+def _provider_enum(raw: Any, *, default: str | None) -> str | None:
+    if raw is None or raw == "":
+        return default
+    if not isinstance(raw, str):
+        raise ValueError("invalid Google review reply enum")
+    value = raw.strip().upper()
+    if not value or len(value) > 96 or not value.replace("_", "").isalnum():
+        raise ValueError("invalid Google review reply enum")
+    return value
+
+
+def _normalize_provider_reply(
+    raw_review: dict[str, Any], *, external_response_id: str
+) -> ProviderReplyObservation | None:
+    raw_reply = raw_review.get("reviewReply")
+    if raw_reply is None:
+        return None
+    if not isinstance(raw_reply, dict):
+        raise ValueError("invalid Google review reply")
+
+    raw_comment = raw_reply.get("comment")
+    if raw_comment is not None and not isinstance(raw_comment, str):
+        raise ValueError("invalid Google review reply comment")
+    comment = raw_comment or ""
+    state = _provider_enum(
+        raw_reply.get("reviewReplyState"), default=PROVIDER_REPLY_STATE_UNSPECIFIED
+    )
+    assert state is not None
+    policy_violation = _provider_enum(raw_reply.get("policyViolation"), default=None)
+    updated_at_raw = raw_reply.get("updateTime")
+    updated_at = _parse_time(updated_at_raw) if updated_at_raw else None
+
+    # Treat a wholly empty compatibility object as absence. A moderation state,
+    # timestamp, policy code, or comment is otherwise provider-owned evidence.
+    if (
+        not comment.strip()
+        and state == PROVIDER_REPLY_STATE_UNSPECIFIED
+        and updated_at is None
+        and policy_violation is None
+    ):
+        return None
+    return ProviderReplyObservation(
+        comment=comment,
+        updated_at=updated_at,
+        state=state,
+        policy_violation=policy_violation,
+        external_response_id=external_response_id,
+    )
 
 
 @dataclass(slots=True)
@@ -127,6 +182,15 @@ class ReviewIngestionService:
             created_at = _parse_time(raw.get("createTime"))
             updated_at_raw = raw.get("updateTime")
             updated_at = _parse_time(updated_at_raw) if updated_at_raw else None
+            raw_name = raw.get("name")
+            external_response_id = (
+                raw_name.strip()
+                if isinstance(raw_name, str) and raw_name.strip()
+                else f"{location_name}/reviews/{external_review_id}"
+            )
+            provider_reply = _normalize_provider_reply(
+                raw, external_response_id=external_response_id
+            )
             _review, _revision, created = await self.reviews.ingest(
                 session,
                 organization_id=organization_id,
@@ -140,6 +204,7 @@ class ReviewIngestionService:
                 created_at=created_at,
                 updated_at=updated_at,
                 correlation_id=correlation_id,
+                provider_reply=provider_reply,
             )
             if created:
                 ingested += 1

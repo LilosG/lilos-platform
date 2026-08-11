@@ -8,6 +8,7 @@ export type ReviewSummary = {
   risk_level: string;
   provider: string;
   review_created_at: string;
+  last_synced_at: string;
   current_revision_number: number;
 };
 
@@ -40,6 +41,48 @@ export type ReviewSummaryStats = {
   average_rating: number | null;
   open_restricted_cases: number;
 };
+
+const NEEDS_RESPONSE_STATUSES = [
+  "new",
+  "classified",
+  "triaged",
+  "drafting",
+  "awaiting_approval",
+  "approved",
+  "publication_failed",
+  "escalated",
+  "disputed",
+] as const;
+
+export function summarizeReviewStatuses(stats: ReviewSummaryStats): {
+  total: number;
+  newCount: number;
+  responded: number;
+  needsResponse: number;
+} {
+  const byStatus = stats.by_status ?? {};
+  return {
+    total: Object.values(byStatus).reduce((sum, count) => sum + count, 0),
+    newCount: byStatus.new ?? 0,
+    responded: byStatus.responded ?? 0,
+    needsResponse: NEEDS_RESPONSE_STATUSES.reduce(
+      (sum, status) => sum + (byStatus[status] ?? 0),
+      0,
+    ),
+  };
+}
+
+export function canDraftReviewResponse(reviewStatus: string): boolean {
+  return reviewStatus !== "responded" && reviewStatus !== "publishing";
+}
+
+export function reviewResponseSourceLabel(generatedByType: string): string {
+  if (generatedByType === "imported") return "Google response";
+  if (generatedByType === "ai") return "LILOs AI response";
+  if (generatedByType === "template") return "LILOs template response";
+  if (generatedByType === "user") return "LILOs manual response";
+  return "Response";
+}
 
 export type AuditEntry = {
   id: string;
