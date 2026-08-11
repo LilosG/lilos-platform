@@ -183,6 +183,7 @@ class GBPService:
     ) -> GBPProfileSnapshot:
         normalized = normalize_profile(payload)
         digest = canonical_hash(normalized)
+        observed_at = datetime.now(UTC)
         existing = await session.scalar(
             select(GBPProfileSnapshot).where(
                 GBPProfileSnapshot.organization_id == location.organization_id,
@@ -190,7 +191,9 @@ class GBPService:
                 GBPProfileSnapshot.content_hash == digest,
             )
         )
+        location.last_synced_at = observed_at
         if existing:
+            await session.flush()
             return existing
         item = GBPProfileSnapshot(
             organization_id=location.organization_id,
@@ -198,10 +201,9 @@ class GBPService:
             normalized_profile=normalized,
             content_hash=digest,
             completeness="partial" if partial else "full",
-            observed_at=datetime.now(UTC),
+            observed_at=observed_at,
         )
         session.add(item)
-        location.last_synced_at = item.observed_at
         await session.flush()
         return item
 
