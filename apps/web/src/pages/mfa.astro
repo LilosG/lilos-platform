@@ -16,7 +16,17 @@ import "../styles/global.css";
   <body>
     <main class="auth-page">
       <section aria-labelledby="mfa-title" class="auth-card">
-        <p class="eyebrow">LILOs</p><h1 id="mfa-title">Verify it's you</h1>
+        <div class="auth-brand">
+          <span class="brand__mark" aria-hidden="true">L</span>
+          <div><strong>LILOs</strong><span>Growth operations</span></div>
+        </div>
+        <p class="eyebrow">Protected administration</p><h1 id="mfa-title">
+          Verify it's you
+        </h1>
+        <p class="auth-card__intro">
+          Platform administration requires an authenticator code to protect
+          every client workspace.
+        </p>
 
         <div id="mfa-not-configured" hidden role="status">
           <p>
@@ -46,6 +56,10 @@ import "../styles/global.css";
             Platform-administrator access requires a second verification step.
             Scan this QR code with an authenticator app (e.g. 1Password, Google
             Authenticator, Authy), or enter the code manually.
+          </p>
+          <p class="source-note">
+            Store your authenticator recovery information in your approved
+            password manager. This screen cannot recover a lost factor.
           </p>
           <div id="mfa-qr-container"></div>
           <p>

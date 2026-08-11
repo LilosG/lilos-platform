@@ -103,6 +103,7 @@ import "../styles/global.css";
         errorAlert,
         describeFailure,
         formatTimestamp,
+        confirmInline,
         type BootRegions,
       } from "../lib/ui";
 
@@ -233,8 +234,10 @@ import "../styles/global.css";
 
         if (githubResult.kind === "ok" && githubResult.data.length > 0) {
           ghFooter.append(statusBadge("ready", "Connected"));
-        } else {
+        } else if (githubResult.kind === "ok") {
           ghFooter.append(statusBadge("setup", "Not connected"));
+        } else {
+          ghFooter.append(statusBadge("blocked", "Unavailable"));
         }
 
         githubCard.append(ghHeader, ghDesc, ghFooter);
@@ -392,7 +395,14 @@ import "../styles/global.css";
             : state.status === "reconnect_required"
               ? "blocked"
               : "setup";
-        panel.append(statusBadge(badgeKind, state.status));
+        panel.append(
+          statusBadge(
+            badgeKind,
+            state.status === "reconnect_required"
+              ? "Reconnect required"
+              : state.status.replace(/_/g, " "),
+          ),
+        );
 
         if (state.last_verified_at) {
           const verified = document.createElement("p");
@@ -475,19 +485,35 @@ import "../styles/global.css";
           disconnectBtn.type = "button";
           disconnectBtn.className = "button button--secondary";
           disconnectBtn.textContent = "Disconnect";
-          disconnectBtn.addEventListener("click", async () => {
-            const result = await disconnectConnection(organizationId);
-            if (result.kind === "ok") {
-              const refreshed = await fetchConnectionStatus(organizationId);
-              renderGoogleConnection(panel, refreshed);
-            } else {
-              panel.append(errorAlert(describeFailure(result, "Disconnect")));
-            }
+          disconnectBtn.addEventListener("click", () => {
+            disconnectBtn.disabled = true;
+            actions.append(
+              confirmInline(
+                "Disconnect Google? New syncs and provider actions will stop. Existing LILOs history is retained.",
+                () => void performGoogleDisconnect(panel),
+                () => {
+                  disconnectBtn.disabled = false;
+                },
+                "Disconnect Google",
+              ),
+            );
           });
           actions.append(disconnectBtn);
         }
 
         panel.append(actions);
+      }
+
+      async function performGoogleDisconnect(
+        panel: HTMLElement,
+      ): Promise<void> {
+        const result = await disconnectConnection(organizationId);
+        if (result.kind === "ok") {
+          const refreshed = await fetchConnectionStatus(organizationId);
+          renderGoogleConnection(panel, refreshed);
+        } else {
+          panel.append(errorAlert(describeFailure(result, "Disconnect")));
+        }
       }
 
       // ---- GitHub provider workspace ----
@@ -519,7 +545,14 @@ import "../styles/global.css";
         connCard.append(connBody);
         content.append(connCard);
 
-        if (connectionsResult.kind !== "ok" || appConnections.length === 0) {
+        if (connectionsResult.kind !== "ok") {
+          connBody.append(
+            errorAlert(describeFailure(connectionsResult, "GitHub connection")),
+          );
+          return;
+        }
+
+        if (appConnections.length === 0) {
           const installBtn = document.createElement("button");
           installBtn.type = "button";
           installBtn.className = "button";
@@ -554,28 +587,27 @@ import "../styles/global.css";
             conn.status,
           ),
         );
-        if (conn.external_account_reference) {
-          const ref = document.createElement("p");
-          ref.className = "text-sm muted";
-          ref.textContent = `Connected as ${conn.external_account_reference}`;
-          connBody.append(ref);
-        }
+        const connectionNote = document.createElement("p");
+        connectionNote.className = "text-sm muted";
+        connectionNote.textContent =
+          "The LILOs GitHub App is installed. Credentials and installation identifiers stay protected.";
+        connBody.append(connectionNote);
         const disconnectBtn = document.createElement("button");
         disconnectBtn.type = "button";
         disconnectBtn.className = "button button--secondary";
         disconnectBtn.textContent = "Disconnect GitHub App";
-        disconnectBtn.addEventListener("click", async () => {
+        disconnectBtn.addEventListener("click", () => {
           disconnectBtn.disabled = true;
-          const result = await disconnectGitHub(organizationId);
-          if (result.kind === "ok") {
-            const refreshed = await fetchGitHubConnections(organizationId);
-            await openGitHub(refreshed);
-          } else {
-            disconnectBtn.disabled = false;
-            connBody.append(
-              errorAlert(describeFailure(result, "GitHub disconnect")),
-            );
-          }
+          connBody.append(
+            confirmInline(
+              "Disconnect GitHub? New publishing work will stop. Existing content and publication history are retained.",
+              () => void performGitHubDisconnect(connBody),
+              () => {
+                disconnectBtn.disabled = false;
+              },
+              "Disconnect GitHub",
+            ),
+          );
         });
         connBody.append(disconnectBtn);
 
@@ -613,6 +645,24 @@ import "../styles/global.css";
           }
           reposBody.append(list);
           content.append(reposCard);
+        } else if (reposResult.kind !== "ok") {
+          content.append(
+            errorAlert(describeFailure(reposResult, "GitHub repositories")),
+          );
+        }
+      }
+
+      async function performGitHubDisconnect(
+        panel: HTMLElement,
+      ): Promise<void> {
+        const result = await disconnectGitHub(organizationId);
+        if (result.kind === "ok") {
+          const refreshed = await fetchGitHubConnections(organizationId);
+          await openGitHub(refreshed);
+        } else {
+          panel.append(
+            errorAlert(describeFailure(result, "GitHub disconnect")),
+          );
         }
       }
 

@@ -73,7 +73,9 @@ export function summarizeReviewStatuses(stats: ReviewSummaryStats): {
 }
 
 export function canDraftReviewResponse(reviewStatus: string): boolean {
-  return reviewStatus !== "responded" && reviewStatus !== "publishing";
+  return !["responded", "publishing", "removed", "closed", "archived"].includes(
+    reviewStatus,
+  );
 }
 
 export function reviewResponseSourceLabel(generatedByType: string): string {

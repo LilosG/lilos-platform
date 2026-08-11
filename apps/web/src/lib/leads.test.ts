@@ -125,6 +125,7 @@ describe("LEAD_STATUS_VALUES", () => {
       "lost",
       "spam",
       "duplicate",
+      "cancelled",
       "archived",
     ];
     expect(LEAD_STATUS_VALUES).toEqual(expected);

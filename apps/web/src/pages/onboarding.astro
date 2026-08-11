@@ -173,6 +173,10 @@ import "../styles/global.css";
             <button class="stepper__step" data-step="activate" type="button"
               ><span class="stepper__number">8</span>Activate</button
             >
+            <div class="stepper__connector"></div>
+            <button class="stepper__step" data-step="connect" type="button"
+              ><span class="stepper__number">9</span>Connect</button
+            >
           </div>
 
           <section aria-labelledby="progress-title">
@@ -584,10 +588,10 @@ import "../styles/global.css";
             </form>
           </section>
 
-          <section aria-labelledby="readiness-title">
+          <section id="section-activate" aria-labelledby="readiness-title">
             <div class="section-heading">
               <div>
-                <p class="eyebrow">Final step</p><h2 id="readiness-title">
+                <p class="eyebrow">Step 8</p><h2 id="readiness-title">
                   Readiness and activation
                 </h2>
               </div>
@@ -618,6 +622,52 @@ import "../styles/global.css";
             <button type="button" class="button" id="activate-button" disabled
               >Activate organization</button
             >
+          </section>
+
+          <section id="section-connect" aria-labelledby="connect-title">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Step 9</p><h2 id="connect-title">
+                  Connect services and complete setup
+                </h2>
+              </div>
+              <span id="connect-status"></span>
+            </div>
+            <p id="connect-help">
+              Activate the client first. Then connect providers, map their
+              resources, and confirm each enabled product’s operational
+              readiness from the product workspace.
+            </p>
+            <div class="directory-grid">
+              <a class="settings-card" href="/integrations">
+                <div class="settings-card__title">Connect providers</div>
+                <p class="settings-card__desc">
+                  Authorize Google and GitHub capabilities without exposing
+                  credentials.
+                </p>
+              </a>
+              <a class="settings-card" href="/gbp">
+                <div class="settings-card__title">Map Business Profile</div>
+                <p class="settings-card__desc">
+                  Confirm which discovered Google location belongs to this
+                  client location.
+                </p>
+              </a>
+              <a class="settings-card" href="/seo">
+                <div class="settings-card__title">Verify website data</div>
+                <p class="settings-card__desc">
+                  Review the site, Search Console property, and first crawl.
+                </p>
+              </a>
+              <a class="settings-card" href="/settings">
+                <div class="settings-card__title">
+                  Confirm product readiness
+                </div>
+                <p class="settings-card__desc">
+                  Resolve remaining product requirements before handoff.
+                </p>
+              </a>
+            </div>
           </section>
         </div>
       </div>
@@ -674,6 +724,11 @@ import "../styles/global.css";
       import { getCurrentSession, signOut } from "../lib/session";
       import { readPublicConfig } from "../lib/config";
       import type { ApiOutcome } from "../lib/api-client";
+      import {
+        applyShellAudience,
+        applyShellPrincipal,
+        setPlatformNavigationVisible,
+      } from "../lib/ui";
 
       const regions = {
         notConfigured: document.getElementById("boot-not-configured")!,
@@ -1850,6 +1905,7 @@ import "../styles/global.css";
 
         await renderUsers(organizationId);
         await renderProducts(organizationId, state);
+        renderConnectStep();
 
         if (orgIsActive()) {
           unlockSection("section-users");
@@ -1920,6 +1976,67 @@ import "../styles/global.css";
         wireCreateApprovalPolicyForm();
         wireCreateNotificationPolicyForm();
         wireActivation();
+        wireStepper();
+      }
+
+      function wireStepper(): void {
+        const sections: Record<string, string> = {
+          profile: "section-profile",
+          locations: "section-locations",
+          website: "section-domain",
+          industry: "section-industry",
+          users: "section-users",
+          products: "section-products",
+          policies: "section-policies",
+          activate: "section-activate",
+          connect: "section-connect",
+        };
+        document
+          .querySelectorAll<HTMLButtonElement>(
+            "#onboarding-stepper [data-step]",
+          )
+          .forEach((button) => {
+            button.addEventListener("click", () => {
+              const sectionId = sections[button.dataset.step ?? ""];
+              if (!sectionId) return;
+              document.getElementById(sectionId)?.scrollIntoView({
+                behavior: "smooth",
+                block: "start",
+              });
+            });
+          });
+      }
+
+      function renderConnectStep(): void {
+        if (!currentOrganization) return;
+        const active = currentOrganization.status === "active";
+        const status = document.getElementById("connect-status")!;
+        status.replaceChildren(
+          badge(
+            active ? "ready" : "setup",
+            active ? "Available" : "After activation",
+          ),
+        );
+        document.getElementById("connect-help")!.textContent = active
+          ? "Continue with provider authorization, resource mapping, and product-specific readiness. A connection is not complete until the required resource is mapped and current."
+          : "Activate the client first. Provider authorization and resource mapping are intentionally completed in the standard organization workspace after activation.";
+        document
+          .querySelectorAll<HTMLAnchorElement>("#section-connect a")
+          .forEach((link) => {
+            const destination = new URL(link.href);
+            destination.searchParams.set("org", currentOrganization!.id);
+            link.href = destination.pathname + destination.search;
+            link.setAttribute("aria-disabled", String(!active));
+            link.tabIndex = active ? 0 : -1;
+            link.onclick = active
+              ? null
+              : (event) => {
+                  event.preventDefault();
+                };
+          });
+        document
+          .getElementById("section-connect")!
+          .classList.toggle("is-disabled", !active);
       }
 
       /**
@@ -1989,12 +2106,7 @@ import "../styles/global.css";
           showBootError("principal", describeFailure(principal));
           return;
         }
-        document.getElementById("current-user-label")!.textContent =
-          principal.data.auth_user_id;
-        document.getElementById("current-user-initial")!.textContent =
-          principal.data.auth_user_id.slice(0, 1).toUpperCase();
-        document.getElementById("current-assurance-label")!.textContent =
-          principal.data.assurance_level;
+        applyShellPrincipal(principal.data);
         document.getElementById("sign-out-button")!.hidden = false;
         wireSignOut();
         currentPrincipal = principal.data;
@@ -2013,6 +2125,8 @@ import "../styles/global.css";
           showOnly(regions.notAdmin);
           return;
         }
+        setPlatformNavigationVisible(true);
+        applyShellAudience("internal");
         if (!adminStatus.data.meets_required_assurance) {
           logStage("redirect-to-mfa");
           const next = encodeURIComponent(

@@ -13,6 +13,9 @@ export {
   applyBootResult,
   populateSwitcher,
   setActiveOrganization,
+  applyShellPrincipal,
+  applyShellAudience,
+  setPlatformNavigationVisible,
   type BootRegions,
   type BootContext,
   type BootResult,
@@ -30,6 +33,9 @@ export {
 export {
   card,
   cardBody,
+  sectionCard,
+  detailFact,
+  liveStatus,
   metricCard,
   metricGrid,
   sectionHeader,
@@ -45,3 +51,4 @@ export {
   formSection,
   confirmInline,
 } from "./forms";
+export { setupTabs } from "./tabs";

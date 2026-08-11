@@ -62,6 +62,7 @@ import "../styles/global.css";
             >
           </div>
           <div id="platform-admin-alert"></div>
+          <div class="metric-grid" id="portfolio-metrics"></div>
           <ul class="product-list" id="clients-list"></ul>
 
           <div id="client-detail" hidden style="margin-top: 1.5rem;">
@@ -341,6 +342,12 @@ import "../styles/global.css";
         type ProductEntitlementMap,
       } from "../lib/product-entitlements";
       import { withBootBoundary } from "../lib/boot-boundary";
+      import {
+        applyShellAudience,
+        applyShellPrincipal,
+        setPlatformNavigationVisible,
+        metricCard,
+      } from "../lib/ui";
 
       const regions = {
         notConfigured: document.getElementById("boot-not-configured")!,
@@ -661,7 +668,7 @@ import "../styles/global.css";
         const title = document.createElement("h3");
         title.textContent = organization.name;
         const meta = document.createElement("p");
-        meta.textContent = `${organization.slug} · ${organization.organization_type} · status: ${organization.status}`;
+        meta.textContent = `${humanize(organization.organization_type)} · ${humanize(organization.status)}`;
         body.append(title, meta);
 
         const actions = document.createElement("div");
@@ -800,26 +807,38 @@ import "../styles/global.css";
 
       async function renderClientsList(): Promise<void> {
         const list = document.getElementById("clients-list")!;
+        const metrics = document.getElementById("portfolio-metrics")!;
         list.replaceChildren();
+        metrics.replaceChildren();
         const outcome = await fetchAdminOrganizations();
         if (outcome.kind !== "ok") {
+          const item = document.createElement("li");
+          item.setAttribute("role", "alert");
+          item.append(
+            Object.assign(document.createElement("p"), {
+              className: "alert alert--error",
+              textContent: describeFailure(outcome),
+            }),
+          );
+          list.append(item);
           return;
         }
         if (outcome.data.items.length === 0) {
-          const empty = document.createElement("div");
+          const empty = document.createElement("li");
           empty.className = "empty-state";
           empty.innerHTML =
             "<h3>No client organizations yet</h3><p>Create the first one using the form below.</p>";
           list.append(empty);
           return;
         }
+        renderPortfolioMetrics(outcome.data.items);
         for (const organization of outcome.data.items) {
           const item = document.createElement("li");
           const info = document.createElement("div");
           const title = document.createElement("h3");
           title.textContent = organization.name;
           const meta = document.createElement("p");
-          meta.textContent = `${organization.slug} · ${organization.organization_type}`;
+          meta.textContent = humanize(organization.organization_type);
           info.append(title, meta);
           const actionsCell = document.createElement("div");
           actionsCell.append(
@@ -840,6 +859,45 @@ import "../styles/global.css";
           item.append(info, actionsCell);
           list.append(item);
         }
+      }
+
+      function renderPortfolioMetrics(
+        organizations: AdminOrganization[],
+      ): void {
+        const panel = document.getElementById("portfolio-metrics")!;
+        panel.replaceChildren();
+        const count = (statuses: string[]) =>
+          organizations.filter((organization) =>
+            statuses.includes(organization.status),
+          ).length;
+        panel.append(
+          metricCard(
+            "Clients",
+            String(organizations.length),
+            "Visible portfolio",
+          ),
+          metricCard(
+            "Active",
+            String(count(["active"])),
+            "Live client workspaces",
+          ),
+          metricCard(
+            "Onboarding",
+            String(count(["prospect", "onboarding"])),
+            "Setup in progress",
+          ),
+          metricCard(
+            "Needs review",
+            String(count(["paused", "offboarding", "suspended"])),
+            "Lifecycle attention",
+          ),
+        );
+      }
+
+      function humanize(value: string): string {
+        return value
+          .replace(/_/g, " ")
+          .replace(/\b\w/g, (character) => character.toUpperCase());
       }
 
       async function populateIndustries(): Promise<void> {
@@ -970,18 +1028,23 @@ import "../styles/global.css";
           showOnly(regions.error);
           return;
         }
-        document.getElementById("current-user-label")!.textContent =
-          principal.data.auth_user_id;
-        document.getElementById("current-user-initial")!.textContent =
-          principal.data.auth_user_id.slice(0, 1).toUpperCase();
-        document.getElementById("current-assurance-label")!.textContent =
-          principal.data.assurance_level;
+        applyShellPrincipal(principal.data);
         const signOutButton = document.getElementById("sign-out-button")!;
         signOutButton.hidden = false;
         wireSignOut();
         currentPrincipal = principal.data;
 
         const adminStatus = await fetchMyPlatformAdministratorStatus();
+        setPlatformNavigationVisible(
+          adminStatus.kind === "ok" &&
+            adminStatus.data.is_platform_administrator,
+        );
+        if (
+          adminStatus.kind === "ok" &&
+          adminStatus.data.is_platform_administrator
+        ) {
+          applyShellAudience("internal");
+        }
         if (
           adminStatus.kind === "ok" &&
           adminStatus.data.is_platform_administrator &&
@@ -1025,6 +1088,7 @@ import "../styles/global.css";
         organizationId = organization.organization_id;
         document.getElementById("active-organization-name")!.textContent =
           organization.organization_name;
+        applyShellAudience(organization.membership_type);
 
         await Promise.all([renderProducts(), renderServices()]);
 

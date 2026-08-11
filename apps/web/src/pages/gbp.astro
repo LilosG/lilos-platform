@@ -47,6 +47,12 @@ import "../styles/global.css";
           </div>
           <div class="page-head__meta">
             <div class="page-head__actions">
+              <button
+                type="button"
+                class="button button--secondary button--sm"
+                id="change-gbp-location"
+                hidden>Change location</button
+              >
               <a
                 class="button button--secondary button--sm"
                 href="/integrations">Manage connection</a
@@ -160,6 +166,7 @@ import "../styles/global.css";
         errorAlert,
         describeFailure,
         formatTimestamp,
+        setupTabs,
         type BootRegions,
       } from "../lib/ui";
       import { startWorkflowRun } from "../lib/workflows";
@@ -177,25 +184,21 @@ import "../styles/global.css";
         content: document.getElementById("gbp-content")!,
       };
 
-      // Tab switching
-      document.querySelectorAll<HTMLElement>("[data-tab]").forEach((tab) => {
-        tab.addEventListener("click", () => {
-          document.querySelectorAll<HTMLElement>("[data-tab]").forEach((t) => {
-            t.setAttribute("aria-selected", t === tab ? "true" : "false");
-          });
-          document
-            .querySelectorAll<HTMLElement>(".tab-panel")
-            .forEach((panel) => {
-              panel.hidden = !panel.id.endsWith(tab.dataset.tab!);
-            });
-        });
-      });
+      setupTabs(document.getElementById("gbp-tabs")!);
+
+      document
+        .getElementById("change-gbp-location")!
+        .addEventListener("click", showLocationPicker);
 
       async function loadOrganization(
         org: import("../lib/workspace").MyOrganization,
       ): Promise<void> {
         setActiveOrganization(org);
         organizationId = org.organization_id;
+        platformLocationsCache = [];
+        selectedPlatformLocationId = null;
+        selectedGbpLocationId = null;
+        showLocationPicker();
 
         const [connectionResult, locationsResult, platformLocsResult] =
           await Promise.all([
@@ -208,9 +211,16 @@ import "../styles/global.css";
           platformLocationsCache = platformLocsResult.data;
 
         renderConnectionStatus(connectionResult);
-        renderLocationPicker(
-          locationsResult.kind === "ok" ? locationsResult.data : [],
-        );
+        if (locationsResult.kind === "ok") {
+          renderLocationPicker(locationsResult.data);
+        } else {
+          const panel = document.getElementById("location-picker-panel")!;
+          panel.replaceChildren(
+            errorAlert(
+              describeFailure(locationsResult, "Business Profile locations"),
+            ),
+          );
+        }
       }
 
       function renderConnectionStatus(
@@ -287,7 +297,7 @@ import "../styles/global.css";
         const text = document.createElement("p");
         text.className = "text-sm";
         text.textContent = state.last_verified_at
-          ? `Last synced ${formatTimestamp(state.last_verified_at)}`
+          ? `Connection verified ${formatTimestamp(state.last_verified_at)}`
           : "Connected";
         info.append(badge, text);
         panel.append(info);
@@ -314,6 +324,18 @@ import "../styles/global.css";
         }
 
         if (confirmed.length > 0) {
+          const managedHeading = document.createElement("div");
+          managedHeading.className = "list-heading";
+          managedHeading.append(
+            Object.assign(document.createElement("h3"), {
+              textContent: "Managed locations",
+            }),
+            Object.assign(document.createElement("p"), {
+              textContent:
+                "Only confirmed mappings appear as managed business data.",
+            }),
+          );
+          panel.append(managedHeading);
           const list = document.createElement("ul");
           list.className = "product-list";
           for (const loc of confirmed) {
@@ -331,7 +353,16 @@ import "../styles/global.css";
             openBtn.className = "button button--sm";
             openBtn.textContent = "Open";
             openBtn.addEventListener("click", () => void openWorkspace(loc));
-            item.append(info, openBtn);
+            const actions = document.createElement("div");
+            actions.className = "list-actions";
+            actions.append(
+              statusBadge(
+                loc.last_synced_at ? "ready" : "setup",
+                loc.last_synced_at ? "Synced" : "Awaiting sync",
+              ),
+              openBtn,
+            );
+            item.append(info, actions);
             list.append(item);
           }
           panel.append(list);
@@ -344,9 +375,8 @@ import "../styles/global.css";
         );
         if (unmapped.length > 0) {
           const heading = document.createElement("p");
-          heading.className = "eyebrow";
-          heading.style.marginTop = "1rem";
-          heading.textContent = "Unmapped locations";
+          heading.className = "list-heading__eyebrow";
+          heading.textContent = "Setup · discovered locations not yet managed";
           panel.append(heading);
           const list = document.createElement("ul");
           list.className = "product-list";
@@ -357,7 +387,7 @@ import "../styles/global.css";
             name.textContent = loc.business_name;
             const detail = document.createElement("p");
             detail.textContent =
-              "Map to a platform location to start managing.";
+              "Map to a LILOs business location to start managing.";
             info.append(name, detail);
 
             const select = document.createElement("select");
@@ -399,6 +429,20 @@ import "../styles/global.css";
             list.append(item);
           }
           panel.append(list);
+        } else if (
+          locations.some(
+            (location) => location.mapping_status === "unmapped",
+          ) &&
+          platformLocationsCache.length === 0
+        ) {
+          panel.append(
+            emptyState(
+              "Discovered locations need a LILOs location",
+              "Add the client’s business location in Settings before mapping a discovered Google location.",
+              "Manage locations",
+              "/settings",
+            ),
+          );
         }
       }
 
@@ -409,6 +453,7 @@ import "../styles/global.css";
         selectedGbpLocationId = context.gbpLocationId;
         document.getElementById("gbp-workspace")!.hidden = false;
         document.getElementById("location-picker-section")!.hidden = true;
+        document.getElementById("change-gbp-location")!.hidden = false;
 
         // Update page title to show selected location
         const titleEl = document.querySelector(
@@ -423,6 +468,18 @@ import "../styles/global.css";
           renderPosts(),
           renderMedia(),
         ]);
+      }
+
+      function showLocationPicker(): void {
+        selectedPlatformLocationId = null;
+        selectedGbpLocationId = null;
+        document.getElementById("gbp-workspace")!.hidden = true;
+        document.getElementById("location-picker-section")!.hidden = false;
+        document.getElementById("change-gbp-location")!.hidden = true;
+        const title = document.querySelector(
+          "#gbp-content .page-head__intro h1",
+        );
+        if (title) title.textContent = "Business Profile";
       }
 
       // ---- Overview tab ----
@@ -544,7 +601,7 @@ import "../styles/global.css";
             const strong = document.createElement("strong");
             strong.textContent = event.summary;
             const span = document.createElement("span");
-            span.textContent = `${event.event_type} · ${formatTimestamp(event.occurred_at)}`;
+            span.textContent = formatTimestamp(event.occurred_at);
             item.append(strong, span);
             list.append(item);
           }
@@ -935,23 +992,23 @@ import "../styles/global.css";
         const reconcileBtn = document.createElement("button");
         reconcileBtn.type = "button";
         reconcileBtn.className = "button";
-        reconcileBtn.textContent = "Reconcile from Google";
+        reconcileBtn.textContent = "Refresh from Google";
         const providerStatus = document.createElement("p");
         providerStatus.className = "text-sm muted";
         reconcileBtn.addEventListener("click", async () => {
           reconcileBtn.disabled = true;
-          reconcileBtn.textContent = "Reconciling…";
+          reconcileBtn.textContent = "Refreshing…";
           const result = await reconcileProviderPosts(
             organizationId,
             selectedPlatformLocationId!,
             selectedGbpLocationId!,
           );
           if (result.kind === "ok") {
-            providerStatus.textContent = `Google returned ${result.data.provider_count} post(s); ${result.data.present_count} current provider record(s) are persisted.`;
+            providerStatus.textContent = `${result.data.provider_count} post(s) found on Google; ${result.data.present_count} are currently visible.`;
             await renderPosts();
           } else {
             reconcileBtn.disabled = false;
-            reconcileBtn.textContent = "Reconcile from Google";
+            reconcileBtn.textContent = "Refresh from Google";
             providerStatus.textContent = describeFailure(
               result,
               "Google Local Posts",
@@ -965,7 +1022,7 @@ import "../styles/global.css";
           ).length;
           const observed = document.createElement("p");
           observed.className = "text-sm muted";
-          observed.textContent = `Persisted provider records: ${current} current, ${providerPostsResult.data.length} total observed.`;
+          observed.textContent = `${current} post(s) currently visible on Google · ${providerPostsResult.data.length} observed over time.`;
           providerBody.append(observed);
         }
         providerCard.append(providerBody);

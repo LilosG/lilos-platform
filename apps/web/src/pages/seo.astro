@@ -97,9 +97,14 @@ import "../styles/global.css";
         fetchSEOSummary,
         fetchOpportunities,
         fetchSearchProperties,
+        fetchRecommendations,
+        createRecommendation,
+        decideRecommendation,
+        fetchImplementationTasks,
         runCrawl,
         normalizeCrawlPageLimit,
         describeCrawlResult,
+        isSEOOpportunityActionable,
       } from "../lib/seo";
       import { fetchSearchConsoleSummary } from "../lib/search-console";
       import { startWorkflowRun } from "../lib/workflows";
@@ -114,6 +119,11 @@ import "../styles/global.css";
         errorAlert,
         describeFailure,
         formatTimestamp,
+        setupTabs,
+        sectionCard,
+        detailFact,
+        liveStatus,
+        formField,
         type BootRegions,
       } from "../lib/ui";
 
@@ -127,18 +137,7 @@ import "../styles/global.css";
         content: document.getElementById("seo-content")!,
       };
 
-      document.querySelectorAll<HTMLElement>("[data-tab]").forEach((tab) => {
-        tab.addEventListener("click", () => {
-          document.querySelectorAll<HTMLElement>("[data-tab]").forEach((t) => {
-            t.setAttribute("aria-selected", t === tab ? "true" : "false");
-          });
-          document
-            .querySelectorAll<HTMLElement>(".tab-panel")
-            .forEach((panel) => {
-              panel.hidden = !panel.id.endsWith(tab.dataset.tab!);
-            });
-        });
-      });
+      setupTabs(document.getElementById("seo-tabs")!);
 
       async function loadOrganization(
         org: import("../lib/workspace").MyOrganization,
@@ -167,29 +166,38 @@ import "../styles/global.css";
         const grid = document.getElementById("seo-metrics")!;
         grid.replaceChildren();
 
-        const websiteCount = websites.kind === "ok" ? websites.data.length : 0;
-        const oppCount = opps.kind === "ok" ? opps.data.length : 0;
+        const websiteCount =
+          websites.kind === "ok" ? String(websites.data.length) : "—";
+        const oppCount = opps.kind === "ok" ? String(opps.data.length) : "—";
         const openOpps =
           opps.kind === "ok"
-            ? opps.data.filter((o) => o.status === "open" || o.status === "new")
+            ? opps.data.filter((o) => isSEOOpportunityActionable(o.status))
                 .length
-            : 0;
+            : null;
         const highPriority =
           opps.kind === "ok"
-            ? opps.data.filter((o) => o.priority_score >= 70).length
-            : 0;
+            ? opps.data.filter(
+                (o) =>
+                  o.priority_score >= 70 &&
+                  isSEOOpportunityActionable(o.status),
+              ).length
+            : null;
 
         grid.append(
           metricCard(
             "Websites",
-            String(websiteCount),
+            websiteCount,
             websites.kind === "ok" ? "Configured" : "Unable to load",
           ),
-          metricCard("Opportunities", String(oppCount), `${openOpps} open`),
+          metricCard(
+            "Opportunities",
+            oppCount,
+            openOpps === null ? "Unable to load" : `${openOpps} open`,
+          ),
           metricCard(
             "High priority",
-            String(highPriority),
-            "Priority score ≥ 70",
+            highPriority === null ? "—" : String(highPriority),
+            highPriority === null ? "Unable to load" : "Priority score ≥ 70",
           ),
         );
         if (summary.kind === "ok") {
@@ -289,12 +297,7 @@ import "../styles/global.css";
             info.append(name, detail);
             item.append(
               info,
-              statusBadge(
-                opp.status === "open" || opp.status === "new"
-                  ? "setup"
-                  : "neutral",
-                opp.status,
-              ),
+              statusBadge(opp.status, opp.status.replace(/_/g, " ")),
             );
             list.append(item);
           }
@@ -440,7 +443,7 @@ import "../styles/global.css";
         const t = document.createElement("table");
         const thead = document.createElement("thead");
         thead.innerHTML =
-          "<tr><th>Type</th><th>Priority</th><th>Status</th></tr>";
+          "<tr><th>Type</th><th>Priority</th><th>Status</th><th><span class='sr-only'>Actions</span></th></tr>";
         t.append(thead);
         const tbody = document.createElement("tbody");
         for (const opp of opps.data) {
@@ -461,19 +464,287 @@ import "../styles/global.css";
           priorityTd.append(priorityBadge);
           const statusTd = document.createElement("td");
           statusTd.append(
-            statusBadge(
-              opp.status === "resolved" || opp.status === "closed"
-                ? "ready"
-                : "setup",
-              opp.status,
-            ),
+            statusBadge(opp.status, opp.status.replace(/_/g, " ")),
           );
-          tr.append(typeTd, priorityTd, statusTd);
+          const actionTd = document.createElement("td");
+          const action = document.createElement("button");
+          action.type = "button";
+          action.className = "button button--secondary button--sm";
+          action.textContent = "Review";
+          action.addEventListener(
+            "click",
+            () => void renderOpportunityDetail(opp, opps),
+          );
+          actionTd.append(action);
+          tr.append(typeTd, priorityTd, statusTd, actionTd);
           tbody.append(tr);
         }
         t.append(tbody);
         table.append(t);
         panel.append(table);
+      }
+
+      async function renderOpportunityDetail(
+        opportunity: import("../lib/seo").SEOOpportunity,
+        opportunityList: Awaited<ReturnType<typeof fetchOpportunities>>,
+      ): Promise<void> {
+        const panel = document.getElementById("tab-opportunities")!;
+        panel.replaceChildren(
+          Object.assign(document.createElement("div"), {
+            className: "loading-state",
+            textContent: "Loading recommendation workspace…",
+          }),
+        );
+        const recommendations = await fetchRecommendations(
+          organizationId,
+          opportunity.id,
+        );
+        panel.replaceChildren();
+        const back = document.createElement("button");
+        back.type = "button";
+        back.className = "button button--secondary button--sm";
+        back.textContent = "← Back to opportunities";
+        back.addEventListener("click", () =>
+          renderOpportunities(opportunityList),
+        );
+
+        const heading = document.createElement("div");
+        heading.className = "page-head page-head--detail";
+        const intro = document.createElement("div");
+        intro.className = "page-head__intro";
+        const type = opportunity.opportunity_type
+          .replace(/_/g, " ")
+          .replace(/\b\w/g, (character) => character.toUpperCase());
+        intro.append(
+          Object.assign(document.createElement("p"), {
+            className: "eyebrow",
+            textContent: "SEO opportunity",
+          }),
+          Object.assign(document.createElement("h2"), { textContent: type }),
+          Object.assign(document.createElement("p"), {
+            textContent:
+              "Review the supporting evidence, expected impact, and approval state before any implementation begins.",
+          }),
+        );
+        heading.append(
+          intro,
+          statusBadge(
+            opportunity.priority_score >= 70
+              ? "blocked"
+              : opportunity.priority_score >= 40
+                ? "setup"
+                : "neutral",
+            `Priority ${opportunity.priority_score}`,
+          ),
+        );
+        panel.append(back, heading);
+
+        const grid = document.createElement("div");
+        grid.className = "detail-grid";
+        grid.append(
+          renderEvidenceCard(opportunity),
+          await renderRecommendationCard(opportunity, recommendations),
+        );
+        panel.append(grid);
+      }
+
+      function renderEvidenceCard(
+        opportunity: import("../lib/seo").SEOOpportunity,
+      ): HTMLElement {
+        const card = sectionCard(
+          "Why this matters",
+          "Evidence and score factors recorded by the latest analysis.",
+        );
+        const body = card.querySelector<HTMLElement>(".card__body")!;
+        const factors = Object.entries(opportunity.score_explanation);
+        if (factors.length > 0) {
+          const list = document.createElement("dl");
+          list.className = "fact-list";
+          for (const [key, value] of factors) {
+            const term = document.createElement("dt");
+            term.textContent = key.replace(/_/g, " ");
+            const detail = document.createElement("dd");
+            detail.textContent = String(value);
+            list.append(term, detail);
+          }
+          body.append(list);
+        }
+        const evidence = readableEvidence(opportunity.evidence);
+        if (evidence.length > 0) {
+          const title = document.createElement("h4");
+          title.textContent = "Supporting evidence";
+          const list = document.createElement("ul");
+          list.className = "plain-list";
+          for (const line of evidence) {
+            const item = document.createElement("li");
+            item.textContent = line;
+            list.append(item);
+          }
+          body.append(title, list);
+        } else {
+          body.append(
+            emptyState(
+              "No readable evidence attached",
+              "The opportunity can be reviewed after a crawl records supporting observations.",
+            ),
+          );
+        }
+        return card;
+      }
+
+      async function renderRecommendationCard(
+        opportunity: import("../lib/seo").SEOOpportunity,
+        recommendations: Awaited<ReturnType<typeof fetchRecommendations>>,
+      ): Promise<HTMLElement> {
+        const card = sectionCard(
+          "Recommended action",
+          "Recommendations are governed revisions, separate from implementation.",
+        );
+        const body = card.querySelector<HTMLElement>(".card__body")!;
+        if (recommendations.kind !== "ok") {
+          body.append(
+            errorAlert(describeFailure(recommendations, "Recommendations")),
+          );
+          return card;
+        }
+        const latest = recommendations.data[0];
+        if (latest) {
+          body.append(
+            detailFact("Action", latest.proposed_action),
+            detailFact("Expected result", latest.expected_result_hypothesis),
+            detailFact(
+              "Effort and risk",
+              `${latest.effort} effort · ${latest.risk} risk`,
+            ),
+            statusBadge(latest.status, latest.status.replace(/_/g, " ")),
+          );
+          if (latest.status === "awaiting_approval") {
+            const approve = document.createElement("button");
+            approve.type = "button";
+            approve.className = "button";
+            approve.textContent = "Approve recommendation";
+            approve.addEventListener("click", async () => {
+              approve.disabled = true;
+              const result = await decideRecommendation(
+                organizationId,
+                latest.id,
+                true,
+              );
+              if (result.kind === "ok") {
+                const refreshed = await fetchOpportunities(organizationId);
+                if (refreshed.kind === "ok")
+                  await renderOpportunityDetail(opportunity, refreshed);
+              } else {
+                approve.disabled = false;
+                body.append(errorAlert(describeFailure(result, "Approval")));
+              }
+            });
+            body.append(approve);
+          }
+          const tasks = await fetchImplementationTasks(
+            organizationId,
+            latest.id,
+          );
+          if (tasks.kind === "ok" && tasks.data.length > 0) {
+            const taskTitle = document.createElement("h4");
+            taskTitle.textContent = "Implementation";
+            body.append(taskTitle);
+            for (const task of tasks.data) {
+              body.append(
+                detailFact(
+                  task.target_type.replace(/_/g, " "),
+                  task.verified_at
+                    ? `Verified ${formatTimestamp(task.verified_at)}`
+                    : task.status.replace(/_/g, " "),
+                ),
+              );
+            }
+          }
+          return card;
+        }
+
+        const form = document.createElement("form");
+        form.className = "form-grid";
+        const action = document.createElement("textarea");
+        action.required = true;
+        action.rows = 4;
+        const outcome = document.createElement("textarea");
+        outcome.required = true;
+        outcome.rows = 3;
+        const risk = optionSelect(["low", "medium", "high"]);
+        const effort = optionSelect(["low", "medium", "high"]);
+        form.append(
+          formField("Proposed action", action, {
+            full: true,
+            id: `seo-action-${opportunity.id}`,
+          }),
+          formField("Expected result", outcome, {
+            full: true,
+            id: `seo-outcome-${opportunity.id}`,
+          }),
+          formField("Risk", risk, { id: `seo-risk-${opportunity.id}` }),
+          formField("Effort", effort, { id: `seo-effort-${opportunity.id}` }),
+        );
+        const submit = document.createElement("button");
+        submit.type = "submit";
+        submit.className = "button";
+        submit.textContent = "Create recommendation";
+        const status = liveStatus();
+        form.append(submit, status);
+        form.addEventListener("submit", async (event) => {
+          event.preventDefault();
+          submit.disabled = true;
+          status.textContent = "Creating recommendation…";
+          const result = await createRecommendation(
+            organizationId,
+            opportunity.id,
+            {
+              proposedAction: action.value,
+              expectedResultHypothesis: outcome.value,
+              risk: risk.value as "low" | "medium" | "high",
+              effort: effort.value as "low" | "medium" | "high",
+            },
+          );
+          if (result.kind === "ok") {
+            const refreshed = await fetchOpportunities(organizationId);
+            if (refreshed.kind === "ok")
+              await renderOpportunityDetail(opportunity, refreshed);
+          } else {
+            submit.disabled = false;
+            status.textContent = describeFailure(result, "Recommendation");
+          }
+        });
+        body.append(form);
+        return card;
+      }
+
+      function readableEvidence(evidence: Record<string, unknown>): string[] {
+        const lines: string[] = [];
+        for (const [key, value] of Object.entries(evidence)) {
+          const label = key.replace(/_/g, " ");
+          if (["string", "number", "boolean"].includes(typeof value)) {
+            lines.push(`${label}: ${String(value)}`);
+          } else if (
+            Array.isArray(value) &&
+            value.every((entry) => ["string", "number"].includes(typeof entry))
+          ) {
+            lines.push(`${label}: ${value.join(", ")}`);
+          }
+        }
+        return lines;
+      }
+
+      function optionSelect(values: string[]): HTMLSelectElement {
+        const select = document.createElement("select");
+        for (const value of values) {
+          const option = document.createElement("option");
+          option.value = value;
+          option.textContent = value.replace(/\b\w/g, (character) =>
+            character.toUpperCase(),
+          );
+          select.append(option);
+        }
+        return select;
       }
 
       async function renderSearchConsole(
@@ -521,6 +792,31 @@ import "../styles/global.css";
               ),
             );
           } else {
+            const sourceList = document.createElement("ul");
+            sourceList.className = "product-list product-list--compact";
+            for (const property of propsResult.data) {
+              const item = document.createElement("li");
+              const info = document.createElement("div");
+              const title = document.createElement("h3");
+              title.textContent =
+                property.property_type === "domain"
+                  ? "Domain property"
+                  : "Website property";
+              const detail = document.createElement("p");
+              detail.textContent = property.last_synced_at
+                ? `Synced ${formatTimestamp(property.last_synced_at)}`
+                : "Awaiting first data sync";
+              info.append(title, detail);
+              item.append(
+                info,
+                statusBadge(
+                  property.freshness_status === "fresh" ? "ready" : "setup",
+                  property.freshness_status.replace(/_/g, " "),
+                ),
+              );
+              sourceList.append(item);
+            }
+            body.append(sourceList);
             const summaryResult = await fetchSearchConsoleSummary(
               organizationId,
               website.id,
@@ -539,6 +835,17 @@ import "../styles/global.css";
                 ),
               );
               body.append(grid);
+              const notice = document.createElement("p");
+              notice.className = "source-note";
+              notice.textContent =
+                "Current totals are shown without a trend because the Search Console summary does not yet include its observation period or a comparable prior period.";
+              body.append(notice);
+            } else {
+              body.append(
+                errorAlert(
+                  describeFailure(summaryResult, "Search Console performance"),
+                ),
+              );
             }
           }
           card.append(body);

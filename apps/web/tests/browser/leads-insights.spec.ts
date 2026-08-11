@@ -26,6 +26,7 @@ const LEAD_STATUS_FILTER_VALUES = [
   "lost",
   "spam",
   "duplicate",
+  "cancelled",
   "archived",
 ];
 

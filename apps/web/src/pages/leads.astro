@@ -49,24 +49,6 @@ import "../styles/global.css";
 
         <div class="section-heading">
           <div>
-            <p class="eyebrow">Product readiness</p>
-            <h2>Setup status</h2>
-          </div>
-        </div>
-        <div class="attention-card" id="readiness-panel">
-          <p>Checking readiness…</p>
-        </div>
-
-        <div class="section-heading">
-          <div>
-            <p class="eyebrow">Sources</p>
-            <h2>Source performance</h2>
-          </div>
-        </div>
-        <ul class="product-list" id="sources-list"></ul>
-
-        <div class="section-heading">
-          <div>
             <p class="eyebrow">Inbox</p>
             <h2>Leads</h2>
           </div>
@@ -103,6 +85,7 @@ import "../styles/global.css";
               <option value="lost">Lost</option>
               <option value="spam">Spam</option>
               <option value="duplicate">Duplicate</option>
+              <option value="cancelled">Cancelled</option>
               <option value="archived">Archived</option>
             </select>
             <label class="sr-only" for="urgency-filter">Urgency</label>
@@ -135,13 +118,35 @@ import "../styles/global.css";
           <ul class="product-list" id="leads-list"></ul>
         </div>
 
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Sources</p>
+            <h2>Source performance</h2>
+          </div>
+        </div>
+        <ul class="product-list" id="sources-list"></ul>
+
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Account health</p>
+            <h2>Leads readiness</h2>
+          </div>
+        </div>
+        <div class="attention-card" id="readiness-panel">
+          <p>Checking readiness…</p>
+        </div>
+
         <section id="detail-section" aria-labelledby="detail-title" hidden>
           <div class="section-heading">
             <div>
               <p class="eyebrow">Lead detail</p><h2 id="detail-title">
                 Selected lead
               </h2>
-            </div>
+            </div><button
+              type="button"
+              class="button button--secondary button--sm"
+              id="close-lead-detail">← Back to queue</button
+            >
           </div><div class="split">
             <article>
               <p class="eyebrow">Contact</p><div id="detail-body"></div><h3>
@@ -194,12 +199,13 @@ import "../styles/global.css";
                 >
               </div><div class="hero__actions">
                 <label class="sr-only" for="conversion-value"
-                  >Converted value (cents)</label
+                  >Conversion value</label
                 ><input
                   id="conversion-value"
                   type="number"
                   min="0"
-                  placeholder="Converted value (cents, optional)"
+                  step="0.01"
+                  placeholder="Conversion value (optional)"
                 /><button
                   type="button"
                   class="button button--secondary"
@@ -245,15 +251,15 @@ import "../styles/global.css";
                 class="timeline"
                 id="tasks-list"
               >
-              </ol><p class="eyebrow">Communications</p><ol
-                class="timeline"
-                id="communications-list"
+              </ol><p class="eyebrow">Communications</p><p class="source-note">
+                Delivery is shown only when a provider event has been recorded.
+                This workspace does not imply that outbound email or SMS is
+                available.
+              </p><ol class="timeline" id="communications-list"></ol><p
+                class="eyebrow"
               >
-              </ol><p class="eyebrow">Audit history</p><ol
-                class="timeline"
-                id="audit-history"
-              >
-              </ol>
+                Audit history
+              </p><ol class="timeline" id="audit-history"></ol>
             </article>
           </div>
         </section>
@@ -261,8 +267,6 @@ import "../styles/global.css";
     </AppShell>
     <script>
       import {
-        fetchMyOrganizations,
-        fetchPrincipal,
         fetchProductReadiness,
         type MyOrganization,
       } from "../lib/workspace";
@@ -291,12 +295,20 @@ import "../styles/global.css";
         type LeadSummary,
         type LeadTask,
       } from "../lib/leads";
-      import { selectDefaultOrganization } from "../lib/dashboard-logic";
-      import { getCurrentSession, signOut } from "../lib/session";
-      import { readPublicConfig } from "../lib/config";
-      import type { ApiOutcome } from "../lib/api-client";
+      import {
+        bootWorkspace,
+        applyBootResult,
+        populateSwitcher,
+        setActiveOrganization,
+        statusBadge,
+        emptyState,
+        errorAlert,
+        describeFailure,
+        metricCard,
+        type BootRegions,
+      } from "../lib/ui";
 
-      const regions = {
+      const regions: BootRegions = {
         notConfigured: document.getElementById("boot-not-configured")!,
         loading: document.getElementById("boot-loading")!,
         error: document.getElementById("boot-error")!,
@@ -305,7 +317,6 @@ import "../styles/global.css";
       };
 
       let organizationId = "";
-      let organizations: MyOrganization[] = [];
       let selectedLeadId: string | null = null;
       // Assignable teammates for the currently selected organization only.
       // Reset to an empty list on every organization switch so stale members
@@ -313,77 +324,14 @@ import "../styles/global.css";
       // ever populated from the authoritative `leads/assignees` endpoint.
       let assignees: AssigneeCandidate[] = [];
 
-      function showOnly(region: HTMLElement): void {
-        for (const key of Object.keys(regions) as (keyof typeof regions)[]) {
-          regions[key].hidden = regions[key] !== region;
-        }
-      }
-
-      function describeFailure(outcome: ApiOutcome<unknown>): string {
-        switch (outcome.kind) {
-          case "forbidden":
-            return "You do not have permission to view Leads for this organization.";
-          case "not-found":
-            return "The requested resource could not be found.";
-          case "disconnected":
-            return "Could not reach the platform API.";
-          case "unauthenticated":
-            return "Your session has expired. Sign in again.";
-          case "not-configured":
-            return "This deployment is not configured.";
-          case "error":
-            return outcome.message;
-          case "ok":
-            return "";
-        }
-      }
-
-      function goToLogin(): void {
-        const next = encodeURIComponent(window.location.pathname);
-        window.location.assign(`/login?next=${next}`);
-      }
-
-      function wireSignOut(): void {
-        document
-          .getElementById("sign-out-button")
-          ?.addEventListener("click", async () => {
-            await signOut();
-            goToLogin();
+      document
+        .getElementById("close-lead-detail")!
+        .addEventListener("click", () => {
+          document.getElementById("detail-section")!.hidden = true;
+          document.getElementById("leads-list-panel")!.scrollIntoView({
+            block: "start",
           });
-      }
-
-      function badge(status: string, label = status): HTMLSpanElement {
-        const el = document.createElement("span");
-        el.className = `status status--${status}`;
-        const dot = document.createElement("span");
-        dot.setAttribute("aria-hidden", "true");
-        dot.className = "status__dot";
-        el.append(dot, document.createTextNode(label));
-        return el;
-      }
-
-      function errorAlert(message: string): HTMLDivElement {
-        const alert = document.createElement("div");
-        alert.className = "alert alert--error";
-        const text = document.createElement("p");
-        text.textContent = message;
-        alert.append(text);
-        return alert;
-      }
-
-      function emptyState(
-        heading: string,
-        description: string,
-      ): HTMLDivElement {
-        const wrap = document.createElement("div");
-        wrap.className = "empty-state";
-        const title = document.createElement("h3");
-        title.textContent = heading;
-        const body = document.createElement("p");
-        body.textContent = description;
-        wrap.append(title, body);
-        return wrap;
-      }
+        });
 
       function statusBadgeKind(status: string): string {
         if (status === "converted") return "ready";
@@ -403,7 +351,12 @@ import "../styles/global.css";
         }
         const state = outcome.data.readiness_state;
         const label = state === "not_entitled" ? "setup" : state;
-        panel.append(badge(label));
+        panel.append(
+          statusBadge(
+            label,
+            state === "ready" ? "Operational" : humanize(state),
+          ),
+        );
         for (const finding of outcome.data.blocking_requirements) {
           const reason = document.createElement("p");
           reason.textContent = finding.remediation;
@@ -427,28 +380,44 @@ import "../styles/global.css";
           panel.append(errorAlert(describeFailure(outcome)));
           return;
         }
-        const metrics: Array<[string, string]> = [
+        const closedStatuses = new Set([
+          "converted",
+          "lost",
+          "disqualified",
+          "spam",
+          "duplicate",
+          "cancelled",
+          "archived",
+        ]);
+        const openCount = Object.entries(outcome.data.by_status).reduce(
+          (sum, [status, count]) =>
+            sum + (closedStatuses.has(status) ? 0 : count),
+          0,
+        );
+        const unassigned =
+          (outcome.data.by_status.new ?? 0) +
+          (outcome.data.by_status.unassigned ?? 0);
+        const metrics: Array<[string, string, string]> = [
           [
             "Average speed to lead",
             formatSpeedToLead(outcome.data.average_speed_to_lead_seconds),
+            "First human response",
           ],
-          ["Open urgent leads", String(outcome.data.open_urgent_count)],
-          ...Object.entries(outcome.data.by_status).map(
-            ([status, count]) =>
-              [`Status: ${status}`, String(count)] as [string, string],
-          ),
+          ["Open leads", String(openCount), "Active queue"],
+          ["Needs assignment", String(unassigned), "New or unassigned"],
+          [
+            "Urgent",
+            String(outcome.data.open_urgent_count),
+            "Open urgent leads",
+          ],
+          [
+            "Converted",
+            String(outcome.data.by_status.converted ?? 0),
+            "Recorded outcomes",
+          ],
         ];
-        for (const [label, value] of metrics) {
-          const article = document.createElement("article");
-          article.className = "metric";
-          const eyebrow = document.createElement("p");
-          eyebrow.className = "eyebrow";
-          eyebrow.textContent = label;
-          const valueEl = document.createElement("p");
-          valueEl.className = "metric__value";
-          valueEl.textContent = value;
-          article.append(eyebrow, valueEl);
-          panel.append(article);
+        for (const [label, value, meta] of metrics) {
+          panel.append(metricCard(label, value, meta));
         }
       }
 
@@ -524,14 +493,19 @@ import "../styles/global.css";
         const item = document.createElement("li");
         const info = document.createElement("div");
         const title = document.createElement("h3");
-        title.textContent = `Lead ${lead.id.slice(0, 8)}`;
+        title.textContent = `${lead.urgency === "unknown" ? "New" : humanize(lead.urgency)} lead`;
         const meta = document.createElement("p");
-        meta.textContent = `${lead.urgency} urgency · received ${new Date(
-          lead.received_at,
-        ).toLocaleString()}`;
+        const responseState = lead.first_human_contact_at
+          ? `Contacted ${new Date(lead.first_human_contact_at).toLocaleString()}`
+          : lead.acknowledged_at
+            ? "Acknowledged · awaiting contact"
+            : "Awaiting acknowledgement";
+        meta.textContent = `${ageSince(lead.received_at)} · ${lead.assigned_to_user_id ? "Assigned" : "Unassigned"} · ${responseState}`;
         info.append(title, meta);
         const actions = document.createElement("div");
-        actions.append(badge(statusBadgeKind(lead.status), lead.status));
+        actions.append(
+          statusBadge(statusBadgeKind(lead.status), humanize(lead.status)),
+        );
         const openButton = document.createElement("button");
         openButton.type = "button";
         openButton.className = "button button--secondary";
@@ -546,6 +520,7 @@ import "../styles/global.css";
         selectedLeadId = leadId;
         const detailSection = document.getElementById("detail-section")!;
         detailSection.hidden = false;
+        detailSection.scrollIntoView({ block: "start" });
         const bodyPanel = document.getElementById("detail-body")!;
         bodyPanel.replaceChildren(document.createTextNode("Loading…"));
 
@@ -567,6 +542,20 @@ import "../styles/global.css";
 
       function when(value: string | null): string {
         return value ? new Date(value).toLocaleString() : "Not yet";
+      }
+
+      function ageSince(value: string): string {
+        const elapsedMinutes = Math.max(
+          0,
+          Math.floor((Date.now() - new Date(value).getTime()) / 60_000),
+        );
+        if (elapsedMinutes < 60)
+          return `Received ${elapsedMinutes} minute${elapsedMinutes === 1 ? "" : "s"} ago`;
+        const hours = Math.floor(elapsedMinutes / 60);
+        if (hours < 48)
+          return `Received ${hours} hour${hours === 1 ? "" : "s"} ago`;
+        const days = Math.floor(hours / 24);
+        return `Received ${days} day${days === 1 ? "" : "s"} ago`;
       }
 
       function fact(label: string, value: string): HTMLParagraphElement {
@@ -610,10 +599,23 @@ import "../styles/global.css";
       function assigneeLabel(candidate: AssigneeCandidate): string {
         const name = candidate.display_name?.trim();
         if (name) return name;
-        // No display name on file — never invent one. Show the raw id so the
-        // operator can still distinguish teammates, exactly as the backend
-        // knows them.
-        return candidate.user_profile_id;
+        return `Unnamed ${humanize(candidate.membership_type)} teammate`;
+      }
+
+      function humanize(value: string): string {
+        return value
+          .replace(/_/g, " ")
+          .replace(/\b\w/g, (character) => character.toUpperCase());
+      }
+
+      function currentAssigneeLabel(assigneeId: string | null): string {
+        if (!assigneeId) return "Unassigned";
+        const candidate = assignees.find(
+          (item) => item.user_profile_id === assigneeId,
+        );
+        return candidate
+          ? assigneeLabel(candidate)
+          : "Assigned teammate is no longer available";
       }
 
       function setAssigneeSelect(currentAssigneeId: string | null): void {
@@ -695,6 +697,8 @@ import "../styles/global.css";
           .filter(Boolean)
           .join(" ");
         name.textContent = fullName || "No name provided";
+        document.getElementById("detail-title")!.textContent =
+          fullName || `${humanize(lead.urgency)} lead`;
         const contact = document.createElement("p");
         contact.textContent =
           [lead.normalized_email, lead.normalized_phone]
@@ -703,7 +707,9 @@ import "../styles/global.css";
         const message = document.createElement("p");
         message.textContent = lead.message ?? "No message provided.";
         const status = document.createElement("p");
-        status.append(badge(statusBadgeKind(lead.status), lead.status));
+        status.append(
+          statusBadge(statusBadgeKind(lead.status), humanize(lead.status)),
+        );
         bodyPanel.append(name, contact, message, status);
 
         // Lifecycle facts come from real backend timestamps only — no value
@@ -718,7 +724,7 @@ import "../styles/global.css";
           fact("Received", when(lead.received_at)),
           fact("Acknowledged", when(lead.acknowledged_at)),
           fact("First human contact", when(lead.first_human_contact_at)),
-          fact("Assigned to", lead.assigned_to_user_id ?? "Unassigned"),
+          fact("Assigned to", currentAssigneeLabel(lead.assigned_to_user_id)),
         );
         if (lead.converted_at !== null) {
           facts.append(
@@ -726,7 +732,10 @@ import "../styles/global.css";
             fact(
               "Converted value",
               lead.converted_value_cents !== null
-                ? `${lead.converted_value_cents} cents`
+                ? (lead.converted_value_cents / 100).toLocaleString(undefined, {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })
                 : "Not specified",
             ),
           );
@@ -741,9 +750,9 @@ import "../styles/global.css";
         // is unassigned, or the assignee is no longer selectable (revoked,
         // suspended, deactivated, or from a different organization), the
         // picker falls back to "Unassigned" — it never fabricates a name for
-        // an unresolved id and never leaves a stale id selectable. The real
-        // current assignee id is still shown verbatim in the lifecycle facts
-        // above, so no information is hidden.
+        // an unresolved id and never leaves a stale id selectable. Internal
+        // identifiers remain available to the request layer but are not
+        // presented as teammate names.
         setAssigneeSelect(lead.assigned_to_user_id);
 
         setLeadStatusSelect(lead.status);
@@ -873,8 +882,6 @@ import "../styles/global.css";
           // The status is the backend's real delivery state — never a
           // fabricated "sent"/"delivered" — so it is shown verbatim.
           strong.textContent = `${comm.channel} · ${comm.direction} · ${comm.status}`;
-          const ref = document.createElement("span");
-          ref.textContent = `Reference: ${comm.message_reference}`;
           const delivery = document.createElement("span");
           const parts: string[] = [];
           if (comm.sent_at)
@@ -891,7 +898,7 @@ import "../styles/global.css";
             parts.length > 0
               ? parts.join(" · ")
               : "No delivery events recorded yet.";
-          item.append(strong, ref, delivery);
+          item.append(strong, delivery);
           list.append(item);
         }
       }
@@ -917,7 +924,7 @@ import "../styles/global.css";
           const strong = document.createElement("strong");
           strong.textContent = event.summary;
           const span = document.createElement("span");
-          span.textContent = `${event.event_type} · ${new Date(event.occurred_at).toLocaleString()}`;
+          span.textContent = new Date(event.occurred_at).toLocaleString();
           item.append(strong, span);
           list.append(item);
         }
@@ -992,7 +999,7 @@ import "../styles/global.css";
             const raw = (
               document.getElementById("conversion-value") as HTMLInputElement
             ).value;
-            const value = raw ? Number.parseInt(raw, 10) : null;
+            const value = raw ? Math.round(Number.parseFloat(raw) * 100) : null;
             const result = await convertLead(
               organizationId,
               selectedLeadId,
@@ -1110,50 +1117,11 @@ import "../styles/global.css";
           });
       }
 
-      /**
-       * Populates the shared organization switcher in the topbar (rendered by
-       * AppShell) from the caller's real memberships. Reuses the existing
-       * `selectDefaultOrganization` helper for resolution — this is not a
-       * second organization-selection mechanism; it wires the one already in
-       * the shell that this page previously left dead and empty.
-       */
-      function populateSwitcher(): void {
-        const select = document.getElementById(
-          "organization-switcher",
-        ) as HTMLSelectElement;
-        select.replaceChildren();
-        for (const organization of organizations) {
-          const option = document.createElement("option");
-          option.value = organization.organization_id;
-          option.textContent = organization.organization_name;
-          select.append(option);
-        }
-        select.hidden = organizations.length <= 1;
-        select.addEventListener("change", () => {
-          const chosen = organizations.find(
-            (item) => item.organization_id === select.value,
-          );
-          if (chosen) void loadOrganization(chosen);
-        });
-      }
-
       async function loadOrganization(
         organization: MyOrganization,
       ): Promise<void> {
+        setActiveOrganization(organization);
         organizationId = organization.organization_id;
-        if (typeof window !== "undefined") {
-          localStorage.setItem("selected_org_id", organizationId);
-          const url = new URL(window.location.href);
-          if (url.searchParams.get("org") !== organizationId) {
-            url.searchParams.set("org", organizationId);
-            window.history.replaceState({}, "", url.toString());
-          }
-        }
-        document.getElementById("active-organization-name")!.textContent =
-          organization.organization_name;
-        (
-          document.getElementById("organization-switcher") as HTMLSelectElement
-        ).value = organizationId;
 
         // The previously selected lead belongs to the previous organization.
         // Close its detail panel and clear the action status so no stale
@@ -1173,66 +1141,19 @@ import "../styles/global.css";
       }
 
       async function boot(): Promise<void> {
-        if (!readPublicConfig()) {
-          showOnly(regions.notConfigured);
-          return;
-        }
-        showOnly(regions.loading);
-
-        const session = await getCurrentSession();
-        if (session.status !== "signed-in") {
-          goToLogin();
-          return;
-        }
-
-        const principal = await fetchPrincipal();
-        if (principal.kind === "unauthenticated") {
-          goToLogin();
-          return;
-        }
-        if (principal.kind !== "ok") {
-          regions.error.textContent = describeFailure(principal);
-          showOnly(regions.error);
-          return;
-        }
-        document.getElementById("current-user-label")!.textContent =
-          principal.data.auth_user_id;
-        document.getElementById("current-user-initial")!.textContent =
-          principal.data.auth_user_id.slice(0, 1).toUpperCase();
-        document.getElementById("current-assurance-label")!.textContent =
-          principal.data.assurance_level;
-        const signOutButton = document.getElementById("sign-out-button")!;
-        signOutButton.hidden = false;
-        wireSignOut();
-
-        const organizationsResult = await fetchMyOrganizations();
-        if (organizationsResult.kind === "unauthenticated") {
-          goToLogin();
-          return;
-        }
-        if (organizationsResult.kind !== "ok") {
-          regions.error.textContent = describeFailure(organizationsResult);
-          showOnly(regions.error);
-          return;
-        }
-        if (organizationsResult.data.length === 0) {
-          showOnly(regions.empty);
-          return;
-        }
-        organizations = organizationsResult.data;
-
-        const organization = selectDefaultOrganization(organizations);
-        if (!organization) {
-          showOnly(regions.empty);
-          return;
-        }
-
+        const result = await bootWorkspace("Leads");
+        if (!applyBootResult(regions, result)) return;
         wireDetailActions();
         wireFilters();
-        populateSwitcher();
+        populateSwitcher(
+          result.organizations,
+          (organization) => void loadOrganization(organization),
+        );
+        const organization =
+          result.organizations.find(
+            (item) => item.organization_id === result.context.organizationId,
+          ) ?? result.organizations[0];
         await loadOrganization(organization);
-
-        showOnly(regions.content);
       }
 
       void boot();

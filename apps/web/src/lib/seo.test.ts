@@ -3,8 +3,18 @@ import { describe, expect, it } from "vitest";
 import {
   MAX_CRAWL_PAGES,
   describeCrawlResult,
+  isSEOOpportunityActionable,
   normalizeCrawlPageLimit,
 } from "./seo";
+
+describe("SEO opportunity lifecycle", () => {
+  it("matches the statuses produced by the recommendation workflow", () => {
+    expect(isSEOOpportunityActionable("identified")).toBe(true);
+    expect(isSEOOpportunityActionable("recommended")).toBe(true);
+    expect(isSEOOpportunityActionable("approved")).toBe(true);
+    expect(isSEOOpportunityActionable("rejected")).toBe(false);
+  });
+});
 
 describe("normalizeCrawlPageLimit", () => {
   it("matches the API crawl limit", () => {

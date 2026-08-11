@@ -1,4 +1,8 @@
-import { fetchMyOrganizations, fetchPrincipal } from "../workspace";
+import {
+  fetchMyOrganizations,
+  fetchMyPlatformAdministratorStatus,
+  fetchPrincipal,
+} from "../workspace";
 import { getCurrentSession, signOut } from "../session";
 import { readPublicConfig } from "../config";
 import { selectDefaultOrganization } from "../dashboard-logic";
@@ -39,21 +43,37 @@ function wireSignOut(): void {
   });
 }
 
-function populateUserLabels(
+export function applyShellPrincipal(
   principal: import("../workspace").PrincipalSummary,
 ): void {
   const label = document.getElementById("current-user-label");
   const initial = document.getElementById("current-user-initial");
   const assurance = document.getElementById("current-assurance-label");
   if (label) {
-    label.textContent = principal.auth_user_id;
+    label.textContent = "Your account";
   }
   if (initial) {
-    initial.textContent = principal.auth_user_id.slice(0, 1).toUpperCase();
+    initial.textContent = "L";
   }
   if (assurance) {
     assurance.textContent = principal.assurance_level;
   }
+}
+
+export function applyShellAudience(membershipType: string): void {
+  const audience = document.getElementById("active-workspace-audience");
+  const role = document.getElementById("current-workspace-role");
+  const isAgency = ["internal", "partner", "support"].includes(membershipType);
+  const audienceLabel = isAgency ? "Agency workspace" : "Client workspace";
+  if (audience) audience.textContent = audienceLabel;
+  if (role) role.textContent = audienceLabel;
+}
+
+export function setPlatformNavigationVisible(visible: boolean): void {
+  const adminGroup = document.querySelector<HTMLElement>(
+    '[data-navigation-group="admin"]',
+  );
+  if (adminGroup) adminGroup.hidden = !visible;
 }
 
 export function populateSwitcher(
@@ -97,6 +117,7 @@ export function setActiveOrganization(
   if (switcher) switcher.value = organization.organization_id;
   const nameEl = document.getElementById("active-organization-name");
   if (nameEl) nameEl.textContent = organization.organization_name;
+  applyShellAudience(organization.membership_type);
 }
 
 export async function bootWorkspace(
@@ -124,12 +145,19 @@ export async function bootWorkspace(
     };
   }
 
-  populateUserLabels(principal.data);
+  applyShellPrincipal(principal.data);
   const signOutButton = document.getElementById("sign-out-button");
   if (signOutButton) signOutButton.hidden = false;
   wireSignOut();
 
-  const organizations = await fetchMyOrganizations();
+  const [organizations, platformStatus] = await Promise.all([
+    fetchMyOrganizations(),
+    fetchMyPlatformAdministratorStatus(),
+  ]);
+  setPlatformNavigationVisible(
+    platformStatus.kind === "ok" &&
+      platformStatus.data.is_platform_administrator,
+  );
   if (organizations.kind === "unauthenticated") {
     goToLogin();
     return { kind: "redirected-to-login" };

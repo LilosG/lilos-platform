@@ -158,7 +158,48 @@ test.describe("Onboarding stepper", () => {
     await page.goto("/onboarding");
     await expect(page.locator("#onboarding-stepper")).toBeAttached();
     const steps = page.locator(".stepper__step");
-    await expect(steps).toHaveCount(8);
+    await expect(steps).toHaveCount(9);
+    await expect(steps.last()).toContainText("Connect");
+  });
+});
+
+test.describe("Keyboard interaction", () => {
+  test("tabs support arrow-key selection and complete ARIA relationships", async ({
+    page,
+  }) => {
+    await page.goto("/content");
+    // The browser suite intentionally runs without deployment credentials, so
+    // configured workspace regions stay hidden. Reveal this region only to
+    // exercise the attached tab interaction as it behaves after a real boot.
+    await page.locator("#content-workspace").evaluate((element) => {
+      (element as HTMLElement).hidden = false;
+    });
+    const first = page.locator('#content-tabs [role="tab"]').first();
+    await first.focus();
+    await page.keyboard.press("ArrowRight");
+    const second = page.locator('#content-tabs [role="tab"]').nth(1);
+    await expect(second).toBeFocused();
+    await expect(second).toHaveAttribute("aria-selected", "true");
+    const panelId = await second.getAttribute("aria-controls");
+    expect(panelId).toBe("tab-opportunities");
+    await expect(page.locator(`#${panelId}`)).toHaveAttribute(
+      "role",
+      "tabpanel",
+    );
+  });
+
+  test("mobile navigation opens, closes with Escape, and exposes its state", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("/");
+    const toggle = page.locator("#mobile-navigation-toggle");
+    await expect(toggle).toBeVisible();
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-expanded", "true");
+    await expect(page.locator("#workspace-navigation-menu")).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
   });
 });
 

@@ -1,10 +1,65 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  applyShellAudience,
+  applyShellPrincipal,
   applyBootResult,
+  setPlatformNavigationVisible,
   setActiveOrganization,
   type BootRegions,
   type BootResult,
 } from "./boot";
+
+describe("shell presentation", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("uses a safe account label instead of exposing the auth identifier", () => {
+    const label = element(false);
+    const initial = element(false);
+    const assurance = element(false);
+    vi.stubGlobal("document", {
+      getElementById: (id: string) =>
+        id === "current-user-label"
+          ? label
+          : id === "current-user-initial"
+            ? initial
+            : id === "current-assurance-label"
+              ? assurance
+              : null,
+    });
+    applyShellPrincipal({
+      platform_user_id: "profile-id",
+      auth_user_id: "private-auth-id",
+      user_status: "active",
+      assurance_level: "aal1",
+    });
+    expect(label.textContent).toBe("Your account");
+    expect(label.textContent).not.toContain("private-auth-id");
+    expect(initial.textContent).toBe("L");
+  });
+
+  it("distinguishes agency and client workspaces without granting access", () => {
+    const audience = element(false);
+    const role = element(false);
+    const admin = element(false);
+    vi.stubGlobal("document", {
+      getElementById: (id: string) =>
+        id === "active-workspace-audience"
+          ? audience
+          : id === "current-workspace-role"
+            ? role
+            : null,
+      querySelector: () => admin,
+    });
+    applyShellAudience("owner");
+    expect(audience.textContent).toBe("Client workspace");
+    applyShellAudience("internal");
+    expect(role.textContent).toBe("Agency workspace");
+    setPlatformNavigationVisible(false);
+    expect(admin.hidden).toBe(true);
+    setPlatformNavigationVisible(true);
+    expect(admin.hidden).toBe(false);
+  });
+});
 
 function element(hidden: boolean): HTMLElement {
   return { hidden, textContent: "" } as HTMLElement;

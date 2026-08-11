@@ -57,6 +57,16 @@ import "../styles/global.css";
 
         <div id="insights-readiness-panel"></div>
 
+        <div class="section-heading section-heading--first">
+          <div>
+            <p class="eyebrow">Website performance</p>
+            <h2>Latest Analytics results</h2>
+          </div>
+        </div>
+        <div id="performance-panel">
+          <div class="loading-state">Loading performance…</div>
+        </div>
+
         <div class="section-heading">
           <div>
             <p class="eyebrow">Data sources</p>
@@ -94,6 +104,8 @@ import "../styles/global.css";
         emptyState,
         errorAlert,
         describeFailure,
+        metricCard,
+        formatTimestamp,
         type BootRegions,
       } from "../lib/ui";
 
@@ -133,7 +145,8 @@ import "../styles/global.css";
           ]);
 
         renderReadiness(readinessResult);
-        renderSources(sourceReadiness);
+        renderPerformance(summaryResult);
+        renderSources(sourceReadiness, summaryResult);
         renderActivity(summaryResult);
       }
 
@@ -176,7 +189,7 @@ import "../styles/global.css";
           alert.append(text);
           const link = document.createElement("a");
           link.className = "button button--secondary button--sm";
-          link.href = "/onboarding";
+          link.href = "/settings";
           link.textContent =
             summary.status === "setup" ? "Complete setup" : "Review blockers";
           alert.append(link);
@@ -186,12 +199,36 @@ import "../styles/global.css";
 
       function renderSources(
         readinessResults: Awaited<ReturnType<typeof fetchProductReadiness>>[],
+        summaryResult: Awaited<ReturnType<typeof fetchInsightsSummary>>,
       ): void {
         const panel = document.getElementById("sources-panel")!;
         panel.replaceChildren();
 
         const grid = document.createElement("div");
         grid.className = "directory-grid";
+
+        if (summaryResult.kind === "ok" && summaryResult.data.ga4?.connected) {
+          const analytics = summaryResult.data.ga4;
+          const card = document.createElement("div");
+          card.className = "integration-card";
+          const latestSync = analytics.properties
+            .map((property) => property.last_synced_at)
+            .filter((value): value is string => Boolean(value))
+            .sort()
+            .at(-1);
+          card.innerHTML =
+            '<div class="integration-card__header"><span class="integration-card__icon">A</span><div class="integration-card__title">Google Analytics</div></div>';
+          const description = document.createElement("p");
+          description.className = "integration-card__desc";
+          description.textContent = latestSync
+            ? `${analytics.properties.length} mapped propert${analytics.properties.length === 1 ? "y" : "ies"} · Synced ${formatTimestamp(latestSync)}`
+            : `${analytics.properties.length} mapped propert${analytics.properties.length === 1 ? "y" : "ies"} · Awaiting first sync`;
+          const footer = document.createElement("div");
+          footer.className = "integration-card__footer";
+          footer.append(statusBadge("ready", "Connected"));
+          card.append(description, footer);
+          grid.append(card);
+        }
 
         for (let i = 0; i < SOURCE_PRODUCTS.length; i++) {
           const key = SOURCE_PRODUCTS[i];
@@ -219,10 +256,10 @@ import "../styles/global.css";
             statusBadge(
               summary.status,
               summary.status === "ready"
-                ? "Connected"
+                ? "Operational"
                 : summary.status === "missing"
                   ? "Unavailable"
-                  : summary.status,
+                  : summary.status.replace(/_/g, " "),
             ),
           );
           const link = document.createElement("a");
@@ -238,6 +275,61 @@ import "../styles/global.css";
         panel.append(grid);
       }
 
+      function renderPerformance(
+        summaryResult: Awaited<ReturnType<typeof fetchInsightsSummary>>,
+      ): void {
+        const panel = document.getElementById("performance-panel")!;
+        panel.replaceChildren();
+        if (summaryResult.kind !== "ok") {
+          panel.append(
+            errorAlert(describeFailure(summaryResult, "Performance")),
+          );
+          return;
+        }
+        const ga4 = summaryResult.data.ga4;
+        if (!ga4?.connected || Object.keys(ga4.metrics).length === 0) {
+          panel.append(
+            emptyState(
+              "No Analytics observations yet",
+              "Connect and sync Google Analytics to report real website activity. LILOs will not invent values or trends while a source is unavailable.",
+              "Manage data sources",
+              "/integrations",
+            ),
+          );
+          return;
+        }
+        const labels: Record<string, string> = {
+          "ga4.sessions": "Sessions",
+          "ga4.totalUsers": "Users",
+          "ga4.screenPageViews": "Page views",
+          "ga4.conversions": "Conversions",
+        };
+        const latestSync = ga4.properties
+          .map((property) => property.last_synced_at)
+          .filter((value): value is string => Boolean(value))
+          .sort()
+          .at(-1);
+        const grid = document.createElement("div");
+        grid.className = "metric-grid";
+        for (const [key, value] of Object.entries(ga4.metrics)) {
+          grid.append(
+            metricCard(
+              labels[key] ?? key.replace(/^ga4\./, "").replace(/_/g, " "),
+              String(value),
+              latestSync
+                ? `Synced ${formatTimestamp(latestSync)}`
+                : "Latest observation",
+            ),
+          );
+        }
+        panel.append(grid);
+        const notice = document.createElement("p");
+        notice.className = "source-note";
+        notice.textContent =
+          "Current totals are shown without a period comparison because the reporting API does not yet return an observation window or comparable prior period.";
+        panel.append(notice);
+      }
+
       function renderActivity(
         summaryResult: Awaited<ReturnType<typeof fetchInsightsSummary>>,
       ): void {
@@ -250,7 +342,7 @@ import "../styles/global.css";
               "Activity unavailable",
               "Connect the insights product to see cross-product activity.",
               "Set up Insights",
-              "/onboarding",
+              "/settings",
             ),
           );
           return;
