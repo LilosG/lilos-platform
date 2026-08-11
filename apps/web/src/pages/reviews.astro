@@ -146,6 +146,7 @@ import "../styles/global.css";
         ingestReviews,
         type ReviewSummary,
       } from "../lib/reviews";
+      import { resolveBusinessFact } from "../lib/administration";
       import { fetchLocations } from "../lib/workspace";
       import {
         bootWorkspace,
@@ -431,6 +432,25 @@ import "../styles/global.css";
         status.className = "text-sm muted";
         status.setAttribute("role", "status");
         status.setAttribute("aria-live", "polite");
+
+        async function approvedFactRevisionIds(): Promise<string[]> {
+          const factKeys = [
+            "business.name",
+            "business.address",
+            "brand.approved_claims",
+          ];
+          const results = await Promise.all(
+            factKeys.map((factKey) =>
+              resolveBusinessFact(organizationId, factKey, selectedLocationId),
+            ),
+          );
+          return results.flatMap((result) =>
+            result.kind === "ok" && result.data.selected_revision_id
+              ? [result.data.selected_revision_id]
+              : [],
+          );
+        }
+
         saveBtn.addEventListener("click", async () => {
           if (!textarea.value.trim()) {
             status.textContent = "Enter a response first.";
@@ -442,6 +462,12 @@ import "../styles/global.css";
             status.textContent = "No revision to respond to.";
             return;
           }
+          const approvedFactIds = await approvedFactRevisionIds();
+          if (approvedFactIds.length === 0) {
+            status.textContent =
+              "Approve at least one business fact before drafting a response.";
+            return;
+          }
           const result = await draftResponse(
             organizationId,
             selectedLocationId,
@@ -450,7 +476,7 @@ import "../styles/global.css";
               review_revision_id: latestRev.id,
               response_text: textarea.value,
               generated_by_type: "user",
-              approved_fact_revision_ids: [],
+              approved_fact_revision_ids: approvedFactIds,
             },
           );
           status.textContent =
@@ -468,13 +494,21 @@ import "../styles/global.css";
             status.textContent = "No revision to respond to.";
             return;
           }
+          const approvedFactIds = await approvedFactRevisionIds();
+          if (approvedFactIds.length === 0) {
+            status.textContent =
+              "Approve at least one business fact before generating a draft.";
+            aiBtn.disabled = false;
+            aiBtn.textContent = "Generate AI draft";
+            return;
+          }
           const result = await generateAIDraft(
             organizationId,
             selectedLocationId,
             review.id,
             {
               review_revision_id: latestRev.id,
-              approved_fact_revision_ids: [],
+              approved_fact_revision_ids: approvedFactIds,
               idempotency_key: `web-ai-${review.id}-${Date.now()}`,
             },
           );
