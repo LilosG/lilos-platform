@@ -27,6 +27,7 @@ from apps.api.app.products.gbp.operations import (
 from apps.api.app.products.gbp.operations import validate_hours as validate_hours_periods
 from apps.api.app.products.gbp.operations_contracts import (
     ChangeSetPropose,
+    MediaDecision,
     MediaPropose,
     PostRevisionCreate,
     SpecialHoursPropose,
@@ -40,6 +41,7 @@ from apps.api.app.products.gbp.operations_errors import (
     GBPLocationNotFoundError,
     GBPLocationNotWriteEnabledError,
     GBPMediaNotFoundError,
+    GBPMediaNotPublishEligibleError,
     GBPPostNotPublishEligibleError,
     GBPPostRevisionNotFoundError,
     GBPSpecialHoursNotFoundError,
@@ -527,6 +529,75 @@ class GBPOperationsService:
         )
         if not media:
             raise GBPMediaNotFoundError
+        return media
+
+    async def decide_media(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        media_id: UUID,
+        command: MediaDecision,
+        *,
+        actor_id: UUID | None,
+        correlation_id: str,
+    ) -> GBPMedia:
+        media = await self.get_media(session, organization_id, media_id)
+        if media.status != "awaiting_approval":
+            raise GBPMediaNotPublishEligibleError
+        media.status = "approved" if command.approve else "rejected"
+        await session.flush()
+        await self._audit(
+            session,
+            event="gbp.media.decided",
+            organization_id=organization_id,
+            location_id=None,
+            actor_id=actor_id,
+            resource_type="gbp_media",
+            resource_id=media.id,
+            correlation_id=correlation_id,
+            summary=f"Media {'approved' if command.approve else 'rejected'}.",
+            metadata={"media_type": media.media_type},
+        )
+        return media
+
+    async def reserve_media_publication(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        media_id: UUID,
+        workflow_run_id: UUID,
+        idempotency_key: str,
+        *,
+        actor_id: UUID | None,
+        correlation_id: str,
+    ) -> GBPMedia:
+        media = await self.get_media(session, organization_id, media_id)
+        if media.status != "approved":
+            raise GBPMediaNotPublishEligibleError
+        location = await self._get_gbp_location(session, organization_id, media.gbp_location_id)
+        if not location.write_enabled or location.mapping_status != "confirmed":
+            raise GBPLocationNotWriteEnabledError
+        workflow_run = await self.execution.resolve_for_consumption(
+            session, organization_id, workflow_run_id, "gbp.upload_media"
+        )
+        media.status = "publishing"
+        await session.flush()
+        workflow_run.input_document = {
+            **(workflow_run.input_document or {}),
+            "media_id": str(media.id),
+        }
+        await self._audit(
+            session,
+            event="gbp.media.publication_reserved",
+            organization_id=organization_id,
+            location_id=None,
+            actor_id=actor_id,
+            resource_type="gbp_media",
+            resource_id=media.id,
+            correlation_id=correlation_id,
+            summary="GBP media publication reserved.",
+            metadata={"media_type": media.media_type},
+        )
         return media
 
     async def create_post_revision(

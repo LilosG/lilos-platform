@@ -25,7 +25,9 @@ from apps.api.app.products.gbp.operations_contracts import (
     CapabilitySnapshotRecord,
     ChangeSetDecision,
     ChangeSetPropose,
+    MediaDecision,
     MediaPropose,
+    MediaPublishRequest,
     PostDecision,
     PostPublishRequest,
     PostRevisionCreate,
@@ -426,6 +428,57 @@ async def propose_media(
         organization_id,
         gbp_location_id,
         command,
+        actor_id=principal.platform_user_id,
+        correlation_id=request_correlation_id(request),
+    )
+    return {"data": media_row(item), "meta": meta(request)}
+
+
+@router.post(
+    "/media/{media_id}/decide",
+    dependencies=[Depends(no_store)],
+)
+async def decide_media(
+    request: Request,
+    organization_id: UUID,
+    location_id: UUID,
+    media_id: UUID,
+    command: MediaDecision,
+    session: Session,
+    principal: Authenticated,
+    _: Annotated[AuthorizationDecision, policy("gbp.propose")],
+) -> dict[str, object]:
+    item = await service.decide_media(
+        session,
+        organization_id,
+        media_id,
+        command,
+        actor_id=principal.platform_user_id,
+        correlation_id=request_correlation_id(request),
+    )
+    return {"data": media_row(item), "meta": meta(request)}
+
+
+@router.post(
+    "/media/{media_id}/publish",
+    dependencies=[Depends(no_store)],
+)
+async def publish_media(
+    request: Request,
+    organization_id: UUID,
+    location_id: UUID,
+    media_id: UUID,
+    command: MediaPublishRequest,
+    session: Session,
+    principal: Authenticated,
+    _: Annotated[AuthorizationDecision, policy("gbp.propose")],
+) -> dict[str, object]:
+    item = await service.reserve_media_publication(
+        session,
+        organization_id,
+        media_id,
+        command.workflow_run_id,
+        command.idempotency_key,
         actor_id=principal.platform_user_id,
         correlation_id=request_correlation_id(request),
     )

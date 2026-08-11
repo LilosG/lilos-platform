@@ -908,6 +908,180 @@ async def _handle_reviews_publish_response(
 
 
 # ---------------------------------------------------------------------------
+    # GBP upload-media handler
+    # ---------------------------------------------------------------------------
+
+
+async def _handle_gbp_upload_media(
+    session: AsyncSession,
+    *,
+    organization_id: UUID,
+    location_id: UUID | None,
+    input_document: dict[str, Any],
+    correlation_id: str,
+) -> JobOutcome:
+    """Upload an approved GBP media item via the GBP adapter.
+
+    Resolves the media record, reads a fresh access token, calls the
+    adapter's create_media, verifies by re-reading, and updates the status.
+    """
+    from datetime import UTC, datetime
+
+    from sqlalchemy import select
+
+    from apps.api.app.products.gbp.models import GBPAccount, GBPLocation
+    from apps.api.app.products.gbp.operations_models import GBPMedia
+    from apps.api.app.products.gbp.resource_names import v4_location_name
+
+    media_id_raw = input_document.get("media_id")
+    if not media_id_raw:
+        return JobOutcome(result="permanent_failure", safe_error="MEDIA_ID_MISSING")
+
+    try:
+        media_id = UUID(str(media_id_raw))
+    except (ValueError, TypeError):
+        return JobOutcome(result="permanent_failure", safe_error="MEDIA_ID_INVALID")
+
+    if not _provider_writes_enabled():
+        return JobOutcome(result="permanent_failure", safe_error="PROVIDER_WRITES_DISABLED")
+
+    media = await session.scalar(
+        select(GBPMedia).where(
+            GBPMedia.organization_id == organization_id,
+            GBPMedia.id == media_id,
+        )
+    )
+    if not media:
+        return JobOutcome(result="permanent_failure", safe_error="MEDIA_NOT_FOUND")
+
+    if media.status != "publishing":
+        return JobOutcome(result="permanent_failure", safe_error="MEDIA_NOT_PUBLISHING")
+
+    if media.provider_media_id:
+        adapter = _adapter_factory()
+        try:
+            token, _ = await _token_resolver(session, organization_id)
+            re_read = await adapter.get_media(token, media.provider_media_id)
+            state = str(re_read.get("state", "")).upper()
+            if state == "VERIFIED":
+                media.status = "verified"
+                media.verified_at = datetime.now(UTC)
+                return JobOutcome(
+                    result="succeeded",
+                    result_reference=f"media:{media.id}",
+                )
+            return JobOutcome(
+                result="retryable_failure",
+                safe_error=f"MEDIA_PROVIDER_STATE_{state}",
+            )
+        except Exception:
+            return JobOutcome(
+                result="retryable_failure",
+                safe_error="MEDIA_VERIFICATION_FAILED",
+            )
+
+    location = await session.scalar(
+        select(GBPLocation).where(
+            GBPLocation.organization_id == organization_id,
+            GBPLocation.id == media.gbp_location_id,
+        )
+    )
+    if not location:
+        media.status = "failed"
+        media.safe_error_code = "LOCATION_NOT_FOUND"
+        return JobOutcome(result="permanent_failure", safe_error="LOCATION_NOT_FOUND")
+
+    if not location.write_enabled or location.mapping_status != "confirmed":
+        media.status = "failed"
+        media.safe_error_code = "LOCATION_NOT_WRITE_ENABLED"
+        return JobOutcome(result="permanent_failure", safe_error="LOCATION_NOT_WRITE_ENABLED")
+
+    account = await session.get(GBPAccount, location.account_id)
+    if not account:
+        media.status = "failed"
+        media.safe_error_code = "ACCOUNT_NOT_FOUND"
+        return JobOutcome(result="permanent_failure", safe_error="ACCOUNT_NOT_FOUND")
+
+    try:
+        token, _ = await _token_resolver(session, organization_id)
+    except Exception:
+        media.status = "failed"
+        media.safe_error_code = "TOKEN_REFRESH_FAILED"
+        return JobOutcome(result="retryable_failure", safe_error="TOKEN_REFRESH_FAILED")
+
+    adapter = _adapter_factory()
+    location_name = v4_location_name(account.external_account_id, location.external_location_id)
+
+    media_item: dict[str, Any] = {
+        "mediaFormat": "PHOTO",
+        "locationAssociation": {"category": "ADDITIONAL"},
+        "sourceUrl": media.source_reference,
+    }
+    if media.media_type == "video":
+        media_item["mediaFormat"] = "VIDEO"
+    elif media.media_type == "cover":
+        media_item["locationAssociation"] = {"category": "COVER"}
+    elif media.media_type == "logo":
+        media_item["locationAssociation"] = {"category": "LOGO"}
+
+    try:
+        result = await adapter.create_media(token, location_name, media_item)
+    except Exception as exc:
+        media.status = "failed"
+        media.safe_error_code = "PROVIDER_WRITE_FAILED"
+        logger.warning(
+            "GBP media upload failed",
+            extra={
+                "event_name": "gbp.media.upload_failed",
+                "media_id": str(media.id),
+                "error": str(exc)[:200],
+            },
+        )
+        return JobOutcome(result="retryable_failure", safe_error="PROVIDER_WRITE_FAILED")
+
+    google_media_name = str(result.get("name", ""))
+    if not google_media_name:
+        media.status = "failed"
+        media.safe_error_code = "PROVIDER_MEDIA_ID_MISSING"
+        return JobOutcome(result="retryable_failure", safe_error="PROVIDER_MEDIA_ID_MISSING")
+
+    media.provider_media_id = google_media_name
+
+    try:
+        re_read = await adapter.get_media(token, google_media_name)
+    except Exception as exc:
+        media.status = "reconciliation_required"
+        media.safe_error_code = "VERIFICATION_REREAD_FAILED"
+        logger.warning(
+            "GBP media verification re-read failed",
+            extra={
+                "event_name": "gbp.media.verification_failed",
+                "media_id": str(media.id),
+                "error": str(exc)[:200],
+            },
+        )
+        return JobOutcome(result="retryable_failure", safe_error="VERIFICATION_REREAD_FAILED")
+
+    provider_state = str(re_read.get("state", "")).upper()
+    if provider_state == "VERIFIED":
+        media.status = "verified"
+        media.verified_at = datetime.now(UTC)
+        return JobOutcome(
+            result="succeeded",
+            result_reference=f"media:{media.id}",
+        )
+    elif provider_state == "REJECTED":
+        media.status = "failed"
+        media.safe_error_code = "MEDIA_REJECTED_BY_PROVIDER"
+        return JobOutcome(result="permanent_failure", safe_error="MEDIA_REJECTED_BY_PROVIDER")
+
+    media.status = "reconciliation_required"
+    media.safe_error_code = f"MEDIA_PROVIDER_STATE_{provider_state}"
+    safe_error = f"MEDIA_PROVIDER_STATE_{provider_state}"
+    return JobOutcome(result="retryable_failure", safe_error=safe_error)
+
+
+# ---------------------------------------------------------------------------
 # Register all handlers
 # ---------------------------------------------------------------------------
 
@@ -915,6 +1089,7 @@ async def _handle_reviews_publish_response(
 def _register_all() -> None:
     register_workflow_handler("gbp.publish_change", _handle_gbp_publish_change)
     register_workflow_handler("gbp.publish_post", _handle_gbp_publish_post)
+    register_workflow_handler("gbp.upload_media", _handle_gbp_upload_media)
     register_workflow_handler("seo.crawl_or_analysis", _handle_seo_crawl)
     register_workflow_handler("content.publish", _handle_content_publish)
     register_workflow_handler("reviews.publish_response", _handle_reviews_publish_response)

@@ -132,6 +132,7 @@ class GBPMedia(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
     provider_media_id: Mapped[str | None] = mapped_column(String(500))
     status: Mapped[str] = mapped_column(String(32), nullable=False)
+    safe_error_code: Mapped[str | None] = mapped_column(String(64))
     verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 

@@ -11,6 +11,7 @@ WORKFLOW_TYPES: dict[str, tuple[str, str]] = {
     "seo.crawl_or_analysis": ("Run SEO crawl or analysis execution", "seo"),
     "gbp.publish_change": ("Publish an approved Business Profile change", "gbp"),
     "gbp.publish_post": ("Publish an approved Business Profile post", "gbp"),
+    "gbp.upload_media": ("Upload an approved Business Profile media item", "gbp"),
     "reviews.publish_response": ("Publish an approved review response to the provider", "reviews"),
 }
 
