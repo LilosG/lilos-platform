@@ -111,6 +111,7 @@ def test_audit_migration_upgrades_downgrades_and_restores_head(
             "gbp_post_revisions",
             "gbp_profile_change_revisions",
             "gbp_profile_snapshots",
+            "gbp_provider_posts",
             "gbp_publications",
             "gbp_special_hours",
             "gbp_suspension_cases",
