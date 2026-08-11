@@ -145,6 +145,41 @@ async def test_github_app_install_callback_persists_installation_id(
 
 @pytest.mark.integration
 @pytest.mark.anyio
+async def test_github_app_disconnect_clears_local_installation_binding(
+    integrations_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with integrations_session_factory.begin() as session:
+        await ProviderCatalogSeeder().run(session)
+        org = await make_organization(session)
+        settings = make_github_settings()
+        service = GitHubAppService(http_client_factory=mock_client_factory(github_http_handler()))
+        state = state_from_url(
+            await service.begin_install(
+                session, settings, org.id, actor_id=None, correlation_id="c1"
+            )
+        )
+        connection = await service.complete_install(
+            session,
+            settings,
+            org.id,
+            state=state,
+            installation_id="99999",
+            setup_action="install",
+            correlation_id="c2",
+        )
+
+        disconnected = await service.disconnect_installation(
+            session, org.id, actor_id=None, correlation_id="c3"
+        )
+
+        assert disconnected.id == connection.id
+        assert disconnected.status == "disconnected"
+        assert disconnected.external_account_reference is None
+        assert disconnected.credential_reference is None
+
+
+@pytest.mark.integration
+@pytest.mark.anyio
 async def test_github_app_installation_token_is_short_lived_and_not_persisted(
     integrations_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:

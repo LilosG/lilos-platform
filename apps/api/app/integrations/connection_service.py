@@ -152,6 +152,12 @@ class GBPConnectionService:
             "response_type": "code",
             "scope": " ".join(scopes),
             "access_type": "offline",
+            # Ask Google to retain scopes already granted to this client while
+            # the operator authorizes an additional LILOs product.  The
+            # explicit union below keeps the requested token scope truthful;
+            # this flag preserves the provider-side grant during incremental
+            # re-consent.
+            "include_granted_scopes": "true",
             "prompt": "consent",
             "state": state,
         }
@@ -374,7 +380,15 @@ class GBPConnectionService:
             wanted_scopes.update(scopes_for_product(product))
         # Union with already-granted scopes so re-consent requests the full set
         # Google needs to issue a refresh token covering every product.
-        wanted_scopes.update(granted_scopes(connection))
+        existing_scopes = granted_scopes(connection)
+        wanted_scopes.update(existing_scopes)
+        # Connections created before scope tracking was introduced have no
+        # recorded capabilities, but their token is known to be the original
+        # GBP connection.  Preserve business.manage when upgrading one of
+        # those rows instead of issuing a Search Console/Analytics-only
+        # authorization that could strand existing GBP mappings.
+        if not existing_scopes:
+            wanted_scopes.add(BUSINESS_MANAGE_SCOPE)
         scopes = tuple(sorted(wanted_scopes)) or (BUSINESS_MANAGE_SCOPE,)
         _, state = await self.intents.create(session, organization_id, connection.id, redirect_uri)
         url = self.authorization_url(client_id, redirect_uri, state, scopes)

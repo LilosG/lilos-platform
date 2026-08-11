@@ -166,11 +166,12 @@ test("unconfigured Content page shows a truthful not-configured state, not fabri
   ).toEqual([]);
 });
 
-test("Content page exposes a reachable publishing setup form to configure a GitHub target", async ({
+test("Content page does not expose a PAT registration path", async ({
   page,
 }) => {
   await page.goto("/content");
-  await expect(page.locator("#register-connection-button")).toHaveCount(1);
+  await expect(page.locator("#register-connection-button")).toHaveCount(0);
+  await expect(page.locator("#github-token")).toHaveCount(0);
   await expect(page.locator("#create-target-button")).toHaveCount(1);
 });
 

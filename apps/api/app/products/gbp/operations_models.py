@@ -193,6 +193,46 @@ class GBPPostPublication(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+class GBPProviderPost(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Read-side snapshot of a Local Post returned by Google.
+
+    This is deliberately separate from governed LILOs post revisions and
+    publications: provider truth may include posts created outside LILOs and
+    must never be mistaken for an approved local draft.
+    """
+
+    __tablename__ = "gbp_provider_posts"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["organization_id", "gbp_location_id"],
+            ["gbp_locations.organization_id", "gbp_locations.id"],
+            ondelete="RESTRICT",
+        ),
+        UniqueConstraint("organization_id", "id", name="uq_gbp_provider_posts_org_id"),
+        UniqueConstraint(
+            "organization_id",
+            "gbp_location_id",
+            "provider_post_name",
+            name="uq_gbp_provider_post_name",
+        ),
+        CheckConstraint("status IN ('present','not_seen')", name="status"),
+    )
+    organization_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    )
+    gbp_location_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    provider_post_name: Mapped[str] = mapped_column(String(500), nullable=False)
+    post_type: Mapped[str | None] = mapped_column(String(32))
+    state: Mapped[str | None] = mapped_column(String(32))
+    summary: Mapped[str | None] = mapped_column(String(1500))
+    provider_payload: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, server_default="present")
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class GBPSuspensionCase(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "gbp_suspension_cases"
     __table_args__ = (

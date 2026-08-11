@@ -8,7 +8,11 @@ vi.mock("./api-client", () => ({
   apiRequest: (...args: unknown[]) => apiRequest(...args),
 }));
 
-import { beginGitHubInstall, fetchGitHubRepositories } from "./github-app";
+import {
+  beginGitHubInstall,
+  disconnectGitHub,
+  fetchGitHubRepositories,
+} from "./github-app";
 
 describe("github-app lib routes", () => {
   beforeEach(() => {
@@ -30,6 +34,14 @@ describe("github-app lib routes", () => {
     await fetchGitHubRepositories("org-1");
     expect(apiGet).toHaveBeenCalledWith(
       "/api/v1/organizations/org-1/integrations/github/repositories",
+    );
+  });
+
+  it("disconnectGitHub POSTs to the local installation binding endpoint", async () => {
+    await disconnectGitHub("org-1");
+    expect(apiRequest).toHaveBeenCalledWith(
+      "/api/v1/organizations/org-1/integrations/github/disconnect",
+      { method: "POST" },
     );
   });
 });

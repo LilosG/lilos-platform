@@ -141,12 +141,14 @@ import "../styles/global.css";
         fetchMedia,
         fetchOperationsAudit,
         fetchPostRevisions,
+        fetchProviderPosts,
         fetchSpecialHours,
         fetchSuspensionCases,
         proposeChangeSet,
         proposeMedia,
         proposeSpecialHours,
         publishPost,
+        reconcileProviderPosts,
       } from "../lib/gbp-operations";
       import {
         bootWorkspace,
@@ -911,6 +913,63 @@ import "../styles/global.css";
           selectedPlatformLocationId,
           selectedGbpLocationId,
         );
+        const providerPostsResult = await fetchProviderPosts(
+          organizationId,
+          selectedPlatformLocationId,
+          selectedGbpLocationId,
+        );
+
+        const providerCard = document.createElement("div");
+        providerCard.className = "card";
+        const providerHeader = document.createElement("div");
+        providerHeader.className = "card__header";
+        providerHeader.append(
+          Object.assign(document.createElement("h3"), {
+            className: "card__title",
+            textContent: "Google Local Posts",
+          }),
+        );
+        providerCard.append(providerHeader);
+        const providerBody = document.createElement("div");
+        providerBody.className = "card__body";
+        const reconcileBtn = document.createElement("button");
+        reconcileBtn.type = "button";
+        reconcileBtn.className = "button";
+        reconcileBtn.textContent = "Reconcile from Google";
+        const providerStatus = document.createElement("p");
+        providerStatus.className = "text-sm muted";
+        reconcileBtn.addEventListener("click", async () => {
+          reconcileBtn.disabled = true;
+          reconcileBtn.textContent = "Reconciling…";
+          const result = await reconcileProviderPosts(
+            organizationId,
+            selectedPlatformLocationId!,
+            selectedGbpLocationId!,
+          );
+          if (result.kind === "ok") {
+            providerStatus.textContent = `Google returned ${result.data.provider_count} post(s); ${result.data.present_count} current provider record(s) are persisted.`;
+            await renderPosts();
+          } else {
+            reconcileBtn.disabled = false;
+            reconcileBtn.textContent = "Reconcile from Google";
+            providerStatus.textContent = describeFailure(
+              result,
+              "Google Local Posts",
+            );
+          }
+        });
+        providerBody.append(reconcileBtn, providerStatus);
+        if (providerPostsResult.kind === "ok") {
+          const current = providerPostsResult.data.filter(
+            (post) => post.status === "present",
+          ).length;
+          const observed = document.createElement("p");
+          observed.className = "text-sm muted";
+          observed.textContent = `Persisted provider records: ${current} current, ${providerPostsResult.data.length} total observed.`;
+          providerBody.append(observed);
+        }
+        providerCard.append(providerBody);
+        panel.append(providerCard);
 
         // Draft post form
         const formCard = document.createElement("div");

@@ -70,6 +70,12 @@ export type GitHubConnection = {
   status: string;
 };
 
+export function isGitHubAppConnection(connection: GitHubConnection): boolean {
+  return (
+    connection.external_account_reference?.startsWith("installation:") ?? false
+  );
+}
+
 export type ContentSummaryStats = {
   by_status: Record<string, number>;
   open_opportunities: number;

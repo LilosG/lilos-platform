@@ -76,17 +76,22 @@ import "../styles/global.css";
     </AppShell>
     <script>
       import {
-        beginConnection,
+        connectGoogle,
         disconnectConnection,
         fetchConnectionStatus,
         discoverResources,
         describeGbpConnectFailure,
+        missingGoogleProducts,
       } from "../lib/gbp-connection";
       import {
         beginGitHubInstall,
+        disconnectGitHub,
         fetchGitHubRepositories,
       } from "../lib/github-app";
-      import { fetchGitHubConnections } from "../lib/content";
+      import {
+        fetchGitHubConnections,
+        isGitHubAppConnection,
+      } from "../lib/content";
       import {
         bootWorkspace,
         applyBootResult,
@@ -355,7 +360,11 @@ import "../styles/global.css";
           connectBtn.addEventListener("click", async () => {
             connectBtn.disabled = true;
             connectBtn.textContent = "Connecting…";
-            const result = await beginConnection(organizationId);
+            const result = await connectGoogle(organizationId, [
+              "gbp",
+              "search_console",
+              "analytics",
+            ]);
             if (result.kind === "ok") {
               window.location.assign(result.data.authorization_url);
             } else {
@@ -403,12 +412,46 @@ import "../styles/global.css";
           reconnectBtn.className = "button";
           reconnectBtn.textContent = "Reconnect Google";
           reconnectBtn.addEventListener("click", async () => {
-            const result = await beginConnection(organizationId);
+            const result = await connectGoogle(
+              organizationId,
+              missingGoogleProducts(state.services),
+            );
             if (result.kind === "ok")
               window.location.assign(result.data.authorization_url);
             else panel.append(errorAlert(describeFailure(result, "Reconnect")));
           });
           actions.append(reconnectBtn);
+        }
+
+        const missingProducts = missingGoogleProducts(state.services);
+        if (
+          missingProducts.length > 0 &&
+          state.status !== "reconnect_required"
+        ) {
+          const authorizeBtn = document.createElement("button");
+          authorizeBtn.type = "button";
+          authorizeBtn.className = "button";
+          authorizeBtn.textContent = "Authorize missing Google services";
+          authorizeBtn.addEventListener("click", async () => {
+            authorizeBtn.disabled = true;
+            authorizeBtn.textContent = "Redirecting…";
+            const result = await connectGoogle(organizationId, missingProducts);
+            if (result.kind === "ok") {
+              window.location.assign(result.data.authorization_url);
+            } else {
+              authorizeBtn.disabled = false;
+              authorizeBtn.textContent = "Authorize missing Google services";
+              panel.append(
+                errorAlert(describeFailure(result, "Google authorization")),
+              );
+            }
+          });
+          actions.append(authorizeBtn);
+          const hint = document.createElement("p");
+          hint.className = "text-sm muted";
+          hint.textContent =
+            "Authorize the remaining read-only Google services to enable Analytics and Search Console discovery.";
+          panel.append(hint);
         }
 
         if (state.status === "connected" || state.status === "degraded") {
@@ -459,6 +502,10 @@ import "../styles/global.css";
         );
         const content = providerContent;
         content.replaceChildren();
+        const appConnections =
+          connectionsResult.kind === "ok"
+            ? connectionsResult.data.filter(isGitHubAppConnection)
+            : [];
 
         const connCard = document.createElement("div");
         connCard.className = "card";
@@ -474,10 +521,7 @@ import "../styles/global.css";
         connCard.append(connBody);
         content.append(connCard);
 
-        if (
-          connectionsResult.kind !== "ok" ||
-          connectionsResult.data.length === 0
-        ) {
+        if (connectionsResult.kind !== "ok" || appConnections.length === 0) {
           const installBtn = document.createElement("button");
           installBtn.type = "button";
           installBtn.className = "button";
@@ -505,7 +549,7 @@ import "../styles/global.css";
           return;
         }
 
-        const conn = connectionsResult.data[0];
+        const conn = appConnections[0];
         connBody.append(
           statusBadge(
             conn.status === "active" ? "ready" : "setup",
@@ -518,6 +562,24 @@ import "../styles/global.css";
           ref.textContent = `Connected as ${conn.external_account_reference}`;
           connBody.append(ref);
         }
+        const disconnectBtn = document.createElement("button");
+        disconnectBtn.type = "button";
+        disconnectBtn.className = "button button--secondary";
+        disconnectBtn.textContent = "Disconnect GitHub App";
+        disconnectBtn.addEventListener("click", async () => {
+          disconnectBtn.disabled = true;
+          const result = await disconnectGitHub(organizationId);
+          if (result.kind === "ok") {
+            const refreshed = await fetchGitHubConnections(organizationId);
+            await openGitHub(refreshed);
+          } else {
+            disconnectBtn.disabled = false;
+            connBody.append(
+              errorAlert(describeFailure(result, "GitHub disconnect")),
+            );
+          }
+        });
+        connBody.append(disconnectBtn);
 
         // Repositories
         const reposResult = await fetchGitHubRepositories(organizationId);
