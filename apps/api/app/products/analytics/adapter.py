@@ -12,7 +12,7 @@ and raw provider identifiers/bearer tokens are never returned by callers.
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 import httpx
 
@@ -23,6 +23,8 @@ ANALYTICS_DATA_API = "https://analyticsdata.googleapis.com/v1beta"
 # GA4 metrics (not invented), limited to what §13.42 justifies: sessions,
 # users, pageviews, and conversions.
 GA4_METRICS: tuple[str, ...] = ("sessions", "totalUsers", "screenPageViews", "conversions")
+ACCOUNT_SUMMARIES_PAGE_SIZE = 200
+MAX_ACCOUNT_SUMMARY_PAGES = 1_000
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,11 +81,19 @@ class GoogleAnalyticsAdminAdapter:
         }
 
     async def _get(
-        self, access_token: str, url: str, *, expected_status: int = 200
+        self,
+        access_token: str,
+        url: str,
+        *,
+        expected_status: int = 200,
+        params: dict[str, int | str] | None = None,
     ) -> dict[str, Any]:
         async with self.http_client_factory() as client:
             response = await client.get(
-                url, headers=self._headers(access_token), timeout=self.timeout_seconds
+                url,
+                headers=self._headers(access_token),
+                params=params,
+                timeout=self.timeout_seconds,
             )
         if response.status_code != expected_status:
             raise RuntimeError(
@@ -119,8 +129,31 @@ class GoogleAnalyticsAdminAdapter:
         return payload
 
     async def list_account_summaries(self, access_token: str) -> list[DiscoveredAnalyticsProperty]:
-        payload = await self._get(access_token, f"{ANALYTICS_ADMIN_API}/accountSummaries")
-        summaries = payload.get("accountSummaries") or []
+        url = f"{ANALYTICS_ADMIN_API}/accountSummaries"
+        params: dict[str, int | str] = {"pageSize": ACCOUNT_SUMMARIES_PAGE_SIZE}
+        summaries: list[dict[str, Any]] = []
+        seen_tokens: set[str] = set()
+        for _page_number in range(MAX_ACCOUNT_SUMMARY_PAGES):
+            payload = await self._get(access_token, url, params=params)
+            raw_summaries = payload.get("accountSummaries", [])
+            if not isinstance(raw_summaries, list) or not all(
+                isinstance(summary, dict) for summary in raw_summaries
+            ):
+                raise RuntimeError("invalid Analytics account summaries page")
+            summaries.extend(cast(list[dict[str, Any]], raw_summaries))
+
+            raw_token = payload.get("nextPageToken")
+            if raw_token is None or raw_token == "":
+                break
+            if not isinstance(raw_token, str) or not raw_token.strip():
+                raise RuntimeError("invalid Analytics pagination token")
+            if raw_token in seen_tokens:
+                raise RuntimeError("Analytics pagination token repeated")
+            seen_tokens.add(raw_token)
+            params = {"pageSize": ACCOUNT_SUMMARIES_PAGE_SIZE, "pageToken": raw_token}
+        else:
+            raise RuntimeError("Analytics account summary pagination exceeded safety limit")
+
         properties: list[DiscoveredAnalyticsProperty] = []
         for summary in summaries:
             account_name = str(summary.get("displayName", ""))
