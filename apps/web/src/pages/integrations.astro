@@ -28,31 +28,22 @@ import "../styles/global.css";
         <div class="empty-state">
           <span class="empty-state__icon" aria-hidden="true">○</span>
           <h3>No organization access yet</h3>
-          <p>
-            Your account is not a member of any organization. Ask an
-            administrator to invite you.
-          </p>
+          <p>Your account is not a member of any organization.</p>
         </div>
       </div>
 
       <div id="integrations-content" hidden>
-        <!-- Integrations directory -->
         <div id="integrations-directory">
           <div class="page-head">
             <div class="page-head__intro">
               <p class="eyebrow">Manage</p>
               <h1>Integrations</h1>
-              <p>
-                Connect external providers. Daily product pages consume these
-                connections automatically.
-              </p>
+              <p>Connect external providers below.  Product pages consume these connections automatically.</p>
             </div>
           </div>
-
           <div class="directory-grid" id="integration-cards"></div>
         </div>
 
-        <!-- Provider workspace (shown when a provider card is selected) -->
         <div id="provider-workspace" hidden>
           <div class="page-head">
             <div class="page-head__intro">
@@ -62,11 +53,8 @@ import "../styles/global.css";
             </div>
             <div class="page-head__meta">
               <div class="page-head__actions">
-                <button
-                  type="button"
-                  class="button button--secondary button--sm"
-                  id="back-to-integrations">← Back to Integrations</button
-                >
+                <button type="button" class="button button--secondary button--sm"
+                  id="back-to-integrations">← Back to Integrations</button>
               </div>
             </div>
           </div>
@@ -87,12 +75,17 @@ import "../styles/global.css";
       import {
         beginGitHubInstall,
         disconnectGitHub,
-        fetchGitHubRepositories,
       } from "../lib/github-app";
       import {
         fetchGitHubConnections,
         isGitHubAppConnection,
       } from "../lib/content";
+      import {
+        fetchGoogleWorkspace,
+        fetchUnmappedResources,
+        fetchGitHubWorkspace,
+        type GoogleWorkspace,
+      } from "../lib/integrations";
       import {
         bootWorkspace,
         applyBootResult,
@@ -106,6 +99,8 @@ import "../styles/global.css";
         confirmInline,
         type BootRegions,
       } from "../lib/ui";
+      import { apiRequest } from "../lib/api-client";
+      import { fetchLocations, type LocationSummary } from "../lib/workspace";
 
       let organizationId = "";
 
@@ -123,16 +118,23 @@ import "../styles/global.css";
       const providerDesc = document.getElementById("provider-description")!;
       const providerContent = document.getElementById("provider-content")!;
 
+      const PROVIDER_DESCRIPTIONS: Record<string, string> = {
+        google: "Manage Google Business Profile, Search Console, and Analytics.",
+        github: "Manage GitHub repository connections for content publishing.",
+        email: "Transactional email delivery via Resend.",
+        sms: "SMS messaging via provider integration.",
+      };
+
       function showDirectory(): void {
         directory.hidden = false;
         providerView.hidden = true;
       }
 
-      function showProvider(title: string, description: string): void {
+      function showProvider(key: string, name: string): void {
         directory.hidden = true;
         providerView.hidden = false;
-        providerTitle.textContent = title;
-        providerDesc.textContent = description;
+        providerTitle.textContent = name;
+        providerDesc.textContent = PROVIDER_DESCRIPTIONS[key] || "";
         providerContent.replaceChildren();
         providerContent.append(createLoading());
       }
@@ -144,189 +146,149 @@ import "../styles/global.css";
         return el;
       }
 
-      document
-        .getElementById("back-to-integrations")!
-        .addEventListener("click", showDirectory);
+      function cardIcon(key: string): string {
+        switch (key) {
+          case "google": return "G";
+          case "github": return "⌥";
+          case "email": return "@";
+          case "sms": return "✉";
+          default: return "○";
+        }
+      }
+
+      document.getElementById("back-to-integrations")!.addEventListener("click", showDirectory);
+
+      // -- Directory: assemble from individual provider status endpoints ---
 
       async function renderDirectory(): Promise<void> {
         const cards = document.getElementById("integration-cards")!;
-        cards.replaceChildren();
+        cards.replaceChildren(createLoading());
 
         const [googleResult, githubResult] = await Promise.all([
           fetchConnectionStatus(organizationId),
-          fetchGitHubConnections(organizationId),
+          fetchGitHubWorkspace(organizationId),
         ]);
 
+        cards.replaceChildren();
+
         // Google card
-        const googleCard = document.createElement("button");
-        googleCard.className = "integration-card";
-        googleCard.type = "button";
-        googleCard.dataset.provider = "google";
-
-        const googleHeader = document.createElement("div");
-        googleHeader.className = "integration-card__header";
-        const googleIcon = document.createElement("span");
-        googleIcon.className = "integration-card__icon";
-        googleIcon.textContent = "G";
-        const googleTitle = document.createElement("div");
-        googleTitle.className = "integration-card__title";
-        googleTitle.textContent = "Google";
-        googleHeader.append(googleIcon, googleTitle);
-
-        const googleDesc = document.createElement("p");
-        googleDesc.className = "integration-card__desc";
-        googleDesc.textContent =
-          "Business Profile, Search Console, and Analytics";
-
-        const googleFooter = document.createElement("div");
-        googleFooter.className = "integration-card__footer";
-
-        if (
-          googleResult.kind === "ok" &&
-          googleResult.data &&
-          googleResult.data.status === "connected"
-        ) {
-          googleFooter.append(statusBadge("ready", "Connected"));
-        } else if (
-          googleResult.kind === "ok" &&
-          googleResult.data &&
-          googleResult.data.status === "reconnect_required"
-        ) {
-          googleFooter.append(statusBadge("blocked", "Needs attention"));
-        } else if (
-          googleResult.kind === "error" &&
-          googleResult.code === "INTEGRATION_NOT_CONFIGURED"
-        ) {
-          googleFooter.append(statusBadge("missing", "Not configured"));
-        } else {
-          googleFooter.append(statusBadge("setup", "Not connected"));
-        }
-
-        googleCard.append(googleHeader, googleDesc, googleFooter);
-        googleCard.addEventListener(
-          "click",
-          () => void openGoogle(googleResult),
+        cards.append(
+          makeDirectoryCard(
+            "google",
+            "Google",
+            "Business Profile, Search Console, and Analytics",
+            googleResult.kind === "ok" && googleResult.data?.status === "connected"
+              ? "connected"
+              : googleResult.kind === "ok" && googleResult.data?.status === "reconnect_required"
+                ? "degraded"
+                : googleResult.kind === "error" && googleResult.code === "INTEGRATION_NOT_CONFIGURED"
+                  ? "not_configured"
+                  : "not_connected",
+            () => void openGoogle(googleResult),
+          ),
         );
-        cards.append(googleCard);
 
         // GitHub card
-        const githubCard = document.createElement("button");
-        githubCard.className = "integration-card";
-        githubCard.type = "button";
-        githubCard.dataset.provider = "github";
-
-        const ghHeader = document.createElement("div");
-        ghHeader.className = "integration-card__header";
-        const ghIcon = document.createElement("span");
-        ghIcon.className = "integration-card__icon";
-        ghIcon.textContent = "⌥";
-        const ghTitle = document.createElement("div");
-        ghTitle.className = "integration-card__title";
-        ghTitle.textContent = "GitHub";
-        ghHeader.append(ghIcon, ghTitle);
-
-        const ghDesc = document.createElement("p");
-        ghDesc.className = "integration-card__desc";
-        ghDesc.textContent = "Content publishing via GitHub repositories";
-
-        const ghFooter = document.createElement("div");
-        ghFooter.className = "integration-card__footer";
-
-        if (githubResult.kind === "ok" && githubResult.data.length > 0) {
-          ghFooter.append(statusBadge("ready", "Connected"));
-        } else if (githubResult.kind === "ok") {
-          ghFooter.append(statusBadge("setup", "Not connected"));
-        } else {
-          ghFooter.append(statusBadge("blocked", "Unavailable"));
-        }
-
-        githubCard.append(ghHeader, ghDesc, ghFooter);
-        githubCard.addEventListener(
-          "click",
-          () => void openGitHub(githubResult),
+        const ghStatus: "connected" | "not_connected" =
+          githubResult.kind === "ok" && githubResult.data?.connection_status === "active"
+            ? "connected"
+            : "not_connected";
+        cards.append(
+          makeDirectoryCard("github", "GitHub", "Content publishing via GitHub repositories", ghStatus, () =>
+            void openGitHub(githubResult),
+          ),
         );
-        cards.append(githubCard);
+
+        // Email card
+        cards.append(
+          makeDirectoryCard("email", "Email", "Transactional email via Resend", "not_configured", () =>
+            void renderEmailWorkspace(providerContent),
+          ),
+        );
+
+        // SMS card
+        cards.append(
+          makeDirectoryCard("sms", "SMS", "SMS messaging via provider integration", "not_configured", () =>
+            void renderSmsWorkspace(providerContent),
+          ),
+        );
       }
 
-      // ---- Google provider workspace ----
+      function makeDirectoryCard(
+        key: string,
+        name: string,
+        description: string,
+        status: string,
+        onClick: () => void,
+      ): HTMLButtonElement {
+        const card = document.createElement("button");
+        card.className = "integration-card";
+        card.type = "button";
+        card.dataset.provider = key;
+        card.addEventListener("click", onClick);
+
+        const header = document.createElement("div");
+        header.className = "integration-card__header";
+        const icon = document.createElement("span");
+        icon.className = "integration-card__icon";
+        icon.textContent = cardIcon(key);
+        const title = document.createElement("div");
+        title.className = "integration-card__title";
+        title.textContent = name;
+        header.append(icon, title);
+
+        const desc = document.createElement("p");
+        desc.className = "integration-card__desc";
+        desc.textContent = description;
+
+        const footer = document.createElement("div");
+        footer.className = "integration-card__footer";
+        const badgeKind =
+          status === "connected" ? "ready" : status === "degraded" ? "blocked" : status === "not_configured" ? "missing" : "setup";
+        const label =
+          status === "connected" ? "Connected" : status === "degraded" ? "Needs attention" : status === "not_configured" ? "Not configured" : "Not connected";
+        footer.append(statusBadge(badgeKind, label));
+
+        card.append(header, desc, footer);
+        return card;
+      }
+
+      // -- Google workspace --------------------------------------------------
+
       async function openGoogle(
         connectionResult: Awaited<ReturnType<typeof fetchConnectionStatus>>,
       ): Promise<void> {
-        showProvider(
-          "Google",
-          "Manage the Google connection for Business Profile, Search Console, and Analytics.",
-        );
+        showProvider("google", "Google");
         const content = providerContent;
         content.replaceChildren();
 
-        // Connection panel
-        const connCard = document.createElement("div");
-        connCard.className = "card";
-        const connHeader = document.createElement("div");
-        connHeader.className = "card__header";
-        const connTitle = document.createElement("h3");
-        connTitle.className = "card__title";
-        connTitle.textContent = "Connection";
-        connHeader.append(connTitle);
-        connCard.append(connHeader);
-        const connBody = document.createElement("div");
-        connBody.className = "card__body";
-        connCard.append(connBody);
+        const connCard = makeCard("Connection");
         content.append(connCard);
+        const connBody = connCard.querySelector(".card__body") as HTMLElement;
 
-        renderGoogleConnection(connBody, connectionResult);
+        const [wsResult] = await Promise.all([
+          fetchGoogleWorkspace(organizationId),
+          new Promise((r) => { renderGoogleConnection(connBody, connectionResult); r(true); }),
+        ]);
 
-        // Services panel
-        const servicesCard = document.createElement("div");
-        servicesCard.className = "card";
-        const servicesHeader = document.createElement("div");
-        servicesHeader.className = "card__header";
-        const servicesTitle = document.createElement("h3");
-        servicesTitle.className = "card__title";
-        servicesTitle.textContent = "Connected Services";
-        servicesHeader.append(servicesTitle);
-        servicesCard.append(servicesHeader);
-        const servicesBody = document.createElement("div");
-        servicesBody.className = "card__body";
-        servicesCard.append(servicesBody);
-        content.append(servicesCard);
+        if (wsResult.kind === "ok") {
+          const ws = wsResult.data;
 
-        if (
-          connectionResult.kind === "ok" &&
-          connectionResult.data &&
-          connectionResult.data.services
-        ) {
-          const services = connectionResult.data.services;
-          const list = document.createElement("ul");
-          list.className = "product-list";
-          for (const [name, enabled] of Object.entries(services)) {
-            const item = document.createElement("li");
-            const info = document.createElement("div");
-            const sName = document.createElement("h3");
-            sName.textContent =
-              name === "gbp"
-                ? "Business Profile"
-                : name === "search_console"
-                  ? "Search Console"
-                  : name === "analytics"
-                    ? "Analytics"
-                    : name;
-            info.append(sName);
-            const badge = statusBadge(
-              enabled ? "ready" : "setup",
-              enabled ? "Enabled" : "Not enabled",
+          const capsCard = makeCard("Connected Services");
+          content.append(capsCard);
+          const capsBody = capsCard.querySelector(".card__body") as HTMLElement;
+          renderCapabilities(capsBody, ws);
+
+          if (ws.mapped_resources.length > 0) {
+            const mappedCard = makeCard("Mapped Resources");
+            content.append(mappedCard);
+            renderMappedResources(
+              mappedCard.querySelector(".card__body") as HTMLElement,
+              ws,
             );
-            item.append(info, badge);
-            list.append(item);
           }
-          servicesBody.append(list);
-        } else {
-          servicesBody.append(
-            emptyState(
-              "No services connected",
-              "Connect Google to discover and enable individual services.",
-            ),
-          );
+
+          await renderUnmappedQueue(content, wsResult);
         }
       }
 
@@ -336,22 +298,14 @@ import "../styles/global.css";
       ): void {
         panel.replaceChildren();
 
-        if (
-          outcome.kind === "error" &&
-          outcome.code === "INTEGRATION_NOT_CONFIGURED"
-        ) {
+        if (outcome.kind === "error" && outcome.code === "INTEGRATION_NOT_CONFIGURED") {
           panel.append(
-            emptyState(
-              "Google connection is not configured",
-              "This deployment has not been configured with Google OAuth credentials yet.",
-            ),
+            emptyState("Google connection is not configured", "This deployment has not been configured with Google OAuth credentials yet."),
           );
           return;
         }
         if (outcome.kind !== "ok") {
-          panel.append(
-            errorAlert(describeFailure(outcome, "Google connection")),
-          );
+          panel.append(errorAlert(describeFailure(outcome, "Google connection")));
           return;
         }
 
@@ -364,11 +318,7 @@ import "../styles/global.css";
           connectBtn.addEventListener("click", async () => {
             connectBtn.disabled = true;
             connectBtn.textContent = "Connecting…";
-            const result = await connectGoogle(organizationId, [
-              "gbp",
-              "search_console",
-              "analytics",
-            ]);
+            const result = await connectGoogle(organizationId, ["gbp", "search_console", "analytics"]);
             if (result.kind === "ok") {
               window.location.assign(result.data.authorization_url);
             } else {
@@ -382,25 +332,17 @@ import "../styles/global.css";
           panel.append(
             Object.assign(document.createElement("p"), {
               className: "text-sm muted",
-              textContent:
-                "Connect your Google account to enable Business Profile, Search Console, and Analytics.",
+              textContent: "Connect your Google account to enable Business Profile, Search Console, and Analytics.",
             }),
           );
           return;
         }
 
         const badgeKind =
-          state.status === "connected"
-            ? "ready"
-            : state.status === "reconnect_required"
-              ? "blocked"
-              : "setup";
+          state.status === "connected" ? "ready" : state.status === "reconnect_required" ? "blocked" : "setup";
         panel.append(
-          statusBadge(
-            badgeKind,
-            state.status === "reconnect_required"
-              ? "Reconnect required"
-              : state.status.replace(/_/g, " "),
+          statusBadge(badgeKind,
+            state.status === "reconnect_required" ? "Reconnect required" : state.status.replace(/_/g, " "),
           ),
         );
 
@@ -409,6 +351,12 @@ import "../styles/global.css";
           verified.className = "text-sm muted";
           verified.textContent = `Last verified ${formatTimestamp(state.last_verified_at)}`;
           panel.append(verified);
+        }
+        if (state.token_expires_at) {
+          const expires = document.createElement("p");
+          expires.className = "text-sm muted";
+          expires.textContent = `Token expires ${formatTimestamp(state.token_expires_at)}`;
+          panel.append(expires);
         }
 
         const actions = document.createElement("div");
@@ -425,8 +373,7 @@ import "../styles/global.css";
           reconnectBtn.textContent = "Reconnect Google";
           reconnectBtn.addEventListener("click", async () => {
             const result = await beginConnection(organizationId);
-            if (result.kind === "ok")
-              window.location.assign(result.data.authorization_url);
+            if (result.kind === "ok") window.location.assign(result.data.authorization_url);
             else panel.append(errorAlert(describeFailure(result, "Reconnect")));
           });
           actions.append(reconnectBtn);
@@ -440,26 +387,22 @@ import "../styles/global.css";
           authorizeBtn.addEventListener("click", async () => {
             authorizeBtn.disabled = true;
             authorizeBtn.textContent = "Redirecting…";
-            const result = await connectGoogle(
-              organizationId,
-              authorizationAction.products,
-            );
+            const result = await connectGoogle(organizationId, authorizationAction.products);
             if (result.kind === "ok") {
               window.location.assign(result.data.authorization_url);
             } else {
               authorizeBtn.disabled = false;
               authorizeBtn.textContent = "Authorize missing Google services";
-              panel.append(
-                errorAlert(describeFailure(result, "Google authorization")),
-              );
+              panel.append(errorAlert(describeFailure(result, "Google authorization")));
             }
           });
           actions.append(authorizeBtn);
-          const hint = document.createElement("p");
-          hint.className = "text-sm muted";
-          hint.textContent =
-            "Authorize the remaining read-only Google services to enable Analytics and Search Console discovery.";
-          panel.append(hint);
+          panel.append(
+            Object.assign(document.createElement("p"), {
+              className: "text-sm muted",
+              textContent: "Authorize the remaining read-only Google services to enable Analytics and Search Console discovery.",
+            }),
+          );
         }
 
         if (state.status === "connected" || state.status === "degraded") {
@@ -487,16 +430,12 @@ import "../styles/global.css";
           disconnectBtn.textContent = "Disconnect";
           disconnectBtn.addEventListener("click", () => {
             disconnectBtn.disabled = true;
-            actions.append(
-              confirmInline(
-                "Disconnect Google? New syncs and provider actions will stop. Existing LILOs history is retained.",
-                () => void performGoogleDisconnect(panel),
-                () => {
-                  disconnectBtn.disabled = false;
-                },
-                "Disconnect Google",
-              ),
-            );
+            actions.append(confirmInline(
+              "Disconnect Google? New syncs and provider actions will stop.",
+              () => void performGoogleDisconnect(),
+              () => { disconnectBtn.disabled = false; },
+              "Disconnect Google",
+            ));
           });
           actions.append(disconnectBtn);
         }
@@ -504,55 +443,203 @@ import "../styles/global.css";
         panel.append(actions);
       }
 
-      async function performGoogleDisconnect(
-        panel: HTMLElement,
-      ): Promise<void> {
+      async function performGoogleDisconnect(): Promise<void> {
         const result = await disconnectConnection(organizationId);
         if (result.kind === "ok") {
-          const refreshed = await fetchConnectionStatus(organizationId);
-          renderGoogleConnection(panel, refreshed);
+          await openGoogle(await fetchConnectionStatus(organizationId));
         } else {
-          panel.append(errorAlert(describeFailure(result, "Disconnect")));
+          providerContent.append(errorAlert(describeFailure(result, "Disconnect")));
         }
       }
 
-      // ---- GitHub provider workspace ----
-      async function openGitHub(
-        connectionsResult: Awaited<ReturnType<typeof fetchGitHubConnections>>,
+      function renderCapabilities(panel: HTMLElement, ws: GoogleWorkspace): void {
+        const list = document.createElement("ul");
+        list.className = "product-list";
+        for (const cap of ws.capabilities) {
+          const item = document.createElement("li");
+          const info = document.createElement("div");
+          const name = document.createElement("h3");
+          name.textContent = cap.label;
+          info.append(name);
+          item.append(info, statusBadge(cap.enabled ? "ready" : "setup", cap.enabled ? "Granted" : "Not granted"));
+          list.append(item);
+        }
+        panel.append(list);
+      }
+
+      function renderMappedResources(panel: HTMLElement, ws: GoogleWorkspace): void {
+        const list = document.createElement("ul");
+        list.className = "product-list";
+        for (const res of ws.mapped_resources) {
+          const item = document.createElement("li");
+          const info = document.createElement("div");
+          const name = document.createElement("h3");
+          name.textContent = res.display_name || res.external_resource_id;
+          const detail = document.createElement("p");
+          const syncLabel = res.sync_freshness === "fresh" ? "Synced" : res.sync_freshness === "stale" ? "Stale" : "Never synced";
+          detail.textContent = syncLabel;
+          if (res.last_synced_at) {
+            detail.textContent += ` · ${formatTimestamp(res.last_synced_at)}`;
+          }
+          info.append(name, detail);
+          item.append(info, statusBadge(
+            res.sync_freshness === "fresh" ? "ready" : res.sync_freshness === "stale" ? "blocked" : "setup",
+            res.sync_freshness === "fresh" ? "Fresh" : res.sync_freshness === "stale" ? "Stale" : "Pending",
+          ));
+          list.append(item);
+        }
+        panel.append(list);
+      }
+
+      // -- Unmapped queue (privileged, uses canonical AAL2 confirm endpoint) ---
+
+      async function renderUnmappedQueue(
+        parent: HTMLElement,
+        wsResult: Awaited<ReturnType<typeof fetchGoogleWorkspace>>,
       ): Promise<void> {
-        showProvider(
-          "GitHub",
-          "Connect GitHub for content publishing to repositories.",
-        );
+        if (wsResult.kind !== "ok" || wsResult.data.unmapped_count === 0) return;
+
+        const card = makeCard(`Unmapped Resources (${wsResult.data.unmapped_count})`);
+        parent.append(card);
+        const body = card.querySelector(".card__body") as HTMLElement;
+
+        // Search
+        const searchRow = document.createElement("div");
+        searchRow.style.marginBottom = "0.75rem";
+        const searchInput = document.createElement("input");
+        searchInput.type = "search";
+        searchInput.placeholder = "Search unmapped locations…";
+        searchInput.className = "form-input";
+        searchInput.style.maxWidth = "320px";
+        searchRow.append(searchInput);
+        body.append(searchRow);
+
+        // Location picker for mapping (shared across all rows)
+        const locationsResult = await fetchLocations(organizationId);
+        const availableLocations: LocationSummary[] =
+          locationsResult.kind === "ok" ? locationsResult.data : [];
+
+        const listContainer = document.createElement("div");
+        body.append(listContainer);
+
+        async function loadUnmapped(search?: string): Promise<void> {
+          listContainer.replaceChildren(createLoading());
+          const result = await fetchUnmappedResources(organizationId, search);
+          if (result.kind !== "ok") {
+            listContainer.replaceChildren(errorAlert(describeFailure(result, "unmapped resources")));
+            return;
+          }
+          if (result.data.length === 0) {
+            listContainer.replaceChildren(emptyState("No unmapped resources", "All discovered resources have been mapped."));
+            return;
+          }
+          const list = document.createElement("ul");
+          list.className = "product-list";
+          for (const resource of result.data) {
+            const item = document.createElement("li");
+            const info = document.createElement("div");
+            const name = document.createElement("h3");
+            name.textContent = resource.display_name;
+            const detail = document.createElement("p");
+            detail.textContent = resource.primary_category || "";
+            info.append(name, detail);
+
+            // Location picker + map button
+            const rowActions = document.createElement("div");
+            rowActions.style.display = "flex";
+            rowActions.style.gap = "0.5rem";
+            rowActions.style.alignItems = "center";
+
+            const locationSelect = document.createElement("select");
+            locationSelect.className = "form-input";
+            locationSelect.style.maxWidth = "200px";
+            locationSelect.style.fontSize = "0.8rem";
+
+            const placeholderOpt = document.createElement("option");
+            placeholderOpt.value = "";
+            placeholderOpt.textContent = "Select location…";
+            locationSelect.append(placeholderOpt);
+            for (const loc of availableLocations) {
+              const opt = document.createElement("option");
+              opt.value = loc.id;
+              opt.textContent = loc.name;
+              locationSelect.append(opt);
+            }
+
+            const mapBtn = document.createElement("button");
+            mapBtn.type = "button";
+            mapBtn.className = "button button--sm";
+            mapBtn.textContent = "Map";
+            mapBtn.addEventListener("click", async () => {
+              const selectedLocationId = locationSelect.value;
+              if (!selectedLocationId) {
+                const errorEl = document.createElement("p");
+                errorEl.className = "text-error";
+                errorEl.textContent = "Select a location first.";
+                item.append(errorEl);
+                return;
+              }
+              mapBtn.disabled = true;
+              mapBtn.textContent = "Mapping…";
+              // Call canonical AAL2 GBP confirm endpoint
+              const confirmPath = `/api/v1/organizations/${organizationId}/locations/${selectedLocationId}/gbp/locations/${resource.id}/confirm`;
+              const mapResult = await apiRequest(confirmPath, {
+                method: "POST",
+                body: { location_id: selectedLocationId },
+              });
+              if (mapResult.kind === "ok") {
+                item.remove();
+              } else {
+                mapBtn.textContent = "Map";
+                mapBtn.disabled = false;
+                item.append(errorAlert(describeFailure(mapResult, "confirm mapping")));
+              }
+            });
+
+            rowActions.append(locationSelect, mapBtn);
+            info.append(rowActions);
+
+            item.append(info);
+            list.append(item);
+          }
+          listContainer.replaceChildren(list);
+        }
+
+        await loadUnmapped();
+        let debounceTimer: ReturnType<typeof setTimeout>;
+        searchInput.addEventListener("input", () => {
+          clearTimeout(debounceTimer);
+          debounceTimer = setTimeout(() => {
+            const q = searchInput.value.trim();
+            void loadUnmapped(q || undefined);
+          }, 300);
+        });
+      }
+
+      // -- GitHub workspace ---------------------------------------------------
+
+      async function openGitHub(
+        wsResult: Awaited<ReturnType<typeof fetchGitHubWorkspace>>,
+      ): Promise<void> {
+        showProvider("github", "GitHub");
         const content = providerContent;
         content.replaceChildren();
+
+        const connCard = makeCard("Connection");
+        content.append(connCard);
+        const connBody = connCard.querySelector(".card__body") as HTMLElement;
+
+        const [connectionsResult] = await Promise.all([
+          fetchGitHubConnections(organizationId),
+        ]);
+
+        const ws = wsResult.kind === "ok" ? wsResult.data : null;
         const appConnections =
           connectionsResult.kind === "ok"
             ? connectionsResult.data.filter(isGitHubAppConnection)
             : [];
 
-        const connCard = document.createElement("div");
-        connCard.className = "card";
-        const connHeader = document.createElement("div");
-        connHeader.className = "card__header";
-        const connTitle = document.createElement("h3");
-        connTitle.className = "card__title";
-        connTitle.textContent = "Connection";
-        connHeader.append(connTitle);
-        connCard.append(connHeader);
-        const connBody = document.createElement("div");
-        connBody.className = "card__body";
-        connCard.append(connBody);
-        content.append(connCard);
-
-        if (connectionsResult.kind !== "ok") {
-          connBody.append(
-            errorAlert(describeFailure(connectionsResult, "GitHub connection")),
-          );
-          return;
-        }
-
-        if (appConnections.length === 0) {
+        if ((!ws || ws.connection_status === "none") && appConnections.length === 0) {
           const installBtn = document.createElement("button");
           installBtn.type = "button";
           installBtn.className = "button";
@@ -570,65 +657,43 @@ import "../styles/global.css";
             }
           });
           connBody.append(installBtn);
-          connBody.append(
-            Object.assign(document.createElement("p"), {
-              className: "text-sm muted",
-              textContent:
-                "Install the GitHub App to enable content publishing to your repositories.",
-            }),
-          );
+          connBody.append(Object.assign(document.createElement("p"), {
+            className: "text-sm muted",
+            textContent: "Install the LILOs GitHub App to enable content publishing to your repositories.",
+          }));
           return;
         }
 
-        const conn = appConnections[0];
-        connBody.append(
-          statusBadge(
-            conn.status === "active" ? "ready" : "setup",
-            conn.status,
-          ),
-        );
-        const connectionNote = document.createElement("p");
-        connectionNote.className = "text-sm muted";
-        connectionNote.textContent =
-          "The LILOs GitHub App is installed. Credentials and installation identifiers stay protected.";
-        connBody.append(connectionNote);
+        const conn = appConnections[0] || null;
+        connBody.append(statusBadge(conn?.status === "active" ? "ready" : "setup", conn?.status || "connected"));
+        connBody.append(Object.assign(document.createElement("p"), {
+          className: "text-sm muted",
+          textContent: "The LILOs GitHub App is installed.",
+        }));
+
         const disconnectBtn = document.createElement("button");
         disconnectBtn.type = "button";
         disconnectBtn.className = "button button--secondary";
         disconnectBtn.textContent = "Disconnect GitHub App";
         disconnectBtn.addEventListener("click", () => {
           disconnectBtn.disabled = true;
-          connBody.append(
-            confirmInline(
-              "Disconnect GitHub? New publishing work will stop. Existing content and publication history are retained.",
-              () => void performGitHubDisconnect(connBody),
-              () => {
-                disconnectBtn.disabled = false;
-              },
-              "Disconnect GitHub",
-            ),
-          );
+          connBody.append(confirmInline(
+            "Disconnect GitHub? New publishing work will stop.",
+            () => void performGitHubDisconnect(),
+            () => { disconnectBtn.disabled = false; },
+            "Disconnect GitHub",
+          ));
         });
         connBody.append(disconnectBtn);
 
         // Repositories
-        const reposResult = await fetchGitHubRepositories(organizationId);
-        if (reposResult.kind === "ok" && reposResult.data.length > 0) {
-          const reposCard = document.createElement("div");
-          reposCard.className = "card";
-          const reposHeader = document.createElement("div");
-          reposHeader.className = "card__header";
-          const reposTitle = document.createElement("h3");
-          reposTitle.className = "card__title";
-          reposTitle.textContent = "Accessible Repositories";
-          reposHeader.append(reposTitle);
-          reposCard.append(reposHeader);
-          const reposBody = document.createElement("div");
-          reposBody.className = "card__body";
-          reposCard.append(reposBody);
+        if (ws?.repositories && ws.repositories.length > 0) {
+          const reposCard = makeCard("Accessible Repositories");
+          content.append(reposCard);
+          const reposBody = reposCard.querySelector(".card__body") as HTMLElement;
           const list = document.createElement("ul");
           list.className = "product-list";
-          for (const repo of reposResult.data) {
+          for (const repo of ws.repositories) {
             const item = document.createElement("li");
             const info = document.createElement("div");
             const name = document.createElement("h3");
@@ -636,39 +701,71 @@ import "../styles/global.css";
             const detail = document.createElement("p");
             detail.textContent = `Default branch: ${repo.default_branch}`;
             info.append(name, detail);
-            const badge = statusBadge(
-              repo.private ? "neutral" : "ready",
-              repo.private ? "Private" : "Public",
-            );
-            item.append(info, badge);
+            item.append(info, statusBadge(repo.private ? "neutral" : "ready", repo.private ? "Private" : "Public"));
             list.append(item);
           }
           reposBody.append(list);
-          content.append(reposCard);
-        } else if (reposResult.kind !== "ok") {
-          content.append(
-            errorAlert(describeFailure(reposResult, "GitHub repositories")),
-          );
         }
       }
 
-      async function performGitHubDisconnect(
-        panel: HTMLElement,
-      ): Promise<void> {
+      async function performGitHubDisconnect(): Promise<void> {
         const result = await disconnectGitHub(organizationId);
         if (result.kind === "ok") {
-          const refreshed = await fetchGitHubConnections(organizationId);
-          await openGitHub(refreshed);
+          await openGitHub(await fetchGitHubWorkspace(organizationId));
         } else {
-          panel.append(
-            errorAlert(describeFailure(result, "GitHub disconnect")),
-          );
+          providerContent.append(errorAlert(describeFailure(result, "GitHub disconnect")));
         }
       }
 
-      async function loadOrganization(
-        org: import("../lib/workspace").MyOrganization,
-      ): Promise<void> {
+      // -- Email -- truthfully not configured --------------------------------
+
+      function renderEmailWorkspace(content: HTMLElement): void {
+        content.replaceChildren();
+        const card = makeCard("Email Configuration");
+        content.append(card);
+        const body = card.querySelector(".card__body") as HTMLElement;
+        body.append(statusBadge("missing", "Not configured"));
+        body.append(Object.assign(document.createElement("p"), {
+          className: "text-sm muted",
+          textContent: "Email delivery is configured through the Resend provider. Contact LILOs to enable transactional email.",
+        }));
+      }
+
+      // -- SMS -- truthfully not configured ----------------------------------
+
+      function renderSmsWorkspace(content: HTMLElement): void {
+        content.replaceChildren();
+        const card = makeCard("SMS Configuration");
+        content.append(card);
+        const body = card.querySelector(".card__body") as HTMLElement;
+        body.append(statusBadge("missing", "Not configured"));
+        body.append(Object.assign(document.createElement("p"), {
+          className: "text-sm muted",
+          textContent: "SMS messaging is not currently configured. SMS integration will be available in a future platform release.",
+        }));
+      }
+
+      // -- Helpers ------------------------------------------------------------
+
+      function makeCard(title: string): HTMLDivElement {
+        const card = document.createElement("div");
+        card.className = "card";
+        const header = document.createElement("div");
+        header.className = "card__header";
+        const titleEl = document.createElement("h3");
+        titleEl.className = "card__title";
+        titleEl.textContent = title;
+        header.append(titleEl);
+        card.append(header);
+        const body = document.createElement("div");
+        body.className = "card__body";
+        card.append(body);
+        return card;
+      }
+
+      // -- Boot ----------------------------------------------------------------
+
+      async function loadOrganization(org: import("../lib/workspace").MyOrganization): Promise<void> {
         setActiveOrganization(org);
         organizationId = org.organization_id;
         showDirectory();
