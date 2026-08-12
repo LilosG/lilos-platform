@@ -72,3 +72,14 @@ class SuspensionCaseReport(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
     provider_status: str = Field(min_length=1, max_length=64)
     evidence_references: list[str] = Field(default_factory=list, max_length=50)
+
+
+class MediaDecision(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    approve: bool
+
+
+class MediaPublishRequest(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    workflow_run_id: UUID
+    idempotency_key: str = Field(min_length=8, max_length=128)

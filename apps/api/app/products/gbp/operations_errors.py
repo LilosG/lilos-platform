@@ -61,3 +61,8 @@ class GBPSuspensionCaseNotFoundError(NotFoundError):
 class GBPLocationNotWriteEnabledError(ConflictError):
     code = "GBP_LOCATION_NOT_WRITE_ENABLED"
     public_message = "This location is not confirmed and write-enabled."
+
+
+class GBPMediaNotPublishEligibleError(ConflictError):
+    code = "GBP_MEDIA_NOT_PUBLISH_ELIGIBLE"
+    public_message = "An approved media item on a write-enabled location is required."

@@ -112,6 +112,17 @@ class FakeGBPAdapter:
         self.local_posts_location_name = location_name
         return list(self.local_posts)
 
+    async def create_media(
+        self, access_token: str, location_name: str, media_item: dict[str, Any]
+    ) -> dict[str, Any]:
+        raise NotImplementedError
+
+    async def get_media(self, access_token: str, media_name: str) -> dict[str, Any]:
+        raise NotImplementedError
+
+    async def delete_media(self, access_token: str, media_name: str) -> None:
+        raise NotImplementedError
+
 
 class FakeConnectionService(GBPConnectionService):
     """Bypasses token refresh; delegates get_connection to the real service."""

@@ -37,6 +37,7 @@ MAX_PROVIDER_PAGES = 1_000
 
 SUPPORTED_POST_TYPES = frozenset({"STANDARD", "OFFER", "EVENT"})
 SUPPORTED_CTA_TYPES = frozenset({"BOOK", "ORDER", "SHOP", "LEARN_MORE", "SIGN_UP", "CALL", "MENU"})
+SUPPORTED_MEDIA_FORMATS = frozenset({"PHOTO", "VIDEO"})
 
 
 class GBPAdapter(Protocol):
@@ -65,6 +66,11 @@ class GBPAdapter(Protocol):
     async def list_local_posts(
         self, access_token: str, location_name: str
     ) -> list[dict[str, Any]]: ...
+    async def create_media(
+        self, access_token: str, location_name: str, media_item: dict[str, Any]
+    ) -> dict[str, Any]: ...
+    async def get_media(self, access_token: str, media_name: str) -> dict[str, Any]: ...
+    async def delete_media(self, access_token: str, media_name: str) -> None: ...
 
 
 @dataclass(slots=True)
@@ -282,3 +288,41 @@ class GoogleBusinessProfileAdapter:
             seen_tokens.add(token)
             params = {"pageSize": LOCAL_POST_PAGE_SIZE, "pageToken": token}
         raise ValueError("provider local post pagination exceeded safety limit")
+
+    async def create_media(
+        self, access_token: str, location_name: str, media_item: dict[str, Any]
+    ) -> dict[str, Any]:
+        """POST {location_name}/media — upload a photo or video to a location."""
+        media_format = media_item.get("mediaFormat")
+        if media_format not in SUPPORTED_MEDIA_FORMATS:
+            raise ValueError(f"unsupported GBP media format: {media_format}")
+        return await self._request(
+            "POST",
+            f"{MYBUSINESS_BASE}/{location_name}/media",
+            access_token,
+            json=media_item,
+        )
+
+    async def get_media(self, access_token: str, media_name: str) -> dict[str, Any]:
+        """GET a single media resource by name (for verification re-read)."""
+        return await self._request(
+            "GET",
+            f"{MYBUSINESS_BASE}/{media_name}",
+            access_token,
+        )
+
+    async def delete_media(self, access_token: str, media_name: str) -> None:
+        """DELETE a media resource by name."""
+        async with httpx.AsyncClient(
+            timeout=self.timeout_seconds, follow_redirects=False
+        ) as client:
+            response = await client.request(
+                "DELETE",
+                f"{MYBUSINESS_BASE}/{media_name}",
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                    "Accept": "application/json",
+                    "X-Goog-Api-Format-Version": "2",
+                },
+            )
+        response.raise_for_status()
