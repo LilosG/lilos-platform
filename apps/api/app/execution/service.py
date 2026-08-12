@@ -8,14 +8,19 @@ from uuid import UUID
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from croniter import croniter
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.app.audit.contracts import AuditEventCreate
 from apps.api.app.audit.enums import AuditActorType, AuditResult
 from apps.api.app.audit.metadata import JsonValue
 from apps.api.app.audit.service import AuditEventService
-from apps.api.app.execution.contracts import JobOutcome, WorkflowSubmit
+from apps.api.app.execution.contracts import (
+    JobOutcome,
+    ScheduleCreate,
+    ScheduleUpdate,
+    WorkflowSubmit,
+)
 from apps.api.app.execution.errors import (
     WorkflowIdempotencyConflictError,
     WorkflowKeyUnknownError,
@@ -420,3 +425,426 @@ class ExecutionService:
         job.lease_expires_at = datetime.now(UTC) + timedelta(seconds=lease_seconds)
         await session.flush()
         return True
+
+    # ------------------------------------------------------------------
+    # Read-model queries for Automation & Agents product surface
+    # ------------------------------------------------------------------
+
+    async def list_workflow_types(self, session: AsyncSession) -> list[dict[str, object]]:
+        """Return the known workflow catalog with definition/version state.
+
+        This is a read-only view of the fixed ``WORKFLOW_TYPES`` registry
+        enriched with any persisted ``WorkflowDefinition`` / ``WorkflowVersion``
+        rows for each key, so the Automation UI can show whether a workflow
+        type has been activated for execution.
+        """
+        definitions = (await session.scalars(select(WorkflowDefinition))).all()
+        versions = (
+            await session.scalars(
+                select(WorkflowVersion).where(WorkflowVersion.status == "approved")
+            )
+        ).all()
+        def_by_key: dict[str, WorkflowDefinition] = {d.key: d for d in definitions}
+        ver_by_def: dict[UUID, WorkflowVersion | None] = {}
+        for v in versions:
+            cur = ver_by_def.get(v.definition_id)
+            if cur is None or v.version > cur.version:
+                ver_by_def[v.definition_id] = v
+
+        result: list[dict[str, object]] = []
+        for key, (display_name, product_key) in sorted(WORKFLOW_TYPES.items()):
+            definition = def_by_key.get(key)
+            version = ver_by_def.get(definition.id) if definition else None
+            result.append(
+                {
+                    "key": key,
+                    "display_name": display_name,
+                    "product_key": product_key,
+                    "definition_status": definition.status if definition else "not_persisted",
+                    "latest_version": version.version if version else None,
+                }
+            )
+        return result
+
+    async def list_runs(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        *,
+        workflow_key: str | None = None,
+        location_id: UUID | None = None,
+        status: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> tuple[list[dict[str, object]], int]:
+        """Return paginated workflow runs for an organization.
+
+        Includes the latest job and its attempts so the UI can show retry
+        counts and error information without additional round-trips.
+        """
+        base = select(WorkflowRun).where(WorkflowRun.organization_id == organization_id)
+        if workflow_key is not None:
+            # Join through WorkflowVersion → WorkflowDefinition to filter by key
+            base = (
+                base.join(
+                    WorkflowVersion,
+                    WorkflowVersion.id == WorkflowRun.workflow_version_id,
+                )
+                .join(
+                    WorkflowDefinition,
+                    WorkflowDefinition.id == WorkflowVersion.definition_id,
+                )
+                .where(WorkflowDefinition.key == workflow_key)
+            )
+        if location_id is not None:
+            base = base.where(WorkflowRun.location_id == location_id)
+        if status is not None:
+            base = base.where(WorkflowRun.status == status)
+
+        count_q = select(func.count()).select_from(base.subquery())
+        total = (await session.scalar(count_q)) or 0
+
+        rows = (
+            await session.scalars(
+                base.order_by(WorkflowRun.created_at.desc()).limit(limit).offset(offset)
+            )
+        ).all()
+
+        # Resolve workflow keys for all runs in one batch
+        run_ids = [r.id for r in rows]
+        version_ids = {r.workflow_version_id for r in rows}
+        def_versions: dict[UUID, tuple[str | None, str | None]] = {}
+        if version_ids:
+            vers = (
+                await session.scalars(
+                    select(WorkflowVersion).where(WorkflowVersion.id.in_(version_ids))
+                )
+            ).all()
+            def_ids = {v.definition_id for v in vers}
+            defs: dict[UUID, WorkflowDefinition] = {}
+            if def_ids:
+                def_rows = (
+                    await session.scalars(
+                        select(WorkflowDefinition).where(WorkflowDefinition.id.in_(def_ids))
+                    )
+                ).all()
+                defs = {d.id: d for d in def_rows}
+            for v in vers:
+                d = defs.get(v.definition_id)
+                def_versions[v.id] = (d.key if d else None, d.name if d else None)
+
+        # Resolve latest job for each run
+        jobs: dict[UUID, Job] = {}
+        if run_ids:
+            # Get the most recent job per run
+            job_rows = (
+                await session.scalars(
+                    select(Job)
+                    .where(
+                        Job.organization_id == organization_id,
+                        Job.workflow_run_id.in_(run_ids),
+                    )
+                    .order_by(Job.created_at.desc())
+                )
+            ).all()
+            seen: set[UUID] = set()
+            for j in job_rows:
+                if j.workflow_run_id not in seen:
+                    seen.add(j.workflow_run_id)
+                    jobs[j.workflow_run_id] = j
+
+        results: list[dict[str, object]] = []
+        for run in rows:
+            wf_key, wf_name = def_versions.get(run.workflow_version_id, (None, None))
+            job = jobs.get(run.id)
+            results.append(
+                {
+                    "id": str(run.id),
+                    "workflow_key": wf_key,
+                    "workflow_name": wf_name,
+                    "product_key": run.product_key,
+                    "status": run.status,
+                    "trigger_type": run.trigger_type,
+                    "location_id": str(run.location_id) if run.location_id else None,
+                    "input_document": run.input_document,
+                    "output_reference": run.output_reference,
+                    "failure_code": run.failure_code,
+                    "correlation_id": run.correlation_id,
+                    "started_at": run.started_at.isoformat() if run.started_at else None,
+                    "completed_at": run.completed_at.isoformat() if run.completed_at else None,
+                    "created_at": run.created_at.isoformat() if run.created_at else None,
+                    "job_status": job.status if job else None,
+                    "job_attempt_count": job.attempt_count if job else None,
+                    "job_max_attempts": job.max_attempts if job else None,
+                    "job_last_error_category": job.last_error_category if job else None,
+                }
+            )
+        return results, total
+
+    async def get_run(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        run_id: UUID,
+    ) -> dict[str, object] | None:
+        """Return a single workflow run with full job/attempt detail."""
+        run = await session.scalar(
+            select(WorkflowRun).where(
+                WorkflowRun.organization_id == organization_id,
+                WorkflowRun.id == run_id,
+            )
+        )
+        if not run:
+            return None
+
+        # Resolve workflow key
+        version = await session.get(WorkflowVersion, run.workflow_version_id)
+        wf_key: str | None = None
+        wf_name: str | None = None
+        if version:
+            definition = await session.get(WorkflowDefinition, version.definition_id)
+            if definition:
+                wf_key = definition.key
+                wf_name = definition.name
+
+        # Get all jobs for this run
+        job_rows = (
+            await session.scalars(
+                select(Job)
+                .where(
+                    Job.organization_id == organization_id,
+                    Job.workflow_run_id == run_id,
+                )
+                .order_by(Job.created_at.desc())
+            )
+        ).all()
+
+        # Get attempts for the latest job
+        attempts: list[dict[str, object]] = []
+        if job_rows:
+            latest_job = job_rows[0]
+            attempt_rows = (
+                await session.scalars(
+                    select(JobAttempt)
+                    .where(
+                        JobAttempt.organization_id == organization_id,
+                        JobAttempt.job_id == latest_job.id,
+                    )
+                    .order_by(JobAttempt.attempt_number.desc())
+                )
+            ).all()
+            attempts = [
+                {
+                    "attempt_number": a.attempt_number,
+                    "status": a.status,
+                    "worker_id": a.worker_id,
+                    "started_at": a.started_at.isoformat() if a.started_at else None,
+                    "completed_at": a.completed_at.isoformat() if a.completed_at else None,
+                    "error_category": a.error_category,
+                    "safe_error": a.safe_error,
+                }
+                for a in attempt_rows
+            ]
+
+        return {
+            "id": str(run.id),
+            "workflow_key": wf_key,
+            "workflow_name": wf_name,
+            "product_key": run.product_key,
+            "status": run.status,
+            "trigger_type": run.trigger_type,
+            "location_id": str(run.location_id) if run.location_id else None,
+            "input_document": run.input_document,
+            "output_reference": run.output_reference,
+            "failure_code": run.failure_code,
+            "correlation_id": run.correlation_id,
+            "started_at": run.started_at.isoformat() if run.started_at else None,
+            "completed_at": run.completed_at.isoformat() if run.completed_at else None,
+            "created_at": run.created_at.isoformat() if run.created_at else None,
+            "jobs": [
+                {
+                    "id": str(j.id),
+                    "job_type": j.job_type,
+                    "status": j.status,
+                    "attempt_count": j.attempt_count,
+                    "max_attempts": j.max_attempts,
+                    "last_error_category": j.last_error_category,
+                    "result_reference": j.result_reference,
+                    "priority": j.priority,
+                    "lease_owner": j.lease_owner,
+                    "available_at": j.available_at.isoformat() if j.available_at else None,
+                }
+                for j in job_rows
+            ],
+            "latest_attempts": attempts,
+        }
+
+    async def list_schedules(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+    ) -> list[dict[str, object]]:
+        """Return all schedules for an organization with workflow context."""
+        schedules = (
+            await session.scalars(
+                select(Schedule)
+                .where(
+                    Schedule.organization_id == organization_id,
+                )
+                .order_by(Schedule.created_at.desc())
+            )
+        ).all()
+
+        # Resolve workflow keys in batch
+        version_ids = {s.workflow_version_id for s in schedules}
+        def_lookup: dict[UUID, tuple[str, str]] = {}
+        if version_ids:
+            vers = (
+                await session.scalars(
+                    select(WorkflowVersion).where(WorkflowVersion.id.in_(version_ids))
+                )
+            ).all()
+            def_ids = {v.definition_id for v in vers}
+            defs: dict[UUID, WorkflowDefinition] = {}
+            if def_ids:
+                def_rows = (
+                    await session.scalars(
+                        select(WorkflowDefinition).where(WorkflowDefinition.id.in_(def_ids))
+                    )
+                ).all()
+                defs = {d.id: d for d in def_rows}
+            for v in vers:
+                d = defs.get(v.definition_id)
+                if d:
+                    def_lookup[v.id] = (d.key, d.name)
+
+        results: list[dict[str, object]] = []
+        for s in schedules:
+            wf_key, wf_name = def_lookup.get(s.workflow_version_id, (None, None))
+            results.append(
+                {
+                    "id": str(s.id),
+                    "key": s.key,
+                    "workflow_key": wf_key,
+                    "workflow_name": wf_name,
+                    "cron_expression": s.cron_expression,
+                    "timezone": s.timezone,
+                    "status": s.status,
+                    "next_run_at": s.next_run_at.isoformat() if s.next_run_at else None,
+                    "last_run_at": s.last_run_at.isoformat() if s.last_run_at else None,
+                    "location_id": str(s.location_id) if s.location_id else None,
+                    "created_at": s.created_at.isoformat() if s.created_at else None,
+                }
+            )
+        return results
+
+    async def create_schedule(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        command: ScheduleCreate,
+        *,
+        correlation_id: str,
+        actor_id: UUID | None = None,
+    ) -> Schedule:
+        """Create a recurring schedule for a known workflow type.
+
+        The ``workflow_version_id`` is resolved from the workflow type
+        catalog — callers supply ``workflow_key`` instead of an opaque
+        version id.
+        """
+        version = await self._resolve_workflow_version(session, command.workflow_key)
+        command_dict = command.model_dump(exclude={"workflow_key"})
+        command_dict["workflow_version_id"] = version.id
+
+        schedule = Schedule(
+            organization_id=organization_id,
+            location_id=command.location_id,
+            workflow_version_id=version.id,
+            key=command.key,
+            cron_expression=command.cron_expression,
+            timezone=command.timezone,
+            status="active",
+            next_run_at=command.next_run_at,
+            last_run_at=None,
+            version=1,
+        )
+        session.add(schedule)
+        await session.flush()
+
+        await self._audit(
+            session,
+            event="workflow.schedule.created",
+            organization_id=organization_id,
+            location_id=command.location_id,
+            actor_id=actor_id,
+            resource_type="workflow_schedule",
+            resource_id=schedule.id,
+            correlation_id=correlation_id,
+            summary=f"Schedule created: {command.key} ({command.cron_expression})",
+            metadata={
+                "workflow_key": command.workflow_key,
+                "cron_expression": command.cron_expression,
+                "timezone": command.timezone,
+            },
+        )
+        return schedule
+
+    async def update_schedule(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        schedule_id: UUID,
+        command: ScheduleUpdate,
+        *,
+        correlation_id: str,
+        actor_id: UUID | None = None,
+    ) -> Schedule | None:
+        """Update schedule status, cron expression, or next run time."""
+        schedule = await session.scalar(
+            select(Schedule)
+            .where(
+                Schedule.organization_id == organization_id,
+                Schedule.id == schedule_id,
+            )
+            .with_for_update()
+        )
+        if not schedule:
+            return None
+
+        if command.status is not None:
+            schedule.status = command.status
+        if command.cron_expression is not None:
+            schedule.cron_expression = command.cron_expression
+        if command.next_run_at is not None:
+            schedule.next_run_at = command.next_run_at
+        if command.timezone is not None:
+            schedule.timezone = command.timezone
+
+        await session.flush()
+
+        # Resolve workflow key for audit
+        version = await session.get(WorkflowVersion, schedule.workflow_version_id)
+        wf_key: str | None = None
+        if version:
+            definition = await session.get(WorkflowDefinition, version.definition_id)
+            if definition:
+                wf_key = definition.key
+
+        await self._audit(
+            session,
+            event="workflow.schedule.updated",
+            organization_id=organization_id,
+            location_id=schedule.location_id,
+            actor_id=actor_id,
+            resource_type="workflow_schedule",
+            resource_id=schedule.id,
+            correlation_id=correlation_id,
+            summary=f"Schedule updated: {schedule.key} (status={schedule.status})",
+            metadata={
+                "workflow_key": wf_key,
+                "status": schedule.status,
+                "cron_expression": schedule.cron_expression,
+            },
+        )
+        return schedule

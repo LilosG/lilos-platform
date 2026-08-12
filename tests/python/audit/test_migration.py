@@ -152,6 +152,7 @@ def test_audit_migration_upgrades_downgrades_and_restores_head(
             "offboarding_steps",
             "operational_incidents",
             "onboarding_checklist_items",
+            "onboarding_step_assignments",
             "organization_domains",
             "organization_invitations",
             "organization_memberships",

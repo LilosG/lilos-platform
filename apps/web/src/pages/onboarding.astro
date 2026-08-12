@@ -105,6 +105,19 @@ import "../styles/global.css";
               </select>
             </div>
             <div class="field">
+              <label for="onboarding-mode">Onboarding mode</label><select
+                id="onboarding-mode"
+                name="onboarding_mode"
+              >
+                <option value="managed" selected>Managed by LILOs</option>
+                <option value="co_managed">Co-Managed</option>
+                <option value="self_service">Self-Service</option>
+              </select>
+              <span class="field-hint"
+                >Controls who performs each onboarding step.</span
+              >
+            </div>
+            <div class="field">
               <label for="org-industry-create">Industry</label><select
                 id="org-industry-create"
                 name="industry_id"
@@ -189,6 +202,17 @@ import "../styles/global.css";
                 </h2>
               </div>
               <span id="workspace-status-badge"></span>
+              <span id="workspace-mode-badge" hidden></span>
+              <select
+                id="workspace-mode-select"
+                hidden
+                class="field--sm"
+                style="margin-left: 0.5rem"
+              >
+                <option value="managed">Managed by LILOs</option>
+                <option value="co_managed">Co-Managed</option>
+                <option value="self_service">Self-Service</option>
+              </select>
             </div>
             <div
               class="progress-bar"
@@ -217,6 +241,26 @@ import "../styles/global.css";
               </div>
             </div>
             <ul class="checklist" id="checklist-list"></ul>
+          </section>
+
+          <section
+            id="section-co-managed-assignments"
+            aria-labelledby="co-managed-title"
+            hidden
+          >
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Co-Managed</p><h2 id="co-managed-title">
+                  Step assignments
+                </h2>
+              </div>
+            </div>
+            <p class="field-hint">
+              Assign each step to the agency or the client. Only eligible steps
+              may be delegated to the client.
+            </p>
+            <div id="assignments-alert"></div>
+            <ul class="checklist" id="assignments-list"></ul>
           </section>
 
           <section id="section-profile" aria-labelledby="profile-title">
@@ -690,12 +734,16 @@ import "../styles/global.css";
         bootstrapOwner,
         fetchOnboardingState,
         activateOrganization,
+        setOnboardingMode,
+        assignOnboardingStep,
+        fetchStepAssignments,
         type AdminOrganization,
         type AdminLocation,
         type Industry,
         type IndustriesResponse,
         type PaginatedOrganizations,
         type OnboardingState,
+        type OnboardingResponsibilityMode,
       } from "../lib/platform-admin";
       import {
         fetchProducts,
@@ -727,7 +775,7 @@ import "../styles/global.css";
       import {
         applyShellAudience,
         applyShellPrincipal,
-        setPlatformNavigationVisible,
+        setPlatformAdminStatus,
       } from "../lib/ui";
 
       const regions = {
@@ -970,6 +1018,8 @@ import "../styles/global.css";
             ).toUpperCase(),
             industry_id:
               industryId && industryId.trim() !== "" ? industryId : null,
+            onboarding_mode: (data.get("onboarding_mode") ?? "managed") as
+              "managed" | "co_managed" | "self_service",
           });
           if (outcome.kind !== "ok") {
             alertInto("picker-alert", "error", describeFailure(outcome));
@@ -992,6 +1042,26 @@ import "../styles/global.css";
         ) as HTMLSelectElement;
         select.addEventListener("change", async () => {
           if (select.value) await loadOrganization(select.value);
+        });
+      }
+
+      function wireModeChange(): void {
+        const select = document.getElementById(
+          "workspace-mode-select",
+        ) as HTMLSelectElement;
+        select.addEventListener("change", async () => {
+          if (!currentOrganization) return;
+          const newMode = select.value as OnboardingResponsibilityMode;
+          const outcome = await setOnboardingMode(currentOrganization.id, {
+            mode: newMode,
+            expected_version: currentOrganization.version,
+          });
+          if (outcome.kind !== "ok") {
+            alertInto("picker-alert", "error", describeFailure(outcome));
+            await refreshWorkspace();
+            return;
+          }
+          await refreshWorkspace();
         });
       }
 
@@ -1717,7 +1787,7 @@ import "../styles/global.css";
         users: "section-users",
       };
 
-      function renderChecklist(state: OnboardingState): void {
+      async function renderChecklist(state: OnboardingState): Promise<void> {
         const list = document.getElementById("checklist-list")!;
         list.replaceChildren();
         for (const step of state.steps) {
@@ -1750,6 +1820,8 @@ import "../styles/global.css";
           item.append(info, actionsCell);
           list.append(item);
         }
+        // Show co-managed assignment controls when mode is co_managed
+        await renderCoManagedAssignments(state);
       }
 
       function renderReadiness(state: OnboardingState): void {
@@ -1813,6 +1885,87 @@ import "../styles/global.css";
           activateButton.title = state.activation_eligible
             ? ""
             : "Resolve every blocker above before activating.";
+        }
+      }
+
+      /**
+       * Render co-managed step assignment controls. Only visible when the
+       * organisation's responsibility_mode is "co_managed".
+       */
+      async function renderCoManagedAssignments(
+        state: OnboardingState,
+      ): Promise<void> {
+        const section = document.getElementById(
+          "section-co-managed-assignments",
+        )!;
+        if (state.responsibility_mode !== "co_managed") {
+          section.hidden = true;
+          return;
+        }
+        section.hidden = false;
+
+        const assignmentsOutcome = await fetchStepAssignments(
+          state.organization_id,
+        );
+        const assignments: Record<string, string> = {};
+        if (assignmentsOutcome.kind === "ok") {
+          for (const a of assignmentsOutcome.data) {
+            assignments[a.step_key] = a.assigned_to;
+          }
+        }
+
+        const list = document.getElementById("assignments-list")!;
+        list.replaceChildren();
+
+        // Only show client-eligible steps
+        const clientableKeys = new Set([
+          "organization_profile",
+          "locations",
+          "website_domain",
+        ]);
+
+        for (const step of state.steps) {
+          if (!clientableKeys.has(step.key)) continue;
+
+          const item = document.createElement("li");
+          const info = document.createElement("div");
+          info.className = "checklist__info";
+          const title = document.createElement("h3");
+          title.textContent = step.label;
+          info.append(title);
+
+          const actionsCell = document.createElement("div");
+          actionsCell.className = "checklist__actions";
+
+          const currentAssigned = assignments[step.key] ?? "agency";
+          const select = document.createElement("select");
+          select.setAttribute("data-step-key", step.key);
+          const agencyOpt = document.createElement("option");
+          agencyOpt.value = "agency";
+          agencyOpt.textContent = "Agency";
+          if (currentAssigned === "agency") agencyOpt.selected = true;
+          const clientOpt = document.createElement("option");
+          clientOpt.value = "client";
+          clientOpt.textContent = "Client";
+          if (currentAssigned === "client") clientOpt.selected = true;
+          select.append(agencyOpt, clientOpt);
+
+          select.addEventListener("change", async () => {
+            const assignedTo = select.value as "agency" | "client";
+            const outcome = await assignOnboardingStep(state.organization_id, {
+              step_key: step.key,
+              assigned_to: assignedTo,
+            });
+            if (outcome.kind !== "ok") {
+              alertInto("assignments-alert", "error", describeFailure(outcome));
+              // Reset to previous value
+              select.value = currentAssigned;
+            }
+          });
+
+          actionsCell.append(select);
+          item.append(info, actionsCell);
+          list.append(item);
         }
       }
 
@@ -1901,6 +2054,32 @@ import "../styles/global.css";
         if (state) {
           renderChecklist(state);
           renderReadiness(state);
+          // Show onboarding responsibility mode
+          const modeBadgeEl = document.getElementById("workspace-mode-badge")!;
+          modeBadgeEl.replaceChildren();
+          if (state.responsibility_mode) {
+            modeBadgeEl.hidden = false;
+            const modeLabel =
+              state.responsibility_mode === "managed"
+                ? "Managed by LILOs"
+                : state.responsibility_mode === "co_managed"
+                  ? "Co-Managed"
+                  : "Self-Service";
+            modeBadgeEl.append(badge("info", modeLabel));
+            // Show and wire the mode-change dropdown
+            const modeSelect = document.getElementById(
+              "workspace-mode-select",
+            ) as HTMLSelectElement;
+            modeSelect.value = state.responsibility_mode;
+            modeSelect.hidden = false;
+          } else {
+            modeBadgeEl.hidden = true;
+            (
+              document.getElementById(
+                "workspace-mode-select",
+              ) as HTMLSelectElement
+            ).hidden = true;
+          }
         }
 
         await renderUsers(organizationId);
@@ -1967,6 +2146,7 @@ import "../styles/global.css";
       function wireStaticForms(): void {
         wireCreateOrgForm();
         wireOrgPicker();
+        wireModeChange();
         wireProfileForm();
         wireCreateLocationForm();
         wireCreateDomainForm();
@@ -2125,7 +2305,7 @@ import "../styles/global.css";
           showOnly(regions.notAdmin);
           return;
         }
-        setPlatformNavigationVisible(true);
+        setPlatformAdminStatus(true);
         applyShellAudience("internal");
         if (!adminStatus.data.meets_required_assurance) {
           logStage("redirect-to-mfa");

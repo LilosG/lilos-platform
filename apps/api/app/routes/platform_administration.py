@@ -48,7 +48,11 @@ from apps.api.app.industries.service import IndustryService
 from apps.api.app.locations.contracts import LocationCreate, LocationData, LocationTransition
 from apps.api.app.locations.enums import LocationLifecycleAction
 from apps.api.app.locations.service import LocationService
-from apps.api.app.onboarding.contracts import OnboardingStateResponse
+from apps.api.app.onboarding.contracts import (
+    OnboardingModeSetRequest,
+    OnboardingStateResponse,
+    StepAssignmentRequest,
+)
 from apps.api.app.onboarding.service import OnboardingOrchestrationService
 from apps.api.app.organizations.contracts import (
     OrganizationCreate,
@@ -665,3 +669,93 @@ async def transition_product_entitlement(
             category=ErrorCategory.CONFLICT,
         )
     return response(request, _row(item))
+
+
+# ---------------------------------------------------------------------------
+# Onboarding responsibility mode and co-managed step assignment
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/organizations/{organization_id}/onboarding-mode",
+    response_model=DataResponse,
+    summary="Set the onboarding responsibility mode",
+)
+async def set_onboarding_mode(
+    request: Request,
+    organization_id: UUID,
+    command: OnboardingModeSetRequest,
+    session: DatabaseSession,
+) -> DataResponse | JSONResponse:
+    """Set managed, co_managed, or self_service mode for this organization.
+
+    This controls who may perform each onboarding step but does not alter
+    the underlying definition of completion/readiness.
+    """
+    organization = await organizations.get(session, organization_id)
+    if command.expected_version != organization.version:
+        return error_response(
+            request,
+            status_code=status.HTTP_409_CONFLICT,
+            code="VERSION_CONFLICT",
+            message="The organization version does not match; reload and retry.",
+            category=ErrorCategory.CONFLICT,
+        )
+    await onboarding_service.set_onboarding_mode(session, organization_id, command.mode)
+    await session.refresh(organization)
+    return response(request, OrganizationData.model_validate(organization))
+
+
+@router.post(
+    "/organizations/{organization_id}/onboarding-assign",
+    response_model=DataResponse,
+    summary="Assign a co-managed onboarding step to agency or client",
+)
+async def assign_onboarding_step(
+    request: Request,
+    organization_id: UUID,
+    command: StepAssignmentRequest,
+    session: DatabaseSession,
+) -> DataResponse | JSONResponse:
+    """Assign a step in co-managed mode to 'agency' or 'client'.
+
+    Only steps declared as co_managed_clientable may be assigned to the
+    client. Agency may always take any step.
+    """
+    try:
+        assignment = await onboarding_service.assign_step(
+            session, organization_id, command.step_key, command.assigned_to
+        )
+    except ValueError as exc:
+        return error_response(
+            request,
+            status_code=status.HTTP_400_BAD_REQUEST,
+            code="INVALID_ASSIGNMENT",
+            message=str(exc),
+            category=ErrorCategory.VALIDATION,
+        )
+    return response(
+        request,
+        {
+            "step_key": assignment.step_key,
+            "assigned_to": assignment.assigned_to,
+            "assigned_at": assignment.assigned_at.isoformat(),
+        },
+    )
+
+
+@router.get(
+    "/organizations/{organization_id}/onboarding-assign",
+    response_model=DataResponse,
+    summary="List co-managed step assignments",
+)
+async def list_step_assignments(
+    request: Request,
+    organization_id: UUID,
+    session: DatabaseSession,
+) -> DataResponse:
+    assignments = await onboarding_service.get_assignments(session, organization_id)
+    return response(
+        request,
+        [{"step_key": a.step_key, "assigned_to": a.assigned_to} for a in assignments],
+    )

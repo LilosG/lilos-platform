@@ -1,15 +1,15 @@
-"""Google Business Profile OAuth connection routes.
+"""Google OAuth connection routes and Integrations control plane endpoints.
 
-Two distinct route shapes exist here, deliberately:
+Three distinct route groups exist here:
 
-- Organization-scoped, authenticated, permission-checked JSON routes
-  (`connect`, `status`, `disconnect`) follow the same pattern as every other
-  product route in this codebase.
-- The provider callback (`GET /api/v1/integrations/google/callback`) is fixed,
-  unauthenticated, and organization-agnostic in its path, because it is the
-  exact URL registered with Google and reached by a full browser navigation
-  carrying no bearer token. Tenant identity is recovered entirely from the
-  already-validated, hashed, one-time `state` parameter -- never from the URL.
+- Organization-scoped Google OAuth routes (``connect``, ``status``, ``disconnect``,
+  ``discover``, ``sync_profile``) follow the standard authenticated, permission-checked
+  pattern.
+- The provider callback (``GET /api/v1/integrations/google/callback``) is fixed,
+  unauthenticated, and organization-agnostic in its path.
+- The Integrations control plane directory and workspace routes power the privileged
+  provider directory, Google/GitHub detail workspaces, and unmapped-resource mapping
+  queue consumed by the ``/integrations`` page.
 """
 
 from typing import Annotated
@@ -18,6 +18,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request, Response, status
 from fastapi.responses import RedirectResponse
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.app.access_control.enums import ScopeType
@@ -38,6 +39,7 @@ from apps.api.app.integrations.connection_service import (
     granted_services,
 )
 from apps.api.app.integrations.contracts import GoogleConnectRequest
+from apps.api.app.integrations.directory_service import IntegrationDirectoryService
 from apps.api.app.integrations.errors import (
     IntegrationNotConfiguredError,
     IntegrationNotFoundError,
@@ -45,7 +47,9 @@ from apps.api.app.integrations.errors import (
     IntegrationStateInvalidError,
     IntegrationTokenExchangeFailedError,
 )
+from apps.api.app.integrations.models import ProviderResourceMapping
 from apps.api.app.products.gbp.discovery_service import GBPDiscoveryService
+from apps.api.app.products.gbp.models import GBPLocation
 from apps.api.app.routes.health import settings_from_request
 from apps.api.app.schemas import ResponseMeta
 
@@ -58,6 +62,7 @@ callback_router = APIRouter(prefix="/api/v1/integrations/google", tags=["integra
 service = GBPConnectionService()
 discovery = GBPDiscoveryService()
 administration = AdministrationService()
+directory_service = IntegrationDirectoryService()
 Session = Annotated[AsyncSession, Depends(get_database_session)]
 GBPConnect = Annotated[
     AuthorizationDecision,
@@ -329,3 +334,115 @@ async def callback(
         url=_frontend_return_url(settings, connected=True),
         status_code=status.HTTP_302_FOUND,
     )
+
+
+# -- Integrations control plane workspace detail routes -------------------------
+# These routes extend the existing Google OAuth router so no new main.py
+# registration is required.  They power the privileged Integrations page:
+# Google/GitHub detail workspaces and the admin-only unmapped-resource queue.
+
+
+@router.get(
+    "/workspace",
+    dependencies=[Depends(no_store)],
+    summary="Google provider detail workspace",
+)
+async def google_workspace(
+    request: Request,
+    organization_id: UUID,
+    session: Session,
+    _principal: Authenticated,
+    _authz: GBPConnect,
+) -> dict[str, object]:
+    """Google detail: credential health, capabilities, mappings, sync freshness."""
+    ws = await directory_service.google_workspace(session, organization_id)
+    return {
+        "data": {
+            "connection_status": ws.connection_status,
+            "connection_id": ws.connection_id,
+            "token_expires_at": ws.token_expires_at,
+            "last_verified_at": ws.last_verified_at,
+            "capabilities": ws.capabilities,
+            "mapped_resources": ws.mapped_resources,
+            "unmapped_count": ws.unmapped_count,
+        },
+        "meta": ResponseMeta(correlation_id=request_correlation_id(request)).model_dump(),
+    }
+
+
+@router.get(
+    "/unmapped",
+    dependencies=[Depends(no_store)],
+    summary="Privileged unmapped Google resources",
+)
+async def google_unmapped(
+    request: Request,
+    organization_id: UUID,
+    session: Session,
+    _principal: Authenticated,
+    _authz: GBPConnect,
+    search: Annotated[str | None, Query(max_length=200)] = None,
+) -> dict[str, object]:
+    """Discovered-but-unmapped GBP locations for the privileged mapping queue.
+
+    Ordinary product pages consume only confirmed mappings and never call this.
+    The response does NOT include a mapping mutation action -- that belongs to
+    the canonical AAL2 GBP confirm endpoint on the product route.
+    """
+    connection = await service.find_connection(session, organization_id)
+    if connection is None:
+        return {
+            "data": [],
+            "meta": ResponseMeta(correlation_id=request_correlation_id(request)).model_dump(),
+        }
+
+    mapped_ids: set[UUID] = set()
+    rows = (
+        (
+            await session.execute(
+                select(ProviderResourceMapping.platform_resource_id).where(
+                    ProviderResourceMapping.organization_id == organization_id,
+                    ProviderResourceMapping.resource_type == "location",
+                    ProviderResourceMapping.status == "active",
+                    ProviderResourceMapping.platform_resource_id.isnot(None),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for row in rows:
+        if row is not None:
+            mapped_ids.add(row)
+
+    gbp_locations = (
+        (
+            await session.execute(
+                select(GBPLocation).where(GBPLocation.organization_id == organization_id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    unmapped: list[dict[str, object]] = []
+    for loc in gbp_locations:
+        if loc.id in mapped_ids:
+            continue
+        name = loc.business_name or "Unnamed location"
+        if search and search.lower() not in name.lower():
+            continue
+        capability = loc.capability_document or {}
+        unmapped.append(
+            {
+                "id": str(loc.id),
+                "external_location_id": loc.external_location_id or "",
+                "display_name": name,
+                "primary_category": capability.get("primaryCategory"),
+            }
+        )
+
+    return {
+        "data": unmapped,
+        "meta": ResponseMeta(correlation_id=request_correlation_id(request)).model_dump(),
+    }

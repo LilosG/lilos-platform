@@ -109,6 +109,7 @@ def test_baseline_migration_upgrades_downgrades_and_upgrades_again(
         "offboarding_plans",
         "offboarding_steps",
         "onboarding_checklist_items",
+        "onboarding_step_assignments",
         "operational_incidents",
         "organization_domains",
         "organization_invitations",
@@ -237,6 +238,7 @@ def test_baseline_migration_upgrades_downgrades_and_upgrades_again(
         "offboarding_plans",
         "offboarding_steps",
         "onboarding_checklist_items",
+        "onboarding_step_assignments",
         "operational_incidents",
         "organization_domains",
         "organization_invitations",
@@ -290,3 +292,122 @@ def test_baseline_migration_upgrades_downgrades_and_upgrades_again(
         "workflow_versions",
     ]
     assert revisions_at_final_head == [alembic_head]
+
+
+@pytest.mark.integration
+def test_20260812_0001_catalog_correction_survives_immutability_trigger(
+    postgresql_test_url: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Catalog correction can UPDATE products despite products_governed_immutability.
+
+    Migration 20260803_0001 installs a BEFORE UPDATE trigger that raises
+    "catalog or operational revision is immutable" for the products table.
+    Migration 20260812_0001 must temporarily disable *only* that trigger,
+    run the correction, and re-enable it — leaving immutability enforcement
+    fully operational after the transaction commits.
+
+    Alembic commands run synchronously (they internally use asyncio.run).
+    Async DB queries run in their own short-lived asyncio.run() calls so
+    they never overlap with an active Alembic event loop.
+    """
+    import uuid
+
+    from alembic.command import downgrade as alembic_downgrade
+    from alembic.command import upgrade as alembic_upgrade
+    from sqlalchemy import text as sa_text
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+    from sqlalchemy.pool import NullPool
+
+    monkeypatch.setenv("LILOS_MIGRATION_DATABASE_URL", postgresql_test_url)
+    config = alembic_config()
+    engine = create_async_engine(postgresql_test_url, poolclass=NullPool)
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    # ---------- sync: initialise schema at head ----------
+    alembic_downgrade(config, "base")
+    alembic_upgrade(config, "head")
+
+    # ---------- async: seed product rows ----------
+    gbp_id = uuid.uuid4()
+    reviews_id = uuid.uuid4()
+
+    async def _seed() -> None:
+        async with session_factory.begin() as s:
+            for row in (
+                (gbp_id, "gbp", "Google Business Profile", True),
+                (reviews_id, "reviews", "Reviews", True),
+            ):
+                await s.execute(
+                    sa_text(
+                        "INSERT INTO products (id, key, name, description, owning_module, "
+                        "current_product_version, runtime_control_namespace, "
+                        "requires_location_profile) "
+                        "VALUES (:id, :key, :name, :desc, 'platform', '1.0', :key, :rlp)"
+                    ),
+                    {
+                        "id": row[0],
+                        "key": row[1],
+                        "name": row[2],
+                        "desc": row[2],
+                        "rlp": row[3],
+                    },
+                )
+
+    asyncio.run(_seed())
+
+    async def _select_requires_location_profile(key: str) -> bool:
+        async with session_factory() as s:
+            result = await s.execute(
+                sa_text("SELECT requires_location_profile FROM products WHERE key = :key"),
+                {"key": key},
+            )
+            return result.scalar()  # type: ignore[return-value]
+
+    # Verify seeded state.
+    for key in ("gbp", "reviews"):
+        assert asyncio.run(_select_requires_location_profile(key)) is True, (
+            f"{key} should start true"
+        )
+
+    try:
+        # ---------- sync: downgrade to just before 20260812_0001 ----------
+        alembic_downgrade(config, "20260811_0002")
+
+        # Verify downgrade restored true.
+        for key in ("gbp", "reviews"):
+            assert asyncio.run(_select_requires_location_profile(key)) is True, (
+                f"{key} should be true after downgrade"
+            )
+
+        # Verify trigger is active.
+        async def _trigger_active() -> bool:
+            try:
+                async with session_factory.begin() as s:
+                    await s.execute(sa_text("UPDATE products SET name = 'hack' WHERE key = 'gbp'"))
+                return False
+            except Exception as exc:
+                assert "immutable" in str(exc).lower()
+                return True
+
+        assert asyncio.run(_trigger_active()), (
+            "products_governed_immutability trigger must be active after downgrade"
+        )
+
+        # ---------- sync: upgrade through 20260812_0001 ----------
+        alembic_upgrade(config, "20260812_0001")
+
+        # Verify upgrade restored false.
+        for key in ("gbp", "reviews"):
+            assert asyncio.run(_select_requires_location_profile(key)) is False, (
+                f"{key} should be false after upgrade"
+            )
+
+        # Verify trigger is STILL active.
+        assert asyncio.run(_trigger_active()), (
+            "products_governed_immutability trigger must be active after upgrade"
+        )
+
+    finally:
+        # ---------- sync: always restore head ----------
+        alembic_upgrade(config, "head")

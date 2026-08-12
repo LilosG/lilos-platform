@@ -130,11 +130,8 @@ import "../styles/global.css";
     <script>
       import {
         fetchGBPLocations,
-        fetchPlatformLocations,
-        confirmLocationMapping,
         workspaceContextFor,
         type GBPLocationSummary,
-        type PlatformLocation,
       } from "../lib/gbp";
       import { fetchConnectionStatus } from "../lib/gbp-connection";
       import {
@@ -174,7 +171,6 @@ import "../styles/global.css";
       let organizationId = "";
       let selectedPlatformLocationId: string | null = null;
       let selectedGbpLocationId: string | null = null;
-      let platformLocationsCache: PlatformLocation[] = [];
 
       const regions: BootRegions = {
         notConfigured: document.getElementById("boot-not-configured")!,
@@ -195,20 +191,14 @@ import "../styles/global.css";
       ): Promise<void> {
         setActiveOrganization(org);
         organizationId = org.organization_id;
-        platformLocationsCache = [];
         selectedPlatformLocationId = null;
         selectedGbpLocationId = null;
         showLocationPicker();
 
-        const [connectionResult, locationsResult, platformLocsResult] =
-          await Promise.all([
-            fetchConnectionStatus(organizationId),
-            fetchGBPLocations(organizationId),
-            fetchPlatformLocations(organizationId),
-          ]);
-
-        if (platformLocsResult.kind === "ok")
-          platformLocationsCache = platformLocsResult.data;
+        const [connectionResult, locationsResult] = await Promise.all([
+          fetchConnectionStatus(organizationId),
+          fetchGBPLocations(organizationId),
+        ]);
 
         renderConnectionStatus(connectionResult);
         if (locationsResult.kind === "ok") {
@@ -307,14 +297,10 @@ import "../styles/global.css";
         const panel = document.getElementById("location-picker-panel")!;
         panel.replaceChildren();
 
-        const confirmed = locations.filter(
-          (l) => l.mapping_status === "confirmed",
-        );
-
         if (locations.length === 0) {
           panel.append(
             emptyState(
-              "No Business Profile locations discovered",
+              "No managed Business Profile locations",
               "Connect Google in Integrations and discover your accounts and locations to get started.",
               "Go to Integrations",
               "/integrations",
@@ -323,127 +309,47 @@ import "../styles/global.css";
           return;
         }
 
-        if (confirmed.length > 0) {
-          const managedHeading = document.createElement("div");
-          managedHeading.className = "list-heading";
-          managedHeading.append(
-            Object.assign(document.createElement("h3"), {
-              textContent: "Managed locations",
-            }),
-            Object.assign(document.createElement("p"), {
-              textContent:
-                "Only confirmed mappings appear as managed business data.",
-            }),
-          );
-          panel.append(managedHeading);
-          const list = document.createElement("ul");
-          list.className = "product-list";
-          for (const loc of confirmed) {
-            const item = document.createElement("li");
-            const info = document.createElement("div");
-            const name = document.createElement("h3");
-            name.textContent = loc.business_name;
-            const detail = document.createElement("p");
-            detail.textContent = loc.last_synced_at
-              ? `Last synced ${formatTimestamp(loc.last_synced_at)}`
-              : "Not yet synced";
-            info.append(name, detail);
-            const openBtn = document.createElement("button");
-            openBtn.type = "button";
-            openBtn.className = "button button--sm";
-            openBtn.textContent = "Open";
-            openBtn.addEventListener("click", () => void openWorkspace(loc));
-            const actions = document.createElement("div");
-            actions.className = "list-actions";
-            actions.append(
-              statusBadge(
-                loc.last_synced_at ? "ready" : "setup",
-                loc.last_synced_at ? "Synced" : "Awaiting sync",
-              ),
-              openBtn,
-            );
-            item.append(info, actions);
-            list.append(item);
-          }
-          panel.append(list);
-        }
-
-        const unmapped = locations.filter(
-          (l) =>
-            l.mapping_status === "unmapped" &&
-            platformLocationsCache.length > 0,
+        const managedHeading = document.createElement("div");
+        managedHeading.className = "list-heading";
+        managedHeading.append(
+          Object.assign(document.createElement("h3"), {
+            textContent: "Managed locations",
+          }),
+          Object.assign(document.createElement("p"), {
+            textContent: "Confirmed mappings appear as managed business data.",
+          }),
         );
-        if (unmapped.length > 0) {
-          const heading = document.createElement("p");
-          heading.className = "list-heading__eyebrow";
-          heading.textContent = "Setup · discovered locations not yet managed";
-          panel.append(heading);
-          const list = document.createElement("ul");
-          list.className = "product-list";
-          for (const loc of unmapped) {
-            const item = document.createElement("li");
-            const info = document.createElement("div");
-            const name = document.createElement("h3");
-            name.textContent = loc.business_name;
-            const detail = document.createElement("p");
-            detail.textContent =
-              "Map to a LILOs business location to start managing.";
-            info.append(name, detail);
-
-            const select = document.createElement("select");
-            select.className = "button button--secondary button--sm";
-            const placeholder = document.createElement("option");
-            placeholder.value = "";
-            placeholder.textContent = "Select location…";
-            select.append(placeholder);
-            for (const pLoc of platformLocationsCache) {
-              const opt = document.createElement("option");
-              opt.value = pLoc.id;
-              opt.textContent = pLoc.name;
-              select.append(opt);
-            }
-            const mapBtn = document.createElement("button");
-            mapBtn.type = "button";
-            mapBtn.className = "button button--secondary button--sm";
-            mapBtn.textContent = "Map";
-            mapBtn.addEventListener("click", async () => {
-              if (!select.value) return;
-              mapBtn.disabled = true;
-              mapBtn.textContent = "Mapping…";
-              const result = await confirmLocationMapping(
-                organizationId,
-                select.value,
-                loc.id,
-                false,
-              );
-              if (result.kind === "ok") {
-                const locs = await fetchGBPLocations(organizationId);
-                renderLocationPicker(locs.kind === "ok" ? locs.data : []);
-              } else {
-                mapBtn.disabled = false;
-                mapBtn.textContent = "Map";
-                panel.append(errorAlert(describeFailure(result, "Mapping")));
-              }
-            });
-            item.append(info, select, mapBtn);
-            list.append(item);
-          }
-          panel.append(list);
-        } else if (
-          locations.some(
-            (location) => location.mapping_status === "unmapped",
-          ) &&
-          platformLocationsCache.length === 0
-        ) {
-          panel.append(
-            emptyState(
-              "Discovered locations need a LILOs location",
-              "Add the client’s business location in Settings before mapping a discovered Google location.",
-              "Manage locations",
-              "/settings",
+        panel.append(managedHeading);
+        const list = document.createElement("ul");
+        list.className = "product-list";
+        for (const loc of locations) {
+          const item = document.createElement("li");
+          const info = document.createElement("div");
+          const name = document.createElement("h3");
+          name.textContent = loc.business_name;
+          const detail = document.createElement("p");
+          detail.textContent = loc.last_synced_at
+            ? `Last synced ${formatTimestamp(loc.last_synced_at)}`
+            : "Not yet synced";
+          info.append(name, detail);
+          const openBtn = document.createElement("button");
+          openBtn.type = "button";
+          openBtn.className = "button button--sm";
+          openBtn.textContent = "Open";
+          openBtn.addEventListener("click", () => void openWorkspace(loc));
+          const actions = document.createElement("div");
+          actions.className = "list-actions";
+          actions.append(
+            statusBadge(
+              loc.last_synced_at ? "ready" : "setup",
+              loc.last_synced_at ? "Synced" : "Awaiting sync",
             ),
+            openBtn,
           );
+          item.append(info, actions);
+          list.append(item);
         }
+        panel.append(list);
       }
 
       async function openWorkspace(loc: GBPLocationSummary): Promise<void> {

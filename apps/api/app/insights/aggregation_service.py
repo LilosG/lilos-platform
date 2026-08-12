@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import ColumnElement, func, select
+from sqlalchemy import ColumnElement, and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.app.execution.models import WorkflowRun
@@ -35,7 +35,12 @@ class InsightsService:
             session, WorkflowRun, WorkflowRun.organization_id == organization_id
         )
         gbp_locations = await self._count(
-            session, GBPLocation, GBPLocation.organization_id == organization_id
+            session,
+            GBPLocation,
+            and_(
+                GBPLocation.organization_id == organization_id,
+                GBPLocation.mapping_status == "confirmed",
+            ),
         )
         gbp_snapshots = await self._count(
             session, GBPProfileSnapshot, GBPProfileSnapshot.organization_id == organization_id

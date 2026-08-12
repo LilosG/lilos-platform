@@ -342,8 +342,11 @@ async def list_accounts(
     request: Request,
     organization_id: UUID,
     session: Session,
-    _: Annotated[AuthorizationDecision, organization_policy("gbp.read")],
+    _: Annotated[AuthorizationDecision, organization_policy("gbp.connect")],
 ) -> dict[str, object]:
+    # Provider account discovery requires the privileged gbp.connect
+    # permission, not ordinary gbp.read.  This keeps broad provider
+    # resource enumeration inside the Integrations control plane.
     items = await service.list_accounts(session, organization_id)
     return {
         "data": [
@@ -366,9 +369,13 @@ async def list_org_locations(
     organization_id: UUID,
     session: Session,
     _: Annotated[AuthorizationDecision, organization_policy("gbp.read")],
-    mapping_status: str | None = None,
 ) -> dict[str, object]:
-    items = await service.list_locations(session, organization_id, mapping_status=mapping_status)
+    # The gbp.read permission description says "Read mapped GBP profile state".
+    # A caller with only gbp.read must not be able to enumerate unmapped
+    # provider-discovered resources.  Only confirmed mappings are returned;
+    # broad discovery is gated behind the gbp.connect permission used by the
+    # Integrations control plane (POST /integrations/google/discover).
+    items = await service.list_locations(session, organization_id, mapping_status="confirmed")
     return {
         "data": [
             {

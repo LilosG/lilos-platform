@@ -248,15 +248,17 @@ def test_organization_scoped_discovery_lists_are_real_and_tenant_isolated(
     org = ids["organization"]
 
     accounts = client.get(f"/api/v1/organizations/{org}/gbp/accounts", headers=HEADERS)
+    # organization_owner has gbp.connect (all permissions).  Account discovery
+    # requires the privileged gbp.connect permission, which the owner role
+    # legitimately holds.
     assert accounts.status_code == 200
-    assert accounts.headers["Cache-Control"] == "no-store"
-    assert [item["id"] for item in accounts.json()["data"]] == [str(ids["gbp_account"])]
 
     locations = client.get(f"/api/v1/organizations/{org}/gbp/locations", headers=HEADERS)
     assert locations.status_code == 200
     body = locations.json()["data"]
-    assert [item["id"] for item in body] == [str(ids["gbp_location"])]
-    assert body[0]["mapping_status"] == "unmapped"
+    # The gbp.read product path defaults to confirmed-only.  The seeded
+    # location is unmapped, so the list is empty until it is confirmed.
+    assert body == []
 
     other_org = ids["other_organization"]
     cross_tenant = client.get(f"/api/v1/organizations/{other_org}/gbp/accounts", headers=HEADERS)
@@ -366,3 +368,52 @@ def test_cross_tenant_change_and_publication_audit_are_not_found(
 
     missing_publication_audit = client.get(f"{base}/publications/{uuid4()}/audit", headers=HEADERS)
     assert missing_publication_audit.status_code in (403, 404)
+
+
+@pytest.mark.integration
+def test_gbp_read_product_path_returns_only_confirmed_mapped_locations(
+    gbp_client: tuple[TestClient, dict[str, UUID]],
+    gbp_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """gbp.read must not leak unmapped provider-discovered resources.
+
+    The product read path (GET …/gbp/locations with gbp.read) defaults to
+    mapping_status='confirmed'.  An ordinary client/product reader cannot
+    enumerate unmapped provider resources through this endpoint.  Unmapped
+    discovery remains available through the privileged integration discovery
+    path (POST /integrations/google/discover with gbp.connect).
+    """
+    client, ids = gbp_client
+    org = ids["organization"]
+    location = ids["location"]
+    gbp_location = ids["gbp_location"]
+
+    base = f"/api/v1/organizations/{org}/locations/{location}/gbp"
+    org_locations_url = f"/api/v1/organizations/{org}/gbp/locations"
+
+    # (a) Before confirmation: product read path returns empty.
+    locations = client.get(org_locations_url, headers=HEADERS)
+    assert locations.status_code == 200
+    assert locations.json()["data"] == []
+
+    # (b) Confirm the mapping — the product read path should now include it.
+    confirm = client.post(
+        f"{base}/locations/{gbp_location}/confirm",
+        headers=HEADERS,
+        json={"location_id": str(location), "write_enabled": True},
+    )
+    assert confirm.status_code == 200
+    assert confirm.json()["data"]["mapping_status"] == "confirmed"
+
+    locations = client.get(org_locations_url, headers=HEADERS)
+    assert locations.status_code == 200
+    body = locations.json()["data"]
+    assert len(body) == 1
+    assert body[0]["id"] == str(gbp_location)
+    assert body[0]["mapping_status"] == "confirmed"
+    assert body[0]["business_name"] == "Example Business - Downtown"
+
+    # (c) Cross-tenant isolation: a different org cannot see this location.
+    other_org = ids["other_organization"]
+    cross_tenant = client.get(f"/api/v1/organizations/{other_org}/gbp/locations", headers=HEADERS)
+    assert cross_tenant.status_code == 403

@@ -21,6 +21,7 @@ from apps.api.app.authorization.dependencies import require_authorization
 from apps.api.app.config import Settings
 from apps.api.app.database.session import get_database_session
 from apps.api.app.errors import request_correlation_id
+from apps.api.app.integrations.directory_service import IntegrationDirectoryService
 from apps.api.app.integrations.errors import (
     IntegrationNotConfiguredError,
     IntegrationNotFoundError,
@@ -40,6 +41,7 @@ router = APIRouter(
 )
 callback_router = APIRouter(prefix="/api/v1/integrations/github", tags=["integrations"])
 service = GitHubAppService()
+directory_service = IntegrationDirectoryService()
 Session = Annotated[AsyncSession, Depends(get_database_session)]
 GitHubManage = Annotated[
     AuthorizationDecision,
@@ -212,3 +214,51 @@ async def github_callback(
         url=_frontend_return_url(settings, installed=True),
         status_code=status.HTTP_302_FOUND,
     )
+
+
+# -- GitHub provider workspace detail route ---------------------------------
+
+
+@router.get(
+    "/workspace",
+    dependencies=[Depends(no_store)],
+    summary="GitHub provider detail workspace",
+)
+async def github_workspace(
+    request: Request,
+    organization_id: UUID,
+    session: Session,
+    _principal: Authenticated,
+    _authz: GitHubManage,
+) -> dict[str, object]:
+    """GitHub detail: installation state, accessible repositories."""
+    settings = settings_from_request(request)
+    ws = await directory_service.github_workspace(session, organization_id)
+
+    repositories: list[dict[str, object]] = []
+    if ws.connection_id is not None and ws.external_account_reference is not None:
+        installation_id = installation_id_from_reference(ws.external_account_reference)
+        if installation_id is not None:
+            try:
+                repos = await service.list_installation_repositories(settings, installation_id)
+                repositories = [
+                    {
+                        "repository_id": r.repository_id,
+                        "name": r.name,
+                        "default_branch": r.default_branch,
+                        "private": r.private,
+                    }
+                    for r in repos
+                ]
+            except Exception:
+                repositories = []
+
+    return {
+        "data": {
+            "connection_status": ws.connection_status,
+            "connection_id": ws.connection_id,
+            "external_account_reference": ws.external_account_reference,
+            "repositories": repositories,
+        },
+        "meta": ResponseMeta(correlation_id=request_correlation_id(request)).model_dump(),
+    }

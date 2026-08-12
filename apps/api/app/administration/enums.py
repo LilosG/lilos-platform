@@ -51,6 +51,15 @@ class EntitlementStatus(StrEnum):
     ARCHIVED = "archived"
 
 
+# Only not_enabled and archived represent a product that is not
+# selected/subscribed.  suspended is selected but not currently
+# effective — it remains visible in product navigation.
+# Consumers: onboarding, GET /organizations/{id}/products.
+NOT_SELECTED_ENTITLEMENT_STATUSES: frozenset[str] = frozenset(
+    {EntitlementStatus.NOT_ENABLED, EntitlementStatus.ARCHIVED}
+)
+
+
 class RevisionStatus(StrEnum):
     DRAFT = "draft"
     VALIDATION_FAILED = "validation_failed"

@@ -79,6 +79,7 @@ from apps.api.app.observability.models import (
     ServiceHeartbeat,
     SLORecord,
 )
+from apps.api.app.onboarding.models import OnboardingStepAssignmentRecord
 from apps.api.app.organizations.models import Organization
 from apps.api.app.products.analytics.models import AnalyticsProperty
 from apps.api.app.products.content.models import (
@@ -300,6 +301,7 @@ for content_model in (
     ContentPublication,
 ):
     assert content_model.metadata is target_metadata
+assert OnboardingStepAssignmentRecord.metadata is target_metadata
 
 
 def configured_database_url() -> str:

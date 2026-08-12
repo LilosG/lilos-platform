@@ -54,6 +54,7 @@ class OrganizationCreate(BaseModel):
     billing_email: EmailReference | None = None
     external_reference: Annotated[str, Field(min_length=1, max_length=200)] | None = None
     onboarding_status: Annotated[str, Field(min_length=1, max_length=64)] | None = None
+    onboarding_mode: Annotated[str, Field(min_length=1, max_length=16)] | None = None
     industry_id: UUID | None = None
 
     @field_validator("slug", mode="before")
@@ -142,6 +143,7 @@ class OrganizationData(BaseModel):
     billing_email: str | None
     external_reference: str | None
     onboarding_status: str | None
+    onboarding_mode: str | None
     industry_id: UUID | None
     archived_at: datetime | None
     created_at: datetime

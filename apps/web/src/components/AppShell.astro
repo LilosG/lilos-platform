@@ -21,6 +21,15 @@ const iconPaths: Record<string, string> = {
   shield: "M12 2l8 4v6c0 5-3.5 9-8 10-4.5-1-8-5-8-10V6z",
   plus: "M12 5v14M5 12h14",
 };
+const productKeys = [
+  "gbp",
+  "reviews",
+  "leads",
+  "content",
+  "seo",
+  "automations",
+  "insights",
+];
 ---
 
 <a class="skip-link" href="#main-content">Skip to main content</a>
@@ -72,10 +81,14 @@ const iconPaths: Record<string, string> = {
             <p class="sidebar__group-heading">{group.heading}</p>
             <ul class="sidebar__group-list">
               {group.items.map((item) => (
-                <li>
+                <li
+                  hidden={productKeys.includes(item.key)}
+                  data-nav-product={productKeys.includes(item.key) || undefined}
+                >
                   <a
                     class="sidebar__link"
                     href={item.href}
+                    data-nav-key={item.key}
                     aria-current={isActive(item.href) ? "page" : undefined}
                   >
                     {item.icon && (

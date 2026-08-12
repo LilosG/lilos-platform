@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { apiGet } from "./api-client";
+import { apiGet, type ApiRequestOptions } from "./api-client";
 
 const config = {
   apiBaseUrl: "https://api.lilos.invalid",
@@ -171,5 +171,16 @@ describe("apiGet", () => {
       message: "Stale version.",
       details: [],
     });
+  });
+});
+
+describe("ApiRequestOptions supports PATCH", () => {
+  it("accepts PATCH as a valid HTTP method", () => {
+    const opts: ApiRequestOptions = {
+      method: "PATCH",
+      body: { status: "active" },
+    };
+    expect(opts.method).toBe("PATCH");
+    expect(opts.body).toEqual({ status: "active" });
   });
 });
