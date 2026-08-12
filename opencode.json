@@ -1,0 +1,13 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "openrouter/deepseek/deepseek-v4-pro",
+  "provider": {
+    "openrouter": {
+      "models": {
+        "deepseek/deepseek-v4-pro": {},
+        "deepseek/deepseek-v4-flash": {},
+        "qwen/qwen3-coder-next": {}
+      }
+    }
+  }
+}
