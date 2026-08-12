@@ -45,6 +45,7 @@ export const PRODUCT_KEYS = [
   "leads",
   "content",
   "seo",
+  "automations",
   "insights",
 ] as const;
 export type ProductKey = (typeof PRODUCT_KEYS)[number];
@@ -55,6 +56,7 @@ export const PRODUCT_LABELS: Record<ProductKey, string> = {
   leads: "Leads",
   content: "Content",
   seo: "SEO",
+  automations: "Automations",
   insights: "Insights",
 };
 
@@ -135,5 +137,19 @@ export function fetchInsightsSummary(
 ): Promise<ApiOutcome<InsightsSummary>> {
   return apiGet<InsightsSummary>(
     `/api/v1/organizations/${organizationId}/insights/summary`,
+  );
+}
+
+export type EntitledProduct = {
+  product_key: string;
+  entitled: boolean;
+  entitlement_status: string;
+};
+
+export function fetchEntitledProducts(
+  organizationId: string,
+): Promise<ApiOutcome<EntitledProduct[]>> {
+  return apiGet<EntitledProduct[]>(
+    `/api/v1/organizations/${organizationId}/products`,
   );
 }

@@ -43,6 +43,51 @@ function wireSignOut(): void {
   });
 }
 
+let _isPlatformAdmin = false;
+let _onOrganizationChanged: ((orgId: string) => void) | null = null;
+let _activeOrganizationId = "";
+
+export function setPlatformAdminStatus(status: boolean): void {
+  _isPlatformAdmin = status;
+}
+
+export function onOrganizationChanged(handler: (orgId: string) => void): void {
+  _onOrganizationChanged = handler;
+}
+
+function _updateAdminNavigation(): void {
+  // Admin navigation mirrors the authoritative platform-administrator
+  // grant checked by /administration and /onboarding — never a frontend
+  // membership-type allowlist.  The Admin group starts hidden (AppShell
+  // renders it with the hidden attribute) and is only made visible when
+  // the backend confirms an active platform-administrator grant.
+  setPlatformNavigationVisible(_isPlatformAdmin);
+}
+
+export function setProductNavigationVisibility(entitledKeys: Set<string>): void {
+  if (typeof document === "undefined") return;
+  // Platform administrators see the full product suite regardless of the
+  // current organization's entitlements.
+  if (_isPlatformAdmin) {
+    for (const item of document.querySelectorAll<HTMLElement>(
+      'li[data-nav-product]',
+    )) {
+      item.hidden = false;
+    }
+    return;
+  }
+  // Product navigation fails closed: items start hidden (AppShell renders
+  // them with the hidden attribute) and are only revealed when the
+  // authoritative entitlement response confirms the product is selected.
+  for (const item of document.querySelectorAll<HTMLElement>(
+    'li[data-nav-product]',
+  )) {
+    const link = item.querySelector<HTMLAnchorElement>("a[data-nav-key]");
+    const key = link?.getAttribute("data-nav-key");
+    item.hidden = !key || !entitledKeys.has(key);
+  }
+}
+
 export function applyShellPrincipal(
   principal: import("../workspace").PrincipalSummary,
 ): void {
@@ -67,9 +112,11 @@ export function applyShellAudience(membershipType: string): void {
   const audienceLabel = isAgency ? "Agency workspace" : "Client workspace";
   if (audience) audience.textContent = audienceLabel;
   if (role) role.textContent = audienceLabel;
+  _updateAdminNavigation();
 }
 
 export function setPlatformNavigationVisible(visible: boolean): void {
+  if (typeof document === "undefined") return;
   const adminGroup = document.querySelector<HTMLElement>(
     '[data-navigation-group="admin"]',
   );
@@ -104,6 +151,7 @@ export function setActiveOrganization(
   organization: import("../workspace").MyOrganization,
 ): void {
   if (organization.organization_id) {
+    _activeOrganizationId = organization.organization_id;
     localStorage.setItem("selected_org_id", organization.organization_id);
     const url = new URL(window.location.href);
     if (url.searchParams.get("org") !== organization.organization_id) {
@@ -118,6 +166,7 @@ export function setActiveOrganization(
   const nameEl = document.getElementById("active-organization-name");
   if (nameEl) nameEl.textContent = organization.organization_name;
   applyShellAudience(organization.membership_type);
+  if (_onOrganizationChanged) _onOrganizationChanged(organization.organization_id);
 }
 
 export async function bootWorkspace(
@@ -154,7 +203,7 @@ export async function bootWorkspace(
     fetchMyOrganizations(),
     fetchMyPlatformAdministratorStatus(),
   ]);
-  setPlatformNavigationVisible(
+  setPlatformAdminStatus(
     platformStatus.kind === "ok" &&
       platformStatus.data.is_platform_administrator,
   );
@@ -178,6 +227,46 @@ export async function bootWorkspace(
   }
 
   setActiveOrganization(initial);
+
+  // Register a callback so organization switching recalculates product
+  // navigation visibility from the newly-selected organization's entitlements.
+  // The callback fails closed: products are hidden until the new entitlement
+  // response arrives, and a stale response from an earlier switch is discarded.
+  onOrganizationChanged(async (targetOrgId) => {
+    // Hide all product items while the new entitlement state resolves.
+    if (!_isPlatformAdmin) {
+      for (const item of document.querySelectorAll<HTMLElement>(
+        'li[data-nav-product]',
+      )) {
+        item.hidden = true;
+      }
+    }
+    const { fetchEntitledProducts: fetchProducts } = await import("../workspace");
+    const products = await fetchProducts(targetOrgId);
+    // Discard stale responses from a different active organization.
+    if (_activeOrganizationId !== targetOrgId) return;
+    if (products.kind === "ok") {
+      setProductNavigationVisibility(
+        new Set(
+          products.data.filter((p) => p.entitled).map((p) => p.product_key),
+        ),
+      );
+    }
+    // On failure, product items remain hidden (fail closed).
+  });
+
+  // Fetch entitled products for the initial organization.
+  const { fetchEntitledProducts } = await import("../workspace");
+  const products = await fetchEntitledProducts(initial.organization_id);
+  if (products.kind === "ok") {
+    setProductNavigationVisibility(
+      new Set(
+        products.data
+          .filter((p) => p.entitled)
+          .map((p) => p.product_key),
+      ),
+    );
+  }
 
   return {
     kind: "ok",

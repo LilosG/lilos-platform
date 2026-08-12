@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from apps.api.app.access_control.enums import MembershipStatus
 from apps.api.app.access_control.service import AccessControlService
 from apps.api.app.administration.contracts import ReadinessFinding
+from apps.api.app.administration.enums import NOT_SELECTED_ENTITLEMENT_STATUSES
 from apps.api.app.administration.errors import AdministrationNotFoundError
 from apps.api.app.administration.service import AdministrationService
 from apps.api.app.database.base import utc_now
@@ -34,6 +35,7 @@ CANONICAL_PRODUCT_KEYS: tuple[str, ...] = (
     "leads",
     "content",
     "seo",
+    "automations",
     "insights",
 )
 
@@ -44,7 +46,9 @@ CANONICAL_PRODUCT_KEYS: tuple[str, ...] = (
 _NON_ACTIVATION_BLOCKING_CODES = frozenset(
     {"CONNECTION_REQUIRED", "ORGANIZATION_NOT_ACTIVE", "ENTITLEMENT_NOT_EFFECTIVE"}
 )
-_NOT_SELECTED_ENTITLEMENT_STATUSES = frozenset({"not_enabled", "archived"})
+# The canonical selected-entitlement lifecycle rule lives in:
+# apps.api.app.administration.enums.NOT_SELECTED_ENTITLEMENT_STATUSES
+# onboarding is a consumer — not the owner — of that rule.
 
 
 @dataclass(frozen=True, slots=True)
@@ -242,7 +246,7 @@ class OnboardingOrchestrationService:
             )
             selected = (
                 entitlement is not None
-                and entitlement.status not in _NOT_SELECTED_ENTITLEMENT_STATUSES
+                and entitlement.status not in NOT_SELECTED_ENTITLEMENT_STATUSES
             )
             if not selected:
                 products.append(

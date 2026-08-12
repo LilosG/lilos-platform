@@ -10,6 +10,7 @@ describe("navigation", () => {
       "leads",
       "content",
       "seo",
+      "automations",
       "insights",
       "settings",
       "integrations",

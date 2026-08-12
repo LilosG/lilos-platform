@@ -4,6 +4,8 @@ import {
   applyShellPrincipal,
   applyBootResult,
   setPlatformNavigationVisible,
+  setPlatformAdminStatus,
+  setProductNavigationVisibility,
   setActiveOrganization,
   type BootRegions,
   type BootResult,
@@ -54,15 +56,121 @@ describe("shell presentation", () => {
     expect(audience.textContent).toBe("Client workspace");
     applyShellAudience("internal");
     expect(role.textContent).toBe("Agency workspace");
+    // Membership type alone does not grant Admin navigation — only an
+    // active platform-administrator grant does.
     setPlatformNavigationVisible(false);
     expect(admin.hidden).toBe(true);
     setPlatformNavigationVisible(true);
     expect(admin.hidden).toBe(false);
   });
+
+  it("does not escalate admin navigation from membership type alone", () => {
+    const admin = element(false);
+    vi.stubGlobal("document", {
+      getElementById: () => null,
+      querySelector: () => admin,
+    });
+    // Start with no platform-admin grant.
+    setPlatformAdminStatus(false);
+
+    // Internal membership does NOT show Admin nav.
+    applyShellAudience("internal");
+    expect(admin.hidden).toBe(true);
+
+    // Partner membership does NOT show Admin nav.
+    applyShellAudience("partner");
+    expect(admin.hidden).toBe(true);
+
+    // Client membership does NOT show Admin nav.
+    applyShellAudience("client");
+    expect(admin.hidden).toBe(true);
+
+    // Platform-admin grant DOES show Admin nav.
+    setPlatformAdminStatus(true);
+    applyShellAudience("internal");
+    expect(admin.hidden).toBe(false);
+
+    // Revoking platform-admin hides it again.
+    setPlatformAdminStatus(false);
+    applyShellAudience("internal");
+    expect(admin.hidden).toBe(true);
+  });
+});
+
+describe("setProductNavigationVisibility", () => {
+  it("hides non-entitled product links for client users", () => {
+    const gbpItem = documentItem(true, "gbp");
+    const reviewsItem = documentItem(true, "reviews");
+    const automationsItem = documentItem(true, "automations");
+    const settingsItem = documentItem(false);
+    vi.stubGlobal("document", {
+      querySelectorAll: (selector: string) => {
+        if (selector === 'li[data-nav-product]') {
+          return [gbpItem, reviewsItem, automationsItem];
+        }
+        return [];
+      },
+    });
+    // Client user — only entitled to GBP.
+    setPlatformAdminStatus(false);
+    setProductNavigationVisibility(new Set(["gbp"]));
+
+    expect(gbpItem.hidden).toBe(false);
+    expect(reviewsItem.hidden).toBe(true);
+    expect(automationsItem.hidden).toBe(true);
+    // Non-product items (settings) are unaffected.
+    expect(settingsItem.hidden).toBe(false);
+  });
+
+  it("reveals all products for platform administrators", () => {
+    const gbpItem = documentItem(true, "gbp");
+    const reviewsItem = documentItem(true, "reviews");
+    vi.stubGlobal("document", {
+      querySelectorAll: (selector: string) => {
+        if (selector === 'li[data-nav-product]') {
+          return [gbpItem, reviewsItem];
+        }
+        return [];
+      },
+    });
+    // Platform admin — all products should be revealed.
+    setPlatformAdminStatus(true);
+    setProductNavigationVisibility(new Set([]));
+
+    expect(gbpItem.hidden).toBe(false);
+    expect(reviewsItem.hidden).toBe(false);
+  });
+
+  it("keeps products hidden when entitlement loading fails (fail closed)", () => {
+    const gbpItem = documentItem(true, "gbp");
+    vi.stubGlobal("document", {
+      querySelectorAll: (selector: string) => {
+        if (selector === 'li[data-nav-product]') {
+          return [gbpItem];
+        }
+        return [];
+      },
+    });
+    // Client user — no entitled products (simulating API failure).
+    setPlatformAdminStatus(false);
+    setProductNavigationVisibility(new Set([]));
+
+    expect(gbpItem.hidden).toBe(true);
+  });
 });
 
 function element(hidden: boolean): HTMLElement {
   return { hidden, textContent: "" } as HTMLElement;
+}
+
+function documentItem(hidden = false, navKey?: string): HTMLElement {
+  const link = navKey
+    ? ({ getAttribute: (attr: string) => (attr === "data-nav-key" ? navKey : null) } as HTMLAnchorElement)
+    : null;
+  return {
+    hidden,
+    querySelector: () => link,
+  } as unknown as HTMLElement;
 }
 
 function regions(): BootRegions {
@@ -143,6 +251,7 @@ describe("setActiveOrganization", () => {
         if (id === "active-organization-name") return name;
         return null;
       },
+      querySelector: () => null,
     });
 
     setActiveOrganization({

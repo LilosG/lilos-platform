@@ -35,13 +35,13 @@ The **Implementation** column uses the formal status vocabulary. The **Live acce
 
 | Layer / capability | Implementation | Live acceptance | UX / productization | Automation | Reporting | Current blocker / evidence |
 |---|---|---|---|---|---|---|
-| Agency operating layer | IMPLEMENTED_NOT_ACCEPTED | n/a | IMPLEMENTED_NOT_ACCEPTED | partial | partial | Dashboard renders KPIs + attention + work from real data; needs first-viewport convergence per Packet 4/6 |
-| Client workspace | IMPLEMENTED_NOT_ACCEPTED | n/a | IMPLEMENTED_NOT_ACCEPTED | partial | partial | **P0: Client role scoping unverified.** Navigation hides Admin group via `hidden` attribute (frontend-only). GBP page renders unmapped provider resources. Client role live test required. |
-| Entitlement-aware navigation | IMPLEMENTED_NOT_ACCEPTED | n/a | IMPLEMENTED_NOT_ACCEPTED | n/a | n/a | Navigation groups defined in `platform.ts`; Admin group hidden via `hidden` attribute. Backend authorization enforces per-request. Frontend does not pre-filter by role. |
+| Agency operating layer | IMPLEMENTED_NOT_ACCEPTED | n/a | IMPLEMENTED_NOT_ACCEPTED | partial | partial | Dashboard renders KPIs + attention + work from real data; needs first-viewport convergence per Packet 4/6. Admin navigation role-aware (Packet 1). |
+| Client workspace | IMPLEMENTED_NOT_ACCEPTED | n/a | IMPLEMENTED_NOT_ACCEPTED | partial | partial | **Packet 1: Admin nav hidden for clients; unauthorized states on /administration, /onboarding.** Live client-role scoping still unverified without runtime access. |
+| Entitlement-aware navigation | IMPLEMENTED_NOT_ACCEPTED | n/a | IMPLEMENTED_NOT_ACCEPTED | n/a | n/a | **Packet 1: Navigation role-aware via `_updateAdminNavigation()` checking platform admin status + membership type.** Backend authorization enforces per-request. |
 | Unified onboarding | IMPLEMENTED_NOT_ACCEPTED | partial | IMPLEMENTED_NOT_ACCEPTED | n/a | readiness partial | `OnboardingOrchestrationService` composes 8 steps + per-product readiness. Managed/Co-Managed/Self-Service responsibility modes not yet differentiated in UI. |
 | Google connection lifecycle | IMPLEMENTED_NOT_ACCEPTED | partial | IMPLEMENTED_NOT_ACCEPTED | sync partial | health partial | `GBPConnectionService` handles full OAuth lifecycle with incremental scopes. PR #10 repaired reconnect logic. Live acceptance: healthy connection must not re-prompt OAuth (unverified). |
-| Google provider resource mapping | IMPLEMENTED_NOT_ACCEPTED | partial | IMPLEMENTED_NOT_ACCEPTED | n/a | n/a | **P0: Broad discovery rendered on GBP page labeled "Client workspace".** `gbp.astro` lines 371-446 render ALL unmapped locations regardless of client scope. Mapping queue belongs in privileged Integrations workflow. |
-| GBP operational product | IMPLEMENTED_NOT_ACCEPTED | partial | IMPLEMENTED_NOT_ACCEPTED | sync/media/post workflows partial | partial | GBP models/services/routes fully implemented. 9 workflow handlers registered including `gbp.sync`, `gbp.publish_change`, `gbp.publish_post`, `gbp.upload_media`. Live evidence: Wheyland has 1 managed synced location + 90 reviews. Provider writes fail-closed by default. |
+| Google provider resource mapping | IMPLEMENTED_NOT_ACCEPTED | partial | IMPLEMENTED_NOT_ACCEPTED | n/a | n/a | **Packet 1: Unmapped discovery removed from /gbp.** Mapping queue belongs in privileged Integrations workflow (Packet 3). API routes preserved. |
+| GBP operational product | IMPLEMENTED_NOT_ACCEPTED | partial | IMPLEMENTED_NOT_ACCEPTED | sync/media/post workflows partial | partial | **Packet 1: GBP API defaults to confirmed-only for gbp.read; frontend simplified.** Readiness engine uses integration_connected check for non-blocking LOCATION_PROFILE_MISSING. Provider writes fail-closed by default. **Deferred: list_accounts endpoint returns all accounts under gbp.read (accounts are parent entities, not locations).** |
 | Reviews | IMPLEMENTED_NOT_ACCEPTED | partial | IMPLEMENTED_NOT_ACCEPTED | ingestion/reply workflow partial | partial | Review models/services/routes fully implemented. `reviews.ingest` and `reviews.publish_response` handlers registered. Live evidence: 90 reviews reconciled/responded for Wheyland. |
 | Search Console | IMPLEMENTED_NOT_ACCEPTED | unknown | IMPLEMENTED_NOT_ACCEPTED | sync unknown | partial | `SearchConsoleService` with discovery, mapping, sync. `SearchConsoleAdapter` for API calls. Live mapping/sync/freshness unverified. |
 | GA4 | IMPLEMENTED_NOT_ACCEPTED | partial | IMPLEMENTED_NOT_ACCEPTED | sync unknown | IMPLEMENTED_NOT_ACCEPTED | `AnalyticsService` with discovery, mapping, sync. Live metrics visible (Sessions 764, Users 576, Page Views 1201, Conversions 58). **Known gap: no period/comparison.** Insights page explicitly notes: "Current totals are shown without a period comparison because the reporting API does not yet return an observation window or comparable prior period." |
@@ -50,7 +50,7 @@ The **Implementation** column uses the formal status vocabulary. The **Live acce
 | Leads | IMPLEMENTED_NOT_ACCEPTED | partial | IMPLEMENTED_NOT_ACCEPTED | partial | partial | Lead models/services/routes fully implemented. `leads.send_communication` handler registered. **Status semantics gap: `sent` status may mean notification queued, not provider-dispatched.** `LeadCommunication` model has proper states (planned→queued→sent→delivered) but handler creates notification delivery records; actual provider dispatch delegated to notification delivery jobs. Live verification required. |
 | Integrations control plane | IMPLEMENTED_NOT_ACCEPTED | partial | IMPLEMENTED_NOT_ACCEPTED | n/a | health partial | Integration models/services/routes implemented. Integrations page exists. Needs central directory/detail/mapping convergence per Packet 3. |
 | Automation & Agents control plane | IMPLEMENTED_NOT_ACCEPTED | n/a | NOT_STARTED | IMPLEMENTED_NOT_ACCEPTED | NOT_STARTED | 9 workflow handlers registered. Worker/scheduler runtime functional. **No evidence of active schedules in database.** Automation catalog/surface not yet productized. |
-| Insights / reporting | IMPLEMENTED_NOT_ACCEPTED | partial | IMPLEMENTED_NOT_ACCEPTED | scheduled reporting partial/unknown | IMPLEMENTED_NOT_ACCEPTED | `InsightsService.summary()` aggregates real product data. **Known issues: (1) `gbp.locations` counts ALL GBPLocation rows including unmapped — "17 locations" may include non-Wheyland resources. (2) No period/comparison for GA4 metrics. (3) Contradictory readiness: products show "blocked" while product data exists.** |
+| Insights / reporting | IMPLEMENTED_NOT_ACCEPTED | partial | IMPLEMENTED_NOT_ACCEPTED | scheduled reporting partial/unknown | IMPLEMENTED_NOT_ACCEPTED | **Packet 1: `gbp.locations` count now filters to `mapping_status == "confirmed"` only.** No period/comparison for GA4 metrics (Packet 6). Readiness contradictions resolved. |
 | Release/production acceptance | IMPLEMENTED_NOT_ACCEPTED | partial | n/a | n/a | n/a | **Vercel deployment rate-limited for current main.** PR #14 deployed successfully. Render API/worker/scheduler parity unverified. Migration head `20260811_0002` deployment status unknown. Backup/restore evidence not verified. |
 
 ## Round 0 findings
@@ -67,19 +67,19 @@ The **Implementation** column uses the formal status vocabulary. The **Live acce
 
 ### Confirmed gaps (evidence-backed)
 
-1. **P0 — Client scope leakage:** `gbp.astro` renders ALL unmapped discovered locations on a page labeled "Client workspace." The `InsightsService.summary()` counts ALL `GBPLocation` rows including unmapped ones. If a real client role can see unrelated business names, this is a release-blocking cross-client information exposure.
+1. **P0 — Client scope leakage:** ✅ **RESOLVED in Packet 1.** `gbp.astro` no longer renders unmapped locations. `InsightsService.summary()` counts only confirmed mapped locations. Navigation Admin group hidden from client users via `hidden` attribute + client-side role check. Administration/onboarding pages render unauthorized state for non-privileged users.
 
-2. **P0 — Contradictory readiness:** Products show "blocked" with "Create the location profile" while product data (synced locations, 90 reviews) exists. Root cause: readiness engine checks `LOCATION_PROFILE_MISSING` independently of whether GBP data is already synced and mapped.
+2. **P0 — Contradictory readiness:** ✅ **RESOLVED in Packet 1.** Readiness engine now checks `product.required_integrations`: when all required integrations are connected, `LOCATION_PROFILE_MISSING` becomes a non-blocking warning rather than a blocker. This applies generically to any product with required integrations (GBP, Reviews), not a one-off GBP exception. The `LocationProfile` requirement is preserved as a warning.
 
-3. **P1 — Navigation admin leakage:** Admin group hidden via `hidden` HTML attribute (frontend-only). Client can still navigate to `/administration` and receive 403. Backend authorization is correct; UX contract violation.
+3. **P1 — Navigation admin leakage:** ✅ **RESOLVED in Packet 1.** Admin group hidden via `hidden` attribute (removes from accessibility tree). `_updateAdminNavigation()` in `boot.ts` controls visibility based on platform admin status AND agency membership type. Administration page shows unauthorized state for non-privileged users. Backend authorization remains authoritative.
 
-4. **P1 — Insights metric semantics:** `gbp.locations` count includes unmapped provider-discovered resources. "Managed locations" label is misleading when count includes non-client businesses.
+4. **P1 — Insights metric semantics:** ✅ **RESOLVED in Packet 1.** `aggregation_service.py` now filters `GBPLocation` by `mapping_status == "confirmed"`. "Managed locations" count reflects only confirmed mapped locations.
 
-5. **P2 — GA4 period/comparison missing:** Insights page explicitly documents this gap. Reporting API does not return observation window or comparable prior period.
+5. **P2 — GA4 period/comparison missing:** Insights page explicitly documents this gap. Reporting API does not return observation window or comparable prior period. Deferred to Packet 6.
 
-6. **P2 — Lead communication status semantics:** `sent` status may mean notification queued rather than provider-dispatched. Handler creates `NotificationDelivery` records; actual dispatch is delegated. Live verification required.
+6. **P2 — Lead communication status semantics:** `sent` status may mean notification queued rather than provider-dispatched. Handler creates `NotificationDelivery` records; actual dispatch is delegated. Live verification required. Deferred to Packet 5/6.
 
-7. **P2 — No active automation schedules:** 9 handlers registered but no evidence of active `Schedule` rows in database for `gbp.sync` or `reviews.ingest`.
+7. **P2 — No active automation schedules:** 9 handlers registered but no evidence of active `Schedule` rows in database for `gbp.sync` or `reviews.ingest`. Deferred to Packet 5.
 
 8. **P3 — Vercel deployment rate-limited:** Current main deployment blocked. Operational resolution required, not a code fix.
 
@@ -95,13 +95,39 @@ The **Implementation** column uses the formal status vocabulary. The **Live acce
 
 ### Packet 0 — Baseline and Contract Map
 - Branch / commit: `release/platform-consolidation` / `35cf577`
-- Auditor result: PENDING (run after deliverables created)
-- Principal result: IN PROGRESS
+- Auditor result: PASS (deliverables internally consistent)
+- Principal result: ACCEPTED
 - Focused checks: Repository structure mapped, domain trace complete, ownership boundaries defined
 - Live checks: Not applicable (read-only round)
 - Ledger rows changed: All rows updated from evidence
 - Remaining blockers: Vercel rate-limit (operational), Render parity unverified (needs runtime access)
-- Accepted: PENDING (awaiting auditor review)
+- Accepted: yes
+
+### Packet 1 — Platform Information Architecture
+- Branch / commit: `release/platform-consolidation` / baseline `600eef8` (working tree, not yet committed)
+- Auditor result (initial): ACCEPT (no critical blockers; 3 moderate, 2 minor)
+- Auditor result (correction pass): ACCEPT (2 moderate, 1 minor — all addressed)
+- Principal result: ACCEPTED
+- Focused checks: TypeScript typecheck (0 errors), Python mypy (0 errors), ESLint (0 errors), Ruff (0 errors), Prettier (1 file reformatted), vitest (120 passed), pytest (5 passed, 4 skipped)
+- Live checks: Not applicable (no runtime access)
+- Ledger rows changed: Agency operating layer, Client workspace, Entitlement-aware navigation, Google provider resource mapping, GBP operational product, Insights/reporting
+- Root causes resolved:
+  1. P0 Client scope leakage — API-level: `list_org_locations` defaults to `mapping_status="confirmed"`; frontend simplified (no client-side filter needed). Discovery path preserved via `gbp.connect`.
+  2. P0 Contradictory readiness — removed one-off `_location_has_integration_profile` helper; replaced with generic `integration_connected`-based check: when all required integrations are connected, `LOCATION_PROFILE_MISSING` is non-blocking.
+  3. P1 Navigation admin leakage — Admin navigation now uses ONLY authoritative `_isPlatformAdmin` (from `fetchMyPlatformAdministratorStatus()`), no membership-type allowlist. Admin group starts hidden; no flash.
+  4. P1 Insights metric semantics — `gbp.locations` filtered to `mapping_status == "confirmed"` at API and aggregation layers.
+- Correction pass changes:
+  1. `apps/api/app/routes/gbp.py` — `list_org_locations` hardcodes `mapping_status="confirmed"`; removed `mapping_status` query param
+  2. `apps/web/src/pages/gbp.astro` — simplified `renderLocationPicker` (API returns confirmed-only)
+  3. `apps/web/src/lib/ui/boot.ts` — `_updateAdminNavigation` only checks `_isPlatformAdmin`
+  4. `apps/web/src/lib/ui/boot.test.ts` — test for no-membership-type escalation
+  5. `apps/api/app/administration/service.py` — removed `_location_has_integration_profile`; uses `integration_connected` for non-blocking
+  6. `tests/python/gbp/test_gbp_api.py` — updated existing test; added data-scope boundary test
+  7. `tests/python/insights/test_insights_foundation.py` — structural test for aggregation AND filter
+- Ownership exceptions: `apps/web/src/pages/gbp.astro` (Product UX-owned) modified during pre-parallel Packet 1 per explicit authorization
+- Deferred findings: `list_accounts` endpoint returns all accounts under `gbp.read` (accounts are parent entities, not location data; noted for Packet 3)
+- Remaining blockers: Vercel rate-limit (operational), Render parity unverified, live client-role scoping unverified without runtime access
+- Accepted: yes
 
 ---
 

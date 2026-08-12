@@ -103,6 +103,12 @@ from apps.api.app.profiles.contracts import (
 from apps.api.app.profiles.service import LocationProfileService, OrganizationProfileService
 from apps.api.app.schemas import ErrorCategory, ResponseMeta
 
+from apps.api.app.administration.catalog import PRODUCT_CATALOG
+from apps.api.app.administration.enums import NOT_SELECTED_ENTITLEMENT_STATUSES
+from apps.api.app.administration.service import AdministrationService
+
+administration_service = AdministrationService()
+
 
 def no_store(response: Response) -> None:
     response.headers["Cache-Control"] = "no-store"
@@ -210,6 +216,44 @@ def location_policy(permission: str, *, aal2: bool = False) -> Any:
             AssuranceLevel.AAL2 if aal2 else AssuranceLevel.AAL1,
         )
     )
+
+
+@organizations.get("/products", dependencies=[Depends(no_store)])
+async def get_organization_products(
+    request: Request,
+    organization_id: UUID,
+    session: DatabaseSession,
+    _authorization: Annotated[AuthorizationDecision, organization_policy("organization.read")],
+) -> dict[str, object]:
+    """Return the product keys entitled for the caller's organization.
+
+    A client-readable contract for entitlement-aware navigation.  Returns
+    each product's key and its entitlement status so the frontend can
+    show entitled products even when readiness is blocked/setup_required.
+    """
+    entitled: list[dict[str, object]] = []
+    for key in PRODUCT_CATALOG:
+        product = await administration_service.catalog.get_product_by_key(session, key)
+        if product is None:
+            continue
+        entitlement = await administration_service.entitlements.get_by_product(
+            session, organization_id, product.id
+        )
+        # Reuse the canonical selected-entitlement rule from onboarding:
+        # not_enabled and archived are not selected; suspended is selected
+        # but not currently effective.  Readiness is evaluated separately.
+        selected = (
+            entitlement is not None
+            and entitlement.status not in NOT_SELECTED_ENTITLEMENT_STATUSES
+        )
+        entitled.append(
+            {
+                "product_key": key,
+                "entitled": selected,
+                "entitlement_status": entitlement.status if entitlement else "not_enabled",
+            }
+        )
+    return {"data": entitled, "meta": meta(request)}
 
 
 @organizations.get("", response_model=OrganizationResponse)

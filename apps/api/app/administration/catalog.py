@@ -34,7 +34,11 @@ PRODUCT_CATALOG: dict[str, dict[str, object]] = {
         "required_configuration_keys": ["gbp.general"],
         "required_business_fact_keys": ["business.name", "business.address", "business.hours"],
         "required_integrations": ["google_business_profile"],
-        "requires_location_profile": True,
+        # GBP operates from the Core Platform Organization/Location model,
+        # shared business facts, and provider state mapped to that Location.
+        # It does not consume the separate LocationProfile content/configuration
+        # entity.
+        "requires_location_profile": False,
     },
     "reviews": {
         "name": "LILOs Reviews",
@@ -42,7 +46,9 @@ PRODUCT_CATALOG: dict[str, dict[str, object]] = {
         "required_configuration_keys": ["reviews.general"],
         "required_business_fact_keys": ["business.name"],
         "required_integrations": ["google_business_profile"],
-        "requires_location_profile": True,
+        # Reviews operates from confirmed GBP mappings and provider state.
+        # It does not consume the platform LocationProfile entity.
+        "requires_location_profile": False,
     },
     "content": {
         "name": "LILOs Content",

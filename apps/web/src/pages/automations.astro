@@ -1,0 +1,108 @@
+---
+import AppShell from "../components/AppShell.astro";
+import "../styles/global.css";
+---
+
+<!doctype html>
+<html lang="en">
+  <head
+    ><meta charset="UTF-8" /><meta
+      name="viewport"
+      content="width=device-width, initial-scale=1"
+    /><meta name="description" content="LILOs Automations workspace" /><title
+    >
+      Automations · LILOs
+    </title></head
+  >
+  <body
+    ><AppShell>
+      <div id="boot-not-configured" role="status">
+        <h1>This deployment is not configured</h1><p>
+          No Supabase or API connection is configured for this build.
+        </p>
+      </div>
+
+      <div id="boot-loading" role="status" aria-live="polite" hidden>
+        <p>Loading Automations…</p>
+      </div>
+
+      <div id="boot-error" role="alert" hidden></div>
+
+      <div id="workspace-empty" role="status" hidden>
+        <h1>No organization access yet</h1><p>
+          Your account is not a member of any organization. Ask an administrator
+          to invite you.
+        </p>
+      </div>
+
+      <div id="workspace-content" hidden>
+        <div class="page-head">
+          <div class="page-head__intro">
+            <p class="eyebrow">Operations</p>
+            <h1>Automations</h1>
+            <p>
+              Scheduled workflows, background tasks, and governed automation
+              runs for this organization.
+            </p>
+          </div>
+        </div>
+
+        <section aria-labelledby="automations-status-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Status</p>
+              <h2 id="automations-status-title">Automation activity</h2>
+            </div>
+          </div>
+          <p class="text-sm muted">
+            Automation configuration and run history will appear here once the
+            Automations workspace is activated for this organization. Scheduled
+            syncs, review ingestion, content publishing, and other background
+            work are managed through this surface.
+          </p>
+        </section>
+      </div>
+    </AppShell>
+    <script>
+      import {
+        bootWorkspace,
+        applyBootResult,
+        populateSwitcher,
+        setActiveOrganization,
+      } from "../lib/ui";
+
+      const regions = {
+        notConfigured: document.getElementById("boot-not-configured")!,
+        loading: document.getElementById("boot-loading")!,
+        error: document.getElementById("boot-error")!,
+        empty: document.getElementById("workspace-empty")!,
+        content: document.getElementById("workspace-content")!,
+      };
+
+      async function loadOrganization(
+        organization: import("../lib/workspace").MyOrganization,
+      ): Promise<void> {
+        setActiveOrganization(organization);
+        document.getElementById("active-organization-status")!.textContent =
+          organization.organization_status.replace(/_/g, " ");
+      }
+
+      async function boot(): Promise<void> {
+        const result = await bootWorkspace("Automations");
+        if (!applyBootResult(regions, result)) return;
+        populateSwitcher(result.organizations, loadOrganization);
+        await loadOrganization({
+          organization_id: result.context.organizationId,
+          organization_name: result.context.organizationName,
+          organization_slug: "",
+          organization_status: result.context.organizationStatus,
+          membership_id: "",
+          membership_status: "active",
+          membership_type: result.context.membershipType,
+        });
+      }
+
+      void boot();
+    </script>
+  </body>
+</html>

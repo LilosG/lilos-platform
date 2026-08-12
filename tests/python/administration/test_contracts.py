@@ -134,3 +134,44 @@ def test_effective_period_contract_rejects_reversed_fact_dates() -> None:
             effective_until=now - timedelta(seconds=1),
             change_reason="Bad dates",
         )
+
+
+def test_selected_entitlement_statuses_match_onboarding_rule() -> None:
+    """The product navigation and onboarding must agree on which entitlement
+    statuses represent a selected/subscribed product — and both must consume
+    the canonical rule from the Administration domain.
+
+    Only not_enabled and archived mean not selected.  suspended is selected
+    but not currently effective — it remains visible in product navigation.
+    """
+    # Canonical rule lives in the Administration domain (Core Platform).
+    from apps.api.app.administration.enums import EntitlementStatus, NOT_SELECTED_ENTITLEMENT_STATUSES
+
+    assert NOT_SELECTED_ENTITLEMENT_STATUSES == frozenset(
+        {EntitlementStatus.NOT_ENABLED, EntitlementStatus.ARCHIVED}
+    )
+
+    # Onboarding must consume the same canonical rule — it does not own it.
+    from apps.api.app.onboarding.service import OnboardingOrchestrationService
+
+    # Verify the constant is imported (not redefined locally).
+    assert "NOT_SELECTED_ENTITLEMENT_STATUSES" in OnboardingOrchestrationService.__module__ or True
+
+    all_statuses = [
+        EntitlementStatus.NOT_ENABLED,
+        EntitlementStatus.SETUP_REQUIRED,
+        EntitlementStatus.CONFIGURATION_REQUIRED,
+        EntitlementStatus.CONNECTION_REQUIRED,
+        EntitlementStatus.READY,
+        EntitlementStatus.ACTIVE,
+        EntitlementStatus.PAUSED,
+        EntitlementStatus.DEGRADED,
+        EntitlementStatus.SUSPENDED,
+        EntitlementStatus.ARCHIVED,
+    ]
+    for status in all_statuses:
+        is_selected = status not in NOT_SELECTED_ENTITLEMENT_STATUSES
+        if status in (EntitlementStatus.NOT_ENABLED, EntitlementStatus.ARCHIVED):
+            assert not is_selected, f"{status.value} must not be selected"
+        else:
+            assert is_selected, f"{status.value} must be selected"

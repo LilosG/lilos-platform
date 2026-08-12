@@ -727,7 +727,7 @@ import "../styles/global.css";
       import {
         applyShellAudience,
         applyShellPrincipal,
-        setPlatformNavigationVisible,
+        setPlatformAdminStatus,
       } from "../lib/ui";
 
       const regions = {
@@ -2125,7 +2125,7 @@ import "../styles/global.css";
           showOnly(regions.notAdmin);
           return;
         }
-        setPlatformNavigationVisible(true);
+        setPlatformAdminStatus(true);
         applyShellAudience("internal");
         if (!adminStatus.data.meets_required_assurance) {
           logStage("redirect-to-mfa");

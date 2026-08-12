@@ -107,21 +107,21 @@ Establish agency/client boundaries, role/scope/entitlement-aware navigation, set
 
 ### Acceptance scenarios
 
-1. **SC1-CLIENT-NAV:** Client-role user sees only Workspace, Operations (entitled products), Manage (Settings, Integrations if authorized), and no Admin group.
-   - **Test:** Log in with real client-role account; inspect navigation DOM
-   - **Expected:** Admin group not rendered (not just hidden); `/administration` and `/onboarding` return 403 with clear error
+1. **SC1-CLIENT-NAV:** Client-role users must not have Admin navigation rendered into the accessible/navigation DOM. Direct navigation to `/administration` or `/onboarding` by a non-authorized client must render a deliberate unauthorized state and expose no privileged client portfolio data or privileged actions. Every privileged API operation used by Administration/Onboarding must remain backend-authorized and return 403 when the caller lacks the required authorization. Frontend visibility is not the security boundary. Agency/platform-administrator behavior must continue to work.
+   - **Test:** Verify Admin group is not in DOM for client-role users; verify `/administration` and `/onboarding` render unauthorized state for non-privileged users; verify backend returns 403 for unauthorized API calls
+   - **Expected:** Admin group absent from DOM for clients; unauthorized state rendered on admin pages; backend 403 for unauthorized operations; agency users see full navigation
 
-2. **SC1-AGENCY-NAV:** Agency-role user sees full navigation including Admin group.
-   - **Test:** Log in with agency-role account; inspect navigation DOM
+2. **SC1-AGENCY-NAV:** Agency-role user sees full navigation including Admin group. Platform administrators and users with internal/partner/support membership type see the Admin group.
+   - **Test:** Verify Admin group visible for platform administrators and agency operators
    - **Expected:** All groups visible; Admin group accessible
 
-3. **SC1-GBP-SCOPE:** Client GBP page shows only confirmed mapped locations for that client's organization.
-   - **Test:** Log in with Wheyland client role; navigate to `/gbp`
-   - **Expected:** Only Wheyland managed locations visible; no unrelated business names
+3. **SC1-GBP-SCOPE:** Client GBP page shows only confirmed mapped locations for that client's organization. Broad provider-discovered/unmapped resources and mapping controls are removed from normal operational product pages.
+   - **Test:** Verify `/gbp` renders only confirmed mapped locations; no unmapped discovery list
+   - **Expected:** Only confirmed mapped locations visible; no unrelated business names
 
-4. **SC1-DISCOVERY-ISOLATION:** Broad provider resource discovery is accessible only through privileged Integrations workflow.
-   - **Test:** Agency operator navigates to Integrations → Google → Unmapped Resources
-   - **Expected:** Discovery queue available; mapping controls functional
+4. **SC1-DISCOVERY-ISOLATION:** Broad provider resource discovery is removed from normal operational product pages. Integrations is established as the canonical owner/location for privileged discovery and mapping in the shared IA/contracts. Existing integration capabilities and routes needed by Packet 3 are preserved. Full provider detail workspace, search/collapse UX, and complete unmapped-resource queue are Packet 3 scope.
+   - **Test:** Verify no unmapped resource rendering on `/gbp`, `/reviews`, `/seo`, `/content`, `/leads`; verify integration routes still functional
+   - **Expected:** Product pages consume only confirmed mappings; integration API routes preserved
 
 5. **SC1-READINESS-TRUTH:** Product readiness reflects actual managed state without contradictions.
    - **Test:** Verify GBP readiness for Wheyland (has synced location, 90 reviews)
