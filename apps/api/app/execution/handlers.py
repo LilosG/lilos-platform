@@ -1097,11 +1097,21 @@ async def _handle_leads_send_communication(
     """Dispatch a planned lead communication through the notification system.
 
     Resolves the communication record, validates it is planned, creates a
-    notification event and delivery, and marks the communication as sent.
-    Actual provider dispatch (email/SMS gateway) is handled by durable
-    notification delivery jobs.
+    notification event and delivery, and transitions the communication to
+    ``queued`` (queued for provider dispatch). The communication is not
+    marked ``sent`` until a durable notification delivery job actually
+    dispatches it to the provider. If no provider dispatch implementation
+    is active, the communication remains ``queued`` — a truthful
+    representation of pending delivery.
+
+    IMPORTANT: Setting ``status = "queued"`` rather than ``"sent"`` is a
+    deliberate semantic correction. Previously this handler claimed the
+    communication was ``sent`` merely because a ``NotificationDelivery``
+    row was created. That was incorrect — the delivery had not been
+    dispatched to any provider. The platform now truthfully reports the
+    communication as ``queued`` until provider dispatch evidence exists.
+    See PLATFORM-RELEASE-LEDGER.md § Lead communication status semantics.
     """
-    from datetime import UTC, datetime
 
     from sqlalchemy import select
 
@@ -1126,14 +1136,14 @@ async def _handle_leads_send_communication(
     if not communication:
         return JobOutcome(result="permanent_failure", safe_error="COMMUNICATION_NOT_FOUND")
 
-    if communication.status != "planned":
-        return JobOutcome(result="permanent_failure", safe_error="COMMUNICATION_NOT_PLANNED")
-
-    if communication.status == "sent":
+    if communication.status == "queued":
         return JobOutcome(
             result="succeeded",
             result_reference=f"communication:{communication.id}",
         )
+
+    if communication.status != "planned":
+        return JobOutcome(result="permanent_failure", safe_error="COMMUNICATION_NOT_PLANNED")
 
     lead = await session.scalar(
         select(Lead).where(
@@ -1152,6 +1162,7 @@ async def _handle_leads_send_communication(
 
     notification_svc = NotificationService()
 
+    delivery = None
     try:
         event = await notification_svc.create_event(
             session,
@@ -1167,7 +1178,7 @@ async def _handle_leads_send_communication(
             },
             location_id=communication.location_id,
         )
-        await notification_svc.add_delivery(
+        delivery = await notification_svc.add_delivery(
             session,
             event,
             recipient_reference=recipient,
@@ -1188,8 +1199,8 @@ async def _handle_leads_send_communication(
             safe_error="NOTIFICATION_CREATE_FAILED",
         )
 
-    communication.status = "sent"
-    communication.sent_at = datetime.now(UTC)
+    communication.status = "queued"
+    communication.notification_delivery_id = delivery.id if delivery else None
 
     return JobOutcome(
         result="succeeded",

@@ -29,10 +29,29 @@ class JobOutcome(BaseModel):
 
 
 class ScheduleCreate(BaseModel):
+    """Command to create a recurring schedule for a known workflow type.
+
+    ``workflow_key`` must be one of the keys in ``WORKFLOW_TYPES``.
+    The ``workflow_version_id`` is resolved server-side by
+    ``ExecutionService._resolve_workflow_version``.
+    """
     model_config = ConfigDict(frozen=True)
-    workflow_version_id: UUID
+    workflow_key: str = Field(min_length=3, max_length=128)
     key: str = Field(min_length=3, max_length=128)
     cron_expression: str = Field(min_length=5, max_length=100)
     timezone: str = Field(min_length=1, max_length=64)
     next_run_at: datetime
     location_id: UUID | None = None
+
+
+class ScheduleUpdate(BaseModel):
+    """Partial update for an existing schedule.
+
+    At least one field must be provided. ``status`` changes (e.g.,
+    ``active`` → ``paused``) are the most common update.
+    """
+    model_config = ConfigDict(frozen=True)
+    status: Literal["active", "paused", "cancelled"] | None = None
+    cron_expression: str | None = Field(default=None, min_length=5, max_length=100)
+    timezone: str | None = Field(default=None, min_length=1, max_length=64)
+    next_run_at: datetime | None = None
