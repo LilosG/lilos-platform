@@ -557,6 +557,17 @@ async def test_gbp_publish_post_creates_local_post_and_verifies(
         ) -> list[dict[str, Any]]:
             return [{"name": post_resource_name, "state": "LIVE"}]
 
+        async def create_media(
+            self, access_token: str, location_name: str, media_item: dict[str, Any]
+        ) -> dict[str, Any]:
+            raise NotImplementedError
+
+        async def get_media(self, access_token: str, media_name: str) -> dict[str, Any]:
+            raise NotImplementedError
+
+        async def delete_media(self, access_token: str, media_name: str) -> None:
+            raise NotImplementedError
+
     original = handler_mod._adapter_factory
     original_resolver = handler_mod._token_resolver
     handler_mod._adapter_factory = FakePostAdapter
@@ -839,6 +850,17 @@ async def test_reviews_publish_response_publishes_and_verifies(
         async def list_local_posts(self, *args: object, **kwargs: object) -> list[dict[str, Any]]:
             raise NotImplementedError
 
+        async def create_media(
+            self, access_token: str, location_name: str, media_item: dict[str, Any]
+        ) -> dict[str, Any]:
+            raise NotImplementedError
+
+        async def get_media(self, access_token: str, media_name: str) -> dict[str, Any]:
+            raise NotImplementedError
+
+        async def delete_media(self, access_token: str, media_name: str) -> None:
+            raise NotImplementedError
+
     original = handler_mod._adapter_factory
     original_resolver = handler_mod._token_resolver
     handler_mod._adapter_factory = FakeReviewAdapter
@@ -1037,6 +1059,17 @@ async def test_reviews_publish_response_verification_mismatch_marks_reconciliati
             raise NotImplementedError
 
         async def list_local_posts(self, *args: object, **kwargs: object) -> list[dict[str, Any]]:
+            raise NotImplementedError
+
+        async def create_media(
+            self, access_token: str, location_name: str, media_item: dict[str, Any]
+        ) -> dict[str, Any]:
+            raise NotImplementedError
+
+        async def get_media(self, access_token: str, media_name: str) -> dict[str, Any]:
+            raise NotImplementedError
+
+        async def delete_media(self, access_token: str, media_name: str) -> None:
             raise NotImplementedError
 
     original = handler_mod._adapter_factory
@@ -1989,6 +2022,17 @@ async def test_reviews_publish_response_persists_safe_error_code_provider_write_
         async def list_local_posts(self, *args: object, **kwargs: object) -> list[dict[str, Any]]:
             raise NotImplementedError
 
+        async def create_media(
+            self, access_token: str, location_name: str, media_item: dict[str, Any]
+        ) -> dict[str, Any]:
+            raise NotImplementedError
+
+        async def get_media(self, access_token: str, media_name: str) -> dict[str, Any]:
+            raise NotImplementedError
+
+        async def delete_media(self, access_token: str, media_name: str) -> None:
+            raise NotImplementedError
+
     original = handler_mod._adapter_factory
     original_resolver = handler_mod._token_resolver
     handler_mod._adapter_factory = _WriteFailsAdapter
@@ -2110,6 +2154,17 @@ async def test_reviews_publish_response_persists_safe_error_code_verification_re
             raise NotImplementedError
 
         async def list_local_posts(self, *args: object, **kwargs: object) -> list[dict[str, Any]]:
+            raise NotImplementedError
+
+        async def create_media(
+            self, access_token: str, location_name: str, media_item: dict[str, Any]
+        ) -> dict[str, Any]:
+            raise NotImplementedError
+
+        async def get_media(self, access_token: str, media_name: str) -> dict[str, Any]:
+            raise NotImplementedError
+
+        async def delete_media(self, access_token: str, media_name: str) -> None:
             raise NotImplementedError
 
     original = handler_mod._adapter_factory
