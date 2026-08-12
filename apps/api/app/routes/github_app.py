@@ -218,6 +218,7 @@ async def github_callback(
 
 # -- GitHub provider workspace detail route ---------------------------------
 
+
 @router.get(
     "/workspace",
     dependencies=[Depends(no_store)],
@@ -239,9 +240,7 @@ async def github_workspace(
         installation_id = installation_id_from_reference(ws.external_account_reference)
         if installation_id is not None:
             try:
-                repos = await service.list_installation_repositories(
-                    settings, installation_id
-                )
+                repos = await service.list_installation_repositories(settings, installation_id)
                 repositories = [
                     {
                         "repository_id": r.repository_id,

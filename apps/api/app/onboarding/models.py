@@ -35,13 +35,20 @@ class OnboardingStepAssignmentRecord(UUIDPrimaryKeyMixin, Base):
     __table_args__ = (
         CheckConstraint(
             "assigned_to IN ('agency', 'client')",
-            name="ck_onboarding_step_assignments_assigned_to",
+            name="assigned_to",
         ),
         UniqueConstraint(
             "organization_id",
             "step_key",
             name="uq_onboarding_step_assignments_org_step",
         ),
+        {
+            "comment": (
+                "Co-managed onboarding step delegation. One row per step per org. "
+                "assigned_to is 'agency' or 'client'. Deleted rows mean the step "
+                "reverts to agency control."
+            ),
+        },
     )
 
     organization_id: Mapped[UUID] = mapped_column(

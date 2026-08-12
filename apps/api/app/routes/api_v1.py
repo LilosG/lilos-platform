@@ -242,8 +242,7 @@ async def get_organization_products(
         # not_enabled and archived are not selected; suspended is selected
         # but not currently effective.  Readiness is evaluated separately.
         selected = (
-            entitlement is not None
-            and entitlement.status not in NOT_SELECTED_ENTITLEMENT_STATUSES
+            entitlement is not None and entitlement.status not in NOT_SELECTED_ENTITLEMENT_STATUSES
         )
         entitled.append(
             {

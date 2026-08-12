@@ -203,6 +203,16 @@ import "../styles/global.css";
               </div>
               <span id="workspace-status-badge"></span>
               <span id="workspace-mode-badge" hidden></span>
+              <select
+                id="workspace-mode-select"
+                hidden
+                class="field--sm"
+                style="margin-left: 0.5rem"
+              >
+                <option value="managed">Managed by LILOs</option>
+                <option value="co_managed">Co-Managed</option>
+                <option value="self_service">Self-Service</option>
+              </select>
             </div>
             <div
               class="progress-bar"
@@ -1032,6 +1042,26 @@ import "../styles/global.css";
         ) as HTMLSelectElement;
         select.addEventListener("change", async () => {
           if (select.value) await loadOrganization(select.value);
+        });
+      }
+
+      function wireModeChange(): void {
+        const select = document.getElementById(
+          "workspace-mode-select",
+        ) as HTMLSelectElement;
+        select.addEventListener("change", async () => {
+          if (!currentOrganization) return;
+          const newMode = select.value as OnboardingResponsibilityMode;
+          const outcome = await setOnboardingMode(currentOrganization.id, {
+            mode: newMode,
+            expected_version: currentOrganization.version,
+          });
+          if (outcome.kind !== "ok") {
+            alertInto("picker-alert", "error", describeFailure(outcome));
+            await refreshWorkspace();
+            return;
+          }
+          await refreshWorkspace();
         });
       }
 
@@ -2036,8 +2066,19 @@ import "../styles/global.css";
                   ? "Co-Managed"
                   : "Self-Service";
             modeBadgeEl.append(badge("info", modeLabel));
+            // Show and wire the mode-change dropdown
+            const modeSelect = document.getElementById(
+              "workspace-mode-select",
+            ) as HTMLSelectElement;
+            modeSelect.value = state.responsibility_mode;
+            modeSelect.hidden = false;
           } else {
             modeBadgeEl.hidden = true;
+            (
+              document.getElementById(
+                "workspace-mode-select",
+              ) as HTMLSelectElement
+            ).hidden = true;
           }
         }
 
@@ -2105,6 +2146,7 @@ import "../styles/global.css";
       function wireStaticForms(): void {
         wireCreateOrgForm();
         wireOrgPicker();
+        wireModeChange();
         wireProfileForm();
         wireCreateLocationForm();
         wireCreateDomainForm();

@@ -9,19 +9,13 @@ across API processes, worker restarts, and browser sessions so that
 onboarding is fully resumable from authoritative database state.
 """
 
-from collections.abc import Sequence
-
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 
 revision: str = "20260812_0002"
 down_revision: str | None = "20260812_0001"
 branch_labels: str | tuple[str, ...] | None = None
 depends_on: str | tuple[str, ...] | None = None
-
-
-VALID_MODES = ("managed", "co_managed", "self_service")
-VALID_ASSIGNMENT_TARGETS = ("agency", "client")
 
 
 def upgrade() -> None:
@@ -35,10 +29,10 @@ def upgrade() -> None:
             server_default=None,
         ),
     )
-    op.create_check_constraint(
-        "ck_organizations_onboarding_mode",
-        "organizations",
-        "onboarding_mode IS NULL OR onboarding_mode IN ('managed', 'co_managed', 'self_service')",
+    op.execute(
+        "ALTER TABLE organizations ADD CONSTRAINT ck_organizations_onboarding_mode "
+        "CHECK (onboarding_mode IS NULL OR "
+        "onboarding_mode IN ('managed', 'co_managed', 'self_service'))"
     )
     op.execute(
         "COMMENT ON COLUMN organizations.onboarding_mode IS "
@@ -58,7 +52,11 @@ def upgrade() -> None:
         sa.Column(
             "organization_id",
             sa.Uuid(),
-            sa.ForeignKey("organizations.id", ondelete="CASCADE"),
+            sa.ForeignKey(
+                "organizations.id",
+                ondelete="CASCADE",
+                name="fk_onboarding_step_assignments_organization_id_organizations",
+            ),
             nullable=False,
         ),
         sa.Column("step_key", sa.String(64), nullable=False),
@@ -67,18 +65,27 @@ def upgrade() -> None:
             sa.String(16),
             nullable=False,
         ),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
-    )
-    op.create_check_constraint(
-        "ck_onboarding_step_assignments_assigned_to",
-        "onboarding_step_assignments",
-        "assigned_to IN ('agency', 'client')",
-    )
-    op.create_unique_constraint(
-        "uq_onboarding_step_assignments_org_step",
-        "onboarding_step_assignments",
-        ["organization_id", "step_key"],
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
+        sa.CheckConstraint(
+            "assigned_to IN ('agency', 'client')",
+            name="assigned_to",
+        ),
+        sa.UniqueConstraint(
+            "organization_id",
+            "step_key",
+            name="uq_onboarding_step_assignments_org_step",
+        ),
     )
     op.create_index(
         "ix_onboarding_step_assignments_organization_id",
@@ -95,5 +102,7 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_table("onboarding_step_assignments")
-    op.drop_constraint("ck_organizations_onboarding_mode", "organizations")
+    op.execute(
+        "ALTER TABLE organizations DROP CONSTRAINT IF EXISTS ck_organizations_onboarding_mode"
+    )
     op.drop_column("organizations", "onboarding_mode")

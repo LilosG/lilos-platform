@@ -430,9 +430,7 @@ class ExecutionService:
     # Read-model queries for Automation & Agents product surface
     # ------------------------------------------------------------------
 
-    async def list_workflow_types(
-        self, session: AsyncSession
-    ) -> list[dict[str, object]]:
+    async def list_workflow_types(self, session: AsyncSession) -> list[dict[str, object]]:
         """Return the known workflow catalog with definition/version state.
 
         This is a read-only view of the fixed ``WORKFLOW_TYPES`` registry
@@ -440,14 +438,10 @@ class ExecutionService:
         rows for each key, so the Automation UI can show whether a workflow
         type has been activated for execution.
         """
-        definitions = (
-            await session.scalars(select(WorkflowDefinition))
-        ).all()
+        definitions = (await session.scalars(select(WorkflowDefinition))).all()
         versions = (
             await session.scalars(
-                select(WorkflowVersion).where(
-                    WorkflowVersion.status == "approved"
-                )
+                select(WorkflowVersion).where(WorkflowVersion.status == "approved")
             )
         ).all()
         def_by_key: dict[str, WorkflowDefinition] = {d.key: d for d in definitions}
@@ -461,13 +455,15 @@ class ExecutionService:
         for key, (display_name, product_key) in sorted(WORKFLOW_TYPES.items()):
             definition = def_by_key.get(key)
             version = ver_by_def.get(definition.id) if definition else None
-            result.append({
-                "key": key,
-                "display_name": display_name,
-                "product_key": product_key,
-                "definition_status": definition.status if definition else "not_persisted",
-                "latest_version": version.version if version else None,
-            })
+            result.append(
+                {
+                    "key": key,
+                    "display_name": display_name,
+                    "product_key": product_key,
+                    "definition_status": definition.status if definition else "not_persisted",
+                    "latest_version": version.version if version else None,
+                }
+            )
         return result
 
     async def list_runs(
@@ -486,19 +482,20 @@ class ExecutionService:
         Includes the latest job and its attempts so the UI can show retry
         counts and error information without additional round-trips.
         """
-        base = (
-            select(WorkflowRun)
-            .where(WorkflowRun.organization_id == organization_id)
-        )
+        base = select(WorkflowRun).where(WorkflowRun.organization_id == organization_id)
         if workflow_key is not None:
             # Join through WorkflowVersion → WorkflowDefinition to filter by key
-            base = base.join(
-                WorkflowVersion,
-                WorkflowVersion.id == WorkflowRun.workflow_version_id,
-            ).join(
-                WorkflowDefinition,
-                WorkflowDefinition.id == WorkflowVersion.definition_id,
-            ).where(WorkflowDefinition.key == workflow_key)
+            base = (
+                base.join(
+                    WorkflowVersion,
+                    WorkflowVersion.id == WorkflowRun.workflow_version_id,
+                )
+                .join(
+                    WorkflowDefinition,
+                    WorkflowDefinition.id == WorkflowVersion.definition_id,
+                )
+                .where(WorkflowDefinition.key == workflow_key)
+            )
         if location_id is not None:
             base = base.where(WorkflowRun.location_id == location_id)
         if status is not None:
@@ -509,9 +506,7 @@ class ExecutionService:
 
         rows = (
             await session.scalars(
-                base.order_by(WorkflowRun.created_at.desc())
-                .limit(limit)
-                .offset(offset)
+                base.order_by(WorkflowRun.created_at.desc()).limit(limit).offset(offset)
             )
         ).all()
 
@@ -522,9 +517,7 @@ class ExecutionService:
         if version_ids:
             vers = (
                 await session.scalars(
-                    select(WorkflowVersion).where(
-                        WorkflowVersion.id.in_(version_ids)
-                    )
+                    select(WorkflowVersion).where(WorkflowVersion.id.in_(version_ids))
                 )
             ).all()
             def_ids = {v.definition_id for v in vers}
@@ -532,9 +525,7 @@ class ExecutionService:
             if def_ids:
                 def_rows = (
                     await session.scalars(
-                        select(WorkflowDefinition).where(
-                            WorkflowDefinition.id.in_(def_ids)
-                        )
+                        select(WorkflowDefinition).where(WorkflowDefinition.id.in_(def_ids))
                     )
                 ).all()
                 defs = {d.id: d for d in def_rows}
@@ -548,10 +539,12 @@ class ExecutionService:
             # Get the most recent job per run
             job_rows = (
                 await session.scalars(
-                    select(Job).where(
+                    select(Job)
+                    .where(
                         Job.organization_id == organization_id,
                         Job.workflow_run_id.in_(run_ids),
-                    ).order_by(Job.created_at.desc())
+                    )
+                    .order_by(Job.created_at.desc())
                 )
             ).all()
             seen: set[UUID] = set()
@@ -564,26 +557,28 @@ class ExecutionService:
         for run in rows:
             wf_key, wf_name = def_versions.get(run.workflow_version_id, (None, None))
             job = jobs.get(run.id)
-            results.append({
-                "id": str(run.id),
-                "workflow_key": wf_key,
-                "workflow_name": wf_name,
-                "product_key": run.product_key,
-                "status": run.status,
-                "trigger_type": run.trigger_type,
-                "location_id": str(run.location_id) if run.location_id else None,
-                "input_document": run.input_document,
-                "output_reference": run.output_reference,
-                "failure_code": run.failure_code,
-                "correlation_id": run.correlation_id,
-                "started_at": run.started_at.isoformat() if run.started_at else None,
-                "completed_at": run.completed_at.isoformat() if run.completed_at else None,
-                "created_at": run.created_at.isoformat() if run.created_at else None,
-                "job_status": job.status if job else None,
-                "job_attempt_count": job.attempt_count if job else None,
-                "job_max_attempts": job.max_attempts if job else None,
-                "job_last_error_category": job.last_error_category if job else None,
-            })
+            results.append(
+                {
+                    "id": str(run.id),
+                    "workflow_key": wf_key,
+                    "workflow_name": wf_name,
+                    "product_key": run.product_key,
+                    "status": run.status,
+                    "trigger_type": run.trigger_type,
+                    "location_id": str(run.location_id) if run.location_id else None,
+                    "input_document": run.input_document,
+                    "output_reference": run.output_reference,
+                    "failure_code": run.failure_code,
+                    "correlation_id": run.correlation_id,
+                    "started_at": run.started_at.isoformat() if run.started_at else None,
+                    "completed_at": run.completed_at.isoformat() if run.completed_at else None,
+                    "created_at": run.created_at.isoformat() if run.created_at else None,
+                    "job_status": job.status if job else None,
+                    "job_attempt_count": job.attempt_count if job else None,
+                    "job_max_attempts": job.max_attempts if job else None,
+                    "job_last_error_category": job.last_error_category if job else None,
+                }
+            )
         return results, total
 
     async def get_run(
@@ -615,10 +610,12 @@ class ExecutionService:
         # Get all jobs for this run
         job_rows = (
             await session.scalars(
-                select(Job).where(
+                select(Job)
+                .where(
                     Job.organization_id == organization_id,
                     Job.workflow_run_id == run_id,
-                ).order_by(Job.created_at.desc())
+                )
+                .order_by(Job.created_at.desc())
             )
         ).all()
 
@@ -628,10 +625,12 @@ class ExecutionService:
             latest_job = job_rows[0]
             attempt_rows = (
                 await session.scalars(
-                    select(JobAttempt).where(
+                    select(JobAttempt)
+                    .where(
                         JobAttempt.organization_id == organization_id,
                         JobAttempt.job_id == latest_job.id,
-                    ).order_by(JobAttempt.attempt_number.desc())
+                    )
+                    .order_by(JobAttempt.attempt_number.desc())
                 )
             ).all()
             attempts = [
@@ -688,9 +687,11 @@ class ExecutionService:
         """Return all schedules for an organization with workflow context."""
         schedules = (
             await session.scalars(
-                select(Schedule).where(
+                select(Schedule)
+                .where(
                     Schedule.organization_id == organization_id,
-                ).order_by(Schedule.created_at.desc())
+                )
+                .order_by(Schedule.created_at.desc())
             )
         ).all()
 
@@ -700,9 +701,7 @@ class ExecutionService:
         if version_ids:
             vers = (
                 await session.scalars(
-                    select(WorkflowVersion).where(
-                        WorkflowVersion.id.in_(version_ids)
-                    )
+                    select(WorkflowVersion).where(WorkflowVersion.id.in_(version_ids))
                 )
             ).all()
             def_ids = {v.definition_id for v in vers}
@@ -710,9 +709,7 @@ class ExecutionService:
             if def_ids:
                 def_rows = (
                     await session.scalars(
-                        select(WorkflowDefinition).where(
-                            WorkflowDefinition.id.in_(def_ids)
-                        )
+                        select(WorkflowDefinition).where(WorkflowDefinition.id.in_(def_ids))
                     )
                 ).all()
                 defs = {d.id: d for d in def_rows}
@@ -724,19 +721,21 @@ class ExecutionService:
         results: list[dict[str, object]] = []
         for s in schedules:
             wf_key, wf_name = def_lookup.get(s.workflow_version_id, (None, None))
-            results.append({
-                "id": str(s.id),
-                "key": s.key,
-                "workflow_key": wf_key,
-                "workflow_name": wf_name,
-                "cron_expression": s.cron_expression,
-                "timezone": s.timezone,
-                "status": s.status,
-                "next_run_at": s.next_run_at.isoformat() if s.next_run_at else None,
-                "last_run_at": s.last_run_at.isoformat() if s.last_run_at else None,
-                "location_id": str(s.location_id) if s.location_id else None,
-                "created_at": s.created_at.isoformat() if s.created_at else None,
-            })
+            results.append(
+                {
+                    "id": str(s.id),
+                    "key": s.key,
+                    "workflow_key": wf_key,
+                    "workflow_name": wf_name,
+                    "cron_expression": s.cron_expression,
+                    "timezone": s.timezone,
+                    "status": s.status,
+                    "next_run_at": s.next_run_at.isoformat() if s.next_run_at else None,
+                    "last_run_at": s.last_run_at.isoformat() if s.last_run_at else None,
+                    "location_id": str(s.location_id) if s.location_id else None,
+                    "created_at": s.created_at.isoformat() if s.created_at else None,
+                }
+            )
         return results
 
     async def create_schedule(
@@ -754,9 +753,7 @@ class ExecutionService:
         catalog — callers supply ``workflow_key`` instead of an opaque
         version id.
         """
-        version = await self._resolve_workflow_version(
-            session, command.workflow_key
-        )
+        version = await self._resolve_workflow_version(session, command.workflow_key)
         command_dict = command.model_dump(exclude={"workflow_key"})
         command_dict["workflow_version_id"] = version.id
 
@@ -805,10 +802,12 @@ class ExecutionService:
     ) -> Schedule | None:
         """Update schedule status, cron expression, or next run time."""
         schedule = await session.scalar(
-            select(Schedule).where(
+            select(Schedule)
+            .where(
                 Schedule.organization_id == organization_id,
                 Schedule.id == schedule_id,
-            ).with_for_update()
+            )
+            .with_for_update()
         )
         if not schedule:
             return None

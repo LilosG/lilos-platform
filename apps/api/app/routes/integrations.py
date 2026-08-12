@@ -398,24 +398,32 @@ async def google_unmapped(
 
     mapped_ids: set[UUID] = set()
     rows = (
-        await session.execute(
-            select(ProviderResourceMapping.platform_resource_id).where(
-                ProviderResourceMapping.organization_id == organization_id,
-                ProviderResourceMapping.resource_type == "location",
-                ProviderResourceMapping.status == "active",
-                ProviderResourceMapping.platform_resource_id.isnot(None),
+        (
+            await session.execute(
+                select(ProviderResourceMapping.platform_resource_id).where(
+                    ProviderResourceMapping.organization_id == organization_id,
+                    ProviderResourceMapping.resource_type == "location",
+                    ProviderResourceMapping.status == "active",
+                    ProviderResourceMapping.platform_resource_id.isnot(None),
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     for row in rows:
         if row is not None:
             mapped_ids.add(row)
 
     gbp_locations = (
-        await session.execute(
-            select(GBPLocation).where(GBPLocation.organization_id == organization_id)
+        (
+            await session.execute(
+                select(GBPLocation).where(GBPLocation.organization_id == organization_id)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     unmapped: list[dict[str, object]] = []
     for loc in gbp_locations:

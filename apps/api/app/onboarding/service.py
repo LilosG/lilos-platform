@@ -138,15 +138,11 @@ _CONTROLS_BY_KEY: dict[str, OnboardingModeControl] = {
 }
 
 _CLIENT_VISIBLE_STEP_KEYS: frozenset[str] = frozenset(
-    ctrl.step_key
-    for ctrl in RESPONSIBILITY_CONTROLS
-    if ctrl.self_service_client
+    ctrl.step_key for ctrl in RESPONSIBILITY_CONTROLS if ctrl.self_service_client
 )
 
 _COMANAGED_CLIENTABLE_STEP_KEYS: frozenset[str] = frozenset(
-    ctrl.step_key
-    for ctrl in RESPONSIBILITY_CONTROLS
-    if ctrl.co_managed_client
+    ctrl.step_key for ctrl in RESPONSIBILITY_CONTROLS if ctrl.co_managed_client
 )
 
 
@@ -236,13 +232,10 @@ class OnboardingOrchestrationService:
         elif mode is OnboardingResponsibilityMode.CO_MANAGED:
             assigned = await self._load_assigned_keys(session, organization_id)
             visible_steps = [
-                step for step in steps
-                if step.key in assigned and assigned[step.key] == "client"
+                step for step in steps if step.key in assigned and assigned[step.key] == "client"
             ]
         elif mode is OnboardingResponsibilityMode.SELF_SERVICE:
-            visible_steps = [
-                step for step in steps if step.key in _CLIENT_VISIBLE_STEP_KEYS
-            ]
+            visible_steps = [step for step in steps if step.key in _CLIENT_VISIBLE_STEP_KEYS]
         else:
             visible_steps = []
 
@@ -260,9 +253,7 @@ class OnboardingOrchestrationService:
             if visible_steps
             else 0
         )
-        progress_percent = (
-            round((complete_steps / total_steps) * 100) if total_steps else 0
-        )
+        progress_percent = round((complete_steps / total_steps) * 100) if total_steps else 0
         activation_eligible = not blockers
 
         return OnboardingClientState(
@@ -294,13 +285,9 @@ class OnboardingOrchestrationService:
         upserted (the unique constraint prevents duplicates per org+step).
         """
         if assigned_to == "client" and step_key not in _COMANAGED_CLIENTABLE_STEP_KEYS:
-            raise ValueError(
-                f"Step '{step_key}' cannot be delegated to the client."
-            )
+            raise ValueError(f"Step '{step_key}' cannot be delegated to the client.")
         if assigned_to not in ("agency", "client"):
-            raise ValueError(
-                f"assigned_to must be 'agency' or 'client', got '{assigned_to}'."
-            )
+            raise ValueError(f"assigned_to must be 'agency' or 'client', got '{assigned_to}'.")
 
         # Upsert: delete any prior row for this org+step, then insert
         await session.execute(
@@ -418,9 +405,7 @@ class OnboardingOrchestrationService:
             blockers.append("Complete the organization profile.")
 
         # --- locations ---
-        all_locations, _ = await self.locations.list(
-            session, organization_id, limit=100, offset=0
-        )
+        all_locations, _ = await self.locations.list(session, organization_id, limit=100, offset=0)
         has_location = len(all_locations) > 0
         has_primary_location = any(location.is_primary for location in all_locations)
         steps.append(
@@ -553,8 +538,41 @@ class OnboardingOrchestrationService:
             blockers.append("Assign at least one active user with organization access.")
 
         # --- products ---
-        # Product evaluation is done separately in get_state() so blockers are
-        # not double-counted.
+        # Check whether any canonical product has a selected entitlement.
+        # Full readiness is evaluated separately in _evaluate_products().
+        products_selected = 0
+        for key in CANONICAL_PRODUCT_KEYS:
+            product = await self.administration.catalog.get_product_by_key(session, key)
+            if product is None:
+                continue
+            entitlement = await self.administration.entitlements.get_by_product(
+                session, organization_id, product.id
+            )
+            if (
+                entitlement is not None
+                and entitlement.status not in NOT_SELECTED_ENTITLEMENT_STATUSES
+            ):
+                products_selected += 1
+
+        has_products = products_selected > 0
+        steps.append(
+            OnboardingStep(
+                key="products",
+                label="Products and entitlements",
+                state=OnboardingStepState.COMPLETE
+                if has_products
+                else OnboardingStepState.OPTIONAL_INCOMPLETE,
+                blocking=False,
+                detail=(
+                    f"{products_selected} product(s) enabled."
+                    if has_products
+                    else "No products are enabled yet."
+                ),
+                next_action=(None if has_products else "Enable at least one product."),
+            )
+        )
+        if not has_products:
+            warnings.append("No products have been enabled for this client yet.")
 
         return steps, blockers, warnings
 
@@ -658,6 +676,7 @@ class OnboardingOrchestrationService:
 # ---------------------------------------------------------------------------
 # Public module helpers
 # ---------------------------------------------------------------------------
+
 
 def step_control(step_key: str) -> OnboardingModeControl | None:
     """Return the responsibility control for a single step, or None."""

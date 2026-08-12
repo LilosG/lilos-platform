@@ -31,7 +31,12 @@ export const navigationGroups: readonly NavigationGroup[] = [
       { key: "leads", label: "Leads", href: "/leads", icon: "inbox" },
       { key: "content", label: "Content", href: "/content", icon: "document" },
       { key: "seo", label: "SEO", href: "/seo", icon: "search" },
-      { key: "automations", label: "Automations", href: "/automations", icon: "settings" },
+      {
+        key: "automations",
+        label: "Automations",
+        href: "/automations",
+        icon: "settings",
+      },
       { key: "insights", label: "Insights", href: "/insights", icon: "chart" },
     ],
   },

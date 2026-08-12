@@ -35,6 +35,7 @@ class ScheduleCreate(BaseModel):
     The ``workflow_version_id`` is resolved server-side by
     ``ExecutionService._resolve_workflow_version``.
     """
+
     model_config = ConfigDict(frozen=True)
     workflow_key: str = Field(min_length=3, max_length=128)
     key: str = Field(min_length=3, max_length=128)
@@ -50,6 +51,7 @@ class ScheduleUpdate(BaseModel):
     At least one field must be provided. ``status`` changes (e.g.,
     ``active`` → ``paused``) are the most common update.
     """
+
     model_config = ConfigDict(frozen=True)
     status: Literal["active", "paused", "cancelled"] | None = None
     cron_expression: str | None = Field(default=None, min_length=5, max_length=100)

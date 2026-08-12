@@ -84,10 +84,9 @@ export type WorkflowRunStart = {
 export function listWorkflowTypes(
   organizationId: string,
 ): Promise<ApiOutcome<WorkflowTypeEntry[]>> {
-  return apiRequest(
-    `/api/v1/organizations/${organizationId}/workflows`,
-    { method: "GET" },
-  );
+  return apiRequest(`/api/v1/organizations/${organizationId}/workflows`, {
+    method: "GET",
+  });
 }
 
 export function getWorkflowType(

@@ -105,7 +105,7 @@ describe("setProductNavigationVisibility", () => {
     const settingsItem = documentItem(false);
     vi.stubGlobal("document", {
       querySelectorAll: (selector: string) => {
-        if (selector === 'li[data-nav-product]') {
+        if (selector === "li[data-nav-product]") {
           return [gbpItem, reviewsItem, automationsItem];
         }
         return [];
@@ -127,7 +127,7 @@ describe("setProductNavigationVisibility", () => {
     const reviewsItem = documentItem(true, "reviews");
     vi.stubGlobal("document", {
       querySelectorAll: (selector: string) => {
-        if (selector === 'li[data-nav-product]') {
+        if (selector === "li[data-nav-product]") {
           return [gbpItem, reviewsItem];
         }
         return [];
@@ -145,7 +145,7 @@ describe("setProductNavigationVisibility", () => {
     const gbpItem = documentItem(true, "gbp");
     vi.stubGlobal("document", {
       querySelectorAll: (selector: string) => {
-        if (selector === 'li[data-nav-product]') {
+        if (selector === "li[data-nav-product]") {
           return [gbpItem];
         }
         return [];
@@ -165,7 +165,10 @@ function element(hidden: boolean): HTMLElement {
 
 function documentItem(hidden = false, navKey?: string): HTMLElement {
   const link = navKey
-    ? ({ getAttribute: (attr: string) => (attr === "data-nav-key" ? navKey : null) } as HTMLAnchorElement)
+    ? ({
+        getAttribute: (attr: string) =>
+          attr === "data-nav-key" ? navKey : null,
+      } as HTMLAnchorElement)
     : null;
   return {
     hidden,

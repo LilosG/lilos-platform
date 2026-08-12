@@ -61,24 +61,19 @@ def _api_response(request: Request, data: object) -> dict[str, object]:
     }
 
 
-async def _resolve_user_profile(
-    session: AsyncSession, principal: Authenticated
-) -> object | None:
+async def _resolve_user_profile(session: AsyncSession, principal: Authenticated) -> object | None:
     """Find the UserProfile row for the authenticated principal."""
-    return await user_profile_repo.get_by_auth_user_id(
-        session, principal.platform_user_id
-    )
+    return await user_profile_repo.get_by_auth_user_id(session, principal.platform_user_id)
 
 
-async def _is_platform_admin(
-    session: AsyncSession, principal: Authenticated
-) -> bool:
+async def _is_platform_admin(session: AsyncSession, principal: Authenticated) -> bool:
     """Return True when the principal holds an active PlatformAdministrator grant."""
     profile = await _resolve_user_profile(session, principal)
     if profile is None:
         return False
     admin = await platform_admin_repo.get_active_by_user_profile_id(
-        session, profile.id  # type: ignore[attr-defined]
+        session,
+        profile.id,  # type: ignore[attr-defined]
     )
     return admin is not None
 
@@ -95,7 +90,9 @@ async def _verify_organization_access(
     if profile is None:
         return False
     membership = await access.memberships.get_by_user(
-        session, organization_id, profile.id  # type: ignore[attr-defined]
+        session,
+        organization_id,
+        profile.id,  # type: ignore[attr-defined]
     )
     return membership is not None and membership.status.value == "active"
 
@@ -230,8 +227,7 @@ async def activate_self_service_organization(
                 "error": {
                     "code": "ONBOARDING_INCOMPLETE",
                     "message": (
-                        "This organization cannot be activated "
-                        "until onboarding is complete."
+                        "This organization cannot be activated until onboarding is complete."
                     ),
                     "category": "conflict",
                     "details": [

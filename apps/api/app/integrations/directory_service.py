@@ -310,22 +310,20 @@ class IntegrationDirectoryService:
                 )
             )
             if checkpoint is not None and checkpoint.observed_through is not None:
-                    last_synced_at = checkpoint.observed_through.isoformat()
-                    now = datetime.now(UTC)
-                    stale_after = checkpoint.stale_after
-                    if stale_after is not None and stale_after < now:
-                        sync_freshness = "stale"
-                    else:
-                        sync_freshness = "fresh"
+                last_synced_at = checkpoint.observed_through.isoformat()
+                now = datetime.now(UTC)
+                stale_after = checkpoint.stale_after
+                if stale_after is not None and stale_after < now:
+                    sync_freshness = "stale"
+                else:
+                    sync_freshness = "fresh"
 
             result.append(
                 {
                     "id": str(mapping.id),
                     "external_resource_id": mapping.external_resource_id,
                     "platform_resource_id": (
-                        str(mapping.platform_resource_id)
-                        if mapping.platform_resource_id
-                        else None
+                        str(mapping.platform_resource_id) if mapping.platform_resource_id else None
                     ),
                     "resource_type": mapping.resource_type,
                     "status": mapping.status,
@@ -343,22 +341,28 @@ class IntegrationDirectoryService:
         """Count GBP locations that exist without a confirmed active mapping."""
         mapped_ids: set[UUID] = set()
         rows = (
-            await session.execute(
-                select(ProviderResourceMapping.platform_resource_id).where(
-                    ProviderResourceMapping.organization_id == organization_id,
-                    ProviderResourceMapping.connection_id == connection_id,
-                    ProviderResourceMapping.resource_type == "location",
-                    ProviderResourceMapping.status == "active",
-                    ProviderResourceMapping.platform_resource_id.isnot(None),
+            (
+                await session.execute(
+                    select(ProviderResourceMapping.platform_resource_id).where(
+                        ProviderResourceMapping.organization_id == organization_id,
+                        ProviderResourceMapping.connection_id == connection_id,
+                        ProviderResourceMapping.resource_type == "location",
+                        ProviderResourceMapping.status == "active",
+                        ProviderResourceMapping.platform_resource_id.isnot(None),
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         for row in rows:
             if row is not None:
                 mapped_ids.add(row)
 
         total_locations = await session.scalar(
-            select(func.count()).select_from(GBPLocation).where(
+            select(func.count())
+            .select_from(GBPLocation)
+            .where(
                 GBPLocation.organization_id == organization_id,
             )
         )

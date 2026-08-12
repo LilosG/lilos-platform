@@ -1164,28 +1164,57 @@ async def _handle_leads_send_communication(
 
     delivery = None
     try:
-        event = await notification_svc.create_event(
-            session,
-            organization_id=organization_id,
-            template_id=UUID("00000000-0000-0000-0000-000000000001"),
-            event_type="leads.communication.send",
-            idempotency_key=f"lead-comm-{communication.id}",
-            context={
-                "lead_id": str(lead.id),
-                "communication_id": str(communication.id),
-                "channel": communication.channel,
-                "message_reference": communication.message_reference,
-            },
-            location_id=communication.location_id,
-        )
-        delivery = await notification_svc.add_delivery(
-            session,
-            event,
-            recipient_reference=recipient,
-            channel=communication.channel,
-        )
+        async with session.begin_nested():
+            # Ensure the notification template exists (create if missing).
+            from apps.api.app.notifications.models import NotificationTemplate
+
+            _TEMPLATE_ID = UUID("00000000-0000-0000-0000-000000000001")
+            template = await session.scalar(
+                select(NotificationTemplate).where(
+                    NotificationTemplate.organization_id == organization_id,
+                    NotificationTemplate.id == _TEMPLATE_ID,
+                )
+            )
+            if template is None:
+                template = NotificationTemplate(
+                    id=_TEMPLATE_ID,
+                    organization_id=organization_id,
+                    key="leads.communication.send",
+                    version=1,
+                    channel="email",
+                    body_template="A new message has been sent to you.",
+                    status="active",
+                )
+                session.add(template)
+                await session.flush()
+
+            event = await notification_svc.create_event(
+                session,
+                organization_id=organization_id,
+                template_id=_TEMPLATE_ID,
+                event_type="leads.communication.send",
+                idempotency_key=f"lead-comm-{communication.id}",
+                context={
+                    "lead_id": str(lead.id),
+                    "communication_id": str(communication.id),
+                    "channel": communication.channel,
+                    "message_reference": communication.message_reference,
+                },
+                location_id=communication.location_id,
+            )
+            delivery = await notification_svc.add_delivery(
+                session,
+                event,
+                recipient_reference=recipient,
+                channel=communication.channel,
+            )
     except Exception as exc:
+        # The savepoint is already rolled back.  The outer transaction is
+        # still clean — the caller's WorkflowRun / Job / audit state is
+        # untouched.  We can safely persist the communication failure
+        # without poisoning the outer unit-of-work.
         communication.status = "failed"
+        await session.flush()
         logger.warning(
             "Lead communication notification failed",
             extra={
@@ -1201,6 +1230,7 @@ async def _handle_leads_send_communication(
 
     communication.status = "queued"
     communication.notification_delivery_id = delivery.id if delivery else None
+    await session.flush()
 
     return JobOutcome(
         result="succeeded",

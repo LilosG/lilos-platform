@@ -64,13 +64,15 @@ function _updateAdminNavigation(): void {
   setPlatformNavigationVisible(_isPlatformAdmin);
 }
 
-export function setProductNavigationVisibility(entitledKeys: Set<string>): void {
+export function setProductNavigationVisibility(
+  entitledKeys: Set<string>,
+): void {
   if (typeof document === "undefined") return;
   // Platform administrators see the full product suite regardless of the
   // current organization's entitlements.
   if (_isPlatformAdmin) {
     for (const item of document.querySelectorAll<HTMLElement>(
-      'li[data-nav-product]',
+      "li[data-nav-product]",
     )) {
       item.hidden = false;
     }
@@ -80,7 +82,7 @@ export function setProductNavigationVisibility(entitledKeys: Set<string>): void 
   // them with the hidden attribute) and are only revealed when the
   // authoritative entitlement response confirms the product is selected.
   for (const item of document.querySelectorAll<HTMLElement>(
-    'li[data-nav-product]',
+    "li[data-nav-product]",
   )) {
     const link = item.querySelector<HTMLAnchorElement>("a[data-nav-key]");
     const key = link?.getAttribute("data-nav-key");
@@ -166,7 +168,8 @@ export function setActiveOrganization(
   const nameEl = document.getElementById("active-organization-name");
   if (nameEl) nameEl.textContent = organization.organization_name;
   applyShellAudience(organization.membership_type);
-  if (_onOrganizationChanged) _onOrganizationChanged(organization.organization_id);
+  if (_onOrganizationChanged)
+    _onOrganizationChanged(organization.organization_id);
 }
 
 export async function bootWorkspace(
@@ -236,12 +239,13 @@ export async function bootWorkspace(
     // Hide all product items while the new entitlement state resolves.
     if (!_isPlatformAdmin) {
       for (const item of document.querySelectorAll<HTMLElement>(
-        'li[data-nav-product]',
+        "li[data-nav-product]",
       )) {
         item.hidden = true;
       }
     }
-    const { fetchEntitledProducts: fetchProducts } = await import("../workspace");
+    const { fetchEntitledProducts: fetchProducts } =
+      await import("../workspace");
     const products = await fetchProducts(targetOrgId);
     // Discard stale responses from a different active organization.
     if (_activeOrganizationId !== targetOrgId) return;
@@ -261,9 +265,7 @@ export async function bootWorkspace(
   if (products.kind === "ok") {
     setProductNavigationVisibility(
       new Set(
-        products.data
-          .filter((p) => p.entitled)
-          .map((p) => p.product_key),
+        products.data.filter((p) => p.entitled).map((p) => p.product_key),
       ),
     );
   }

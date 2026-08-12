@@ -3,10 +3,14 @@
 from datetime import UTC, datetime
 from uuid import uuid4
 
-from apps.api.app.execution.contracts import JobOutcome, ScheduleCreate, ScheduleUpdate, WorkflowSubmit
+from apps.api.app.execution.contracts import (
+    JobOutcome,
+    ScheduleCreate,
+    ScheduleUpdate,
+    WorkflowSubmit,
+)
 from apps.api.app.execution.service import ExecutionService
 from apps.api.app.execution.workflow_catalog import WORKFLOW_TYPES, is_known_workflow_key
-
 
 # ---------------------------------------------------------------------------
 # Contract validation
@@ -95,7 +99,7 @@ def test_workflow_keys_follow_naming_convention() -> None:
 
 def test_workflow_types_have_product_and_display_name() -> None:
     """Each entry must have a display name and product key."""
-    for key, (display_name, product_key) in WORKFLOW_TYPES.items():
+    for _key, (display_name, product_key) in WORKFLOW_TYPES.items():
         assert isinstance(display_name, str)
         assert len(display_name) > 0
         assert isinstance(product_key, str)

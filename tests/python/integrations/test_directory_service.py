@@ -102,27 +102,25 @@ class TestRouteExistence:
         """GET /workspace is on the Google OAuth integrations router."""
         from apps.api.app.routes.integrations import router
 
-        routes = [r for r in router.routes if (
-            hasattr(r, "path") and r.path.endswith("/workspace")
-        )]
+        routes = [
+            r for r in router.routes if (hasattr(r, "path") and r.path.endswith("/workspace"))
+        ]
         assert len(routes) == 1
 
     def test_google_unmapped_route_exists(self) -> None:
         """GET /unmapped is on the Google OAuth integrations router."""
         from apps.api.app.routes.integrations import router
 
-        routes = [r for r in router.routes if (
-            hasattr(r, "path") and r.path.endswith("/unmapped")
-        )]
+        routes = [r for r in router.routes if (hasattr(r, "path") and r.path.endswith("/unmapped"))]
         assert len(routes) == 1
 
     def test_github_workspace_route_exists(self) -> None:
         """GET /workspace is on the GitHub App router."""
         from apps.api.app.routes.github_app import router as gh_router
 
-        routes = [r for r in gh_router.routes if (
-            hasattr(r, "path") and r.path.endswith("/workspace")
-        )]
+        routes = [
+            r for r in gh_router.routes if (hasattr(r, "path") and r.path.endswith("/workspace"))
+        ]
         assert len(routes) == 1
 
 
@@ -133,20 +131,14 @@ class TestMappingConfirmation:
         """POST /locations/{id}/confirm exists on the GBP router."""
         from apps.api.app.routes.gbp import router as gbp_router
 
-        routes = [
-            r for r in gbp_router.routes
-            if hasattr(r, "path") and "confirm" in r.path
-        ]
+        routes = [r for r in gbp_router.routes if hasattr(r, "path") and "confirm" in r.path]
         assert len(routes) >= 1
 
     def test_no_duplicate_confirm_on_integrations_router(self) -> None:
         """The integrations router has zero confirm routes."""
         from apps.api.app.routes.integrations import router as int_router
 
-        routes = [
-            r for r in int_router.routes
-            if hasattr(r, "path") and "confirm" in r.path
-        ]
+        routes = [r for r in int_router.routes if hasattr(r, "path") and "confirm" in r.path]
         assert len(routes) == 0
 
 
@@ -155,10 +147,7 @@ class TestMainPyNotModified:
 
     def test_main_py_has_no_directory_router_import(self) -> None:
         """No `directory_router` import or include_router in main.py."""
-        main_path = (
-            Path(__file__).parents[3]
-            / "apps" / "api" / "app" / "main.py"
-        )
+        main_path = Path(__file__).parents[3] / "apps" / "api" / "app" / "main.py"
         source = main_path.read_text()
         tree = ast.parse(source)
 
@@ -180,6 +169,4 @@ class TestMainPyNotModified:
                     if isinstance(arg, ast.Name) and "directory" in arg.id.lower():
                         directory_include_found = True
 
-        assert not directory_include_found, (
-            "main.py must not register directory_router"
-        )
+        assert not directory_include_found, "main.py must not register directory_router"

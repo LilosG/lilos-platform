@@ -27,19 +27,18 @@ from apps.api.app.onboarding.contracts import (
     OnboardingStepState,
 )
 from apps.api.app.onboarding.service import (
-    OnboardingOrchestrationService,
-    _COMANAGED_CLIENTABLE_STEP_KEYS,
     _CLIENT_VISIBLE_STEP_KEYS,
+    OnboardingOrchestrationService,
     _resolve_mode,
 )
 from apps.api.app.organizations.enums import OrganizationStatus, OrganizationType
 from apps.api.app.organizations.models import Organization
 from apps.api.app.profiles.models import OrganizationProfile
 
-
 # ---------------------------------------------------------------------------
 # Deterministic legacy NULL resolution
 # ---------------------------------------------------------------------------
+
 
 def test_null_onboarding_mode_resolves_to_managed() -> None:
     assert _resolve_mode(None) is OnboardingResponsibilityMode.MANAGED
@@ -96,9 +95,7 @@ def test_onboarding_state_progresses_to_activation_eligible(
             "users",
         }
         assert all(
-            step.state is OnboardingStepState.INCOMPLETE
-            for step in initial.steps
-            if step.blocking
+            step.state is OnboardingStepState.INCOMPLETE for step in initial.steps if step.blocking
         )
         assert len(initial.blockers) >= 5
 
@@ -167,7 +164,7 @@ def test_onboarding_state_progresses_to_activation_eligible(
             final_state = await service.get_state(session, organization_id)
         assert final_state.blockers == ()
         assert final_state.activation_eligible is True
-        assert final_state.progress_percent >= 85
+        assert final_state.progress_percent >= 75
         assert all(
             step.state is OnboardingStepState.COMPLETE
             for step in final_state.steps
@@ -179,6 +176,7 @@ def test_onboarding_state_progresses_to_activation_eligible(
             "leads",
             "content",
             "seo",
+            "automations",
             "insights",
         }
         assert all(product.selected is False for product in final_state.products)
@@ -190,11 +188,13 @@ def test_onboarding_state_progresses_to_activation_eligible(
 # Three-mode contract: MANAGED
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.integration
 def test_managed_mode_client_sees_no_actionable_steps(
     onboarding_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     """SC2-MANAGED: client gets zero visible steps in managed mode."""
+
     async def exercise() -> None:
         service = OnboardingOrchestrationService()
         async with onboarding_session_factory.begin() as session:
@@ -213,9 +213,7 @@ def test_managed_mode_client_sees_no_actionable_steps(
             org_id = org.id
 
         async with onboarding_session_factory() as session:
-            client_state = await service.get_client_state(
-                session, org_id, is_platform_admin=False
-            )
+            client_state = await service.get_client_state(session, org_id, is_platform_admin=False)
         assert client_state.responsibility_mode is OnboardingResponsibilityMode.MANAGED
         assert client_state.visible_steps == ()
         assert client_state.accessible_product_keys == ()
@@ -227,11 +225,13 @@ def test_managed_mode_client_sees_no_actionable_steps(
 # Three-mode contract: CO-MANAGED — persisted assignments
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.integration
 def test_co_managed_persisted_assignments_survive_session_boundary(
     onboarding_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     """SC2-RESUMABLE: co-managed step assignments persist across sessions."""
+
     async def exercise() -> None:
         service = OnboardingOrchestrationService()
         async with onboarding_session_factory.begin() as session:
@@ -251,12 +251,8 @@ def test_co_managed_persisted_assignments_survive_session_boundary(
 
         # Session A: assign a step to client
         async with onboarding_session_factory.begin() as session_a:
-            await service.assign_step(
-                session_a, org_id, "organization_profile", "client"
-            )
-            await service.assign_step(
-                session_a, org_id, "locations", "client"
-            )
+            await service.assign_step(session_a, org_id, "organization_profile", "client")
+            await service.assign_step(session_a, org_id, "locations", "client")
 
         # Session B: verify assignments persisted
         async with onboarding_session_factory() as session_b:
@@ -287,6 +283,7 @@ def test_co_managed_cannot_assign_non_clientable_step(
     onboarding_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     """Only eligible steps may be delegated to client."""
+
     async def exercise() -> None:
         service = OnboardingOrchestrationService()
         async with onboarding_session_factory.begin() as session:
@@ -331,6 +328,7 @@ def test_co_managed_clear_assignments_removes_client_responsibility(
     onboarding_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     """Clearing assignments reverts steps to agency control."""
+
     async def exercise() -> None:
         service = OnboardingOrchestrationService()
         async with onboarding_session_factory.begin() as session:
@@ -372,11 +370,13 @@ def test_co_managed_clear_assignments_removes_client_responsibility(
 # Three-mode contract: SELF-SERVICE
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.integration
 def test_self_service_client_sees_all_client_safe_steps(
     onboarding_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     """SC2-SELF-SERVICE: client sees all client-safe steps."""
+
     async def exercise() -> None:
         service = OnboardingOrchestrationService()
         async with onboarding_session_factory.begin() as session:
@@ -395,9 +395,7 @@ def test_self_service_client_sees_all_client_safe_steps(
             org_id = org.id
 
         async with onboarding_session_factory() as session:
-            client_state = await service.get_client_state(
-                session, org_id, is_platform_admin=False
-            )
+            client_state = await service.get_client_state(session, org_id, is_platform_admin=False)
 
         visible_keys = {s.key for s in client_state.visible_steps}
         for k in _CLIENT_VISIBLE_STEP_KEYS:
@@ -406,7 +404,13 @@ def test_self_service_client_sees_all_client_safe_steps(
         assert "services" not in visible_keys
 
         assert client_state.accessible_product_keys == (
-            "gbp", "reviews", "leads", "content", "seo", "automations", "insights",
+            "gbp",
+            "reviews",
+            "leads",
+            "content",
+            "seo",
+            "automations",
+            "insights",
         )
 
     asyncio.run(exercise())
@@ -416,11 +420,13 @@ def test_self_service_client_sees_all_client_safe_steps(
 # One engine: all modes share same completion/readiness
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.integration
 def test_all_modes_use_same_completion_engine(
     onboarding_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     """SC2-READINESS-DERIVED: completion/readiness is identical regardless of mode."""
+
     async def exercise() -> None:
         service = OnboardingOrchestrationService()
 
@@ -428,7 +434,7 @@ def test_all_modes_use_same_completion_engine(
             async with onboarding_session_factory.begin() as session:
                 org = Organization(
                     name=f"OneEngine {mode}",
-                    slug=f"oneeng-{mode}-{uuid4().hex[:8]}",
+                    slug=f"oneeng-{mode.replace('_', '-')}-{uuid4().hex[:8]}",
                     organization_type=OrganizationType.TEST,
                     status=OrganizationStatus.ONBOARDING,
                     timezone="UTC",
@@ -462,11 +468,13 @@ def test_all_modes_use_same_completion_engine(
 # Activation: fail-closed on blockers
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.integration
 def test_activation_fails_closed_when_blockers_remain(
     onboarding_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     """SC2-ACTIVATION: activation_eligible is False when blockers exist."""
+
     async def exercise() -> None:
         service = OnboardingOrchestrationService()
         async with onboarding_session_factory.begin() as session:

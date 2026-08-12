@@ -143,9 +143,7 @@ def p5_client(
             owner_mem = await access.create_membership(
                 session,
                 org.id,
-                MembershipCreate(
-                    user_profile_id=owner.id, membership_type=MembershipType.CLIENT
-                ),
+                MembershipCreate(user_profile_id=owner.id, membership_type=MembershipType.CLIENT),
                 correlation_id="p5-owner",
             )
             owner_role = await access.catalog.get_role_by_key(session, "organization_owner")
@@ -160,9 +158,7 @@ def p5_client(
             await access.create_membership(
                 session,
                 org.id,
-                MembershipCreate(
-                    user_profile_id=no_perm.id, membership_type=MembershipType.CLIENT
-                ),
+                MembershipCreate(user_profile_id=no_perm.id, membership_type=MembershipType.CLIENT),
                 correlation_id="p5-no-perm",
             )
 
@@ -206,9 +202,7 @@ def test_list_workflow_types_returns_all_nine(p5_client: P5Context) -> None:
 @pytest.mark.integration
 def test_get_single_workflow_type(p5_client: P5Context) -> None:
     client, org = p5_client.client, p5_client.ids["organization"]
-    resp = client.get(
-        f"/api/v1/organizations/{org}/workflows/gbp.sync", headers=HEADERS
-    )
+    resp = client.get(f"/api/v1/organizations/{org}/workflows/gbp.sync", headers=HEADERS)
     assert resp.status_code == 200, resp.text
     item = resp.json()["data"]
     assert item["key"] == "gbp.sync"
@@ -218,9 +212,7 @@ def test_get_single_workflow_type(p5_client: P5Context) -> None:
 @pytest.mark.integration
 def test_unknown_workflow_type_404(p5_client: P5Context) -> None:
     client, org = p5_client.client, p5_client.ids["organization"]
-    resp = client.get(
-        f"/api/v1/organizations/{org}/workflows/not.a.workflow", headers=HEADERS
-    )
+    resp = client.get(f"/api/v1/organizations/{org}/workflows/not.a.workflow", headers=HEADERS)
     assert resp.status_code == 404
 
 
@@ -244,9 +236,7 @@ def test_catalog_requires_auth(p5_client: P5Context) -> None:
 @pytest.mark.integration
 def test_list_runs_returns_empty_for_new_org(p5_client: P5Context) -> None:
     client, org = p5_client.client, p5_client.ids["organization"]
-    resp = client.get(
-        f"/api/v1/organizations/{org}/workflows/runs", headers=HEADERS
-    )
+    resp = client.get(f"/api/v1/organizations/{org}/workflows/runs", headers=HEADERS)
     assert resp.status_code == 200, resp.text
     assert resp.json()["data"] == []
 
@@ -259,9 +249,7 @@ def test_list_runs_after_starting_a_workflow(p5_client: P5Context) -> None:
         headers=HEADERS,
         json={"idempotency_key": "p5-run-list-test-001"},
     )
-    resp = client.get(
-        f"/api/v1/organizations/{org}/workflows/runs", headers=HEADERS
-    )
+    resp = client.get(f"/api/v1/organizations/{org}/workflows/runs", headers=HEADERS)
     assert resp.status_code == 200
     data = resp.json()["data"]
     assert len(data) >= 1
@@ -341,9 +329,7 @@ def test_get_run_detail(p5_client: P5Context) -> None:
     )
     run_id = started.json()["data"]["workflow_run_id"]
 
-    resp = client.get(
-        f"/api/v1/organizations/{org}/workflows/runs/{run_id}", headers=HEADERS
-    )
+    resp = client.get(f"/api/v1/organizations/{org}/workflows/runs/{run_id}", headers=HEADERS)
     assert resp.status_code == 200
     detail = resp.json()["data"]
     assert detail["id"] == run_id
@@ -384,9 +370,7 @@ def test_cross_org_run_not_visible(p5_client: P5Context) -> None:
 @pytest.mark.integration
 def test_list_schedules_empty(p5_client: P5Context) -> None:
     client, org = p5_client.client, p5_client.ids["organization"]
-    resp = client.get(
-        f"/api/v1/organizations/{org}/workflows/schedules", headers=HEADERS
-    )
+    resp = client.get(f"/api/v1/organizations/{org}/workflows/schedules", headers=HEADERS)
     assert resp.status_code == 200
     assert resp.json()["data"] == []
 
@@ -429,9 +413,7 @@ def test_create_schedule_unknown_workflow_key_rejected(p5_client: P5Context) -> 
             "next_run_at": next_run,
         },
     )
-    assert resp.status_code == 404, (
-        f"Expected 404 for unknown workflow key, got {resp.status_code}"
-    )
+    assert resp.status_code == 404, f"Expected 404 for unknown workflow key, got {resp.status_code}"
 
 
 @pytest.mark.integration
@@ -449,9 +431,7 @@ def test_list_schedules_after_create(p5_client: P5Context) -> None:
             "next_run_at": next_run,
         },
     )
-    resp = client.get(
-        f"/api/v1/organizations/{org}/workflows/schedules", headers=HEADERS
-    )
+    resp = client.get(f"/api/v1/organizations/{org}/workflows/schedules", headers=HEADERS)
     assert resp.status_code == 200
     data = resp.json()["data"]
     assert len(data) >= 1
@@ -591,8 +571,10 @@ def test_schedule_tenant_isolation_service_layer(
         }
 
     result = run_db(postgresql_test_url, scenario)
-    assert result["org_count"] >= 1, "Org should see its schedules"
-    assert result["other_org_count"] == 0, "Other org must not see org's schedules"
+    org_count: int = result["org_count"]  # type: ignore[assignment]
+    other_org_count: int = result["other_org_count"]  # type: ignore[assignment]
+    assert org_count >= 1, "Org should see its schedules"
+    assert other_org_count == 0, "Other org must not see org's schedules"
 
 
 # ---------------------------------------------------------------------------
@@ -629,17 +611,22 @@ def test_lead_communication_handler_sets_queued_not_sent(
 
         # Create a real WorkflowRun for the FK constraint
         wf_def = WorkflowDefinition(
-            key="leads.send_communication", name="Send Lead Communication",
-            owner="leads", status="active",
+            key="leads.send_communication",
+            name="Send Lead Communication",
+            owner="leads",
+            status="active",
         )
         session.add(wf_def)
         await session.flush()
 
         wf_ver = WorkflowVersion(
             definition_id=wf_def.id,
-            version=1, status="approved",
-            input_schema={}, output_schema={},
-            step_specification=[], retry_policy={},
+            version=1,
+            status="approved",
+            input_schema={},
+            output_schema={},
+            step_specification=[],
+            retry_policy={},
             timeout_seconds=300,
         )
         session.add(wf_ver)
@@ -648,7 +635,8 @@ def test_lead_communication_handler_sets_queued_not_sent(
         wf_run = WorkflowRun(
             organization_id=org.id,
             workflow_version_id=wf_ver.id,
-            status="queued", trigger_type="test",
+            status="queued",
+            trigger_type="test",
             idempotency_key=f"p5-lead-comm-run-{uuid4().hex[:12]}",
             request_hash="test-hash",
             input_document={},
@@ -755,15 +743,21 @@ def test_lead_communication_idempotent_on_queued_status(
 
         # Create WorkflowRun for FK constraint
         wf_def = WorkflowDefinition(
-            key="leads.send_communication", name="Send Lead Communication",
-            owner="leads", status="active",
+            key="leads.send_communication",
+            name="Send Lead Communication",
+            owner="leads",
+            status="active",
         )
         session.add(wf_def)
         await session.flush()
         wf_ver = WorkflowVersion(
-            definition_id=wf_def.id, version=1, status="approved",
-            input_schema={}, output_schema={},
-            step_specification=[], retry_policy={},
+            definition_id=wf_def.id,
+            version=1,
+            status="approved",
+            input_schema={},
+            output_schema={},
+            step_specification=[],
+            retry_policy={},
             timeout_seconds=300,
         )
         session.add(wf_ver)
@@ -771,7 +765,8 @@ def test_lead_communication_idempotent_on_queued_status(
         wf_run = WorkflowRun(
             organization_id=org.id,
             workflow_version_id=wf_ver.id,
-            status="queued", trigger_type="test",
+            status="queued",
+            trigger_type="test",
             idempotency_key=f"p5-idem-run-{uuid4().hex[:12]}",
             request_hash="test-idem-hash",
             input_document={},
@@ -790,6 +785,8 @@ def test_lead_communication_idempotent_on_queued_status(
             raw_payload_retention_policy="30d",
             version=1,
         )
+        session.add(source)
+        await session.flush()
         lead = Lead(
             organization_id=org.id,
             source_id=source.id,
@@ -799,7 +796,7 @@ def test_lead_communication_idempotent_on_queued_status(
             urgency="routine",
             received_at=datetime.now(UTC),
         )
-        session.add_all([source, lead])
+        session.add(lead)
         await session.flush()
 
         comm = LeadCommunication(
@@ -868,6 +865,215 @@ def test_lead_communication_idempotent_on_queued_status(
     )
     assert result["outcome3"] == "succeeded"
     assert result["status3"] == "queued"
+
+
+@pytest.mark.integration
+def test_lead_communication_handler_failure_does_not_rollback_outer_transaction(
+    postgresql_test_url: str,
+    workflows_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Notification creation failure must not poison the outer transaction.
+
+    The handler uses a SAVEPOINT / begin_nested() for notification work.
+    A failure there must roll back only the nested savepoint, leaving the
+    outer transaction clean.  The communication is marked "failed" and
+    unrelated durable state in the same session (e.g. a second lead) must
+    still be present and the session still usable.
+
+    This test forces a failure inside the savepoint by monkey-patching
+    NotificationService.add_delivery to raise an exception, then verifies:
+    - The handler returns retryable_failure (NOTIFICATION_CREATE_FAILED)
+    - communication.status is "failed"
+    - The extra_lead created before the handler call survives
+    - The session is still usable after the handler returns
+    """
+    from unittest.mock import patch
+
+    from apps.api.app.execution.handlers import _handle_leads_send_communication
+    from apps.api.app.execution.models import (
+        WorkflowDefinition,
+        WorkflowRun,
+        WorkflowVersion,
+    )
+    from apps.api.app.notifications.service import NotificationService
+    from apps.api.app.products.leads.models import Lead, LeadCommunication, LeadSource
+
+    async def scenario(session: AsyncSession) -> dict[str, object]:
+        org = Organization(
+            name="Txn Recovery",
+            slug="txn-recovery",
+            organization_type=OrganizationType.TEST,
+            status=OrganizationStatus.ACTIVE,
+            timezone="UTC",
+            default_currency="USD",
+            version=1,
+        )
+        session.add(org)
+        await session.flush()
+
+        # Create unrelated durable state in the outer transaction BEFORE
+        # the handler runs.  This must survive the savepoint failure.
+        extra_source = LeadSource(
+            organization_id=org.id,
+            key="extra-txn-source",
+            source_type="form",
+            name="Extra Form",
+            status="active",
+            consent_capabilities=[],
+            raw_payload_retention_policy="30d",
+            version=1,
+        )
+        session.add(extra_source)
+        await session.flush()
+
+        extra_lead = Lead(
+            organization_id=org.id,
+            source_id=extra_source.id,
+            status="new",
+            first_name="Unrelated",
+            normalized_email="unrelated@example.invalid",
+            urgency="routine",
+            received_at=datetime.now(UTC),
+        )
+        session.add(extra_lead)
+        await session.flush()
+        extra_lead_id = extra_lead.id
+
+        wf_def = WorkflowDefinition(
+            key="leads.send_communication",
+            name="Send Lead Communication",
+            owner="leads",
+            status="active",
+        )
+        session.add(wf_def)
+        await session.flush()
+        wf_ver = WorkflowVersion(
+            definition_id=wf_def.id,
+            version=1,
+            status="approved",
+            input_schema={},
+            output_schema={},
+            step_specification=[],
+            retry_policy={},
+            timeout_seconds=300,
+        )
+        session.add(wf_ver)
+        await session.flush()
+        wf_run = WorkflowRun(
+            organization_id=org.id,
+            workflow_version_id=wf_ver.id,
+            status="queued",
+            trigger_type="test",
+            idempotency_key=f"p5-txn-run-{uuid4().hex[:12]}",
+            request_hash="test-txn-hash",
+            input_document={},
+            correlation_id="p5-txn-test",
+        )
+        session.add(wf_run)
+        await session.flush()
+
+        source = LeadSource(
+            organization_id=org.id,
+            key="test-txn-source",
+            source_type="form",
+            name="Test Form",
+            status="active",
+            consent_capabilities=[],
+            raw_payload_retention_policy="30d",
+            version=1,
+        )
+        session.add(source)
+        await session.flush()
+
+        lead = Lead(
+            organization_id=org.id,
+            source_id=source.id,
+            status="new",
+            first_name="Test",
+            normalized_email="test@example.invalid",
+            urgency="routine",
+            received_at=datetime.now(UTC),
+        )
+        session.add(lead)
+        await session.flush()
+
+        comm = LeadCommunication(
+            organization_id=org.id,
+            lead_id=lead.id,
+            direction="outbound",
+            channel="email",
+            status="planned",
+            message_reference="test-txn-ref",
+            workflow_run_id=wf_run.id,
+            idempotency_key=f"p5-txn-comm-{uuid4().hex[:12]}",
+        )
+        session.add(comm)
+        await session.flush()
+
+        # ── Force notification failure inside the savepoint ────────────
+        # Monkey-patch add_delivery to raise; the savepoint will roll back,
+        # but the outer transaction must remain clean.
+
+        async def _raise_delivery(*args: object, **kwargs: object) -> None:
+            raise RuntimeError("simulated notification delivery failure")
+
+        with patch.object(NotificationService, "add_delivery", _raise_delivery):
+            outcome = await _handle_leads_send_communication(
+                session,
+                organization_id=org.id,
+                location_id=None,
+                input_document={"communication_id": str(comm.id)},
+                correlation_id="p5-txn-test",
+            )
+        await session.refresh(comm)
+
+        # ── Assertions ─────────────────────────────────────────────────
+
+        # 1. Handler reports failure, not poison.
+        assert outcome.result == "retryable_failure", (
+            f"Expected retryable_failure, got {outcome.result}"
+        )
+        assert outcome.safe_error == "NOTIFICATION_CREATE_FAILED"
+
+        # 2. Communication marked failed in the outer transaction.
+        assert comm.status == "failed", f"Expected comm.status='failed', got '{comm.status}'"
+
+        # 3. Unrelated state must survive the savepoint failure.
+        extra = await session.get(Lead, extra_lead_id)
+        assert extra is not None, "Unrelated lead must survive savepoint rollback"
+        assert extra.first_name == "Unrelated"
+
+        # 4. Session is still usable — we can create new rows after the failure.
+        post_fail_lead = Lead(
+            organization_id=org.id,
+            source_id=source.id,
+            status="new",
+            first_name="PostFailure",
+            normalized_email="post@example.invalid",
+            urgency="routine",
+            received_at=datetime.now(UTC),
+        )
+        session.add(post_fail_lead)
+        await session.flush()
+        assert post_fail_lead.id is not None, (
+            "Session must be usable after handler savepoint failure"
+        )
+
+        return {
+            "outcome_result": outcome.result,
+            "safe_error": outcome.safe_error,
+            "communication_status": comm.status,
+            "extra_lead_survived": extra is not None,
+            "session_usable_after_failure": post_fail_lead.id is not None,
+        }
+
+    result = run_db(postgresql_test_url, scenario)
+
+    assert result["outcome_result"] == "retryable_failure"
+    assert result["safe_error"] == "NOTIFICATION_CREATE_FAILED"
+    assert result["communication_status"] == "failed"
+    assert result["extra_lead_survived"] is True
+    assert result["session_usable_after_failure"] is True
 
 
 # ---------------------------------------------------------------------------
@@ -947,9 +1153,7 @@ def test_service_create_and_list_schedule(
             timezone="America/Chicago",
             next_run_at=next_run,
         )
-        schedule = await svc.create_schedule(
-            session, org.id, cmd, correlation_id="svc-test"
-        )
+        schedule = await svc.create_schedule(session, org.id, cmd, correlation_id="svc-test")
 
         schedules = await svc.list_schedules(session, org.id)
         return {

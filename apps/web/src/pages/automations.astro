@@ -9,8 +9,7 @@ import "../styles/global.css";
     ><meta charset="UTF-8" /><meta
       name="viewport"
       content="width=device-width, initial-scale=1"
-    /><meta name="description" content="LILOs Automations workspace" /><title
-    >
+    /><meta name="description" content="LILOs Automations workspace" /><title>
       Automations · LILOs
     </title></head
   >
@@ -48,20 +47,30 @@ import "../styles/global.css";
         </div>
 
         <!-- Workflow catalog -->
-        <section aria-labelledby="automations-workflows-title" style="margin-bottom: var(--space-8);">
+        <section
+          aria-labelledby="automations-workflows-title"
+          style="margin-bottom: var(--space-8);"
+        >
           <div class="section-heading">
             <div>
               <p class="eyebrow">Workflows</p>
               <h2 id="automations-workflows-title">Automation catalog</h2>
             </div>
           </div>
-          <div id="workflow-catalog" class="grid grid--3col" style="--grid-min: 280px;">
+          <div
+            id="workflow-catalog"
+            class="grid grid--3col"
+            style="--grid-min: 280px;"
+          >
             <p class="text-sm muted">Loading catalog…</p>
           </div>
         </section>
 
         <!-- Schedules -->
-        <section aria-labelledby="automations-schedules-title" style="margin-bottom: var(--space-8);">
+        <section
+          aria-labelledby="automations-schedules-title"
+          style="margin-bottom: var(--space-8);"
+        >
           <div class="section-heading">
             <div>
               <p class="eyebrow">Schedules</p>
@@ -125,14 +134,20 @@ import "../styles/global.css";
           running: '<span class="badge badge--info">Running</span>',
           queued: '<span class="badge badge--info">Queued</span>',
           failed: '<span class="badge badge--danger">Failed</span>',
-          dead_lettered: '<span class="badge badge--danger">Dead-lettered</span>',
+          dead_lettered:
+            '<span class="badge badge--danger">Dead-lettered</span>',
           retry_scheduled: '<span class="badge badge--warning">Retrying</span>',
           escalated: '<span class="badge badge--danger">Escalated</span>',
-          cancelled_workflow: '<span class="badge badge--muted">Cancelled</span>',
-          waiting_approval: '<span class="badge badge--warning">Awaiting Approval</span>',
-          not_persisted: '<span class="badge badge--muted">Not activated</span>',
+          cancelled_workflow:
+            '<span class="badge badge--muted">Cancelled</span>',
+          waiting_approval:
+            '<span class="badge badge--warning">Awaiting Approval</span>',
+          not_persisted:
+            '<span class="badge badge--muted">Not activated</span>',
         };
-        return mapping[status] ?? `<span class="badge badge--muted">${status}</span>`;
+        return (
+          mapping[status] ?? `<span class="badge badge--muted">${status}</span>`
+        );
       }
 
       function formatTime(iso: string | null): string {
@@ -169,7 +184,8 @@ import "../styles/global.css";
       function renderCatalog(items: WorkflowTypeEntry[]): void {
         const container = document.getElementById("workflow-catalog")!;
         if (items.length === 0) {
-          container.innerHTML = '<p class="text-sm muted">No workflow types registered.</p>';
+          container.innerHTML =
+            '<p class="text-sm muted">No workflow types registered.</p>';
           return;
         }
         container.innerHTML = items

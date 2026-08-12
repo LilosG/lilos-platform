@@ -61,9 +61,7 @@ export function fetchUnmappedResources(
   organizationId: string,
   search?: string,
 ): Promise<ApiOutcome<UnmappedResource[]>> {
-  const query = search
-    ? `?search=${encodeURIComponent(search)}`
-    : "";
+  const query = search ? `?search=${encodeURIComponent(search)}` : "";
   return apiGet<UnmappedResource[]>(
     `${googleBase(organizationId)}/unmapped${query}`,
   );

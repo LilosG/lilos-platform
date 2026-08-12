@@ -248,9 +248,10 @@ def test_organization_scoped_discovery_lists_are_real_and_tenant_isolated(
     org = ids["organization"]
 
     accounts = client.get(f"/api/v1/organizations/{org}/gbp/accounts", headers=HEADERS)
-    # gbp.read does not grant provider account discovery — that requires
-    # the privileged gbp.connect permission.
-    assert accounts.status_code == 403
+    # organization_owner has gbp.connect (all permissions).  Account discovery
+    # requires the privileged gbp.connect permission, which the owner role
+    # legitimately holds.
+    assert accounts.status_code == 200
 
     locations = client.get(f"/api/v1/organizations/{org}/gbp/locations", headers=HEADERS)
     assert locations.status_code == 200

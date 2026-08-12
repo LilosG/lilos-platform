@@ -757,8 +757,5 @@ async def list_step_assignments(
     assignments = await onboarding_service.get_assignments(session, organization_id)
     return response(
         request,
-        [
-            {"step_key": a.step_key, "assigned_to": a.assigned_to}
-            for a in assignments
-        ],
+        [{"step_key": a.step_key, "assigned_to": a.assigned_to} for a in assignments],
     )
