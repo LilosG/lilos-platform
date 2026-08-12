@@ -931,7 +931,7 @@ async def _handle_gbp_upload_media(
 
     from apps.api.app.products.gbp.models import GBPAccount, GBPLocation
     from apps.api.app.products.gbp.operations_models import GBPMedia
-    from apps.api.app.products.gbp.resource_names import v4_location_name
+    from apps.api.app.products.gbp.resource_names import v4_location_parent
 
     media_id_raw = input_document.get("media_id")
     if not media_id_raw:
@@ -1010,7 +1010,7 @@ async def _handle_gbp_upload_media(
         return JobOutcome(result="retryable_failure", safe_error="TOKEN_REFRESH_FAILED")
 
     adapter = _adapter_factory()
-    location_name = v4_location_name(account.external_account_id, location.external_location_id)
+    location_name = v4_location_parent(account.external_account_id, location.external_location_id)
 
     media_item: dict[str, Any] = {
         "mediaFormat": "PHOTO",
@@ -1221,7 +1221,6 @@ async def _handle_gbp_sync(
     from sqlalchemy import select
 
     from apps.api.app.config import Settings
-    from apps.api.app.integrations.connection_service import GBPConnectionService
     from apps.api.app.products.gbp.discovery_service import GBPDiscoveryService
     from apps.api.app.products.gbp.models import GBPLocation
 
@@ -1248,19 +1247,15 @@ async def _handle_gbp_sync(
     except Exception:
         return JobOutcome(result="retryable_failure", safe_error="TOKEN_REFRESH_FAILED")
 
-    adapter = _adapter_factory()
     discovery_svc = GBPDiscoveryService()
-    connection_svc = GBPConnectionService()
     settings = Settings()
 
     try:
-        connection = await connection_svc.get_connection(session, organization_id)
         await discovery_svc.discover_and_sync(
             session,
-            adapter,
-            connection,
             settings,
             organization_id,
+            actor_id=None,
             correlation_id=correlation_id,
         )
     except Exception as exc:
