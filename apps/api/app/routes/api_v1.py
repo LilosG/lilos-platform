@@ -33,6 +33,9 @@ from apps.api.app.access_control.contracts import (
 from apps.api.app.access_control.enums import MembershipStatus, ScopeType
 from apps.api.app.access_control.repository import CatalogRepository
 from apps.api.app.access_control.service import AccessControlService
+from apps.api.app.administration.catalog import PRODUCT_CATALOG
+from apps.api.app.administration.enums import NOT_SELECTED_ENTITLEMENT_STATUSES
+from apps.api.app.administration.service import AdministrationService
 from apps.api.app.authentication.contracts import AuthenticatedPrincipalResponse
 from apps.api.app.authentication.dependencies import Authenticated, get_authenticated_principal
 from apps.api.app.authentication.enums import AssuranceLevel
@@ -102,10 +105,6 @@ from apps.api.app.profiles.contracts import (
 )
 from apps.api.app.profiles.service import LocationProfileService, OrganizationProfileService
 from apps.api.app.schemas import ErrorCategory, ResponseMeta
-
-from apps.api.app.administration.catalog import PRODUCT_CATALOG
-from apps.api.app.administration.enums import NOT_SELECTED_ENTITLEMENT_STATUSES
-from apps.api.app.administration.service import AdministrationService
 
 administration_service = AdministrationService()
 

@@ -112,6 +112,7 @@ class OrganizationService:
             billing_email=command.billing_email,
             external_reference=command.external_reference,
             onboarding_status=command.onboarding_status,
+            onboarding_mode=command.onboarding_mode,
             industry_id=industry.id if industry is not None else None,
             version=1,
         )
@@ -136,6 +137,7 @@ class OrganizationService:
                     "organization_type": organization.organization_type.value,
                     "status": organization.status.value,
                     "version": organization.version,
+                    "onboarding_mode": organization.onboarding_mode,
                     "industry_id": (
                         str(organization.industry_id)
                         if organization.industry_id is not None

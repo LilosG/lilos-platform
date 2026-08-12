@@ -90,6 +90,7 @@ class Organization(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     billing_email: Mapped[str | None] = mapped_column(String(254))
     external_reference: Mapped[str | None] = mapped_column(String(200))
     onboarding_status: Mapped[str | None] = mapped_column(String(64))
+    onboarding_mode: Mapped[str | None] = mapped_column(String(16), nullable=True, default=None)
     industry_id: Mapped[UUID | None] = mapped_column(
         PostgreSQLUUID(as_uuid=True),
         ForeignKey(

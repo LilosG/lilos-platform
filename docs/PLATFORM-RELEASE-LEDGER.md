@@ -38,7 +38,7 @@ The **Implementation** column uses the formal status vocabulary. The **Live acce
 | Agency operating layer | IMPLEMENTED_NOT_ACCEPTED | n/a | IMPLEMENTED_NOT_ACCEPTED | partial | partial | Dashboard renders KPIs + attention + work from real data; needs first-viewport convergence per Packet 4/6. Admin navigation role-aware (Packet 1). |
 | Client workspace | IMPLEMENTED_NOT_ACCEPTED | n/a | IMPLEMENTED_NOT_ACCEPTED | partial | partial | **Packet 1: Admin nav hidden for clients; unauthorized states on /administration, /onboarding.** Live client-role scoping still unverified without runtime access. |
 | Entitlement-aware navigation | IMPLEMENTED_NOT_ACCEPTED | n/a | IMPLEMENTED_NOT_ACCEPTED | n/a | n/a | **Packet 1: Navigation role-aware via `_updateAdminNavigation()` checking platform admin status + membership type.** Backend authorization enforces per-request. |
-| Unified onboarding | IMPLEMENTED_NOT_ACCEPTED | partial | IMPLEMENTED_NOT_ACCEPTED | n/a | readiness partial | `OnboardingOrchestrationService` composes 8 steps + per-product readiness. Managed/Co-Managed/Self-Service responsibility modes not yet differentiated in UI. |
+| Unified onboarding | IMPLEMENTED_NOT_ACCEPTED | partial | IMPLEMENTED_NOT_ACCEPTED | n/a | readiness partial | **Packet 2: Three-mode responsibility contract implemented.** `OnboardingOrchestrationService` extended with `managed`/`co_managed`/`self_service` modes over ONE engine. Co-managed step assignments persisted in `onboarding_step_assignments`. Client-facing onboarding API at `/api/v1/client/onboarding/`. Activation fail-closed in both agency and client paths. Frontend mode selector + co-managed assignment controls. Deterministic NULL→managed legacy contract. Auditor review pending. |
 | Google connection lifecycle | IMPLEMENTED_NOT_ACCEPTED | partial | IMPLEMENTED_NOT_ACCEPTED | sync partial | health partial | `GBPConnectionService` handles full OAuth lifecycle with incremental scopes. PR #10 repaired reconnect logic. Live acceptance: healthy connection must not re-prompt OAuth (unverified). |
 | Google provider resource mapping | IMPLEMENTED_NOT_ACCEPTED | partial | IMPLEMENTED_NOT_ACCEPTED | n/a | n/a | **Packet 1: Unmapped discovery removed from /gbp.** Mapping queue belongs in privileged Integrations workflow (Packet 3). API routes preserved. |
 | GBP operational product | IMPLEMENTED_NOT_ACCEPTED | partial | IMPLEMENTED_NOT_ACCEPTED | sync/media/post workflows partial | partial | **Packet 1: GBP API defaults to confirmed-only for gbp.read; frontend simplified.** Readiness engine uses integration_connected check for non-blocking LOCATION_PROFILE_MISSING. Provider writes fail-closed by default. **Deferred: list_accounts endpoint returns all accounts under gbp.read (accounts are parent entities, not locations).** |
@@ -128,6 +128,49 @@ The **Implementation** column uses the formal status vocabulary. The **Live acce
 - Deferred findings: `list_accounts` endpoint returns all accounts under `gbp.read` (accounts are parent entities, not location data; noted for Packet 3)
 - Remaining blockers: Vercel rate-limit (operational), Render parity unverified, live client-role scoping unverified without runtime access
 - Accepted: yes
+
+### Packet 2 — Unified Onboarding
+
+- Branch / commit: `release/platform-consolidation` / base `3c653e27c02b4af86b3867c75cda45533f15961f`
+- Auditor result: PENDING (not yet audited)
+- Principal result: NOT YET ACCEPTED (awaiting auditor review)
+- Focused checks:
+  - TypeScript typecheck: 0 errors
+  - Python mypy: 0 errors (13 source files checked)
+  - Ruff: 0 errors
+  - Prettier: formatted
+  - vitest: 123 passed (all frontend unit tests)
+  - pytest unit: 3 passed (NULL resolution, mode resolution)
+  - pytest integration: 8 tests defined (require LILOS_TEST_DATABASE_URL)
+- Ledger rows changed: Unified onboarding
+- Architecture delivered:
+  1. **OnboardingResponsibilityMode** — `managed`, `co_managed`, `self_service` enum over ONE engine.
+  2. **Deterministic legacy contract** — NULL `onboarding_mode` resolves to `managed`.
+  3. **Persisted co-managed assignments** — `onboarding_step_assignments` table with org-scoped unique constraint.
+  4. **Client onboarding API** — `/api/v1/client/onboarding/` routes with proper PlatformAdministrator + membership authorization.
+  5. **Client state filtering** — `get_client_state()` filters steps by mode + persisted assignments.
+  6. **Self-service org creation** — authenticated users can create/bootstrap their own org with `self_service` mode.
+  7. **Activation fail-closed** — both agency and client activation routes use `OnboardingOrchestrationService.get_state()` as authoritative source.
+  8. **Frontend** — mode selector in create-org form, mode badge in workspace, co-managed step assignment dropdowns.
+- Changed files (14 files):
+  - `migrations/versions/20260812_0002_onboarding_responsibility_mode.py` (new)
+  - `apps/api/app/onboarding/models.py` (new — `OnboardingStepAssignmentRecord`)
+  - `apps/api/app/onboarding/contracts.py` (extended)
+  - `apps/api/app/onboarding/service.py` (rewritten)
+  - `apps/api/app/onboarding/__init__.py` (exports updated)
+  - `apps/api/app/routes/client_onboarding.py` (new)
+  - `apps/api/app/routes/platform_administration.py` (extended)
+  - `apps/api/app/main.py` (router registered)
+  - `apps/api/app/organizations/models.py` (+`onboarding_mode` column)
+  - `apps/api/app/organizations/contracts.py` (+`onboarding_mode` fields)
+  - `apps/api/app/organizations/service.py` (passes through `onboarding_mode`)
+  - `apps/web/src/lib/platform-admin.ts` (new types + functions)
+  - `apps/web/src/pages/onboarding.astro` (mode selector, assignments UI)
+  - `tests/python/onboarding/test_service.py` (extended: 3 unit + 8 integration)
+- Cross-workstream: No Integration (`apps/api/app/integrations/`) or Automation (`apps/api/app/execution/`,`worker/`,`scheduler/`) files modified.
+- Deferred: Co-managed step assignment UI needs live DB for integration tests; mode-change dropdown on workspace header not yet added (HTML badge exists, no interactive mode-change control yet).
+- Remaining blockers: Auditor review pending. Integration tests require `LILOS_TEST_DATABASE_URL`.
+- Accepted: no (auditor pending)
 
 ---
 

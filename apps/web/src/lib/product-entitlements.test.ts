@@ -45,6 +45,9 @@ describe("entitlement effectiveness mirrors the backend OAuth gate", () => {
     expect(isEffectiveEntitlement("not_enabled")).toBe(false);
     expect(isEffectiveEntitlement("archived")).toBe(false);
     expect(isEffectiveEntitlement("suspended")).toBe(false);
+    // suspended IS selected (the entitlement row exists; the product is in
+    // the portfolio but operationally paused). It is selected AND not effective.
+    expect(isSelectedEntitlement("suspended")).toBe(true);
   });
 
   it("does not invent client-side effective statuses the backend does not recognize", () => {
@@ -61,9 +64,9 @@ describe("entitlement effectiveness mirrors the backend OAuth gate", () => {
     expect(SELECTED_ENTITLEMENT_STATUSES.has("active")).toBe(true);
     expect(SELECTED_ENTITLEMENT_STATUSES.has("paused")).toBe(true);
     expect(SELECTED_ENTITLEMENT_STATUSES.has("degraded")).toBe(true);
+    expect(SELECTED_ENTITLEMENT_STATUSES.has("suspended")).toBe(true);
     expect(SELECTED_ENTITLEMENT_STATUSES.has("not_enabled")).toBe(false);
     expect(SELECTED_ENTITLEMENT_STATUSES.has("archived")).toBe(false);
-    expect(SELECTED_ENTITLEMENT_STATUSES.has("suspended")).toBe(false);
   });
 });
 

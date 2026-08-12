@@ -14,6 +14,7 @@ from apps.api.app.logging_config import configure_logging
 from apps.api.app.middleware import CorrelationIdMiddleware
 from apps.api.app.routes.administration import router as administration_router
 from apps.api.app.routes.api_v1 import router as api_v1_router
+from apps.api.app.routes.client_onboarding import router as client_onboarding_router
 from apps.api.app.routes.content import router as content_router
 from apps.api.app.routes.gbp import organization_router as gbp_organization_router
 from apps.api.app.routes.gbp import router as gbp_router
@@ -92,6 +93,7 @@ def create_app(
     application.include_router(seo_router)
     application.include_router(insights_router)
     application.include_router(platform_administration_router)
+    application.include_router(client_onboarding_router)
     application.include_router(integrations_router)
     application.include_router(integrations_callback_router)
     application.include_router(github_app_router)

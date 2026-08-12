@@ -84,6 +84,7 @@ export type CreateOrganizationInput = {
   website_url?: string | null;
   primary_contact_name?: string | null;
   primary_contact_email?: string | null;
+  onboarding_mode?: OnboardingResponsibilityMode | null;
 };
 
 export type CreateLocationInput = {
@@ -150,6 +151,9 @@ export type OnboardingStepKey =
   | "services"
   | "users";
 
+export type OnboardingResponsibilityMode =
+  "managed" | "co_managed" | "self_service";
+
 export type OnboardingStep = {
   key: OnboardingStepKey;
   label: string;
@@ -176,6 +180,7 @@ export type OnboardingState = {
   organization_name: string;
   organization_status: OrganizationStatus;
   organization_version: number;
+  responsibility_mode: OnboardingResponsibilityMode | null;
   steps: OnboardingStep[];
   products: OnboardingProductStatus[];
   blockers: string[];
@@ -255,6 +260,7 @@ export const SELECTED_ENTITLEMENT_STATUSES: ReadonlySet<EntitlementStatus> =
     "active",
     "paused",
     "degraded",
+    "suspended",
   ]);
 
 export type CreateProductEntitlementInput = {
@@ -515,5 +521,49 @@ export function transitionProductEntitlement(
         expected_version: command.expected_version,
       },
     },
+  );
+}
+
+export type SetOnboardingModeInput = {
+  mode: OnboardingResponsibilityMode;
+  expected_version: number;
+};
+
+export function setOnboardingMode(
+  organizationId: string,
+  command: SetOnboardingModeInput,
+): Promise<ApiOutcome<AdminOrganization>> {
+  return apiRequest<AdminOrganization>(
+    `${base}/organizations/${organizationId}/onboarding-mode`,
+    { method: "POST", body: command },
+  );
+}
+
+export type StepAssignmentInput = {
+  step_key: string;
+  assigned_to: "agency" | "client";
+};
+
+export type StepAssignment = {
+  step_key: string;
+  assigned_to: string;
+  assigned_at?: string;
+};
+
+export function assignOnboardingStep(
+  organizationId: string,
+  command: StepAssignmentInput,
+): Promise<ApiOutcome<StepAssignment>> {
+  return apiRequest<StepAssignment>(
+    `${base}/organizations/${organizationId}/onboarding-assign`,
+    { method: "POST", body: command },
+  );
+}
+
+export function fetchStepAssignments(
+  organizationId: string,
+): Promise<ApiOutcome<StepAssignment[]>> {
+  return apiGet<StepAssignment[]>(
+    `${base}/organizations/${organizationId}/onboarding-assign`,
   );
 }
