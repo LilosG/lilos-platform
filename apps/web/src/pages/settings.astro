@@ -653,6 +653,36 @@ import "../styles/global.css";
         domainContent.replaceChildren(...sections);
       }
 
+      function _renderFactValue(
+        container: HTMLElement,
+        factKey: string,
+        value: unknown,
+      ): void {
+        if (factKey === "business.hours") {
+          const rows = formatBusinessHoursRows(value);
+          if (rows && rows.length > 0) {
+            for (const row of rows) {
+              const rowEl = document.createElement("div");
+              rowEl.style.display = "flex";
+              rowEl.style.gap = "1.5rem";
+              rowEl.style.padding = "0.125rem 0";
+              const daySpan = document.createElement("span");
+              daySpan.style.minWidth = "7rem";
+              daySpan.style.fontWeight = "500";
+              daySpan.textContent = row.dayLabel;
+              const timeSpan = document.createElement("span");
+              timeSpan.textContent = row.timeLabel;
+              rowEl.append(daySpan, timeSpan);
+              container.append(rowEl);
+            }
+            return;
+          }
+        }
+        const p = document.createElement("p");
+        p.textContent = formatBusinessFactValue(value);
+        container.append(p);
+      }
+
       function _buildPolicySection(
         policyResult:
           | import("../lib/administration").ApiOutcome<
@@ -813,33 +843,7 @@ import "../styles/global.css";
             }
 
             const detail = document.createElement("div");
-            if (fact.fact_key === "business.hours") {
-              const rows = formatBusinessHoursRows(fact.value);
-              if (rows && rows.length > 0) {
-                for (const row of rows) {
-                  const rowEl = document.createElement("div");
-                  rowEl.style.display = "flex";
-                  rowEl.style.gap = "1.5rem";
-                  rowEl.style.padding = "0.125rem 0";
-                  const daySpan = document.createElement("span");
-                  daySpan.style.minWidth = "7rem";
-                  daySpan.style.fontWeight = "500";
-                  daySpan.textContent = row.dayLabel;
-                  const timeSpan = document.createElement("span");
-                  timeSpan.textContent = row.timeLabel;
-                  rowEl.append(daySpan, timeSpan);
-                  detail.append(rowEl);
-                }
-              } else {
-                const p = document.createElement("p");
-                p.textContent = formatBusinessFactValue(fact.value);
-                detail.append(p);
-              }
-            } else {
-              const p = document.createElement("p");
-              p.textContent = formatBusinessFactValue(fact.value);
-              detail.append(p);
-            }
+            _renderFactValue(detail, fact.fact_key, fact.value);
 
             const scopeInfo = document.createElement("span");
             scopeInfo.className = "text-xs muted";
@@ -939,14 +943,14 @@ import "../styles/global.css";
 
           if (candidate.location_id) {
             const locBadge = document.createElement("span");
-            locBadge.className = "badge badge--neutral";
+            locBadge.className = "text-xs muted";
             locBadge.textContent =
               locationNames.get(candidate.location_id) || "Location";
             hdr.append(locBadge);
           }
 
-          const detail = document.createElement("p");
-          detail.textContent = formatBusinessFactValue(candidate.value);
+          const detail = document.createElement("div");
+          _renderFactValue(detail, candidate.fact_key, candidate.value);
           info.append(hdr, detail);
 
           const meta = document.createElement("span");

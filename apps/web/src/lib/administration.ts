@@ -92,7 +92,8 @@ const FACT_SOURCE_LABELS: Record<string, string> = {
 };
 
 export function factSourceLabel(source: string): string {
-  return FACT_SOURCE_LABELS[source] ?? source;
+  if (!source) return "Business data";
+  return FACT_SOURCE_LABELS[source] ?? "Business data";
 }
 
 export function formatBusinessFactValue(value: unknown): string {

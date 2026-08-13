@@ -62,8 +62,8 @@ const MIDNIGHT_MINUTES = 24 * 60;
 
 function parseTime(raw: string | GbpTimeOfDay): number | null {
   if (typeof raw === "string") {
+    if (!/^\d{1,2}:\d{2}$/.test(raw)) return null;
     const parts = raw.split(":");
-    if (parts.length < 2) return null;
     const hours = Number.parseInt(parts[0], 10);
     const minutes = Number.parseInt(parts[1], 10);
     if (Number.isNaN(hours) || Number.isNaN(minutes)) return null;
@@ -87,7 +87,7 @@ function parseTime(raw: string | GbpTimeOfDay): number | null {
   if (hours < 0 || hours > 23) return null;
   if (minutes < 0 || minutes > 59) return null;
   if (seconds < 0 || seconds > 59) return null;
-  if (nanos < 0) return null;
+  if (nanos < 0 || nanos > 999_999_999) return null;
 
   return hours * 60 + minutes;
 }

@@ -309,3 +309,130 @@ describe("formatAmPm midnight handling", () => {
     expect(result).not.toContain("12:00 PM");
   });
 });
+
+describe("formatBusinessHoursRows for pending candidates", () => {
+  it("returns structured rows for production-style hours, never raw schema keys", () => {
+    const hours = {
+      periods: [
+        {
+          openDay: "MONDAY",
+          closeDay: "MONDAY",
+          openTime: { hours: 8 },
+          closeTime: { hours: 19 },
+        },
+        {
+          openDay: "TUESDAY",
+          closeDay: "TUESDAY",
+          openTime: { hours: 8 },
+          closeTime: { hours: 19 },
+        },
+        {
+          openDay: "WEDNESDAY",
+          closeDay: "WEDNESDAY",
+          openTime: { hours: 8 },
+          closeTime: { hours: 19 },
+        },
+        {
+          openDay: "THURSDAY",
+          closeDay: "THURSDAY",
+          openTime: { hours: 8 },
+          closeTime: { hours: 19 },
+        },
+        {
+          openDay: "FRIDAY",
+          closeDay: "FRIDAY",
+          openTime: { hours: 8 },
+          closeTime: { hours: 19 },
+        },
+      ],
+    };
+
+    const rows = formatBusinessHoursRows(hours);
+    expect(rows).not.toBeNull();
+    expect(rows!.length).toBe(2);
+
+    const text = JSON.stringify(rows);
+    expect(text).not.toContain("OpenDay");
+    expect(text).not.toContain("CloseDay");
+    expect(text).not.toContain("OpenTime");
+    expect(text).not.toContain("CloseTime");
+    expect(text).not.toContain("Hours");
+    expect(text).not.toContain("Periods");
+    expect(text).not.toContain("MONDAY");
+    expect(text).not.toContain("TUESDAY");
+    expect(text).not.toContain("WEDNESDAY");
+    expect(text).not.toContain("THURSDAY");
+    expect(text).not.toContain("FRIDAY");
+
+    expect(rows![0]).toEqual({
+      dayLabel: "Mon\u2013Fri",
+      timeLabel: "8:00 AM\u20137:00 PM",
+    });
+    expect(rows![1]).toEqual({
+      dayLabel: "Sat\u2013Sun",
+      timeLabel: "Closed",
+    });
+  });
+});
+
+describe("strict malformed time rejection", () => {
+  it("rejects string times with non-numeric characters", () => {
+    expect(
+      formatBusinessHours({
+        periods: [
+          {
+            openDay: "MONDAY",
+            closeDay: "MONDAY",
+            openTime: "08x:00",
+            closeTime: "17:00",
+          },
+        ],
+      }),
+    ).toBe("\u2014");
+  });
+
+  it("rejects string times with trailing junk", () => {
+    expect(
+      formatBusinessHours({
+        periods: [
+          {
+            openDay: "MONDAY",
+            closeDay: "MONDAY",
+            openTime: "8:30junk",
+            closeTime: "17:00",
+          },
+        ],
+      }),
+    ).toBe("\u2014");
+  });
+
+  it("rejects overly large nanos values", () => {
+    expect(
+      formatBusinessHours({
+        periods: [
+          {
+            openDay: "MONDAY",
+            closeDay: "MONDAY",
+            openTime: { hours: 9, nanos: 1_000_000_000 },
+            closeTime: { hours: 17 },
+          },
+        ],
+      }),
+    ).toBe("\u2014");
+  });
+
+  it("rejects negative nanos values", () => {
+    expect(
+      formatBusinessHours({
+        periods: [
+          {
+            openDay: "MONDAY",
+            closeDay: "MONDAY",
+            openTime: { hours: 9, nanos: -1 },
+            closeTime: { hours: 17 },
+          },
+        ],
+      }),
+    ).toBe("\u2014");
+  });
+});
