@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { businessFactLabel, formatBusinessFactValue } from "./administration";
+import {
+  businessFactLabel,
+  factSourceLabel,
+  formatBusinessFactValue,
+} from "./administration";
 
 describe("business fact presentation", () => {
   it("uses operator-facing labels for governed fact keys", () => {
@@ -28,5 +32,25 @@ describe("business fact presentation", () => {
     expect(formatBusinessFactValue(["Licensed", "Bonded"])).toBe(
       "Licensed, Bonded",
     );
+  });
+});
+
+describe("factSourceLabel", () => {
+  it("produces friendly labels for known sources", () => {
+    expect(factSourceLabel("gbp_profile_snapshot")).toBe(
+      "Google Business Profile",
+    );
+    expect(factSourceLabel("organization_profile")).toBe("Business profile");
+    expect(factSourceLabel("location")).toBe("Location record");
+    expect(factSourceLabel("organization_domain")).toBe("Domain record");
+  });
+
+  it("never leaks raw internal identifiers", () => {
+    expect(factSourceLabel("internal_system_x")).toBe("Business data");
+    expect(factSourceLabel("some_unknown_source")).toBe("Business data");
+  });
+
+  it("handles empty source safely", () => {
+    expect(factSourceLabel("")).toBe("Business data");
   });
 });

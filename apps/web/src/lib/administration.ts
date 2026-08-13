@@ -1,5 +1,7 @@
 import { apiGet, apiRequest, type ApiOutcome } from "./api-client";
 
+export type { ApiOutcome };
+
 export type AdministeredProduct = {
   /**
    * Product catalog row id (UUID). The backend `GET /products` route serializes
@@ -44,6 +46,21 @@ export type BusinessFactRevision = {
   status: string;
   revision: number;
   authority: string;
+  source?: string;
+  approved_at?: string | null;
+};
+
+export type EffectiveFact = {
+  fact_key: string;
+  revision_id: string;
+  fact_identity: string;
+  value: unknown;
+  value_type: string;
+  location_id: string | null;
+  source: string;
+  authority: string;
+  revision: number;
+  approved_at: string | null;
 };
 
 const BUSINESS_FACT_LABELS: Record<string, string> = {
@@ -63,6 +80,20 @@ export function businessFactLabel(factKey: string): string {
       .trim()
       .replace(/\b\w/g, (character) => character.toUpperCase())
   );
+}
+
+const FACT_SOURCE_LABELS: Record<string, string> = {
+  gbp_profile_snapshot: "Google Business Profile",
+  organization_profile: "Business profile",
+  location: "Location record",
+  organization_domain: "Domain record",
+  operator_entered: "Operator-entered",
+  system_derived: "System-derived",
+};
+
+export function factSourceLabel(source: string): string {
+  if (!source) return "Business data";
+  return FACT_SOURCE_LABELS[source] ?? "Business data";
 }
 
 export function formatBusinessFactValue(value: unknown): string {
@@ -267,6 +298,14 @@ export function fetchBusinessFactCandidates(
 ): Promise<ApiOutcome<BusinessFactRevision[]>> {
   return apiGet<BusinessFactRevision[]>(
     `${base(organizationId)}/business-facts/candidates`,
+  );
+}
+
+export function fetchEffectiveBusinessFacts(
+  organizationId: string,
+): Promise<ApiOutcome<EffectiveFact[]>> {
+  return apiGet<EffectiveFact[]>(
+    `${base(organizationId)}/business-facts/effective`,
   );
 }
 

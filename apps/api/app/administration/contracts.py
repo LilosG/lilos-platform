@@ -230,6 +230,21 @@ class FactResolution(Contract):
     conflicts: tuple[UUID, ...]
 
 
+class EffectiveFact(Contract):
+    """A single active governed business fact currently in effect."""
+
+    fact_key: str
+    revision_id: UUID
+    fact_identity: UUID
+    value: Any
+    value_type: str
+    location_id: UUID | None
+    source: str
+    authority: FactAuthority
+    revision: int
+    approved_at: datetime | None
+
+
 class ControlResolution(Contract):
     capability: str
     allowed: bool
