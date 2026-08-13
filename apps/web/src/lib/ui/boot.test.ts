@@ -3,13 +3,31 @@ import {
   applyShellAudience,
   applyShellPrincipal,
   applyBootResult,
+  canUsePlatformAdministration,
+  hasPlatformAdminGrant,
+  isPlatformAdmin,
+  meetsPlatformAdminRequiredAssurance,
   setPlatformNavigationVisible,
   setPlatformAdminStatus,
   setProductNavigationVisibility,
   setActiveOrganization,
   type BootRegions,
   type BootResult,
+  type PlatformAdminCapability,
 } from "./boot";
+
+const NO_ADMIN: PlatformAdminCapability = {
+  is_platform_administrator: false,
+  meets_required_assurance: false,
+};
+const GRANT_NO_ASSURANCE: PlatformAdminCapability = {
+  is_platform_administrator: true,
+  meets_required_assurance: false,
+};
+const FULL_ADMIN: PlatformAdminCapability = {
+  is_platform_administrator: true,
+  meets_required_assurance: true,
+};
 
 describe("shell presentation", () => {
   afterEach(() => vi.unstubAllGlobals());
@@ -71,7 +89,7 @@ describe("shell presentation", () => {
       querySelector: () => admin,
     });
     // Start with no platform-admin grant.
-    setPlatformAdminStatus(false);
+    setPlatformAdminStatus(NO_ADMIN);
 
     // Internal membership does NOT show Admin nav.
     applyShellAudience("internal");
@@ -86,12 +104,12 @@ describe("shell presentation", () => {
     expect(admin.hidden).toBe(true);
 
     // Platform-admin grant DOES show Admin nav.
-    setPlatformAdminStatus(true);
+    setPlatformAdminStatus(FULL_ADMIN);
     applyShellAudience("internal");
     expect(admin.hidden).toBe(false);
 
     // Revoking platform-admin hides it again.
-    setPlatformAdminStatus(false);
+    setPlatformAdminStatus(NO_ADMIN);
     applyShellAudience("internal");
     expect(admin.hidden).toBe(true);
   });
@@ -112,7 +130,7 @@ describe("setProductNavigationVisibility", () => {
       },
     });
     // Client user — only entitled to GBP.
-    setPlatformAdminStatus(false);
+    setPlatformAdminStatus(NO_ADMIN);
     setProductNavigationVisibility(new Set(["gbp"]));
 
     expect(gbpItem.hidden).toBe(false);
@@ -134,7 +152,7 @@ describe("setProductNavigationVisibility", () => {
       },
     });
     // Platform admin — all products should be revealed.
-    setPlatformAdminStatus(true);
+    setPlatformAdminStatus(FULL_ADMIN);
     setProductNavigationVisibility(new Set([]));
 
     expect(gbpItem.hidden).toBe(false);
@@ -152,7 +170,7 @@ describe("setProductNavigationVisibility", () => {
       },
     });
     // Client user — no entitled products (simulating API failure).
-    setPlatformAdminStatus(false);
+    setPlatformAdminStatus(NO_ADMIN);
     setProductNavigationVisibility(new Set([]));
 
     expect(gbpItem.hidden).toBe(true);
@@ -271,5 +289,106 @@ describe("setActiveOrganization", () => {
     expect(name.textContent).toBe("Wheyland Electric");
     expect(stored.get("selected_org_id")).toBe("wheyland-id");
     expect(replacedUrl).toBe("");
+  });
+});
+
+describe("platform-admin capability model", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    setPlatformAdminStatus(NO_ADMIN);
+  });
+
+  function stubDocument(): void {
+    vi.stubGlobal("document", {
+      getElementById: () => null,
+      querySelector: () => null,
+    });
+  }
+
+  it("returns false for all capabilities by default before boot status is set", () => {
+    stubDocument();
+    expect(isPlatformAdmin()).toBe(false);
+    expect(hasPlatformAdminGrant()).toBe(false);
+    expect(meetsPlatformAdminRequiredAssurance()).toBe(false);
+    expect(canUsePlatformAdministration()).toBe(false);
+  });
+
+  it("no grant: grant=false, assurance irrelevant, usable=false", () => {
+    stubDocument();
+    setPlatformAdminStatus(NO_ADMIN);
+    expect(hasPlatformAdminGrant()).toBe(false);
+    expect(meetsPlatformAdminRequiredAssurance()).toBe(false);
+    expect(canUsePlatformAdministration()).toBe(false);
+  });
+
+  it("grant + insufficient assurance: grant=true, assurance=false, usable=false", () => {
+    stubDocument();
+    setPlatformAdminStatus(GRANT_NO_ASSURANCE);
+    expect(hasPlatformAdminGrant()).toBe(true);
+    expect(meetsPlatformAdminRequiredAssurance()).toBe(false);
+    expect(canUsePlatformAdministration()).toBe(false);
+  });
+
+  it("grant + sufficient assurance: usable=true", () => {
+    stubDocument();
+    setPlatformAdminStatus(FULL_ADMIN);
+    expect(hasPlatformAdminGrant()).toBe(true);
+    expect(meetsPlatformAdminRequiredAssurance()).toBe(true);
+    expect(canUsePlatformAdministration()).toBe(true);
+  });
+
+  it("capability resets correctly when boot status changes", () => {
+    stubDocument();
+    setPlatformAdminStatus(FULL_ADMIN);
+    expect(canUsePlatformAdministration()).toBe(true);
+    setPlatformAdminStatus(GRANT_NO_ASSURANCE);
+    expect(canUsePlatformAdministration()).toBe(false);
+    expect(hasPlatformAdminGrant()).toBe(true);
+    setPlatformAdminStatus(NO_ADMIN);
+    expect(canUsePlatformAdministration()).toBe(false);
+    expect(hasPlatformAdminGrant()).toBe(false);
+  });
+
+  it("membership type does not affect any capability value", () => {
+    const admin = element(false);
+    vi.stubGlobal("document", {
+      getElementById: () => null,
+      querySelector: () => admin,
+    });
+    // Start clean: no platform-admin grant.
+    setPlatformAdminStatus(NO_ADMIN);
+    expect(canUsePlatformAdministration()).toBe(false);
+
+    // Internal membership alone does NOT imply any capability.
+    applyShellAudience("internal");
+    expect(hasPlatformAdminGrant()).toBe(false);
+    expect(canUsePlatformAdministration()).toBe(false);
+
+    // Partner membership alone does NOT imply any capability.
+    applyShellAudience("partner");
+    expect(canUsePlatformAdministration()).toBe(false);
+
+    // Client membership alone does NOT imply any capability.
+    applyShellAudience("client");
+    expect(canUsePlatformAdministration()).toBe(false);
+
+    // Full platform-admin capability is authoritative, independent of membership.
+    setPlatformAdminStatus(FULL_ADMIN);
+    applyShellAudience("client");
+    expect(canUsePlatformAdministration()).toBe(true);
+  });
+
+  it("low-assurance grant yields grant visibility but not usable capability (MFA path)", () => {
+    stubDocument();
+    setPlatformAdminStatus(GRANT_NO_ASSURANCE);
+    // Admin navigation (grant-based) is visible…
+    expect(isPlatformAdmin()).toBe(true);
+    // …but the privileged Settings capability is NOT usable until MFA.
+    expect(canUsePlatformAdministration()).toBe(false);
+    // The caller has the grant and lacks assurance: the frontend must
+    // show the MFA path instead of a dead-end operator control.
+    expect(
+      hasPlatformAdminGrant() && !meetsPlatformAdminRequiredAssurance(),
+    ).toBe(true);
   });
 });

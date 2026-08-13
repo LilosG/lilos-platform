@@ -1044,10 +1044,14 @@ import "../styles/global.css";
         currentPrincipal = principal.data;
 
         const adminStatus = await fetchMyPlatformAdministratorStatus();
-        setPlatformAdminStatus(
-          adminStatus.kind === "ok" &&
+        setPlatformAdminStatus({
+          is_platform_administrator:
+            adminStatus.kind === "ok" &&
             adminStatus.data.is_platform_administrator,
-        );
+          meets_required_assurance:
+            adminStatus.kind === "ok" &&
+            adminStatus.data.meets_required_assurance,
+        });
         if (
           adminStatus.kind === "ok" &&
           adminStatus.data.is_platform_administrator

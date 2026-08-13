@@ -185,11 +185,16 @@ import "../styles/global.css";
         emptyState,
         errorAlert,
         describeFailure,
+        hasPlatformAdminGrant,
+        meetsPlatformAdminRequiredAssurance,
+        canUsePlatformAdministration,
         type BootRegions,
       } from "../lib/ui";
 
       let organizationId = "";
       let isAgencyWorkspace = false;
+      let canOperateClientSettings = false;
+      let _needsMfaForOperatorControls = false;
 
       const regions: BootRegions = {
         notConfigured: document.getElementById("boot-not-configured")!,
@@ -672,8 +677,10 @@ import "../styles/global.css";
               policyBody.append(errorAlert(describeFailure(result, "Policy")));
             }
           });
-          if (isAgencyWorkspace) {
+          if (canOperateClientSettings) {
             policyBody.append(provisionBtn);
+          } else if (_needsMfaForOperatorControls) {
+            policyBody.append(_buildMfaNudge());
           } else {
             const contact = document.createElement("p");
             contact.className = "text-sm muted";
@@ -703,6 +710,11 @@ import "../styles/global.css";
         factsBody.className = "card__body";
 
         if (factsResult.kind === "ok" && factsResult.data.length > 0) {
+          if (canOperateClientSettings) {
+            factsBody.append(_buildReconcileButton(factsBody));
+          } else if (_needsMfaForOperatorControls) {
+            factsBody.append(_buildMfaNudge());
+          }
           const list = document.createElement("ul");
           list.className = "product-list";
           for (const candidate of factsResult.data) {
@@ -727,6 +739,19 @@ import "../styles/global.css";
               );
               if (result.kind === "ok") {
                 item.remove();
+                if (list.children.length === 0) {
+                  factsBody.replaceChildren(
+                    emptyState(
+                      "All business details confirmed",
+                      "No pending business details remain.",
+                    ),
+                  );
+                  if (canOperateClientSettings) {
+                    factsBody.append(_buildReconcileButton(factsBody));
+                  } else if (_needsMfaForOperatorControls) {
+                    factsBody.append(_buildMfaNudge());
+                  }
+                }
               } else {
                 confirmBtn.disabled = false;
                 confirmBtn.textContent = "Confirm";
@@ -738,29 +763,17 @@ import "../styles/global.css";
           }
           factsBody.append(list);
         } else if (factsResult.kind === "ok") {
-          const reconcileBtn = document.createElement("button");
-          reconcileBtn.type = "button";
-          reconcileBtn.className = "button button--secondary button--sm";
-          reconcileBtn.textContent = "Refresh business details";
-          reconcileBtn.addEventListener("click", async () => {
-            reconcileBtn.disabled = true;
-            reconcileBtn.textContent = "Generating…";
-            const result = await reconcileBusinessFacts(organizationId);
-            if (result.kind === "ok") {
-              await openGovernance();
-            } else {
-              reconcileBtn.disabled = false;
-              reconcileBtn.textContent = "Refresh business details";
-              factsBody.append(errorAlert(describeFailure(result, "Facts")));
-            }
-          });
           factsBody.append(
             emptyState(
               "No business details awaiting confirmation",
               "Refresh details from this client’s business profile, location, and website.",
             ),
           );
-          if (isAgencyWorkspace) factsBody.append(reconcileBtn);
+          if (canOperateClientSettings) {
+            factsBody.append(_buildReconcileButton(factsBody));
+          } else if (_needsMfaForOperatorControls) {
+            factsBody.append(_buildMfaNudge());
+          }
         } else {
           factsBody.append(errorAlert(describeFailure(factsResult, "Facts")));
         }
@@ -768,6 +781,50 @@ import "../styles/global.css";
         sections.push(factsCard);
 
         domainContent.replaceChildren(...sections);
+      }
+
+      function _buildReconcileButton(
+        container: HTMLElement,
+      ): HTMLButtonElement {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "button button--secondary button--sm";
+        btn.textContent = "Refresh business details";
+        btn.addEventListener("click", async () => {
+          btn.disabled = true;
+          btn.textContent = "Generating…";
+          const result = await reconcileBusinessFacts(organizationId);
+          if (result.kind === "ok") {
+            await openGovernance();
+          } else {
+            btn.disabled = false;
+            btn.textContent = "Refresh business details";
+            container.append(errorAlert(describeFailure(result, "Facts")));
+          }
+        });
+        return btn;
+      }
+
+      function _buildMfaNudge(): HTMLDivElement {
+        const nudge = document.createElement("div");
+        nudge.className = "text-sm muted";
+        nudge.style.marginTop = "0.75rem";
+        const msg = document.createElement("p");
+        msg.textContent =
+          "Operator controls require MFA. Complete MFA to manage this workspace's governance.";
+        const action = document.createElement("button");
+        action.type = "button";
+        action.className = "button button--secondary button--sm";
+        action.textContent = "Complete MFA";
+        action.style.marginTop = "0.5rem";
+        action.addEventListener("click", () => {
+          const next = encodeURIComponent(
+            window.location.pathname + window.location.search,
+          );
+          window.location.assign(`/mfa?next=${next}`);
+        });
+        nudge.append(msg, action);
+        return nudge;
       }
 
       // ---- Products ----
@@ -819,6 +876,9 @@ import "../styles/global.css";
         isAgencyWorkspace = ["internal", "partner", "support"].includes(
           org.membership_type,
         );
+        canOperateClientSettings = canUsePlatformAdministration();
+        _needsMfaForOperatorControls =
+          hasPlatformAdminGrant() && !meetsPlatformAdminRequiredAssurance();
         showDirectory();
       }
 
