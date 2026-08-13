@@ -97,11 +97,17 @@ class ExecutionService:
         correlation_id: str,
         *,
         trigger_type: str = "api",
+        enqueue_job: bool = True,
     ) -> tuple[WorkflowRun, bool]:
-        """Create (or idempotently return) a durable workflow run and its initial job.
+        """Create (or idempotently return) a durable workflow run.
 
         Returns `(run, created)`, where `created` is False when an existing run
         with the same idempotency key was returned instead of a new one being made.
+
+        When *enqueue_job* is True (the default), an initial ``workflow.execute``
+        Job is also created so a background worker will process the run.
+        Set *enqueue_job* to False when a product endpoint intends to consume
+        the run via ``resolve_for_consumption``, avoiding a worker race.
         """
         digest = self.request_hash(command)
         existing = await session.scalar(
@@ -127,17 +133,18 @@ class ExecutionService:
         )
         session.add(run)
         await session.flush()
-        session.add(
-            Job(
-                organization_id=organization_id,
-                workflow_run_id=run.id,
-                job_type="workflow.execute",
-                status="queued",
-                idempotency_key=f"run:{run.id}",
-                payload={"run_id": str(run.id)},
+        if enqueue_job:
+            session.add(
+                Job(
+                    organization_id=organization_id,
+                    workflow_run_id=run.id,
+                    job_type="workflow.execute",
+                    status="queued",
+                    idempotency_key=f"run:{run.id}",
+                    payload={"run_id": str(run.id)},
+                )
             )
-        )
-        await session.flush()
+            await session.flush()
         return run, True
 
     async def dispatch_due_schedule(
@@ -234,6 +241,7 @@ class ExecutionService:
         input_document: dict[str, object] | None = None,
         correlation_id: str,
         actor_id: UUID | None = None,
+        enqueue_job: bool = True,
     ) -> WorkflowRun:
         """Start (or idempotently resolve) a named, persisted workflow run.
 
@@ -243,6 +251,10 @@ class ExecutionService:
         caller's organization and validated against the fixed workflow-type
         catalog. `workflow_key` must be one of `WORKFLOW_TYPES`; unknown keys
         are rejected before any row is created.
+
+        Set *enqueue_job* to False when the caller intends to consume the
+        reserved run through `resolve_for_consumption` and does not want a
+        background worker to race for it.
         """
         if location_id is not None:
             location = await session.scalar(
@@ -261,7 +273,12 @@ class ExecutionService:
         )
         try:
             run, created = await self.submit(
-                session, organization_id, command, correlation_id, trigger_type="api"
+                session,
+                organization_id,
+                command,
+                correlation_id,
+                trigger_type="api",
+                enqueue_job=enqueue_job,
             )
         except IdempotencyConflict as error:
             raise WorkflowIdempotencyConflictError from error

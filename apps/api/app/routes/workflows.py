@@ -322,6 +322,7 @@ async def start_workflow_run(
         input_document=command.input_document,
         correlation_id=request_correlation_id(request),
         actor_id=principal.platform_user_id,
+        enqueue_job=False,
     )
     return {"data": run_row(run), "meta": {"correlation_id": request_correlation_id(request)}}
 

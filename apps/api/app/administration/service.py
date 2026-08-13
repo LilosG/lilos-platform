@@ -715,15 +715,15 @@ class AdministrationService:
     ) -> dict[str, object]:
         """Derive business-fact candidates from authoritative client data.
 
-        Reads the organization profile, primary location, and primary domain
-        and proposes ``system_derived`` business facts for the keys products
-        actually require (``business.name``, ``business.address``,
-        ``brand.approved_claims``). Each candidate is proposed (NOT
-        auto-approved) so a human still confirms it; an already-active or
-        already-proposed fact with the same value is never duplicated. Facts
-        with no derivable source (e.g. ``business.hours`` until a location
-        hours field or GBP sync exists) are reported as ``unresolved`` so the
-        operator knows they need manual entry rather than silently passing.
+        Reads the organization profile, primary location, primary domain, and
+        GBP profile snapshot and proposes ``system_derived`` business facts
+        for the keys products actually require (``business.name``,
+        ``business.address``, ``business.hours``, ``brand.approved_claims``).
+        Each candidate is proposed (NOT auto-approved) so a human still
+        confirms it; an already-active or already-proposed fact with the same
+        value is never duplicated. Facts with no derivable source are reported
+        as ``unresolved`` so the operator knows they need manual entry rather
+        than silently passing.
         """
         await _organization(session, organization_id, lock=True)
         organization = await _organization(session, organization_id)
@@ -796,6 +796,41 @@ class AdministrationService:
                     None,
                 )
             )
+
+        # business.hours ← GBP regularHours from the latest profile snapshot
+        # for the GBP location mapped to the primary location.
+        if primary_location is not None:
+            from apps.api.app.products.gbp.models import GBPLocation, GBPProfileSnapshot
+
+            gbp_location = await session.scalar(
+                select(GBPLocation).where(
+                    GBPLocation.organization_id == organization_id,
+                    GBPLocation.location_id == primary_location.id,
+                    GBPLocation.mapping_status == "confirmed",
+                )
+            )
+            if gbp_location is not None:
+                latest_snapshot = await session.scalar(
+                    select(GBPProfileSnapshot)
+                    .where(
+                        GBPProfileSnapshot.organization_id == organization_id,
+                        GBPProfileSnapshot.gbp_location_id == gbp_location.id,
+                    )
+                    .order_by(GBPProfileSnapshot.observed_at.desc())
+                    .limit(1)
+                )
+                if latest_snapshot is not None:
+                    regular_hours = latest_snapshot.normalized_profile.get("regularHours")
+                    if regular_hours and isinstance(regular_hours, dict) and len(regular_hours) > 0:
+                        candidates.append(
+                            (
+                                "business.hours",
+                                "object",
+                                "gbp_profile_snapshot",
+                                regular_hours,
+                                primary_location.id,
+                            )
+                        )
 
         proposed: list[dict[str, object]] = []
         unresolved: list[str] = []

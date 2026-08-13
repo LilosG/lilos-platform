@@ -6,6 +6,8 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest
+from sqlalchemy import delete as sqla_delete
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from starlette.testclient import TestClient
 
@@ -22,7 +24,7 @@ from apps.api.app.execution.errors import (
     WorkflowRunNotFoundError,
     WorkflowRunTypeMismatchError,
 )
-from apps.api.app.execution.models import WorkflowRun
+from apps.api.app.execution.models import Job, WorkflowRun
 from apps.api.app.execution.service import ExecutionService
 from apps.api.app.locations.enums import LocationStatus, LocationType
 from apps.api.app.locations.models import Location
@@ -383,3 +385,217 @@ def test_completed_workflow_run_cannot_be_reused(
             )
 
     run_db(postgresql_test_url, resolve_stale)
+
+
+# ── Hotfix A: reservation-mode regression tests ──────────────────────────
+
+
+@pytest.mark.integration
+def test_api_workflow_reservation_creates_run_without_execution_job(
+    postgresql_test_url: str,
+    workflow_client: WorkflowClientContext,
+) -> None:
+    """Prove that the shared workflow-start API creates a WorkflowRun
+    without enqueueing a workflow.execute Job, so the product endpoint
+    that called resolve_for_consumption owns the run exclusively."""
+
+    client, org = workflow_client.client, workflow_client.ids["organization"]
+
+    response = client.post(
+        f"/api/v1/organizations/{org}/workflows/seo.crawl_or_analysis/runs",
+        headers=HEADERS,
+        json={"idempotency_key": "reservation-no-worker-001"},
+    )
+    assert response.status_code == 201
+    run_id = UUID(response.json()["data"]["workflow_run_id"])
+
+    async def assert_no_job(session: AsyncSession) -> None:
+        jobs = (
+            (
+                await session.execute(
+                    select(Job).where(
+                        Job.organization_id == org,
+                        Job.workflow_run_id == run_id,
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(jobs) == 0
+
+    run_db(postgresql_test_url, assert_no_job)
+
+
+@pytest.mark.integration
+def test_reserved_run_consumable_through_resolve_for_consumption(
+    postgresql_test_url: str,
+    workflow_client: WorkflowClientContext,
+) -> None:
+    """A WorkflowRun created via the reservation API (enqueue_job=False)
+    remains consumable through resolve_for_consumption without a worker
+    having raced ahead."""
+
+    client, org = workflow_client.client, workflow_client.ids["organization"]
+
+    response = client.post(
+        f"/api/v1/organizations/{org}/workflows/gbp.publish_change/runs",
+        headers=HEADERS,
+        json={"idempotency_key": "reservation-consumable-002"},
+    )
+    run_id = UUID(response.json()["data"]["workflow_run_id"])
+
+    async def consume(session: AsyncSession) -> None:
+        run = await ExecutionService().resolve_for_consumption(
+            session, org, run_id, "gbp.publish_change"
+        )
+        assert run.status == "running"
+        await session.commit()
+
+    run_db(postgresql_test_url, consume)
+
+    assert _workflow_run_status(postgresql_test_url, run_id) == "running"
+
+
+@pytest.mark.integration
+def test_scheduled_dispatch_still_creates_execution_job(
+    postgresql_test_url: str,
+    workflow_client: WorkflowClientContext,
+) -> None:
+    """Schedule-triggered runs (through dispatch_due_schedule → submit)
+    must continue enqueueing a workflow.execute Job because the worker
+    is the intended consumer."""
+
+    org = workflow_client.ids["organization"]
+
+    async def dispatch(session: AsyncSession) -> None:
+        from datetime import UTC
+
+        from apps.api.app.execution.contracts import ScheduleCreate
+
+        now = datetime.now(UTC)
+        exec_svc = ExecutionService()
+        schedule = await exec_svc.create_schedule(
+            session,
+            org,
+            ScheduleCreate(
+                workflow_key="reviews.publish_response",
+                key="dispatch-test-schedule",
+                cron_expression="0 6 * * *",
+                timezone="America/Chicago",
+                next_run_at=now,
+            ),
+            correlation_id="scheduled-dispatch-test",
+        )
+        await session.flush()
+        # Clear pre-existing jobs from other tests or prior runs.
+        await session.execute(sqla_delete(Job).where(Job.organization_id == org))
+        await session.flush()
+        # Advance the schedule so dispatch_due_schedule picks it up.
+        schedule.next_run_at = datetime(2020, 1, 1, 0, 0, 0, tzinfo=UTC)
+        await session.flush()
+
+        run = await exec_svc.dispatch_due_schedule(
+            session, correlation_id="scheduled-dispatch-test"
+        )
+        assert run is not None
+        jobs = (
+            (
+                await session.execute(
+                    select(Job).where(
+                        Job.organization_id == org,
+                        Job.workflow_run_id == run.id,
+                        Job.job_type == "workflow.execute",
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(jobs) == 1
+        await session.commit()
+
+    run_db(postgresql_test_url, dispatch)
+
+
+@pytest.mark.integration
+def test_seo_crawl_can_execute_without_worker_race(
+    postgresql_test_url: str,
+    workflow_client: WorkflowClientContext,
+) -> None:
+    """An end-to-end SEO crawl sequence: reserve a run through the API,
+    then consume it through resolve_for_consumption (simulating the
+    product endpoint). Verifies no worker job exists to race."""
+
+    client, org = (
+        workflow_client.client,
+        workflow_client.ids["organization"],
+    )
+
+    response = client.post(
+        f"/api/v1/organizations/{org}/workflows/seo.crawl_or_analysis/runs",
+        headers=HEADERS,
+        json={"idempotency_key": "seo-e2e-no-worker-003"},
+    )
+    assert response.status_code == 201
+    run_id = UUID(response.json()["data"]["workflow_run_id"])
+
+    async def seo_consume(session: AsyncSession) -> None:
+        jobs_before = (
+            (
+                await session.execute(
+                    select(Job).where(
+                        Job.organization_id == org,
+                        Job.workflow_run_id == run_id,
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(jobs_before) == 0
+
+        run = await ExecutionService().resolve_for_consumption(
+            session, org, run_id, "seo.crawl_or_analysis"
+        )
+        assert run.status == "running"
+        assert run.organization_id == org
+        assert run.workflow_version_id is not None
+        await session.commit()
+
+    run_db(postgresql_test_url, seo_consume)
+    assert _workflow_run_status(postgresql_test_url, run_id) == "running"
+
+
+@pytest.mark.integration
+def test_existing_workflow_idempotency_preserved_with_reservation_mode(
+    postgresql_test_url: str,
+    workflow_client: WorkflowClientContext,
+) -> None:
+    """Idempotency and tenant-scope contracts remain valid when the
+    API runs in reservation (enqueue_job=False) mode."""
+
+    client, org = workflow_client.client, workflow_client.ids["organization"]
+
+    first = client.post(
+        f"/api/v1/organizations/{org}/workflows/content.publish/runs",
+        headers=HEADERS,
+        json={"idempotency_key": "idempotent-reservation-004"},
+    )
+    second = client.post(
+        f"/api/v1/organizations/{org}/workflows/content.publish/runs",
+        headers=HEADERS,
+        json={"idempotency_key": "idempotent-reservation-004"},
+    )
+    assert first.status_code == 201
+    assert second.status_code == 201
+    assert UUID(first.json()["data"]["workflow_run_id"]) == UUID(
+        second.json()["data"]["workflow_run_id"]
+    )
+
+    response = client.post(
+        f"/api/v1/organizations/{org}/workflows/not.a.real.workflow/runs",
+        headers=HEADERS,
+        json={"idempotency_key": "unknown-key-reservation-005"},
+    )
+    assert response.status_code == 404
