@@ -17,6 +17,7 @@ from apps.api.app.authorization.dependencies import require_authorization
 from apps.api.app.database.session import get_database_session
 from apps.api.app.errors import request_correlation_id
 from apps.api.app.insights.aggregation_service import InsightsService
+from apps.api.app.insights.website_readiness import WebsiteReadinessService
 from apps.api.app.products.analytics.contracts import (
     AnalyticsDiscoverRequest,
     AnalyticsPropertySelect,
@@ -32,6 +33,7 @@ router = APIRouter(
 )
 service = InsightsService()
 analytics = AnalyticsService()
+website_readiness = WebsiteReadinessService()
 Session = Annotated[AsyncSession, Depends(get_database_session)]
 
 
@@ -59,6 +61,21 @@ async def summary(
     _: Annotated[AuthorizationDecision, policy("insights.read")],
 ) -> dict[str, object]:
     return {"data": await service.summary(session, organization_id), "meta": meta(request)}
+
+
+@router.get(
+    "/website-readiness",
+    dependencies=[Depends(no_store)],
+    summary="Derived website readiness facts — domain, SEO, Search Console, Analytics, crawl",
+)
+async def website_readiness_route(
+    request: Request,
+    organization_id: UUID,
+    session: Session,
+    _: Annotated[AuthorizationDecision, policy("insights.read")],
+) -> dict[str, object]:
+    result = await website_readiness.readiness(session, organization_id)
+    return {"data": result, "meta": meta(request)}
 
 
 @router.post(
@@ -173,6 +190,22 @@ async def sync_analytics(
         correlation_id=request_correlation_id(request),
         days=days,
     )
+    return {"data": result, "meta": meta(request)}
+
+
+@router.get(
+    "/analytics/performance",
+    dependencies=[Depends(no_store)],
+    summary="GA4 performance report with period comparison and daily series",
+)
+async def analytics_performance(
+    request: Request,
+    organization_id: UUID,
+    session: Session,
+    _: Annotated[AuthorizationDecision, policy("insights.read")],
+    days: int = 28,
+) -> dict[str, object]:
+    result = await analytics.performance_report(session, organization_id, days=days)
     return {"data": result, "meta": meta(request)}
 
 

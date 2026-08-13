@@ -59,6 +59,7 @@ DEFAULT_SYNC_WINDOW_DAYS = 28
 # Search Console finalized data lags ~2 days; never request the most recent
 # couple of days as though they were final.
 SYNC_TAIL_EXCLUSION_DAYS = 2
+VALID_REPORTING_PERIODS: tuple[int, ...] = (7, 28, 90)
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,6 +124,18 @@ def _sync_window(now: datetime, days: int) -> tuple[datetime, datetime]:
         window_end_date.year, window_end_date.month, window_end_date.day, tzinfo=UTC
     )
     return start, window_end
+
+
+def _reporting_period(now: datetime, days: int) -> tuple[datetime, datetime]:
+    """Compute current reporting period with tail exclusion."""
+    return _sync_window(now, days)
+
+
+def _comparison_period(current_start: datetime, days: int) -> tuple[datetime, datetime]:
+    """Compute prior comparison period of equal length before current_start."""
+    comp_end = current_start
+    comp_start = comp_end - timedelta(days=days)
+    return comp_start, comp_end
 
 
 def _date_str(dt: datetime) -> str:
@@ -326,8 +339,13 @@ class SearchConsoleService:
     ) -> dict[str, object]:
         """Pull real Search Console metrics into ``SEOSearchObservation``.
 
-        Only the metrics the SEO model already defines are stored (clicks,
-        impressions, ctr, position). Rows are upserted idempotently on the
+        Pulls four observation types:
+        - site_summary: no dimensions (authoritative site-level totals)
+        - daily: date dimension (for trend series)
+        - top_queries: query dimension (top search queries)
+        - top_pages: page dimension (top landing pages)
+
+        Rows are upserted idempotently on the
         (search_property, date_start, date_end, dimension_hash) uniqueness key.
         """
         property_row = await session.scalar(
@@ -345,13 +363,16 @@ class SearchConsoleService:
         del connection
         now = datetime.now(UTC)
         start, window_end = _sync_window(now, days)
+        upserted = 0
+
         try:
-            rows = await self.adapter.query_search_analytics(
+            # A. Site summary — no dimensions, authoritative site-level totals
+            summary_rows = await self.adapter.query_search_analytics(
                 token,
                 property_row.external_property_id,
                 start_date=_date_str(start),
                 end_date=_date_str(window_end),
-                dimensions=("query",),
+                dimensions=(),
                 row_limit=1000,
             )
         except Exception as exc:
@@ -363,17 +384,15 @@ class SearchConsoleService:
                 resource_type="seo_search_property",
                 resource_id=property_row.id,
                 correlation_id=correlation_id,
-                summary="Search Console sync failed.",
+                summary="Search Console sync failed (site summary).",
                 metadata={"error": str(exc)[:200]},
                 result=AuditResult.FAILED,
             )
             raise SEOSearchConsoleDiscoveryFailedError from exc
 
-        upserted = 0
-        for row in rows:
-            query = row.keys[0] if row.keys else ""
-            dimensions: dict[str, object] = {"query": query}
-            dim_hash = _dimension_hash(dimensions)
+        for row in summary_rows:
+            dims: dict[str, object] = {"observation_type": "site_summary"}
+            dim_hash = _dimension_hash(dims)
             existing = await session.scalar(
                 select(SEOSearchObservation).where(
                     SEOSearchObservation.search_property_id == property_row.id,
@@ -387,8 +406,8 @@ class SearchConsoleService:
                 existing.impressions = row.impressions
                 existing.ctr = row.ctr
                 existing.position = row.position
-                existing.query = query or None
-                existing.dimensions = dimensions
+                existing.query = None
+                existing.dimensions = dims
                 existing.quality_status = "valid"
                 existing.partial = False
             else:
@@ -397,10 +416,10 @@ class SearchConsoleService:
                         organization_id=organization_id,
                         search_property_id=property_row.id,
                         page_id=None,
-                        query=query or None,
+                        query=None,
                         date_start=start,
                         date_end=window_end,
-                        dimensions=dimensions,
+                        dimensions=dims,
                         dimension_hash=dim_hash,
                         clicks=row.clicks,
                         impressions=row.impressions,
@@ -411,6 +430,213 @@ class SearchConsoleService:
                     )
                 )
             upserted += 1
+
+        # B. Daily series — date dimension for trend charts
+        try:
+            daily_rows = await self.adapter.query_search_analytics(
+                token,
+                property_row.external_property_id,
+                start_date=_date_str(start),
+                end_date=_date_str(window_end),
+                dimensions=("date",),
+                row_limit=25000,
+            )
+        except Exception as exc:
+            daily_rows = []
+            await self._audit(
+                session,
+                event="seo.search_console.sync_failed",
+                organization_id=organization_id,
+                actor_id=actor_id,
+                resource_type="seo_search_property",
+                resource_id=property_row.id,
+                correlation_id=correlation_id,
+                summary="Search Console sync failed (daily series), continuing with other types.",
+                metadata={"error": str(exc)[:200]},
+                result=AuditResult.FAILED,
+            )
+
+        for row in daily_rows:
+            date_val = row.keys[0] if row.keys else ""
+            dims = {"observation_type": "daily", "date": date_val}
+            dim_hash = _dimension_hash(dims)
+            from datetime import date as date_type
+
+            day_dt = date_type.fromisoformat(date_val)
+            day_start = datetime(day_dt.year, day_dt.month, day_dt.day, tzinfo=UTC)
+            day_end = day_start + timedelta(days=1)
+            existing = await session.scalar(
+                select(SEOSearchObservation).where(
+                    SEOSearchObservation.search_property_id == property_row.id,
+                    SEOSearchObservation.date_start == day_start,
+                    SEOSearchObservation.date_end == day_end,
+                    SEOSearchObservation.dimension_hash == dim_hash,
+                )
+            )
+            if existing is not None:
+                existing.clicks = row.clicks
+                existing.impressions = row.impressions
+                existing.ctr = row.ctr
+                existing.position = row.position
+                existing.query = None
+                existing.dimensions = dims
+                existing.quality_status = "valid"
+                existing.partial = False
+            else:
+                session.add(
+                    SEOSearchObservation(
+                        organization_id=organization_id,
+                        search_property_id=property_row.id,
+                        page_id=None,
+                        query=None,
+                        date_start=day_start,
+                        date_end=day_end,
+                        dimensions=dims,
+                        dimension_hash=dim_hash,
+                        clicks=row.clicks,
+                        impressions=row.impressions,
+                        ctr=row.ctr,
+                        position=row.position,
+                        quality_status="valid",
+                        partial=False,
+                    )
+                )
+            upserted += 1
+
+        # C. Top queries — query dimension
+        try:
+            query_rows = await self.adapter.query_search_analytics(
+                token,
+                property_row.external_property_id,
+                start_date=_date_str(start),
+                end_date=_date_str(window_end),
+                dimensions=("query",),
+                row_limit=1000,
+            )
+        except Exception as exc:
+            query_rows = []
+            await self._audit(
+                session,
+                event="seo.search_console.sync_failed",
+                organization_id=organization_id,
+                actor_id=actor_id,
+                resource_type="seo_search_property",
+                resource_id=property_row.id,
+                correlation_id=correlation_id,
+                summary="Search Console sync failed (top queries), continuing.",
+                metadata={"error": str(exc)[:200]},
+                result=AuditResult.FAILED,
+            )
+
+        for row in query_rows:
+            q = row.keys[0] if row.keys else ""
+            dims = {"observation_type": "top_query", "query": q}
+            dim_hash = _dimension_hash(dims)
+            existing = await session.scalar(
+                select(SEOSearchObservation).where(
+                    SEOSearchObservation.search_property_id == property_row.id,
+                    SEOSearchObservation.date_start == start,
+                    SEOSearchObservation.date_end == window_end,
+                    SEOSearchObservation.dimension_hash == dim_hash,
+                )
+            )
+            if existing is not None:
+                existing.clicks = row.clicks
+                existing.impressions = row.impressions
+                existing.ctr = row.ctr
+                existing.position = row.position
+                existing.query = q or None
+                existing.dimensions = dims
+                existing.quality_status = "valid"
+                existing.partial = False
+            else:
+                session.add(
+                    SEOSearchObservation(
+                        organization_id=organization_id,
+                        search_property_id=property_row.id,
+                        page_id=None,
+                        query=q or None,
+                        date_start=start,
+                        date_end=window_end,
+                        dimensions=dims,
+                        dimension_hash=dim_hash,
+                        clicks=row.clicks,
+                        impressions=row.impressions,
+                        ctr=row.ctr,
+                        position=row.position,
+                        quality_status="valid",
+                        partial=False,
+                    )
+                )
+            upserted += 1
+
+        # D. Top pages — page dimension
+        try:
+            page_rows = await self.adapter.query_search_analytics(
+                token,
+                property_row.external_property_id,
+                start_date=_date_str(start),
+                end_date=_date_str(window_end),
+                dimensions=("page",),
+                row_limit=1000,
+            )
+        except Exception as exc:
+            page_rows = []
+            await self._audit(
+                session,
+                event="seo.search_console.sync_failed",
+                organization_id=organization_id,
+                actor_id=actor_id,
+                resource_type="seo_search_property",
+                resource_id=property_row.id,
+                correlation_id=correlation_id,
+                summary="Search Console sync failed (top pages), continuing.",
+                metadata={"error": str(exc)[:200]},
+                result=AuditResult.FAILED,
+            )
+
+        for row in page_rows:
+            p = row.keys[0] if row.keys else ""
+            dims = {"observation_type": "top_page", "page": p}
+            dim_hash = _dimension_hash(dims)
+            existing = await session.scalar(
+                select(SEOSearchObservation).where(
+                    SEOSearchObservation.search_property_id == property_row.id,
+                    SEOSearchObservation.date_start == start,
+                    SEOSearchObservation.date_end == window_end,
+                    SEOSearchObservation.dimension_hash == dim_hash,
+                )
+            )
+            if existing is not None:
+                existing.clicks = row.clicks
+                existing.impressions = row.impressions
+                existing.ctr = row.ctr
+                existing.position = row.position
+                existing.query = None
+                existing.dimensions = dims
+                existing.quality_status = "valid"
+                existing.partial = False
+            else:
+                session.add(
+                    SEOSearchObservation(
+                        organization_id=organization_id,
+                        search_property_id=property_row.id,
+                        page_id=None,
+                        query=None,
+                        date_start=start,
+                        date_end=window_end,
+                        dimensions=dims,
+                        dimension_hash=dim_hash,
+                        clicks=row.clicks,
+                        impressions=row.impressions,
+                        ctr=row.ctr,
+                        position=row.position,
+                        quality_status="valid",
+                        partial=False,
+                    )
+                )
+            upserted += 1
+
         await session.flush()
         property_row.last_synced_at = datetime.now(UTC)
         property_row.freshness_status = "fresh"
@@ -423,7 +649,8 @@ class SearchConsoleService:
             resource_type="seo_search_property",
             resource_id=property_row.id,
             correlation_id=correlation_id,
-            summary=f"Synced {upserted} Search Console observations.",
+            summary=f"Synced {upserted} Search Console observations "
+            f"(site summary, daily, top queries, top pages).",
             metadata={"rows": upserted, "window_days": days},
         )
         del website
@@ -448,6 +675,242 @@ class SearchConsoleService:
             raise IntegrationNotFoundError
         return website
 
+    async def performance_report(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        website_id: UUID,
+        *,
+        days: int = DEFAULT_SYNC_WINDOW_DAYS,
+    ) -> dict[str, object]:
+        """Return a reporting-safe Search Console performance contract.
+
+        Selects only the exact authoritative window's observations to prevent
+        overlapping-window double counting. Returns site summary KPIs, daily
+        trend series, top queries, and top pages with comparisons.
+        """
+        await self._get_website(session, organization_id, website_id)
+        properties = list(
+            await session.scalars(
+                select(SEOSearchProperty).where(
+                    SEOSearchProperty.organization_id == organization_id,
+                    SEOSearchProperty.website_id == website_id,
+                    SEOSearchProperty.provider == "google_search_console",
+                    SEOSearchProperty.mapping_status == "mapped",
+                )
+            )
+        )
+        if not properties:
+            return {
+                "connected": False,
+                "properties": [],
+                "range": None,
+                "comparison_range": None,
+                "freshness": {"last_synced_at": None, "status": "never_synced"},
+                "metrics": {},
+                "series": [],
+                "top_queries": [],
+                "top_pages": [],
+            }
+
+        if days not in VALID_REPORTING_PERIODS:
+            days = DEFAULT_SYNC_WINDOW_DAYS
+
+        now = datetime.now(UTC)
+        current_start, current_end = _reporting_period(now, days)
+        comp_start, comp_end = _comparison_period(current_start, days)
+
+        last_synced = max(
+            (p.last_synced_at for p in properties if p.last_synced_at is not None),
+            default=None,
+        )
+        freshness_status = "fresh"
+        if last_synced is None:
+            freshness_status = "never_synced"
+        elif last_synced < (now - timedelta(days=days + SYNC_TAIL_EXCLUSION_DAYS)):
+            freshness_status = "stale"
+
+        prop_ids = [p.id for p in properties]
+
+        # Get site summary observations for current and comparison periods
+        current_summary = await self._get_observation_by_type(
+            session, prop_ids, current_start, current_end, "site_summary"
+        )
+        comp_summary = await self._get_observation_by_type(
+            session, prop_ids, comp_start, comp_end, "site_summary"
+        )
+
+        metrics = {}
+        for metric_key in ("clicks", "impressions", "ctr", "position"):
+            curr_val = getattr(current_summary, metric_key, None) if current_summary else None
+            prev_val = getattr(comp_summary, metric_key, None) if comp_summary else None
+            absolute_delta = None
+            percent_delta = None
+            if (
+                curr_val is not None
+                and prev_val is not None
+                and isinstance(curr_val, (int, float))
+                and isinstance(prev_val, (int, float))
+            ):
+                absolute_delta = float(curr_val) - float(prev_val)
+                if prev_val != 0:
+                    pct = (float(curr_val) - float(prev_val)) / abs(float(prev_val)) * 100
+                    percent_delta = pct
+
+            quality = "valid"
+            if curr_val is None and prev_val is None or curr_val is None:
+                quality = "missing"
+            elif prev_val is None:
+                quality = "partial"
+
+            metrics[metric_key] = {
+                "current": float(curr_val) if curr_val is not None else None,
+                "previous": float(prev_val) if prev_val is not None else None,
+                "delta": absolute_delta,
+                "percent_delta": percent_delta,
+                "quality": quality,
+            }
+
+        # Daily series
+        daily_obs = await self._get_typed_observations(
+            session, prop_ids, current_start, current_end, "daily"
+        )
+        series = []
+        for obs in sorted(
+            daily_obs,
+            key=lambda o: o.date_start if o.date_start else datetime.min.replace(tzinfo=UTC),
+        ):
+            date_label = obs.dimensions.get(
+                "date",
+                obs.date_start.strftime("%Y-%m-%d") if obs.date_start else "",
+            )
+            series.append(
+                {
+                    "date": date_label,
+                    "clicks": obs.clicks or 0,
+                    "impressions": obs.impressions or 0,
+                    "ctr": float(obs.ctr) if obs.ctr is not None else 0.0,
+                    "position": float(obs.position) if obs.position is not None else 0.0,
+                }
+            )
+
+        # Top queries
+        top_query_obs = await self._get_typed_observations(
+            session, prop_ids, current_start, current_end, "top_query"
+        )
+        top_queries = sorted(
+            [
+                {
+                    "query": str(o.dimensions.get("query", "")),
+                    "clicks": o.clicks or 0,
+                    "impressions": o.impressions or 0,
+                    "ctr": float(o.ctr) if o.ctr is not None else 0.0,
+                    "position": float(o.position) if o.position is not None else 0.0,
+                }
+                for o in top_query_obs
+            ],
+            key=lambda x: cast(int, x["clicks"]),
+            reverse=True,
+        )[:25]
+
+        # Top pages
+        top_page_obs = await self._get_typed_observations(
+            session, prop_ids, current_start, current_end, "top_page"
+        )
+        top_pages = sorted(
+            [
+                {
+                    "page": str(o.dimensions.get("page", "")),
+                    "clicks": o.clicks or 0,
+                    "impressions": o.impressions or 0,
+                    "ctr": float(o.ctr) if o.ctr is not None else 0.0,
+                    "position": float(o.position) if o.position is not None else 0.0,
+                }
+                for o in top_page_obs
+            ],
+            key=lambda x: cast(int, x["clicks"]),
+            reverse=True,
+        )[:25]
+
+        prop_data = [
+            {
+                "id": str(p.id),
+                "external_property_id": p.external_property_id,
+                "property_type": p.property_type,
+                "freshness_status": p.freshness_status,
+                "last_synced_at": p.last_synced_at.isoformat() if p.last_synced_at else None,
+            }
+            for p in properties
+        ]
+
+        return {
+            "connected": True,
+            "properties": prop_data,
+            "range": {
+                "start": current_start.strftime("%Y-%m-%d"),
+                "end": current_end.strftime("%Y-%m-%d"),
+                "days": days,
+            },
+            "comparison_range": {
+                "start": comp_start.strftime("%Y-%m-%d"),
+                "end": comp_end.strftime("%Y-%m-%d"),
+                "days": days,
+            },
+            "freshness": {
+                "last_synced_at": last_synced.isoformat() if last_synced else None,
+                "status": freshness_status,
+            },
+            "metrics": metrics,
+            "series": series,
+            "top_queries": top_queries,
+            "top_pages": top_pages,
+        }
+
+    async def _get_observation_by_type(
+        self,
+        session: AsyncSession,
+        prop_ids: list[UUID],
+        period_start: datetime,
+        period_end: datetime,
+        observation_type: str,
+    ) -> SEOSearchObservation | None:
+        """Get the single observation of a given type for the exact period."""
+        # Sum across multiple properties for the same window
+        result = await session.scalar(
+            select(SEOSearchObservation)
+            .where(
+                SEOSearchObservation.search_property_id.in_(prop_ids),
+                SEOSearchObservation.date_start == period_start,
+                SEOSearchObservation.date_end == period_end,
+                SEOSearchObservation.dimensions["observation_type"].astext == observation_type,
+            )
+            .order_by(SEOSearchObservation.date_end.desc())
+        )
+        return result
+
+    async def _get_typed_observations(
+        self,
+        session: AsyncSession,
+        prop_ids: list[UUID],
+        period_start: datetime,
+        period_end: datetime,
+        observation_type: str,
+    ) -> list[SEOSearchObservation]:
+        """Get all observations of a given type for the exact period."""
+        rows = list(
+            await session.scalars(
+                select(SEOSearchObservation)
+                .where(
+                    SEOSearchObservation.search_property_id.in_(prop_ids),
+                    SEOSearchObservation.date_start >= period_start,
+                    SEOSearchObservation.date_end <= period_end,
+                    SEOSearchObservation.dimensions["observation_type"].astext == observation_type,
+                )
+                .order_by(SEOSearchObservation.date_start.asc())
+            )
+        )
+        return rows
+
     async def search_performance_summary(
         self, session: AsyncSession, organization_id: UUID, website_id: UUID
     ) -> dict[str, object]:
@@ -470,18 +933,29 @@ class SearchConsoleService:
         if not properties:
             return {"connected": False, "total_clicks": 0, "total_impressions": 0, "properties": []}
         prop_ids = [p.id for p in properties]
-        rows = list(
-            await session.scalars(
-                select(SEOSearchObservation).where(
+        # Select only the most recent site_summary per property to prevent
+        # overlapping-window double counting. Multiple syncs produce multiple
+        # site_summary rows; only the latest should be used.
+        total_clicks = 0
+        total_impressions = 0
+        for prop_id in prop_ids:
+            latest = await session.scalar(
+                select(SEOSearchObservation)
+                .where(
                     SEOSearchObservation.organization_id == organization_id,
-                    SEOSearchObservation.search_property_id.in_(prop_ids),
+                    SEOSearchObservation.search_property_id == prop_id,
+                    SEOSearchObservation.dimensions["observation_type"].astext
+                    == "site_summary",
                 )
+                .order_by(SEOSearchObservation.date_end.desc())
             )
-        )
+            if latest is not None:
+                total_clicks += latest.clicks or 0
+                total_impressions += latest.impressions or 0
         return {
             "connected": True,
-            "total_clicks": sum(r.clicks or 0 for r in rows),
-            "total_impressions": sum(r.impressions or 0 for r in rows),
+            "total_clicks": total_clicks,
+            "total_impressions": total_impressions,
             "properties": [
                 {
                     "id": str(p.id),

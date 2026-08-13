@@ -147,8 +147,16 @@ class FakeAnalyticsAdapter(GoogleAnalyticsAdapter):
             "screenPageViews",
             "conversions",
         ),
+        dimensions: Sequence[str] = (),
     ) -> list[AnalyticsReportRow]:
-        del access_token, property_number, start_date, end_date, metrics
+        del (
+            access_token,
+            property_number,
+            start_date,
+            end_date,
+            metrics,
+            dimensions,
+        )
         return self._rows
 
 

@@ -24,6 +24,45 @@ export type AnalyticsSummary = {
   metrics: Record<string, number>;
 };
 
+export type AnalyticsKPI = {
+  label: string;
+  current: number | null;
+  previous: number | null;
+  delta: number | null;
+  percent_delta: number | null;
+  quality: string;
+};
+
+export type AnalyticsPerformanceReport = {
+  connected: boolean;
+  properties: {
+    id: string;
+    display_name: string;
+    external_property_id: string;
+    freshness_status: string;
+    last_synced_at: string | null;
+  }[];
+  range: {
+    start: string;
+    end: string;
+    days: number;
+  } | null;
+  comparison_range: {
+    start: string;
+    end: string;
+    days: number;
+  } | null;
+  freshness: {
+    last_synced_at: string | null;
+    status: string;
+  };
+  metrics: Record<string, AnalyticsKPI>;
+  series: {
+    date: string;
+    metrics: Record<string, number>;
+  }[];
+};
+
 function base(organizationId: string): string {
   return `/api/v1/organizations/${organizationId}/insights`;
 }
@@ -66,6 +105,15 @@ export function syncAnalytics(
   return apiRequest(
     `${base(organizationId)}/analytics/properties/${analyticsPropertyId}/sync`,
     { method: "POST", body: { days } },
+  );
+}
+
+export function fetchAnalyticsPerformance(
+  organizationId: string,
+  days = 28,
+): Promise<ApiOutcome<AnalyticsPerformanceReport>> {
+  return apiGet<AnalyticsPerformanceReport>(
+    `${base(organizationId)}/analytics/performance?days=${days}`,
   );
 }
 
