@@ -559,43 +559,46 @@ class AdministrationService:
     ) -> list[EffectiveFact]:
         """Return every active governed business fact currently in effect.
 
-        When multiple active revisions share the same fact_key the highest
-        authority wins (per AUTHORITY_RANK).  Location-scoped facts are
-        returned alongside organization-scoped facts; callers distinguish
-        them via location_id.
+        Facts with the same fact_key but distinct location scopes are kept
+        separate.  Within one (fact_key, location_id) scope the highest
+        authority wins (per AUTHORITY_RANK).
         """
         await _organization(session, organization_id)
         all_active = await self.facts.list_effective(session, organization_id)
-        by_key: dict[str, list[BusinessFactRevision]] = {}
+        by_scope: dict[tuple[str, UUID | None], list[BusinessFactRevision]] = {}
         for rev in all_active:
-            by_key.setdefault(rev.fact_key, []).append(rev)
+            scope = (rev.fact_key, rev.location_id)
+            by_scope.setdefault(scope, []).append(rev)
         winning: list[EffectiveFact] = []
-        for key, revisions in by_key.items():
+        for (fact_key, location_id), revisions in by_scope.items():
             ranked = sorted(
                 revisions,
-                key=lambda r: (
-                    AUTHORITY_RANK[r.authority],
-                    r.location_id is not None,
-                    r.revision,
-                ),
+                key=lambda r: (AUTHORITY_RANK[r.authority], r.revision),
                 reverse=True,
             )
             selected = ranked[0]
             winning.append(
                 EffectiveFact(
-                    fact_key=key,
+                    fact_key=fact_key,
                     revision_id=selected.id,
                     fact_identity=selected.fact_identity,
                     value=selected.value,
                     value_type=selected.value_type,
-                    location_id=selected.location_id,
+                    location_id=location_id,
                     source=selected.source,
                     authority=FactAuthority(selected.authority),
                     revision=selected.revision,
                     approved_at=selected.approved_at,
                 )
             )
-        winning.sort(key=lambda f: f.fact_key)
+        winning.sort(
+            key=lambda f: (
+                f.fact_key,
+                str(f.location_id)
+                if f.location_id is not None
+                else "00000000-0000-0000-0000-000000000000",
+            )
+        )
         return winning
 
     async def create_entitlement(

@@ -3,7 +3,12 @@
    Handles the Google Business Profile normalized_profile["regularHours"]
    structure:
 
-   { periods: [{ openDay, openTime, closeDay, closeTime }] }
+   periods: [{ openDay, openTime, closeDay, closeTime }]
+
+   openTime / closeTime may be either:
+   - string: "09:00"
+   - object: { hours: 9 }
+   - object: { hours: 9, minutes: 0, seconds: 0, nanos: 0 }
 
    Falls back gracefully for malformed/unsupported values.
 */
@@ -30,34 +35,67 @@ const DAY_ABBREV: Record<DayIndex, string> = {
   6: "Sun",
 };
 
+interface GbpTimeOfDay {
+  hours?: unknown;
+  minutes?: unknown;
+  seconds?: unknown;
+  nanos?: unknown;
+}
+
 interface Period {
   openDay: string;
-  openTime: string;
+  openTime: string | GbpTimeOfDay;
   closeDay: string;
-  closeTime: string;
+  closeTime: string | GbpTimeOfDay;
 }
 
 interface Interval {
-  open: number; // minutes since midnight
-  close: number; // minutes since midnight
+  open: number;
+  close: number;
 }
 
 interface DaySchedule {
   intervals: Interval[];
 }
 
-function parseTime(raw: string): number {
-  const parts = raw?.split(":");
-  if (!parts || parts.length !== 2) return 0;
-  const hours = Number.parseInt(parts[0], 10);
-  const minutes = Number.parseInt(parts[1], 10);
-  if (Number.isNaN(hours) || Number.isNaN(minutes)) return 0;
+const MIDNIGHT_MINUTES = 24 * 60;
+
+function parseTime(raw: string | GbpTimeOfDay): number | null {
+  if (typeof raw === "string") {
+    const parts = raw.split(":");
+    if (parts.length < 2) return null;
+    const hours = Number.parseInt(parts[0], 10);
+    const minutes = Number.parseInt(parts[1], 10);
+    if (Number.isNaN(hours) || Number.isNaN(minutes)) return null;
+    if (hours < 0 || hours > 23) return null;
+    if (minutes < 0 || minutes > 59) return null;
+    return hours * 60 + minutes;
+  }
+
+  if (raw === null || typeof raw !== "object") return null;
+
+  const hours =
+    typeof raw.hours === "number" ? raw.hours : Number(raw.hours ?? NaN);
+  const minutes =
+    typeof raw.minutes === "number" ? raw.minutes : Number(raw.minutes ?? 0);
+  const seconds =
+    typeof raw.seconds === "number" ? raw.seconds : Number(raw.seconds ?? 0);
+  const nanos =
+    typeof raw.nanos === "number" ? raw.nanos : Number(raw.nanos ?? 0);
+
+  if (Number.isNaN(hours) || Number.isNaN(minutes)) return null;
+  if (hours < 0 || hours > 23) return null;
+  if (minutes < 0 || minutes > 59) return null;
+  if (seconds < 0 || seconds > 59) return null;
+  if (nanos < 0) return null;
+
   return hours * 60 + minutes;
 }
 
 function formatAmPm(minutes: number): string {
   const h = Math.floor(minutes / 60);
   const m = minutes % 60;
+  if (h === 24) return "12:00 AM";
   const period = h >= 12 ? "PM" : "AM";
   const displayHour = h % 12 === 0 ? 12 : h % 12;
   if (m === 0) return `${displayHour}:00 ${period}`;
@@ -77,35 +115,36 @@ function formatInterval(interval: Interval): string {
   return `${formatAmPm(interval.open)}\u2013${formatAmPm(interval.close)}`;
 }
 
-function formatSchedulesAsRows(schedules: DaySchedule[]): string[] {
+export interface BusinessHoursRow {
+  dayLabel: string;
+  timeLabel: string;
+}
+
+function buildScheduleRows(schedules: DaySchedule[]): BusinessHoursRow[] {
   if (schedules.length !== 7) return [];
-  const rows: string[] = [];
+  const rows: BusinessHoursRow[] = [];
   let i = 0;
   while (i < 7) {
     const current = schedules[i];
     if (current.intervals.length === 0) {
-      // Collect consecutive closed days.
       let j = i;
       while (j < 7 && schedules[j].intervals.length === 0) j++;
-      if (j - i === 1) {
-        rows.push(`${DAY_ABBREV[i as DayIndex]}\tClosed`);
-      } else {
-        rows.push(
-          `${DAY_ABBREV[i as DayIndex]}\u2013${DAY_ABBREV[(j - 1) as DayIndex]}\tClosed`,
-        );
-      }
+      const dayLabel =
+        j - i === 1
+          ? DAY_ABBREV[i as DayIndex]
+          : `${DAY_ABBREV[i as DayIndex]}\u2013${DAY_ABBREV[(j - 1) as DayIndex]}`;
+      rows.push({ dayLabel, timeLabel: "Closed" });
       i = j;
       continue;
     }
-    // Collect consecutive days with identical schedules.
     let j = i + 1;
     while (j < 7 && intervalsEqual(current, schedules[j])) j++;
-    const timeLabels = current.intervals.map(formatInterval).join(", ");
+    const timeLabel = current.intervals.map(formatInterval).join(", ");
     const dayLabel =
       j - i === 1
         ? DAY_ABBREV[i as DayIndex]
         : `${DAY_ABBREV[i as DayIndex]}\u2013${DAY_ABBREV[(j - 1) as DayIndex]}`;
-    rows.push(`${dayLabel}\t${timeLabels}`);
+    rows.push({ dayLabel, timeLabel });
     i = j;
   }
   return rows;
@@ -118,20 +157,20 @@ function isValidPeriods(periods: unknown): periods is Period[] {
       typeof p === "object" &&
       p !== null &&
       typeof (p as Period).openDay === "string" &&
-      typeof (p as Period).openTime === "string" &&
       typeof (p as Period).closeDay === "string" &&
-      typeof (p as Period).closeTime === "string",
+      typeof (p as Period).openTime !== "undefined" &&
+      typeof (p as Period).closeTime !== "undefined",
   );
 }
 
-export function formatBusinessHours(value: unknown): string {
-  if (!value || typeof value !== "object") return "\u2014";
+export function formatBusinessHoursRows(
+  value: unknown,
+): BusinessHoursRow[] | null {
+  if (!value || typeof value !== "object") return null;
   const obj = value as Record<string, unknown>;
-  if (!isValidPeriods(obj.periods)) return "\u2014";
+  if (!isValidPeriods(obj.periods)) return null;
 
-  const periods = obj.periods;
-
-  // Build schedule: 7 days, each with an array of intervals.
+  const periods = obj.periods as Period[];
   const schedules: DaySchedule[] = Array.from({ length: 7 }, () => ({
     intervals: [],
   }));
@@ -139,20 +178,17 @@ export function formatBusinessHours(value: unknown): string {
   for (const p of periods) {
     const openIdx = DAY_INDEX[p.openDay];
     const closeIdx = DAY_INDEX[p.closeDay];
-    if (openIdx === undefined || closeIdx === undefined) return "\u2014";
+    if (openIdx === undefined || closeIdx === undefined) return null;
 
     const openMinutes = parseTime(p.openTime);
     const closeMinutes = parseTime(p.closeTime);
+    if (openMinutes === null || closeMinutes === null) return null;
 
     if (openIdx === closeIdx) {
-      // Same-day interval
       if (closeMinutes <= openMinutes) {
-        // Overnight or invalid; treat as 24h/next-day
-        // Add to open day until midnight, then continue on next day
-        const midnight = 24 * 60;
         schedules[openIdx].intervals.push({
           open: openMinutes,
-          close: midnight,
+          close: MIDNIGHT_MINUTES,
         });
         const nextDay = (openIdx + 1) % 7;
         schedules[nextDay].intervals.push({
@@ -166,21 +202,19 @@ export function formatBusinessHours(value: unknown): string {
         });
       }
     } else {
-      // Multi-day interval (e.g., open Fri, close Mon)
       schedules[openIdx].intervals.push({
         open: openMinutes,
-        close: 24 * 60,
+        close: MIDNIGHT_MINUTES,
       });
       let day = (openIdx + 1) % 7;
       while (day !== closeIdx) {
-        schedules[day].intervals.push({ open: 0, close: 24 * 60 });
+        schedules[day].intervals.push({ open: 0, close: MIDNIGHT_MINUTES });
         day = (day + 1) % 7;
       }
       schedules[closeIdx].intervals.push({ open: 0, close: closeMinutes });
     }
   }
 
-  // Sort and merge overlapping/adjacent intervals per day.
   for (let d = 0; d < 7; d++) {
     if (schedules[d].intervals.length <= 1) continue;
     schedules[d].intervals.sort((a, b) => a.open - b.open);
@@ -202,8 +236,9 @@ export function formatBusinessHours(value: unknown): string {
     schedules[d].intervals = merged;
   }
 
-  // Deduplicate full-day schedules for grouping
-  const fullOpen: DaySchedule = { intervals: [{ open: 0, close: 24 * 60 }] };
+  const fullOpen: DaySchedule = {
+    intervals: [{ open: 0, close: MIDNIGHT_MINUTES }],
+  };
   const closed: DaySchedule = { intervals: [] };
   for (let d = 0; d < 7; d++) {
     if (intervalsEqual(schedules[d], fullOpen)) {
@@ -213,7 +248,11 @@ export function formatBusinessHours(value: unknown): string {
     }
   }
 
-  const rows = formatSchedulesAsRows(schedules);
-  if (rows.length === 0) return "\u2014";
-  return rows.join("\n");
+  return buildScheduleRows(schedules);
+}
+
+export function formatBusinessHours(value: unknown): string {
+  const rows = formatBusinessHoursRows(value);
+  if (!rows || rows.length === 0) return "\u2014";
+  return rows.map((r) => `${r.dayLabel}\t${r.timeLabel}`).join("\n");
 }

@@ -178,7 +178,7 @@ import "../styles/global.css";
         factSourceLabel,
         formatBusinessFactValue,
       } from "../lib/administration";
-      import { formatBusinessHours } from "../lib/business-hours";
+      import { formatBusinessHoursRows } from "../lib/business-hours";
       import {
         bootWorkspace,
         applyBootResult,
@@ -627,23 +627,28 @@ import "../styles/global.css";
           "Approval policies, business facts, and notification rules.",
         );
 
-        const [policyResult, effectiveResult, pendingResult] =
+        const [policyResult, effectiveResult, pendingResult, locationsResult] =
           await Promise.all([
             fetchEffectivePolicies(organizationId, "approval"),
             fetchEffectiveBusinessFacts(organizationId),
             fetchBusinessFactCandidates(organizationId),
+            fetchLocations(organizationId),
           ]);
+
+        const locationNames: Map<string, string> = new Map();
+        if (locationsResult.kind === "ok") {
+          for (const loc of locationsResult.data) {
+            locationNames.set(loc.id, loc.name);
+          }
+        }
 
         const sections: HTMLElement[] = [];
 
-        // ---- A. Approval Policy ----
         sections.push(_buildPolicySection(policyResult));
-
-        // ---- B. Verified Business Details ----
-        sections.push(_buildEffectiveFactsSection(effectiveResult));
-
-        // ---- C. Pending Confirmations ----
-        sections.push(_buildPendingFactsSection(pendingResult));
+        sections.push(
+          _buildEffectiveFactsSection(effectiveResult, locationNames),
+        );
+        sections.push(_buildPendingFactsSection(pendingResult, locationNames));
 
         domainContent.replaceChildren(...sections);
       }
@@ -715,10 +720,19 @@ import "../styles/global.css";
         return card;
       }
 
+      const CORE_FACT_KEYS = [
+        "business.name",
+        "business.address",
+        "business.website",
+        "business.hours",
+        "brand.approved_claims",
+      ];
+
       function _buildEffectiveFactsSection(
         result: import("../lib/administration").ApiOutcome<
           import("../lib/administration").EffectiveFact[]
         >,
+        locationNames: Map<string, string>,
       ): HTMLElement {
         const card = document.createElement("div");
         card.className = "card";
@@ -738,46 +752,121 @@ import "../styles/global.css";
           return card;
         }
 
-        if (result.data.length === 0) {
-          body.append(
-            emptyState(
-              "No verified business details yet",
-              "Confirm pending business details to establish verified facts.",
-            ),
-          );
-          card.append(body);
-          return card;
+        const factsByKey = new Map<string, typeof result.data>();
+        for (const f of result.data) {
+          const bucket = factsByKey.get(f.fact_key) || [];
+          bucket.push(f);
+          factsByKey.set(f.fact_key, bucket);
         }
 
         const list = document.createElement("ul");
         list.className = "product-list";
 
-        for (const fact of result.data) {
-          const item = document.createElement("li");
-          const info = document.createElement("div");
-          const name = document.createElement("h3");
-          name.textContent = businessFactLabel(fact.fact_key);
+        for (const key of CORE_FACT_KEYS) {
+          const entries = factsByKey.get(key) || [];
 
-          const value = _formatFactValueForDisplay(fact);
-          const detail = document.createElement("p");
-          detail.textContent = value;
-          info.append(name, detail);
+          if (key === "brand.approved_claims" && entries.length === 0) {
+            const item = document.createElement("li");
+            const info = document.createElement("div");
+            const h3 = document.createElement("h3");
+            h3.textContent = businessFactLabel(key);
+            const detail = document.createElement("p");
+            detail.textContent = "Not configured";
+            const explain = document.createElement("span");
+            explain.className = "text-xs muted";
+            explain.textContent =
+              "Approved claims control which claims are permitted in governed content.";
+            detail.append(" ", explain);
+            info.append(h3, detail);
 
-          const scopeInfo = document.createElement("span");
-          scopeInfo.className = "text-xs muted";
-          const parts: string[] = [];
-          if (fact.location_id) {
-            parts.push("Location-scoped");
+            const gotoBtn = _makeBtn("Business Information", "secondary", "sm");
+            gotoBtn.addEventListener("click", () => {
+              const bizCard = document.querySelector<HTMLElement>(
+                '[data-domain="business"]',
+              );
+              if (bizCard) bizCard.click();
+            });
+            item.append(info, gotoBtn);
+            list.append(item);
+            continue;
           }
-          parts.push(factSourceLabel(fact.source));
-          scopeInfo.textContent = parts.join(" \u00b7 ");
-          detail.append(" ", scopeInfo);
 
-          item.append(info, statusBadge("ready", "Verified"));
-          list.append(item);
+          for (const fact of entries) {
+            const item = document.createElement("li");
+            const info = document.createElement("div");
+            const hdr = document.createElement("div");
+            hdr.style.display = "flex";
+            hdr.style.alignItems = "baseline";
+            hdr.style.gap = "0.5rem";
+            hdr.style.flexWrap = "wrap";
+
+            const h3 = document.createElement("h3");
+            h3.textContent = businessFactLabel(fact.fact_key);
+            hdr.append(h3);
+
+            if (fact.location_id) {
+              const locBadge = document.createElement("span");
+              locBadge.className = "text-xs muted";
+              locBadge.textContent =
+                locationNames.get(fact.location_id) || "Location";
+              hdr.append(locBadge);
+            }
+
+            const detail = document.createElement("div");
+            if (fact.fact_key === "business.hours") {
+              const rows = formatBusinessHoursRows(fact.value);
+              if (rows && rows.length > 0) {
+                for (const row of rows) {
+                  const rowEl = document.createElement("div");
+                  rowEl.style.display = "flex";
+                  rowEl.style.gap = "1.5rem";
+                  rowEl.style.padding = "0.125rem 0";
+                  const daySpan = document.createElement("span");
+                  daySpan.style.minWidth = "7rem";
+                  daySpan.style.fontWeight = "500";
+                  daySpan.textContent = row.dayLabel;
+                  const timeSpan = document.createElement("span");
+                  timeSpan.textContent = row.timeLabel;
+                  rowEl.append(daySpan, timeSpan);
+                  detail.append(rowEl);
+                }
+              } else {
+                const p = document.createElement("p");
+                p.textContent = formatBusinessFactValue(fact.value);
+                detail.append(p);
+              }
+            } else {
+              const p = document.createElement("p");
+              p.textContent = formatBusinessFactValue(fact.value);
+              detail.append(p);
+            }
+
+            const scopeInfo = document.createElement("span");
+            scopeInfo.className = "text-xs muted";
+            scopeInfo.textContent = factSourceLabel(fact.source);
+            detail.append(scopeInfo);
+
+            info.append(hdr, detail);
+            item.append(info, statusBadge("ready", "Verified"));
+            list.append(item);
+          }
+
+          if (key !== "brand.approved_claims" && entries.length === 0) {
+            const item = document.createElement("li");
+            const info = document.createElement("div");
+            const h3 = document.createElement("h3");
+            h3.textContent = businessFactLabel(key);
+            const detail = document.createElement("p");
+            detail.className = "text-sm muted";
+            detail.textContent = "Not configured";
+            info.append(h3, detail);
+            item.append(info, statusBadge("missing", "Missing"));
+            list.append(item);
+          }
         }
-        card.append(body);
+
         body.append(list);
+        card.append(body);
         return card;
       }
 
@@ -785,6 +874,7 @@ import "../styles/global.css";
         result: import("../lib/administration").ApiOutcome<
           import("../lib/administration").BusinessFactRevision[]
         >,
+        locationNames: Map<string, string>,
       ): HTMLElement {
         const card = document.createElement("div");
         card.className = "card";
@@ -838,12 +928,26 @@ import "../styles/global.css";
         for (const candidate of result.data) {
           const item = document.createElement("li");
           const info = document.createElement("div");
+          const hdr = document.createElement("div");
+          hdr.style.display = "flex";
+          hdr.style.alignItems = "baseline";
+          hdr.style.gap = "0.5rem";
+          hdr.style.flexWrap = "wrap";
           const name = document.createElement("h3");
           name.textContent = businessFactLabel(candidate.fact_key);
+          hdr.append(name);
+
+          if (candidate.location_id) {
+            const locBadge = document.createElement("span");
+            locBadge.className = "badge badge--neutral";
+            locBadge.textContent =
+              locationNames.get(candidate.location_id) || "Location";
+            hdr.append(locBadge);
+          }
+
           const detail = document.createElement("p");
-          const valueText = _formatFactValueForDisplay(candidate);
-          detail.textContent = valueText;
-          info.append(name, detail);
+          detail.textContent = formatBusinessFactValue(candidate.value);
+          info.append(hdr, detail);
 
           const meta = document.createElement("span");
           meta.className = "text-xs muted";
@@ -852,7 +956,7 @@ import "../styles/global.css";
             mp.push("System-derived");
           }
           if (candidate.source) {
-            mp.push(factSourceLabel(candidate.source || ""));
+            mp.push(factSourceLabel(candidate.source));
           }
           meta.textContent = mp.join(" \u00b7 ");
           detail.append(" ", meta);
@@ -904,24 +1008,6 @@ import "../styles/global.css";
         body.append(list);
         card.append(body);
         return card;
-      }
-
-      function _formatFactValueForDisplay(
-        fact:
-          | import("../lib/administration").EffectiveFact
-          | import("../lib/administration").BusinessFactRevision,
-      ): string {
-        if (fact.fact_key === "business.hours") {
-          return formatBusinessHours(fact.value);
-        }
-        if (
-          fact.value === null ||
-          fact.value === undefined ||
-          fact.value === ""
-        ) {
-          return "\u2014";
-        }
-        return formatBusinessFactValue(fact.value);
       }
 
       function _makeBtn(
