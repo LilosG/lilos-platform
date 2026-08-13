@@ -17,11 +17,16 @@ export {
   applyShellAudience,
   setPlatformNavigationVisible,
   setPlatformAdminStatus,
+  isPlatformAdmin,
+  hasPlatformAdminGrant,
+  meetsPlatformAdminRequiredAssurance,
+  canUsePlatformAdministration,
   setProductNavigationVisibility,
   onOrganizationChanged,
   type BootRegions,
   type BootContext,
   type BootResult,
+  type PlatformAdminCapability,
 } from "./boot";
 export {
   buildDataTable,

@@ -43,12 +43,37 @@ function wireSignOut(): void {
   });
 }
 
-let _isPlatformAdmin = false;
+let _platformAdminGrant = false;
+let _meetsPlatformAdminAssurance = false;
 let _onOrganizationChanged: ((orgId: string) => void) | null = null;
 let _activeOrganizationId = "";
 
-export function setPlatformAdminStatus(status: boolean): void {
-  _isPlatformAdmin = status;
+export type PlatformAdminCapability = {
+  is_platform_administrator: boolean;
+  meets_required_assurance: boolean;
+};
+
+export function setPlatformAdminStatus(
+  capability: PlatformAdminCapability,
+): void {
+  _platformAdminGrant = capability.is_platform_administrator;
+  _meetsPlatformAdminAssurance = capability.meets_required_assurance;
+}
+
+export function isPlatformAdmin(): boolean {
+  return _platformAdminGrant;
+}
+
+export function hasPlatformAdminGrant(): boolean {
+  return _platformAdminGrant;
+}
+
+export function meetsPlatformAdminRequiredAssurance(): boolean {
+  return _meetsPlatformAdminAssurance;
+}
+
+export function canUsePlatformAdministration(): boolean {
+  return _platformAdminGrant && _meetsPlatformAdminAssurance;
 }
 
 export function onOrganizationChanged(handler: (orgId: string) => void): void {
@@ -61,7 +86,7 @@ function _updateAdminNavigation(): void {
   // membership-type allowlist.  The Admin group starts hidden (AppShell
   // renders it with the hidden attribute) and is only made visible when
   // the backend confirms an active platform-administrator grant.
-  setPlatformNavigationVisible(_isPlatformAdmin);
+  setPlatformNavigationVisible(_platformAdminGrant);
 }
 
 export function setProductNavigationVisibility(
@@ -70,7 +95,7 @@ export function setProductNavigationVisibility(
   if (typeof document === "undefined") return;
   // Platform administrators see the full product suite regardless of the
   // current organization's entitlements.
-  if (_isPlatformAdmin) {
+  if (_platformAdminGrant) {
     for (const item of document.querySelectorAll<HTMLElement>(
       "li[data-nav-product]",
     )) {
@@ -206,10 +231,14 @@ export async function bootWorkspace(
     fetchMyOrganizations(),
     fetchMyPlatformAdministratorStatus(),
   ]);
-  setPlatformAdminStatus(
-    platformStatus.kind === "ok" &&
+  setPlatformAdminStatus({
+    is_platform_administrator:
+      platformStatus.kind === "ok" &&
       platformStatus.data.is_platform_administrator,
-  );
+    meets_required_assurance:
+      platformStatus.kind === "ok" &&
+      platformStatus.data.meets_required_assurance,
+  });
   if (organizations.kind === "unauthenticated") {
     goToLogin();
     return { kind: "redirected-to-login" };
@@ -237,7 +266,7 @@ export async function bootWorkspace(
   // response arrives, and a stale response from an earlier switch is discarded.
   onOrganizationChanged(async (targetOrgId) => {
     // Hide all product items while the new entitlement state resolves.
-    if (!_isPlatformAdmin) {
+    if (!_platformAdminGrant) {
       for (const item of document.querySelectorAll<HTMLElement>(
         "li[data-nav-product]",
       )) {

@@ -2305,7 +2305,10 @@ import "../styles/global.css";
           showOnly(regions.notAdmin);
           return;
         }
-        setPlatformAdminStatus(true);
+        setPlatformAdminStatus({
+          is_platform_administrator: true,
+          meets_required_assurance: adminStatus.data.meets_required_assurance,
+        });
         applyShellAudience("internal");
         if (!adminStatus.data.meets_required_assurance) {
           logStage("redirect-to-mfa");
