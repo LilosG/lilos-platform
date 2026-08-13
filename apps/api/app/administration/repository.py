@@ -1,6 +1,6 @@
 """Narrow tenant-scoped Phase 4 persistence operations."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import cast
 from uuid import UUID
 
@@ -189,6 +189,28 @@ class FactRepository:
                 BusinessFactRevision.status.in_(("proposed", "pending_approval")),
             )
             .order_by(BusinessFactRevision.created_at.desc(), BusinessFactRevision.id)
+        )
+        return list(await session.scalars(stmt))
+
+    async def list_effective(
+        self, session: AsyncSession, organization_id: UUID
+    ) -> list[BusinessFactRevision]:
+        """List every active business-fact revision currently in effect.
+
+        Returns all revisions with status='active' whose effective window
+        includes the current time, scoped to one organization.
+        """
+        now = datetime.now(UTC)
+        stmt = (
+            select(BusinessFactRevision)
+            .where(
+                BusinessFactRevision.organization_id == organization_id,
+                BusinessFactRevision.status == "active",
+                BusinessFactRevision.effective_from <= now,
+                BusinessFactRevision.effective_until.is_(None)
+                | (BusinessFactRevision.effective_until > now),
+            )
+            .order_by(BusinessFactRevision.fact_key, BusinessFactRevision.revision.desc())
         )
         return list(await session.scalars(stmt))
 

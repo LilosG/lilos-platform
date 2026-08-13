@@ -293,6 +293,18 @@ async def list_business_fact_candidates(
     return response(request, [row(item) for item in items])
 
 
+@router.get("/business-facts/effective", response_model=DataResponse)
+async def list_effective_business_facts(
+    request: Request,
+    organization_id: UUID,
+    session: DatabaseSession,
+    _: Annotated[AuthorizationDecision | None, policy("business_facts.read")] = None,
+) -> DataResponse:
+    """List every active governed business fact currently in effect."""
+    items = await service.effective_facts(session, organization_id)
+    return response(request, items)
+
+
 @router.get("/products", response_model=DataResponse)
 async def list_products(
     request: Request,

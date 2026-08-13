@@ -167,6 +167,7 @@ import "../styles/global.css";
       import { summarizeReadiness } from "../lib/dashboard-logic";
       import {
         fetchBusinessFactCandidates,
+        fetchEffectiveBusinessFacts,
         decideBusinessFact,
         reconcileBusinessFacts,
         reconcileDefaultPolicy,
@@ -174,8 +175,10 @@ import "../styles/global.css";
         fetchMemberships,
         fetchInvitations,
         businessFactLabel,
+        factSourceLabel,
         formatBusinessFactValue,
       } from "../lib/administration";
+      import { formatBusinessHours } from "../lib/business-hours";
       import {
         bootWorkspace,
         applyBootResult,
@@ -624,181 +627,330 @@ import "../styles/global.css";
           "Approval policies, business facts, and notification rules.",
         );
 
-        const [policyResult, factsResult] = await Promise.all([
-          fetchEffectivePolicies(organizationId, "approval"),
-          fetchBusinessFactCandidates(organizationId),
-        ]);
+        const [policyResult, effectiveResult, pendingResult] =
+          await Promise.all([
+            fetchEffectivePolicies(organizationId, "approval"),
+            fetchEffectiveBusinessFacts(organizationId),
+            fetchBusinessFactCandidates(organizationId),
+          ]);
 
         const sections: HTMLElement[] = [];
 
-        // Policy section
-        const policyCard = document.createElement("div");
-        policyCard.className = "card";
-        const policyHeader = document.createElement("div");
-        policyHeader.className = "card__header";
-        const policyTitle = document.createElement("h3");
-        policyTitle.className = "card__title";
-        policyTitle.textContent = "Approval Policy";
-        policyHeader.append(policyTitle);
-        policyCard.append(policyHeader);
-        const policyBody = document.createElement("div");
-        policyBody.className = "card__body";
+        // ---- A. Approval Policy ----
+        sections.push(_buildPolicySection(policyResult));
+
+        // ---- B. Verified Business Details ----
+        sections.push(_buildEffectiveFactsSection(effectiveResult));
+
+        // ---- C. Pending Confirmations ----
+        sections.push(_buildPendingFactsSection(pendingResult));
+
+        domainContent.replaceChildren(...sections);
+      }
+
+      function _buildPolicySection(
+        policyResult:
+          | import("../lib/administration").ApiOutcome<
+              import("../lib/administration").PolicyRevision[]
+            >
+          | { kind: "not-found" },
+      ): HTMLElement {
+        const card = document.createElement("div");
+        card.className = "card";
+        const header = document.createElement("div");
+        header.className = "card__header";
+        const title = document.createElement("h3");
+        title.className = "card__title";
+        title.textContent = "Approval Policy";
+        header.append(title);
+        card.append(header);
+        const body = document.createElement("div");
+        body.className = "card__body";
 
         if (policyResult.kind === "ok" && policyResult.data.length > 0) {
-          const badge = statusBadge("ready", "Active");
+          body.append(statusBadge("ready", "Active"));
           const note = document.createElement("p");
           note.className = "text-sm muted";
           note.textContent = "An approval policy is in place.";
-          policyBody.append(badge, note);
+          body.append(note);
         } else if (
           policyResult.kind === "not-found" ||
           (policyResult.kind === "ok" && policyResult.data.length === 0)
         ) {
-          const badge = statusBadge("blocked", "Missing");
+          body.append(statusBadge("blocked", "Missing"));
           const note = document.createElement("p");
           note.className = "text-sm muted";
           note.textContent = "No approval policy yet.";
-          policyBody.append(badge, note);
-          const provisionBtn = document.createElement("button");
-          provisionBtn.type = "button";
-          provisionBtn.className = "button button--secondary button--sm";
-          provisionBtn.textContent = "Provision default policy";
-          provisionBtn.style.marginTop = "0.75rem";
-          provisionBtn.addEventListener("click", async () => {
-            provisionBtn.disabled = true;
-            provisionBtn.textContent = "Provisioning…";
-            const result = await reconcileDefaultPolicy(organizationId);
-            if (result.kind === "ok") {
-              provisionBtn.textContent = "Provisioned";
-              await openGovernance();
-            } else {
-              provisionBtn.disabled = false;
-              provisionBtn.textContent = "Provision default policy";
-              policyBody.append(errorAlert(describeFailure(result, "Policy")));
-            }
-          });
+          body.append(note);
           if (canOperateClientSettings) {
-            policyBody.append(provisionBtn);
+            const btn = _makeBtn("Provision default policy", "secondary", "sm");
+            btn.style.marginTop = "0.75rem";
+            btn.addEventListener("click", async () => {
+              btn.disabled = true;
+              btn.textContent = "Provisioning\u2026";
+              const result = await reconcileDefaultPolicy(organizationId);
+              if (result.kind === "ok") {
+                btn.textContent = "Provisioned";
+                await openGovernance();
+              } else {
+                btn.disabled = false;
+                btn.textContent = "Provision default policy";
+                body.append(errorAlert(describeFailure(result, "Policy")));
+              }
+            });
+            body.append(btn);
           } else if (_needsMfaForOperatorControls) {
-            policyBody.append(_buildMfaNudge());
+            body.append(_buildMfaNudge());
           } else {
             const contact = document.createElement("p");
             contact.className = "text-sm muted";
             contact.textContent =
               "Ask your account team to configure the approval policy.";
-            policyBody.append(contact);
+            body.append(contact);
           }
         } else {
-          policyBody.append(
-            errorAlert(describeFailure(policyResult, "Policy")),
-          );
+          body.append(errorAlert(describeFailure(policyResult, "Policy")));
         }
-        policyCard.append(policyBody);
-        sections.push(policyCard);
+        card.append(body);
+        return card;
+      }
 
-        // Facts section
-        const factsCard = document.createElement("div");
-        factsCard.className = "card";
-        const factsHeader = document.createElement("div");
-        factsHeader.className = "card__header";
-        const factsTitle = document.createElement("h3");
-        factsTitle.className = "card__title";
-        factsTitle.textContent = "Verified Business Details";
-        factsHeader.append(factsTitle);
-        factsCard.append(factsHeader);
-        const factsBody = document.createElement("div");
-        factsBody.className = "card__body";
+      function _buildEffectiveFactsSection(
+        result: import("../lib/administration").ApiOutcome<
+          import("../lib/administration").EffectiveFact[]
+        >,
+      ): HTMLElement {
+        const card = document.createElement("div");
+        card.className = "card";
+        const header = document.createElement("div");
+        header.className = "card__header";
+        const title = document.createElement("h3");
+        title.className = "card__title";
+        title.textContent = "Verified Business Details";
+        header.append(title);
+        card.append(header);
+        const body = document.createElement("div");
+        body.className = "card__body";
 
-        if (factsResult.kind === "ok" && factsResult.data.length > 0) {
-          if (canOperateClientSettings) {
-            factsBody.append(_buildReconcileButton(factsBody));
-          } else if (_needsMfaForOperatorControls) {
-            factsBody.append(_buildMfaNudge());
-          }
-          const list = document.createElement("ul");
-          list.className = "product-list";
-          for (const candidate of factsResult.data) {
-            const item = document.createElement("li");
-            const info = document.createElement("div");
-            const name = document.createElement("h3");
-            name.textContent = businessFactLabel(candidate.fact_key);
-            const detail = document.createElement("p");
-            detail.textContent = formatBusinessFactValue(candidate.value);
-            info.append(name, detail);
-            const confirmBtn = document.createElement("button");
-            confirmBtn.type = "button";
-            confirmBtn.className = "button button--sm";
-            confirmBtn.textContent = "Confirm";
-            confirmBtn.addEventListener("click", async () => {
-              confirmBtn.disabled = true;
-              confirmBtn.textContent = "Confirming…";
-              const result = await decideBusinessFact(
-                organizationId,
-                candidate.id,
-                "approve",
-              );
-              if (result.kind === "ok") {
-                item.remove();
-                if (list.children.length === 0) {
-                  factsBody.replaceChildren(
-                    emptyState(
-                      "All business details confirmed",
-                      "No pending business details remain.",
-                    ),
-                  );
-                  if (canOperateClientSettings) {
-                    factsBody.append(_buildReconcileButton(factsBody));
-                  } else if (_needsMfaForOperatorControls) {
-                    factsBody.append(_buildMfaNudge());
-                  }
-                }
-              } else {
-                confirmBtn.disabled = false;
-                confirmBtn.textContent = "Confirm";
-                info.append(errorAlert(describeFailure(result, "Confirm")));
-              }
-            });
-            item.append(info, confirmBtn);
-            list.append(item);
-          }
-          factsBody.append(list);
-        } else if (factsResult.kind === "ok") {
-          factsBody.append(
+        if (result.kind !== "ok") {
+          body.append(errorAlert(describeFailure(result, "Business details")));
+          card.append(body);
+          return card;
+        }
+
+        if (result.data.length === 0) {
+          body.append(
             emptyState(
-              "No business details awaiting confirmation",
-              "Refresh details from this client’s business profile, location, and website.",
+              "No verified business details yet",
+              "Confirm pending business details to establish verified facts.",
             ),
           );
-          if (canOperateClientSettings) {
-            factsBody.append(_buildReconcileButton(factsBody));
-          } else if (_needsMfaForOperatorControls) {
-            factsBody.append(_buildMfaNudge());
-          }
-        } else {
-          factsBody.append(errorAlert(describeFailure(factsResult, "Facts")));
+          card.append(body);
+          return card;
         }
-        factsCard.append(factsBody);
-        sections.push(factsCard);
 
-        domainContent.replaceChildren(...sections);
+        const list = document.createElement("ul");
+        list.className = "product-list";
+
+        for (const fact of result.data) {
+          const item = document.createElement("li");
+          const info = document.createElement("div");
+          const name = document.createElement("h3");
+          name.textContent = businessFactLabel(fact.fact_key);
+
+          const value = _formatFactValueForDisplay(fact);
+          const detail = document.createElement("p");
+          detail.textContent = value;
+          info.append(name, detail);
+
+          const scopeInfo = document.createElement("span");
+          scopeInfo.className = "text-xs muted";
+          const parts: string[] = [];
+          if (fact.location_id) {
+            parts.push("Location-scoped");
+          }
+          parts.push(factSourceLabel(fact.source));
+          scopeInfo.textContent = parts.join(" \u00b7 ");
+          detail.append(" ", scopeInfo);
+
+          item.append(info, statusBadge("ready", "Verified"));
+          list.append(item);
+        }
+        card.append(body);
+        body.append(list);
+        return card;
+      }
+
+      function _buildPendingFactsSection(
+        result: import("../lib/administration").ApiOutcome<
+          import("../lib/administration").BusinessFactRevision[]
+        >,
+      ): HTMLElement {
+        const card = document.createElement("div");
+        card.className = "card";
+        const header = document.createElement("div");
+        header.className = "card__header";
+        const hdrRow = document.createElement("div");
+        hdrRow.style.display = "flex";
+        hdrRow.style.justifyContent = "space-between";
+        hdrRow.style.alignItems = "flex-start";
+        hdrRow.style.width = "100%";
+        hdrRow.style.gap = "0.75rem";
+        const title = document.createElement("h3");
+        title.className = "card__title";
+        title.textContent = "Pending Confirmations";
+        hdrRow.append(title);
+        if (canOperateClientSettings) {
+          hdrRow.append(_buildReconcileButton(header));
+        } else if (_needsMfaForOperatorControls) {
+          hdrRow.append(_buildMfaNudge());
+        }
+        header.append(hdrRow);
+        card.append(header);
+        const body = document.createElement("div");
+        body.className = "card__body";
+
+        if (result.kind !== "ok") {
+          body.append(
+            errorAlert(describeFailure(result, "Pending confirmations")),
+          );
+          card.append(body);
+          return card;
+        }
+
+        const count = result.data.length;
+        const summary = document.createElement("p");
+        summary.className = "text-sm muted";
+        summary.style.marginBottom = "0.75rem";
+        summary.textContent =
+          count === 0
+            ? "No items requiring review."
+            : `${count} item${count === 1 ? "" : "s"} requiring review`;
+        body.append(summary);
+
+        if (count === 0) {
+          card.append(body);
+          return card;
+        }
+
+        const list = document.createElement("ul");
+        list.className = "product-list";
+        for (const candidate of result.data) {
+          const item = document.createElement("li");
+          const info = document.createElement("div");
+          const name = document.createElement("h3");
+          name.textContent = businessFactLabel(candidate.fact_key);
+          const detail = document.createElement("p");
+          const valueText = _formatFactValueForDisplay(candidate);
+          detail.textContent = valueText;
+          info.append(name, detail);
+
+          const meta = document.createElement("span");
+          meta.className = "text-xs muted";
+          const mp: string[] = [];
+          if (candidate.authority === "system_derived") {
+            mp.push("System-derived");
+          }
+          if (candidate.source) {
+            mp.push(factSourceLabel(candidate.source || ""));
+          }
+          meta.textContent = mp.join(" \u00b7 ");
+          detail.append(" ", meta);
+
+          const actions = document.createElement("div");
+          actions.style.display = "flex";
+          actions.style.gap = "0.5rem";
+          actions.style.alignItems = "center";
+
+          const confirmBtn = _makeBtn("Confirm", "primary", "sm");
+          confirmBtn.addEventListener("click", async () => {
+            confirmBtn.disabled = true;
+            confirmBtn.textContent = "Confirming\u2026";
+            const decision = await decideBusinessFact(
+              organizationId,
+              candidate.id,
+              "approve",
+            );
+            if (decision.kind !== "ok") {
+              confirmBtn.disabled = false;
+              confirmBtn.textContent = "Confirm";
+              info.append(errorAlert(describeFailure(decision, "Confirm")));
+              return;
+            }
+            await openGovernance();
+          });
+          const rejectBtn = _makeBtn("Reject", "secondary", "sm");
+          rejectBtn.addEventListener("click", async () => {
+            rejectBtn.disabled = true;
+            rejectBtn.textContent = "Rejecting\u2026";
+            const decision = await decideBusinessFact(
+              organizationId,
+              candidate.id,
+              "reject",
+            );
+            if (decision.kind !== "ok") {
+              rejectBtn.disabled = false;
+              rejectBtn.textContent = "Reject";
+              info.append(errorAlert(describeFailure(decision, "Reject")));
+              return;
+            }
+            await openGovernance();
+          });
+
+          actions.append(confirmBtn, rejectBtn);
+          item.append(info, actions);
+          list.append(item);
+        }
+        body.append(list);
+        card.append(body);
+        return card;
+      }
+
+      function _formatFactValueForDisplay(
+        fact:
+          | import("../lib/administration").EffectiveFact
+          | import("../lib/administration").BusinessFactRevision,
+      ): string {
+        if (fact.fact_key === "business.hours") {
+          return formatBusinessHours(fact.value);
+        }
+        if (
+          fact.value === null ||
+          fact.value === undefined ||
+          fact.value === ""
+        ) {
+          return "\u2014";
+        }
+        return formatBusinessFactValue(fact.value);
+      }
+
+      function _makeBtn(
+        label: string,
+        variant: "primary" | "secondary",
+        size: "sm" | "md",
+      ): HTMLButtonElement {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "button";
+        if (variant === "secondary") btn.classList.add("button--secondary");
+        if (size === "sm") btn.classList.add("button--sm");
+        btn.textContent = label;
+        return btn;
       }
 
       function _buildReconcileButton(
         container: HTMLElement,
       ): HTMLButtonElement {
-        const btn = document.createElement("button");
-        btn.type = "button";
-        btn.className = "button button--secondary button--sm";
-        btn.textContent = "Refresh business details";
+        const btn = _makeBtn("Reconcile business data", "secondary", "sm");
         btn.addEventListener("click", async () => {
           btn.disabled = true;
-          btn.textContent = "Generating…";
+          btn.textContent = "Reconciling\u2026";
           const result = await reconcileBusinessFacts(organizationId);
           if (result.kind === "ok") {
             await openGovernance();
           } else {
             btn.disabled = false;
-            btn.textContent = "Refresh business details";
+            btn.textContent = "Reconcile business data";
             container.append(errorAlert(describeFailure(result, "Facts")));
           }
         });
@@ -812,10 +964,7 @@ import "../styles/global.css";
         const msg = document.createElement("p");
         msg.textContent =
           "Operator controls require MFA. Complete MFA to manage this workspace's governance.";
-        const action = document.createElement("button");
-        action.type = "button";
-        action.className = "button button--secondary button--sm";
-        action.textContent = "Complete MFA";
+        const action = _makeBtn("Complete MFA", "secondary", "sm");
         action.style.marginTop = "0.5rem";
         action.addEventListener("click", () => {
           const next = encodeURIComponent(
@@ -826,7 +975,6 @@ import "../styles/global.css";
         nudge.append(msg, action);
         return nudge;
       }
-
       // ---- Products ----
       async function openProducts(): Promise<void> {
         showDomain(
