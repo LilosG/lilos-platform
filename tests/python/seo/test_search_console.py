@@ -147,6 +147,8 @@ class FakeSearchConsoleAdapter(SearchConsoleAdapter):
         query_rows: list[SearchAnalyticsRow] | None = None,
         page_rows: list[SearchAnalyticsRow] | None = None,
         summary_by_start: dict[str, list[SearchAnalyticsRow]] | None = None,
+        query_by_start: dict[str, list[SearchAnalyticsRow]] | None = None,
+        page_by_start: dict[str, list[SearchAnalyticsRow]] | None = None,
         fail_on_start: set[str] | None = None,
     ) -> None:
         self._properties = properties
@@ -155,6 +157,8 @@ class FakeSearchConsoleAdapter(SearchConsoleAdapter):
         self._query_rows = query_rows or []
         self._page_rows = page_rows or []
         self._summary_by_start = summary_by_start or {}
+        self._query_by_start = query_by_start or {}
+        self._page_by_start = page_by_start or {}
         self._fail_on_start = fail_on_start or set()
         # (site_url, start_date, end_date, dimensions)
         self.query_calls: list[tuple[str, str, str, tuple[str, ...]]] = []
@@ -181,9 +185,9 @@ class FakeSearchConsoleAdapter(SearchConsoleAdapter):
         if "date" in dimensions:
             return self._daily_rows
         if "query" in dimensions:
-            return self._query_rows
+            return self._query_by_start.get(start_date, self._query_rows)
         if "page" in dimensions:
-            return self._page_rows
+            return self._page_by_start.get(start_date, self._page_rows)
         return self._query_rows  # default fallback
 
 
@@ -1402,3 +1406,260 @@ async def test_search_console_ctr_position_decimal_deltas(
         assert metrics["position"]["percent_delta"] is not None
         # (-2.3 / 5.5 * 100) ≈ -41.818...
         assert pytest.approx(metrics["position"]["percent_delta"], abs=0.1) == -41.82
+
+
+# -- regression: GSC dimensional reporting-window isolation -------------------
+
+# Each top_query/top_page observation describes a full reporting window
+# (date_start == window_start, date_end == window_end).  Containment reads
+# would leak shorter-window rows into longer-window reports (the live defect).
+# The fix requires exact-window equality for dimensional reads while keeping
+# containment for daily series.
+
+
+@pytest.mark.integration
+@pytest.mark.anyio
+async def test_top_queries_exact_window_no_cross_period_leak(
+    seo_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """7d top_query must not leak into 28d / 90d performance_report results."""
+    day_n = datetime(2026, 8, 13, 12, 0, tzinfo=UTC)
+    _freeze_search_console_clock(monkeypatch, day_n)
+
+    async with seo_session_factory.begin() as session:
+        org = await make_organization(session)
+        settings = make_settings()
+        await make_connected_google_connection(
+            session,
+            settings,
+            org.id,
+            http_handler=token_handler("https://www.googleapis.com/auth/webmasters.readonly"),
+        )
+
+        # Each period returns a distinct "wheyland electric" value — exactly the
+        # live-defect scenario where 7d (8/30) leaked into 28d (39/120) etc.
+        query_by_start: dict[str, list[SearchAnalyticsRow]] = {}
+        for days, clicks, impressions in ((7, 8, 30), (28, 39, 120), (90, 95, 400)):
+            cur_start, _ = reporting_window(day_n, days, GSC_SYNC_TAIL_EXCLUSION_DAYS)
+            query_by_start[provider_start_date(cur_start)] = [
+                SearchAnalyticsRow(("wheyland electric",), clicks, impressions, 0.02, 5.0),
+                SearchAnalyticsRow(("other query",), clicks // 2, impressions // 2, 0.01, 6.0),
+            ]
+
+        fake = FakeSearchConsoleAdapter(
+            properties=[
+                DiscoveredSearchProperty("sc-domain:wheylandelectric.com", "domain", "owner")
+            ],
+            summary_rows=[SearchAnalyticsRow((), 500, 15000, 0.033, 5.0)],
+            query_by_start=query_by_start,
+        )
+        service = SearchConsoleService(adapter=fake)
+        mapped, website = await _setup_mapped_gsc(session, settings, org, fake)
+        await service.sync_observations(
+            session, settings, org.id, mapped.id, actor_id=None, correlation_id="s1"
+        )
+
+        # 7d report → only 7d "wheyland electric" (8 clicks / 30 impressions)
+        r7 = await service.performance_report(session, org.id, website.id, days=7)
+        q7 = cast(list[dict[str, object]], r7["top_queries"])
+        wheyland7 = [q for q in q7 if q["query"] == "wheyland electric"]
+        assert len(wheyland7) == 1, "7d report must have exactly one wheyland electric row"
+        assert wheyland7[0]["clicks"] == 8
+        assert wheyland7[0]["impressions"] == 30
+
+        # 28d report → only 28d (39/120), no 7d duplicate
+        r28 = await service.performance_report(session, org.id, website.id, days=28)
+        q28 = cast(list[dict[str, object]], r28["top_queries"])
+        wheyland28 = [q for q in q28 if q["query"] == "wheyland electric"]
+        assert len(wheyland28) == 1, "28d report must not leak 7d row"
+        assert wheyland28[0]["clicks"] == 39
+        assert wheyland28[0]["impressions"] == 120
+
+        # 90d report → only 90d (95/400), no 7d or 28d duplicates
+        r90 = await service.performance_report(session, org.id, website.id, days=90)
+        q90 = cast(list[dict[str, object]], r90["top_queries"])
+        wheyland90 = [q for q in q90 if q["query"] == "wheyland electric"]
+        assert len(wheyland90) == 1, "90d report must not leak 7d/28d rows"
+        assert wheyland90[0]["clicks"] == 95
+        assert wheyland90[0]["impressions"] == 400
+
+
+@pytest.mark.integration
+@pytest.mark.anyio
+async def test_top_pages_exact_window_no_cross_period_leak(
+    seo_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """7d top_page must not leak into 28d / 90d performance_report results."""
+    day_n = datetime(2026, 8, 13, 12, 0, tzinfo=UTC)
+    _freeze_search_console_clock(monkeypatch, day_n)
+
+    async with seo_session_factory.begin() as session:
+        org = await make_organization(session)
+        settings = make_settings()
+        await make_connected_google_connection(
+            session,
+            settings,
+            org.id,
+            http_handler=token_handler("https://www.googleapis.com/auth/webmasters.readonly"),
+        )
+
+        page_by_start: dict[str, list[SearchAnalyticsRow]] = {}
+        for days, clicks, impressions in ((7, 10, 50), (28, 60, 200), (90, 150, 500)):
+            cur_start, _ = reporting_window(day_n, days, GSC_SYNC_TAIL_EXCLUSION_DAYS)
+            page_by_start[provider_start_date(cur_start)] = [
+                SearchAnalyticsRow(("/services",), clicks, impressions, 0.04, 3.5),
+                SearchAnalyticsRow(("/contact",), clicks // 2, impressions // 2, 0.03, 4.0),
+            ]
+
+        fake = FakeSearchConsoleAdapter(
+            properties=[
+                DiscoveredSearchProperty("sc-domain:wheylandelectric.com", "domain", "owner")
+            ],
+            summary_rows=[SearchAnalyticsRow((), 500, 15000, 0.033, 5.0)],
+            page_by_start=page_by_start,
+        )
+        service = SearchConsoleService(adapter=fake)
+        mapped, website = await _setup_mapped_gsc(session, settings, org, fake)
+        await service.sync_observations(
+            session, settings, org.id, mapped.id, actor_id=None, correlation_id="s1"
+        )
+
+        r7 = await service.performance_report(session, org.id, website.id, days=7)
+        p7 = cast(list[dict[str, object]], r7["top_pages"])
+        svc7 = [p for p in p7 if p["page"] == "/services"]
+        assert len(svc7) == 1
+        assert svc7[0]["clicks"] == 10
+        assert svc7[0]["impressions"] == 50
+
+        r28 = await service.performance_report(session, org.id, website.id, days=28)
+        p28 = cast(list[dict[str, object]], r28["top_pages"])
+        svc28 = [p for p in p28 if p["page"] == "/services"]
+        assert len(svc28) == 1, "28d report must not leak 7d page row"
+        assert svc28[0]["clicks"] == 60
+        assert svc28[0]["impressions"] == 200
+
+        r90 = await service.performance_report(session, org.id, website.id, days=90)
+        p90 = cast(list[dict[str, object]], r90["top_pages"])
+        svc90 = [p for p in p90 if p["page"] == "/services"]
+        assert len(svc90) == 1, "90d report must not leak 7d/28d page rows"
+        assert svc90[0]["clicks"] == 150
+        assert svc90[0]["impressions"] == 500
+
+
+@pytest.mark.integration
+@pytest.mark.anyio
+async def test_daily_series_still_uses_containment_not_exact_window(
+    seo_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Daily observations are single-day rows contained inside the window."""
+    day_n = datetime(2026, 8, 13, 12, 0, tzinfo=UTC)
+    _freeze_search_console_clock(monkeypatch, day_n)
+
+    async with seo_session_factory.begin() as session:
+        org = await make_organization(session)
+        settings = make_settings()
+        await make_connected_google_connection(
+            session,
+            settings,
+            org.id,
+            http_handler=token_handler("https://www.googleapis.com/auth/webmasters.readonly"),
+        )
+
+        # Simulate that every window sync produced daily rows for the same days
+        # — containment ensures each report only gets its own window's rows.
+        def _make_daily(date_val: str, clicks: int) -> SearchAnalyticsRow:
+            return SearchAnalyticsRow((date_val,), clicks, clicks * 10, 0.03, 5.0)
+
+        # Sync uses one set of daily rows (same for all periods via fake).
+        # The _daily_rows list is shared — but each sync period generates
+        # daily obs with its own date_start/date_end boundaries.
+        # We'll test that the 28d report only sees the 28 days of daily obs
+        # stored during the 28d sync slice.
+        daily_date = (day_n.date() - timedelta(days=3)).isoformat()
+        fake = FakeSearchConsoleAdapter(
+            properties=[
+                DiscoveredSearchProperty("sc-domain:wheylandelectric.com", "domain", "owner")
+            ],
+            summary_rows=[SearchAnalyticsRow((), 500, 15000, 0.033, 5.0)],
+            daily_rows=[_make_daily(daily_date, 15)],
+        )
+        service = SearchConsoleService(adapter=fake)
+        mapped, website = await _setup_mapped_gsc(session, settings, org, fake)
+        await service.sync_observations(
+            session, settings, org.id, mapped.id, actor_id=None, correlation_id="s1"
+        )
+
+        # All three periods produce the same daily_date row, each stored with
+        # its own day_start/day_end (single day).  Containment ensures every
+        # report finds the row — the test proves containment still returns them.
+        for days in (7, 28, 90):
+            report = await service.performance_report(session, org.id, website.id, days=days)
+            series = cast(list[dict[str, object]], report["series"])
+            assert len(series) == 1
+            assert series[0]["date"] == daily_date
+            assert series[0]["clicks"] == 15
+            assert series[0]["impressions"] == 150
+
+
+@pytest.mark.integration
+@pytest.mark.anyio
+async def test_site_summary_kpi_unaffected_by_exact_window_fix(
+    seo_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Site-summary current/prior KPI reads must remain unchanged (exact match)."""
+    day_n = datetime(2026, 8, 13, 12, 0, tzinfo=UTC)
+    _freeze_search_console_clock(monkeypatch, day_n)
+
+    async with seo_session_factory.begin() as session:
+        org = await make_organization(session)
+        settings = make_settings()
+        await make_connected_google_connection(
+            session,
+            settings,
+            org.id,
+            http_handler=token_handler("https://www.googleapis.com/auth/webmasters.readonly"),
+        )
+
+        # Multiple periods with distinct current KPIs — each uses exact
+        # _get_observation_by_type (unchanged), must not cross-contaminate.
+        summary_by_start: dict[str, list[SearchAnalyticsRow]] = {}
+        for days, clicks in ((7, 100), (28, 500), (90, 2000)):
+            cur_start, _ = reporting_window(day_n, days, GSC_SYNC_TAIL_EXCLUSION_DAYS)
+            comp_start, _ = comparison_window(cur_start, days)
+            summary_by_start[provider_start_date(cur_start)] = [
+                SearchAnalyticsRow((), clicks, clicks * 10, 0.033, 5.0)
+            ]
+            summary_by_start[provider_start_date(comp_start)] = [
+                SearchAnalyticsRow((), clicks - 10, (clicks - 10) * 10, 0.030, 5.5)
+            ]
+
+        fake = FakeSearchConsoleAdapter(
+            properties=[
+                DiscoveredSearchProperty("sc-domain:wheylandelectric.com", "domain", "owner")
+            ],
+            summary_by_start=summary_by_start,
+        )
+        service = SearchConsoleService(adapter=fake)
+        mapped, website = await _setup_mapped_gsc(session, settings, org, fake)
+        await service.sync_observations(
+            session, settings, org.id, mapped.id, actor_id=None, correlation_id="s1"
+        )
+
+        r7 = await service.performance_report(session, org.id, website.id, days=7)
+        m7 = cast(dict[str, dict[str, object]], r7["metrics"])
+        assert m7["clicks"]["current"] == 100, "7d site_summary KPI correct"
+        assert m7["clicks"]["previous"] == 90
+
+        r28 = await service.performance_report(session, org.id, website.id, days=28)
+        m28 = cast(dict[str, dict[str, object]], r28["metrics"])
+        assert m28["clicks"]["current"] == 500, "28d site_summary KPI correct"
+        assert m28["clicks"]["previous"] == 490
+
+        r90 = await service.performance_report(session, org.id, website.id, days=90)
+        m90 = cast(dict[str, dict[str, object]], r90["metrics"])
+        assert m90["clicks"]["current"] == 2000, "90d site_summary KPI correct"
+        assert m90["clicks"]["previous"] == 1990
