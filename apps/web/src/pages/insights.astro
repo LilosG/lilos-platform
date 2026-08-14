@@ -254,17 +254,19 @@ import "../styles/global.css";
               : "Not configured",
           });
           const scMapped = !!wr.search_console_mapped;
+          const scReady = scMapped && wr.search_console_freshness === "fresh";
           facts.push({
             label: "Search Console",
-            ready: scMapped,
+            ready: scReady,
             note: scMapped
               ? readinessClientLabel(wr.search_console_freshness as string)
               : "Not mapped",
           });
           const gaMapped = !!wr.analytics_mapped;
+          const gaReady = gaMapped && wr.analytics_freshness === "fresh";
           facts.push({
             label: "Analytics",
-            ready: gaMapped,
+            ready: gaReady,
             note: gaMapped
               ? readinessClientLabel(wr.analytics_freshness as string)
               : "Not mapped",
@@ -317,7 +319,7 @@ import "../styles/global.css";
           case "stale":
             return "Stale";
           case "never_synced":
-            return "Connected";
+            return "Mapped \u00b7 not yet synced";
           case "not_mapped":
             return "Not mapped";
           default:

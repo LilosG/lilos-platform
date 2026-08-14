@@ -498,7 +498,19 @@ class SearchConsoleService:
             )
             upserted += 1
 
+        if not summary_rows:
+            await self._store_site_summary(
+                session,
+                property_row,
+                organization_id,
+                date_start=start,
+                date_end=window_end,
+                row=None,
+            )
+            upserted += 1
+
         # B. Prior site summary — exact comparison window for delta/percent
+        prior_failed = False
         try:
             prior_summary_rows = await self.adapter.query_search_analytics(
                 token,
@@ -510,6 +522,7 @@ class SearchConsoleService:
             )
         except Exception as exc:
             prior_summary_rows = []
+            prior_failed = True
             failed = True
             failures.append(
                 {
@@ -527,6 +540,17 @@ class SearchConsoleService:
                 date_start=comp_start,
                 date_end=comp_end,
                 row=row,
+            )
+            upserted += 1
+
+        if not prior_summary_rows and not prior_failed:
+            await self._store_site_summary(
+                session,
+                property_row,
+                organization_id,
+                date_start=comp_start,
+                date_end=comp_end,
+                row=None,
             )
             upserted += 1
 
@@ -737,9 +761,13 @@ class SearchConsoleService:
         *,
         date_start: datetime,
         date_end: datetime,
-        row: SearchAnalyticsRow,
+        row: SearchAnalyticsRow | None = None,
     ) -> None:
-        """Upsert one authoritative site_summary observation for the window."""
+        """Upsert one authoritative site_summary observation for the window.
+
+        When *row* is None the caller is establishing an authoritative
+        zero-data observation (provider call succeeded but returned no rows).
+        """
         dims: dict[str, object] = {"observation_type": "site_summary"}
         dim_hash = _dimension_hash(dims)
         existing = await session.scalar(
@@ -750,14 +778,26 @@ class SearchConsoleService:
                 SEOSearchObservation.dimension_hash == dim_hash,
             )
         )
+        if row is None:
+            quality = "zero"
+            clicks: int = 0
+            impressions: int = 0
+            ctr = None
+            position = None
+        else:
+            quality = "valid"
+            clicks = row.clicks
+            impressions = row.impressions
+            ctr = row.ctr
+            position = row.position
         if existing is not None:
-            existing.clicks = row.clicks
-            existing.impressions = row.impressions
-            existing.ctr = row.ctr
-            existing.position = row.position
+            existing.clicks = clicks
+            existing.impressions = impressions
+            existing.ctr = ctr
+            existing.position = position
             existing.query = None
             existing.dimensions = dims
-            existing.quality_status = "valid"
+            existing.quality_status = quality
             existing.partial = False
         else:
             session.add(
@@ -770,11 +810,11 @@ class SearchConsoleService:
                     date_end=date_end,
                     dimensions=dims,
                     dimension_hash=dim_hash,
-                    clicks=row.clicks,
-                    impressions=row.impressions,
-                    ctr=row.ctr,
-                    position=row.position,
-                    quality_status="valid",
+                    clicks=clicks,
+                    impressions=impressions,
+                    ctr=ctr,
+                    position=position,
+                    quality_status=quality,
                     partial=False,
                 )
             )
@@ -927,16 +967,12 @@ class SearchConsoleService:
             prev_val = getattr(comp_summary, metric_key, None) if comp_summary else None
             absolute_delta = None
             percent_delta = None
-            if (
-                curr_val is not None
-                and prev_val is not None
-                and isinstance(curr_val, (int, float))
-                and isinstance(prev_val, (int, float))
-            ):
-                absolute_delta = float(curr_val) - float(prev_val)
-                if prev_val != 0:
-                    pct = (float(curr_val) - float(prev_val)) / abs(float(prev_val)) * 100
-                    percent_delta = pct
+            if curr_val is not None and prev_val is not None:
+                curr_number = float(curr_val)
+                prev_number = float(prev_val)
+                absolute_delta = curr_number - prev_number
+                if prev_number != 0:
+                    percent_delta = absolute_delta / abs(prev_number) * 100
 
             quality = "valid"
             if curr_val is None:

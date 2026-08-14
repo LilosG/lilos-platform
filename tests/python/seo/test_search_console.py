@@ -1173,3 +1173,241 @@ async def test_search_console_sync_failure_tenant_isolation(
         report_b = await service_b.performance_report(session, org_b.id, website_b.id, days=28)
         assert report_b["range"] is None
         assert cast(dict[str, object], report_b["freshness"])["status"] == "never_synced"
+
+
+# -- regression: empty site-summary must establish authoritative zero observation --
+
+
+@pytest.mark.integration
+@pytest.mark.anyio
+async def test_search_console_empty_current_summary_persists_zero_observation(
+    seo_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """First sync stores real data; second sync returns [] → current window is zero."""
+    day_n = datetime(2026, 8, 13, 12, 0, tzinfo=UTC)
+    _freeze_search_console_clock(monkeypatch, day_n)
+
+    async with seo_session_factory.begin() as session:
+        org = await make_organization(session)
+        settings = make_settings()
+        await make_connected_google_connection(
+            session,
+            settings,
+            org.id,
+            http_handler=token_handler("https://www.googleapis.com/auth/webmasters.readonly"),
+        )
+
+        # First sync — real 28‑day data
+        cur_start, cur_end = reporting_window(day_n, 28, GSC_SYNC_TAIL_EXCLUSION_DAYS)
+        comp_start, _ = comparison_window(cur_start, 28)
+        summary_by_start1: dict[str, list[SearchAnalyticsRow]] = {
+            provider_start_date(cur_start): [
+                SearchAnalyticsRow((), 500, 15000, 0.033, 5.0)
+            ],
+            provider_start_date(comp_start): [
+                SearchAnalyticsRow((), 400, 12000, 0.033, 5.5)
+            ],
+        }
+
+        fake1 = FakeSearchConsoleAdapter(
+            properties=[
+                DiscoveredSearchProperty("sc-domain:wheylandelectric.com", "domain", "owner")
+            ],
+            summary_by_start=summary_by_start1,
+        )
+        service = SearchConsoleService(adapter=fake1)
+        mapped, website = await _setup_mapped_gsc(session, settings, org, fake1)
+        result = await service.sync_observations(
+            session, settings, org.id, mapped.id, actor_id=None, correlation_id="s1"
+        )
+        assert result["freshness_status"] == "fresh"
+        assert result["last_synced_at"] is not None
+        first_synced = result["last_synced_at"]
+
+        report = await service.performance_report(session, org.id, website.id, days=28)
+        metrics = cast(dict[str, dict[str, object]], report["metrics"])
+        assert metrics["clicks"]["current"] == 500
+        assert cast(dict[str, object], report["freshness"])["status"] == "fresh"
+
+        # Advance clock so we get a new reporting window
+        day_n1 = day_n + timedelta(days=3)
+        _FrozenDateTime.frozen_now = day_n1
+
+        new_start, new_end = reporting_window(day_n1, 28, GSC_SYNC_TAIL_EXCLUSION_DAYS)
+        new_comp_start, _ = comparison_window(new_start, 28)
+
+        # Second sync — current site_summary returns [], prior returns zero too
+        summary_by_start2: dict[str, list[SearchAnalyticsRow]] = {
+            provider_start_date(new_start): [],
+            provider_start_date(new_comp_start): [],
+        }
+        fake2 = FakeSearchConsoleAdapter(
+            properties=[
+                DiscoveredSearchProperty("sc-domain:wheylandelectric.com", "domain", "owner")
+            ],
+            summary_by_start=summary_by_start2,
+        )
+        service2 = SearchConsoleService(adapter=fake2)
+        result2 = await service2.sync_observations(
+            session, settings, org.id, mapped.id, actor_id=None, correlation_id="s2"
+        )
+        assert result2["freshness_status"] == "fresh"
+        assert result2["last_synced_at"] is not None
+        assert result2["last_synced_at"] > first_synced
+
+        report2 = await service2.performance_report(session, org.id, website.id, days=28)
+        metrics2 = cast(dict[str, dict[str, object]], report2["metrics"])
+        assert metrics2["clicks"]["current"] == 0
+        assert metrics2["clicks"]["previous"] == 0
+        assert metrics2["impressions"]["current"] == 0
+        assert metrics2["impressions"]["previous"] == 0
+        assert metrics2["ctr"]["current"] is None
+        assert metrics2["ctr"]["previous"] is None
+        assert metrics2["position"]["current"] is None
+        assert metrics2["position"]["previous"] is None
+        assert metrics2["clicks"]["quality"] == "valid"
+        assert metrics2["ctr"]["quality"] == "missing"
+
+        # Range labels use the new window
+        rng = cast(dict[str, object], report2["range"])
+        assert rng["start"] == provider_start_date(new_start)
+        assert rng["end"] == provider_end_date(new_end)
+        assert rng["days"] == 28
+
+        assert cast(dict[str, object], report2["freshness"])["status"] == "fresh"
+
+        # Repeated empty sync is idempotent
+        result3 = await service2.sync_observations(
+            session, settings, org.id, mapped.id, actor_id=None, correlation_id="s3"
+        )
+        assert result3["freshness_status"] == "fresh"
+        report3 = await service2.performance_report(session, org.id, website.id, days=28)
+        metrics3 = cast(dict[str, dict[str, object]], report3["metrics"])
+        assert metrics3["clicks"]["current"] == 0
+
+
+@pytest.mark.integration
+@pytest.mark.anyio
+async def test_search_console_empty_prior_summary_does_not_substitute_stale_prior(
+    seo_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When prior site_summary returns [] the previous values are 0, not stale."""
+    day_n = datetime(2026, 8, 13, 12, 0, tzinfo=UTC)
+    _freeze_search_console_clock(monkeypatch, day_n)
+
+    async with seo_session_factory.begin() as session:
+        org = await make_organization(session)
+        settings = make_settings()
+        await make_connected_google_connection(
+            session,
+            settings,
+            org.id,
+            http_handler=token_handler("https://www.googleapis.com/auth/webmasters.readonly"),
+        )
+
+        cur_start, _ = reporting_window(day_n, 28, GSC_SYNC_TAIL_EXCLUSION_DAYS)
+        comp_start, _ = comparison_window(cur_start, 28)
+
+        summary_by_start: dict[str, list[SearchAnalyticsRow]] = {
+            provider_start_date(cur_start): [
+                SearchAnalyticsRow((), 500, 15000, 0.033, 5.0)
+            ],
+            provider_start_date(comp_start): [],
+        }
+
+        fake = FakeSearchConsoleAdapter(
+            properties=[
+                DiscoveredSearchProperty("sc-domain:wheylandelectric.com", "domain", "owner")
+            ],
+            summary_by_start=summary_by_start,
+        )
+        service = SearchConsoleService(adapter=fake)
+        mapped, website = await _setup_mapped_gsc(session, settings, org, fake)
+        await service.sync_observations(
+            session, settings, org.id, mapped.id, actor_id=None, correlation_id="s1"
+        )
+
+        report = await service.performance_report(session, org.id, website.id, days=28)
+        metrics = cast(dict[str, dict[str, object]], report["metrics"])
+        assert metrics["clicks"]["current"] == 500
+        assert metrics["clicks"]["previous"] == 0
+        assert metrics["impressions"]["current"] == 15000
+        assert metrics["impressions"]["previous"] == 0
+        assert metrics["ctr"]["current"] == 0.033
+        assert metrics["ctr"]["previous"] is None
+        assert metrics["position"]["current"] == 5.0
+        assert metrics["position"]["previous"] is None
+
+
+# -- regression: CTR / position deltas must work with Decimal (Numeric) values --
+
+
+@pytest.mark.integration
+@pytest.mark.anyio
+async def test_search_console_ctr_position_decimal_deltas(
+    seo_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """CTR and position deltas are computed correctly from real Numeric columns."""
+    day_n = datetime(2026, 8, 13, 12, 0, tzinfo=UTC)
+    _freeze_search_console_clock(monkeypatch, day_n)
+
+    async with seo_session_factory.begin() as session:
+        org = await make_organization(session)
+        settings = make_settings()
+        await make_connected_google_connection(
+            session,
+            settings,
+            org.id,
+            http_handler=token_handler("https://www.googleapis.com/auth/webmasters.readonly"),
+        )
+
+        cur_start, _ = reporting_window(day_n, 28, GSC_SYNC_TAIL_EXCLUSION_DAYS)
+        comp_start, _ = comparison_window(cur_start, 28)
+
+        summary_by_start: dict[str, list[SearchAnalyticsRow]] = {
+            provider_start_date(cur_start): [
+                SearchAnalyticsRow((), 500, 15000, 0.045, 3.2)
+            ],
+            provider_start_date(comp_start): [
+                SearchAnalyticsRow((), 400, 12000, 0.033, 5.5)
+            ],
+        }
+
+        fake = FakeSearchConsoleAdapter(
+            properties=[
+                DiscoveredSearchProperty("sc-domain:wheylandelectric.com", "domain", "owner")
+            ],
+            summary_by_start=summary_by_start,
+        )
+        service = SearchConsoleService(adapter=fake)
+        mapped, website = await _setup_mapped_gsc(session, settings, org, fake)
+        await service.sync_observations(
+            session, settings, org.id, mapped.id, actor_id=None, correlation_id="s1"
+        )
+
+        report = await service.performance_report(session, org.id, website.id, days=28)
+        metrics = cast(dict[str, dict[str, object]], report["metrics"])
+
+        # CTR
+        assert metrics["ctr"]["current"] == 0.045
+        assert metrics["ctr"]["previous"] == 0.033
+        assert metrics["ctr"]["delta"] is not None
+        assert isinstance(metrics["ctr"]["delta"], float)
+        assert pytest.approx(metrics["ctr"]["delta"], abs=1e-6) == 0.012
+        assert metrics["ctr"]["percent_delta"] is not None
+        assert isinstance(metrics["ctr"]["percent_delta"], float)
+        # (0.045 - 0.033) / 0.033 * 100 ≈ 36.36...
+        assert pytest.approx(metrics["ctr"]["percent_delta"], abs=0.1) == 36.36
+
+        # Position
+        assert metrics["position"]["current"] == 3.2
+        assert metrics["position"]["previous"] == 5.5
+        assert metrics["position"]["delta"] is not None
+        assert isinstance(metrics["position"]["delta"], float)
+        assert pytest.approx(metrics["position"]["delta"], abs=1e-6) == -2.3
+        assert metrics["position"]["percent_delta"] is not None
+        # (-2.3 / 5.5 * 100) ≈ -41.818...
+        assert pytest.approx(metrics["position"]["percent_delta"], abs=0.1) == -41.82

@@ -290,6 +290,73 @@ async def test_website_readiness_search_console_not_mapped(
 
 @pytest.mark.integration
 @pytest.mark.anyio
+async def test_website_readiness_search_console_mapped_never_synced(
+    insights_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Mapped but never synced is not ready — freshness is never_synced, not fresh."""
+    async with insights_session_factory.begin() as session:
+        org = await make_organization(session)
+        connection = await make_connection(session, org.id)
+        website = await make_website(session, org.id, "https://example.com/")
+
+        sc_prop = SEOSearchProperty(
+            organization_id=org.id,
+            website_id=website.id,
+            connection_id=connection.id,
+            provider="google_search_console",
+            external_property_id="sc-domain:example.com",
+            property_type="domain",
+            mapping_status="mapped",
+            freshness_status="never_synced",
+            last_synced_at=None,
+        )
+        session.add(sc_prop)
+        await session.flush()
+
+        service = WebsiteReadinessService()
+        result = await service.readiness(session, org.id)
+        assert result["search_console_mapped"] is True
+        assert result["search_console_connected"] is True
+        assert result["search_console_freshness"] == "never_synced"
+        assert result["search_console_last_sync"] is None
+
+
+@pytest.mark.integration
+@pytest.mark.anyio
+async def test_website_readiness_analytics_mapped_never_synced(
+    insights_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Analytics mapped but never synced — freshness is never_synced, not fresh."""
+    async with insights_session_factory.begin() as session:
+        org = await make_organization(session)
+        connection = await make_connection(session, org.id)
+        website = await make_website(session, org.id, "https://example.com/")
+
+        ga4 = AnalyticsProperty(
+            organization_id=org.id,
+            connection_id=connection.id,
+            website_id=website.id,
+            provider="google_analytics",
+            external_property_id="properties/123456",
+            property_number="123456",
+            display_name="Example GA4",
+            mapping_status="mapped",
+            freshness_status="never_synced",
+            last_synced_at=None,
+        )
+        session.add(ga4)
+        await session.flush()
+
+        service = WebsiteReadinessService()
+        result = await service.readiness(session, org.id)
+        assert result["analytics_mapped"] is True
+        assert result["analytics_connected"] is True
+        assert result["analytics_freshness"] == "never_synced"
+        assert result["analytics_last_sync"] is None
+
+
+@pytest.mark.integration
+@pytest.mark.anyio
 async def test_website_readiness_analytics_mapped(
     insights_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
