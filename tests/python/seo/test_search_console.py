@@ -1202,12 +1202,8 @@ async def test_search_console_empty_current_summary_persists_zero_observation(
         cur_start, cur_end = reporting_window(day_n, 28, GSC_SYNC_TAIL_EXCLUSION_DAYS)
         comp_start, _ = comparison_window(cur_start, 28)
         summary_by_start1: dict[str, list[SearchAnalyticsRow]] = {
-            provider_start_date(cur_start): [
-                SearchAnalyticsRow((), 500, 15000, 0.033, 5.0)
-            ],
-            provider_start_date(comp_start): [
-                SearchAnalyticsRow((), 400, 12000, 0.033, 5.5)
-            ],
+            provider_start_date(cur_start): [SearchAnalyticsRow((), 500, 15000, 0.033, 5.0)],
+            provider_start_date(comp_start): [SearchAnalyticsRow((), 400, 12000, 0.033, 5.5)],
         }
 
         fake1 = FakeSearchConsoleAdapter(
@@ -1312,9 +1308,7 @@ async def test_search_console_empty_prior_summary_does_not_substitute_stale_prio
         comp_start, _ = comparison_window(cur_start, 28)
 
         summary_by_start: dict[str, list[SearchAnalyticsRow]] = {
-            provider_start_date(cur_start): [
-                SearchAnalyticsRow((), 500, 15000, 0.033, 5.0)
-            ],
+            provider_start_date(cur_start): [SearchAnalyticsRow((), 500, 15000, 0.033, 5.0)],
             provider_start_date(comp_start): [],
         }
 
@@ -1369,12 +1363,8 @@ async def test_search_console_ctr_position_decimal_deltas(
         comp_start, _ = comparison_window(cur_start, 28)
 
         summary_by_start: dict[str, list[SearchAnalyticsRow]] = {
-            provider_start_date(cur_start): [
-                SearchAnalyticsRow((), 500, 15000, 0.045, 3.2)
-            ],
-            provider_start_date(comp_start): [
-                SearchAnalyticsRow((), 400, 12000, 0.033, 5.5)
-            ],
+            provider_start_date(cur_start): [SearchAnalyticsRow((), 500, 15000, 0.045, 3.2)],
+            provider_start_date(comp_start): [SearchAnalyticsRow((), 400, 12000, 0.033, 5.5)],
         }
 
         fake = FakeSearchConsoleAdapter(
