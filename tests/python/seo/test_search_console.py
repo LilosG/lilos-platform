@@ -129,10 +129,16 @@ class FakeSearchConsoleAdapter(SearchConsoleAdapter):
     def __init__(
         self,
         properties: list[DiscoveredSearchProperty],
-        rows: list[SearchAnalyticsRow] | None = None,
+        summary_rows: list[SearchAnalyticsRow] | None = None,
+        daily_rows: list[SearchAnalyticsRow] | None = None,
+        query_rows: list[SearchAnalyticsRow] | None = None,
+        page_rows: list[SearchAnalyticsRow] | None = None,
     ) -> None:
         self._properties = properties
-        self._rows = rows or []
+        self._summary_rows = summary_rows or []
+        self._daily_rows = daily_rows or []
+        self._query_rows = query_rows or []
+        self._page_rows = page_rows or []
         self.query_calls: list[tuple[str, str]] = []
 
     async def list_sites(self, access_token: str) -> list[DiscoveredSearchProperty]:
@@ -150,7 +156,15 @@ class FakeSearchConsoleAdapter(SearchConsoleAdapter):
         row_limit: int = 1000,
     ) -> list[SearchAnalyticsRow]:
         self.query_calls.append((site_url, start_date))
-        return self._rows
+        if not dimensions:
+            return self._summary_rows
+        if "date" in dimensions:
+            return self._daily_rows
+        if "query" in dimensions:
+            return self._query_rows
+        if "page" in dimensions:
+            return self._page_rows
+        return self._query_rows  # default fallback
 
 
 def token_handler(scope: str) -> Callable[[httpx.Request], httpx.Response]:
@@ -266,9 +280,20 @@ async def test_search_console_discover_recommend_map_and_sync(
                     "https://wheylandelectric.com/", "url_prefix", "siteOwner"
                 ),
             ],
-            rows=[
+            summary_rows=[
+                SearchAnalyticsRow((), 500, 15000, 0.033, 5.0),
+            ],
+            daily_rows=[
+                SearchAnalyticsRow(("2026-07-20",), 15, 500, 0.030, 5.5),
+                SearchAnalyticsRow(("2026-07-21",), 12, 400, 0.030, 4.8),
+            ],
+            query_rows=[
                 SearchAnalyticsRow(("electrician near me",), 120, 3400, 0.035, 4.2),
                 SearchAnalyticsRow(("panel upgrade",), 40, 900, 0.044, 6.1),
+            ],
+            page_rows=[
+                SearchAnalyticsRow(("/services",), 80, 2000, 0.040, 3.5),
+                SearchAnalyticsRow(("/contact",), 60, 1500, 0.040, 4.0),
             ],
         )
         service = SearchConsoleService(adapter=fake)
@@ -311,7 +336,10 @@ async def test_search_console_discover_recommend_map_and_sync(
         result = await service.sync_observations(
             session, settings, org.id, mapped.id, actor_id=None, correlation_id="s1"
         )
-        assert result["rows_synced"] == 2
+        # 3 × (1 summary + 2 daily + 2 query + 2 page) = 21 upserts;
+        # daily rows dedup across periods (same day boundaries) → 17 stored
+        assert result["rows_synced"] == 21
+        assert result["periods_synced"] == [7, 28, 90]
         await session.flush()
         observations = list(
             await session.scalars(
@@ -320,18 +348,18 @@ async def test_search_console_discover_recommend_map_and_sync(
                 )
             )
         )
-        assert len(observations) == 2
-        clicks_by_query = {o.query: o.clicks for o in observations}
-        assert clicks_by_query["electrician near me"] == 120
-        assert clicks_by_query["panel upgrade"] == 40
+        assert len(observations) == 17
+        # Verify observation types are present
+        obs_types = {o.dimensions.get("observation_type") for o in observations}
+        assert obs_types == {"site_summary", "daily", "top_query", "top_page"}
         # The sync queried the mapped domain property (last recorded call).
         assert fake.query_calls[-1][0] == "sc-domain:wheylandelectric.com"
 
-        # SEO summary consumes the synced observations with real totals.
+        # SEO summary consumes the latest site_summary observation.
         summary = await service.search_performance_summary(session, org.id, website.id)
         assert summary["connected"] is True
-        assert summary["total_clicks"] == 160
-        assert summary["total_impressions"] == 4300
+        assert summary["total_clicks"] == 500
+        assert summary["total_impressions"] == 15000
 
 
 @pytest.mark.integration
@@ -353,7 +381,8 @@ async def test_search_console_sync_is_idempotent_on_repeat(
             properties=[
                 DiscoveredSearchProperty("sc-domain:wheylandelectric.com", "domain", "owner")
             ],
-            rows=[SearchAnalyticsRow(("q",), 10, 100, 0.1, 5.0)],
+            summary_rows=[SearchAnalyticsRow((), 10, 100, 0.1, 5.0)],
+            query_rows=[SearchAnalyticsRow(("q",), 10, 100, 0.1, 5.0)],
         )
         service = SearchConsoleService(adapter=fake)
         mapped = await service.map_property(
@@ -366,9 +395,11 @@ async def test_search_console_sync_is_idempotent_on_repeat(
             actor_id=None,
             correlation_id="m1",
         )
-        await service.sync_observations(
+        first_result = await service.sync_observations(
             session, settings, org.id, mapped.id, actor_id=None, correlation_id="s1"
         )
+        # 3 periods × (1 summary + 1 query) = 6 observations
+        assert first_result["rows_synced"] == 6
         # Second sync upserts in place rather than duplicating rows.
         await service.sync_observations(
             session, settings, org.id, mapped.id, actor_id=None, correlation_id="s2"
@@ -381,7 +412,7 @@ async def test_search_console_sync_is_idempotent_on_repeat(
                 )
             )
         )
-        assert len(observations) == 1
+        assert len(observations) == 6
         assert observations[0].clicks == 10
 
 

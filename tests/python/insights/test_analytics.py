@@ -126,10 +126,12 @@ class FakeAnalyticsAdapter(GoogleAnalyticsAdapter):
     def __init__(
         self,
         properties: list[DiscoveredAnalyticsProperty],
-        rows: list[AnalyticsReportRow] | None = None,
+        aggregate_rows: list[AnalyticsReportRow] | None = None,
+        daily_rows: list[AnalyticsReportRow] | None = None,
     ) -> None:
         self._properties = properties
-        self._rows = rows or []
+        self._aggregate_rows = aggregate_rows or []
+        self._daily_rows = daily_rows or []
 
     async def list_account_summaries(self, access_token: str) -> list[DiscoveredAnalyticsProperty]:
         return self._properties
@@ -149,15 +151,10 @@ class FakeAnalyticsAdapter(GoogleAnalyticsAdapter):
         ),
         dimensions: Sequence[str] = (),
     ) -> list[AnalyticsReportRow]:
-        del (
-            access_token,
-            property_number,
-            start_date,
-            end_date,
-            metrics,
-            dimensions,
-        )
-        return self._rows
+        del access_token, property_number, start_date, end_date, metrics
+        if dimensions == ("date",):
+            return self._daily_rows
+        return self._aggregate_rows
 
 
 def test_recommend_property_matches_display_name_to_website_domain() -> None:
@@ -287,7 +284,7 @@ async def test_ga4_discover_map_sync_and_insights_consumption(
                 ),
                 DiscoveredAnalyticsProperty("properties/999", "999", "Other", "Other"),
             ],
-            rows=[
+            aggregate_rows=[
                 AnalyticsReportRow(
                     {
                         "sessions": 5400,
@@ -296,6 +293,16 @@ async def test_ga4_discover_map_sync_and_insights_consumption(
                         "conversions": 42,
                     }
                 )
+            ],
+            daily_rows=[
+                AnalyticsReportRow(
+                    {"sessions": 200, "totalUsers": 120, "screenPageViews": 450, "conversions": 2},
+                    {"date": "2026-07-20"},
+                ),
+                AnalyticsReportRow(
+                    {"sessions": 180, "totalUsers": 110, "screenPageViews": 420, "conversions": 1},
+                    {"date": "2026-07-21"},
+                ),
             ],
         )
         service = AnalyticsService(adapter=fake)
@@ -342,10 +349,9 @@ async def test_ga4_discover_map_sync_and_insights_consumption(
         result = await service.sync_metrics(
             session, settings, org.id, mapped.id, actor_id=None, correlation_id="s1"
         )
-        assert result["metrics_synced"] == 4
-        totals = cast(dict[str, int], result["totals"])
-        assert totals["sessions"] == 5400
-        assert totals["conversions"] == 42
+        # 3 periods × (4 aggregate + 2 daily × 4 metrics) = 36 upserts
+        assert result["metrics_synced"] == 36
+        assert result["periods_synced"] == [7, 28, 90]
 
         # MetricDefinition catalog was created idempotently.
         defs = list(
@@ -359,17 +365,25 @@ async def test_ga4_discover_map_sync_and_insights_consumption(
             "ga4.conversions",
         }
 
-        # MetricObservation rows were persisted with real values.
+        # MetricObservation rows were persisted with real values across periods.
         observations = list(
             await session.scalars(
                 select(MetricObservation).where(MetricObservation.organization_id == org.id)
             )
         )
-        assert len(observations) == 4
-        values = {o.metric_definition_id: o.value for o in observations}
-        assert any(v == 5400 for v in values.values())
+        # 3 periods × 4 aggregate + 2 dates × 4 daily = 20 observations
+        assert len(observations) == 20
+        aggregate_obs = [
+            o for o in observations if o.dimensions.get("observation_type") == "aggregate"
+        ]
+        daily_obs = [o for o in observations if o.dimensions.get("observation_type") == "daily"]
+        assert len(aggregate_obs) == 12
+        assert len(daily_obs) == 8
+        # Aggregate observations contain real provider values
+        agg_values = {int(o.value) for o in aggregate_obs if o.value is not None}
+        assert 5400 in agg_values
 
-        # Insights summary consumes the synced GA4 metrics with real totals.
+        # Insights summary consumes the synced GA4 metrics from latest period.
         summary = await service.summary(session, org.id)
         assert summary["connected"] is True
         metrics = cast(dict[str, int], summary["metrics"])
@@ -386,7 +400,7 @@ async def test_ga4_discover_map_sync_and_insights_consumption(
                 select(MetricObservation).where(MetricObservation.organization_id == org.id)
             )
         )
-        assert len(observations2) == 4
+        assert len(observations2) == 20
 
 
 @pytest.mark.integration
