@@ -1,113 +1,174 @@
-# AGENTS.md — LILOs Platform
+# LILOs Platform — Agent Constitution
 
-Every coding agent session in this repository loads this file first. It overrides model defaults and habits. Where it conflicts with a packet instruction, the packet wins; where it conflicts with your inclination, this file wins.
+This file applies to every OpenCode agent working in this repository.
 
-## Authority order
+## Authority and precedence
 
-1. `/docs/LILOS-MASTER-SPEC.md` — required behavior and acceptance
-2. `/docs/LILOS-BUILD-ROADMAP.md` — sequence and exit criteria
-3. `/docs/LILOS-MASTER-BUILD-PROMPT.md` — engineering standard
-4. `/docs/LILOS-CAPABILITY-TRUTH.md` — what is actually implemented right now
-5. The assigned packet
-6. Existing code — evidence of current state, not authority
+Use this order when instructions conflict:
 
-When documents conflict, do not silently pick one. Preserve the more restrictive behavior and report the conflict.
+1. `docs/governing/LILOS-MASTER-SPEC.md` — architecture, product, security, data, workflow, integration, release requirements.
+2. `docs/PLATFORM-CONSOLIDATION-RELEASE.md` — the current commercial V1 target and platform consolidation contract.
+3. `docs/governing/LILOS-BUILD-ROADMAP.md` — build sequencing where still relevant.
+4. `docs/governing/LILOS-MASTER-BUILD-PROMPT.md` — implementation discipline.
+5. `docs/PLATFORM-RELEASE-LEDGER.md` — current acceptance status, not architecture authority.
+6. Current repository truth — authoritative for what actually exists now.
+7. Historical chats/handoffs — evidence and context only; never implementation authority.
 
-## The rule that exists because it was broken
+If a governing document is missing, report it. Do not silently replace it with assumptions.
 
-**No UI without backend.** If a control, field, or status implies a capability the backend does not have, you either implement the capability or remove the control in the same change. A disabled control labeled "Not available yet" is acceptable. A live control that silently does less than it says is a defect of the same severity as a data leak.
+## Release goal
 
-This rule exists because the SEO crawl UI shipped a "Max pages" field on a backend that fetches exactly one URL and never discovers a link.
+Deliver one coherent commercial V1 of the complete LILOs platform, not a collection of isolated modules.
 
-## Completion
+Required platform layers:
 
-You may write `COMPLETE` only when every item in the packet's acceptance list has been demonstrated with the evidence the packet names. Tests passing is necessary and never sufficient.
+- Agency operating layer.
+- Client workspace.
+- Modular product entitlements.
+- Managed by LILOs, Co-Managed, and Self-Service onboarding modes using one underlying onboarding engine.
+- Centralized Integrations control plane.
+- Operational products: GBP, Reviews, SEO, Content, Leads, Insights.
+- Automation & Agents control plane powered by the existing workflow/worker/scheduler runtime.
+- Governed AI tasks embedded in product workflows.
+- Cross-product Insights and Reporting.
+- Approvals, work queues, failures, activity, audit, and settings.
+- Production-safe tenant isolation, authorization, idempotency, reconciliation, observability, and release controls.
 
-Use exactly one status: `COMPLETE` · `PARTIALLY COMPLETE` · `BLOCKED`.
+## Platform boundaries
 
-Forbidden phrasings, because they have all been used to disguise unfinished work: "substantially complete", "functionally complete", "should now work", "the implementation is in place", "ready pending verification".
+### Integrations owns external systems
 
-If you cannot demonstrate it, say `PARTIALLY COMPLETE` and name what is missing. That answer is always accepted. A false `COMPLETE` is not.
+Connections, credentials, OAuth, provider accounts, provider resource discovery, mappings, webhooks, capability health, and sync health belong to Integrations.
 
-## Root cause before code
+Operational products consume confirmed integration state.
 
-For every defect:
+Do not duplicate provider configuration inside GBP, Reviews, SEO, Content, Leads, or Insights.
 
-1. Reproduce the user action
-2. Capture: HTTP status, safe error code, correlation ID, failing endpoint, frontend call site, backend service path
-3. Name the owning service
-4. State the root cause as a fact you can point at in source
-5. Smallest architecture-correct fix
-6. Focused regression test
-7. Repeat the original user action
+### Operational products own business work
 
-Never write a fix from a hypothesis. If you find yourself writing "this is likely caused by", stop and go get the evidence.
+GBP, Reviews, SEO, Content, Leads, and Insights must primarily answer what the operator can do, what changed, what needs attention, and what work is next.
 
-## Scope
+A product may show concise integration health and a link to Manage Integration. It must not expose broad provider discovery/mapping machinery during normal operation.
 
-Implement only the assigned packet. Classify everything else you find as: blocks this packet (fix minimally) · related follow-up (record in the packet report) · future scope (record). Do not refactor unrelated code because it could be better.
+### Automation & Agents is a first-class product layer
 
-Do not pull a later packet's work forward. Do not begin a redesign when a targeted change satisfies the packet.
+Use the existing workflow registry, worker, scheduler, job, approval, retry, reconciliation, audit, and notification architecture.
 
-## Architecture — non-negotiable
+Do not install or introduce a parallel agent orchestration framework unless the Master Spec is formally amended.
 
-- Modular monolith. Products consume shared platform services; they do not reimplement auth, authorization, orgs, locations, entitlements, config, workflows, approvals, notifications, integrations, AI routing, audit, or reporting.
-- Products never call provider APIs directly. All provider traffic goes through registered connectors and the Integration Framework.
-- AI is requested by task type through the AI Gateway. No hardcoded model or provider calls in product code.
-- Tenant, organization, and location scope explicit at every boundary. Never infer tenant from client input.
-- Authentication, membership, permission, entitlement, readiness, and approval are six distinct checks.
-- Deterministic software controls permissions, consent, state transitions, publication eligibility, external actions, and retention. AI does not.
-- Long-running work runs in durable background workflows, not HTTP requests.
-- External writes require idempotency, verification, reconciliation, audit, and approval where defined.
-- Approved and published revisions are immutable; changes create versions.
-- Secrets stay server-side, redacted from logs, excluded from frontend responses and AI context.
+An LILOs "agent" is a governed workflow containing deterministic and/or AI-assisted tasks, with schemas, validation, permissions, approvals, limits, observability, and recovery.
 
-## Prohibited
+### Insights and Reporting use governed metrics
 
-- Direct production database edits. Schema changes go through migrations, always.
-- Manufacturing provider state — inserting integration connections, entitlements, or resource mappings by hand. This was done in an earlier session with invented Google resource IDs and it cost days.
-- Reconciling a historical provider mapping because a row says "confirmed". Reconcile only after the same canonical external resource is re-verified through live provider discovery.
-- Fabricated data anywhere. Missing is missing; zero is a measurement. No invented metrics, trends, comparisons, resource IDs, repositories, or business facts.
-- Raw enum strings in client-facing UI (`pending_verification`, `never_synced`, `setup_required`).
-- Weakening, skipping, or deleting a test to make acceptance pass.
-- Claiming a test ran when it did not.
-- Merging to main, enabling provider writes, or publishing to a client's live site without explicit owner approval.
-- Changing Google Cloud OAuth configuration, scopes, or verification state. That is owner territory. If the app asks for consent on a healthy fully-scoped credential, the defect is in our lifecycle code.
+Never manufacture a metric to fill a dashboard.
 
-## Stop conditions
+Never treat missing data as zero.
 
-Stop and ask only for: a secret you cannot obtain · a customer-visible provider write · a business fact only the owner knows · a billing decision · an external account permission · a genuine specification conflict.
+Metrics require meaningful period/context, source/freshness, and data-quality state where applicable.
 
-Everything else is an engineering decision. Make it, record it, continue. Do not stop after each fix to ask whether to proceed.
+## Non-negotiable engineering rules
 
-## Validation
+- Inspect repository truth before proposing or implementing changes.
+- Diagnose evidence first. Do not code from a hypothesized root cause.
+- Reuse canonical services, repositories, contracts, and workflow infrastructure.
+- No duplicate architecture.
+- No direct production SQL repairs or bypasses.
+- No invented provider IDs, mappings, credentials, or provider state.
+- No front-end-only authorization or tenancy fixes; backend remains authoritative.
+- Preserve tenant isolation and least privilege.
+- Preserve immutable/auditable state transitions.
+- Preserve idempotency and provider reconciliation for writes.
+- Do not declare live provider acceptance based on unit tests.
+- Do not declare a platform layer complete because one module inside it works.
+- Do not broaden a packet when adjacent work is discovered. Record adjacent work in the release ledger.
+- Do not silently change deployment, hosting, authentication, database, or integration architecture.
+- Do not edit Google Cloud/provider configuration without concrete provider evidence requiring it.
+- Do not weaken security, approvals, migrations, CI, tests, backup/recovery, accessibility, or release gates to move faster.
+- Do not add unrelated products/integrations during platform consolidation.
 
-During iteration, run focused tests for what changed. At the end of the packet, run the full suite once:
+## User experience contract
 
-```
-npm run test:web && npm run typecheck:web && npm run build:web && npm run check:browser
-uv run pytest
-uv run ruff check .
-npm run check
-git diff --check
-```
+The interface must hide implementation complexity unless the user is in a privileged diagnostic/admin surface.
 
-Record exact commands and exact results. If a check could not run, say so and do not report COMPLETE.
+Agency users need portfolio health, requires-attention queues, today's work, approvals, automation state, reporting readiness, and recent activity.
 
-## Report format
+Client users need account status, results, what changed, required actions, completed work, upcoming work, and freshness.
 
-```
-PACKET <id> — <name>
-Branch / HEAD SHA
-Acceptance (one line per item): item → EVIDENCE → PASS/FAIL
-Capability audit rows changed: <surface> HOLLOW→REAL
-Implemented
-Root causes fixed: symptom → evidence → cause → fix
-Live demonstration: what, against what data, result
-Tests: exact commands, exact results
-Files changed
-Remaining gaps
-Status: COMPLETE | PARTIALLY COMPLETE | BLOCKED
-```
+Navigation must respect role, scope, entitlement, and readiness.
 
-No architecture narration. No re-planning. No summarizing the request back.
+A client workspace must never expose unrelated provider resources, organizations, locations, or administrative capabilities.
+
+## Onboarding contract
+
+One resumable onboarding engine supports:
+
+- Managed by LILOs.
+- Co-Managed.
+- Self-Service.
+
+Underlying sequence:
+
+Business → Locations → Products → Integrations → Resource Mapping → Configuration → Automation Defaults → Readiness Review → Activate.
+
+The operating mode determines who performs each step; it does not create separate onboarding architecture.
+
+## Verification discipline
+
+During implementation use focused tests for the changed behavior.
+
+At packet acceptance, run the relevant focused integration/regression checks.
+
+Run the expensive full repository/release gate once the integrated release candidate is stable.
+
+Canonical repository commands include:
+
+- `npm run format:check`
+- `npm run lint`
+- `npm run typecheck`
+- `npm run test`
+- `npm run build`
+- `npm run check:secrets`
+- `npm run check:browser`
+- `npm run check:release`
+- `npm run check:production-preflight`
+- `npm run db:current`
+
+Use narrower workspace/Python commands during development when appropriate.
+
+## Completion vocabulary
+
+Use only evidence-backed states:
+
+- `NOT_STARTED`
+- `IMPLEMENTED_NOT_ACCEPTED`
+- `LIVE_READ_ACCEPTED`
+- `LIVE_WRITE_ACCEPTED`
+- `PILOT_READY`
+- `BLOCKED_EXTERNAL`
+- `DEFERRED_POST_PILOT`
+
+"Implemented" is not synonymous with "live accepted."
+
+## Git / collaboration rules
+
+- Never push directly unless the user explicitly requests it.
+- Never force-push.
+- Never reset or clean away work you did not create.
+- Specialists do not merge themselves.
+- Parallel coding happens only in isolated worktrees after shared contracts/ownership are frozen.
+- Principal release integrator owns cross-cutting contracts and integration of specialist work.
+
+## Required completion report for every execution packet
+
+Return:
+
+1. Repository state inspected.
+2. Existing implementation discovered and reused.
+3. Evidence-backed gaps.
+4. Changes implemented.
+5. Files changed.
+6. Focused tests and results.
+7. Acceptance scenarios and PASS/FAIL.
+8. Remaining blockers/risks.
+9. Exact release-ledger updates.
+10. Adjacent work discovered but intentionally not implemented.
