@@ -1,5 +1,6 @@
 """Deterministic URL, crawl-safety, score, and missing-data policies plus SEO domain service."""
 
+import hashlib
 import ipaddress
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -10,6 +11,7 @@ from uuid import UUID
 
 import httpx
 from sqlalchemy import Select, func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.app.audit.contracts import AuditEventCreate
@@ -452,7 +454,7 @@ class SEOService:
         crawl_run_id: UUID,
         *,
         correlation_id: str,
-    ) -> SEOCrawlRun:
+    ) -> tuple[SEOCrawlRun, list[SEOOpportunity]]:
         """Worker path: run the crawl engine to completion, persisting pages incrementally."""
         crawl_run = await session.scalar(
             select(SEOCrawlRun)
@@ -466,7 +468,7 @@ class SEOService:
             raise ValueError("crawl run not found")
         if crawl_run.status not in ("queued", "running"):
             if crawl_run.status in ("success", "partial", "error"):
-                return crawl_run
+                return crawl_run, []
             raise ValueError(f"crawl run not executable: {crawl_run.status}")
 
         website = await self.get_website(session, organization_id, crawl_run.website_id)
@@ -480,7 +482,7 @@ class SEOService:
             crawl_run.status = "error"
             crawl_run.stop_reason = "Could not determine host from canonical origin"
             await session.flush()
-            return crawl_run
+            return crawl_run, []
         allowed_host = allowed_host_raw.casefold()
 
         workflow_run = await session.scalar(
@@ -519,44 +521,105 @@ class SEOService:
             query_param_policy="keep",
         )
 
+        created_opportunities: list[SEOOpportunity] = []
+
         async def persist_page(page_data: Any) -> None:
             from apps.api.app.products.seo.crawl_engine import CrawledPage
 
             cp: CrawledPage = page_data
-            existing_page = await session.scalar(
-                select(SEOPage).where(
-                    SEOPage.website_id == website.id,
-                    SEOPage.normalized_url == cp.url,
-                )
+
+            upsert_values = {
+                "organization_id": organization_id,
+                "website_id": website.id,
+                "normalized_url": cp.url,
+                "observed_url": cp.observed_url,
+                "canonical_url": cp.canonical_url,
+                "normalization_reasons": [],
+                "http_status": cp.http_status,
+                "content_type": cp.content_type,
+                "title": cp.title,
+                "meta_description": cp.meta_description,
+                "h1": cp.h1,
+                "robots_directives": list(cp.robots_directives),
+                "internal_links": list(cp.internal_links),
+                "external_links": list(cp.external_links),
+                "word_count": cp.word_count,
+                "structured_data_present": cp.structured_data_present,
+                "content_hash": cp.content_hash,
+                "indexability": cp.indexability,
+                "technical_issues": list(cp.technical_issues),
+                "crawl_depth": cp.depth,
+                "redirect_destination": cp.redirect_destination,
+                "quality_status": cp.quality_status,
+                "observed_at": datetime.now(UTC),
+            }
+            stmt = pg_insert(SEOPage).values(**upsert_values)
+            stmt = stmt.on_conflict_do_update(
+                constraint="uq_seo_page_normalized_url",
+                set_={
+                    "observed_url": cp.observed_url,
+                    "canonical_url": cp.canonical_url,
+                    "http_status": cp.http_status,
+                    "content_type": cp.content_type,
+                    "title": cp.title,
+                    "meta_description": cp.meta_description,
+                    "h1": cp.h1,
+                    "robots_directives": list(cp.robots_directives),
+                    "internal_links": list(cp.internal_links),
+                    "external_links": list(cp.external_links),
+                    "word_count": cp.word_count,
+                    "structured_data_present": cp.structured_data_present,
+                    "content_hash": cp.content_hash,
+                    "indexability": cp.indexability,
+                    "technical_issues": list(cp.technical_issues),
+                    "crawl_depth": cp.depth,
+                    "redirect_destination": cp.redirect_destination,
+                    "quality_status": cp.quality_status,
+                    "observed_at": datetime.now(UTC),
+                },
             )
-            if existing_page is None:
-                db_page = SEOPage(
-                    organization_id=organization_id,
-                    website_id=website.id,
-                    normalized_url=cp.url,
-                    observed_url=cp.observed_url,
-                    canonical_url=cp.canonical_url,
-                    normalization_reasons=[],
-                    http_status=cp.http_status,
-                    content_type=cp.content_type,
-                    title=cp.title,
-                    meta_description=cp.meta_description,
-                    h1=cp.h1,
-                    robots_directives=list(cp.robots_directives),
-                    internal_links=list(cp.internal_links),
-                    external_links=list(cp.external_links),
-                    word_count=cp.word_count,
-                    structured_data_present=cp.structured_data_present,
-                    content_hash=cp.content_hash,
-                    indexability=cp.indexability,
-                    technical_issues=list(cp.technical_issues),
-                    crawl_depth=cp.depth,
-                    redirect_destination=cp.redirect_destination,
-                    quality_status=cp.quality_status,
-                    observed_at=datetime.now(UTC),
+            result = await session.execute(stmt.returning(SEOPage))
+            page = result.scalar_one()
+
+            digest = hashlib.sha256(cp.url.encode()).hexdigest()
+            for issue in cp.technical_issues:
+                dedup_key = f"{digest}.{issue}"
+                score, explanation = opportunity_score(
+                    search_potential=40,
+                    business_value=40,
+                    relevance=60,
+                    confidence=90,
+                    urgency=30,
+                    effort=10,
                 )
-                session.add(db_page)
+                existing_opportunity = await session.scalar(
+                    select(SEOOpportunity).where(
+                        SEOOpportunity.organization_id == organization_id,
+                        SEOOpportunity.deduplication_key == dedup_key,
+                        SEOOpportunity.active_marker == "active",
+                    )
+                )
+                if existing_opportunity:
+                    continue
+                opportunity = SEOOpportunity(
+                    organization_id=organization_id,
+                    location_id=website.location_id,
+                    website_id=website.id,
+                    page_id=page.id,
+                    opportunity_type=issue,
+                    deduplication_key=dedup_key,
+                    active_marker="active",
+                    evidence={"url": cp.url, "issue": issue},
+                    source_versions=["crawl.v1"],
+                    score_version=1,
+                    priority_score=score,
+                    score_explanation=explanation,
+                    status="identified",
+                    version=1,
+                )
+                session.add(opportunity)
                 await session.flush()
+                created_opportunities.append(opportunity)
 
         report: CrawlReport = CrawlReport(
             terminal_state="error", reason="Engine did not produce a report"
@@ -578,6 +641,9 @@ class SEOService:
             "sitemap_files": list(report.sitemap_file_urls),
             "sitemap_page_count": report.sitemap_page_count,
             "sitemap_page_urls": list(report.sitemap_page_urls),
+            "sitemap_not_reached": list(report.sitemap_not_reached),
+            "crawled_not_in_sitemap": list(report.crawled_not_in_sitemap),
+            "sitemap_non_indexable": list(report.sitemap_non_indexable),
         }
         await session.flush()
 
@@ -599,7 +665,7 @@ class SEOService:
                 "pages_fetched": report.pages_fetched,
             },
         )
-        return crawl_run
+        return crawl_run, created_opportunities
 
     async def get_crawl_run(
         self,

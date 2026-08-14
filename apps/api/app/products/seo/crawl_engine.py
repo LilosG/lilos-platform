@@ -22,7 +22,11 @@ import httpx
 
 LILOS_USER_AGENT = "LILOs-Crawler/1.0 (+https://lilos.io)"
 
-ANCHOR_HREF_PATTERN = re.compile(r'<a\s+[^>]*href=["\']([^"\']+)["\'][^>]*>', re.IGNORECASE)
+ANCHOR_TAG_PATTERN = re.compile(r"<a\b[^>]*>", re.IGNORECASE)
+ANCHOR_HREF_ATTR_PATTERN = re.compile(r"""href\s*=\s*["']([^"']+)["']""", re.IGNORECASE)
+ANCHOR_NOFOLLOW_PATTERN = re.compile(
+    r"""rel\s*=\s*["'][^"']*\bnofollow\b[^"']*["']""", re.IGNORECASE
+)
 TITLE_PATTERN = re.compile(r"<title[^>]*>(.*?)</title>", re.IGNORECASE | re.DOTALL)
 META_DESCRIPTION_PATTERN = re.compile(
     r'<meta[^>]+name=["\']description["\'][^>]+content=["\']([^"\']*)["\']', re.IGNORECASE
@@ -102,6 +106,9 @@ class CrawlReport:
     sitemap_file_urls: list[str] = field(default_factory=list)
     sitemap_page_urls: list[str] = field(default_factory=list)
     sitemap_page_count: int = 0
+    sitemap_not_reached: list[str] = field(default_factory=list)
+    crawled_not_in_sitemap: list[str] = field(default_factory=list)
+    sitemap_non_indexable: list[str] = field(default_factory=list)
 
 
 def _urlparse_absolute(url: str) -> Any:
@@ -161,9 +168,12 @@ def same_host(host_a: str, host_b: str) -> bool:
     return host_a.casefold() == host_b.casefold()
 
 
-def parse_robots_txt(text: str, user_agent: str = LILOS_USER_AGENT) -> tuple[list[str], list[str]]:
-    """Return ``(disallow_rules, sitemap_urls)`` from a robots.txt body."""
+def parse_robots_txt(
+    text: str, user_agent: str = LILOS_USER_AGENT
+) -> tuple[list[str], list[str], list[str]]:
+    """Return ``(disallow_rules, allow_rules, sitemap_urls)`` from a robots.txt body."""
     disallow: list[str] = []
+    allow: list[str] = []
     sitemaps: list[str] = []
     active_group = False
     agent_matched = False
@@ -185,28 +195,57 @@ def parse_robots_txt(text: str, user_agent: str = LILOS_USER_AGENT) -> tuple[lis
         elif active_group and field == "disallow":
             if value:
                 disallow.append(value)
+        elif active_group and field == "allow":
+            if value:
+                allow.append(value)
 
-    return disallow, sitemaps
+    return disallow, allow, sitemaps
 
 
-def is_disallowed(path: str, disallow_rules: list[str]) -> bool:
+def _rule_match_length(rule: str, normalized_path: str) -> int:
+    """Return the number of path octets matched by ``rule``, or -1 for no match."""
+    if not rule:
+        return -1
+    pattern = rule
+    anchor_end = pattern.endswith("$")
+    if anchor_end:
+        pattern = pattern[:-1]
+    pattern = pattern.lstrip("/")
+    if pattern.endswith("*"):
+        prefix = pattern[:-1]
+        if normalized_path.startswith(prefix):
+            return len(prefix)
+        return -1
+    if normalized_path == pattern:
+        return len(pattern)
+    if normalized_path.startswith(pattern.rstrip("/") + "/"):
+        return len(pattern.rstrip("/"))
+    return -1
+
+
+def is_disallowed(
+    path: str, disallow_rules: list[str], allow_rules: list[str] | None = None
+) -> bool:
+    """Decide whether ``path`` is blocked, honouring RFC 9309 precedence.
+
+    The most specific (longest matching) rule wins; on equal specificity an
+    ``Allow`` rule overrides a broader ``Disallow`` rule.
+    """
     normalized_path = path.lstrip("/")
+    best_rule: str | None = None
+    best_length = -1
     for rule in disallow_rules:
-        if not rule:
-            continue
-        pattern = rule
-        anchor_end = pattern.endswith("$")
-        if anchor_end:
-            pattern = pattern[:-1]
-        pattern = pattern.lstrip("/")
-        if pattern.endswith("*"):
-            prefix = pattern[:-1]
-            if normalized_path.startswith(prefix):
-                return True
-            continue
-        if normalized_path == pattern or normalized_path.startswith(pattern.rstrip("/") + "/"):
-            return True
-    return False
+        length = _rule_match_length(rule, normalized_path)
+        if length >= 0 and length > best_length:
+            best_length = length
+            best_rule = "disallow"
+    if allow_rules:
+        for rule in allow_rules:
+            length = _rule_match_length(rule, normalized_path)
+            if length >= 0 and length >= best_length:
+                best_length = length
+                best_rule = "allow"
+    return best_rule == "disallow"
 
 
 _SM_NS = {"sm": "http://www.sitemaps.org/schemas/sitemap/0.9"}
@@ -233,12 +272,21 @@ def parse_sitemap(xml_text: str) -> list[str]:
     return _sitemap_locs(xml_text, "url")
 
 
-def extract_links(html: str, base_url: str) -> tuple[list[str], list[str]]:
+def extract_links(html: str, base_url: str) -> tuple[list[str], list[str], list[str]]:
+    """Return ``(internal, external, nofollow)`` absolute link URLs.
+
+    ``nofollow`` lists URLs whose anchor carries ``rel="nofollow"``. They are
+    still inventory but must not be traversed.
+    """
     internal: list[str] = []
     external: list[str] = []
+    nofollow: list[str] = []
     base_host = host_of(base_url)
-    for match in ANCHOR_HREF_PATTERN.finditer(html):
-        href = match.group(1).strip()
+    for tag in ANCHOR_TAG_PATTERN.findall(html):
+        href_match = ANCHOR_HREF_ATTR_PATTERN.search(tag)
+        if not href_match:
+            continue
+        href = href_match.group(1).strip()
         if not href or href.lower().startswith(
             ("#", "javascript:", "mailto:", "tel:", "data:", "ftp:")
         ):
@@ -247,11 +295,14 @@ def extract_links(html: str, base_url: str) -> tuple[list[str], list[str]]:
         link_host = host_of(absolute)
         if not link_host:
             continue
+        is_nofollow = bool(ANCHOR_NOFOLLOW_PATTERN.search(tag))
         if same_host(link_host, base_host):
             internal.append(absolute)
         else:
             external.append(absolute)
-    return internal, external
+        if is_nofollow:
+            nofollow.append(absolute)
+    return internal, external, nofollow
 
 
 def _parse_content_type(response: httpx.Response) -> str | None:
@@ -295,7 +346,7 @@ def extract_page_signals(
 
     indexability = "not_indexable" if "noindex" in robots_directives else "indexable"
 
-    internal, external = extract_links(html, base_url)
+    internal, external, nofollow = extract_links(html, base_url)
 
     technical_issues: list[str] = []
     if http_status != 200:
@@ -318,6 +369,7 @@ def extract_page_signals(
         "h1": h1_text,
         "internal_links": internal,
         "external_links": external,
+        "nofollow_links": nofollow,
         "word_count": word_count,
         "structured_data_present": structured_data_present,
         "content_hash": content_hash,
@@ -382,9 +434,12 @@ class CrawlEngine:
         max_depth_reached = 0
         timed_out = False
         page_limit_reached = False
+        crawled_urls: set[str] = set()
+        non_indexable_urls: set[str] = set()
 
         robots_available = False
         disallow_rules: list[str] = []
+        allow_rules: list[str] = []
         sitemap_file_urls: list[str] = []
         sitemap_page_urls: list[str] = []
 
@@ -400,7 +455,7 @@ class CrawlEngine:
             )
             if 200 <= robots_resp.status_code < 300:
                 robots_available = True
-                disallow_rules, sitemap_file_urls = parse_robots_txt(
+                disallow_rules, allow_rules, sitemap_file_urls = parse_robots_txt(
                     robots_resp.text, config.user_agent
                 )
         except Exception:
@@ -476,7 +531,7 @@ class CrawlEngine:
 
             if self._is_excluded(url):
                 return
-            if _url_is_disallowed(url, disallow_rules):
+            if _url_is_disallowed(url, disallow_rules, allow_rules):
                 return
 
             await throttle()
@@ -496,6 +551,8 @@ class CrawlEngine:
                     error=error,
                 )
                 pages_fetched += 1
+                crawled_urls.add(url)
+                non_indexable_urls.add(url)
                 if on_page:
                     await on_page(page)
                 return
@@ -550,12 +607,18 @@ class CrawlEngine:
             )
 
             pages_fetched += 1
+            crawled_urls.add(url)
+            if page.indexability == "not_indexable":
+                non_indexable_urls.add(url)
             if on_page:
                 await on_page(page)
 
             nofollow = "nofollow" in robots_directives
+            nofollow_anchor_urls: set[str] = set(signals.get("nofollow_links", []))
             if not nofollow and is_html and depth < config.max_depth:
                 for link in signals.get("internal_links", []):
+                    if link in nofollow_anchor_urls:
+                        continue
                     normalized = canonicalize_url(normalize_crawl_url(link))
                     if normalized not in seen:
                         enqueue(normalized, depth + 1)
@@ -595,6 +658,15 @@ class CrawlEngine:
             terminal_state = "success"
             reason = "All reachable same-host pages crawled within configured limits"
 
+        canonical_sitemap_urls = {
+            canonicalize_url(normalize_crawl_url(u)) for u in sitemap_page_urls
+        }
+        sitemap_not_reached = sorted(canonical_sitemap_urls - crawled_urls)
+        crawled_not_in_sitemap = sorted(crawled_urls - canonical_sitemap_urls)
+        sitemap_non_indexable = sorted(
+            u for u in canonical_sitemap_urls if u in non_indexable_urls
+        )
+
         return CrawlReport(
             terminal_state=terminal_state,
             reason=reason,
@@ -606,9 +678,12 @@ class CrawlEngine:
             sitemap_file_urls=sitemap_file_urls,
             sitemap_page_urls=sitemap_page_urls,
             sitemap_page_count=len(sitemap_page_urls),
+            sitemap_not_reached=sitemap_not_reached,
+            crawled_not_in_sitemap=crawled_not_in_sitemap,
+            sitemap_non_indexable=sitemap_non_indexable,
         )
 
 
-def _url_is_disallowed(url: str, disallow_rules: list[str]) -> bool:
+def _url_is_disallowed(url: str, disallow_rules: list[str], allow_rules: list[str]) -> bool:
     path = urlparse(url).path or "/"
-    return is_disallowed(path, disallow_rules)
+    return is_disallowed(path, disallow_rules, allow_rules)

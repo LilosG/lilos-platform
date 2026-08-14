@@ -356,14 +356,14 @@ def test_sc4a_sitemap_discovered_and_parsed() -> None:
 
 
 def test_robots_parser_extracts_disallow_and_sitemap() -> None:
-    disallow, sitemaps = parse_robots_txt(ROBOTS_TXT)
+    disallow, allow, sitemaps = parse_robots_txt(ROBOTS_TXT)
     assert "/admin/" in disallow
     assert "/private" in disallow
     assert "https://example.test/sitemap.xml" in sitemaps
 
 
 def test_disallow_rule_matching() -> None:
-    disallow, _ = parse_robots_txt(ROBOTS_DISALLOW_ONLY)
+    disallow, _, _ = parse_robots_txt(ROBOTS_DISALLOW_ONLY)
     assert is_disallowed("/admin/", disallow)
     assert is_disallowed("/admin/anything", disallow)
     assert not is_disallowed("/public/page", disallow)
@@ -425,3 +425,220 @@ def test_host_same_check() -> None:
 
     assert same_host("Example.COM", "example.com")
     assert not same_host("example.com", "other.com")
+
+
+# ---------------------------------------------------------------------------
+# SC4A-R-ALLOW  — Allow overrides broader Disallow by longest match
+# ---------------------------------------------------------------------------
+
+ALLOW_ROBOTS = (
+    "User-agent: *\n"
+    "Disallow: /admin/\n"
+    "Allow: /admin/public\n"
+)
+
+
+def test_allow_overrides_broader_disallow() -> None:
+    disallow, allow, _ = parse_robots_txt(ALLOW_ROBOTS)
+    assert "/admin/" in disallow
+    assert "/admin/public" in allow
+    assert is_disallowed("/admin/anything", disallow, allow)
+    assert not is_disallowed("/admin/public", disallow, allow)
+    assert not is_disallowed("/admin/public/page", disallow, allow)
+
+
+# ---------------------------------------------------------------------------
+# SC4A-R-NOFOLLOW  — rel="nofollow" anchors recorded but not traversed
+# ---------------------------------------------------------------------------
+
+NOFOLLOW_HTML = (
+    '<html><head><title>Nofollow</title>'
+    '<meta name="description" content="desc">'
+    '<meta name="robots" content="index, follow">'
+    '</head><body><h1>Heading</h1>'
+    '<a href="/followed">Followed</a>'
+    '<a href="/nofollow" rel="nofollow">Nofollow</a>'
+    "</body></html>"
+)
+
+
+def test_nofollow_anchor_recorded_but_not_traversed() -> None:
+    async def run() -> None:
+        responses: dict[str, httpx.Response] = {
+            "https://example.test/robots.txt": ok_html(""),
+            "https://example.test/": ok_html(NOFOLLOW_HTML, "https://example.test/"),
+            "https://example.test/followed": ok_html(
+                ROOT_ONLY_HTML, "https://example.test/followed"
+            ),
+            "https://example.test/nofollow": ok_html(
+                ROOT_ONLY_HTML, "https://example.test/nofollow"
+            ),
+        }
+        collected, _ = await _crawl_with_config(base_config(), responses)
+        fetched_urls = {cp.url for cp in collected}
+        root = next(cp for cp in collected if cp.url == "https://example.test/")
+        assert "https://example.test/followed" in root.internal_links
+        assert "https://example.test/nofollow" in root.internal_links
+        assert "https://example.test/followed" in fetched_urls
+        assert "https://example.test/nofollow" not in fetched_urls
+
+    asyncio.run(run())
+
+
+# ---------------------------------------------------------------------------
+# SC4A-R-SITEMAP-CMP  — sitemap-vs-crawl comparison
+# ---------------------------------------------------------------------------
+
+
+def test_sitemap_vs_crawl_comparison() -> None:
+    async def run() -> None:
+        sitemap_items = (
+            "<url><loc>https://example.test/page1</loc></url>"
+            "<url><loc>https://example.test/page2</loc></url>"
+            "<url><loc>https://example.test/page3</loc></url>"
+        )
+        sm_xml = (
+            '<?xml version="1.0"?>'
+            f'<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">{sitemap_items}</urlset>'
+        )
+        responses: dict[str, httpx.Response] = {
+            "https://example.test/robots.txt": robots_response(
+                "User-agent: *\nSitemap: https://example.test/sitemap.xml\n"
+            ),
+            "https://example.test/sitemap.xml": sitemap_response(sm_xml),
+            "https://example.test/": ok_html(ROOT_ONLY_HTML),
+            "https://example.test/page1": ok_html(
+                ROOT_ONLY_HTML, "https://example.test/page1"
+            ),
+        }
+        # page2 → 404 (non-indexable); page3 → never reached (max_pages=3, concurrency=1)
+        _, report = await _crawl_with_config(
+            base_config(max_pages=3, concurrency=1), responses
+        )
+        assert "https://example.test/page3" in report.sitemap_not_reached
+        assert "https://example.test/" in report.crawled_not_in_sitemap
+        assert "https://example.test/page2" in report.sitemap_non_indexable
+
+    asyncio.run(run())
+
+
+# ---------------------------------------------------------------------------
+# SC4A-R-LIMITS-250  — max_pages at 250
+# ---------------------------------------------------------------------------
+
+
+def test_sc4a_max_pages_binds_at_250() -> None:
+    async def run() -> None:
+        chain_html = (
+            "<html><head><title>Chain</title></head><body>"
+            + "".join(f'<a href="/page{i}">Page {i}</a>' for i in range(300))
+            + "</body></html>"
+        )
+        responses: dict[str, httpx.Response] = {
+            "https://example.test/robots.txt": ok_html(""),
+            "https://example.test/": ok_html(chain_html),
+        }
+        for i in range(300):
+            responses[f"https://example.test/page{i}"] = ok_html(
+                f"<html><head><title>Page {i}</title></head><body></body></html>",
+                f"https://example.test/page{i}",
+            )
+
+        collected, report = await _crawl_with_config(
+            base_config(max_pages=250, concurrency=1), responses
+        )
+        assert report.pages_fetched <= 250
+        assert report.terminal_state == "success"
+        assert "max_pages" in report.reason.lower()
+
+    asyncio.run(run())
+
+
+# ---------------------------------------------------------------------------
+# SC4A-R-FIELDS  — redirect, error, quality, technical_issues
+# ---------------------------------------------------------------------------
+
+
+def test_sc4a_redirect_destination_populated() -> None:
+    async def run() -> None:
+        responses = {
+            "https://example.test/robots.txt": ok_html(""),
+            "https://example.test/old": httpx.Response(
+                301,
+                headers={"location": "https://example.test/new"},
+                request=httpx.Request("GET", "https://example.test/old"),
+            ),
+            "https://example.test/new": ok_html(ROOT_ONLY_HTML, "https://example.test/new"),
+        }
+        collected, _ = await _crawl_with_config(
+            base_config(seeds=("https://example.test/old",)), responses
+        )
+        old_page = next(cp for cp in collected if cp.url.endswith("/old"))
+        assert old_page.redirect_destination is not None
+        assert old_page.redirect_destination.endswith("/new")
+
+    asyncio.run(run())
+
+
+def test_sc4a_error_page_fields_populated() -> None:
+    async def run() -> None:
+        async def handler(request: httpx.Request) -> httpx.Response:
+            if request.url.path == "/broken":
+                raise httpx.ConnectError("boom", request=request)
+            return httpx.Response(200, text=ROOT_ONLY_HTML, request=request)
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            config = base_config(
+                seeds=("https://example.test/", "https://example.test/broken"),
+                retry_limit=0,
+            )
+            engine = CrawlEngine(config, client)
+            collected: list[CrawledPage] = []
+
+            async def on_page(cp: CrawledPage) -> None:
+                collected.append(cp)
+
+            await engine.crawl(on_page=on_page)
+
+        broken = next(cp for cp in collected if cp.url.endswith("/broken"))
+        assert broken.error is not None
+        assert broken.quality_status == "issues_detected"
+        assert "non_200_status" in broken.technical_issues
+
+    asyncio.run(run())
+
+
+# ---------------------------------------------------------------------------
+# SC4A-R-PARTIAL  — timed-out crawl retains fetched pages, terminates partial
+# ---------------------------------------------------------------------------
+
+
+def test_sc4a_partial_timeout_retains_pages() -> None:
+    async def run() -> None:
+        root_html = (
+            "<html><head><title>Root</title></head><body>"
+            + "".join(f'<a href="/page{i}">Page {i}</a>' for i in range(5))
+            + "</body></html>"
+        )
+
+        async def handler(request: httpx.Request) -> httpx.Response:
+            await asyncio.sleep(0.3)
+            return httpx.Response(
+                200, text=root_html, headers={"content-type": "text/html"}, request=request
+            )
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            config = base_config(total_timeout=0.65, request_timeout=5.0, concurrency=1)
+            engine = CrawlEngine(config, client)
+            collected: list[CrawledPage] = []
+
+            async def on_page(cp: CrawledPage) -> None:
+                collected.append(cp)
+
+            report = await engine.crawl(on_page=on_page)
+
+        assert report.terminal_state == "partial"
+        assert "timeout" in report.reason.lower()
+        assert len(collected) >= 2
+
+    asyncio.run(run())
