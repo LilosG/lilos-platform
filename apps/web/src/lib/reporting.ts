@@ -373,10 +373,14 @@ export function formatDateRange(start: string, end: string): string {
 
 export interface GscTableRow {
   primary: string;
-  clicks: number;
-  impressions: number;
+  clicks: number | null;
+  impressions: number | null;
   ctr: string;
   position: string;
+}
+
+function fmtCount(v: number | null): string {
+  return v !== null ? v.toLocaleString() : "—";
 }
 
 export function buildGscDataTable(
@@ -393,8 +397,8 @@ export function buildGscDataTable(
   for (const row of rows) {
     const tr = document.createElement("tr");
     tr.innerHTML = `<td class="cell-meta"><span class="cell-meta__primary">${escHtml(row.primary)}</span></td>
-      <td>${row.clicks.toLocaleString()}</td>
-      <td>${row.impressions.toLocaleString()}</td>
+      <td>${fmtCount(row.clicks)}</td>
+      <td>${fmtCount(row.impressions)}</td>
       <td>${row.ctr}</td>
       <td>${row.position}</td>`;
     tbody.append(tr);

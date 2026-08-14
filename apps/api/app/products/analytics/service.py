@@ -48,6 +48,7 @@ from apps.api.app.integrations.connection_service import (
 from apps.api.app.integrations.models import IntegrationConnection
 from apps.api.app.products.analytics.adapter import (
     GA4_METRICS,
+    AnalyticsReportRow,
     DiscoveredAnalyticsProperty,
     GoogleAnalyticsAdapter,
     GoogleAnalyticsAdminAdapter,
@@ -429,12 +430,20 @@ class AnalyticsService:
 
         for period_days in VALID_REPORTING_PERIODS:
             start, end = reporting_window(now, period_days, GA4_SYNC_TAIL_EXCLUSION_DAYS)
+            comp_start, comp_end = comparison_window(start, period_days)
             try:
                 aggregate_rows = await self.adapter.run_report(
                     token,
                     prop.property_number,
                     start_date=provider_start_date(start),
                     end_date=provider_end_date(end),
+                    metrics=GA4_METRICS,
+                )
+                prior_aggregate_rows = await self.adapter.run_report(
+                    token,
+                    prop.property_number,
+                    start_date=provider_start_date(comp_start),
+                    end_date=provider_end_date(comp_end),
                     metrics=GA4_METRICS,
                 )
                 daily_rows = await self.adapter.run_report(
@@ -463,58 +472,28 @@ class AnalyticsService:
                 )
                 continue
 
-            agg_dims: dict[str, object] = {"observation_type": "aggregate"}
-            agg_dim_hash = _dimension_hash(agg_dims)
-            metric_totals: dict[str, int] = {key: 0 for key in GA4_METRICS}
-            for row in aggregate_rows:
-                for key in GA4_METRICS:
-                    metric_totals[key] += row.metric_values.get(key, 0)
-
-            for key in GA4_METRICS:
-                definition = definitions[f"ga4.{key}"]
-                value = metric_totals.get(key, 0)
-                existing = await session.scalar(
-                    select(MetricObservation).where(
-                        MetricObservation.organization_id == organization_id,
-                        MetricObservation.source_id == source.id,
-                        MetricObservation.metric_definition_id == definition.id,
-                        MetricObservation.period_start == start,
-                        MetricObservation.period_end == end,
-                        MetricObservation.dimension_hash == agg_dim_hash,
-                    )
-                )
-                if existing is not None:
-                    existing.value = Decimal(value)
-                    existing.quality_state = "valid" if value else "zero"
-                    existing.provenance = {
-                        "provider": ANALYTICS_PROVIDER_KEY,
-                        "property": prop.external_property_id,
-                        "window_days": period_days,
-                        "observation_type": "aggregate",
-                    }
-                else:
-                    session.add(
-                        MetricObservation(
-                            organization_id=organization_id,
-                            location_id=None,
-                            source_id=source.id,
-                            metric_definition_id=definition.id,
-                            period_start=start,
-                            period_end=end,
-                            dimensions=agg_dims,
-                            dimension_hash=agg_dim_hash,
-                            value=Decimal(value),
-                            quality_state="valid" if value else "zero",
-                            completeness=Decimal("1.0"),
-                            provenance={
-                                "provider": ANALYTICS_PROVIDER_KEY,
-                                "property": prop.external_property_id,
-                                "window_days": period_days,
-                                "observation_type": "aggregate",
-                            },
-                        )
-                    )
-                upserted += 1
+            upserted += await self._sync_aggregate(
+                session,
+                organization_id,
+                source,
+                definitions,
+                prop,
+                aggregate_rows,
+                start,
+                end,
+                period_days,
+            )
+            upserted += await self._sync_aggregate(
+                session,
+                organization_id,
+                source,
+                definitions,
+                prop,
+                prior_aggregate_rows,
+                comp_start,
+                comp_end,
+                period_days,
+            )
 
             from datetime import date as date_type
 
@@ -605,6 +584,78 @@ class AnalyticsService:
             "periods_synced": list(VALID_REPORTING_PERIODS),
             "freshness_status": prop.freshness_status,
         }
+
+    async def _sync_aggregate(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        source: InsightSource,
+        definitions: dict[str, MetricDefinition],
+        prop: AnalyticsProperty,
+        aggregate_rows: list[AnalyticsReportRow],
+        start: datetime,
+        end: datetime,
+        period_days: int,
+    ) -> int:
+        """Upsert authoritative aggregate observations for one exact window.
+
+        ``totalUsers`` and every other metric come from aggregate provider rows
+        (dimensionless), never summed from daily rows. Returns rows upserted.
+        """
+        agg_dims: dict[str, object] = {"observation_type": "aggregate"}
+        agg_dim_hash = _dimension_hash(agg_dims)
+        metric_totals: dict[str, int] = {key: 0 for key in GA4_METRICS}
+        for row in aggregate_rows:
+            for key in GA4_METRICS:
+                metric_totals[key] += row.metric_values.get(key, 0)
+
+        upserted = 0
+        for key in GA4_METRICS:
+            definition = definitions[f"ga4.{key}"]
+            value = metric_totals.get(key, 0)
+            existing = await session.scalar(
+                select(MetricObservation).where(
+                    MetricObservation.organization_id == organization_id,
+                    MetricObservation.source_id == source.id,
+                    MetricObservation.metric_definition_id == definition.id,
+                    MetricObservation.period_start == start,
+                    MetricObservation.period_end == end,
+                    MetricObservation.dimension_hash == agg_dim_hash,
+                )
+            )
+            if existing is not None:
+                existing.value = Decimal(value)
+                existing.quality_state = "valid" if value else "zero"
+                existing.provenance = {
+                    "provider": ANALYTICS_PROVIDER_KEY,
+                    "property": prop.external_property_id,
+                    "window_days": period_days,
+                    "observation_type": "aggregate",
+                }
+            else:
+                session.add(
+                    MetricObservation(
+                        organization_id=organization_id,
+                        location_id=None,
+                        source_id=source.id,
+                        metric_definition_id=definition.id,
+                        period_start=start,
+                        period_end=end,
+                        dimensions=agg_dims,
+                        dimension_hash=agg_dim_hash,
+                        value=Decimal(value),
+                        quality_state="valid" if value else "zero",
+                        completeness=Decimal("1.0"),
+                        provenance={
+                            "provider": ANALYTICS_PROVIDER_KEY,
+                            "property": prop.external_property_id,
+                            "window_days": period_days,
+                            "observation_type": "aggregate",
+                        },
+                    )
+                )
+            upserted += 1
+        return upserted
 
     # -- read helpers --------------------------------------------------------
 
@@ -702,23 +753,20 @@ class AnalyticsService:
                 comp_start,
                 comp_end,
             )
-            absolute_delta = Decimal(0)
+            absolute_delta: int | None = None
             if current_value is not None and prior_value is not None:
-                absolute_delta = Decimal(current_value) - Decimal(prior_value)
+                absolute_delta = int(Decimal(current_value) - Decimal(prior_value))
             percent_delta: float | None = None
-            if prior_value is not None and prior_value != 0:
+            if current_value is not None and prior_value is not None and prior_value != 0:
                 delta_pct = (
-                    (Decimal(current_value or 0) - Decimal(prior_value))
+                    (Decimal(current_value) - Decimal(prior_value))
                     / abs(Decimal(prior_value))
                     * 100
                 )
                 percent_delta = float(delta_pct)
             quality = "valid"
-            if current_value is None and prior_value is None:
+            if current_value is None:
                 quality = "missing"
-            elif current_value is None:
-                quality = "missing"
-                current_value = Decimal(0)
             elif prior_value is None:
                 quality = "partial"
 
@@ -726,7 +774,7 @@ class AnalyticsService:
                 "label": metric_labels.get(key, key),
                 "current": int(current_value) if current_value is not None else None,
                 "previous": int(prior_value) if prior_value is not None else None,
-                "delta": int(absolute_delta),
+                "delta": absolute_delta,
                 "percent_delta": percent_delta,
                 "quality": quality,
             }

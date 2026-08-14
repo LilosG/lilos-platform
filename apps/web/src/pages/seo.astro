@@ -1001,8 +1001,8 @@ import "../styles/global.css";
                 primary: q.query,
                 clicks: q.clicks,
                 impressions: q.impressions,
-                ctr: `${(q.ctr * 100).toFixed(1)}%`,
-                position: q.position.toFixed(1),
+                ctr: q.ctr !== null ? `${(q.ctr * 100).toFixed(1)}%` : "—",
+                position: q.position !== null ? q.position.toFixed(1) : "—",
               })),
             );
             qBody.append(qTable);
@@ -1030,8 +1030,8 @@ import "../styles/global.css";
                 primary: q.page,
                 clicks: q.clicks,
                 impressions: q.impressions,
-                ctr: `${(q.ctr * 100).toFixed(1)}%`,
-                position: q.position.toFixed(1),
+                ctr: q.ctr !== null ? `${(q.ctr * 100).toFixed(1)}%` : "—",
+                position: q.position !== null ? q.position.toFixed(1) : "—",
               })),
             );
             pBody.append(pTable);
