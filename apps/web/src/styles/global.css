@@ -1853,3 +1853,169 @@ details {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ============================================================
+   REPORTING — KPI comparison cards
+   ============================================================ */
+.kpi-card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: var(--space-5);
+  box-shadow: var(--shadow-xs);
+}
+.kpi-card__label {
+  font-size: var(--text-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+.kpi-card__value {
+  font-size: var(--text-2xl);
+  font-weight: 800;
+  margin: var(--space-2) 0 var(--space-1);
+  line-height: 1;
+}
+.kpi-card__delta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  flex-wrap: wrap;
+}
+.kpi-card__delta-value {
+  font-weight: 800;
+}
+.kpi-card__delta-pct {
+  font-weight: 700;
+}
+.kpi-card__delta-label {
+  color: var(--muted);
+  font-weight: 500;
+  font-size: var(--text-xs);
+}
+.kpi-card__meta {
+  font-size: var(--text-xs);
+  color: var(--muted);
+  margin-top: var(--space-2);
+}
+.delta--positive .kpi-card__delta-value,
+.delta--positive .kpi-card__delta-pct {
+  color: var(--success);
+}
+.delta--negative .kpi-card__delta-value,
+.delta--negative .kpi-card__delta-pct {
+  color: var(--danger);
+}
+.delta--neutral .kpi-card__delta-value,
+.delta--neutral .kpi-card__delta-pct {
+  color: var(--muted);
+}
+
+/* ============================================================
+   REPORTING — Period selector
+   ============================================================ */
+.period-selector {
+  display: inline-flex;
+  gap: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--card);
+}
+.period-selector__option {
+  padding: 0.35rem 0.75rem;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  border-right: 1px solid var(--line);
+  cursor: pointer;
+  transition:
+    background-color 0.12s ease,
+    color 0.12s ease;
+  white-space: nowrap;
+}
+.period-selector__option:last-child {
+  border-right: 0;
+}
+.period-selector__option:hover {
+  background: var(--surface-alt);
+  color: var(--ink);
+}
+.period-selector__option--active {
+  background: var(--green);
+  color: #fff;
+  border-color: var(--green);
+}
+.period-selector__option--active:hover {
+  background: var(--green-dark);
+  color: #fff;
+}
+
+/* ============================================================
+   REPORTING — Time series chart
+   ============================================================ */
+.timeseries-chart {
+  width: 100%;
+  overflow-x: auto;
+  padding: var(--space-4);
+}
+.timeseries-chart svg {
+  display: block;
+  min-width: 280px;
+}
+.timeseries-chart--empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 160px;
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+.timeseries-chart__empty {
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+/* ============================================================
+   REPORTING — Source freshness
+   ============================================================ */
+.source-freshness {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+}
+.source-freshness__label {
+  color: var(--muted);
+}
+.source-freshness__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+/* ============================================================
+   REPORTING — Performance summary
+   ============================================================ */
+.performance-summary__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.performance-summary__list li {
+  font-size: var(--text-sm);
+  color: var(--ink);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--line-subtle);
+}
+.performance-summary__list li:last-child {
+  border-bottom: 0;
+}

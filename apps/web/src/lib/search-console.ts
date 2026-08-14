@@ -24,6 +24,61 @@ export type SearchConsoleSummary = {
   }[];
 };
 
+export type SearchConsoleKPI = {
+  current: number | null;
+  previous: number | null;
+  delta: number | null;
+  percent_delta: number | null;
+  quality: string;
+};
+
+export type SearchConsolePerformanceReport = {
+  connected: boolean;
+  properties: {
+    id: string;
+    external_property_id: string;
+    property_type: string;
+    freshness_status: string;
+    last_synced_at: string | null;
+  }[];
+  range: {
+    start: string;
+    end: string;
+    days: number;
+  } | null;
+  comparison_range: {
+    start: string;
+    end: string;
+    days: number;
+  } | null;
+  freshness: {
+    last_synced_at: string | null;
+    status: string;
+  };
+  metrics: Record<string, SearchConsoleKPI>;
+  series: {
+    date: string;
+    clicks: number;
+    impressions: number;
+    ctr: number;
+    position: number;
+  }[];
+  top_queries: {
+    query: string;
+    clicks: number;
+    impressions: number;
+    ctr: number;
+    position: number;
+  }[];
+  top_pages: {
+    page: string;
+    clicks: number;
+    impressions: number;
+    ctr: number;
+    position: number;
+  }[];
+};
+
 function seoBase(organizationId: string): string {
   return `/api/v1/organizations/${organizationId}/seo`;
 }
@@ -60,6 +115,16 @@ export function syncSearchConsole(
   return apiRequest(
     `${seoBase(organizationId)}/websites/${websiteId}/search-properties/${searchPropertyId}/sync`,
     { method: "POST", body: { days } },
+  );
+}
+
+export function fetchSearchConsolePerformance(
+  organizationId: string,
+  websiteId: string,
+  days = 28,
+): Promise<ApiOutcome<SearchConsolePerformanceReport>> {
+  return apiGet<SearchConsolePerformanceReport>(
+    `${seoBase(organizationId)}/websites/${websiteId}/search-console/performance?days=${days}`,
   );
 }
 

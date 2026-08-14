@@ -41,7 +41,7 @@ import "../styles/global.css";
             <p class="eyebrow">Operations</p>
             <h1>Insights</h1>
             <p>
-              Cross-product reporting from real operational data — no simulated
+              Client-facing reporting from real operational data — no simulated
               or fabricated metrics.
             </p>
           </div>
@@ -56,45 +56,35 @@ import "../styles/global.css";
         </div>
 
         <div id="insights-readiness-panel"></div>
+        <div id="insights-reporting-controls"></div>
 
-        <div class="section-heading section-heading--first">
-          <div>
-            <p class="eyebrow">Website performance</p>
-            <h2>Latest Analytics results</h2>
-          </div>
-        </div>
-        <div id="performance-panel">
+        <div id="website-performance-panel">
           <div class="loading-state">Loading performance…</div>
         </div>
 
-        <div class="section-heading">
-          <div>
-            <p class="eyebrow">Data sources</p>
-            <h2>Connected sources</h2>
-          </div>
-        </div>
-        <div id="sources-panel">
-          <div class="loading-state">Loading data sources…</div>
-        </div>
+        <div id="organic-search-panel"></div>
 
-        <div class="section-heading">
-          <div>
-            <p class="eyebrow">Activity</p>
-            <h2>Cross-product metrics</h2>
-          </div>
-        </div>
-        <div id="activity-panel">
-          <div class="loading-state">Loading activity…</div>
-        </div>
+        <div id="cross-product-panel"></div>
+
+        <div id="digest-panel"></div>
+
+        <div id="sources-panel"></div>
       </div>
     </AppShell>
     <script>
       import {
-        fetchProductReadiness,
         fetchInsightsSummary,
+        fetchProductReadiness,
         PRODUCT_LABELS,
       } from "../lib/workspace";
       import { summarizeReadiness } from "../lib/dashboard-logic";
+      import { fetchAnalyticsPerformance } from "../lib/analytics";
+      import {
+        fetchSearchConsolePerformance,
+        type SearchConsolePerformanceReport,
+      } from "../lib/search-console";
+      import { fetchWebsites } from "../lib/seo";
+      import { apiGet, type ApiOutcome } from "../lib/api-client";
       import {
         bootWorkspace,
         applyBootResult,
@@ -104,12 +94,22 @@ import "../styles/global.css";
         emptyState,
         errorAlert,
         describeFailure,
-        metricCard,
         formatTimestamp,
         type BootRegions,
       } from "../lib/ui";
+      import {
+        reportingPeriodSelector,
+        comparisonKPI,
+        timeSeriesChart,
+        toTimeSeriesPoints,
+        sourceFreshness,
+        performanceSummary,
+        formatDateRange,
+        buildGscDataTable,
+      } from "../lib/reporting";
 
       let organizationId = "";
+      let currentPeriodDays = 28;
 
       const regions: BootRegions = {
         notConfigured: document.getElementById("boot-not-configured")!,
@@ -119,39 +119,81 @@ import "../styles/global.css";
         content: document.getElementById("insights-content")!,
       };
 
-      const SOURCE_PRODUCTS = [
-        "gbp",
-        "reviews",
-        "leads",
-        "content",
-        "seo",
-      ] as const;
-
       async function loadOrganization(
         org: import("../lib/workspace").MyOrganization,
       ): Promise<void> {
         setActiveOrganization(org);
         organizationId = org.organization_id;
 
-        const [readinessResult, summaryResult, sourceReadiness] =
-          await Promise.all([
-            fetchProductReadiness(organizationId, "insights"),
-            fetchInsightsSummary(organizationId),
-            Promise.all(
-              SOURCE_PRODUCTS.map((key) =>
-                fetchProductReadiness(organizationId, key),
-              ),
-            ),
-          ]);
+        const [readinessResult, websiteReadinessRes] = await Promise.all([
+          fetchProductReadiness(organizationId, "insights"),
+          apiGet<Record<string, unknown>>(
+            `/api/v1/organizations/${organizationId}/insights/website-readiness`,
+          ),
+        ]);
 
-        renderReadiness(readinessResult);
-        renderPerformance(summaryResult);
-        renderSources(sourceReadiness, summaryResult);
-        renderActivity(summaryResult);
+        renderReadiness(readinessResult, websiteReadinessRes);
+        await loadReportingData();
+      }
+
+      async function loadReportingData(): Promise<void> {
+        const panel = document.getElementById("insights-reporting-controls")!;
+        panel.replaceChildren();
+
+        // Period selector
+        const selector = reportingPeriodSelector(currentPeriodDays, (days) => {
+          currentPeriodDays = days;
+          void loadReportingData();
+        });
+        panel.append(selector);
+
+        const [ga4Res, websitesRes] = await Promise.all([
+          fetchAnalyticsPerformance(organizationId, currentPeriodDays),
+          fetchWebsites(organizationId),
+        ]);
+
+        // Get first website for Search Console data
+        let gscRes: ApiOutcome<SearchConsolePerformanceReport> | null = null;
+        if (websitesRes.kind === "ok" && websitesRes.data.length > 0) {
+          const firstWebsite = websitesRes.data[0];
+          gscRes = await fetchSearchConsolePerformance(
+            organizationId,
+            firstWebsite.id,
+            currentPeriodDays,
+          );
+        }
+
+        // Date range label
+        if (
+          ga4Res.kind === "ok" &&
+          ga4Res.data.connected &&
+          ga4Res.data.range
+        ) {
+          const dateLabel = document.createElement("p");
+          dateLabel.className = "text-sm muted";
+          dateLabel.style.marginTop = "0.5rem";
+          dateLabel.textContent = `${formatDateRange(ga4Res.data.range.start, ga4Res.data.range.end)} · vs ${formatDateRange(ga4Res.data.comparison_range?.start || "", ga4Res.data.comparison_range?.end || "")}`;
+          panel.append(dateLabel);
+        }
+
+        renderWebsitePerformance(ga4Res);
+        renderOrganicSearch(gscRes);
+        renderDigest(ga4Res, gscRes);
+
+        // Cross-product and sources
+        const summaryRes = await fetchInsightsSummary(organizationId);
+        const sourceReadiness = await Promise.all(
+          (["gbp", "reviews", "leads", "content", "seo"] as const).map((key) =>
+            fetchProductReadiness(organizationId, key),
+          ),
+        );
+        renderCrossProduct(summaryRes);
+        renderSources(sourceReadiness, ga4Res);
       }
 
       function renderReadiness(
         outcome: Awaited<ReturnType<typeof fetchProductReadiness>>,
+        websiteReadinessRes: ApiOutcome<Record<string, unknown>>,
       ): void {
         const panel = document.getElementById("insights-readiness-panel")!;
         panel.replaceChildren();
@@ -162,189 +204,373 @@ import "../styles/global.css";
         }
 
         const summary = summarizeReadiness(outcome);
-        if (summary.status === "ready") {
+        if (summary.status !== "ready") {
           const alert = document.createElement("div");
-          alert.className = "alert alert--success";
-          alert.style.marginBottom = "0";
-          alert.append(statusBadge("ready", "Ready"));
-          const text = document.createElement("p");
-          text.className = "text-sm";
-          text.textContent =
-            "Insights reporting is available. SEO recommendations are on the SEO page.";
-          alert.append(text);
-          panel.append(alert);
-        } else if (summary.status === "setup" || summary.status === "blocked") {
-          const alert = document.createElement("div");
-          alert.className = "alert alert--warning";
+          alert.className =
+            summary.status === "blocked"
+              ? "alert alert--warning"
+              : "alert alert--info";
           alert.style.marginBottom = "0";
           alert.append(
             statusBadge(
               summary.status,
-              summary.status === "setup" ? "Setup required" : "Blocked",
+              summary.status === "blocked"
+                ? "Needs attention"
+                : "Setup required",
             ),
           );
           const text = document.createElement("p");
           text.className = "text-sm";
           text.textContent = summary.detail;
           alert.append(text);
-          const link = document.createElement("a");
-          link.className = "button button--secondary button--sm";
-          link.href = "/settings";
-          link.textContent =
-            summary.status === "setup" ? "Complete setup" : "Review blockers";
-          alert.append(link);
           panel.append(alert);
         }
-      }
 
-      function renderSources(
-        readinessResults: Awaited<ReturnType<typeof fetchProductReadiness>>[],
-        summaryResult: Awaited<ReturnType<typeof fetchInsightsSummary>>,
-      ): void {
-        const panel = document.getElementById("sources-panel")!;
-        panel.replaceChildren();
-
-        const grid = document.createElement("div");
-        grid.className = "directory-grid";
-
-        if (summaryResult.kind === "ok" && summaryResult.data.ga4?.connected) {
-          const analytics = summaryResult.data.ga4;
+        // Website readiness summary card from the dedicated endpoint
+        if (websiteReadinessRes.kind === "ok") {
+          const wr = websiteReadinessRes.data;
           const card = document.createElement("div");
-          card.className = "integration-card";
-          const latestSync = analytics.properties
-            .map((property) => property.last_synced_at)
-            .filter((value): value is string => Boolean(value))
-            .sort()
-            .at(-1);
-          card.innerHTML =
-            '<div class="integration-card__header"><span class="integration-card__icon">A</span><div class="integration-card__title">Google Analytics</div></div>';
-          const description = document.createElement("p");
-          description.className = "integration-card__desc";
-          description.textContent = latestSync
-            ? `${analytics.properties.length} mapped propert${analytics.properties.length === 1 ? "y" : "ies"} · Synced ${formatTimestamp(latestSync)}`
-            : `${analytics.properties.length} mapped propert${analytics.properties.length === 1 ? "y" : "ies"} · Awaiting first sync`;
-          const footer = document.createElement("div");
-          footer.className = "integration-card__footer";
-          footer.append(statusBadge("ready", "Connected"));
-          card.append(description, footer);
-          grid.append(card);
-        }
-
-        for (let i = 0; i < SOURCE_PRODUCTS.length; i++) {
-          const key = SOURCE_PRODUCTS[i];
-          const summary = summarizeReadiness(readinessResults[i]);
-          const card = document.createElement("div");
-          card.className = "integration-card";
-
+          card.className = "card";
+          card.style.marginTop = "var(--space-4)";
           const header = document.createElement("div");
-          header.className = "integration-card__header";
-          const icon = document.createElement("span");
-          icon.className = "integration-card__icon";
-          icon.textContent = PRODUCT_LABELS[key][0];
-          const title = document.createElement("div");
-          title.className = "integration-card__title";
-          title.textContent = PRODUCT_LABELS[key];
-          header.append(icon, title);
-
-          const desc = document.createElement("p");
-          desc.className = "integration-card__desc";
-          desc.textContent = summary.detail;
-
-          const footer = document.createElement("div");
-          footer.className = "integration-card__footer";
-          footer.append(
-            statusBadge(
-              summary.status,
-              summary.status === "ready"
-                ? "Operational"
-                : summary.status === "missing"
-                  ? "Unavailable"
-                  : summary.status.replace(/_/g, " "),
-            ),
+          header.className = "card__header";
+          header.append(
+            Object.assign(document.createElement("h3"), {
+              className: "card__title",
+              textContent: "Website readiness",
+            }),
           );
-          const link = document.createElement("a");
-          link.className = "button button--secondary button--sm";
-          link.href = `/${key}`;
-          link.textContent = "Open →";
-          footer.append(link);
+          card.append(header);
+          const body = document.createElement("div");
+          body.className = "card__body";
 
-          card.append(header, desc, footer);
-          grid.append(card);
+          const facts: { label: string; ready: boolean; note: string }[] = [];
+          const configured = !!wr.canonical_domain_configured;
+          facts.push({
+            label: "Domain",
+            ready: configured,
+            note: configured
+              ? `Primary: ${wr.primary_domain || "Set"}`
+              : "Not configured",
+          });
+          const scMapped = !!wr.search_console_mapped;
+          const scReady = scMapped && wr.search_console_freshness === "fresh";
+          facts.push({
+            label: "Search Console",
+            ready: scReady,
+            note: scMapped
+              ? readinessClientLabel(wr.search_console_freshness as string)
+              : "Not mapped",
+          });
+          const gaMapped = !!wr.analytics_mapped;
+          const gaReady = gaMapped && wr.analytics_freshness === "fresh";
+          facts.push({
+            label: "Analytics",
+            ready: gaReady,
+            note: gaMapped
+              ? readinessClientLabel(wr.analytics_freshness as string)
+              : "Not mapped",
+          });
+          const crawlDone = !!wr.crawl_ready;
+          facts.push({
+            label: "Crawl",
+            ready: crawlDone,
+            note: crawlDone
+              ? wr.last_crawl_at
+                ? `Last crawl: ${formatTimestamp(wr.last_crawl_at as string)}`
+                : "Crawl ready"
+              : "Not yet crawled",
+          });
+
+          for (const f of facts) {
+            const row = document.createElement("div");
+            row.className = "flex-row";
+            row.style.cssText =
+              "align-items:center;justify-content:space-between;margin-bottom:var(--space-2);gap:var(--space-3);";
+            const labelText = document.createElement("span");
+            labelText.className = "text-sm";
+            labelText.textContent = f.label;
+            const rightSide = document.createElement("div");
+            rightSide.style.cssText =
+              "display:flex;align-items:center;gap:var(--space-2);";
+            rightSide.append(
+              statusBadge(
+                f.ready ? "ready" : "setup",
+                f.ready ? "Ready" : "Needs attention",
+              ),
+            );
+            const noteEl = document.createElement("span");
+            noteEl.className = "text-xs muted";
+            noteEl.textContent = f.note;
+            rightSide.append(noteEl);
+            row.append(labelText, rightSide);
+            body.append(row);
+          }
+
+          card.append(body);
+          panel.append(card);
         }
-
-        panel.append(grid);
       }
 
-      function renderPerformance(
-        summaryResult: Awaited<ReturnType<typeof fetchInsightsSummary>>,
+      function readinessClientLabel(freshness: string): string {
+        switch (freshness) {
+          case "fresh":
+            return "Synced";
+          case "stale":
+            return "Stale";
+          case "never_synced":
+            return "Mapped \u00b7 not yet synced";
+          case "not_mapped":
+            return "Not mapped";
+          default:
+            return freshness;
+        }
+      }
+
+      function renderWebsitePerformance(
+        ga4Res: Awaited<ReturnType<typeof fetchAnalyticsPerformance>>,
       ): void {
-        const panel = document.getElementById("performance-panel")!;
+        const panel = document.getElementById("website-performance-panel")!;
         panel.replaceChildren();
-        if (summaryResult.kind !== "ok") {
-          panel.append(
-            errorAlert(describeFailure(summaryResult, "Performance")),
-          );
+
+        if (ga4Res.kind !== "ok") {
+          panel.append(errorAlert(describeFailure(ga4Res, "Performance")));
           return;
         }
-        const ga4 = summaryResult.data.ga4;
-        if (!ga4?.connected || Object.keys(ga4.metrics).length === 0) {
+
+        const data = ga4Res.data;
+        if (!data.connected) {
           panel.append(
             emptyState(
               "No Analytics observations yet",
-              "Connect and sync Google Analytics to report real website activity. LILOs will not invent values or trends while a source is unavailable.",
+              "Connect and sync Google Analytics to report real website activity.",
               "Manage data sources",
               "/integrations",
             ),
           );
           return;
         }
-        const labels: Record<string, string> = {
+
+        // Section heading
+        const heading = document.createElement("div");
+        heading.className = "section-heading section-heading--first";
+        const headingLeft = document.createElement("div");
+        const eyebrow = document.createElement("p");
+        eyebrow.className = "eyebrow";
+        eyebrow.textContent = "Website performance";
+        const title = document.createElement("h2");
+        title.textContent = "Analytics";
+        headingLeft.append(eyebrow, title);
+        heading.append(headingLeft);
+
+        // Freshness
+        if (data.freshness) {
+          const freshness = sourceFreshness(
+            data.freshness.last_synced_at,
+            data.freshness.status,
+          );
+          heading.append(freshness);
+        }
+        panel.append(heading);
+
+        // KPI cards
+        const kpiOrder = [
+          "ga4.sessions",
+          "ga4.totalUsers",
+          "ga4.screenPageViews",
+          "ga4.conversions",
+        ];
+        const kpiLabels: Record<string, string> = {
           "ga4.sessions": "Sessions",
           "ga4.totalUsers": "Users",
           "ga4.screenPageViews": "Page views",
           "ga4.conversions": "Conversions",
         };
-        const latestSync = ga4.properties
-          .map((property) => property.last_synced_at)
-          .filter((value): value is string => Boolean(value))
-          .sort()
-          .at(-1);
-        const grid = document.createElement("div");
-        grid.className = "metric-grid";
-        for (const [key, value] of Object.entries(ga4.metrics)) {
-          grid.append(
-            metricCard(
-              labels[key] ?? key.replace(/^ga4\./, "").replace(/_/g, " "),
-              String(value),
-              latestSync
-                ? `Synced ${formatTimestamp(latestSync)}`
-                : "Latest observation",
+
+        const kpiGrid = document.createElement("div");
+        kpiGrid.className = "metric-grid";
+        for (const key of kpiOrder) {
+          const kpi = data.metrics[key];
+          if (kpi) {
+            kpiGrid.append(
+              comparisonKPI(
+                kpiLabels[key] || kpi.label,
+                kpi.current,
+                kpi.previous,
+                kpi.delta,
+                kpi.percent_delta,
+                "",
+              ),
+            );
+          }
+        }
+        panel.append(kpiGrid);
+
+        // Daily trend chart
+        if (data.series && data.series.length > 0) {
+          const chartSection = document.createElement("div");
+          chartSection.className = "card";
+          chartSection.style.marginTop = "var(--space-5)";
+          const chartHeader = document.createElement("div");
+          chartHeader.className = "card__header";
+          const chartTitle = document.createElement("h3");
+          chartTitle.className = "card__title";
+          chartTitle.textContent = "Daily sessions";
+          chartHeader.append(chartTitle);
+          chartSection.append(chartHeader);
+          const chartBody = document.createElement("div");
+          chartBody.className = "card__body";
+          chartBody.style.padding = "0";
+          const sessionData = toTimeSeriesPoints(data.series, "sessions");
+          chartBody.append(timeSeriesChart(sessionData, "Sessions"));
+          chartSection.append(chartBody);
+          panel.append(chartSection);
+        }
+      }
+
+      function renderOrganicSearch(
+        gscRes: ApiOutcome<SearchConsolePerformanceReport> | null,
+      ): void {
+        const panel = document.getElementById("organic-search-panel")!;
+        panel.replaceChildren();
+
+        if (!gscRes || gscRes.kind !== "ok" || !gscRes.data.connected) {
+          panel.append(
+            emptyState(
+              "No Search Console data available",
+              "Connect Search Console in SEO settings to see organic search performance.",
+              "Set up Search Console",
+              "/seo",
+            ),
+          );
+          return;
+        }
+
+        const data = gscRes.data;
+
+        const heading = document.createElement("div");
+        heading.className = "section-heading";
+        const headingLeft = document.createElement("div");
+        const eyebrow = document.createElement("p");
+        eyebrow.className = "eyebrow";
+        eyebrow.textContent = "Organic search";
+        const title = document.createElement("h2");
+        title.textContent = "Search Console";
+        headingLeft.append(eyebrow, title);
+        heading.append(headingLeft);
+
+        if (data.freshness) {
+          heading.append(
+            sourceFreshness(
+              data.freshness.last_synced_at,
+              data.freshness.status,
             ),
           );
         }
-        panel.append(grid);
-        const notice = document.createElement("p");
-        notice.className = "source-note";
-        notice.textContent =
-          "Current totals are shown without a period comparison because the reporting API does not yet return an observation window or comparable prior period.";
-        panel.append(notice);
+        panel.append(heading);
+
+        // KPI cards
+        const gscOrder = ["clicks", "impressions", "ctr", "position"];
+        const gscLabels: Record<string, string> = {
+          clicks: "Clicks",
+          impressions: "Impressions",
+          ctr: "CTR",
+          position: "Avg position",
+        };
+        const gscFormatters: Record<string, (v: number | null) => string> = {
+          clicks: (v) => (v !== null ? v.toLocaleString() : "—"),
+          impressions: (v) => (v !== null ? v.toLocaleString() : "—"),
+          ctr: (v) => (v !== null ? `${(v * 100).toFixed(1)}%` : "—"),
+          position: (v) => (v !== null ? v.toFixed(1) : "—"),
+        };
+
+        const gscGrid = document.createElement("div");
+        gscGrid.className = "metric-grid";
+        for (const key of gscOrder) {
+          const metric = data.metrics[key];
+          if (metric) {
+            const card = comparisonKPI(
+              gscLabels[key] || key,
+              metric.current as number | null,
+              metric.previous as number | null,
+              metric.delta as number | null,
+              metric.percent_delta as number | null,
+              "",
+              key,
+            );
+            // Override value formatting for position/CTR
+            const valueEl = card.querySelector(".kpi-card__value");
+            if (valueEl) {
+              valueEl.textContent =
+                gscFormatters[key]?.(metric.current as number | null) || "—";
+            }
+            gscGrid.append(card);
+          }
+        }
+        panel.append(gscGrid);
+
+        // Daily series chart
+        if (data.series && data.series.length > 0) {
+          const chartSection = document.createElement("div");
+          chartSection.className = "card";
+          chartSection.style.marginTop = "var(--space-5)";
+          const chartHeader = document.createElement("div");
+          chartHeader.className = "card__header";
+          const chartTitle = document.createElement("h3");
+          chartTitle.className = "card__title";
+          chartTitle.textContent = "Daily impressions";
+          chartHeader.append(chartTitle);
+          chartSection.append(chartHeader);
+          const chartBody = document.createElement("div");
+          chartBody.className = "card__body";
+          chartBody.style.padding = "0";
+          const impressionData = data.series.map((s) => ({
+            date: s.date,
+            value: s.impressions ?? null,
+          }));
+          chartBody.append(timeSeriesChart(impressionData, "Impressions"));
+          chartSection.append(chartBody);
+          panel.append(chartSection);
+        }
+
+        // Top queries table
+        if (data.top_queries && data.top_queries.length > 0) {
+          const queriesSection = document.createElement("div");
+          queriesSection.className = "card";
+          queriesSection.style.marginTop = "var(--space-4)";
+          const qHeader = document.createElement("div");
+          qHeader.className = "card__header";
+          const qTitle = document.createElement("h3");
+          qTitle.className = "card__title";
+          qTitle.textContent = `Top search queries (${data.top_queries.length})`;
+          qHeader.append(qTitle);
+          queriesSection.append(qHeader);
+          const qBody = document.createElement("div");
+          qBody.className = "card__body";
+          qBody.style.padding = "0";
+          const qTable = buildGscDataTable(
+            ["Query", "Clicks", "Impressions", "CTR", "Position"],
+            data.top_queries.map((q) => ({
+              primary: q.query,
+              clicks: q.clicks,
+              impressions: q.impressions,
+              ctr: `${(q.ctr * 100).toFixed(1)}%`,
+              position: q.position.toFixed(1),
+            })),
+          );
+          qBody.append(qTable);
+          queriesSection.append(qBody);
+          panel.append(queriesSection);
+        }
       }
 
-      function renderActivity(
+      function renderCrossProduct(
         summaryResult: Awaited<ReturnType<typeof fetchInsightsSummary>>,
       ): void {
-        const panel = document.getElementById("activity-panel")!;
+        const panel = document.getElementById("cross-product-panel")!;
         panel.replaceChildren();
 
         if (summaryResult.kind !== "ok") {
-          panel.append(
-            emptyState(
-              "Activity unavailable",
-              "Connect the insights product to see cross-product activity.",
-              "Set up Insights",
-              "/settings",
-            ),
-          );
           return;
         }
 
@@ -354,13 +580,8 @@ import "../styles/global.css";
           metrics: { label: string; value: number }[];
         }[] = [];
 
-        // GBP
         const gbpMetrics = [
           { label: "Locations", value: data.gbp?.locations ?? 0 },
-          {
-            label: "Profile snapshots",
-            value: data.gbp?.profile_snapshots ?? 0,
-          },
           {
             label: "Publications",
             value: Object.values(data.gbp?.publications ?? {}).reduce(
@@ -371,14 +592,12 @@ import "../styles/global.css";
         ];
         groups.push({ title: "Business Profile", metrics: gbpMetrics });
 
-        // Reviews
         const reviewMetrics = Object.entries(data.reviews ?? {}).map(
           ([k, v]) => ({ label: k.replace(/_/g, " "), value: v }),
         );
         if (reviewMetrics.length > 0)
           groups.push({ title: "Reviews", metrics: reviewMetrics });
 
-        // Leads
         const leadMetrics = Object.entries(data.leads ?? {}).map(([k, v]) => ({
           label: k.replace(/_/g, " "),
           value: v,
@@ -386,14 +605,12 @@ import "../styles/global.css";
         if (leadMetrics.length > 0)
           groups.push({ title: "Leads", metrics: leadMetrics });
 
-        // Content
         const contentMetrics = Object.entries(
           data.content_publications ?? {},
         ).map(([k, v]) => ({ label: k.replace(/_/g, " "), value: v }));
         if (contentMetrics.length > 0)
           groups.push({ title: "Content", metrics: contentMetrics });
 
-        // SEO
         const seoMetrics = [
           ...Object.entries(data.seo?.crawl_runs ?? {}).map(([k, v]) => ({
             label: `Crawl: ${k}`,
@@ -411,29 +628,35 @@ import "../styles/global.css";
           groups.length === 0 ||
           groups.every((g) => g.metrics.every((m) => m.value === 0))
         ) {
-          panel.append(
-            emptyState(
-              "No activity recorded yet",
-              "Once operations start running, activity from all products will appear here.",
-            ),
-          );
           return;
         }
 
+        const heading = document.createElement("div");
+        heading.className = "section-heading";
+        const headingLeft = document.createElement("div");
+        const eyebrow = document.createElement("p");
+        eyebrow.className = "eyebrow";
+        eyebrow.textContent = "Activity";
+        const title = document.createElement("h2");
+        title.textContent = "Cross-product metrics";
+        headingLeft.append(eyebrow, title);
+        heading.append(headingLeft);
+        panel.append(heading);
+
         const grid = document.createElement("div");
-        grid.className = "split";
+        grid.className = "directory-grid";
         for (const group of groups) {
           const card = document.createElement("article");
           card.className = "card";
-          const header = document.createElement("div");
-          header.className = "card__header";
-          header.append(
+          const cardHeader = document.createElement("div");
+          cardHeader.className = "card__header";
+          cardHeader.append(
             Object.assign(document.createElement("h3"), {
               className: "card__title",
               textContent: group.title,
             }),
           );
-          card.append(header);
+          card.append(cardHeader);
           const body = document.createElement("div");
           body.className = "card__body";
           for (const m of group.metrics) {
@@ -454,6 +677,168 @@ import "../styles/global.css";
           card.append(body);
           grid.append(card);
         }
+        panel.append(grid);
+      }
+
+      function renderDigest(
+        ga4Res: Awaited<ReturnType<typeof fetchAnalyticsPerformance>>,
+        gscRes: ApiOutcome<SearchConsolePerformanceReport> | null,
+      ): void {
+        const panel = document.getElementById("digest-panel")!;
+        panel.replaceChildren();
+
+        const statements: string[] = [];
+        if (ga4Res.kind === "ok" && ga4Res.data.connected) {
+          const kpiLabels: Record<string, string> = {
+            "ga4.sessions": "Sessions",
+            "ga4.totalUsers": "Users",
+            "ga4.screenPageViews": "Page views",
+            "ga4.conversions": "Conversions",
+          };
+          for (const [key, label] of Object.entries(kpiLabels)) {
+            const metric = ga4Res.data.metrics[key];
+            if (
+              metric?.percent_delta !== null &&
+              metric?.percent_delta !== undefined
+            ) {
+              const pct = metric.percent_delta;
+              const direction =
+                Math.abs(pct) < 1
+                  ? "was essentially unchanged"
+                  : pct > 0
+                    ? `increased ${Math.abs(pct).toFixed(1)}%`
+                    : `decreased ${Math.abs(pct).toFixed(1)}%`;
+              statements.push(
+                `${label} ${direction} compared with the previous ${currentPeriodDays} days.`,
+              );
+            }
+          }
+        }
+        if (gscRes && gscRes.kind === "ok" && gscRes.data.connected) {
+          const gscLabels: Record<string, string> = {
+            clicks: "Search clicks",
+            impressions: "Search impressions",
+            ctr: "Click-through rate",
+            position: "Average search position",
+          };
+          for (const [key, label] of Object.entries(gscLabels)) {
+            const metric = gscRes.data.metrics[key];
+            if (
+              metric?.percent_delta !== null &&
+              metric?.percent_delta !== undefined
+            ) {
+              const pct = metric.percent_delta;
+              const direction =
+                Math.abs(pct) < 1
+                  ? "was essentially unchanged"
+                  : pct > 0
+                    ? `increased ${Math.abs(pct).toFixed(1)}%`
+                    : `decreased ${Math.abs(pct).toFixed(1)}%`;
+              statements.push(
+                `${label} ${direction} compared with the previous ${currentPeriodDays} days.`,
+              );
+            }
+          }
+        }
+
+        const summary = performanceSummary(statements);
+        if (summary) {
+          panel.append(summary);
+        }
+      }
+
+      function renderSources(
+        readinessResults: Awaited<ReturnType<typeof fetchProductReadiness>>[],
+        ga4Res: Awaited<ReturnType<typeof fetchAnalyticsPerformance>>,
+      ): void {
+        const panel = document.getElementById("sources-panel")!;
+        panel.replaceChildren();
+
+        const heading = document.createElement("div");
+        heading.className = "section-heading";
+        const headingLeft = document.createElement("div");
+        const eyebrow = document.createElement("p");
+        eyebrow.className = "eyebrow";
+        eyebrow.textContent = "Data sources";
+        const title = document.createElement("h2");
+        title.textContent = "Connection status";
+        headingLeft.append(eyebrow, title);
+        heading.append(headingLeft);
+        panel.append(heading);
+
+        const grid = document.createElement("div");
+        grid.className = "directory-grid";
+
+        // GA4
+        if (ga4Res.kind === "ok" && ga4Res.data.connected) {
+          const card = document.createElement("div");
+          card.className = "integration-card";
+          card.innerHTML =
+            '<div class="integration-card__header"><span class="integration-card__icon">A</span><div class="integration-card__title">Google Analytics</div></div>';
+          const desc = document.createElement("p");
+          desc.className = "integration-card__desc";
+          desc.textContent = ga4Res.data.freshness.last_synced_at
+            ? `Synced ${formatTimestamp(ga4Res.data.freshness.last_synced_at)}`
+            : "Awaiting first sync";
+          const footer = document.createElement("div");
+          footer.className = "integration-card__footer";
+          footer.append(statusBadge("ready", "Connected"));
+          card.append(desc, footer);
+          grid.append(card);
+        }
+
+        // Other products
+        const sourceKeys = [
+          "gbp",
+          "reviews",
+          "leads",
+          "content",
+          "seo",
+        ] as const;
+        for (let i = 0; i < sourceKeys.length; i++) {
+          const key = sourceKeys[i];
+          const summary = summarizeReadiness(readinessResults[i]);
+          const card = document.createElement("div");
+          card.className = "integration-card";
+
+          const header = document.createElement("div");
+          header.className = "integration-card__header";
+          const icon = document.createElement("span");
+          icon.className = "integration-card__icon";
+          icon.textContent = PRODUCT_LABELS[key][0];
+          const cardTitle = document.createElement("div");
+          cardTitle.className = "integration-card__title";
+          cardTitle.textContent = PRODUCT_LABELS[key];
+          header.append(icon, cardTitle);
+
+          const desc = document.createElement("p");
+          desc.className = "integration-card__desc";
+          desc.textContent = summary.detail;
+
+          const footer = document.createElement("div");
+          footer.className = "integration-card__footer";
+          footer.append(
+            statusBadge(
+              summary.status,
+              summary.status === "ready"
+                ? "Operational"
+                : summary.status === "blocked"
+                  ? "Needs attention"
+                  : summary.status === "setup"
+                    ? "Setup required"
+                    : summary.status,
+            ),
+          );
+          const link = document.createElement("a");
+          link.className = "button button--secondary button--sm";
+          link.href = `/${key}`;
+          link.textContent = "Open";
+          footer.append(link);
+
+          card.append(header, desc, footer);
+          grid.append(card);
+        }
+
         panel.append(grid);
       }
 

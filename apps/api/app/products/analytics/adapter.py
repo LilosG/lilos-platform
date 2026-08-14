@@ -11,7 +11,7 @@ and raw provider identifiers/bearer tokens are never returned by callers.
 """
 
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Protocol, cast
 
 import httpx
@@ -22,7 +22,12 @@ ANALYTICS_DATA_API = "https://analyticsdata.googleapis.com/v1beta"
 # Real GA4 Data API metrics the Insights product models. These are standard
 # GA4 metrics (not invented), limited to what §13.42 justifies: sessions,
 # users, pageviews, and conversions.
-GA4_METRICS: tuple[str, ...] = ("sessions", "totalUsers", "screenPageViews", "conversions")
+GA4_METRICS: tuple[str, ...] = (
+    "sessions",
+    "totalUsers",
+    "screenPageViews",
+    "conversions",
+)
 ACCOUNT_SUMMARIES_PAGE_SIZE = 200
 MAX_ACCOUNT_SUMMARY_PAGES = 1_000
 
@@ -42,6 +47,7 @@ class AnalyticsReportRow:
     """One metric-total row from a GA4 Data API runReport response."""
 
     metric_values: dict[str, int]
+    dimension_values: dict[str, str] = field(default_factory=dict)
 
 
 class GoogleAnalyticsAdapter(Protocol):
@@ -59,6 +65,7 @@ class GoogleAnalyticsAdapter(Protocol):
         start_date: str,
         end_date: str,
         metrics: Sequence[str] = GA4_METRICS,
+        dimensions: Sequence[str] = (),
     ) -> list[AnalyticsReportRow]: ...
 
 
@@ -150,7 +157,10 @@ class GoogleAnalyticsAdminAdapter:
             if raw_token in seen_tokens:
                 raise RuntimeError("Analytics pagination token repeated")
             seen_tokens.add(raw_token)
-            params = {"pageSize": ACCOUNT_SUMMARIES_PAGE_SIZE, "pageToken": raw_token}
+            params = {
+                "pageSize": ACCOUNT_SUMMARIES_PAGE_SIZE,
+                "pageToken": raw_token,
+            }
         else:
             raise RuntimeError("Analytics account summary pagination exceeded safety limit")
 
@@ -177,11 +187,14 @@ class GoogleAnalyticsAdminAdapter:
         start_date: str,
         end_date: str,
         metrics: Sequence[str] = GA4_METRICS,
+        dimensions: Sequence[str] = (),
     ) -> list[AnalyticsReportRow]:
-        body = {
+        body: dict[str, Any] = {
             "dateRanges": [{"startDate": start_date, "endDate": end_date}],
             "metrics": [{"name": name} for name in metrics],
         }
+        if dimensions:
+            body["dimensions"] = [{"name": name} for name in dimensions]
         payload = await self._post(
             access_token,
             f"{ANALYTICS_DATA_API}/properties/{property_number}:runReport",
@@ -190,6 +203,7 @@ class GoogleAnalyticsAdminAdapter:
         )
         rows = payload.get("rows") or []
         metric_headers = [str(h.get("name", "")) for h in payload.get("metricHeaders") or []]
+        dimension_headers = [str(h.get("name", "")) for h in payload.get("dimensionHeaders") or []]
         results: list[AnalyticsReportRow] = []
         for row in rows:
             values = row.get("metricValues") or []
@@ -200,5 +214,14 @@ class GoogleAnalyticsAdminAdapter:
                     metric_values[header] = int(raw)
                 except (TypeError, ValueError):
                     metric_values[header] = 0
-            results.append(AnalyticsReportRow(metric_values=metric_values))
+            dim_values_list = row.get("dimensionValues") or []
+            dim_values: dict[str, str] = {}
+            for header, value in zip(dimension_headers, dim_values_list, strict=False):
+                dim_values[header] = str(value.get("value", "")) if isinstance(value, dict) else ""
+            results.append(
+                AnalyticsReportRow(
+                    metric_values=metric_values,
+                    dimension_values=dim_values,
+                )
+            )
         return results

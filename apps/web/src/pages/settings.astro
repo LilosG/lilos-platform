@@ -501,13 +501,13 @@ import "../styles/global.css";
           const name = document.createElement("h3");
           name.textContent = dom.domain;
           const detail = document.createElement("p");
-          detail.textContent = dom.is_primary
-            ? `${dom.status} · Primary`
-            : dom.status;
+          const labels: string[] = ["Configured"];
+          if (dom.is_primary) labels.push("Primary");
+          detail.textContent = labels.join(" · ");
           info.append(name, detail);
           const badge = statusBadge(
-            dom.status === "verified" ? "ready" : "neutral",
-            dom.status,
+            dom.is_primary ? "ready" : "neutral",
+            dom.is_primary ? "Primary" : "Configured",
           );
           item.append(info, badge);
           list.append(item);

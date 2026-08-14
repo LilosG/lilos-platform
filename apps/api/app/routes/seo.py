@@ -335,6 +335,27 @@ async def sync_search_console(
 
 
 @router.get(
+    "/websites/{website_id}/search-console/performance",
+    dependencies=[Depends(no_store)],
+    summary=(
+        "Search Console performance report — period comparison, daily series, top queries and pages"
+    ),
+)
+async def search_console_performance(
+    request: Request,
+    organization_id: UUID,
+    website_id: UUID,
+    session: Session,
+    _: Annotated[AuthorizationDecision, policy("seo.read")],
+    days: int = 28,
+) -> dict[str, object]:
+    result = await search_console.performance_report(
+        session, organization_id, website_id, days=days
+    )
+    return {"data": result, "meta": meta(request)}
+
+
+@router.get(
     "/websites/{website_id}/search-console/summary",
     dependencies=[Depends(no_store)],
     summary="Aggregate synced Search Console performance for the SEO page",

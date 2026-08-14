@@ -106,7 +106,7 @@ import "../styles/global.css";
         describeCrawlResult,
         isSEOOpportunityActionable,
       } from "../lib/seo";
-      import { fetchSearchConsoleSummary } from "../lib/search-console";
+      import { fetchSearchConsolePerformance } from "../lib/search-console";
       import { startWorkflowRun } from "../lib/workflows";
       import {
         bootWorkspace,
@@ -126,6 +126,15 @@ import "../styles/global.css";
         formField,
         type BootRegions,
       } from "../lib/ui";
+      import {
+        reportingPeriodSelector,
+        comparisonKPI,
+        timeSeriesChart,
+        sourceFreshness,
+        formatDateRange,
+        buildGscDataTable,
+      } from "../lib/reporting";
+      import { apiGet, type ApiOutcome } from "../lib/api-client";
 
       let organizationId = "";
 
@@ -145,14 +154,18 @@ import "../styles/global.css";
         setActiveOrganization(org);
         organizationId = org.organization_id;
 
-        const [summaryResult, websitesResult, oppsResult] = await Promise.all([
-          fetchSEOSummary(organizationId),
-          fetchWebsites(organizationId),
-          fetchOpportunities(organizationId),
-        ]);
+        const [summaryResult, websitesResult, oppsResult, websiteReadinessRes] =
+          await Promise.all([
+            fetchSEOSummary(organizationId),
+            fetchWebsites(organizationId),
+            fetchOpportunities(organizationId),
+            apiGet<Record<string, unknown>>(
+              `/api/v1/organizations/${organizationId}/insights/website-readiness`,
+            ),
+          ]);
 
         renderMetrics(summaryResult, websitesResult, oppsResult);
-        renderOverview(websitesResult, oppsResult);
+        renderOverview(websitesResult, oppsResult, websiteReadinessRes);
         renderCrawl(websitesResult);
         renderOpportunities(oppsResult);
         renderSearchConsole(websitesResult);
@@ -211,9 +224,49 @@ import "../styles/global.css";
         }
       }
 
+      function clientWebsiteStatus(
+        status: string,
+        wr: Record<string, unknown> | null,
+      ): { kind: string; label: string; note: string } {
+        const configured = !!wr?.canonical_domain_configured;
+        const scConnected = !!wr?.search_console_connected;
+        const analyticsConnected = !!wr?.analytics_connected;
+        const crawlReady = !!wr?.crawl_ready;
+        const lastCrawl = wr?.last_crawl_at as string | null;
+
+        if (status === "archived") {
+          return { kind: "neutral", label: "Archived", note: "" };
+        }
+        if (status === "paused") {
+          return { kind: "setup", label: "Paused", note: "" };
+        }
+
+        const ready =
+          configured && scConnected && analyticsConnected && crawlReady;
+        if (ready) {
+          const note = lastCrawl
+            ? `Last crawl ${formatTimestamp(lastCrawl)}`
+            : "Website operational";
+          return { kind: "ready", label: "Ready", note };
+        }
+
+        // Distinct reasons for needing attention
+        const reasons: string[] = [];
+        if (!configured) reasons.push("domain not configured");
+        if (!scConnected) reasons.push("Search Console not connected");
+        if (!analyticsConnected) reasons.push("Analytics not connected");
+        if (!crawlReady) reasons.push("no successful crawl");
+        return {
+          kind: "setup",
+          label: "Needs attention",
+          note: reasons.join(" · "),
+        };
+      }
+
       function renderOverview(
         websites: Awaited<ReturnType<typeof fetchWebsites>>,
         opps: Awaited<ReturnType<typeof fetchOpportunities>>,
+        websiteReadinessRes: ApiOutcome<Record<string, unknown>>,
       ): void {
         const panel = document.getElementById("tab-overview")!;
         panel.replaceChildren();
@@ -228,7 +281,11 @@ import "../styles/global.css";
           return;
         }
 
-        // Website status
+        // Derive readiness facts from the dedicated endpoint
+        const wr =
+          websiteReadinessRes.kind === "ok" ? websiteReadinessRes.data : null;
+
+        // Website status cards using client terminology
         for (const website of websites.data) {
           const card = document.createElement("div");
           card.className = "card";
@@ -249,18 +306,20 @@ import "../styles/global.css";
           card.append(header);
           const body = document.createElement("div");
           body.className = "card__body";
-          body.append(
-            statusBadge(
-              website.status === "verified" || website.status === "active"
-                ? "ready"
-                : "setup",
-              website.status,
-            ),
-          );
+
+          const websiteTerm = clientWebsiteStatus(website.status, wr);
+          body.append(statusBadge(websiteTerm.kind, websiteTerm.label));
+          if (websiteTerm.note) {
+            const detail = document.createElement("p");
+            detail.className = "text-sm muted";
+            detail.style.marginTop = "0.5rem";
+            detail.textContent = websiteTerm.note;
+            body.append(detail);
+          }
           if (website.verified_at) {
             const verified = document.createElement("p");
             verified.className = "text-sm muted";
-            verified.style.marginTop = "0.5rem";
+            verified.style.marginTop = "0.25rem";
             verified.textContent = `Verified ${formatTimestamp(website.verified_at)}`;
             body.append(verified);
           }
@@ -393,13 +452,17 @@ import "../styles/global.css";
               crawlBtn.disabled = false;
               crawlBtn.textContent = "Run again";
               status.textContent = describeCrawlResult(result.data);
-              const [updatedSummary, updatedOpps] = await Promise.all([
-                fetchSEOSummary(crawlOrganizationId),
-                fetchOpportunities(crawlOrganizationId),
-              ]);
+              const [updatedSummary, updatedOpps, updatedReadiness] =
+                await Promise.all([
+                  fetchSEOSummary(crawlOrganizationId),
+                  fetchOpportunities(crawlOrganizationId),
+                  apiGet<Record<string, unknown>>(
+                    `/api/v1/organizations/${crawlOrganizationId}/insights/website-readiness`,
+                  ),
+                ]);
               if (organizationId !== crawlOrganizationId) return;
               renderMetrics(updatedSummary, websites, updatedOpps);
-              renderOverview(websites, updatedOpps);
+              renderOverview(websites, updatedOpps, updatedReadiness);
               renderOpportunities(updatedOpps);
             } else {
               crawlBtn.disabled = false;
@@ -747,6 +810,8 @@ import "../styles/global.css";
         return select;
       }
 
+      let searchConsolePeriodDays = 28;
+
       async function renderSearchConsole(
         websites: Awaited<ReturnType<typeof fetchWebsites>>,
       ): Promise<void> {
@@ -764,26 +829,44 @@ import "../styles/global.css";
         }
 
         for (const website of websites.data) {
-          const card = document.createElement("div");
-          card.className = "card";
-          const header = document.createElement("div");
-          header.className = "card__header";
-          header.append(
-            Object.assign(document.createElement("h3"), {
-              className: "card__title",
-              textContent: website.name,
-            }),
-          );
-          card.append(header);
-          const body = document.createElement("div");
-          body.className = "card__body";
+          // Website header
+          const websiteHeader = document.createElement("div");
+          websiteHeader.className = "card";
+          websiteHeader.style.marginBottom = "var(--space-4)";
+          const whBody = document.createElement("div");
+          whBody.className = "card__body";
+          const whRow = document.createElement("div");
+          whRow.style.cssText =
+            "display:flex;align-items:center;justify-content:space-between;gap:var(--space-4);flex-wrap:wrap;";
+          const whInfo = document.createElement("div");
+          const whTitle = document.createElement("h3");
+          whTitle.textContent = website.name;
+          const whDomain = document.createElement("p");
+          whDomain.className = "text-sm muted";
+          whDomain.textContent = website.canonical_origin;
+          whInfo.append(whTitle, whDomain);
+          whRow.append(whInfo);
 
+          // Period selector
+          const selector = reportingPeriodSelector(
+            searchConsolePeriodDays,
+            (days) => {
+              searchConsolePeriodDays = days;
+              void renderSearchConsole(websites);
+            },
+          );
+          whRow.append(selector);
+          whBody.append(whRow);
+          websiteHeader.append(whBody);
+          panel.append(websiteHeader);
+
+          // Fetch performance data
           const propsResult = await fetchSearchProperties(
             organizationId,
             website.id,
           );
           if (propsResult.kind !== "ok" || propsResult.data.length === 0) {
-            body.append(
+            panel.append(
               emptyState(
                 "No Search Console properties",
                 "Map a Search Console property in Integrations to see performance data.",
@@ -791,65 +874,180 @@ import "../styles/global.css";
                 "/integrations",
               ),
             );
-          } else {
-            const sourceList = document.createElement("ul");
-            sourceList.className = "product-list product-list--compact";
-            for (const property of propsResult.data) {
-              const item = document.createElement("li");
-              const info = document.createElement("div");
-              const title = document.createElement("h3");
-              title.textContent =
-                property.property_type === "domain"
-                  ? "Domain property"
-                  : "Website property";
-              const detail = document.createElement("p");
-              detail.textContent = property.last_synced_at
-                ? `Synced ${formatTimestamp(property.last_synced_at)}`
-                : "Awaiting first data sync";
-              info.append(title, detail);
-              item.append(
-                info,
-                statusBadge(
-                  property.freshness_status === "fresh" ? "ready" : "setup",
-                  property.freshness_status.replace(/_/g, " "),
-                ),
-              );
-              sourceList.append(item);
-            }
-            body.append(sourceList);
-            const summaryResult = await fetchSearchConsoleSummary(
-              organizationId,
-              website.id,
+            return;
+          }
+
+          const perfResult = await fetchSearchConsolePerformance(
+            organizationId,
+            website.id,
+            searchConsolePeriodDays,
+          );
+
+          if (perfResult.kind !== "ok" || !perfResult.data.connected) {
+            panel.append(
+              emptyState(
+                "No Search Console data available",
+                "Sync Search Console to see performance data.",
+              ),
             );
-            if (summaryResult.kind === "ok") {
-              const grid = document.createElement("div");
-              grid.className = "metric-grid";
-              grid.append(
-                metricCard(
-                  "Clicks",
-                  String(summaryResult.data.total_clicks ?? 0),
-                ),
-                metricCard(
-                  "Impressions",
-                  String(summaryResult.data.total_impressions ?? 0),
-                ),
+            return;
+          }
+
+          const data = perfResult.data;
+
+          // Freshness
+          if (data.freshness && data.range) {
+            const freshnessRow = document.createElement("div");
+            freshnessRow.style.cssText =
+              "display:flex;align-items:center;justify-content:space-between;gap:var(--space-4);margin-bottom:var(--space-4);flex-wrap:wrap;";
+            const dateLabel = document.createElement("p");
+            dateLabel.className = "text-sm muted";
+            dateLabel.textContent = `${formatDateRange(data.range.start, data.range.end)} · vs ${formatDateRange(data.comparison_range?.start || "", data.comparison_range?.end || "")}`;
+            freshnessRow.append(
+              dateLabel,
+              sourceFreshness(
+                data.freshness.last_synced_at,
+                data.freshness.status,
+              ),
+            );
+            panel.append(freshnessRow);
+          }
+
+          // KPI cards
+          const gscLabels: Record<string, string> = {
+            clicks: "Clicks",
+            impressions: "Impressions",
+            ctr: "CTR",
+            position: "Avg position",
+          };
+          const gscFormatters: Record<string, (v: number | null) => string> = {
+            clicks: (v) => (v !== null ? v.toLocaleString() : "—"),
+            impressions: (v) => (v !== null ? v.toLocaleString() : "—"),
+            ctr: (v) => (v !== null ? `${(v * 100).toFixed(1)}%` : "—"),
+            position: (v) => (v !== null ? v.toFixed(1) : "—"),
+          };
+
+          const gscGrid = document.createElement("div");
+          gscGrid.className = "metric-grid";
+          for (const key of ["clicks", "impressions", "ctr", "position"]) {
+            const metric = data.metrics[key];
+            if (metric) {
+              const card = comparisonKPI(
+                gscLabels[key],
+                metric.current as number | null,
+                metric.previous as number | null,
+                metric.delta as number | null,
+                metric.percent_delta as number | null,
+                "",
+                key,
               );
-              body.append(grid);
-              const notice = document.createElement("p");
-              notice.className = "source-note";
-              notice.textContent =
-                "Current totals are shown without a trend because the Search Console summary does not yet include its observation period or a comparable prior period.";
-              body.append(notice);
-            } else {
-              body.append(
-                errorAlert(
-                  describeFailure(summaryResult, "Search Console performance"),
-                ),
-              );
+              const valueEl = card.querySelector(".kpi-card__value");
+              if (valueEl) {
+                valueEl.textContent = gscFormatters[key](
+                  metric.current as number | null,
+                );
+              }
+              gscGrid.append(card);
             }
           }
-          card.append(body);
-          panel.append(card);
+          panel.append(gscGrid);
+
+          // Daily chart
+          if (data.series && data.series.length > 0) {
+            const chartSection = document.createElement("div");
+            chartSection.className = "card";
+            chartSection.style.marginTop = "var(--space-5)";
+            const chartHeader = document.createElement("div");
+            chartHeader.className = "card__header";
+            const chartTitle = document.createElement("h3");
+            chartTitle.className = "card__title";
+            chartTitle.textContent = "Daily impressions";
+            chartHeader.append(chartTitle);
+            chartSection.append(chartHeader);
+            const chartBody = document.createElement("div");
+            chartBody.className = "card__body";
+            chartBody.style.padding = "0";
+            chartBody.append(
+              timeSeriesChart(
+                data.series.map((s) => ({
+                  date: s.date,
+                  value: s.impressions,
+                })),
+                "Impressions",
+              ),
+            );
+            chartSection.append(chartBody);
+            panel.append(chartSection);
+          }
+
+          // Top queries
+          if (data.top_queries && data.top_queries.length > 0) {
+            const queriesSection = document.createElement("div");
+            queriesSection.className = "card";
+            queriesSection.style.marginTop = "var(--space-4)";
+            const qHeader = document.createElement("div");
+            qHeader.className = "card__header";
+            const qTitle = document.createElement("h3");
+            qTitle.className = "card__title";
+            qTitle.textContent = "Top search queries";
+            qHeader.append(qTitle);
+            queriesSection.append(qHeader);
+            const qBody = document.createElement("div");
+            qBody.className = "card__body";
+            qBody.style.padding = "0";
+            const qTable = buildGscDataTable(
+              ["Query", "Clicks", "Impressions", "CTR", "Position"],
+              data.top_queries.map((q) => ({
+                primary: q.query,
+                clicks: q.clicks,
+                impressions: q.impressions,
+                ctr: q.ctr !== null ? `${(q.ctr * 100).toFixed(1)}%` : "—",
+                position: q.position !== null ? q.position.toFixed(1) : "—",
+              })),
+            );
+            qBody.append(qTable);
+            queriesSection.append(qBody);
+            panel.append(queriesSection);
+          }
+
+          // Top pages
+          if (data.top_pages && data.top_pages.length > 0) {
+            const pagesSection = document.createElement("div");
+            pagesSection.className = "card";
+            pagesSection.style.marginTop = "var(--space-4)";
+            const pHeader = document.createElement("div");
+            pHeader.className = "card__header";
+            const pTitle = document.createElement("h3");
+            pTitle.textContent = "Top landing pages";
+            pHeader.append(pTitle);
+            pagesSection.append(pHeader);
+            const pBody = document.createElement("div");
+            pBody.className = "card__body";
+            pBody.style.padding = "0";
+            const pTable = buildGscDataTable(
+              ["Page", "Clicks", "Impressions", "CTR", "Position"],
+              data.top_pages.map((q) => ({
+                primary: q.page,
+                clicks: q.clicks,
+                impressions: q.impressions,
+                ctr: q.ctr !== null ? `${(q.ctr * 100).toFixed(1)}%` : "—",
+                position: q.position !== null ? q.position.toFixed(1) : "—",
+              })),
+            );
+            pBody.append(pTable);
+            pagesSection.append(pBody);
+            panel.append(pagesSection);
+          }
+
+          // Property info (compact)
+          const propSection = document.createElement("div");
+          propSection.className = "source-note";
+          propSection.style.marginTop = "var(--space-4)";
+          propSection.textContent =
+            propsResult.data.length === 1
+              ? `Property: ${propsResult.data[0].external_property_id}`
+              : `${propsResult.data.length} properties connected`;
+          panel.append(propSection);
         }
       }
 
