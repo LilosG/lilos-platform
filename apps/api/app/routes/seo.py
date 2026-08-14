@@ -25,10 +25,13 @@ from apps.api.app.products.seo.contracts import (
     SearchPropertySelect,
     WebsiteCreate,
 )
+from apps.api.app.products.seo.errors import SEOCrawlRunNotFoundError
 from apps.api.app.products.seo.models import (
+    SEOCrawlRun,
     SEOImplementationTask,
     SEOOpportunity,
     SEOOutcome,
+    SEOPage,
     SEORecommendationRevision,
     SEOSearchProperty,
     SEOWebsite,
@@ -383,6 +386,46 @@ async def landing_page_gaps(
     return {"data": gaps, "meta": meta(request)}
 
 
+def crawl_run_row(item: SEOCrawlRun) -> dict[str, object]:
+    return {
+        "id": str(item.id),
+        "website_id": str(item.website_id),
+        "status": item.status,
+        "max_pages": item.max_pages,
+        "max_depth": item.max_depth,
+        "crawl_delay_seconds": item.crawl_delay_seconds,
+        "stop_reason": item.stop_reason,
+        "safe_result": item.safe_result,
+        "started_at": item.started_at,
+        "completed_at": item.completed_at,
+        "created_at": item.created_at,
+    }
+
+
+def page_row(item: SEOPage) -> dict[str, object]:
+    return {
+        "id": str(item.id),
+        "website_id": str(item.website_id),
+        "normalized_url": item.normalized_url,
+        "observed_url": item.observed_url,
+        "http_status": item.http_status,
+        "content_type": item.content_type,
+        "title": item.title,
+        "meta_description": item.meta_description,
+        "h1": item.h1,
+        "canonical_url": item.canonical_url,
+        "robots_directives": item.robots_directives,
+        "internal_links_count": len(item.internal_links) if item.internal_links else 0,
+        "external_links_count": len(item.external_links) if item.external_links else 0,
+        "word_count": item.word_count,
+        "structured_data_present": item.structured_data_present,
+        "content_hash": item.content_hash,
+        "indexability": item.indexability,
+        "crawl_depth": item.crawl_depth,
+        "redirect_destination": item.redirect_destination,
+    }
+
+
 @router.post(
     "/websites/{website_id}/crawl",
     status_code=status.HTTP_202_ACCEPTED,
@@ -397,24 +440,65 @@ async def run_crawl(
     principal: Authenticated,
     _: Annotated[AuthorizationDecision, policy("seo.manage")],
 ) -> dict[str, object]:
-    crawl_run, opportunities = await service.run_crawl(
+    crawl_run = await service.enqueue_crawl(
         session,
         organization_id,
         website_id,
-        command.workflow_run_id,
         command,
         actor_id=principal.platform_user_id,
         correlation_id=request_correlation_id(request),
     )
     return {
-        "data": {
-            "crawl_run_id": str(crawl_run.id),
-            "status": crawl_run.status,
-            "safe_result": crawl_run.safe_result,
-            "opportunities_created": [opportunity_row(item) for item in opportunities],
-        },
+        "data": crawl_run_row(crawl_run),
         "meta": meta(request),
     }
+
+
+@router.get("/crawl-runs", dependencies=[Depends(no_store)])
+async def list_crawl_runs(
+    request: Request,
+    organization_id: UUID,
+    session: Session,
+    _: Annotated[AuthorizationDecision, policy("seo.read")],
+    website_id: UUID | None = None,
+    limit: int = 20,
+    offset: int = 0,
+) -> dict[str, object]:
+    items = await service.list_crawl_runs(
+        session, organization_id, website_id=website_id, limit=limit, offset=offset
+    )
+    return {"data": [crawl_run_row(item) for item in items], "meta": meta(request)}
+
+
+@router.get("/crawl-runs/{crawl_run_id}", dependencies=[Depends(no_store)])
+async def get_crawl_run(
+    request: Request,
+    organization_id: UUID,
+    crawl_run_id: UUID,
+    session: Session,
+    _: Annotated[AuthorizationDecision, policy("seo.read")],
+) -> dict[str, object]:
+    item = await service.get_crawl_run(session, organization_id, crawl_run_id)
+    if not item:
+        raise SEOCrawlRunNotFoundError
+    return {"data": crawl_run_row(item), "meta": meta(request)}
+
+
+@router.get("/crawl-runs/{crawl_run_id}/pages", dependencies=[Depends(no_store)])
+async def list_crawl_pages(
+    request: Request,
+    organization_id: UUID,
+    crawl_run_id: UUID,
+    session: Session,
+    _: Annotated[AuthorizationDecision, policy("seo.read")],
+) -> dict[str, object]:
+    crawl_run = await service.get_crawl_run(session, organization_id, crawl_run_id)
+    if not crawl_run:
+        raise SEOCrawlRunNotFoundError
+    items = await service.list_pages(
+        session, organization_id, website_id=crawl_run.website_id
+    )
+    return {"data": [page_row(item) for item in items], "meta": meta(request)}
 
 
 @router.get("/summary", dependencies=[Depends(no_store)])

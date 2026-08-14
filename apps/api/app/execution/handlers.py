@@ -514,35 +514,21 @@ async def _handle_seo_crawl(
     input_document: dict[str, Any],
     correlation_id: str,
 ) -> JobOutcome:
-    """Execute a bounded SEO crawl using the existing SEOService."""
-    from apps.api.app.products.seo.contracts import CrawlRequest
+    """Execute a bounded SEO crawl using the existing SEOService crawl engine."""
+    from uuid import UUID as _UUID
+
     from apps.api.app.products.seo.service import SEOService
 
-    website_id = input_document.get("website_id")
-    if not website_id:
-        return JobOutcome(result="permanent_failure", safe_error="MISSING_WEBSITE_ID")
-
-    workflow_run_id_str = input_document.get("workflow_run_id")
-    if not workflow_run_id_str:
-        return JobOutcome(result="permanent_failure", safe_error="MISSING_WORKFLOW_RUN_ID")
-
-    idempotency_key = input_document.get("idempotency_key", f"crawl-{website_id}")
-
-    command = CrawlRequest(
-        workflow_run_id=UUID(str(workflow_run_id_str)),
-        idempotency_key=str(idempotency_key),
-        max_pages=int(input_document.get("max_pages", 5)),
-    )
+    crawl_run_id_str = input_document.get("crawl_run_id")
+    if not crawl_run_id_str:
+        return JobOutcome(result="permanent_failure", safe_error="MISSING_CRAWL_RUN_ID")
 
     seo_service = SEOService()
     try:
-        await seo_service.run_crawl(
+        await seo_service.execute_crawl(
             session,
             organization_id,
-            UUID(str(website_id)),
-            UUID(str(workflow_run_id_str)),
-            command,
-            actor_id=None,
+            _UUID(str(crawl_run_id_str)),
             correlation_id=correlation_id,
         )
     except Exception as exc:
@@ -550,13 +536,15 @@ async def _handle_seo_crawl(
             "SEO crawl failed",
             extra={
                 "event_name": "seo.crawl.failed",
-                "website_id": str(website_id),
+                "crawl_run_id": str(crawl_run_id_str),
                 "error": str(exc)[:200],
             },
         )
-        return JobOutcome(result="retryable_failure", safe_error="CRAWL_FAILED")
+        return JobOutcome(
+            result="retryable_failure", safe_error=f"CRAWL_FAILED:{type(exc).__name__}"
+        )
 
-    return JobOutcome(result="succeeded", result_reference=f"website:{website_id}")
+    return JobOutcome(result="succeeded", result_reference=f"crawl_run:{crawl_run_id_str}")
 
 
 # ---------------------------------------------------------------------------

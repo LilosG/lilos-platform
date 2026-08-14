@@ -93,6 +93,7 @@ import "../styles/global.css";
     <script>
       import {
         MAX_CRAWL_PAGES,
+        MAX_CRAWL_DEPTH,
         fetchWebsites,
         fetchSEOSummary,
         fetchOpportunities,
@@ -102,10 +103,14 @@ import "../styles/global.css";
         decideRecommendation,
         fetchImplementationTasks,
         runCrawl,
+        fetchCrawlRun,
+        fetchCrawlPages,
         normalizeCrawlPageLimit,
-        describeCrawlResult,
+        normalizeCrawlDepthLimit,
+        crawlTerminalState,
         isSEOOpportunityActionable,
-      } from "../lib/seo";
+        type SEOCrawlRun,
+          } from "../lib/seo";
       import { fetchSearchConsolePerformance } from "../lib/search-console";
       import { startWorkflowRun } from "../lib/workflows";
       import {
@@ -366,13 +371,149 @@ import "../styles/global.css";
         }
       }
 
+      function crawlStatusLabel(status: string): string {
+        switch (status) {
+          case "queued":
+            return "Queued";
+          case "running":
+            return "Crawling";
+          case "success":
+            return "Completed";
+          case "partial":
+            return "Completed with partial results";
+          case "error":
+            return "Failed";
+          default:
+            return status.replace(/_/g, " ");
+        }
+      }
+
+      function crawlStatusKind(status: string): string {
+        switch (status) {
+          case "success":
+            return "ready";
+          case "error":
+            return "blocked";
+          case "partial":
+            return "setup";
+          case "running":
+          case "queued":
+            return "neutral";
+          default:
+            return "neutral";
+        }
+      }
+
+      function renderCrawlRunState(
+        container: HTMLElement,
+        run: SEOCrawlRun,
+      ): void {
+        container.replaceChildren();
+        const statusRow = document.createElement("div");
+        statusRow.style.cssText =
+          "display:flex;align-items:center;justify-content:space-between;gap:var(--space-4);margin-bottom:var(--space-4);flex-wrap:wrap;";
+        statusRow.append(
+          statusBadge(crawlStatusKind(run.status), crawlStatusLabel(run.status)),
+        );
+        const pages = run.safe_result.pages_crawled;
+        if (typeof pages === "number") {
+          const count = document.createElement("p");
+          count.className = "text-sm muted";
+          count.textContent = `${pages} page${pages === 1 ? "" : "s"} crawled`;
+          statusRow.append(count);
+        }
+        container.append(statusRow);
+
+        if (run.stop_reason) {
+          const reason = document.createElement("p");
+          reason.className = "text-sm muted";
+          reason.textContent = run.stop_reason;
+          container.append(reason);
+        }
+
+        if (run.status === "success" || run.status === "partial") {
+          const table = renderPageInventory(run);
+          container.append(table);
+        }
+      }
+
+      function renderPageInventory(run: SEOCrawlRun): HTMLElement {
+        const wrapper = document.createElement("div");
+        wrapper.className = "data-table";
+        const table = document.createElement("table");
+        const thead = document.createElement("thead");
+        thead.innerHTML =
+          "<tr><th>URL</th><th>Status</th><th>Depth</th><th>Title</th><th>Indexable</th></tr>";
+        table.append(thead);
+        const tbody = document.createElement("tbody");
+
+        const loadingRow = document.createElement("tr");
+        const loadingCell = document.createElement("td");
+        loadingCell.colSpan = 5;
+        loadingCell.className = "muted";
+        loadingCell.textContent = "Loading page inventory…";
+        loadingRow.append(loadingCell);
+        tbody.append(loadingRow);
+        table.append(tbody);
+        wrapper.append(table);
+
+        void fetchCrawlPages(organizationId, run.id).then((pagesResult) => {
+          if (pagesResult.kind !== "ok") {
+            loadingCell.textContent = describeFailure(
+              pagesResult,
+              "Page inventory",
+            );
+            return;
+          }
+          tbody.replaceChildren();
+          for (const page of pagesResult.data) {
+            const tr = document.createElement("tr");
+            const urlTd = document.createElement("td");
+            urlTd.textContent = page.normalized_url;
+            urlTd.style.wordBreak = "break-all";
+            const statusTd = document.createElement("td");
+            statusTd.textContent =
+              page.http_status === null ? "—" : String(page.http_status);
+            const depthTd = document.createElement("td");
+            depthTd.textContent =
+              page.crawl_depth === null ? "—" : String(page.crawl_depth);
+            const titleTd = document.createElement("td");
+            titleTd.textContent = page.title ? "Present" : "Missing";
+            const indexTd = document.createElement("td");
+            indexTd.append(
+              statusBadge(
+                page.indexability === "indexable" ? "ready" : "neutral",
+                page.indexability === "indexable" ? "Indexable" : "Not indexable",
+              ),
+            );
+            tr.append(urlTd, statusTd, depthTd, titleTd, indexTd);
+            tbody.append(tr);
+          }
+          if (pagesResult.data.length === 0) {
+            const emptyRow = document.createElement("tr");
+            const emptyCell = document.createElement("td");
+            emptyCell.colSpan = 5;
+            emptyCell.className = "muted";
+            emptyCell.textContent = "No pages recorded for this crawl.";
+            emptyRow.append(emptyCell);
+            tbody.append(emptyRow);
+          }
+        });
+
+        return wrapper;
+      }
+
       function renderCrawl(
         websites: Awaited<ReturnType<typeof fetchWebsites>>,
       ): void {
         const panel = document.getElementById("tab-crawl")!;
         panel.replaceChildren();
 
-        if (websites.kind !== "ok" || websites.data.length === 0) {
+        if (websites.kind !== "ok") {
+          panel.append(errorAlert(describeFailure(websites, "Crawl")));
+          return;
+        }
+        if (websites.data.length === 0) {
           panel.append(
             emptyState(
               "No websites to crawl",
@@ -397,6 +538,9 @@ import "../styles/global.css";
           const body = document.createElement("div");
           body.className = "card__body";
 
+          const configRow = document.createElement("div");
+          configRow.className = "form-grid";
+
           const maxPagesField = document.createElement("div");
           maxPagesField.className = "field";
           maxPagesField.append(
@@ -410,23 +554,66 @@ import "../styles/global.css";
           maxPagesInput.type = "number";
           maxPagesInput.min = "1";
           maxPagesInput.max = String(MAX_CRAWL_PAGES);
-          maxPagesInput.value = String(MAX_CRAWL_PAGES);
+          maxPagesInput.value = "50";
           maxPagesField.append(maxPagesInput);
-          body.append(maxPagesField);
+
+          const maxDepthField = document.createElement("div");
+          maxDepthField.className = "field";
+          maxDepthField.append(
+            Object.assign(document.createElement("label"), {
+              htmlFor: `crawl-max-depth-${website.id}`,
+              textContent: "Max depth",
+            }),
+          );
+          const maxDepthInput = document.createElement("input");
+          maxDepthInput.id = `crawl-max-depth-${website.id}`;
+          maxDepthInput.type = "number";
+          maxDepthInput.min = "1";
+          maxDepthInput.max = String(MAX_CRAWL_DEPTH);
+          maxDepthInput.value = "3";
+          maxDepthField.append(maxDepthInput);
+
+          const delayField = document.createElement("div");
+          delayField.className = "field";
+          delayField.append(
+            Object.assign(document.createElement("label"), {
+              htmlFor: `crawl-delay-${website.id}`,
+              textContent: "Crawl delay (seconds)",
+            }),
+          );
+          const delayInput = document.createElement("input");
+          delayInput.id = `crawl-delay-${website.id}`;
+          delayInput.type = "number";
+          delayInput.min = "0.1";
+          delayInput.max = "10";
+          delayInput.step = "0.1";
+          delayInput.value = "1";
+          delayField.append(delayInput);
+
+          configRow.append(maxPagesField, maxDepthField, delayField);
+          body.append(configRow);
 
           const crawlBtn = document.createElement("button");
           crawlBtn.type = "button";
           crawlBtn.className = "button";
           crawlBtn.textContent = "Run crawl";
+
           const status = document.createElement("p");
           status.className = "text-sm muted";
           status.setAttribute("role", "status");
           status.setAttribute("aria-live", "polite");
+
+          const resultContainer = document.createElement("div");
+          resultContainer.style.marginTop = "var(--space-4)";
+
           crawlBtn.addEventListener("click", async () => {
             const crawlOrganizationId = organizationId;
             const requestTimestamp = Date.now();
             crawlBtn.disabled = true;
             crawlBtn.textContent = "Starting…";
+            status.textContent = "";
+            resultContainer.replaceChildren();
+
             const workflowStart = await startWorkflowRun(
               crawlOrganizationId,
               "seo.crawl_or_analysis",
@@ -445,37 +632,65 @@ import "../styles/global.css";
               workflowRunId: workflowStart.data.workflow_run_id,
               seedPaths: ["/"],
               maxPages: normalizeCrawlPageLimit(Number(maxPagesInput.value)),
+              maxDepth: normalizeCrawlDepthLimit(Number(maxDepthInput.value)),
+              crawlDelaySeconds: Math.min(
+                10,
+                Math.max(0.1, Number(delayInput.value) || 1),
+              ),
               idempotencyKey: `web-crawl-run-${website.id}-${requestTimestamp}`,
             });
             if (organizationId !== crawlOrganizationId) return;
-            if (result.kind === "ok") {
-              crawlBtn.disabled = false;
-              crawlBtn.textContent = "Run again";
-              status.textContent = describeCrawlResult(result.data);
-              const [updatedSummary, updatedOpps, updatedReadiness] =
-                await Promise.all([
-                  fetchSEOSummary(crawlOrganizationId),
-                  fetchOpportunities(crawlOrganizationId),
-                  apiGet<Record<string, unknown>>(
-                    `/api/v1/organizations/${crawlOrganizationId}/insights/website-readiness`,
-                  ),
-                ]);
-              if (organizationId !== crawlOrganizationId) return;
-              renderMetrics(updatedSummary, websites, updatedOpps);
-              renderOverview(websites, updatedOpps, updatedReadiness);
-              renderOpportunities(updatedOpps);
-            } else {
+            if (result.kind !== "ok") {
               crawlBtn.disabled = false;
               crawlBtn.textContent = "Run crawl";
               status.textContent = describeFailure(result, "Crawl");
+              return;
             }
+
+            const crawlRunId = result.data.id;
+            crawlBtn.textContent = "Run again";
+            crawlBtn.disabled = false;
+
+            const poll = async () => {
+              const runResult = await fetchCrawlRun(
+                crawlOrganizationId,
+                crawlRunId,
+              );
+              if (organizationId !== crawlOrganizationId) return;
+              if (runResult.kind !== "ok") {
+                status.textContent = describeFailure(runResult, "Crawl");
+                return;
+              }
+              const run = runResult.data;
+              renderCrawlRunState(resultContainer, run);
+              if (crawlTerminalState(run.status)) {
+                status.textContent = "";
+                const [updatedSummary, updatedOpps, updatedReadiness] =
+                  await Promise.all([
+                    fetchSEOSummary(crawlOrganizationId),
+                    fetchOpportunities(crawlOrganizationId),
+                    apiGet<Record<string, unknown>>(
+                      `/api/v1/organizations/${crawlOrganizationId}/insights/website-readiness`,
+                    ),
+                  ]);
+                if (organizationId !== crawlOrganizationId) return;
+                renderMetrics(updatedSummary, websites, updatedOpps);
+                renderOverview(websites, updatedOpps, updatedReadiness);
+                renderOpportunities(updatedOpps);
+                return;
+              }
+              status.textContent = crawlStatusLabel(run.status);
+              window.setTimeout(() => void poll(), 1500);
+            };
+            await poll();
           });
+
           const actions = document.createElement("div");
           actions.className = "form-actions";
           actions.style.borderTop = "none";
           actions.style.paddingTop = "0.5rem";
           actions.append(crawlBtn, status);
-          body.append(actions);
+          body.append(actions, resultContainer);
           card.append(body);
           panel.append(card);
         }
