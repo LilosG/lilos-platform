@@ -1013,7 +1013,7 @@ class SearchConsoleService:
 
         # Top queries
         top_query_obs = await self._get_typed_observations(
-            session, prop_ids, current_start, current_end, "top_query"
+            session, prop_ids, current_start, current_end, "top_query", exact_window=True
         )
         top_queries = sorted(
             [
@@ -1032,7 +1032,7 @@ class SearchConsoleService:
 
         # Top pages
         top_page_obs = await self._get_typed_observations(
-            session, prop_ids, current_start, current_end, "top_page"
+            session, prop_ids, current_start, current_end, "top_page", exact_window=True
         )
         top_pages = sorted(
             [
@@ -1108,18 +1108,36 @@ class SearchConsoleService:
         period_start: datetime,
         period_end: datetime,
         observation_type: str,
+        *,
+        exact_window: bool = False,
     ) -> list[SEOSearchObservation]:
-        """Get all observations of a given type for the exact period."""
+        """Get all observations of a given type for the period.
+
+        Containment mode (``exact_window=False``, the default) returns rows
+        whose boundaries fall inside the period — correct for daily rows whose
+        individual date_start/date_end are single days.
+
+        Exact-window mode (``exact_window=True``) requires date_start and
+        date_end to equal the requested period boundaries — correct for
+        full-window dimensional observations (top_query, top_page) whose
+        boundaries describe the entire reporting window and must not leak
+        from shorter nested windows.
+        """
+        where_clauses = [
+            SEOSearchObservation.search_property_id.in_(prop_ids),
+            SEOSearchObservation.dimensions["observation_type"].astext == observation_type,
+            SEOSearchObservation.quality_status.in_(["valid", "zero"]),
+        ]
+        if exact_window:
+            where_clauses.append(SEOSearchObservation.date_start == period_start)
+            where_clauses.append(SEOSearchObservation.date_end == period_end)
+        else:
+            where_clauses.append(SEOSearchObservation.date_start >= period_start)
+            where_clauses.append(SEOSearchObservation.date_end <= period_end)
         rows = list(
             await session.scalars(
                 select(SEOSearchObservation)
-                .where(
-                    SEOSearchObservation.search_property_id.in_(prop_ids),
-                    SEOSearchObservation.date_start >= period_start,
-                    SEOSearchObservation.date_end <= period_end,
-                    SEOSearchObservation.dimensions["observation_type"].astext == observation_type,
-                    SEOSearchObservation.quality_status.in_(["valid", "zero"]),
-                )
+                .where(*where_clauses)
                 .order_by(SEOSearchObservation.date_start.asc())
             )
         )
