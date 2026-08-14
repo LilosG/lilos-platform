@@ -8,7 +8,7 @@ connected connection with the Search Console scope granted directly.
 
 import json
 from collections.abc import Callable, Sequence
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta, timezone
 from typing import cast
 from urllib.parse import parse_qs, urlsplit
 from uuid import UUID, uuid4
@@ -47,6 +47,7 @@ from apps.api.app.products.seo.search_console_service import (
 from apps.api.app.reporting_periods import (
     GSC_SYNC_TAIL_EXCLUSION_DAYS,
     comparison_window,
+    provider_end_date,
     provider_start_date,
     reporting_window,
 )
@@ -146,6 +147,7 @@ class FakeSearchConsoleAdapter(SearchConsoleAdapter):
         query_rows: list[SearchAnalyticsRow] | None = None,
         page_rows: list[SearchAnalyticsRow] | None = None,
         summary_by_start: dict[str, list[SearchAnalyticsRow]] | None = None,
+        fail_on_start: set[str] | None = None,
     ) -> None:
         self._properties = properties
         self._summary_rows = summary_rows or []
@@ -153,6 +155,7 @@ class FakeSearchConsoleAdapter(SearchConsoleAdapter):
         self._query_rows = query_rows or []
         self._page_rows = page_rows or []
         self._summary_by_start = summary_by_start or {}
+        self._fail_on_start = fail_on_start or set()
         # (site_url, start_date, end_date, dimensions)
         self.query_calls: list[tuple[str, str, str, tuple[str, ...]]] = []
 
@@ -171,6 +174,8 @@ class FakeSearchConsoleAdapter(SearchConsoleAdapter):
         row_limit: int = 1000,
     ) -> list[SearchAnalyticsRow]:
         self.query_calls.append((site_url, start_date, end_date, tuple(dimensions)))
+        if start_date in self._fail_on_start:
+            raise RuntimeError(f"Search Console provider unavailable for {start_date}")
         if not dimensions:
             return self._summary_by_start.get(start_date, self._summary_rows)
         if "date" in dimensions:
@@ -769,11 +774,6 @@ async def test_search_console_missing_values_not_converted_to_zero(
         now = datetime.now(UTC)
         start, end = reporting_window(now, 7, GSC_SYNC_TAIL_EXCLUSION_DAYS)
 
-        # A daily observation with missing (None) metrics vs a real zero.
-        day_dt = date.fromisoformat(provider_start_date(start))
-        day_start = datetime(day_dt.year, day_dt.month, day_dt.day, tzinfo=UTC)
-        day_end = day_start + timedelta(days=1)
-
         import hashlib
         import json as _json
 
@@ -781,6 +781,32 @@ async def test_search_console_missing_values_not_converted_to_zero(
             return hashlib.sha256(
                 _json.dumps(dims, sort_keys=True, separators=(",", ":")).encode()
             ).hexdigest()
+
+        # Insert a current site_summary so the report window can anchor.
+        summary_dims: dict[str, object] = {"observation_type": "site_summary"}
+        session.add(
+            SEOSearchObservation(
+                organization_id=org.id,
+                search_property_id=mapped.id,
+                page_id=None,
+                query=None,
+                date_start=start,
+                date_end=end,
+                dimensions=summary_dims,
+                dimension_hash=_dh(summary_dims),
+                clicks=12,
+                impressions=300,
+                ctr=0.04,
+                position=5.0,
+                quality_status="valid",
+                partial=False,
+            )
+        )
+
+        # A daily observation with missing (None) metrics vs a real zero.
+        day_dt = date.fromisoformat(provider_start_date(start))
+        day_start = datetime(day_dt.year, day_dt.month, day_dt.day, tzinfo=UTC)
+        day_end = day_start + timedelta(days=1)
 
         missing_dims: dict[str, object] = {
             "observation_type": "daily",
@@ -839,3 +865,311 @@ async def test_search_console_missing_values_not_converted_to_zero(
         assert missing_entry["impressions"] is None
         assert zero_entry["clicks"] == 0
         assert zero_entry["impressions"] == 0
+
+
+class _FrozenDateTime(datetime):
+    """Deterministic ``datetime.now`` stub for module-level clock control."""
+
+    frozen_now: datetime | None = None
+
+    @classmethod
+    def now(cls, tz: timezone | None = None) -> datetime:  # type: ignore[override]
+        if cls.frozen_now is not None:
+            return cls.frozen_now
+        return datetime.now(tz)
+
+
+def _freeze_search_console_clock(monkeypatch: pytest.MonkeyPatch, value: datetime) -> None:
+    import apps.api.app.products.seo.search_console_service as sc_module
+
+    _FrozenDateTime.frozen_now = value
+    monkeypatch.setattr(sc_module, "datetime", _FrozenDateTime)
+
+
+async def _setup_mapped_gsc(
+    session: AsyncSession,
+    settings: Settings,
+    org: Organization,
+    fake: FakeSearchConsoleAdapter,
+) -> tuple[SEOSearchProperty, SEOWebsite]:
+    website = await make_website(session, org.id, "https://wheylandelectric.com/")
+    service = SearchConsoleService(adapter=fake)
+    mapped = await service.map_property(
+        session,
+        settings,
+        org.id,
+        website.id,
+        external_property_id="sc-domain:wheylandelectric.com",
+        property_type="domain",
+        actor_id=None,
+        correlation_id="m1",
+    )
+    return mapped, website
+
+
+@pytest.mark.integration
+@pytest.mark.anyio
+async def test_search_console_report_anchored_to_stored_window_across_rollover(
+    seo_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A calendar rollover before the next sync must not shift the report window."""
+    day_n = datetime(2026, 8, 13, 12, 0, tzinfo=UTC)
+    day_n1 = datetime(2026, 8, 14, 12, 0, tzinfo=UTC)
+    _freeze_search_console_clock(monkeypatch, day_n)
+
+    async with seo_session_factory.begin() as session:
+        org = await make_organization(session)
+        settings = make_settings()
+        await make_connected_google_connection(
+            session,
+            settings,
+            org.id,
+            http_handler=token_handler("https://www.googleapis.com/auth/webmasters.readonly"),
+        )
+
+        summary_by_start: dict[str, list[SearchAnalyticsRow]] = {}
+        expected_ranges: dict[int, dict[str, object]] = {}
+        for days in (7, 28, 90):
+            cur_start, cur_end = reporting_window(day_n, days, GSC_SYNC_TAIL_EXCLUSION_DAYS)
+            comp_start, _ = comparison_window(cur_start, days)
+            summary_by_start[provider_start_date(cur_start)] = [
+                SearchAnalyticsRow((), 500, 15000, 0.033, 5.0)
+            ]
+            summary_by_start[provider_start_date(comp_start)] = [
+                SearchAnalyticsRow((), 400, 12000, 0.033, 5.5)
+            ]
+            expected_ranges[days] = {
+                "start": provider_start_date(cur_start),
+                "end": provider_end_date(cur_end),
+                "days": days,
+            }
+
+        fake = FakeSearchConsoleAdapter(
+            properties=[
+                DiscoveredSearchProperty("sc-domain:wheylandelectric.com", "domain", "owner")
+            ],
+            summary_by_start=summary_by_start,
+            query_rows=[SearchAnalyticsRow(("electrician near me",), 120, 3400, 0.035, 4.2)],
+            page_rows=[SearchAnalyticsRow(("/services",), 80, 2000, 0.040, 3.5)],
+        )
+        service = SearchConsoleService(adapter=fake)
+        mapped, website = await _setup_mapped_gsc(session, settings, org, fake)
+        await service.sync_observations(
+            session, settings, org.id, mapped.id, actor_id=None, correlation_id="s1"
+        )
+
+        _FrozenDateTime.frozen_now = day_n1
+
+        for days in (7, 28, 90):
+            report = await service.performance_report(session, org.id, website.id, days=days)
+            metrics = cast(dict[str, dict[str, object]], report["metrics"])
+            assert metrics["clicks"]["current"] == 500
+            assert metrics["clicks"]["previous"] == 400
+            assert metrics["clicks"]["delta"] == 100
+            assert report["range"] == expected_ranges[days]
+            assert cast(dict[str, object], report["freshness"])["status"] == "fresh"
+
+        _FrozenDateTime.frozen_now = day_n + timedelta(days=3)
+        report = await service.performance_report(session, org.id, website.id, days=28)
+        metrics = cast(dict[str, dict[str, object]], report["metrics"])
+        assert metrics["clicks"]["current"] == 500
+        assert report["range"] == expected_ranges[28]
+        assert cast(dict[str, object], report["freshness"])["status"] == "stale"
+
+
+@pytest.mark.integration
+@pytest.mark.anyio
+async def test_search_console_partial_sync_preserves_previous_freshness(
+    seo_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failed required request must not mark fresh nor advance last_synced_at."""
+    day_n = datetime(2026, 8, 13, 12, 0, tzinfo=UTC)
+    _freeze_search_console_clock(monkeypatch, day_n)
+
+    async with seo_session_factory.begin() as session:
+        org = await make_organization(session)
+        settings = make_settings()
+        await make_connected_google_connection(
+            session,
+            settings,
+            org.id,
+            http_handler=token_handler("https://www.googleapis.com/auth/webmasters.readonly"),
+        )
+        fake = FakeSearchConsoleAdapter(
+            properties=[
+                DiscoveredSearchProperty("sc-domain:wheylandelectric.com", "domain", "owner")
+            ],
+            summary_rows=[SearchAnalyticsRow((), 10, 100, 0.1, 5.0)],
+            query_rows=[SearchAnalyticsRow(("q",), 10, 100, 0.1, 5.0)],
+        )
+        service = SearchConsoleService(adapter=fake)
+        mapped, website = await _setup_mapped_gsc(session, settings, org, fake)
+
+        first = await service.sync_observations(
+            session, settings, org.id, mapped.id, actor_id=None, correlation_id="s1"
+        )
+        assert first["freshness_status"] == "fresh"
+        prop_before = await session.scalar(
+            select(SEOSearchProperty).where(SEOSearchProperty.id == mapped.id)
+        )
+        assert prop_before is not None
+        first_last_synced = prop_before.last_synced_at
+        assert first_last_synced is not None
+
+        cur90_start, _ = reporting_window(day_n, 90, GSC_SYNC_TAIL_EXCLUSION_DAYS)
+        fake._fail_on_start = {provider_start_date(cur90_start)}
+        second = await service.sync_observations(
+            session, settings, org.id, mapped.id, actor_id=None, correlation_id="s2"
+        )
+        assert second["freshness_status"] == "stale"
+        assert second["rows_synced"] == 0
+        assert second["periods_synced"] == []
+
+        prop_after = await session.scalar(
+            select(SEOSearchProperty).where(SEOSearchProperty.id == mapped.id)
+        )
+        assert prop_after is not None
+        assert prop_after.last_synced_at == first_last_synced
+        assert prop_after.freshness_status == "stale"
+
+        report = await service.performance_report(session, org.id, website.id, days=90)
+        metrics = cast(dict[str, dict[str, object]], report["metrics"])
+        assert metrics["clicks"]["current"] == 10
+        assert cast(dict[str, object], report["freshness"])["status"] == "stale"
+
+
+@pytest.mark.integration
+@pytest.mark.anyio
+async def test_search_console_total_first_sync_failure_is_never_synced(
+    seo_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Total provider failure on first-ever sync must not claim fresh."""
+    day_n = datetime(2026, 8, 13, 12, 0, tzinfo=UTC)
+    _freeze_search_console_clock(monkeypatch, day_n)
+
+    async with seo_session_factory.begin() as session:
+        org = await make_organization(session)
+        settings = make_settings()
+        await make_connected_google_connection(
+            session,
+            settings,
+            org.id,
+            http_handler=token_handler("https://www.googleapis.com/auth/webmasters.readonly"),
+        )
+        fake = FakeSearchConsoleAdapter(
+            properties=[
+                DiscoveredSearchProperty("sc-domain:wheylandelectric.com", "domain", "owner")
+            ],
+            summary_rows=[SearchAnalyticsRow((), 10, 100, 0.1, 5.0)],
+        )
+        fake._fail_on_start = {
+            provider_start_date(reporting_window(day_n, d, GSC_SYNC_TAIL_EXCLUSION_DAYS)[0])
+            for d in (7, 28, 90)
+        }
+        service = SearchConsoleService(adapter=fake)
+        mapped, website = await _setup_mapped_gsc(session, settings, org, fake)
+
+        result = await service.sync_observations(
+            session, settings, org.id, mapped.id, actor_id=None, correlation_id="s1"
+        )
+        assert result["freshness_status"] == "never_synced"
+        assert result["rows_synced"] == 0
+
+        prop = await session.scalar(
+            select(SEOSearchProperty).where(SEOSearchProperty.id == mapped.id)
+        )
+        assert prop is not None
+        assert prop.last_synced_at is None
+        assert prop.freshness_status == "never_synced"
+
+        report = await service.performance_report(session, org.id, website.id, days=28)
+        assert report["range"] is None
+        assert report["comparison_range"] is None
+        assert cast(dict[str, object], report["freshness"])["status"] == "never_synced"
+        assert report["metrics"] == {}
+
+
+@pytest.mark.integration
+@pytest.mark.anyio
+async def test_search_console_sync_failure_tenant_isolation(
+    seo_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """One tenant's failed sync must not disturb another tenant's dataset."""
+    day_n = datetime(2026, 8, 13, 12, 0, tzinfo=UTC)
+    _freeze_search_console_clock(monkeypatch, day_n)
+
+    async with seo_session_factory.begin() as session:
+        org_a = await make_organization(session)
+        org_b = await make_organization(session)
+        settings = make_settings()
+        await make_connected_google_connection(
+            session,
+            settings,
+            org_a.id,
+            http_handler=token_handler("https://www.googleapis.com/auth/webmasters.readonly"),
+        )
+        await make_connected_google_connection(
+            session,
+            settings,
+            org_b.id,
+            http_handler=token_handler("https://www.googleapis.com/auth/webmasters.readonly"),
+        )
+
+        fake_a = FakeSearchConsoleAdapter(
+            properties=[DiscoveredSearchProperty("sc-domain:a.example", "domain", "owner")],
+            summary_rows=[SearchAnalyticsRow((), 30, 300, 0.1, 5.0)],
+            query_rows=[SearchAnalyticsRow(("qa",), 10, 100, 0.1, 5.0)],
+        )
+        service_a = SearchConsoleService(adapter=fake_a)
+        website_a = await make_website(session, org_a.id, "https://a.example/")
+        mapped_a = await service_a.map_property(
+            session,
+            settings,
+            org_a.id,
+            website_a.id,
+            external_property_id="sc-domain:a.example",
+            property_type="domain",
+            actor_id=None,
+            correlation_id="ma",
+        )
+        result_a = await service_a.sync_observations(
+            session, settings, org_a.id, mapped_a.id, actor_id=None, correlation_id="sa"
+        )
+        assert result_a["freshness_status"] == "fresh"
+
+        fake_b = FakeSearchConsoleAdapter(
+            properties=[DiscoveredSearchProperty("sc-domain:b.example", "domain", "owner")],
+            summary_rows=[SearchAnalyticsRow((), 40, 400, 0.1, 5.0)],
+        )
+        fake_b._fail_on_start = {
+            provider_start_date(reporting_window(day_n, d, GSC_SYNC_TAIL_EXCLUSION_DAYS)[0])
+            for d in (7, 28, 90)
+        }
+        service_b = SearchConsoleService(adapter=fake_b)
+        website_b = await make_website(session, org_b.id, "https://b.example/")
+        mapped_b = await service_b.map_property(
+            session,
+            settings,
+            org_b.id,
+            website_b.id,
+            external_property_id="sc-domain:b.example",
+            property_type="domain",
+            actor_id=None,
+            correlation_id="mb",
+        )
+        result_b = await service_b.sync_observations(
+            session, settings, org_b.id, mapped_b.id, actor_id=None, correlation_id="sb"
+        )
+        assert result_b["freshness_status"] == "never_synced"
+
+        report_a = await service_a.performance_report(session, org_a.id, website_a.id, days=28)
+        metrics_a = cast(dict[str, dict[str, object]], report_a["metrics"])
+        assert metrics_a["clicks"]["current"] == 30
+        assert cast(dict[str, object], report_a["freshness"])["status"] == "fresh"
+        report_b = await service_b.performance_report(session, org_b.id, website_b.id, days=28)
+        assert report_b["range"] is None
+        assert cast(dict[str, object], report_b["freshness"])["status"] == "never_synced"

@@ -27,7 +27,7 @@ from urllib.parse import urlsplit
 from uuid import UUID
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.app.audit.contracts import AuditEventCreate
@@ -427,138 +427,165 @@ class AnalyticsService:
         definitions = await self._ensure_metric_definitions(session)
         source = await self._insight_source(session, organization_id, prop)
         upserted = 0
+        failed = False
+        failures: list[dict[str, object]] = []
 
-        for period_days in VALID_REPORTING_PERIODS:
-            start, end = reporting_window(now, period_days, GA4_SYNC_TAIL_EXCLUSION_DAYS)
-            comp_start, comp_end = comparison_window(start, period_days)
-            try:
-                aggregate_rows = await self.adapter.run_report(
-                    token,
-                    prop.property_number,
-                    start_date=provider_start_date(start),
-                    end_date=provider_end_date(end),
-                    metrics=GA4_METRICS,
-                )
-                prior_aggregate_rows = await self.adapter.run_report(
-                    token,
-                    prop.property_number,
-                    start_date=provider_start_date(comp_start),
-                    end_date=provider_end_date(comp_end),
-                    metrics=GA4_METRICS,
-                )
-                daily_rows = await self.adapter.run_report(
-                    token,
-                    prop.property_number,
-                    start_date=provider_start_date(start),
-                    end_date=provider_end_date(end),
-                    metrics=GA4_METRICS,
-                    dimensions=("date",),
-                )
-            except Exception as exc:
-                await self._audit(
-                    session,
-                    event="insights.analytics.sync_failed",
-                    organization_id=organization_id,
-                    actor_id=actor_id,
-                    resource_type="analytics_property",
-                    resource_id=prop.id,
-                    correlation_id=correlation_id,
-                    summary=f"GA4 sync failed for {period_days}d window.",
-                    metadata={
-                        "error": str(exc)[:200],
-                        "period_days": period_days,
-                    },
-                    result=AuditResult.FAILED,
-                )
-                continue
-
-            upserted += await self._sync_aggregate(
-                session,
-                organization_id,
-                source,
-                definitions,
-                prop,
-                aggregate_rows,
-                start,
-                end,
-                period_days,
-            )
-            upserted += await self._sync_aggregate(
-                session,
-                organization_id,
-                source,
-                definitions,
-                prop,
-                prior_aggregate_rows,
-                comp_start,
-                comp_end,
-                period_days,
-            )
-
-            from datetime import date as date_type
-
-            for row in daily_rows:
-                observation_date = row.dimension_values.get("date", "")
-                if not observation_date:
-                    continue
-                day_dims: dict[str, object] = {
-                    "observation_type": "daily",
-                    "date": observation_date,
-                }
-                day_dim_hash = _dimension_hash(day_dims)
-                day_dt = date_type.fromisoformat(observation_date)
-                day_start = datetime(day_dt.year, day_dt.month, day_dt.day, tzinfo=UTC)
-                day_end = day_start + timedelta(days=1)
-                for key in GA4_METRICS:
-                    definition = definitions[f"ga4.{key}"]
-                    value = row.metric_values.get(key, 0)
-                    existing = await session.scalar(
-                        select(MetricObservation).where(
-                            MetricObservation.organization_id == organization_id,
-                            MetricObservation.source_id == source.id,
-                            MetricObservation.metric_definition_id == definition.id,
-                            MetricObservation.period_start == day_start,
-                            MetricObservation.period_end == day_end,
-                            MetricObservation.dimension_hash == day_dim_hash,
-                        )
+        # Persist the 7/28/90 contract atomically: a partial attempt must never
+        # publish a newer incomplete current window. On any required failure the
+        # savepoint is rolled back and the previous successful dataset remains.
+        nested = session.begin_nested()
+        await nested.start()
+        try:
+            for period_days in VALID_REPORTING_PERIODS:
+                start, end = reporting_window(now, period_days, GA4_SYNC_TAIL_EXCLUSION_DAYS)
+                comp_start, comp_end = comparison_window(start, period_days)
+                try:
+                    aggregate_rows = await self.adapter.run_report(
+                        token,
+                        prop.property_number,
+                        start_date=provider_start_date(start),
+                        end_date=provider_end_date(end),
+                        metrics=GA4_METRICS,
                     )
-                    if existing is not None:
-                        existing.value = Decimal(value)
-                        existing.quality_state = "valid" if value else "zero"
-                        existing.provenance = {
-                            "provider": ANALYTICS_PROVIDER_KEY,
-                            "property": prop.external_property_id,
-                            "window_days": period_days,
-                            "observation_type": "daily",
-                            "observation_date": observation_date,
-                        }
-                    else:
-                        session.add(
-                            MetricObservation(
-                                organization_id=organization_id,
-                                location_id=None,
-                                source_id=source.id,
-                                metric_definition_id=definition.id,
-                                period_start=day_start,
-                                period_end=day_end,
-                                dimensions=day_dims,
-                                dimension_hash=day_dim_hash,
-                                value=Decimal(value),
-                                quality_state="valid" if value else "zero",
-                                completeness=Decimal("1.0"),
-                                provenance={
-                                    "provider": ANALYTICS_PROVIDER_KEY,
-                                    "property": prop.external_property_id,
-                                    "window_days": period_days,
-                                    "observation_type": "daily",
-                                    "observation_date": observation_date,
-                                },
+                    prior_aggregate_rows = await self.adapter.run_report(
+                        token,
+                        prop.property_number,
+                        start_date=provider_start_date(comp_start),
+                        end_date=provider_end_date(comp_end),
+                        metrics=GA4_METRICS,
+                    )
+                    daily_rows = await self.adapter.run_report(
+                        token,
+                        prop.property_number,
+                        start_date=provider_start_date(start),
+                        end_date=provider_end_date(end),
+                        metrics=GA4_METRICS,
+                        dimensions=("date",),
+                    )
+                except Exception as exc:
+                    failed = True
+                    failures.append({"period_days": period_days, "error": str(exc)[:200]})
+                    continue
+
+                upserted += await self._sync_aggregate(
+                    session,
+                    organization_id,
+                    source,
+                    definitions,
+                    prop,
+                    aggregate_rows,
+                    start,
+                    end,
+                    period_days,
+                )
+                upserted += await self._sync_aggregate(
+                    session,
+                    organization_id,
+                    source,
+                    definitions,
+                    prop,
+                    prior_aggregate_rows,
+                    comp_start,
+                    comp_end,
+                    period_days,
+                )
+
+                from datetime import date as date_type
+
+                for row in daily_rows:
+                    observation_date = row.dimension_values.get("date", "")
+                    if not observation_date:
+                        continue
+                    day_dims: dict[str, object] = {
+                        "observation_type": "daily",
+                        "date": observation_date,
+                    }
+                    day_dim_hash = _dimension_hash(day_dims)
+                    day_dt = date_type.fromisoformat(observation_date)
+                    day_start = datetime(day_dt.year, day_dt.month, day_dt.day, tzinfo=UTC)
+                    day_end = day_start + timedelta(days=1)
+                    for key in GA4_METRICS:
+                        definition = definitions[f"ga4.{key}"]
+                        value = row.metric_values.get(key, 0)
+                        existing = await session.scalar(
+                            select(MetricObservation).where(
+                                MetricObservation.organization_id == organization_id,
+                                MetricObservation.source_id == source.id,
+                                MetricObservation.metric_definition_id == definition.id,
+                                MetricObservation.period_start == day_start,
+                                MetricObservation.period_end == day_end,
+                                MetricObservation.dimension_hash == day_dim_hash,
                             )
                         )
-                    upserted += 1
-            await session.flush()
+                        if existing is not None:
+                            existing.value = Decimal(value)
+                            existing.quality_state = "valid" if value else "zero"
+                            existing.provenance = {
+                                "provider": ANALYTICS_PROVIDER_KEY,
+                                "property": prop.external_property_id,
+                                "window_days": period_days,
+                                "observation_type": "daily",
+                                "observation_date": observation_date,
+                            }
+                        else:
+                            session.add(
+                                MetricObservation(
+                                    organization_id=organization_id,
+                                    location_id=None,
+                                    source_id=source.id,
+                                    metric_definition_id=definition.id,
+                                    period_start=day_start,
+                                    period_end=day_end,
+                                    dimensions=day_dims,
+                                    dimension_hash=day_dim_hash,
+                                    value=Decimal(value),
+                                    quality_state="valid" if value else "zero",
+                                    completeness=Decimal("1.0"),
+                                    provenance={
+                                        "provider": ANALYTICS_PROVIDER_KEY,
+                                        "property": prop.external_property_id,
+                                        "window_days": period_days,
+                                        "observation_type": "daily",
+                                        "observation_date": observation_date,
+                                    },
+                                )
+                            )
+                        upserted += 1
+                await session.flush()
+        except BaseException:
+            await nested.rollback()
+            raise
 
-        prop.last_synced_at = datetime.now(UTC)
+        if failed:
+            await nested.rollback()
+            if prop.last_synced_at is None:
+                prop.freshness_status = "never_synced"
+            else:
+                prop.freshness_status = "stale"
+            await session.flush()
+            await self._audit(
+                session,
+                event="insights.analytics.sync_incomplete",
+                organization_id=organization_id,
+                actor_id=actor_id,
+                resource_type="analytics_property",
+                resource_id=prop.id,
+                correlation_id=correlation_id,
+                summary="GA4 sync incomplete: one or more required periods failed; "
+                "previous successful dataset preserved.",
+                metadata={"failures": failures},
+                result=AuditResult.FAILED,
+            )
+            return {
+                "analytics_property_id": str(prop.id),
+                "metrics_synced": 0,
+                "window_days": days,
+                "periods_synced": [],
+                "freshness_status": prop.freshness_status,
+            }
+
+        await nested.commit()
+        prop.last_synced_at = now
         prop.freshness_status = "fresh"
         source.last_synced_at = prop.last_synced_at
         await session.flush()
@@ -708,9 +735,6 @@ class AnalyticsService:
             days = DEFAULT_SYNC_WINDOW_DAYS
 
         now = datetime.now(UTC)
-        current_start, current_end = reporting_window(now, days, GA4_SYNC_TAIL_EXCLUSION_DAYS)
-        comp_start, comp_end = comparison_window(current_start, days)
-
         last_synced = max(
             (p.last_synced_at for p in properties if p.last_synced_at is not None),
             default=None,
@@ -719,7 +743,9 @@ class AnalyticsService:
         freshness_status = "fresh"
         if last_synced is None:
             freshness_status = "never_synced"
-        elif last_synced < stale_threshold:
+        elif (
+            any(p.freshness_status == "stale" for p in properties) or last_synced < stale_threshold
+        ):
             freshness_status = "stale"
 
         metric_keys = [f"ga4.{m}" for m in GA4_METRICS]
@@ -731,8 +757,53 @@ class AnalyticsService:
         }
 
         definitions = await self._get_cached_definitions(session)
-
         metrics: dict[str, dict[str, object]] = {}
+
+        prop_data = [
+            {
+                "id": str(p.id),
+                "display_name": p.display_name,
+                "external_property_id": p.external_property_id,
+                "freshness_status": p.freshness_status,
+                "last_synced_at": p.last_synced_at.isoformat() if p.last_synced_at else None,
+            }
+            for p in properties
+        ]
+
+        # Anchor the report to the latest successfully persisted current window,
+        # not wall-clock "now", so a calendar rollover before the next sync does
+        # not shift the exact-match boundaries away from stored observations.
+        window = await self._latest_aggregate_current_window(
+            session, organization_id, properties, days
+        )
+
+        if window is None:
+            for key in metric_keys:
+                if key in definitions:
+                    metrics[key] = {
+                        "label": metric_labels.get(key, key),
+                        "current": None,
+                        "previous": None,
+                        "delta": None,
+                        "percent_delta": None,
+                        "quality": "missing",
+                    }
+            return {
+                "connected": True,
+                "properties": prop_data,
+                "range": None,
+                "comparison_range": None,
+                "freshness": {
+                    "last_synced_at": last_synced.isoformat() if last_synced else None,
+                    "status": freshness_status,
+                },
+                "metrics": metrics,
+                "series": [],
+            }
+
+        current_start, current_end = window
+        comp_start, comp_end = comparison_window(current_start, days)
+
         for key in metric_keys:
             definition = definitions.get(key)
             if definition is None:
@@ -802,17 +873,6 @@ class AnalyticsService:
         sorted_dates = sorted(daily_labels)
         series = [{"date": d, "metrics": daily_rows.get(d, {})} for d in sorted_dates]
 
-        prop_data = [
-            {
-                "id": str(p.id),
-                "display_name": p.display_name,
-                "external_property_id": p.external_property_id,
-                "freshness_status": p.freshness_status,
-                "last_synced_at": p.last_synced_at.isoformat() if p.last_synced_at else None,
-            }
-            for p in properties
-        ]
-
         return {
             "connected": True,
             "properties": prop_data,
@@ -825,6 +885,48 @@ class AnalyticsService:
             "metrics": metrics,
             "series": series,
         }
+
+    async def _latest_aggregate_current_window(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        properties: list[AnalyticsProperty],
+        days: int,
+    ) -> tuple[datetime, datetime] | None:
+        """Return the latest authoritative aggregate current window for `days`.
+
+        Selects the newest exact-duration aggregate observation (not its prior
+        comparison, which has the same duration but an earlier ``period_end``).
+        """
+        latest: MetricObservation | None = None
+        for prop in properties:
+            source = await session.scalar(
+                select(InsightSource).where(
+                    InsightSource.organization_id == organization_id,
+                    InsightSource.key == prop.external_property_id,
+                )
+            )
+            if source is None:
+                continue
+            obs = await session.scalar(
+                select(MetricObservation)
+                .where(
+                    MetricObservation.organization_id == organization_id,
+                    MetricObservation.source_id == source.id,
+                    MetricObservation.dimensions["observation_type"].astext == "aggregate",
+                    MetricObservation.quality_state.in_(["valid", "zero"]),
+                    func.extract(
+                        "epoch", MetricObservation.period_end - MetricObservation.period_start
+                    )
+                    == days * 86_400,
+                )
+                .order_by(MetricObservation.period_end.desc())
+            )
+            if obs is not None and (latest is None or obs.period_end > latest.period_end):
+                latest = obs
+        if latest is None:
+            return None
+        return latest.period_start, latest.period_end
 
     async def _sum_observations(
         self,

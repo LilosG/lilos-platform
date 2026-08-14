@@ -27,7 +27,7 @@ from urllib.parse import urlsplit
 from uuid import UUID
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.app.audit.contracts import AuditEventCreate
@@ -355,23 +355,67 @@ class SearchConsoleService:
         del connection
         now = datetime.now(UTC)
         upserted = 0
+        failed = False
+        failures: list[dict[str, object]] = []
 
-        for period_days in VALID_REPORTING_PERIODS:
-            start, window_end = reporting_window(now, period_days, GSC_SYNC_TAIL_EXCLUSION_DAYS)
-            upserted += await self._sync_period(
+        # Persist the 7/28/90 contract atomically so a partial attempt never
+        # publishes a newer incomplete current window. On any required failure
+        # the savepoint is rolled back and the previous successful dataset stays.
+        nested = session.begin_nested()
+        await nested.start()
+        try:
+            for period_days in VALID_REPORTING_PERIODS:
+                start, window_end = reporting_window(now, period_days, GSC_SYNC_TAIL_EXCLUSION_DAYS)
+                period_upserted, period_failed = await self._sync_period(
+                    session,
+                    token,
+                    organization_id,
+                    property_row,
+                    start,
+                    window_end,
+                    period_days,
+                    actor_id,
+                    correlation_id,
+                    failures,
+                )
+                upserted += period_upserted
+                if period_failed:
+                    failed = True
+        except BaseException:
+            await nested.rollback()
+            raise
+
+        if failed:
+            await nested.rollback()
+            if property_row.last_synced_at is None:
+                property_row.freshness_status = "never_synced"
+            else:
+                property_row.freshness_status = "stale"
+            await session.flush()
+            await self._audit(
                 session,
-                token,
-                organization_id,
-                property_row,
-                start,
-                window_end,
-                period_days,
-                actor_id,
-                correlation_id,
+                event="seo.search_console.sync_incomplete",
+                organization_id=organization_id,
+                actor_id=actor_id,
+                resource_type="seo_search_property",
+                resource_id=property_row.id,
+                correlation_id=correlation_id,
+                summary="Search Console sync incomplete: one or more required requests "
+                "failed; previous successful dataset preserved.",
+                metadata={"failures": failures},
+                result=AuditResult.FAILED,
             )
+            del website
+            return {
+                "search_property_id": str(property_row.id),
+                "rows_synced": 0,
+                "window_days": days,
+                "periods_synced": [],
+                "freshness_status": property_row.freshness_status,
+            }
 
-        await session.flush()
-        property_row.last_synced_at = datetime.now(UTC)
+        await nested.commit()
+        property_row.last_synced_at = now
         property_row.freshness_status = "fresh"
         await session.flush()
         await self._audit(
@@ -409,9 +453,17 @@ class SearchConsoleService:
         period_days: int,
         actor_id: UUID | None,
         correlation_id: str,
-    ) -> int:
-        """Sync one period's current + prior aggregates and current dimensions."""
+        failures: list[dict[str, object]],
+    ) -> tuple[int, bool]:
+        """Sync one period's current + prior aggregates and current dimensions.
+
+        Returns ``(rows_upserted, failed)``; ``failed`` is True when any
+        required provider request for the reporting contract did not succeed.
+        Provider failures are appended to ``failures`` for auditing after the
+        atomic savepoint decision.
+        """
         upserted = 0
+        failed = False
         external_id = property_row.external_property_id
         comp_start, comp_end = comparison_window(start, period_days)
 
@@ -426,19 +478,14 @@ class SearchConsoleService:
                 row_limit=1000,
             )
         except Exception as exc:
-            await self._audit(
-                session,
-                event="seo.search_console.sync_failed",
-                organization_id=organization_id,
-                actor_id=actor_id,
-                resource_type="seo_search_property",
-                resource_id=property_row.id,
-                correlation_id=correlation_id,
-                summary=f"Search Console sync failed (site summary, {period_days}d).",
-                metadata={"error": str(exc)[:200]},
-                result=AuditResult.FAILED,
+            failures.append(
+                {
+                    "request": "site_summary",
+                    "period_days": period_days,
+                    "error": str(exc)[:200],
+                }
             )
-            return 0
+            return 0, True
 
         for row in summary_rows:
             await self._store_site_summary(
@@ -463,17 +510,13 @@ class SearchConsoleService:
             )
         except Exception as exc:
             prior_summary_rows = []
-            await self._audit(
-                session,
-                event="seo.search_console.sync_failed",
-                organization_id=organization_id,
-                actor_id=actor_id,
-                resource_type="seo_search_property",
-                resource_id=property_row.id,
-                correlation_id=correlation_id,
-                summary=f"Search Console sync failed (prior site summary, {period_days}d).",
-                metadata={"error": str(exc)[:200]},
-                result=AuditResult.FAILED,
+            failed = True
+            failures.append(
+                {
+                    "request": "prior_site_summary",
+                    "period_days": period_days,
+                    "error": str(exc)[:200],
+                }
             )
 
         for row in prior_summary_rows:
@@ -499,17 +542,13 @@ class SearchConsoleService:
             )
         except Exception as exc:
             daily_rows = []
-            await self._audit(
-                session,
-                event="seo.search_console.sync_failed",
-                organization_id=organization_id,
-                actor_id=actor_id,
-                resource_type="seo_search_property",
-                resource_id=property_row.id,
-                correlation_id=correlation_id,
-                summary=f"Search Console sync failed (daily series, {period_days}d).",
-                metadata={"error": str(exc)[:200]},
-                result=AuditResult.FAILED,
+            failed = True
+            failures.append(
+                {
+                    "request": "daily",
+                    "period_days": period_days,
+                    "error": str(exc)[:200],
+                }
             )
 
         from datetime import date as date_type
@@ -573,17 +612,13 @@ class SearchConsoleService:
             )
         except Exception as exc:
             query_rows = []
-            await self._audit(
-                session,
-                event="seo.search_console.sync_failed",
-                organization_id=organization_id,
-                actor_id=actor_id,
-                resource_type="seo_search_property",
-                resource_id=property_row.id,
-                correlation_id=correlation_id,
-                summary=f"Search Console sync failed (top queries, {period_days}d).",
-                metadata={"error": str(exc)[:200]},
-                result=AuditResult.FAILED,
+            failed = True
+            failures.append(
+                {
+                    "request": "top_queries",
+                    "period_days": period_days,
+                    "error": str(exc)[:200],
+                }
             )
 
         for row in query_rows:
@@ -640,17 +675,13 @@ class SearchConsoleService:
             )
         except Exception as exc:
             page_rows = []
-            await self._audit(
-                session,
-                event="seo.search_console.sync_failed",
-                organization_id=organization_id,
-                actor_id=actor_id,
-                resource_type="seo_search_property",
-                resource_id=property_row.id,
-                correlation_id=correlation_id,
-                summary=f"Search Console sync failed (top pages, {period_days}d).",
-                metadata={"error": str(exc)[:200]},
-                result=AuditResult.FAILED,
+            failed = True
+            failures.append(
+                {
+                    "request": "top_pages",
+                    "period_days": period_days,
+                    "error": str(exc)[:200],
+                }
             )
 
         for row in page_rows:
@@ -696,7 +727,7 @@ class SearchConsoleService:
             upserted += 1
 
         await session.flush()
-        return upserted
+        return upserted, failed
 
     async def _store_site_summary(
         self,
@@ -784,6 +815,31 @@ class SearchConsoleService:
         )
         return prop
 
+    async def _latest_site_summary_current_window(
+        self, session: AsyncSession, prop_ids: list[UUID], days: int
+    ) -> tuple[datetime, datetime] | None:
+        """Return the latest authoritative current site_summary window for `days`.
+
+        The newest exact-duration site_summary is the current report window;
+        its prior comparison has the same duration but an earlier ``date_end``.
+        """
+        current = await session.scalar(
+            select(SEOSearchObservation)
+            .where(
+                SEOSearchObservation.search_property_id.in_(prop_ids),
+                SEOSearchObservation.dimensions["observation_type"].astext == "site_summary",
+                SEOSearchObservation.quality_status.in_(["valid", "zero"]),
+                func.extract(
+                    "epoch", SEOSearchObservation.date_end - SEOSearchObservation.date_start
+                )
+                == days * 86_400,
+            )
+            .order_by(SEOSearchObservation.date_end.desc())
+        )
+        if current is None:
+            return None
+        return current.date_start, current.date_end
+
     async def performance_report(
         self,
         session: AsyncSession,
@@ -817,18 +873,45 @@ class SearchConsoleService:
             days = DEFAULT_SYNC_WINDOW_DAYS
 
         now = datetime.now(UTC)
-        current_start, current_end = reporting_window(now, days, GSC_SYNC_TAIL_EXCLUSION_DAYS)
-        comp_start, comp_end = comparison_window(current_start, days)
-
         last_synced = prop.last_synced_at
         stale_threshold = now - timedelta(seconds=DEFAULT_FRESHNESS_STALE_SECONDS)
         freshness_status = "fresh"
         if last_synced is None:
             freshness_status = "never_synced"
-        elif last_synced < stale_threshold:
+        elif prop.freshness_status == "stale" or last_synced < stale_threshold:
             freshness_status = "stale"
 
         prop_ids = [prop.id]
+        window = await self._latest_site_summary_current_window(session, prop_ids, days)
+
+        if window is None:
+            return {
+                "connected": True,
+                "properties": [
+                    {
+                        "id": str(prop.id),
+                        "external_property_id": prop.external_property_id,
+                        "property_type": prop.property_type,
+                        "freshness_status": prop.freshness_status,
+                        "last_synced_at": prop.last_synced_at.isoformat()
+                        if prop.last_synced_at
+                        else None,
+                    }
+                ],
+                "range": None,
+                "comparison_range": None,
+                "freshness": {
+                    "last_synced_at": last_synced.isoformat() if last_synced else None,
+                    "status": freshness_status,
+                },
+                "metrics": {},
+                "series": [],
+                "top_queries": [],
+                "top_pages": [],
+            }
+
+        current_start, current_end = window
+        comp_start, comp_end = comparison_window(current_start, days)
 
         # Get site summary observations for current and comparison periods
         current_summary = await self._get_observation_by_type(
