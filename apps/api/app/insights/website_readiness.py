@@ -31,9 +31,11 @@ class WebsiteReadiness:
     domains: list[dict[str, object]]
     seo_websites: list[dict[str, object]]
     search_console_mapped: bool
+    search_console_connected: bool
     search_console_last_sync: str | None
     search_console_freshness: str
     analytics_mapped: bool
+    analytics_connected: bool
     analytics_last_sync: str | None
     analytics_freshness: str
     last_crawl_at: str | None
@@ -60,8 +62,8 @@ class WebsiteReadinessService:
                 )
             )
         )
-        canonical_configured = len(domains) > 0
-        primary = next((d.domain for d in domains if d.is_primary), None)
+        canonical_configured = any(d.status == "active" for d in domains)
+        primary = next((d.domain for d in domains if d.is_primary and d.status == "active"), None)
         domain_data = [
             {
                 "id": str(d.id),
@@ -154,24 +156,24 @@ class WebsiteReadinessService:
         if analytics_mapped and analytics_freshness == "not_mapped":
             analytics_freshness = "never_synced"
 
-        # Last crawl
-        last_crawl: datetime | None = None
+        # Last successful crawl
+        last_crawl_at: datetime | None = None
         crawl_ready = False
         for w in websites:
-            latest_crawl = await session.scalar(
+            latest_completed = await session.scalar(
                 select(SEOCrawlRun)
                 .where(
                     SEOCrawlRun.organization_id == organization_id,
                     SEOCrawlRun.website_id == w.id,
+                    SEOCrawlRun.status == "completed",
                 )
-                .order_by(SEOCrawlRun.created_at.desc())
+                .order_by(SEOCrawlRun.completed_at.desc())
             )
-            if latest_crawl is not None:
+            if latest_completed is not None:
                 crawl_ready = True
-                if latest_crawl.created_at and (
-                    last_crawl is None or latest_crawl.created_at > last_crawl
-                ):
-                    last_crawl = latest_crawl.created_at
+                completed_at = latest_completed.completed_at
+                if completed_at and (last_crawl_at is None or completed_at > last_crawl_at):
+                    last_crawl_at = completed_at
 
         if not websites:
             crawl_ready = False
@@ -182,11 +184,13 @@ class WebsiteReadinessService:
             "domains": domain_data,
             "seo_websites": website_data,
             "search_console_mapped": search_console_mapped,
+            "search_console_connected": search_console_mapped,
             "search_console_last_sync": _iso(sc_last_sync),
             "search_console_freshness": sc_freshness,
             "analytics_mapped": analytics_mapped,
+            "analytics_connected": analytics_mapped,
             "analytics_last_sync": _iso(analytics_last_sync),
             "analytics_freshness": analytics_freshness,
-            "last_crawl_at": _iso(last_crawl),
+            "last_crawl_at": _iso(last_crawl_at),
             "crawl_ready": crawl_ready,
         }

@@ -134,6 +134,7 @@ import "../styles/global.css";
         formatDateRange,
         buildGscDataTable,
       } from "../lib/reporting";
+      import { apiGet, type ApiOutcome } from "../lib/api-client";
 
       let organizationId = "";
 
@@ -153,14 +154,18 @@ import "../styles/global.css";
         setActiveOrganization(org);
         organizationId = org.organization_id;
 
-        const [summaryResult, websitesResult, oppsResult] = await Promise.all([
-          fetchSEOSummary(organizationId),
-          fetchWebsites(organizationId),
-          fetchOpportunities(organizationId),
-        ]);
+        const [summaryResult, websitesResult, oppsResult, websiteReadinessRes] =
+          await Promise.all([
+            fetchSEOSummary(organizationId),
+            fetchWebsites(organizationId),
+            fetchOpportunities(organizationId),
+            apiGet<Record<string, unknown>>(
+              `/api/v1/organizations/${organizationId}/insights/website-readiness`,
+            ),
+          ]);
 
         renderMetrics(summaryResult, websitesResult, oppsResult);
-        renderOverview(websitesResult, oppsResult);
+        renderOverview(websitesResult, oppsResult, websiteReadinessRes);
         renderCrawl(websitesResult);
         renderOpportunities(oppsResult);
         renderSearchConsole(websitesResult);
@@ -219,9 +224,49 @@ import "../styles/global.css";
         }
       }
 
+      function clientWebsiteStatus(
+        status: string,
+        wr: Record<string, unknown> | null,
+      ): { kind: string; label: string; note: string } {
+        const configured = !!wr?.canonical_domain_configured;
+        const scConnected = !!wr?.search_console_connected;
+        const analyticsConnected = !!wr?.analytics_connected;
+        const crawlReady = !!wr?.crawl_ready;
+        const lastCrawl = wr?.last_crawl_at as string | null;
+
+        if (status === "archived") {
+          return { kind: "neutral", label: "Archived", note: "" };
+        }
+        if (status === "paused") {
+          return { kind: "setup", label: "Paused", note: "" };
+        }
+
+        const ready =
+          configured && scConnected && analyticsConnected && crawlReady;
+        if (ready) {
+          const note = lastCrawl
+            ? `Last crawl ${formatTimestamp(lastCrawl)}`
+            : "Website operational";
+          return { kind: "ready", label: "Ready", note };
+        }
+
+        // Distinct reasons for needing attention
+        const reasons: string[] = [];
+        if (!configured) reasons.push("domain not configured");
+        if (!scConnected) reasons.push("Search Console not connected");
+        if (!analyticsConnected) reasons.push("Analytics not connected");
+        if (!crawlReady) reasons.push("no successful crawl");
+        return {
+          kind: "setup",
+          label: "Needs attention",
+          note: reasons.join(" · "),
+        };
+      }
+
       function renderOverview(
         websites: Awaited<ReturnType<typeof fetchWebsites>>,
         opps: Awaited<ReturnType<typeof fetchOpportunities>>,
+        websiteReadinessRes: ApiOutcome<Record<string, unknown>>,
       ): void {
         const panel = document.getElementById("tab-overview")!;
         panel.replaceChildren();
@@ -236,7 +281,11 @@ import "../styles/global.css";
           return;
         }
 
-        // Website status
+        // Derive readiness facts from the dedicated endpoint
+        const wr =
+          websiteReadinessRes.kind === "ok" ? websiteReadinessRes.data : null;
+
+        // Website status cards using client terminology
         for (const website of websites.data) {
           const card = document.createElement("div");
           card.className = "card";
@@ -257,20 +306,20 @@ import "../styles/global.css";
           card.append(header);
           const body = document.createElement("div");
           body.className = "card__body";
-          body.append(
-            statusBadge(
-              website.status === "active"
-                ? "ready"
-                : website.status === "pending_verification"
-                  ? "setup"
-                  : "neutral",
-              website.status.replace(/_/g, " "),
-            ),
-          );
+
+          const websiteTerm = clientWebsiteStatus(website.status, wr);
+          body.append(statusBadge(websiteTerm.kind, websiteTerm.label));
+          if (websiteTerm.note) {
+            const detail = document.createElement("p");
+            detail.className = "text-sm muted";
+            detail.style.marginTop = "0.5rem";
+            detail.textContent = websiteTerm.note;
+            body.append(detail);
+          }
           if (website.verified_at) {
             const verified = document.createElement("p");
             verified.className = "text-sm muted";
-            verified.style.marginTop = "0.5rem";
+            verified.style.marginTop = "0.25rem";
             verified.textContent = `Verified ${formatTimestamp(website.verified_at)}`;
             body.append(verified);
           }
@@ -403,13 +452,17 @@ import "../styles/global.css";
               crawlBtn.disabled = false;
               crawlBtn.textContent = "Run again";
               status.textContent = describeCrawlResult(result.data);
-              const [updatedSummary, updatedOpps] = await Promise.all([
-                fetchSEOSummary(crawlOrganizationId),
-                fetchOpportunities(crawlOrganizationId),
-              ]);
+              const [updatedSummary, updatedOpps, updatedReadiness] =
+                await Promise.all([
+                  fetchSEOSummary(crawlOrganizationId),
+                  fetchOpportunities(crawlOrganizationId),
+                  apiGet<Record<string, unknown>>(
+                    `/api/v1/organizations/${crawlOrganizationId}/insights/website-readiness`,
+                  ),
+                ]);
               if (organizationId !== crawlOrganizationId) return;
               renderMetrics(updatedSummary, websites, updatedOpps);
-              renderOverview(websites, updatedOpps);
+              renderOverview(websites, updatedOpps, updatedReadiness);
               renderOpportunities(updatedOpps);
             } else {
               crawlBtn.disabled = false;
@@ -886,6 +939,7 @@ import "../styles/global.css";
                 metric.delta as number | null,
                 metric.percent_delta as number | null,
                 "",
+                key,
               );
               const valueEl = card.querySelector(".kpi-card__value");
               if (valueEl) {

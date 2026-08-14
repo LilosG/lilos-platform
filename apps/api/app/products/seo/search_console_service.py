@@ -54,12 +54,16 @@ from apps.api.app.products.seo.search_console_adapter import (
     GoogleSearchConsoleAdapter,
     SearchConsoleAdapter,
 )
+from apps.api.app.reporting_periods import (
+    GSC_SYNC_TAIL_EXCLUSION_DAYS,
+    VALID_REPORTING_PERIODS,
+    comparison_window,
+    format_range_label,
+    reporting_window,
+)
 
 DEFAULT_SYNC_WINDOW_DAYS = 28
-# Search Console finalized data lags ~2 days; never request the most recent
-# couple of days as though they were final.
-SYNC_TAIL_EXCLUSION_DAYS = 2
-VALID_REPORTING_PERIODS: tuple[int, ...] = (7, 28, 90)
+DEFAULT_FRESHNESS_STALE_SECONDS = 172_800  # 48 hours
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,36 +110,6 @@ def _dimension_hash(dimensions: dict[str, object]) -> str:
     return hashlib.sha256(
         json.dumps(dimensions, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
-
-
-def _sync_window(now: datetime, days: int) -> tuple[datetime, datetime]:
-    """Return the (start, end) sync window as day-aligned UTC datetimes.
-
-    Day alignment is essential for idempotency: the ``SEOSearchObservation``
-    uniqueness key includes ``date_start``/``date_end``, so a repeat sync on
-    the same calendar day must produce the *same* range (not one shifted by
-    microseconds). The most recent ~2 days are excluded because Search Console
-    finalized data lags.
-    """
-    window_end_date = (now - timedelta(days=SYNC_TAIL_EXCLUSION_DAYS)).date()
-    start_date = window_end_date - timedelta(days=days)
-    start = datetime(start_date.year, start_date.month, start_date.day, tzinfo=UTC)
-    window_end = datetime(
-        window_end_date.year, window_end_date.month, window_end_date.day, tzinfo=UTC
-    )
-    return start, window_end
-
-
-def _reporting_period(now: datetime, days: int) -> tuple[datetime, datetime]:
-    """Compute current reporting period with tail exclusion."""
-    return _sync_window(now, days)
-
-
-def _comparison_period(current_start: datetime, days: int) -> tuple[datetime, datetime]:
-    """Compute prior comparison period of equal length before current_start."""
-    comp_end = current_start
-    comp_start = comp_end - timedelta(days=days)
-    return comp_start, comp_end
 
 
 def _date_str(dt: datetime) -> str:
@@ -339,7 +313,10 @@ class SearchConsoleService:
     ) -> dict[str, object]:
         """Pull real Search Console metrics into ``SEOSearchObservation``.
 
-        Pulls four observation types:
+        Syncs all supported reporting periods (7/28/90 days) so the reporting
+        selector is populated by a single governed sync. For each period it
+        pulls four observation types:
+
         - site_summary: no dimensions (authoritative site-level totals)
         - daily: date dimension (for trend series)
         - top_queries: query dimension (top search queries)
@@ -362,14 +339,71 @@ class SearchConsoleService:
         token, connection = await self._fresh_token(session, settings, organization_id)
         del connection
         now = datetime.now(UTC)
-        start, window_end = _sync_window(now, days)
         upserted = 0
 
+        for period_days in VALID_REPORTING_PERIODS:
+            start, window_end = reporting_window(now, period_days, GSC_SYNC_TAIL_EXCLUSION_DAYS)
+            upserted += await self._sync_period(
+                session,
+                token,
+                organization_id,
+                property_row,
+                start,
+                window_end,
+                period_days,
+                actor_id,
+                correlation_id,
+            )
+
+        await session.flush()
+        property_row.last_synced_at = datetime.now(UTC)
+        property_row.freshness_status = "fresh"
+        await session.flush()
+        await self._audit(
+            session,
+            event="seo.search_console.synced",
+            organization_id=organization_id,
+            actor_id=actor_id,
+            resource_type="seo_search_property",
+            resource_id=property_row.id,
+            correlation_id=correlation_id,
+            summary=f"Synced {upserted} Search Console observations across "
+            f"{len(VALID_REPORTING_PERIODS)} periods.",
+            metadata={
+                "rows": upserted,
+                "periods_synced": list(VALID_REPORTING_PERIODS),
+            },
+        )
+        del website
+        return {
+            "search_property_id": str(property_row.id),
+            "rows_synced": upserted,
+            "window_days": days,
+            "periods_synced": list(VALID_REPORTING_PERIODS),
+            "freshness_status": property_row.freshness_status,
+        }
+
+    async def _sync_period(
+        self,
+        session: AsyncSession,
+        token: str,
+        organization_id: UUID,
+        property_row: SEOSearchProperty,
+        start: datetime,
+        window_end: datetime,
+        period_days: int,
+        actor_id: UUID | None,
+        correlation_id: str,
+    ) -> int:
+        """Sync one period's four observation types; returns rows upserted."""
+        upserted = 0
+        external_id = property_row.external_property_id
+
+        # A. Site summary — no dimensions, authoritative site-level totals
         try:
-            # A. Site summary — no dimensions, authoritative site-level totals
             summary_rows = await self.adapter.query_search_analytics(
                 token,
-                property_row.external_property_id,
+                external_id,
                 start_date=_date_str(start),
                 end_date=_date_str(window_end),
                 dimensions=(),
@@ -384,11 +418,11 @@ class SearchConsoleService:
                 resource_type="seo_search_property",
                 resource_id=property_row.id,
                 correlation_id=correlation_id,
-                summary="Search Console sync failed (site summary).",
+                summary=f"Search Console sync failed (site summary, {period_days}d).",
                 metadata={"error": str(exc)[:200]},
                 result=AuditResult.FAILED,
             )
-            raise SEOSearchConsoleDiscoveryFailedError from exc
+            return 0
 
         for row in summary_rows:
             dims: dict[str, object] = {"observation_type": "site_summary"}
@@ -435,7 +469,7 @@ class SearchConsoleService:
         try:
             daily_rows = await self.adapter.query_search_analytics(
                 token,
-                property_row.external_property_id,
+                external_id,
                 start_date=_date_str(start),
                 end_date=_date_str(window_end),
                 dimensions=("date",),
@@ -451,17 +485,19 @@ class SearchConsoleService:
                 resource_type="seo_search_property",
                 resource_id=property_row.id,
                 correlation_id=correlation_id,
-                summary="Search Console sync failed (daily series), continuing with other types.",
+                summary=f"Search Console sync failed (daily series, {period_days}d).",
                 metadata={"error": str(exc)[:200]},
                 result=AuditResult.FAILED,
             )
 
+        from datetime import date as date_type
+
         for row in daily_rows:
             date_val = row.keys[0] if row.keys else ""
+            if not date_val:
+                continue
             dims = {"observation_type": "daily", "date": date_val}
             dim_hash = _dimension_hash(dims)
-            from datetime import date as date_type
-
             day_dt = date_type.fromisoformat(date_val)
             day_start = datetime(day_dt.year, day_dt.month, day_dt.day, tzinfo=UTC)
             day_end = day_start + timedelta(days=1)
@@ -507,7 +543,7 @@ class SearchConsoleService:
         try:
             query_rows = await self.adapter.query_search_analytics(
                 token,
-                property_row.external_property_id,
+                external_id,
                 start_date=_date_str(start),
                 end_date=_date_str(window_end),
                 dimensions=("query",),
@@ -523,7 +559,7 @@ class SearchConsoleService:
                 resource_type="seo_search_property",
                 resource_id=property_row.id,
                 correlation_id=correlation_id,
-                summary="Search Console sync failed (top queries), continuing.",
+                summary=f"Search Console sync failed (top queries, {period_days}d).",
                 metadata={"error": str(exc)[:200]},
                 result=AuditResult.FAILED,
             )
@@ -574,7 +610,7 @@ class SearchConsoleService:
         try:
             page_rows = await self.adapter.query_search_analytics(
                 token,
-                property_row.external_property_id,
+                external_id,
                 start_date=_date_str(start),
                 end_date=_date_str(window_end),
                 dimensions=("page",),
@@ -590,7 +626,7 @@ class SearchConsoleService:
                 resource_type="seo_search_property",
                 resource_id=property_row.id,
                 correlation_id=correlation_id,
-                summary="Search Console sync failed (top pages), continuing.",
+                summary=f"Search Console sync failed (top pages, {period_days}d).",
                 metadata={"error": str(exc)[:200]},
                 result=AuditResult.FAILED,
             )
@@ -638,28 +674,7 @@ class SearchConsoleService:
             upserted += 1
 
         await session.flush()
-        property_row.last_synced_at = datetime.now(UTC)
-        property_row.freshness_status = "fresh"
-        await session.flush()
-        await self._audit(
-            session,
-            event="seo.search_console.synced",
-            organization_id=organization_id,
-            actor_id=actor_id,
-            resource_type="seo_search_property",
-            resource_id=property_row.id,
-            correlation_id=correlation_id,
-            summary=f"Synced {upserted} Search Console observations "
-            f"(site summary, daily, top queries, top pages).",
-            metadata={"rows": upserted, "window_days": days},
-        )
-        del website
-        return {
-            "search_property_id": str(property_row.id),
-            "rows_synced": upserted,
-            "window_days": days,
-            "freshness_status": property_row.freshness_status,
-        }
+        return upserted
 
     # -- read helpers --------------------------------------------------------
 
@@ -717,17 +732,18 @@ class SearchConsoleService:
             days = DEFAULT_SYNC_WINDOW_DAYS
 
         now = datetime.now(UTC)
-        current_start, current_end = _reporting_period(now, days)
-        comp_start, comp_end = _comparison_period(current_start, days)
+        current_start, current_end = reporting_window(now, days, GSC_SYNC_TAIL_EXCLUSION_DAYS)
+        comp_start, comp_end = comparison_window(current_start, days)
 
         last_synced = max(
             (p.last_synced_at for p in properties if p.last_synced_at is not None),
             default=None,
         )
+        stale_threshold = now - timedelta(seconds=DEFAULT_FRESHNESS_STALE_SECONDS)
         freshness_status = "fresh"
         if last_synced is None:
             freshness_status = "never_synced"
-        elif last_synced < (now - timedelta(days=days + SYNC_TAIL_EXCLUSION_DAYS)):
+        elif last_synced < stale_threshold:
             freshness_status = "stale"
 
         prop_ids = [p.id for p in properties]
@@ -846,16 +862,8 @@ class SearchConsoleService:
         return {
             "connected": True,
             "properties": prop_data,
-            "range": {
-                "start": current_start.strftime("%Y-%m-%d"),
-                "end": current_end.strftime("%Y-%m-%d"),
-                "days": days,
-            },
-            "comparison_range": {
-                "start": comp_start.strftime("%Y-%m-%d"),
-                "end": comp_end.strftime("%Y-%m-%d"),
-                "days": days,
-            },
+            "range": format_range_label(current_start, current_end, days),
+            "comparison_range": format_range_label(comp_start, comp_end, days),
             "freshness": {
                 "last_synced_at": last_synced.isoformat() if last_synced else None,
                 "status": freshness_status,
@@ -874,8 +882,12 @@ class SearchConsoleService:
         period_end: datetime,
         observation_type: str,
     ) -> SEOSearchObservation | None:
-        """Get the single observation of a given type for the exact period."""
-        # Sum across multiple properties for the same window
+        """Get the authoritative observation of a given type for the exact period.
+
+        When multiple mapped properties exist, returns the most recently synced
+        observation. Clarity of authorship is more important than aggregation
+        for CTR/position metrics which cannot be naively averaged.
+        """
         result = await session.scalar(
             select(SEOSearchObservation)
             .where(
@@ -883,6 +895,7 @@ class SearchConsoleService:
                 SEOSearchObservation.date_start == period_start,
                 SEOSearchObservation.date_end == period_end,
                 SEOSearchObservation.dimensions["observation_type"].astext == observation_type,
+                SEOSearchObservation.quality_status.in_(["valid", "zero"]),
             )
             .order_by(SEOSearchObservation.date_end.desc())
         )
@@ -905,6 +918,7 @@ class SearchConsoleService:
                     SEOSearchObservation.date_start >= period_start,
                     SEOSearchObservation.date_end <= period_end,
                     SEOSearchObservation.dimensions["observation_type"].astext == observation_type,
+                    SEOSearchObservation.quality_status.in_(["valid", "zero"]),
                 )
                 .order_by(SEOSearchObservation.date_start.asc())
             )
@@ -944,8 +958,7 @@ class SearchConsoleService:
                 .where(
                     SEOSearchObservation.organization_id == organization_id,
                     SEOSearchObservation.search_property_id == prop_id,
-                    SEOSearchObservation.dimensions["observation_type"].astext
-                    == "site_summary",
+                    SEOSearchObservation.dimensions["observation_type"].astext == "site_summary",
                 )
                 .order_by(SEOSearchObservation.date_end.desc())
             )

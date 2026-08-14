@@ -33,6 +33,30 @@ export function deltaClass(delta: number | null): string {
   return "delta--neutral";
 }
 
+const INVERTED_METRICS = new Set([
+  "position",
+  "avg_position",
+  "average_position",
+  "bounce_rate",
+  "bounceRate",
+]);
+
+export function metricAwareDeltaClass(
+  metricKey: string,
+  delta: number | null,
+): string {
+  if (delta === null) return "delta--neutral";
+  const inverted = INVERTED_METRICS.has(metricKey);
+  if (inverted) {
+    if (delta < 0) return "delta--positive";
+    if (delta > 0) return "delta--negative";
+    return "delta--neutral";
+  }
+  if (delta > 0) return "delta--positive";
+  if (delta < 0) return "delta--negative";
+  return "delta--neutral";
+}
+
 export function deltaLabel(delta: number | null): string {
   if (delta === null) return "No change";
   if (delta > 0) return "Increased";
@@ -79,6 +103,7 @@ export function comparisonKPI(
   delta: number | null,
   percentDelta: number | null,
   meta?: string,
+  metricKey?: string,
 ): HTMLDivElement {
   const card = document.createElement("div");
   card.className = "kpi-card";
@@ -94,8 +119,11 @@ export function comparisonKPI(
   card.append(valueEl);
 
   if (delta !== null || percentDelta !== null) {
+    const deltaCls = metricKey
+      ? metricAwareDeltaClass(metricKey, delta)
+      : deltaClass(delta);
     const deltaRow = document.createElement("div");
-    deltaRow.className = `kpi-card__delta ${deltaClass(delta)}`;
+    deltaRow.className = `kpi-card__delta ${deltaCls}`;
 
     if (delta !== null) {
       const deltaEl = document.createElement("span");
@@ -137,7 +165,17 @@ function periodLabel(): string {
 
 export interface TimeSeriesPoint {
   date: string;
-  value: number;
+  value: number | null;
+}
+
+export function toTimeSeriesPoints(
+  data: { date: string; metrics: Record<string, number> }[],
+  metricKey: string,
+): TimeSeriesPoint[] {
+  return data.map((d) => ({
+    date: d.date,
+    value: d.metrics[metricKey] ?? null,
+  }));
 }
 
 export function timeSeriesChart(
@@ -150,7 +188,8 @@ export function timeSeriesChart(
   container.setAttribute("role", "img");
   container.setAttribute("aria-label", `${metricLabel} trend chart`);
 
-  if (data.length === 0) {
+  const defined = data.filter((d) => d.value !== null);
+  if (defined.length === 0) {
     container.classList.add("timeseries-chart--empty");
     const empty = document.createElement("p");
     empty.className = "timeseries-chart__empty";
@@ -159,7 +198,7 @@ export function timeSeriesChart(
     return container;
   }
 
-  const values = data.map((d) => d.value);
+  const values = defined.map((d) => d.value as number);
   const maxVal = Math.max(...values, 1);
   const minVal = Math.min(...values, 0);
   const range = maxVal - minVal || 1;
@@ -187,9 +226,10 @@ export function timeSeriesChart(
   yAxis.setAttribute("stroke-width", "1");
   svg.append(yAxis);
 
-  // Bars
+  // Bars — skip null values
   for (let i = 0; i < data.length; i++) {
     const point = data[i];
+    if (point.value === null) continue;
     const barH = Math.max(2, ((point.value - minVal) / range) * chartHeight);
     const x = i * (barWidth + 1);
     const y = chartHeight - barH;
@@ -246,7 +286,7 @@ export function timeSeriesChart(
   const tbody = document.createElement("tbody");
   for (const point of data) {
     const tr = document.createElement("tr");
-    tr.innerHTML = `<td>${point.date}</td><td>${point.value.toLocaleString()}</td>`;
+    tr.innerHTML = `<td>${point.date}</td><td>${point.value !== null ? point.value.toLocaleString() : "—"}</td>`;
     tbody.append(tr);
   }
   srTable.append(tbody);
@@ -317,9 +357,7 @@ export function performanceSummary(
 // ---------- Period label helper ----------
 
 export function periodLabelFromDays(days: number): string {
-  if (days === 7) return "7 days";
-  if (days === 90) return "90 days";
-  return "28 days";
+  return `${days} days`;
 }
 
 export function formatDateRange(start: string, end: string): string {

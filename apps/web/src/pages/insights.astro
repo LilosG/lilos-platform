@@ -101,6 +101,7 @@ import "../styles/global.css";
         reportingPeriodSelector,
         comparisonKPI,
         timeSeriesChart,
+        toTimeSeriesPoints,
         sourceFreshness,
         performanceSummary,
         formatDateRange,
@@ -124,14 +125,14 @@ import "../styles/global.css";
         setActiveOrganization(org);
         organizationId = org.organization_id;
 
-        const [readinessResult] = await Promise.all([
+        const [readinessResult, websiteReadinessRes] = await Promise.all([
           fetchProductReadiness(organizationId, "insights"),
           apiGet<Record<string, unknown>>(
             `/api/v1/organizations/${organizationId}/insights/website-readiness`,
           ),
         ]);
 
-        renderReadiness(readinessResult);
+        renderReadiness(readinessResult, websiteReadinessRes);
         await loadReportingData();
       }
 
@@ -192,6 +193,7 @@ import "../styles/global.css";
 
       function renderReadiness(
         outcome: Awaited<ReturnType<typeof fetchProductReadiness>>,
+        websiteReadinessRes: ApiOutcome<Record<string, unknown>>,
       ): void {
         const panel = document.getElementById("insights-readiness-panel")!;
         panel.replaceChildren();
@@ -222,6 +224,104 @@ import "../styles/global.css";
           text.textContent = summary.detail;
           alert.append(text);
           panel.append(alert);
+        }
+
+        // Website readiness summary card from the dedicated endpoint
+        if (websiteReadinessRes.kind === "ok") {
+          const wr = websiteReadinessRes.data;
+          const card = document.createElement("div");
+          card.className = "card";
+          card.style.marginTop = "var(--space-4)";
+          const header = document.createElement("div");
+          header.className = "card__header";
+          header.append(
+            Object.assign(document.createElement("h3"), {
+              className: "card__title",
+              textContent: "Website readiness",
+            }),
+          );
+          card.append(header);
+          const body = document.createElement("div");
+          body.className = "card__body";
+
+          const facts: { label: string; ready: boolean; note: string }[] = [];
+          const configured = !!wr.canonical_domain_configured;
+          facts.push({
+            label: "Domain",
+            ready: configured,
+            note: configured
+              ? `Primary: ${wr.primary_domain || "Set"}`
+              : "Not configured",
+          });
+          const scMapped = !!wr.search_console_mapped;
+          facts.push({
+            label: "Search Console",
+            ready: scMapped,
+            note: scMapped
+              ? readinessClientLabel(wr.search_console_freshness as string)
+              : "Not mapped",
+          });
+          const gaMapped = !!wr.analytics_mapped;
+          facts.push({
+            label: "Analytics",
+            ready: gaMapped,
+            note: gaMapped
+              ? readinessClientLabel(wr.analytics_freshness as string)
+              : "Not mapped",
+          });
+          const crawlDone = !!wr.crawl_ready;
+          facts.push({
+            label: "Crawl",
+            ready: crawlDone,
+            note: crawlDone
+              ? wr.last_crawl_at
+                ? `Last crawl: ${formatTimestamp(wr.last_crawl_at as string)}`
+                : "Crawl ready"
+              : "Not yet crawled",
+          });
+
+          for (const f of facts) {
+            const row = document.createElement("div");
+            row.className = "flex-row";
+            row.style.cssText =
+              "align-items:center;justify-content:space-between;margin-bottom:var(--space-2);gap:var(--space-3);";
+            const labelText = document.createElement("span");
+            labelText.className = "text-sm";
+            labelText.textContent = f.label;
+            const rightSide = document.createElement("div");
+            rightSide.style.cssText =
+              "display:flex;align-items:center;gap:var(--space-2);";
+            rightSide.append(
+              statusBadge(
+                f.ready ? "ready" : "setup",
+                f.ready ? "Ready" : "Needs attention",
+              ),
+            );
+            const noteEl = document.createElement("span");
+            noteEl.className = "text-xs muted";
+            noteEl.textContent = f.note;
+            rightSide.append(noteEl);
+            row.append(labelText, rightSide);
+            body.append(row);
+          }
+
+          card.append(body);
+          panel.append(card);
+        }
+      }
+
+      function readinessClientLabel(freshness: string): string {
+        switch (freshness) {
+          case "fresh":
+            return "Synced";
+          case "stale":
+            return "Stale";
+          case "never_synced":
+            return "Connected";
+          case "not_mapped":
+            return "Not mapped";
+          default:
+            return freshness;
         }
       }
 
@@ -319,12 +419,7 @@ import "../styles/global.css";
           const chartBody = document.createElement("div");
           chartBody.className = "card__body";
           chartBody.style.padding = "0";
-          const sessionData = data.series
-            .map((s) => ({
-              date: s.date,
-              value: s.metrics.sessions || 0,
-            }))
-            .filter((s) => s.value !== undefined);
+          const sessionData = toTimeSeriesPoints(data.series, "sessions");
           chartBody.append(timeSeriesChart(sessionData, "Sessions"));
           chartSection.append(chartBody);
           panel.append(chartSection);
@@ -394,13 +489,12 @@ import "../styles/global.css";
           if (metric) {
             const card = comparisonKPI(
               gscLabels[key] || key,
-              metric.current
-                ? Number(gscFormatters[key]?.(metric.current) ?? metric.current)
-                : null,
-              metric.previous,
-              metric.delta,
-              metric.percent_delta,
+              metric.current as number | null,
+              metric.previous as number | null,
+              metric.delta as number | null,
+              metric.percent_delta as number | null,
               "",
+              key,
             );
             // Override value formatting for position/CTR
             const valueEl = card.querySelector(".kpi-card__value");
@@ -430,7 +524,7 @@ import "../styles/global.css";
           chartBody.style.padding = "0";
           const impressionData = data.series.map((s) => ({
             date: s.date,
-            value: s.impressions || 0,
+            value: s.impressions ?? null,
           }));
           chartBody.append(timeSeriesChart(impressionData, "Impressions"));
           chartSection.append(chartBody);
