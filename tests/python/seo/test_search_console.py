@@ -1222,8 +1222,8 @@ async def test_search_console_empty_current_summary_persists_zero_observation(
             session, settings, org.id, mapped.id, actor_id=None, correlation_id="s1"
         )
         assert result["freshness_status"] == "fresh"
-        assert result["last_synced_at"] is not None
-        first_synced = result["last_synced_at"]
+        assert mapped.last_synced_at is not None
+        first_synced = mapped.last_synced_at
 
         report = await service.performance_report(session, org.id, website.id, days=28)
         metrics = cast(dict[str, dict[str, object]], report["metrics"])
@@ -1253,8 +1253,9 @@ async def test_search_console_empty_current_summary_persists_zero_observation(
             session, settings, org.id, mapped.id, actor_id=None, correlation_id="s2"
         )
         assert result2["freshness_status"] == "fresh"
-        assert result2["last_synced_at"] is not None
-        assert result2["last_synced_at"] > first_synced
+        await session.refresh(mapped)
+        assert mapped.last_synced_at is not None
+        assert mapped.last_synced_at > first_synced
 
         report2 = await service2.performance_report(session, org.id, website.id, days=28)
         metrics2 = cast(dict[str, dict[str, object]], report2["metrics"])
