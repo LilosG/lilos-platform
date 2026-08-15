@@ -1,5 +1,13 @@
 ---
 import AppShell from "../components/AppShell.astro";
+import Button from "../lib/ui/Button.astro";
+import EmptyState from "../lib/ui/EmptyState.astro";
+import Notice from "../lib/ui/Notice.astro";
+import PageHeader from "../lib/ui/PageHeader.astro";
+import PageSection from "../lib/ui/PageSection.astro";
+import PageShell from "../lib/ui/PageShell.astro";
+import Region from "../lib/ui/Region.astro";
+import Skeleton from "../lib/ui/Skeleton.astro";
 import "../styles/global.css";
 ---
 
@@ -13,100 +21,88 @@ import "../styles/global.css";
   </head>
   <body>
     <AppShell>
-      <div id="boot-not-configured" role="status">
-        <h1>This deployment is not configured</h1>
-        <p>No Supabase or API connection is configured for this build.</p>
-      </div>
+      <PageShell id="boot-not-configured"
+        ><EmptyState
+          heading="This deployment is not configured"
+          description="Connect the platform runtime configuration to enable Insights."
+        /></PageShell
+      >
+      <PageShell id="boot-loading" hidden
+        ><Skeleton lines={3} label="Loading insights" /></PageShell
+      >
+      <PageShell id="boot-error" hidden><Region role="alert" /></PageShell>
+      <PageShell id="workspace-empty" hidden
+        ><EmptyState
+          heading="No organization access yet"
+          description="Ask an administrator to invite your account to an organization."
+        /></PageShell
+      >
 
-      <div id="boot-loading" role="status" aria-live="polite" hidden>
-        <p class="loading-state">Loading insights…</p>
-      </div>
-
-      <div id="boot-error" role="alert" hidden></div>
-
-      <div id="workspace-empty" role="status" hidden>
-        <div class="empty-state">
-          <span class="empty-state__icon" aria-hidden="true">○</span>
-          <h3>No organization access yet</h3>
-          <p>
-            Your account is not a member of any organization. Ask an
-            administrator to invite you.
-          </p>
-        </div>
-      </div>
-
-      <div id="insights-content" hidden>
-        <div class="page-head">
-          <div class="page-head__intro">
-            <p class="eyebrow">Operations</p>
-            <h1>Insights</h1>
-            <p>
-              Client-facing reporting from real operational data — no simulated
-              or fabricated metrics.
-            </p>
-          </div>
-          <div class="page-head__meta">
-            <div class="page-head__actions">
-              <a
-                class="button button--secondary button--sm"
-                href="/integrations">Manage data sources</a
-              >
-            </div>
-          </div>
-        </div>
-
-        <div id="insights-readiness-panel"></div>
-        <div id="insights-reporting-controls"></div>
-
-        <div id="website-performance-panel">
-          <div class="loading-state">Loading performance…</div>
-        </div>
-
-        <div id="organic-search-panel"></div>
-
-        <div id="cross-product-panel"></div>
-
-        <div id="digest-panel"></div>
-
-        <div id="sources-panel"></div>
-      </div>
+      <PageShell id="insights-content" hidden>
+        <PageHeader
+          eyebrow="Operations"
+          title="Insights"
+          description="Client-facing reporting from observed operational and provider data."
+        >
+          <Button
+            slot="actions"
+            href="/integrations"
+            variant="secondary"
+            size="sm">Manage data sources</Button
+          >
+          <Region slot="meta" id="insights-reporting-controls" />
+        </PageHeader>
+        <PageSection eyebrow="Analytics" title="Website performance">
+          <Region slot="actions" id="analytics-provenance" />
+          <Region id="website-performance-panel"
+            ><Skeleton lines={4} label="Loading website performance" /></Region
+          >
+        </PageSection>
+        <PageSection eyebrow="Search Console" title="Organic search">
+          <Region slot="actions" id="search-console-provenance" />
+          <Region id="organic-search-panel" />
+        </PageSection>
+        <PageSection eyebrow="Operational data" title="Cross-product digest"
+          ><Region id="digest-panel" /></PageSection
+        >
+        <Notice title="Reporting data sources"
+          ><p>Connection and provider health are managed centrally.</p><Button
+            slot="action"
+            href="/integrations"
+            variant="secondary"
+            size="sm">Manage integrations</Button
+          ></Notice
+        >
+      </PageShell>
     </AppShell>
     <script>
-      import {
-        fetchInsightsSummary,
-        fetchProductReadiness,
-        PRODUCT_LABELS,
-      } from "../lib/workspace";
-      import { summarizeReadiness } from "../lib/dashboard-logic";
       import { fetchAnalyticsPerformance } from "../lib/analytics";
       import {
         fetchSearchConsolePerformance,
         type SearchConsolePerformanceReport,
       } from "../lib/search-console";
       import { fetchWebsites } from "../lib/seo";
-      import { apiGet, type ApiOutcome } from "../lib/api-client";
+      import type { ApiOutcome } from "../lib/api-client";
       import {
         bootWorkspace,
         applyBootResult,
         populateSwitcher,
         setActiveOrganization,
-        statusBadge,
         emptyState,
         errorAlert,
         describeFailure,
-        formatTimestamp,
         type BootRegions,
       } from "../lib/ui";
       import {
         reportingPeriodSelector,
         comparisonKPI,
-        timeSeriesChart,
         toTimeSeriesPoints,
         sourceFreshness,
         performanceSummary,
         formatDateRange,
         buildGscDataTable,
       } from "../lib/reporting";
+      import { reportingTrendChart } from "../lib/reporting-chart";
 
       let organizationId = "";
       let currentPeriodDays = 28;
@@ -125,14 +121,6 @@ import "../styles/global.css";
         setActiveOrganization(org);
         organizationId = org.organization_id;
 
-        const [readinessResult, websiteReadinessRes] = await Promise.all([
-          fetchProductReadiness(organizationId, "insights"),
-          apiGet<Record<string, unknown>>(
-            `/api/v1/organizations/${organizationId}/insights/website-readiness`,
-          ),
-        ]);
-
-        renderReadiness(readinessResult, websiteReadinessRes);
         await loadReportingData();
       }
 
@@ -170,8 +158,7 @@ import "../styles/global.css";
           ga4Res.data.range
         ) {
           const dateLabel = document.createElement("p");
-          dateLabel.className = "text-sm muted";
-          dateLabel.style.marginTop = "0.5rem";
+          dateLabel.className = "ui-text-secondary";
           dateLabel.textContent = `${formatDateRange(ga4Res.data.range.start, ga4Res.data.range.end)} · vs ${formatDateRange(ga4Res.data.comparison_range?.start || "", ga4Res.data.comparison_range?.end || "")}`;
           panel.append(dateLabel);
         }
@@ -179,159 +166,17 @@ import "../styles/global.css";
         renderWebsitePerformance(ga4Res);
         renderOrganicSearch(gscRes);
         renderDigest(ga4Res, gscRes);
-
-        // Cross-product and sources
-        const summaryRes = await fetchInsightsSummary(organizationId);
-        const sourceReadiness = await Promise.all(
-          (["gbp", "reviews", "leads", "content", "seo"] as const).map((key) =>
-            fetchProductReadiness(organizationId, key),
-          ),
-        );
-        renderCrossProduct(summaryRes);
-        renderSources(sourceReadiness, ga4Res);
-      }
-
-      function renderReadiness(
-        outcome: Awaited<ReturnType<typeof fetchProductReadiness>>,
-        websiteReadinessRes: ApiOutcome<Record<string, unknown>>,
-      ): void {
-        const panel = document.getElementById("insights-readiness-panel")!;
-        panel.replaceChildren();
-
-        if (outcome.kind !== "ok") {
-          panel.append(errorAlert(describeFailure(outcome, "Insights")));
-          return;
-        }
-
-        const summary = summarizeReadiness(outcome);
-        if (summary.status !== "ready") {
-          const alert = document.createElement("div");
-          alert.className =
-            summary.status === "blocked"
-              ? "alert alert--warning"
-              : "alert alert--info";
-          alert.style.marginBottom = "0";
-          alert.append(
-            statusBadge(
-              summary.status,
-              summary.status === "blocked"
-                ? "Needs attention"
-                : "Setup required",
-            ),
-          );
-          const text = document.createElement("p");
-          text.className = "text-sm";
-          text.textContent = summary.detail;
-          alert.append(text);
-          panel.append(alert);
-        }
-
-        // Website readiness summary card from the dedicated endpoint
-        if (websiteReadinessRes.kind === "ok") {
-          const wr = websiteReadinessRes.data;
-          const card = document.createElement("div");
-          card.className = "card";
-          card.style.marginTop = "var(--space-4)";
-          const header = document.createElement("div");
-          header.className = "card__header";
-          header.append(
-            Object.assign(document.createElement("h3"), {
-              className: "card__title",
-              textContent: "Website readiness",
-            }),
-          );
-          card.append(header);
-          const body = document.createElement("div");
-          body.className = "card__body";
-
-          const facts: { label: string; ready: boolean; note: string }[] = [];
-          const configured = !!wr.canonical_domain_configured;
-          facts.push({
-            label: "Domain",
-            ready: configured,
-            note: configured
-              ? `Primary: ${wr.primary_domain || "Set"}`
-              : "Not configured",
-          });
-          const scMapped = !!wr.search_console_mapped;
-          const scReady = scMapped && wr.search_console_freshness === "fresh";
-          facts.push({
-            label: "Search Console",
-            ready: scReady,
-            note: scMapped
-              ? readinessClientLabel(wr.search_console_freshness as string)
-              : "Not mapped",
-          });
-          const gaMapped = !!wr.analytics_mapped;
-          const gaReady = gaMapped && wr.analytics_freshness === "fresh";
-          facts.push({
-            label: "Analytics",
-            ready: gaReady,
-            note: gaMapped
-              ? readinessClientLabel(wr.analytics_freshness as string)
-              : "Not mapped",
-          });
-          const crawlDone = !!wr.crawl_ready;
-          facts.push({
-            label: "Crawl",
-            ready: crawlDone,
-            note: crawlDone
-              ? wr.last_crawl_at
-                ? `Last crawl: ${formatTimestamp(wr.last_crawl_at as string)}`
-                : "Crawl ready"
-              : "Not yet crawled",
-          });
-
-          for (const f of facts) {
-            const row = document.createElement("div");
-            row.className = "flex-row";
-            row.style.cssText =
-              "align-items:center;justify-content:space-between;margin-bottom:var(--space-2);gap:var(--space-3);";
-            const labelText = document.createElement("span");
-            labelText.className = "text-sm";
-            labelText.textContent = f.label;
-            const rightSide = document.createElement("div");
-            rightSide.style.cssText =
-              "display:flex;align-items:center;gap:var(--space-2);";
-            rightSide.append(
-              statusBadge(
-                f.ready ? "ready" : "setup",
-                f.ready ? "Ready" : "Needs attention",
-              ),
-            );
-            const noteEl = document.createElement("span");
-            noteEl.className = "text-xs muted";
-            noteEl.textContent = f.note;
-            rightSide.append(noteEl);
-            row.append(labelText, rightSide);
-            body.append(row);
-          }
-
-          card.append(body);
-          panel.append(card);
-        }
-      }
-
-      function readinessClientLabel(freshness: string): string {
-        switch (freshness) {
-          case "fresh":
-            return "Synced";
-          case "stale":
-            return "Stale";
-          case "never_synced":
-            return "Mapped \u00b7 not yet synced";
-          case "not_mapped":
-            return "Not mapped";
-          default:
-            return freshness;
-        }
       }
 
       function renderWebsitePerformance(
         ga4Res: Awaited<ReturnType<typeof fetchAnalyticsPerformance>>,
       ): void {
         const panel = document.getElementById("website-performance-panel")!;
+        const provenancePanel = document.getElementById(
+          "analytics-provenance",
+        )!;
         panel.replaceChildren();
+        provenancePanel.replaceChildren();
 
         if (ga4Res.kind !== "ok") {
           panel.append(errorAlert(describeFailure(ga4Res, "Performance")));
@@ -351,27 +196,18 @@ import "../styles/global.css";
           return;
         }
 
-        // Section heading
-        const heading = document.createElement("div");
-        heading.className = "section-heading section-heading--first";
-        const headingLeft = document.createElement("div");
-        const eyebrow = document.createElement("p");
-        eyebrow.className = "eyebrow";
-        eyebrow.textContent = "Website performance";
-        const title = document.createElement("h2");
-        title.textContent = "Analytics";
-        headingLeft.append(eyebrow, title);
-        heading.append(headingLeft);
-
-        // Freshness
         if (data.freshness) {
-          const freshness = sourceFreshness(
+          const provenance = sourceFreshness(
             data.freshness.last_synced_at,
             data.freshness.status,
           );
-          heading.append(freshness);
+          provenance.prepend(
+            document.createTextNode(
+              `Google Analytics · ${currentPeriodDays} days · `,
+            ),
+          );
+          provenancePanel.append(provenance);
         }
-        panel.append(heading);
 
         // KPI cards
         const kpiOrder = [
@@ -388,7 +224,7 @@ import "../styles/global.css";
         };
 
         const kpiGrid = document.createElement("div");
-        kpiGrid.className = "metric-grid";
+        kpiGrid.className = "ui-card-grid ui-card-grid--sm";
         for (const key of kpiOrder) {
           const kpi = data.metrics[key];
           if (kpi) {
@@ -399,7 +235,9 @@ import "../styles/global.css";
                 kpi.previous,
                 kpi.delta,
                 kpi.percent_delta,
-                "",
+                undefined,
+                key,
+                `${currentPeriodDays} days`,
               ),
             );
           }
@@ -409,20 +247,44 @@ import "../styles/global.css";
         // Daily trend chart
         if (data.series && data.series.length > 0) {
           const chartSection = document.createElement("div");
-          chartSection.className = "card";
-          chartSection.style.marginTop = "var(--space-5)";
+          chartSection.className =
+            "ui-card ui-card--spaced ui-card--flush reporting-chart-card";
           const chartHeader = document.createElement("div");
-          chartHeader.className = "card__header";
+          chartHeader.className = "ui-card__header";
           const chartTitle = document.createElement("h3");
-          chartTitle.className = "card__title";
-          chartTitle.textContent = "Daily sessions";
+          chartTitle.className = "ui-card__heading";
+          chartTitle.textContent = "Website activity trend";
           chartHeader.append(chartTitle);
           chartSection.append(chartHeader);
           const chartBody = document.createElement("div");
-          chartBody.className = "card__body";
-          chartBody.style.padding = "0";
-          const sessionData = toTimeSeriesPoints(data.series, "sessions");
-          chartBody.append(timeSeriesChart(sessionData, "Sessions"));
+          chartBody.className = "ui-card__body";
+          chartBody.append(
+            reportingTrendChart(
+              [
+                {
+                  key: "sessions",
+                  label: "Sessions",
+                  points: toTimeSeriesPoints(data.series, "sessions"),
+                },
+                {
+                  key: "users",
+                  label: "Users",
+                  points: toTimeSeriesPoints(data.series, "totalUsers"),
+                },
+                {
+                  key: "page-views",
+                  label: "Page views",
+                  points: toTimeSeriesPoints(data.series, "screenPageViews"),
+                },
+                {
+                  key: "conversions",
+                  label: "Conversions",
+                  points: toTimeSeriesPoints(data.series, "conversions"),
+                },
+              ],
+              "sessions",
+            ),
+          );
           chartSection.append(chartBody);
           panel.append(chartSection);
         }
@@ -432,7 +294,11 @@ import "../styles/global.css";
         gscRes: ApiOutcome<SearchConsolePerformanceReport> | null,
       ): void {
         const panel = document.getElementById("organic-search-panel")!;
+        const provenancePanel = document.getElementById(
+          "search-console-provenance",
+        )!;
         panel.replaceChildren();
+        provenancePanel.replaceChildren();
 
         if (!gscRes || gscRes.kind !== "ok" || !gscRes.data.connected) {
           panel.append(
@@ -448,26 +314,18 @@ import "../styles/global.css";
 
         const data = gscRes.data;
 
-        const heading = document.createElement("div");
-        heading.className = "section-heading";
-        const headingLeft = document.createElement("div");
-        const eyebrow = document.createElement("p");
-        eyebrow.className = "eyebrow";
-        eyebrow.textContent = "Organic search";
-        const title = document.createElement("h2");
-        title.textContent = "Search Console";
-        headingLeft.append(eyebrow, title);
-        heading.append(headingLeft);
-
         if (data.freshness) {
-          heading.append(
-            sourceFreshness(
-              data.freshness.last_synced_at,
-              data.freshness.status,
+          const provenance = sourceFreshness(
+            data.freshness.last_synced_at,
+            data.freshness.status,
+          );
+          provenance.prepend(
+            document.createTextNode(
+              `Google Search Console · ${currentPeriodDays} days · `,
             ),
           );
+          provenancePanel.append(provenance);
         }
-        panel.append(heading);
 
         // KPI cards
         const gscOrder = ["clicks", "impressions", "ctr", "position"];
@@ -480,12 +338,12 @@ import "../styles/global.css";
         const gscFormatters: Record<string, (v: number | null) => string> = {
           clicks: (v) => (v !== null ? v.toLocaleString() : "—"),
           impressions: (v) => (v !== null ? v.toLocaleString() : "—"),
-          ctr: (v) => (v !== null ? `${(v * 100).toFixed(1)}%` : "—"),
-          position: (v) => (v !== null ? v.toFixed(1) : "—"),
+          ctr: (v) => (v !== null ? `${(v * 100).toFixed(1)}%` : "No data"),
+          position: (v) => (v !== null ? v.toFixed(1) : "No data"),
         };
 
         const gscGrid = document.createElement("div");
-        gscGrid.className = "metric-grid";
+        gscGrid.className = "ui-card-grid ui-card-grid--sm";
         for (const key of gscOrder) {
           const metric = data.metrics[key];
           if (metric) {
@@ -495,11 +353,12 @@ import "../styles/global.css";
               metric.previous as number | null,
               metric.delta as number | null,
               metric.percent_delta as number | null,
-              "",
+              undefined,
               key,
+              `${currentPeriodDays} days`,
             );
             // Override value formatting for position/CTR
-            const valueEl = card.querySelector(".kpi-card__value");
+            const valueEl = card.querySelector(".ui-metric-card__value");
             if (valueEl) {
               valueEl.textContent =
                 gscFormatters[key]?.(metric.current as number | null) || "—";
@@ -512,23 +371,58 @@ import "../styles/global.css";
         // Daily series chart
         if (data.series && data.series.length > 0) {
           const chartSection = document.createElement("div");
-          chartSection.className = "card";
-          chartSection.style.marginTop = "var(--space-5)";
+          chartSection.className =
+            "ui-card ui-card--spaced ui-card--flush reporting-chart-card";
           const chartHeader = document.createElement("div");
-          chartHeader.className = "card__header";
+          chartHeader.className = "ui-card__header";
           const chartTitle = document.createElement("h3");
-          chartTitle.className = "card__title";
-          chartTitle.textContent = "Daily impressions";
+          chartTitle.className = "ui-card__heading";
+          chartTitle.textContent = "Organic search trend";
           chartHeader.append(chartTitle);
           chartSection.append(chartHeader);
           const chartBody = document.createElement("div");
-          chartBody.className = "card__body";
-          chartBody.style.padding = "0";
-          const impressionData = data.series.map((s) => ({
-            date: s.date,
-            value: s.impressions ?? null,
-          }));
-          chartBody.append(timeSeriesChart(impressionData, "Impressions"));
+          chartBody.className = "ui-card__body";
+          chartBody.append(
+            reportingTrendChart(
+              [
+                {
+                  key: "clicks",
+                  label: "Clicks",
+                  points: data.series.map((item) => ({
+                    date: item.date,
+                    value: item.clicks ?? null,
+                  })),
+                },
+                {
+                  key: "impressions",
+                  label: "Impressions",
+                  points: data.series.map((item) => ({
+                    date: item.date,
+                    value: item.impressions ?? null,
+                  })),
+                },
+                {
+                  key: "ctr",
+                  label: "CTR",
+                  points: data.series.map((item) => ({
+                    date: item.date,
+                    value: item.ctr ?? null,
+                  })),
+                  formatValue: (value) => `${(value * 100).toFixed(1)}%`,
+                },
+                {
+                  key: "position",
+                  label: "Avg position",
+                  points: data.series.map((item) => ({
+                    date: item.date,
+                    value: item.position ?? null,
+                  })),
+                  formatValue: (value) => value.toFixed(1),
+                },
+              ],
+              "clicks",
+            ),
+          );
           chartSection.append(chartBody);
           panel.append(chartSection);
         }
@@ -536,21 +430,19 @@ import "../styles/global.css";
         // Top queries table
         if (data.top_queries && data.top_queries.length > 0) {
           const queriesSection = document.createElement("div");
-          queriesSection.className = "card";
-          queriesSection.style.marginTop = "var(--space-4)";
+          queriesSection.className = "ui-card ui-card--spaced ui-card--flush";
           const qHeader = document.createElement("div");
-          qHeader.className = "card__header";
+          qHeader.className = "ui-card__header";
           const qTitle = document.createElement("h3");
-          qTitle.className = "card__title";
+          qTitle.className = "ui-card__heading";
           qTitle.textContent = `Top search queries (${data.top_queries.length})`;
           qHeader.append(qTitle);
           queriesSection.append(qHeader);
           const qBody = document.createElement("div");
-          qBody.className = "card__body";
-          qBody.style.padding = "0";
+          qBody.className = "ui-card__body";
           const qTable = buildGscDataTable(
             ["Query", "Clicks", "Impressions", "CTR", "Position"],
-            data.top_queries.map((q) => ({
+            data.top_queries.slice(0, 5).map((q) => ({
               primary: q.query,
               clicks: q.clicks,
               impressions: q.impressions,
@@ -559,125 +451,48 @@ import "../styles/global.css";
             })),
           );
           qBody.append(qTable);
+          const viewAll = document.createElement("a");
+          viewAll.className = "ui-button ui-button--ghost ui-button--sm";
+          viewAll.href = "/seo";
+          viewAll.textContent = "View all queries in SEO";
+          qBody.append(viewAll);
           queriesSection.append(qBody);
           panel.append(queriesSection);
         }
-      }
 
-      function renderCrossProduct(
-        summaryResult: Awaited<ReturnType<typeof fetchInsightsSummary>>,
-      ): void {
-        const panel = document.getElementById("cross-product-panel")!;
-        panel.replaceChildren();
-
-        if (summaryResult.kind !== "ok") {
-          return;
-        }
-
-        const data = summaryResult.data;
-        const groups: {
-          title: string;
-          metrics: { label: string; value: number }[];
-        }[] = [];
-
-        const gbpMetrics = [
-          { label: "Locations", value: data.gbp?.locations ?? 0 },
-          {
-            label: "Publications",
-            value: Object.values(data.gbp?.publications ?? {}).reduce(
-              (a, b) => a + b,
-              0,
-            ),
-          },
-        ];
-        groups.push({ title: "Business Profile", metrics: gbpMetrics });
-
-        const reviewMetrics = Object.entries(data.reviews ?? {}).map(
-          ([k, v]) => ({ label: k.replace(/_/g, " "), value: v }),
-        );
-        if (reviewMetrics.length > 0)
-          groups.push({ title: "Reviews", metrics: reviewMetrics });
-
-        const leadMetrics = Object.entries(data.leads ?? {}).map(([k, v]) => ({
-          label: k.replace(/_/g, " "),
-          value: v,
-        }));
-        if (leadMetrics.length > 0)
-          groups.push({ title: "Leads", metrics: leadMetrics });
-
-        const contentMetrics = Object.entries(
-          data.content_publications ?? {},
-        ).map(([k, v]) => ({ label: k.replace(/_/g, " "), value: v }));
-        if (contentMetrics.length > 0)
-          groups.push({ title: "Content", metrics: contentMetrics });
-
-        const seoMetrics = [
-          ...Object.entries(data.seo?.crawl_runs ?? {}).map(([k, v]) => ({
-            label: `Crawl: ${k}`,
-            value: v,
-          })),
-          ...Object.entries(data.seo?.opportunities ?? {}).map(([k, v]) => ({
-            label: `Opportunities: ${k}`,
-            value: v,
-          })),
-        ];
-        if (seoMetrics.length > 0)
-          groups.push({ title: "SEO", metrics: seoMetrics });
-
-        if (
-          groups.length === 0 ||
-          groups.every((g) => g.metrics.every((m) => m.value === 0))
-        ) {
-          return;
-        }
-
-        const heading = document.createElement("div");
-        heading.className = "section-heading";
-        const headingLeft = document.createElement("div");
-        const eyebrow = document.createElement("p");
-        eyebrow.className = "eyebrow";
-        eyebrow.textContent = "Activity";
-        const title = document.createElement("h2");
-        title.textContent = "Cross-product metrics";
-        headingLeft.append(eyebrow, title);
-        heading.append(headingLeft);
-        panel.append(heading);
-
-        const grid = document.createElement("div");
-        grid.className = "directory-grid";
-        for (const group of groups) {
-          const card = document.createElement("article");
-          card.className = "card";
-          const cardHeader = document.createElement("div");
-          cardHeader.className = "card__header";
-          cardHeader.append(
+        if (data.top_pages && data.top_pages.length > 0) {
+          const pagesSection = document.createElement("div");
+          pagesSection.className = "ui-card ui-card--spaced ui-card--flush";
+          const header = document.createElement("div");
+          header.className = "ui-card__header";
+          header.append(
             Object.assign(document.createElement("h3"), {
-              className: "card__title",
-              textContent: group.title,
+              className: "ui-card__heading",
+              textContent: `Top landing pages (${data.top_pages.length})`,
             }),
           );
-          card.append(cardHeader);
           const body = document.createElement("div");
-          body.className = "card__body";
-          for (const m of group.metrics) {
-            const row = document.createElement("div");
-            row.className = "flex-row";
-            row.style.justifyContent = "space-between";
-            row.append(
-              Object.assign(document.createElement("span"), {
-                className: "text-sm",
-                textContent: m.label.replace(/\b\w/g, (c) => c.toUpperCase()),
-              }),
-              Object.assign(document.createElement("strong"), {
-                textContent: String(m.value),
-              }),
-            );
-            body.append(row);
-          }
-          card.append(body);
-          grid.append(card);
+          body.className = "ui-card__body";
+          body.append(
+            buildGscDataTable(
+              ["Page", "Clicks", "Impressions", "CTR", "Position"],
+              data.top_pages.slice(0, 5).map((page) => ({
+                primary: page.page,
+                clicks: page.clicks,
+                impressions: page.impressions,
+                ctr: `${(page.ctr * 100).toFixed(1)}%`,
+                position: page.position.toFixed(1),
+              })),
+            ),
+          );
+          const viewAll = document.createElement("a");
+          viewAll.className = "ui-button ui-button--ghost ui-button--sm";
+          viewAll.href = "/seo";
+          viewAll.textContent = "View all pages in SEO";
+          body.append(viewAll);
+          pagesSection.append(header, body);
+          panel.append(pagesSection);
         }
-        panel.append(grid);
       }
 
       function renderDigest(
@@ -745,101 +560,6 @@ import "../styles/global.css";
         if (summary) {
           panel.append(summary);
         }
-      }
-
-      function renderSources(
-        readinessResults: Awaited<ReturnType<typeof fetchProductReadiness>>[],
-        ga4Res: Awaited<ReturnType<typeof fetchAnalyticsPerformance>>,
-      ): void {
-        const panel = document.getElementById("sources-panel")!;
-        panel.replaceChildren();
-
-        const heading = document.createElement("div");
-        heading.className = "section-heading";
-        const headingLeft = document.createElement("div");
-        const eyebrow = document.createElement("p");
-        eyebrow.className = "eyebrow";
-        eyebrow.textContent = "Data sources";
-        const title = document.createElement("h2");
-        title.textContent = "Connection status";
-        headingLeft.append(eyebrow, title);
-        heading.append(headingLeft);
-        panel.append(heading);
-
-        const grid = document.createElement("div");
-        grid.className = "directory-grid";
-
-        // GA4
-        if (ga4Res.kind === "ok" && ga4Res.data.connected) {
-          const card = document.createElement("div");
-          card.className = "integration-card";
-          card.innerHTML =
-            '<div class="integration-card__header"><span class="integration-card__icon">A</span><div class="integration-card__title">Google Analytics</div></div>';
-          const desc = document.createElement("p");
-          desc.className = "integration-card__desc";
-          desc.textContent = ga4Res.data.freshness.last_synced_at
-            ? `Synced ${formatTimestamp(ga4Res.data.freshness.last_synced_at)}`
-            : "Awaiting first sync";
-          const footer = document.createElement("div");
-          footer.className = "integration-card__footer";
-          footer.append(statusBadge("ready", "Connected"));
-          card.append(desc, footer);
-          grid.append(card);
-        }
-
-        // Other products
-        const sourceKeys = [
-          "gbp",
-          "reviews",
-          "leads",
-          "content",
-          "seo",
-        ] as const;
-        for (let i = 0; i < sourceKeys.length; i++) {
-          const key = sourceKeys[i];
-          const summary = summarizeReadiness(readinessResults[i]);
-          const card = document.createElement("div");
-          card.className = "integration-card";
-
-          const header = document.createElement("div");
-          header.className = "integration-card__header";
-          const icon = document.createElement("span");
-          icon.className = "integration-card__icon";
-          icon.textContent = PRODUCT_LABELS[key][0];
-          const cardTitle = document.createElement("div");
-          cardTitle.className = "integration-card__title";
-          cardTitle.textContent = PRODUCT_LABELS[key];
-          header.append(icon, cardTitle);
-
-          const desc = document.createElement("p");
-          desc.className = "integration-card__desc";
-          desc.textContent = summary.detail;
-
-          const footer = document.createElement("div");
-          footer.className = "integration-card__footer";
-          footer.append(
-            statusBadge(
-              summary.status,
-              summary.status === "ready"
-                ? "Operational"
-                : summary.status === "blocked"
-                  ? "Needs attention"
-                  : summary.status === "setup"
-                    ? "Setup required"
-                    : summary.status,
-            ),
-          );
-          const link = document.createElement("a");
-          link.className = "button button--secondary button--sm";
-          link.href = `/${key}`;
-          link.textContent = "Open";
-          footer.append(link);
-
-          card.append(header, desc, footer);
-          grid.append(card);
-        }
-
-        panel.append(grid);
       }
 
       async function boot(): Promise<void> {

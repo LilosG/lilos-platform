@@ -1,0 +1,39 @@
+---
+interface Props {
+  id: string;
+  text: string;
+  placement?: "top" | "right" | "bottom" | "left";
+  disabled?: boolean;
+  loading?: boolean;
+  active?: boolean;
+  error?: boolean;
+}
+const {
+  id,
+  text,
+  placement = "top",
+  disabled = false,
+  loading = false,
+  active = false,
+  error = false,
+} = Astro.props;
+---
+
+<span
+  class="ui-tooltip"
+  data-state={error ? "error" : loading ? "loading" : "default"}
+  data-active={active ? "true" : undefined}
+  data-placement={placement}
+  aria-disabled={disabled ? "true" : undefined}
+>
+  <span class="ui-tooltip__trigger" aria-describedby={disabled ? undefined : id}
+    ><slot /></span
+  >
+  {
+    !disabled && (
+      <span class="ui-tooltip__content" id={id} role="tooltip">
+        {loading ? "Loading…" : text}
+      </span>
+    )
+  }
+</span>

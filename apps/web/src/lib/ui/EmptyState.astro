@@ -1,0 +1,64 @@
+---
+import { Inbox } from "@lucide/astro";
+import Button from "./Button.astro";
+import Icon from "./Icon.astro";
+import { emptyStateContent } from "./content";
+
+interface Props {
+  heading: string;
+  description: string;
+  actionLabel?: string;
+  actionHref?: string;
+  compact?: boolean;
+  loading?: boolean;
+  error?: boolean;
+  disabled?: boolean;
+  active?: boolean;
+}
+
+const {
+  heading,
+  description,
+  actionLabel,
+  actionHref,
+  compact = false,
+  loading = false,
+  error = false,
+  disabled = false,
+  active = false,
+} = Astro.props;
+const content = emptyStateContent({
+  heading,
+  situation: description,
+  action:
+    actionLabel && actionHref
+      ? { label: actionLabel, href: actionHref }
+      : undefined,
+});
+---
+
+<div
+  class:list={["ui-empty-state", compact && "ui-empty-state--compact"]}
+  data-state={error ? "error" : loading ? "loading" : "default"}
+  data-active={active ? "true" : undefined}
+  aria-busy={loading ? "true" : undefined}
+  aria-disabled={disabled ? "true" : undefined}
+>
+  <span class="ui-empty-state__icon"><Icon icon={Inbox} /></span>
+  <div class="ui-empty-state__content">
+    <h3>{content.heading}</h3><p>{content.situation}</p>
+  </div>
+  {
+    content.action && (
+      <Button
+        href={content.action.href}
+        variant="secondary"
+        size="sm"
+        disabled={disabled}
+        state={loading ? "loading" : error ? "error" : "default"}
+      >
+        {content.action.label}
+      </Button>
+    )
+  }
+</div>

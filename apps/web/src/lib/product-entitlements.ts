@@ -26,6 +26,7 @@ import {
   type ProductEntitlement,
 } from "./platform-admin";
 import type { ApiOutcome } from "./api-client";
+import { statusLabel } from "./status-language";
 
 /**
  * Re-export the truthful entitlement-status sets so operator UIs consume one
@@ -98,7 +99,7 @@ export function entitlementBadgeKind(status: EntitlementStatus): string {
  * `setup_required`).
  */
 export function entitlementStatusLabel(status: EntitlementStatus): string {
-  return status.replace(/_/g, " ");
+  return statusLabel(status);
 }
 
 export type EntitlementRowState = {

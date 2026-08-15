@@ -1,0 +1,28 @@
+---
+interface Props {
+  tone?: "neutral" | "success" | "warning" | "danger" | "info";
+  state?: "default" | "loading" | "error";
+  active?: boolean;
+  disabled?: boolean;
+  class?: string;
+}
+
+const {
+  tone = "neutral",
+  state = "default",
+  active = false,
+  disabled = false,
+  class: className,
+} = Astro.props;
+---
+
+<span
+  class:list={["ui-badge", `ui-badge--${tone}`, className]}
+  data-state={state}
+  data-active={active ? "true" : undefined}
+  aria-disabled={disabled ? "true" : undefined}
+  aria-busy={state === "loading" ? "true" : undefined}
+>
+  <span class="ui-badge__dot" aria-hidden="true"></span>
+  <slot />
+</span>

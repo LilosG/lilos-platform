@@ -95,7 +95,8 @@ test("unconfigured Business Profile page shows a truthful not-configured state, 
   // they are replaced by a task-specific dropdown.
   await expect(page.locator("#change-capability-key")).toHaveCount(0);
   await expect(page.locator("#change-field")).toHaveCount(0);
-  await expect(page.locator("#change-task")).toHaveCount(1);
+  await expect(page.locator("#change-task")).toHaveCount(0);
+  await expect(page.locator("#change-gbp-location")).toBeAttached();
   const results = await new AxeBuilder({ page }).analyze();
   expect(
     results.violations.filter((item) =>
@@ -172,7 +173,12 @@ test("Content page does not expose a PAT registration path", async ({
   await page.goto("/content");
   await expect(page.locator("#register-connection-button")).toHaveCount(0);
   await expect(page.locator("#github-token")).toHaveCount(0);
-  await expect(page.locator("#create-target-button")).toHaveCount(1);
+  await expect(page.locator("#create-target-button")).toHaveCount(0);
+  await expect(
+    page.locator('#content-workspace a[href="/integrations"]', {
+      hasText: "Manage integrations",
+    }),
+  ).toHaveText("Manage integrations");
 });
 
 test("unconfigured SEO page shows a truthful not-configured state, not fabricated SEO data", async ({
@@ -239,6 +245,7 @@ const PROTECTED_ROUTES: ReadonlyArray<{ path: string; heading: string }> = [
   { path: "/leads", heading: "This deployment is not configured" },
   { path: "/content", heading: "This deployment is not configured" },
   { path: "/seo", heading: "This deployment is not configured" },
+  { path: "/automations", heading: "This deployment is not configured" },
   { path: "/insights", heading: "This deployment is not configured" },
   { path: "/settings", heading: "This deployment is not configured" },
   { path: "/integrations", heading: "This deployment is not configured" },

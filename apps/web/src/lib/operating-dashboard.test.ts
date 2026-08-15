@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   dashboardMetrics,
+  hasRecordedActivity,
   requiresAttention,
   todaysWork,
   totalStatuses,
@@ -34,9 +35,20 @@ describe("operating dashboard", () => {
   });
 
   it("does not turn missing summary data into fabricated zeroes", () => {
-    expect(dashboardMetrics(null).every((item) => item.value === null)).toBe(
-      true,
-    );
+    expect(dashboardMetrics(null)).toEqual([]);
+  });
+
+  it("does not treat a mapped location without product activity as an outcome", () => {
+    const thinSummary: InsightsSummary = {
+      workflow_runs: {},
+      gbp: { locations: 1, profile_snapshots: 0, publications: {} },
+      reviews: {},
+      content_publications: {},
+      seo: { crawl_runs: {}, opportunities: {} },
+      leads: {},
+    };
+    expect(dashboardMetrics(thinSummary)).toEqual([]);
+    expect(hasRecordedActivity(thinSummary)).toBe(false);
   });
 
   it("separates failures from routine work", () => {

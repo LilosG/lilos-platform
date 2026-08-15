@@ -9,8 +9,9 @@ export function formField(
   },
 ): HTMLDivElement {
   const field = document.createElement("div");
-  field.className = `field${options?.full ? " field--full" : ""}`;
+  field.className = `ui-field${options?.full ? " ui-field--full" : ""}`;
   const labelEl = document.createElement("label");
+  labelEl.className = "ui-field__label";
   if (options?.id) {
     labelEl.htmlFor = options.id;
     input.id = options.id;
@@ -19,17 +20,20 @@ export function formField(
   field.append(labelEl);
   if (options?.hint) {
     const hint = document.createElement("p");
-    hint.className = "field-hint";
+    hint.className = "ui-field__description";
     hint.textContent = options.hint;
     field.append(hint);
   }
+  input.classList.add(
+    input instanceof HTMLTextAreaElement ? "ui-textarea" : "ui-input",
+  );
   field.append(input);
   if (options?.error) {
     const errorEl = document.createElement("p");
-    errorEl.className = "field-error";
+    errorEl.className = "ui-field__error";
     errorEl.textContent = options.error;
     field.append(errorEl);
-    field.classList.add("field--invalid");
+    field.dataset.state = "error";
   }
   return field;
 }
@@ -39,6 +43,7 @@ export function textInput(
   type: string = "text",
 ): HTMLInputElement {
   const input = document.createElement("input");
+  input.className = "ui-input";
   input.type = type;
   if (placeholder) input.placeholder = placeholder;
   return input;
@@ -49,6 +54,7 @@ export function selectInput(
   placeholder?: string,
 ): HTMLSelectElement {
   const select = document.createElement("select");
+  select.className = "ui-input";
   if (placeholder) {
     const opt = document.createElement("option");
     opt.value = "";
@@ -66,6 +72,7 @@ export function selectInput(
 
 export function textArea(rows = 3): HTMLTextAreaElement {
   const textarea = document.createElement("textarea");
+  textarea.className = "ui-textarea";
   textarea.rows = rows;
   return textarea;
 }
@@ -75,7 +82,7 @@ export function formActions(
   secondary?: HTMLButtonElement | HTMLAnchorElement,
 ): HTMLDivElement {
   const actions = document.createElement("div");
-  actions.className = "form-actions";
+  actions.className = "ui-inline ui-inline--center";
   actions.append(primary);
   if (secondary) actions.append(secondary);
   return actions;
@@ -86,14 +93,14 @@ export function formSection(
   description?: string,
 ): HTMLDivElement {
   const section = document.createElement("div");
-  section.className = "form-section";
+  section.className = "ui-stack ui-stack--2";
   const titleEl = document.createElement("h3");
-  titleEl.className = "form-section__title";
+  titleEl.className = "ui-card__heading";
   titleEl.textContent = title;
   section.append(titleEl);
   if (description) {
     const desc = document.createElement("p");
-    desc.className = "form-section__desc";
+    desc.className = "ui-card__description";
     desc.textContent = description;
     section.append(desc);
   }
@@ -108,12 +115,12 @@ export function confirmInline(
   cancelLabel = "Cancel",
 ): HTMLDivElement {
   const prompt = document.createElement("div");
-  prompt.className = "confirm-inline";
+  prompt.className = "ui-notice ui-notice--warning";
   const msg = document.createElement("p");
   msg.textContent = message;
   const confirmBtn = document.createElement("button");
   confirmBtn.type = "button";
-  confirmBtn.className = "button button--danger button--sm";
+  confirmBtn.className = "ui-button ui-button--danger ui-button--sm";
   confirmBtn.textContent = confirmLabel;
   confirmBtn.addEventListener("click", () => {
     onConfirm();
@@ -121,7 +128,7 @@ export function confirmInline(
   });
   const cancelBtn = document.createElement("button");
   cancelBtn.type = "button";
-  cancelBtn.className = "button button--secondary button--sm";
+  cancelBtn.className = "ui-button ui-button--secondary ui-button--sm";
   cancelBtn.textContent = cancelLabel;
   cancelBtn.addEventListener("click", () => {
     onCancel();

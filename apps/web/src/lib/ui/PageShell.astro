@@ -1,0 +1,17 @@
+---
+interface Props {
+  id?: string;
+  width?: "default" | "narrow" | "form";
+  class?: string;
+  hidden?: boolean;
+}
+const { id, width = "default", class: className, hidden = false } = Astro.props;
+---
+
+<div
+  id={id}
+  class:list={["ui-page-shell", `ui-page-shell--${width}`, className]}
+  hidden={hidden}
+>
+  <slot />
+</div>

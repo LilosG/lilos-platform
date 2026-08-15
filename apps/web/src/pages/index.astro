@@ -1,5 +1,15 @@
 ---
 import AppShell from "../components/AppShell.astro";
+import Button from "../lib/ui/Button.astro";
+import CardGrid from "../lib/ui/CardGrid.astro";
+import EmptyState from "../lib/ui/EmptyState.astro";
+import MetricCard from "../lib/ui/MetricCard.astro";
+import Notice from "../lib/ui/Notice.astro";
+import PageHeader from "../lib/ui/PageHeader.astro";
+import PageSection from "../lib/ui/PageSection.astro";
+import PageShell from "../lib/ui/PageShell.astro";
+import Region from "../lib/ui/Region.astro";
+import Skeleton from "../lib/ui/Skeleton.astro";
 import "../styles/global.css";
 ---
 
@@ -13,124 +23,121 @@ import "../styles/global.css";
   </head>
   <body>
     <AppShell>
-      <div id="boot-not-configured" role="status">
-        <h1>This deployment is not configured</h1>
-        <p>
-          No Supabase or API connection is configured for this build. Set
-          <code>PUBLIC_LILOS_SUPABASE_URL</code>,
-          <code>PUBLIC_LILOS_SUPABASE_ANON_KEY</code>, and
-          <code>PUBLIC_LILOS_API_BASE_URL</code> to enable sign-in.
-        </p>
-      </div>
+      <PageShell id="boot-not-configured">
+        <EmptyState
+          heading="This deployment is not configured"
+          description="Connect the platform runtime configuration to enable sign-in."
+        />
+      </PageShell>
+      <PageShell id="boot-loading" hidden
+        ><Skeleton lines={3} label="Loading your workspace" /></PageShell
+      >
+      <PageShell id="boot-error" hidden><Region role="alert" /></PageShell>
+      <PageShell id="workspace-empty" hidden>
+        <EmptyState
+          heading="No organization access yet"
+          description="Ask an administrator to invite your account to an organization."
+        />
+      </PageShell>
 
-      <div id="boot-loading" role="status" aria-live="polite" hidden>
-        <p class="loading-state">Loading your workspace…</p>
-      </div>
+      <PageShell id="workspace-content" hidden>
+        <PageHeader
+          eyebrow="Workspace"
+          eyebrowId="active-organization-status"
+          title="Operating overview"
+          titleId="overview-title"
+          description="Current performance, urgent work, and recent results for this organization."
+          descriptionId="overview-description"
+        >
+          <Button slot="actions" href="/insights" variant="secondary" size="sm"
+            >View reporting</Button
+          >
+        </PageHeader>
 
-      <div id="boot-error" role="alert" hidden></div>
+        <PageSection
+          eyebrow="Context"
+          title="Client and reporting scope"
+          density="compact"
+        >
+          <CardGrid minimum="sm">
+            <MetricCard
+              id="overview-client-context"
+              label="Client"
+              labelId="overview-client-label"
+              value="Current organization"
+              valueId="overview-client-name"
+            />
+            <MetricCard
+              label="Reporting period"
+              value="All recorded activity"
+            />
+          </CardGrid>
+        </PageSection>
 
-      <div id="workspace-empty" role="status" hidden>
-        <div class="empty-state">
-          <span class="empty-state__icon" aria-hidden="true">○</span>
-          <h3>No organization access yet</h3>
-          <p>
-            Your account is not a member of any organization. Ask an
-            administrator to invite you.
-          </p>
-        </div>
-      </div>
+        <PageSection
+          id="kpi-section"
+          eyebrow="Results"
+          title="Recorded outcomes"
+        >
+          <CardGrid id="kpi-grid" minimum="sm"
+            ><MetricCard label="Loading" value="—" missing /></CardGrid
+          >
+        </PageSection>
 
-      <div id="workspace-content" hidden>
-        <div class="page-head">
-          <div class="page-head__intro">
-            <p class="eyebrow" id="active-organization-status"></p>
-            <h1 id="overview-title">Operating overview</h1>
-            <p id="overview-description">
-              Current performance, urgent work, and recent results for this
-              organization.
-            </p>
-          </div>
-        </div>
+        <PageSection
+          id="attention-section"
+          eyebrow="Actionable work"
+          title="Needs attention"
+        >
+          <Region id="attention-panel"
+            ><Skeleton lines={2} label="Loading work queue" /></Region
+          >
+        </PageSection>
 
-        <div id="kpi-section">
-          <div class="metric-grid" id="kpi-grid">
-            <div class="metric-card">
-              <p class="metric-card__label">Loading…</p><p
-                class="metric-card__value"
-              >
-                —
-              </p>
-            </div>
-          </div>
-        </div>
+        <PageSection
+          eyebrow="Priority queue"
+          eyebrowId="work-eyebrow"
+          title="Today’s work"
+          titleId="work-title"
+          id="work-section"
+        >
+          <Region id="work-panel"
+            ><Skeleton lines={2} label="Loading current work" /></Region
+          >
+        </PageSection>
 
-        <div class="section-heading">
-          <div>
-            <p class="eyebrow">Actionable work</p>
-            <h2>Needs attention</h2>
-          </div>
-        </div>
-        <div id="attention-panel">
-          <div class="loading-state">Loading work queue…</div>
-        </div>
+        <PageSection
+          id="activity-section"
+          eyebrow="Across products"
+          title="Operational activity"
+        >
+          <Region id="activity-panel"
+            ><Skeleton lines={2} label="Loading activity" /></Region
+          >
+        </PageSection>
 
-        <div class="section-heading">
-          <div>
-            <p class="eyebrow" id="work-eyebrow">Priority queue</p>
-            <h2 id="work-title">Today's work</h2>
-          </div>
-        </div>
-        <div id="work-panel">
-          <div class="loading-state">Loading current work…</div>
-        </div>
+        <PageSection eyebrow="Workspace scope" title="Locations">
+          <Region id="locations-panel"
+            ><Skeleton lines={2} label="Loading locations" /></Region
+          >
+        </PageSection>
 
-        <div class="section-heading">
-          <div>
-            <p class="eyebrow">Performance</p>
-            <h2>Latest connected results</h2>
-          </div>
-        </div>
-        <div id="performance-panel">
-          <div class="loading-state">Loading performance…</div>
-        </div>
-
-        <div class="section-heading">
-          <div>
-            <p class="eyebrow">Across products</p>
-            <h2>Operational activity</h2>
-          </div>
-        </div>
-        <div id="activity-panel">
-          <div class="loading-state">Loading activity…</div>
-        </div>
-
-        <div class="section-heading">
-          <div>
-            <p class="eyebrow">Account health</p>
-            <h2>Locations and product status</h2>
-          </div>
-        </div>
-        <div class="dashboard-health-grid">
-          <div id="locations-panel">
-            <div class="loading-state">Loading locations…</div>
-          </div>
-          <div id="products-panel">
-            <div class="loading-state">Loading products…</div>
-          </div>
-        </div>
-      </div>
+        <Notice title="Connections and provider health">
+          <p>Managed centrally for this organization.</p>
+          <Button
+            slot="action"
+            href="/integrations"
+            variant="secondary"
+            size="sm">Manage integrations</Button
+          >
+        </Notice>
+      </PageShell>
     </AppShell>
     <script>
-      import {
-        fetchLocations,
-        fetchProductReadiness,
-        fetchInsightsSummary,
-        PRODUCT_KEYS,
-        PRODUCT_LABELS,
-      } from "../lib/workspace";
-      import { summarizeReadiness } from "../lib/dashboard-logic";
+      import { fetchLocations, fetchInsightsSummary } from "../lib/workspace";
       import {
         dashboardMetrics,
+        hasRecordedActivity,
         requiresAttention,
         todaysWork,
         type WorkItem,
@@ -141,12 +148,12 @@ import "../styles/global.css";
         populateSwitcher,
         setActiveOrganization,
         statusBadge,
-        metricCard,
         emptyState,
         errorAlert,
         describeFailure,
         type BootRegions,
       } from "../lib/ui";
+      import { statusLabel, statusTone } from "../lib/status-language";
 
       let organizationId = "";
 
@@ -162,11 +169,16 @@ import "../styles/global.css";
         organization: import("../lib/workspace").MyOrganization,
       ): Promise<void> {
         setActiveOrganization(organization);
+        document.getElementById("overview-client-name")!.textContent =
+          organization.organization_name;
         document.getElementById("active-organization-status")!.textContent =
-          organization.organization_status.replace(/_/g, " ");
+          statusLabel(organization.organization_status);
         const isAgency = ["internal", "partner", "support"].includes(
           organization.membership_type,
         );
+        document.getElementById("overview-client-label")!.textContent = isAgency
+          ? "Client"
+          : "Account";
         document.getElementById("overview-title")!.textContent = isAgency
           ? "Operating overview"
           : "Your account overview";
@@ -181,31 +193,22 @@ import "../styles/global.css";
           : "Work in progress";
         organizationId = organization.organization_id;
 
-        const [locationsResult, readinessPromises, insightsResult] =
-          await Promise.all([
-            fetchLocations(organizationId),
-            Promise.all(
-              PRODUCT_KEYS.map((key) =>
-                fetchProductReadiness(organizationId, key),
-              ),
-            ),
-            fetchInsightsSummary(organizationId),
-          ]);
-
-        const summaries: Record<string, { status: string; detail: string }> =
-          {};
-        PRODUCT_KEYS.forEach((key, index) => {
-          summaries[key] = summarizeReadiness(readinessPromises[index]);
-        });
+        const [locationsResult, insightsResult] = await Promise.all([
+          fetchLocations(organizationId),
+          fetchInsightsSummary(organizationId),
+        ]);
 
         const insightData =
           insightsResult.kind === "ok" ? insightsResult.data : null;
+        const activityRecorded = hasRecordedActivity(insightData);
+        document.getElementById("attention-section")!.hidden =
+          !activityRecorded;
+        document.getElementById("work-section")!.hidden = !activityRecorded;
+        document.getElementById("activity-section")!.hidden = !activityRecorded;
         renderKPIs(insightData);
-        renderAttention(insightData, summaries, isAgency);
+        renderAttention(insightData, isAgency);
         renderWork(insightData, isAgency);
-        renderPerformance(insightData);
         renderLocations(locationsResult);
-        renderProducts(summaries);
         renderActivity(insightsResult);
       }
 
@@ -214,49 +217,80 @@ import "../styles/global.css";
       ): void {
         const grid = document.getElementById("kpi-grid")!;
         grid.replaceChildren();
-        for (const item of dashboardMetrics(summary)) {
+        const metrics = dashboardMetrics(summary);
+        if (metrics.length === 0) {
+          const hasActivity = hasRecordedActivity(summary);
+          grid.append(
+            overviewEmptyState(
+              hasActivity
+                ? "No outcome metrics recorded yet"
+                : "No outcome data yet",
+              hasActivity
+                ? "Complete the next available product task to start building outcome metrics here."
+                : "Products have not recorded activity yet. Open a product workspace and complete the next available task.",
+              "Open Business Profile",
+              "/gbp",
+            ),
+          );
+          return;
+        }
+        for (const item of metrics) {
           const link = document.createElement("a");
-          link.className = "metric-card metric-card--link";
+          link.className = "ui-card ui-card--interactive ui-metric-card";
           link.href = item.href;
-          link.append(
+          const body = document.createElement("div");
+          body.className = "ui-card__body";
+          body.append(
             Object.assign(document.createElement("p"), {
-              className: "metric-card__label",
+              className: "ui-metric-card__label",
               textContent: item.label,
             }),
             Object.assign(document.createElement("p"), {
-              className: "metric-card__value",
+              className: "ui-metric-card__value",
               textContent: item.value === null ? "—" : String(item.value),
             }),
             Object.assign(document.createElement("p"), {
-              className: "metric-card__meta",
+              className: "ui-metric-card__meta",
               textContent: item.meta,
             }),
           );
+          link.append(body);
           grid.append(link);
         }
       }
 
       function renderAttention(
         insightData: import("../lib/workspace").InsightsSummary | null,
-        summaries: Record<string, { status: string; detail: string }>,
         isAgency: boolean,
       ): void {
         const panel = document.getElementById("attention-panel")!;
         panel.replaceChildren();
+        if (!insightData) {
+          panel.append(
+            overviewEmptyState(
+              "Nothing needs attention yet",
+              "Products have not recorded activity yet. Open a product workspace and complete the next available task.",
+              "Open Business Profile",
+              "/gbp",
+            ),
+          );
+          return;
+        }
+        if (!hasRecordedActivity(insightData)) {
+          panel.append(
+            overviewEmptyState(
+              "Nothing needs attention yet",
+              "Products have not recorded activity yet. Complete the next available product task to start this queue.",
+              "Open Business Profile",
+              "/gbp",
+            ),
+          );
+          return;
+        }
         const operational = requiresAttention(insightData).filter(
           (item) => isAgency || item.href !== "/administration",
         );
-        const blocked = PRODUCT_KEYS.filter(
-          (key) => summaries[key].status === "blocked",
-        ).map<WorkItem>((key) => ({
-          key: `readiness-${key}`,
-          label: PRODUCT_LABELS[key],
-          detail: summaries[key].detail,
-          count: 1,
-          severity: "urgent",
-          href: `/${key}`,
-        }));
-        const items = [...operational, ...blocked].filter(
+        const items = operational.filter(
           (item, index, all) =>
             all.findIndex((candidate) => candidate.href === item.href) ===
             index,
@@ -264,7 +298,7 @@ import "../styles/global.css";
 
         if (items.length === 0) {
           panel.append(
-            emptyState(
+            overviewEmptyState(
               "Everything is on track",
               "No failures, unresolved provider actions, or blocking product issues are recorded.",
             ),
@@ -280,10 +314,32 @@ import "../styles/global.css";
       ): void {
         const panel = document.getElementById("work-panel")!;
         panel.replaceChildren();
+        if (!summary) {
+          panel.append(
+            overviewEmptyState(
+              "No work in progress yet",
+              "Products have not recorded activity yet. Complete the next available product task to start this queue.",
+              "Open Business Profile",
+              "/gbp",
+            ),
+          );
+          return;
+        }
+        if (!hasRecordedActivity(summary)) {
+          panel.append(
+            overviewEmptyState(
+              "No work in progress yet",
+              "Products have not recorded activity yet. Complete the next available product task to start this queue.",
+              "Open Business Profile",
+              "/gbp",
+            ),
+          );
+          return;
+        }
         const items = todaysWork(summary);
         if (items.length === 0) {
           panel.append(
-            emptyState(
+            overviewEmptyState(
               isAgency
                 ? "No queued work right now"
                 : "Nothing is waiting on you",
@@ -302,13 +358,15 @@ import "../styles/global.css";
         actionLabel: string,
       ): HTMLDivElement {
         const grid = document.createElement("div");
-        grid.className = "attention-grid";
+        grid.className = "ui-card-grid ui-card-grid--sm";
         for (const item of items) {
           const card = document.createElement("article");
-          card.className = `attention-card${item.severity === "urgent" ? " attention-card--urgent" : ""}`;
-          const header = document.createElement("div");
-          header.className = "attention-card__header";
+          card.className = "ui-card";
+          card.dataset.state = item.severity === "urgent" ? "error" : "default";
+          const header = document.createElement("header");
+          header.className = "ui-card__header";
           const title = document.createElement("h3");
+          title.className = "ui-card__heading";
           title.textContent = item.label;
           header.append(
             title,
@@ -318,60 +376,19 @@ import "../styles/global.css";
             ),
           );
           const body = document.createElement("p");
-          body.className = "text-sm muted";
+          body.className = "ui-card__body";
           body.textContent = item.detail;
           const action = document.createElement("a");
-          action.className = "button button--secondary button--sm";
+          action.className = "ui-button ui-button--secondary ui-button--sm";
           action.href = item.href;
           action.textContent = actionLabel;
-          card.append(header, body, action);
+          const footer = document.createElement("footer");
+          footer.className = "ui-card__footer";
+          footer.append(action);
+          card.append(header, body, footer);
           grid.append(card);
         }
         return grid;
-      }
-
-      function renderPerformance(
-        summary: import("../lib/workspace").InsightsSummary | null,
-      ): void {
-        const panel = document.getElementById("performance-panel")!;
-        panel.replaceChildren();
-        const ga4 = summary?.ga4;
-        if (!ga4?.connected || Object.keys(ga4.metrics ?? {}).length === 0) {
-          panel.append(
-            emptyState(
-              "No connected performance data yet",
-              "Connect and sync Google Analytics to show real website results. Period comparisons will appear only when the API supplies comparable history.",
-              "Manage data sources",
-              "/integrations",
-            ),
-          );
-          return;
-        }
-        const labels: Record<string, string> = {
-          "ga4.sessions": "Sessions",
-          "ga4.totalUsers": "Users",
-          "ga4.screenPageViews": "Page views",
-          "ga4.conversions": "Conversions",
-        };
-        const grid = document.createElement("div");
-        grid.className = "metric-grid";
-        const synced = ga4.properties
-          .map((property) => property.last_synced_at)
-          .filter((value): value is string => Boolean(value))
-          .sort()
-          .at(-1);
-        for (const [key, value] of Object.entries(ga4.metrics)) {
-          grid.append(
-            metricCard(
-              labels[key] ?? key.replace(/^ga4\./, "").replace(/_/g, " "),
-              String(value),
-              synced
-                ? `Latest sync ${new Date(synced).toLocaleString()}`
-                : "Latest synced observation",
-            ),
-          );
-        }
-        panel.append(grid);
       }
 
       function renderLocations(
@@ -389,7 +406,7 @@ import "../styles/global.css";
 
         if (locationsResult.data.length === 0) {
           panel.append(
-            emptyState(
+            overviewEmptyState(
               "No locations yet",
               "Add locations for this organization to start managing business profiles and operations.",
               "Manage in Settings",
@@ -400,7 +417,7 @@ import "../styles/global.css";
         }
 
         const list = document.createElement("ul");
-        list.className = "product-list";
+        list.className = "ui-record-list";
         for (const location of locationsResult.data) {
           const item = document.createElement("li");
           const info = document.createElement("div");
@@ -408,56 +425,16 @@ import "../styles/global.css";
           name.textContent = location.name;
           const detail = document.createElement("p");
           detail.textContent = location.is_primary
-            ? `${location.status} · Primary`
-            : location.status;
+            ? `${statusLabel(location.status)} · Primary`
+            : statusLabel(location.status);
           info.append(name, detail);
           const badge = statusBadge(
-            location.status === "active" ? "ready" : location.status,
+            statusTone(location.status),
             location.is_primary
-              ? `${location.status.replace(/_/g, " ")} · Primary`
-              : location.status.replace(/_/g, " "),
+              ? `${statusLabel(location.status)} · Primary`
+              : statusLabel(location.status),
           );
           item.append(info, badge);
-          list.append(item);
-        }
-        panel.append(list);
-      }
-
-      function renderProducts(
-        summaries: Record<string, { status: string; detail: string }>,
-      ): void {
-        const panel = document.getElementById("products-panel")!;
-        panel.replaceChildren();
-
-        const list = document.createElement("ul");
-        list.className = "product-list";
-        for (const key of PRODUCT_KEYS) {
-          const summary = summaries[key];
-          const item = document.createElement("li");
-          const info = document.createElement("div");
-          const name = document.createElement("h3");
-          name.textContent = PRODUCT_LABELS[key];
-          const detail = document.createElement("p");
-          detail.textContent = summary.detail;
-          info.append(name, detail);
-          const actions = document.createElement("div");
-          actions.className = "list-actions";
-          actions.append(
-            statusBadge(
-              summary.status,
-              summary.status === "ready"
-                ? "Operational"
-                : summary.status === "blocked"
-                  ? "Needs attention"
-                  : "Setup required",
-            ),
-          );
-          const link = document.createElement("a");
-          link.className = "button button--secondary button--sm";
-          link.href = `/${key}`;
-          link.textContent = "Open";
-          actions.append(link);
-          item.append(info, actions);
           list.append(item);
         }
         panel.append(list);
@@ -471,7 +448,7 @@ import "../styles/global.css";
 
         if (insightsResult.kind !== "ok") {
           panel.append(
-            emptyState(
+            overviewEmptyState(
               "Activity unavailable",
               "Connect the insights product to see cross-product activity.",
               "Set up Insights",
@@ -487,22 +464,27 @@ import "../styles/global.css";
           items: { label: string; value: number }[];
         }[] = [];
 
-        const gbpItems: { label: string; value: number }[] = [];
-        gbpItems.push({ label: "Locations", value: data.gbp?.locations ?? 0 });
-        gbpItems.push({
-          label: "Profile snapshots",
-          value: data.gbp?.profile_snapshots ?? 0,
-        });
         const gbpPubs = Object.values(data.gbp?.publications ?? {}).reduce(
           (a, b) => a + b,
           0,
         );
-        gbpItems.push({ label: "Publications", value: gbpPubs });
-        groups.push({ title: "Business Profile", items: gbpItems });
+        if ((data.gbp?.profile_snapshots ?? 0) > 0 || gbpPubs > 0) {
+          groups.push({
+            title: "Business Profile",
+            items: [
+              { label: "Locations", value: data.gbp?.locations ?? 0 },
+              {
+                label: "Profile snapshots",
+                value: data.gbp?.profile_snapshots ?? 0,
+              },
+              { label: "Publications", value: gbpPubs },
+            ],
+          });
+        }
 
         const reviewItems = Object.entries(data.reviews ?? {}).map(
           ([label, value]) => ({
-            label: label.replace(/_/g, " "),
+            label: statusLabel(label),
             value,
           }),
         );
@@ -510,7 +492,7 @@ import "../styles/global.css";
           groups.push({ title: "Reviews", items: reviewItems });
 
         const leadItems = Object.entries(data.leads ?? {}).map(
-          ([label, value]) => ({ label: label.replace(/_/g, " "), value }),
+          ([label, value]) => ({ label: statusLabel(label), value }),
         );
         if (leadItems.length > 0)
           groups.push({ title: "Leads", items: leadItems });
@@ -518,51 +500,53 @@ import "../styles/global.css";
         const contentItems = Object.entries(
           data.content_publications ?? {},
         ).map(([label, value]) => ({
-          label: label.replace(/_/g, " "),
+          label: statusLabel(label),
           value,
         }));
         if (contentItems.length > 0)
           groups.push({ title: "Content", items: contentItems });
 
         const crawlItems = Object.entries(data.seo?.crawl_runs ?? {}).map(
-          ([label, value]) => ({ label: label.replace(/_/g, " "), value }),
+          ([label, value]) => ({ label: statusLabel(label), value }),
         );
         const oppItems = Object.entries(data.seo?.opportunities ?? {}).map(
-          ([label, value]) => ({ label: label.replace(/_/g, " "), value }),
+          ([label, value]) => ({ label: statusLabel(label), value }),
         );
         const seoItems = [...crawlItems, ...oppItems];
         if (seoItems.length > 0) groups.push({ title: "SEO", items: seoItems });
 
         if (groups.length === 0) {
           panel.append(
-            emptyState(
-              "No activity recorded yet",
-              "Once operations start running, activity from all products will appear here.",
+            overviewEmptyState(
+              "No activity history yet",
+              "Products have not recorded activity yet. Complete the next available product task to start the timeline.",
+              "Open Business Profile",
+              "/gbp",
             ),
           );
           return;
         }
 
         const grid = document.createElement("div");
-        grid.className = "split";
+        grid.className = "ui-card-grid ui-card-grid--lg";
         for (const group of groups) {
           const card = document.createElement("article");
-          card.className = "card";
+          card.className = "ui-card";
           const header = document.createElement("div");
-          header.className = "card__header";
+          header.className = "ui-card__header";
           const title = document.createElement("h3");
-          title.className = "card__title";
+          title.className = "ui-card__heading";
           title.textContent = group.title;
           header.append(title);
           card.append(header);
           const body = document.createElement("div");
-          body.className = "card__body";
+          body.className = "ui-card__body";
           for (const item of group.items) {
             const row = document.createElement("div");
-            row.className = "flex-row";
-            row.style.justifyContent = "space-between";
+            row.className = "ui-inline ui-inline--center";
+            row.classList.add("ui-inline--spread");
             const label = document.createElement("span");
-            label.className = "text-sm";
+            label.className = "ui-text-secondary";
             label.textContent = item.label.replace(/\b\w/g, (c) =>
               c.toUpperCase(),
             );
@@ -575,6 +559,17 @@ import "../styles/global.css";
           grid.append(card);
         }
         panel.append(grid);
+      }
+
+      function overviewEmptyState(
+        heading: string,
+        description: string,
+        actionLabel?: string,
+        actionHref?: string,
+      ): HTMLDivElement {
+        const state = emptyState(heading, description, actionLabel, actionHref);
+        state.classList.add("ui-empty-state--compact");
+        return state;
       }
 
       async function boot(): Promise<void> {

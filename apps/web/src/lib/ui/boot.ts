@@ -154,18 +154,33 @@ export function populateSwitcher(
   organizations: import("../workspace").MyOrganization[],
   onSelect: (org: import("../workspace").MyOrganization) => void,
 ): void {
-  const select = document.getElementById(
-    "organization-switcher",
-  ) as HTMLSelectElement | null;
+  const select = document.getElementById("organization-switcher") as
+    HTMLInputElement | HTMLSelectElement | null;
   if (!select) return;
-  select.replaceChildren();
-  for (const organization of organizations) {
-    const option = document.createElement("option");
-    option.value = organization.organization_id;
-    option.textContent = organization.organization_name;
-    select.append(option);
+  const customRoot = select.closest<HTMLElement>("[data-select-root]");
+  if (select instanceof HTMLSelectElement) {
+    select.replaceChildren();
+    for (const organization of organizations) {
+      const option = document.createElement("option");
+      option.value = organization.organization_id;
+      option.textContent = organization.organization_name;
+      select.append(option);
+    }
+    select.hidden = organizations.length <= 1;
+  } else if (customRoot) {
+    customRoot.dispatchEvent(
+      new CustomEvent("ui:set-options", {
+        detail: {
+          options: organizations.map((organization) => ({
+            value: organization.organization_id,
+            label: organization.organization_name,
+          })),
+          value: organizations[0]?.organization_id,
+        },
+      }),
+    );
+    customRoot.hidden = organizations.length <= 1;
   }
-  select.hidden = organizations.length <= 1;
   select.addEventListener("change", () => {
     const chosen = organizations.find(
       (item) => item.organization_id === select.value,
@@ -186,10 +201,23 @@ export function setActiveOrganization(
       window.history.replaceState({}, "", url.toString());
     }
   }
-  const switcher = document.getElementById(
-    "organization-switcher",
-  ) as HTMLSelectElement | null;
-  if (switcher) switcher.value = organization.organization_id;
+  const switcher = document.getElementById("organization-switcher") as
+    HTMLInputElement | HTMLSelectElement | null;
+  if (switcher) {
+    const customRoot =
+      typeof switcher.closest === "function"
+        ? switcher.closest<HTMLElement>("[data-select-root]")
+        : null;
+    if (customRoot) {
+      customRoot.dispatchEvent(
+        new CustomEvent("ui:set-value", {
+          detail: { value: organization.organization_id },
+        }),
+      );
+    } else {
+      switcher.value = organization.organization_id;
+    }
+  }
   const nameEl = document.getElementById("active-organization-name");
   if (nameEl) nameEl.textContent = organization.organization_name;
   applyShellAudience(organization.membership_type);
@@ -325,13 +353,31 @@ export function applyBootResult(
       return false;
     case "redirected-to-login":
       return false;
-    case "error":
-      regions.error.textContent = result.message;
+    case "error": {
+      regions.error.replaceChildren();
+      const message = document.createElement("p");
+      message.textContent = result.message;
+      const retry = document.createElement("button");
+      retry.type = "button";
+      retry.className = "ui-button ui-button--secondary ui-button--sm";
+      retry.textContent = "Try again";
+      retry.addEventListener("click", () => window.location.reload());
+      regions.error.append(message, retry);
       showRegion(regions, regions.error);
       return false;
-    case "empty":
+    }
+    case "empty": {
+      if (!regions.empty.querySelector("a, button")) {
+        const refresh = document.createElement("button");
+        refresh.type = "button";
+        refresh.className = "ui-button ui-button--secondary ui-button--sm";
+        refresh.textContent = "Refresh access";
+        refresh.addEventListener("click", () => window.location.reload());
+        regions.empty.append(refresh);
+      }
       showRegion(regions, regions.empty);
       return false;
+    }
     case "ok":
       showRegion(regions, regions.content);
       return true;

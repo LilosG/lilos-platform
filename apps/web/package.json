@@ -9,16 +9,21 @@
     "dev": "astro dev",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "lint": "eslint .",
+    "lint": "eslint . && npm run lint:styles",
+    "lint:styles": "stylelint \"src/**/*.css\"",
     "preview": "astro preview",
     "test": "vitest run",
     "test:watch": "vitest",
+    "visual:test": "playwright test --config playwright.visual.config.ts",
     "typecheck": "astro check"
   },
   "dependencies": {
+    "@fontsource-variable/inter": "^5.3.0",
+    "@lucide/astro": "^1.31.0",
     "@supabase/supabase-js": "^2.112.0",
     "@tailwindcss/vite": "^4.3.3",
     "astro": "^7.1.6",
+    "chart.js": "^4.5.1",
     "tailwindcss": "^4.3.3"
   },
   "devDependencies": {
@@ -31,6 +36,7 @@
     "eslint-plugin-astro": "^1.7.0",
     "prettier": "^3.9.6",
     "prettier-plugin-astro": "^0.14.1",
+    "stylelint": "^17.14.1",
     "typescript": "^6.0.0",
     "typescript-eslint": "^8.65.0",
     "vitest": "^4.1.10"

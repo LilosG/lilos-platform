@@ -67,12 +67,8 @@ import "../styles/global.css";
               <option value="">Select a client…</option>
             </select>
           </div>
-          <h3 style="margin-top: 1.5rem;">Or start a new client</h3>
-          <form
-            id="create-org-form"
-            class="form-grid"
-            style="margin-top: 1rem;"
-          >
+          <h3 class="stack-top-6">Or start a new client</h3>
+          <form id="create-org-form" class="form-grid stack-top-4">
             <div class="field">
               <label for="org-name">Organization name</label><input
                 id="org-name"
@@ -142,7 +138,7 @@ import "../styles/global.css";
                 required
                 value="USD"
                 maxlength="3"
-                style="text-transform: uppercase;"
+                class="text-uppercase"
               />
             </div>
             <div class="field--full form-actions">
@@ -206,8 +202,7 @@ import "../styles/global.css";
               <select
                 id="workspace-mode-select"
                 hidden
-                class="field--sm"
-                style="margin-left: 0.5rem"
+                class="field--sm field-inline-offset"
               >
                 <option value="managed">Managed by LILOs</option>
                 <option value="co_managed">Co-Managed</option>
@@ -221,12 +216,7 @@ import "../styles/global.css";
               aria-valuemax="100"
               id="progress-bar"
             >
-              <div
-                class="progress-bar__fill"
-                id="progress-bar-fill"
-                style="width: 0%"
-              >
-              </div>
+              <div class="progress-bar__fill" id="progress-bar-fill"></div>
             </div>
             <p id="progress-label">0% complete</p>
             <p id="progress-updated" class="field-hint"></p>
@@ -306,12 +296,8 @@ import "../styles/global.css";
             </div>
             <div id="locations-alert"></div>
             <ul class="product-list" id="locations-list"></ul>
-            <h3 style="margin-top: 1.5rem;">Add a location</h3>
-            <form
-              id="create-location-form"
-              class="form-grid"
-              style="margin-top: 1rem;"
-            >
+            <h3 class="stack-top-6">Add a location</h3>
+            <form id="create-location-form" class="form-grid stack-top-4">
               <div class="field">
                 <label for="loc-name">Location name</label><input
                   id="loc-name"
@@ -369,7 +355,7 @@ import "../styles/global.css";
                   required
                   value="US"
                   maxlength="2"
-                  style="text-transform: uppercase;"
+                  class="text-uppercase"
                 />
               </div>
               <div class="field field--full">
@@ -434,11 +420,7 @@ import "../styles/global.css";
             </div>
             <div id="domain-alert"></div>
             <ul class="product-list" id="domains-list"></ul>
-            <form
-              id="create-domain-form"
-              class="form-grid"
-              style="margin-top: 1rem;"
-            >
+            <form id="create-domain-form" class="form-grid stack-top-4">
               <div class="field">
                 <label for="domain-value">Domain</label><input
                   id="domain-value"
@@ -507,16 +489,12 @@ import "../styles/global.css";
               class="button button--secondary"
               id="bootstrap-owner-button">Add me as workspace owner</button
             >
-            <h3 style="margin-top: 1.5rem;">Members</h3>
+            <h3 class="stack-top-6">Members</h3>
             <ul class="product-list" id="members-list"></ul>
-            <h3 style="margin-top: 1.5rem;">Pending invitations</h3>
+            <h3 class="stack-top-6">Pending invitations</h3>
             <ul class="product-list" id="invitations-list"></ul>
-            <h3 style="margin-top: 1.5rem;">Add or invite a user</h3>
-            <form
-              id="add-user-form"
-              class="form-grid"
-              style="margin-top: 1rem;"
-            >
+            <h3 class="stack-top-6">Add or invite a user</h3>
+            <form id="add-user-form" class="form-grid stack-top-4">
               <div class="field">
                 <label for="user-email">Email</label><input
                   id="user-email"
@@ -582,8 +560,7 @@ import "../styles/global.css";
             <ul class="product-list" id="approval-policies-list"></ul>
             <form
               id="create-approval-policy-form"
-              class="form-grid"
-              style="margin-top: 1rem;"
+              class="form-grid stack-top-4"
             >
               <div class="field">
                 <label for="approval-min-approvals">Minimum approvals</label
@@ -614,12 +591,11 @@ import "../styles/global.css";
                 >
               </div>
             </form>
-            <h3 style="margin-top: 1.5rem;">Notification policies</h3>
+            <h3 class="stack-top-6">Notification policies</h3>
             <ul class="product-list" id="notification-policies-list"></ul>
             <form
               id="create-notification-policy-form"
-              class="form-grid"
-              style="margin-top: 1rem;"
+              class="form-grid stack-top-4"
             >
               <div class="field--full form-actions">
                 <button
@@ -777,6 +753,7 @@ import "../styles/global.css";
         applyShellPrincipal,
         setPlatformAdminStatus,
       } from "../lib/ui";
+      import { statusLabel } from "../lib/status-language";
 
       const regions = {
         notConfigured: document.getElementById("boot-not-configured")!,
@@ -966,7 +943,7 @@ import "../styles/global.css";
         for (const organization of outcome.data.items) {
           const option = document.createElement("option");
           option.value = organization.id;
-          option.textContent = `${organization.name} (${organization.status})`;
+          option.textContent = `${organization.name} (${statusLabel(organization.status)})`;
           select.append(option);
         }
         return outcome;
@@ -1137,7 +1114,7 @@ import "../styles/global.css";
           title.textContent =
             location.name + (location.is_primary ? " (primary)" : "");
           const meta = document.createElement("p");
-          meta.textContent = `${location.location_type} · ${location.status}`;
+          meta.textContent = `${statusLabel(location.location_type)} · ${statusLabel(location.status)}`;
           info.append(title, meta);
           item.append(
             info,
@@ -1491,14 +1468,14 @@ import "../styles/global.css";
           const entitlement = state.entitlement;
           button.textContent = "Restore to setup required";
           button.title =
-            "Restores this deliberately disabled/suspended entitlement to setup_required through the governed transition API.";
+            "Restores this deliberately disabled or suspended product to its initial setup state.";
           button.addEventListener("click", async () => {
             button.disabled = true;
             button.textContent = "Restoring…";
             const result = await reEnableProduct(
               organizationId,
               entitlement,
-              `Operator restored ${state.productKey} entitlement to setup_required during onboarding.`,
+              `Operator restored ${state.productKey} entitlement to its initial setup state during onboarding.`,
             );
             if (result.kind !== "ok") {
               button.disabled = false;
@@ -1574,9 +1551,9 @@ import "../styles/global.css";
           if (!productStatus.selected && entitlement === null) {
             meta.textContent = "Not enabled for this client yet.";
           } else if (entitlement && !row.selected) {
-            meta.textContent = `Entitlement is ${entitlement.status.replace(/_/g, " ")}.`;
+            meta.textContent = `Entitlement is ${statusLabel(entitlement.status)}.`;
           } else if (entitlement && !row.effective) {
-            meta.textContent = `Enabled — entitlement is ${entitlement.status.replace(/_/g, " ")}.`;
+            meta.textContent = `Enabled — entitlement is ${statusLabel(entitlement.status)}.`;
           } else if (productStatus.external_integration_pending) {
             meta.textContent =
               "Enabled — requires a connected external integration (does not block organization activation).";
@@ -1594,7 +1571,7 @@ import "../styles/global.css";
           actions.style.flexDirection = "column";
           actions.style.gap = "0.5rem";
           actions.style.alignItems = "flex-end";
-          const statusLabel =
+          const productTone =
             !productStatus.selected && entitlement === null
               ? "setup"
               : productStatus.ready
@@ -1604,7 +1581,7 @@ import "../styles/global.css";
                   : entitlement
                     ? entitlementBadgeKind(entitlement.status)
                     : "blocked";
-          actions.append(badge(statusLabel));
+          actions.append(badge(productTone));
           // Operator action: Enable (no entitlement) or Restore
           // (not_enabled/suspended). Archived is terminal and renders no
           // control. An existing effective entitlement is never recreated.
@@ -2115,7 +2092,7 @@ import "../styles/global.css";
             document.getElementById("policies-help")!.textContent!,
           );
           document.getElementById("products-help")!.textContent =
-            "Enable products for this client. A setup_required entitlement is enough to permit the Google Business Profile OAuth connection.";
+            "Enable products for this client. Initial setup access is enough to permit the Google Business Profile OAuth connection.";
         }
       }
 

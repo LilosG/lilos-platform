@@ -73,14 +73,10 @@ import "../styles/global.css";
           <div class="metric-grid" id="portfolio-metrics"></div>
           <ul class="product-list" id="clients-list"></ul>
 
-          <div id="client-detail" hidden style="margin-top: 1.5rem;">
+          <div id="client-detail" hidden class="stack-top-6">
             <div class="attention-card" id="client-detail-body"></div>
-            <h4 style="margin-top: 1.5rem;">Add a location</h4>
-            <form
-              id="create-location-form"
-              class="form-grid"
-              style="margin-top: 1rem;"
-            >
+            <h4 class="stack-top-6">Add a location</h4>
+            <form id="create-location-form" class="form-grid stack-top-4">
               <div class="field">
                 <label for="loc-name">Location name</label><input
                   id="loc-name"
@@ -139,7 +135,7 @@ import "../styles/global.css";
                   required
                   value="US"
                   maxlength="2"
-                  style="text-transform: uppercase;"
+                  class="text-uppercase"
                 />
               </div>
               <div class="field field--full">
@@ -201,12 +197,8 @@ import "../styles/global.css";
             </form>
           </div>
 
-          <h3 style="margin-top: 2rem;">Create a client organization</h3>
-          <form
-            id="create-org-form"
-            class="form-grid"
-            style="margin-top: 1rem;"
-          >
+          <h3 class="stack-top-8">Create a client organization</h3>
+          <form id="create-org-form" class="form-grid stack-top-4">
             <div class="field">
               <label for="org-name">Organization name</label><input
                 id="org-name"
@@ -267,7 +259,7 @@ import "../styles/global.css";
                 required
                 value="USD"
                 maxlength="3"
-                style="text-transform: uppercase;"
+                class="text-uppercase"
               />
             </div>
             <div class="field field--full">
@@ -356,6 +348,7 @@ import "../styles/global.css";
         setPlatformAdminStatus,
         metricCard,
       } from "../lib/ui";
+      import { statusLabel } from "../lib/status-language";
 
       const regions = {
         notConfigured: document.getElementById("boot-not-configured")!,
@@ -551,7 +544,7 @@ import "../styles/global.css";
         if (state.canEnable) {
           button.textContent = "Enable";
           button.title =
-            "Create a setup_required entitlement for this product through the platform-administration API.";
+            "Enable this product for initial setup through the governed administration API.";
           button.addEventListener("click", async () => {
             button.disabled = true;
             button.textContent = "Enabling…";
@@ -576,14 +569,14 @@ import "../styles/global.css";
           const entitlement = state.entitlement;
           button.textContent = "Restore to setup required";
           button.title =
-            "Restores this deliberately disabled/suspended entitlement to setup_required through the governed transition API.";
+            "Restores this deliberately disabled or suspended product to its initial setup state.";
           button.addEventListener("click", async () => {
             button.disabled = true;
             button.textContent = "Restoring…";
             const result = await reEnableProduct(
               organizationId,
               entitlement,
-              `Operator restored ${state.productKey} entitlement to setup_required from Administration.`,
+              `Operator restored ${state.productKey} entitlement to its initial setup state from Administration.`,
             );
             if (result.kind !== "ok") {
               button.disabled = false;
@@ -651,8 +644,8 @@ import "../styles/global.css";
         entBadge.append(
           document.createTextNode(
             entitlement === null
-              ? "no entitlement"
-              : entitlement.status.replace(/_/g, " "),
+              ? "No entitlement"
+              : statusLabel(entitlement.status),
           ),
         );
         actions.append(entBadge);
@@ -783,7 +776,7 @@ import "../styles/global.css";
         title.textContent =
           location.name + (location.is_primary ? " (primary)" : "");
         const meta = document.createElement("p");
-        meta.textContent = `${location.location_type} · ${location.status}`;
+        meta.textContent = `${statusLabel(location.location_type)} · ${statusLabel(location.status)}`;
         info.append(title, meta);
         const actionsCell = document.createElement("div");
         if (location.status === "setup_required") {
@@ -904,9 +897,7 @@ import "../styles/global.css";
       }
 
       function humanize(value: string): string {
-        return value
-          .replace(/_/g, " ")
-          .replace(/\b\w/g, (character) => character.toUpperCase());
+        return statusLabel(value);
       }
 
       async function populateIndustries(): Promise<void> {

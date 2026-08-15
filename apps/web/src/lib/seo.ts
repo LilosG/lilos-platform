@@ -1,4 +1,5 @@
 import { apiGet, apiRequest, type ApiOutcome } from "./api-client";
+import { statusLabel } from "./status-language";
 
 export const MAX_CRAWL_PAGES = 20;
 export const MAX_CRAWL_DEPTH = 10;
@@ -132,7 +133,7 @@ export function crawlTerminalState(status: string): boolean {
 
 export function describeCrawlResult(result: SEOCrawlResult): string {
   const pages = result.safe_result.pages_crawled;
-  const details: string[] = [`Status: ${result.status}`];
+  const details: string[] = [`Status: ${statusLabel(result.status)}`];
   if (typeof pages === "number") {
     details.push(`${pages} page${pages === 1 ? "" : "s"} crawled`);
   }

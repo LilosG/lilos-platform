@@ -44,6 +44,21 @@ export function totalStatuses(statuses: Record<string, number>): number {
   return Object.values(statuses).reduce((total, value) => total + value, 0);
 }
 
+export function hasRecordedActivity(summary: InsightsSummary | null): boolean {
+  if (!summary) return false;
+  return (
+    totalStatuses(summary.workflow_runs) > 0 ||
+    summary.gbp.profile_snapshots > 0 ||
+    totalStatuses(summary.gbp.publications) > 0 ||
+    totalStatuses(summary.reviews) > 0 ||
+    totalStatuses(summary.content_publications) > 0 ||
+    totalStatuses(summary.seo.crawl_runs) > 0 ||
+    totalStatuses(summary.seo.opportunities) > 0 ||
+    totalStatuses(summary.leads) > 0 ||
+    Object.keys(summary.ga4?.metrics ?? {}).length > 0
+  );
+}
+
 function count(
   statuses: Record<string, number>,
   keys: readonly string[],
@@ -54,22 +69,7 @@ function count(
 export function dashboardMetrics(
   summary: InsightsSummary | null,
 ): OperatingMetric[] {
-  if (!summary) {
-    return [
-      ["gbp", "Managed locations", "/gbp"],
-      ["reviews", "Reviews", "/reviews"],
-      ["review-work", "Need a response", "/reviews"],
-      ["leads", "Active leads", "/leads"],
-      ["content", "Published content", "/content"],
-      ["seo", "Open SEO opportunities", "/seo"],
-    ].map(([key, label, href]) => ({
-      key,
-      label,
-      value: null,
-      meta: "Operational data unavailable",
-      href,
-    }));
-  }
+  if (!summary) return [];
 
   const reviews = summary.reviews ?? {};
   const leads = summary.leads ?? {};
@@ -78,53 +78,65 @@ export function dashboardMetrics(
   const publications = summary.content_publications ?? {};
   const publishedContent = count(publications, ["verified", "deployed"]);
 
-  return [
-    {
+  const metrics: OperatingMetric[] = [];
+  if (
+    summary.gbp &&
+    (summary.gbp.profile_snapshots > 0 ||
+      Object.keys(summary.gbp.publications).length > 0)
+  ) {
+    metrics.push({
       key: "gbp",
       label: "Managed locations",
-      value: summary.gbp?.locations ?? 0,
+      value: summary.gbp.locations,
       meta: "Google Business Profile",
       href: "/gbp",
-    },
-    {
+    });
+  }
+  if (Object.keys(reviews).length > 0) {
+    metrics.push({
       key: "reviews",
       label: "Reviews",
       value: totalStatuses(reviews),
       meta: "Recorded across locations",
       href: "/reviews",
-    },
-    {
+    });
+    metrics.push({
       key: "review-work",
       label: "Need a response",
       value: count(reviews, REVIEW_NEEDS_RESPONSE),
       meta: "Review inbox",
       href: "/reviews",
-    },
-    {
+    });
+  }
+  if (Object.keys(leads).length > 0) {
+    metrics.push({
       key: "leads",
       label: "Active leads",
       value: activeLeads,
       meta: "Not in a closed state",
       href: "/leads",
-    },
-    {
+    });
+  }
+  if (Object.keys(publications).length > 0) {
+    metrics.push({
       key: "content",
       label: "Published content",
       value: publishedContent,
       meta: "Provider-verified or deployed",
       href: "/content",
-    },
-    {
+    });
+  }
+  const opportunities = summary.seo?.opportunities ?? {};
+  if (Object.keys(opportunities).length > 0) {
+    metrics.push({
       key: "seo",
       label: "Open SEO opportunities",
-      value: count(
-        summary.seo?.opportunities ?? {},
-        SEO_ACTIONABLE_OPPORTUNITY_STATUSES,
-      ),
+      value: count(opportunities, SEO_ACTIONABLE_OPPORTUNITY_STATUSES),
       meta: "Prioritized work queue",
       href: "/seo",
-    },
-  ];
+    });
+  }
+  return metrics;
 }
 
 export function requiresAttention(summary: InsightsSummary | null): WorkItem[] {

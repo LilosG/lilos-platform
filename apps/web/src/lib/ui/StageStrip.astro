@@ -1,0 +1,40 @@
+---
+export interface StageItem {
+  id: string;
+  label: string;
+  count?: number;
+}
+
+interface Props {
+  id: string;
+  label: string;
+  items: StageItem[];
+  activeId?: string;
+}
+
+const { id, label, items, activeId = "all" } = Astro.props;
+---
+
+<div
+  id={id}
+  class="ui-stage-strip"
+  role="group"
+  aria-label={label}
+  data-stage-strip
+>
+  {
+    items.map((item) => (
+      <button
+        type="button"
+        class="ui-stage-strip__item"
+        data-stage={item.id}
+        aria-pressed={item.id === activeId ? "true" : "false"}
+      >
+        <span>{item.label}</span>
+        <strong id={`${id}-${item.id}-count`} class="ui-stage-strip__count">
+          {item.count ?? 0}
+        </strong>
+      </button>
+    ))
+  }
+</div>

@@ -16,6 +16,7 @@
     "build:web": "npm run build --workspace @lilos/web",
     "check": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run build && npm run check:secrets",
     "check:browser": "npm run browser:test --workspace @lilos/web",
+    "check:visual": "npm run visual:test --workspace @lilos/web",
     "check:dependencies": "npm audit --audit-level=high && uv run pip-audit",
     "check:release": "uv run python scripts/release_gate.py",
     "check:production-preflight": "uv run python -m scripts.production_preflight",

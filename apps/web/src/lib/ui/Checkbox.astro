@@ -1,0 +1,66 @@
+---
+import { Check, LoaderCircle } from "@lucide/astro";
+import Icon from "./Icon.astro";
+
+interface Props {
+  id: string;
+  name?: string;
+  label: string;
+  description?: string;
+  value?: string;
+  checked?: boolean;
+  required?: boolean;
+  disabled?: boolean;
+  loading?: boolean;
+  error?: string;
+  active?: boolean;
+}
+
+const {
+  id,
+  name = id,
+  label,
+  description,
+  value,
+  checked = false,
+  required = false,
+  disabled = false,
+  loading = false,
+  error,
+  active = false,
+} = Astro.props;
+---
+
+<div
+  class="ui-choice-field"
+  data-state={error ? "error" : loading ? "loading" : "default"}
+  data-active={active ? "true" : undefined}
+>
+  <label class="ui-choice" for={id}>
+    <input
+      id={id}
+      name={name}
+      type="checkbox"
+      value={value}
+      checked={checked}
+      required={required}
+      disabled={disabled || loading}
+      aria-invalid={error ? "true" : undefined}
+    />
+    <span class="ui-choice__control" aria-hidden="true">
+      {
+        loading ? (
+          <Icon icon={LoaderCircle} size="sm" class="ui-icon--spin" />
+        ) : (
+          <Icon icon={Check} size="sm" />
+        )
+      }
+    </span>
+    <span
+      ><span class="ui-choice__label">{label}</span>{
+        description && <span class="ui-choice__description">{description}</span>
+      }</span
+    >
+  </label>
+  {error && <p class="ui-field__error">{error}</p>}
+</div>

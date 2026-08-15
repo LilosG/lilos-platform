@@ -1,0 +1,147 @@
+---
+import { CircleAlert, LoaderCircle } from "@lucide/astro";
+import Icon from "./Icon.astro";
+import {
+  formatMetricValue,
+  isNumericMetric,
+  type MetricFormat,
+  type MetricValue,
+} from "./data-display";
+
+export interface DataTableColumn {
+  key: string;
+  label: string;
+  format?: MetricFormat;
+  width?: "auto" | "content";
+}
+
+export type DataTableRow = Record<string, MetricValue>;
+
+interface Props {
+  label: string;
+  caption?: string;
+  striped?: boolean;
+  stickyHeader?: boolean;
+  interactive?: boolean;
+  state?: "default" | "loading" | "empty" | "error";
+  stateMessage?: string;
+  class?: string;
+  active?: boolean;
+  disabled?: boolean;
+  columns?: DataTableColumn[];
+  rows?: DataTableRow[];
+}
+
+const {
+  label,
+  caption,
+  striped = false,
+  stickyHeader = false,
+  interactive = false,
+  state = "default",
+  stateMessage,
+  class: className,
+  active = false,
+  disabled = false,
+  columns,
+  rows = [],
+} = Astro.props;
+---
+
+<div
+  class:list={[
+    "ui-table-frame",
+    striped && "ui-table-frame--striped",
+    stickyHeader && "ui-table-frame--sticky",
+    interactive && "ui-table-frame--interactive",
+    className,
+  ]}
+  data-state={state}
+  aria-busy={state === "loading" ? "true" : undefined}
+  aria-disabled={disabled ? "true" : undefined}
+  data-active={active ? "true" : undefined}
+>
+  <div class="ui-table-frame__scroll">
+    <table class="ui-table" aria-label={label}>
+      {caption && <caption>{caption}</caption>}
+      {
+        columns ? (
+          <thead>
+            <tr>
+              {columns.map((column) => (
+                <th
+                  scope="col"
+                  data-column-width={
+                    column.width ??
+                    (isNumericMetric(column.format) ? "content" : "auto")
+                  }
+                  data-numeric={
+                    isNumericMetric(column.format) ? "true" : undefined
+                  }
+                >
+                  {column.label}
+                </th>
+              ))}
+            </tr>
+          </thead>
+        ) : (
+          <slot name="head" />
+        )
+      }
+      {
+        state === "default" &&
+          (columns ? (
+            <tbody>
+              {rows.map((row) => (
+                <tr>
+                  {columns.map((column) => (
+                    <td
+                      class:list={[
+                        isNumericMetric(column.format) && "ui-table__numeric",
+                      ]}
+                      data-column-width={
+                        column.width ??
+                        (isNumericMetric(column.format) ? "content" : "auto")
+                      }
+                    >
+                      {formatMetricValue(row[column.key], column.format)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          ) : (
+            <slot />
+          ))
+      }
+    </table>
+    {
+      state !== "default" && (
+        <div
+          class="ui-table__state"
+          role={state === "error" ? "alert" : "status"}
+        >
+          <Icon
+            icon={state === "error" ? CircleAlert : LoaderCircle}
+            class:list={[state === "loading" && "ui-icon--spin"]}
+          />
+          <span>
+            {stateMessage ??
+              (state === "loading"
+                ? "Loading data…"
+                : state === "error"
+                  ? "Data could not be loaded."
+                  : "No records are available.")}
+          </span>
+        </div>
+      )
+    }
+  </div>
+  {
+    Astro.slots.has("footer") && (
+      <footer class="ui-table-frame__footer">
+        <slot name="footer" />
+      </footer>
+    )
+  }
+</div>

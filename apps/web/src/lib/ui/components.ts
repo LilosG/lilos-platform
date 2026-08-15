@@ -1,19 +1,21 @@
 export function card(title?: string, description?: string): HTMLDivElement {
   const card = document.createElement("div");
-  card.className = "card";
+  card.className = "ui-card";
   if (title) {
     const header = document.createElement("div");
-    header.className = "card__header";
+    header.className = "ui-card__header";
     const titleEl = document.createElement("h3");
-    titleEl.className = "card__title";
+    titleEl.className = "ui-card__heading";
     titleEl.textContent = title;
-    header.append(titleEl);
+    const identity = document.createElement("div");
+    identity.append(titleEl);
     if (description) {
       const desc = document.createElement("p");
-      desc.className = "card__description";
+      desc.className = "ui-card__description";
       desc.textContent = description;
-      header.append(desc);
+      identity.append(desc);
     }
+    header.append(identity);
     card.append(header);
   }
   return card;
@@ -21,32 +23,34 @@ export function card(title?: string, description?: string): HTMLDivElement {
 
 export function cardBody(): HTMLDivElement {
   const body = document.createElement("div");
-  body.className = "card__body";
+  body.className = "ui-card__body";
   return body;
 }
 
 export function sectionCard(title: string, description?: string): HTMLElement {
   const section = document.createElement("section");
-  section.className = "card";
+  section.className = "ui-card";
   const header = document.createElement("div");
-  header.className = "card__header";
+  header.className = "ui-card__header";
   const titleElement = document.createElement("h3");
-  titleElement.className = "card__title";
+  titleElement.className = "ui-card__heading";
   titleElement.textContent = title;
-  header.append(titleElement);
+  const identity = document.createElement("div");
+  identity.append(titleElement);
   if (description) {
     const descriptionElement = document.createElement("p");
-    descriptionElement.className = "card__description";
+    descriptionElement.className = "ui-card__description";
     descriptionElement.textContent = description;
-    header.append(descriptionElement);
+    identity.append(descriptionElement);
   }
+  header.append(identity);
   section.append(header, cardBody());
   return section;
 }
 
 export function detailFact(label: string, value: string): HTMLDivElement {
   const row = document.createElement("div");
-  row.className = "detail-fact";
+  row.className = "ui-inline ui-inline--center ui-inline--spread";
   const labelElement = document.createElement("strong");
   labelElement.textContent = label;
   const valueElement = document.createElement("span");
@@ -57,7 +61,7 @@ export function detailFact(label: string, value: string): HTMLDivElement {
 
 export function liveStatus(): HTMLParagraphElement {
   const status = document.createElement("p");
-  status.className = "text-sm muted";
+  status.className = "ui-text-secondary";
   status.setAttribute("role", "status");
   status.setAttribute("aria-live", "polite");
   return status;
@@ -70,26 +74,29 @@ export function metricCard(
   trend?: string,
 ): HTMLDivElement {
   const card = document.createElement("div");
-  card.className = "metric-card";
+  card.className = "ui-card ui-metric-card";
+  const body = document.createElement("div");
+  body.className = "ui-card__body";
   const labelEl = document.createElement("p");
-  labelEl.className = "metric-card__label";
+  labelEl.className = "ui-metric-card__label";
   labelEl.textContent = label;
   const valueEl = document.createElement("p");
-  valueEl.className = "metric-card__value";
+  valueEl.className = "ui-metric-card__value";
   valueEl.textContent = value ?? "—";
-  card.append(labelEl, valueEl);
+  body.append(labelEl, valueEl);
   if (meta) {
     const metaEl = document.createElement("p");
-    metaEl.className = "metric-card__meta";
+    metaEl.className = "ui-metric-card__meta";
     metaEl.textContent = meta;
-    card.append(metaEl);
+    body.append(metaEl);
   }
   if (trend) {
     const trendEl = document.createElement("p");
-    trendEl.className = "metric-card__trend";
+    trendEl.className = "ui-metric-card__meta";
     trendEl.textContent = trend;
-    card.append(trendEl);
+    body.append(trendEl);
   }
+  card.append(body);
   return card;
 }
 
@@ -97,7 +104,7 @@ export function metricGrid(
   metrics: { label: string; value: string | null; meta?: string }[],
 ): HTMLDivElement {
   const grid = document.createElement("div");
-  grid.className = "metric-grid";
+  grid.className = "ui-card-grid ui-card-grid--sm";
   for (const m of metrics) {
     grid.append(metricCard(m.label, m.value, m.meta));
   }
@@ -110,10 +117,10 @@ export function sectionHeader(
   description?: string,
 ): HTMLDivElement {
   const header = document.createElement("div");
-  header.className = "section-heading";
+  header.className = "ui-page-section__header";
   const left = document.createElement("div");
   const eyebrowEl = document.createElement("p");
-  eyebrowEl.className = "eyebrow";
+  eyebrowEl.className = "ui-overline";
   eyebrowEl.textContent = eyebrow;
   const titleEl = document.createElement("h2");
   titleEl.textContent = title;
@@ -121,7 +128,7 @@ export function sectionHeader(
   header.append(left);
   if (description) {
     const desc = document.createElement("p");
-    desc.className = "section-heading__desc";
+    desc.className = "ui-page-section__description";
     desc.textContent = description;
     left.append(desc);
   }
@@ -136,7 +143,7 @@ export function actionButton(
 ): HTMLButtonElement {
   const button = document.createElement("button");
   button.type = "button";
-  button.className = `button${variant !== "primary" ? ` button--${variant}` : ""}${size === "sm" ? " button--sm" : ""}`;
+  button.className = `ui-button ui-button--${variant} ui-button--${size}`;
   button.textContent = label;
   button.addEventListener("click", onClick);
   return button;
@@ -149,7 +156,7 @@ export function linkButton(
   size: "sm" | "md" = "md",
 ): HTMLAnchorElement {
   const link = document.createElement("a");
-  link.className = `button${variant !== "primary" ? ` button--${variant}` : ""}${size === "sm" ? " button--sm" : ""}`;
+  link.className = `ui-button ui-button--${variant} ui-button--${size}`;
   link.href = href;
   link.textContent = label;
   return link;

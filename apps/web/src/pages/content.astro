@@ -1,5 +1,16 @@
 ---
 import AppShell from "../components/AppShell.astro";
+import Button from "../lib/ui/Button.astro";
+import CardGrid from "../lib/ui/CardGrid.astro";
+import EmptyState from "../lib/ui/EmptyState.astro";
+import Notice from "../lib/ui/Notice.astro";
+import PageHeader from "../lib/ui/PageHeader.astro";
+import PageSection from "../lib/ui/PageSection.astro";
+import PageShell from "../lib/ui/PageShell.astro";
+import Region from "../lib/ui/Region.astro";
+import Skeleton from "../lib/ui/Skeleton.astro";
+import StageStrip from "../lib/ui/StageStrip.astro";
+import Tabs from "../lib/ui/Tabs.astro";
 import "../styles/global.css";
 ---
 
@@ -13,90 +24,98 @@ import "../styles/global.css";
   </head>
   <body>
     <AppShell>
-      <div id="boot-not-configured" role="status">
-        <h1>This deployment is not configured</h1>
-        <p>No Supabase or API connection is configured for this build.</p>
-      </div>
+      <PageShell id="boot-not-configured"
+        ><EmptyState
+          heading="This deployment is not configured"
+          description="Connect the platform runtime configuration to enable Content."
+        /></PageShell
+      >
+      <PageShell id="boot-loading" hidden
+        ><Skeleton lines={3} label="Loading content" /></PageShell
+      >
+      <PageShell id="boot-error" hidden><Region role="alert" /></PageShell>
+      <PageShell id="workspace-empty" hidden
+        ><EmptyState
+          heading="No organization access yet"
+          description="Ask an administrator to invite your account to an organization."
+        /></PageShell
+      >
 
-      <div id="boot-loading" role="status" aria-live="polite" hidden>
-        <p class="loading-state">Loading content…</p>
-      </div>
-
-      <div id="boot-error" role="alert" hidden></div>
-
-      <div id="workspace-empty" role="status" hidden>
-        <div class="empty-state">
-          <span class="empty-state__icon" aria-hidden="true">○</span>
-          <h3>No organization access yet</h3>
-          <p>
-            Your account is not a member of any organization. Ask an
-            administrator to invite you.
-          </p>
-        </div>
-      </div>
-
-      <div id="content-workspace" hidden>
-        <div class="page-head">
-          <div class="page-head__intro">
-            <p class="eyebrow">Operations</p>
-            <h1>Content</h1>
-            <p>
-              Manage content opportunities, drafts, approvals, and publishing
-              pipeline.
-            </p>
-          </div>
-          <div class="page-head__meta">
-            <div class="page-head__actions">
-              <a
-                class="button button--secondary button--sm"
-                href="/integrations">Manage publishing</a
-              >
-            </div>
-          </div>
-        </div>
-
-        <div class="metric-grid" id="content-metrics"></div>
-
-        <div class="tabs" role="tablist" id="content-tabs">
-          <button
-            class="tabs__tab"
-            role="tab"
-            aria-selected="true"
-            data-tab="pipeline">Pipeline</button
+      <PageShell id="content-workspace" hidden>
+        <PageHeader
+          eyebrow="Operations"
+          title="Content"
+          description="Turn governed opportunities into reviewed, approved, and verified publications."
+        >
+          <Button
+            slot="actions"
+            href="/integrations"
+            variant="secondary"
+            size="sm">Manage publishing</Button
           >
-          <button
-            class="tabs__tab"
-            role="tab"
-            aria-selected="false"
-            data-tab="opportunities">Opportunities</button
-          >
-          <button
-            class="tabs__tab"
-            role="tab"
-            aria-selected="false"
-            data-tab="publishing">Publishing</button
-          >
-        </div>
+        </PageHeader>
+        <Notice title="Publishing destination"
+          ><p>
+            GitHub connection and repository access are managed centrally.
+          </p><Button
+            slot="action"
+            href="/integrations"
+            variant="secondary"
+            size="sm">Manage integrations</Button
+          ></Notice
+        >
 
-        <div id="tab-pipeline" class="tab-panel"></div>
-        <div id="tab-opportunities" class="tab-panel" hidden></div>
-        <div id="tab-publishing" class="tab-panel" hidden>
-          <div class="sr-only" aria-hidden="true">
-            <button type="button" id="create-target-button" hidden
-              >Create target</button
+        <PageSection eyebrow="Performance" title="Content scope"
+          ><CardGrid id="content-metrics" minimum="sm" /></PageSection
+        >
+        <Tabs
+          id="content-tabs"
+          label="Content workspace"
+          items={[
+            { id: "pipeline", label: "Pipeline" },
+            { id: "opportunities", label: "Opportunities" },
+            { id: "publishing", label: "Publishing" },
+          ]}
+        >
+          <Region id="tab-pipeline" tabPanel="pipeline">
+            <PageSection
+              eyebrow="Pipeline filter"
+              title="Publishing stages"
+              description="Counts are all-time summary totals. Select a stage to filter the currently loaded pipeline."
+              density="compact"
             >
-          </div>
-        </div>
+              <StageStrip
+                id="content-stages"
+                label="Pipeline stage filter"
+                items={[
+                  { id: "all", label: "Loaded items" },
+                  { id: "draft", label: "Draft" },
+                  { id: "approval", label: "Approval" },
+                  { id: "published", label: "Published · all time" },
+                ]}
+              />
+            </PageSection>
+            <Region id="pipeline-list" />
+          </Region>
+          <Region id="tab-opportunities" tabPanel="opportunities" hidden />
+          <Region id="tab-publishing" tabPanel="publishing" hidden />
+        </Tabs>
 
-        <section id="content-detail" class="detail-workspace" hidden>
-          <button
-            type="button"
-            class="button button--secondary button--sm"
-            id="back-to-content-pipeline">← Back to pipeline</button
+        <PageSection
+          id="content-detail"
+          eyebrow="Content item"
+          title="Content workflow"
+          hidden
+        >
+          <Button
+            slot="actions"
+            id="back-to-content-pipeline"
+            variant="secondary"
+            size="sm">Back to pipeline</Button
           >
-          <div id="content-detail-body" aria-live="polite"></div>
-        </section>
-      </div>
+          <Region id="content-detail-body" live="polite" />
+        </PageSection>
+      </PageShell>
     </AppShell>
     <script>
       import {
@@ -105,9 +124,6 @@ import "../styles/global.css";
         fetchOpportunities,
         decideOpportunity,
         fetchPublishingTargets,
-        fetchGitHubConnections,
-        isGitHubAppConnection,
-        createPublishingTarget,
         fetchContentItem,
         fetchBriefs,
         fetchRevisions,
@@ -131,21 +147,30 @@ import "../styles/global.css";
         applyBootResult,
         populateSwitcher,
         setActiveOrganization,
+        buildDataTable,
         statusBadge,
         metricCard,
         emptyState,
         errorAlert,
         describeFailure,
         formatTimestamp,
-        setupTabs,
         sectionCard,
         detailFact,
         liveStatus,
         formField,
         type BootRegions,
       } from "../lib/ui";
+      import { statusLabel, statusTone } from "../lib/status-language";
 
       let organizationId = "";
+      let activeContentStage = "all";
+      let loadedContentItems: ContentItem[] = [];
+
+      const CONTENT_STAGE_STATUSES: Record<string, string[]> = {
+        draft: ["briefing", "drafting", "draft"],
+        approval: ["awaiting_approval", "approved", "approved_for_publish"],
+        published: ["publishing", "published"],
+      };
 
       const regions: BootRegions = {
         notConfigured: document.getElementById("boot-not-configured")!,
@@ -155,11 +180,29 @@ import "../styles/global.css";
         content: document.getElementById("content-workspace")!,
       };
 
-      setupTabs(document.getElementById("content-tabs")!);
-
       document
         .getElementById("back-to-content-pipeline")!
         .addEventListener("click", showContentPipeline);
+
+      document
+        .querySelectorAll<HTMLButtonElement>("#content-stages [data-stage]")
+        .forEach((button) => {
+          button.addEventListener("click", () => {
+            const stage = button.dataset.stage ?? "all";
+            document
+              .querySelectorAll<HTMLButtonElement>(
+                "#content-stages [data-stage]",
+              )
+              .forEach((candidate) => {
+                candidate.setAttribute(
+                  "aria-pressed",
+                  String(candidate === button),
+                );
+              });
+            activeContentStage = stage;
+            renderContentRows(loadedContentItems);
+          });
+        });
 
       async function loadOrganization(
         org: import("../lib/workspace").MyOrganization,
@@ -177,6 +220,7 @@ import "../styles/global.css";
           ]);
 
         renderMetrics(summaryResult, itemsResult, oppsResult, targetsResult);
+        renderContentStages(summaryResult, itemsResult, oppsResult);
         renderPipeline(itemsResult);
         renderOpportunities(oppsResult);
         void renderPublishing(targetsResult);
@@ -191,18 +235,26 @@ import "../styles/global.css";
         const grid = document.getElementById("content-metrics")!;
         grid.replaceChildren();
 
-        const itemCount = items.kind === "ok" ? String(items.data.length) : "—";
-        const oppCount = opps.kind === "ok" ? String(opps.data.length) : "—";
+        const itemCount =
+          items.kind === "ok" && items.data.length > 0
+            ? String(items.data.length)
+            : "No data";
+        const oppCount =
+          opps.kind === "ok" && opps.data.length > 0
+            ? String(opps.data.length)
+            : "No data";
         const openOpps =
           opps.kind === "ok"
             ? opps.data.filter((o) => isContentOpportunityActionable(o.status))
                 .length
             : null;
         const targetCount =
-          targets.kind === "ok" ? String(targets.data.length) : "—";
+          targets.kind === "ok" && targets.data.length > 0
+            ? String(targets.data.length)
+            : "No data";
 
         grid.append(
-          metricCard("Content items", itemCount, "In pipeline"),
+          metricCard("Items loaded", itemCount, "Current pipeline response"),
           metricCard(
             "Opportunities",
             oppCount,
@@ -220,81 +272,131 @@ import "../styles/global.css";
         );
         if (summary.kind === "ok") {
           const published = summary.data.by_status?.["published"] ?? 0;
-          grid.append(metricCard("Published", String(published), "All time"));
+          grid.append(
+            metricCard(
+              "Published",
+              published > 0 ? String(published) : "No data",
+              published > 0
+                ? "All-time summary · separate from loaded rows"
+                : "No verified publications yet",
+            ),
+          );
+        }
+      }
+
+      function renderContentStages(
+        summary: Awaited<ReturnType<typeof fetchContentSummary>>,
+        items: Awaited<ReturnType<typeof fetchContentItems>>,
+        opportunities: Awaited<ReturnType<typeof fetchOpportunities>>,
+      ): void {
+        const byStatus = summary.kind === "ok" ? summary.data.by_status : {};
+        const counts: Record<string, number> = {
+          all: items.kind === "ok" ? items.data.length : 0,
+          opportunities:
+            summary.kind === "ok"
+              ? summary.data.open_opportunities
+              : opportunities.kind === "ok"
+                ? opportunities.data.filter((item) =>
+                    isContentOpportunityActionable(item.status),
+                  ).length
+                : 0,
+          draft:
+            (byStatus.drafting ?? 0) +
+            (byStatus.draft ?? 0) +
+            (byStatus.briefing ?? 0),
+          approval:
+            (byStatus.awaiting_approval ?? 0) +
+            (byStatus.approved ?? 0) +
+            (byStatus.approved_for_publish ?? 0),
+          published: (byStatus.publishing ?? 0) + (byStatus.published ?? 0),
+        };
+        for (const [stage, count] of Object.entries(counts)) {
+          const target = document.getElementById(
+            `content-stages-${stage}-count`,
+          );
+          if (target) target.textContent = String(count);
         }
       }
 
       function renderPipeline(
         items: Awaited<ReturnType<typeof fetchContentItems>>,
       ): void {
-        const panel = document.getElementById("tab-pipeline")!;
+        const panel = document.getElementById("pipeline-list")!;
         panel.replaceChildren();
 
         if (items.kind !== "ok") {
           panel.append(errorAlert(describeFailure(items, "Content items")));
           return;
         }
-        if (items.data.length === 0) {
+        loadedContentItems = items.data;
+        renderContentRows(items.data);
+      }
+
+      function renderContentRows(items: ContentItem[]): void {
+        const panel = document.getElementById("pipeline-list")!;
+        panel.replaceChildren();
+        const statuses = CONTENT_STAGE_STATUSES[activeContentStage];
+        const visibleItems = statuses
+          ? items.filter((item) => statuses.includes(item.status))
+          : items;
+        if (visibleItems.length === 0) {
           panel.append(
             emptyState(
-              "No content items yet",
-              "Accept content opportunities to start building your pipeline.",
+              activeContentStage === "all"
+                ? "No content items yet"
+                : "No loaded items in this stage",
+              activeContentStage === "all"
+                ? "Accept a content opportunity to start the governed pipeline."
+                : "Choose another stage or load the next pipeline page.",
             ),
           );
-          const button = document.createElement("button");
-          button.type = "button";
-          button.className = "button button--secondary empty-state-action";
-          button.textContent = "View opportunities";
-          button.addEventListener("click", () =>
-            selectContentTab("opportunities"),
-          );
-          panel.querySelector(".empty-state")?.append(button);
           return;
         }
-
-        const table = document.createElement("div");
-        table.className = "data-table";
-        const t = document.createElement("table");
-        const thead = document.createElement("thead");
-        thead.innerHTML =
-          "<tr><th>Title</th><th>Status</th><th>Published</th><th><span class='sr-only'>Actions</span></th></tr>";
-        t.append(thead);
-        const tbody = document.createElement("tbody");
-        for (const item of items.data) {
-          const tr = document.createElement("tr");
-          const titleTd = document.createElement("td");
-          titleTd.textContent = item.title;
-          const statusTd = document.createElement("td");
-          statusTd.append(
-            statusBadge(
-              item.status === "published"
-                ? "ready"
-                : item.status === "approved"
-                  ? "ready"
-                  : "setup",
-              item.status,
-            ),
-          );
-          const pubTd = document.createElement("td");
-          pubTd.textContent = item.published_at
-            ? formatTimestamp(item.published_at)
-            : "—";
-          const actionTd = document.createElement("td");
-          const openButton = document.createElement("button");
-          openButton.type = "button";
-          openButton.className = "button button--secondary button--sm";
-          openButton.textContent = "Open";
-          openButton.addEventListener(
-            "click",
-            () => void openContentItem(item),
-          );
-          actionTd.append(openButton);
-          tr.append(titleTd, statusTd, pubTd, actionTd);
-          tbody.append(tr);
-        }
-        t.append(tbody);
-        table.append(t);
-        panel.append(table);
+        panel.append(
+          buildDataTable(
+            [
+              {
+                key: "title",
+                header: "Title",
+                render: (item: ContentItem) => item.title,
+              },
+              {
+                key: "status",
+                header: "Stage",
+                render: (item: ContentItem) =>
+                  statusBadge(
+                    statusTone(item.status),
+                    statusLabel(item.status),
+                  ),
+              },
+              {
+                key: "published",
+                header: "Published",
+                width: "content",
+                render: (item: ContentItem) =>
+                  item.published_at ? formatTimestamp(item.published_at) : "—",
+              },
+              {
+                key: "actions",
+                header: "Actions",
+                width: "content",
+                render: (item: ContentItem) => {
+                  const openButton = document.createElement("button");
+                  openButton.type = "button";
+                  openButton.className =
+                    "ui-button ui-button--secondary ui-button--sm";
+                  openButton.textContent = "Open";
+                  openButton.addEventListener(
+                    "click",
+                    () => void openContentItem(item),
+                  );
+                  return openButton;
+                },
+              },
+            ],
+            visibleItems,
+          ),
+        );
       }
 
       function renderOpportunities(
@@ -318,25 +420,23 @@ import "../styles/global.css";
         }
 
         const list = document.createElement("ul");
-        list.className = "product-list";
+        list.className = "ui-record-list";
         for (const opp of opps.data) {
           const item = document.createElement("li");
           const info = document.createElement("div");
           const name = document.createElement("h3");
-          name.textContent = opp.opportunity_type
-            .replace(/_/g, " ")
-            .replace(/\b\w/g, (c) => c.toUpperCase());
+          name.textContent = statusLabel(opp.opportunity_type);
           const detail = document.createElement("p");
-          detail.textContent = `Priority ${opp.priority_score} · ${opp.status}`;
+          detail.textContent = `Priority ${opp.priority_score} · ${statusLabel(opp.status)}`;
           info.append(name, detail);
           item.append(
             info,
-            statusBadge(opp.status, opp.status.replace(/_/g, " ")),
+            statusBadge(statusTone(opp.status), statusLabel(opp.status)),
           );
           if (isContentOpportunityActionable(opp.status)) {
             const acceptBtn = document.createElement("button");
             acceptBtn.type = "button";
-            acceptBtn.className = "button button--sm";
+            acceptBtn.className = "ui-button ui-button--primary ui-button--sm";
             acceptBtn.textContent = "Accept";
             acceptBtn.addEventListener("click", async () => {
               const result = await decideOpportunity(
@@ -352,6 +452,7 @@ import "../styles/global.css";
                   fetchPublishingTargets(organizationId),
                 ]);
                 renderMetrics(s, i, o, t);
+                renderContentStages(s, i, o);
                 renderPipeline(i);
                 renderOpportunities(o);
                 void renderPublishing(t);
@@ -388,127 +489,35 @@ import "../styles/global.css";
         );
 
         if (targets.data.length === 0) {
-          panel.append(
-            emptyState(
-              "No publishing targets configured",
-              "Connect a GitHub repository in Integrations to enable content publishing.",
-              "Go to Integrations",
-              "/integrations",
-            ),
-          );
-
-          // The production publishing path is the GitHub App installation.
-          // The API retains a separate advanced PAT fallback for controlled
-          // migrations, but the normal product UI must not invite PAT use.
-          const setupCard = document.createElement("div");
-          setupCard.className = "card";
-          setupCard.style.marginTop = "1rem";
-          const setupHeader = document.createElement("div");
-          setupHeader.className = "card__header";
-          setupHeader.append(
-            Object.assign(document.createElement("h3"), {
-              className: "card__title",
-              textContent: "Publishing setup",
+          const banner = document.createElement("div");
+          banner.className = "ui-notice ui-notice--warning";
+          const copy = document.createElement("div");
+          copy.append(
+            Object.assign(document.createElement("strong"), {
+              textContent: "Publishing setup required",
+            }),
+            Object.assign(document.createElement("p"), {
+              textContent:
+                "Map an authorized GitHub repository before content can be published.",
             }),
           );
-          setupCard.append(setupHeader);
-          const setupBody = document.createElement("div");
-          setupBody.className = "card__body";
-
-          const status = document.createElement("p");
-          status.className = "text-sm muted";
-          status.setAttribute("role", "status");
-          status.setAttribute("aria-live", "polite");
-          status.textContent =
-            "Choose an authorized repository. This records the target; publishing remains subject to the verified connector and approval workflow.";
-          setupBody.append(status);
-
-          if (repositories.kind !== "ok" || repositories.data.length === 0) {
-            const installLink = document.createElement("a");
-            installLink.className = "button";
-            installLink.href = "/integrations";
-            installLink.textContent = "Connect GitHub";
-            setupBody.append(installLink);
-            if (repositories.kind !== "ok") {
-              setupBody.append(
-                errorAlert(describeFailure(repositories, "Repositories")),
-              );
-            }
-            setupCard.append(setupBody);
-            panel.append(setupCard);
-            return;
-          }
-
-          // Target creation form
-          const targetField = document.createElement("div");
-          targetField.className = "field";
-          targetField.style.marginTop = "1rem";
-          targetField.append(
-            Object.assign(document.createElement("label"), {
-              htmlFor: "target-repo-id",
-              textContent: "Repository",
-            }),
-          );
-          const repoSelect = document.createElement("select");
-          repoSelect.id = "target-repo-id";
-          for (const repository of repositories.data) {
-            const option = document.createElement("option");
-            option.value = repository.repository_id;
-            option.textContent = `${repository.name} · ${repository.default_branch}`;
-            repoSelect.append(option);
-          }
-          targetField.append(repoSelect);
-          setupBody.append(targetField);
-
-          const createBtn = document.createElement("button");
-          createBtn.type = "button";
-          createBtn.className = "button button--secondary";
-          createBtn.textContent = "Create target";
-          createBtn.id = "create-target-button";
-          createBtn.addEventListener("click", async () => {
-            status.textContent = "Creating…";
-            const connResult = await fetchGitHubConnections(organizationId);
-            const appConnections =
-              connResult.kind === "ok"
-                ? connResult.data.filter(isGitHubAppConnection)
-                : [];
-            if (connResult.kind !== "ok" || appConnections.length === 0) {
-              status.textContent = "Install the GitHub App first.";
-              return;
-            }
-            const result = await createPublishingTarget(organizationId, {
-              key: "default",
-              connectionId: appConnections[0].id,
-              repositoryId: repoSelect.value,
-              baseBranch:
-                repositories.data.find(
-                  (repository) => repository.repository_id === repoSelect.value,
-                )?.default_branch ?? "main",
-              allowedPathPrefix: "content/",
-            });
-            status.textContent =
-              result.kind === "ok"
-                ? "Target created."
-                : describeFailure(result, "Create target");
-            if (result.kind === "ok") {
-              const refreshed = await fetchPublishingTargets(organizationId);
-              await renderPublishing(refreshed);
-            }
-          });
-          setupBody.append(createBtn);
-          setupCard.append(setupBody);
-          panel.append(setupCard);
+          const link = document.createElement("a");
+          link.className = "ui-button ui-button--secondary ui-button--sm";
+          link.href = "/integrations";
+          link.textContent = "Manage GitHub";
+          banner.append(copy, link);
+          panel.append(banner);
           return;
         }
 
         for (const target of targets.data) {
           const card = document.createElement("div");
-          card.className = "card";
+          card.className = "ui-card";
           const header = document.createElement("div");
-          header.className = "card__header";
+          header.className = "ui-card__header";
           header.append(
             Object.assign(document.createElement("h3"), {
-              className: "card__title",
+              className: "ui-card__heading",
               textContent:
                 repositoryNames.get(target.repository_id) ??
                 "Configured repository",
@@ -516,18 +525,15 @@ import "../styles/global.css";
           );
           header.append(
             Object.assign(document.createElement("p"), {
-              className: "card__description",
+              className: "ui-card__description",
               textContent: `${target.base_branch} · ${target.allowed_path_prefix}`,
             }),
           );
           card.append(header);
           const body = document.createElement("div");
-          body.className = "card__body";
+          body.className = "ui-card__body";
           body.append(
-            statusBadge(
-              target.status === "active" ? "ready" : "setup",
-              target.status,
-            ),
+            statusBadge(statusTone(target.status), statusLabel(target.status)),
           );
           card.append(body);
           panel.append(card);
@@ -560,7 +566,7 @@ import "../styles/global.css";
         detail.hidden = false;
         body.replaceChildren(
           Object.assign(document.createElement("div"), {
-            className: "loading-state",
+            className: "ui-skeleton-group",
             textContent: "Loading content workspace…",
           }),
         );
@@ -594,13 +600,13 @@ import "../styles/global.css";
         const current = itemResult.data;
         body.replaceChildren();
         const header = document.createElement("div");
-        header.className = "page-head page-head--detail";
+        header.className = "ui-page-header";
         const intro = document.createElement("div");
-        intro.className = "page-head__intro";
+        intro.className = "ui-page-header__identity";
         intro.append(
           Object.assign(document.createElement("p"), {
-            className: "eyebrow",
-            textContent: current.content_type.replace(/_/g, " "),
+            className: "ui-overline",
+            textContent: statusLabel(current.content_type),
           }),
           Object.assign(document.createElement("h2"), {
             textContent: current.title,
@@ -612,12 +618,12 @@ import "../styles/global.css";
         );
         header.append(
           intro,
-          statusBadge(current.status, current.status.replace(/_/g, " ")),
+          statusBadge(statusTone(current.status), statusLabel(current.status)),
         );
         body.append(header);
 
         const grid = document.createElement("div");
-        grid.className = "detail-grid";
+        grid.className = "ui-card-grid ui-card-grid--lg";
         grid.append(
           renderBriefWorkspace(current, briefs, factResolutions),
           renderRevisionWorkspace(current, briefs, revisions),
@@ -636,7 +642,7 @@ import "../styles/global.css";
           "Brief",
           "Audience, intent, and approved business context.",
         );
-        const body = card.querySelector<HTMLElement>(".card__body")!;
+        const body = card.querySelector<HTMLElement>(".ui-card__body")!;
         if (briefs.kind !== "ok") {
           body.append(errorAlert(describeFailure(briefs, "Briefs")));
           return card;
@@ -650,7 +656,7 @@ import "../styles/global.css";
               "Approved business details",
               `${latest.approved_fact_revision_ids.length} governed revision${latest.approved_fact_revision_ids.length === 1 ? "" : "s"}`,
             ),
-            statusBadge(latest.status, latest.status.replace(/_/g, " ")),
+            statusBadge(statusTone(latest.status), statusLabel(latest.status)),
           );
           return card;
         }
@@ -667,7 +673,7 @@ import "../styles/global.css";
             : [],
         );
         const factList = document.createElement("div");
-        factList.className = "fact-readiness";
+        factList.className = "ui-stack ui-stack--2";
         for (const { key, outcome } of facts) {
           const resolved =
             outcome.kind === "ok" &&
@@ -703,7 +709,7 @@ import "../styles/global.css";
         }
 
         const form = document.createElement("form");
-        form.className = "form-grid";
+        form.className = "ui-form-grid";
         const audience = document.createElement("input");
         audience.required = true;
         const intent = document.createElement("textarea");
@@ -721,7 +727,7 @@ import "../styles/global.css";
           }),
         );
         const submit = document.createElement("button");
-        submit.className = "button";
+        submit.className = "ui-button ui-button--primary ui-button--md";
         submit.type = "submit";
         submit.textContent = "Create brief";
         const status = liveStatus();
@@ -755,7 +761,7 @@ import "../styles/global.css";
           "Draft and review",
           "Every revision remains reviewable and requires explicit approval.",
         );
-        const body = card.querySelector<HTMLElement>(".card__body")!;
+        const body = card.querySelector<HTMLElement>(".ui-card__body")!;
         if (revisions.kind !== "ok") {
           body.append(errorAlert(describeFailure(revisions, "Revisions")));
           return card;
@@ -764,15 +770,15 @@ import "../styles/global.css";
         const latest = revisions.data[0];
         if (latest) {
           const article = document.createElement("article");
-          article.className = "content-preview";
+          article.className = "ui-notice ui-notice--info";
           const title = document.createElement("h4");
           title.textContent = `Revision ${latest.revision_number}`;
           const copy = document.createElement("p");
-          copy.className = "content-preview__body";
+          copy.className = "ui-text-secondary";
           copy.textContent = latest.body;
           article.append(
             title,
-            statusBadge(latest.status, latest.status.replace(/_/g, " ")),
+            statusBadge(statusTone(latest.status), statusLabel(latest.status)),
             copy,
           );
           if (!latest.validation_document.valid) {
@@ -783,7 +789,7 @@ import "../styles/global.css";
             article.append(warning);
           }
           const actions = document.createElement("div");
-          actions.className = "form-actions form-actions--compact";
+          actions.className = "ui-inline ui-inline--center ui-inline--tight";
           if (latest.status === "awaiting_editorial") {
             actions.append(
               revisionDecisionButton(
@@ -818,10 +824,10 @@ import "../styles/global.css";
 
         if (latestBrief) {
           const actions = document.createElement("div");
-          actions.className = "form-actions form-actions--compact";
+          actions.className = "ui-inline ui-inline--center ui-inline--tight";
           const aiButton = document.createElement("button");
           aiButton.type = "button";
-          aiButton.className = "button button--secondary";
+          aiButton.className = "ui-button ui-button--secondary ui-button--md";
           aiButton.textContent = "Generate assisted draft";
           const aiStatus = liveStatus();
           aiButton.addEventListener("click", async () => {
@@ -846,7 +852,7 @@ import "../styles/global.css";
           body.append(actions);
 
           const form = document.createElement("form");
-          form.className = "form-grid form-grid--compact";
+          form.className = "ui-form-grid";
           const copy = document.createElement("textarea");
           copy.required = true;
           copy.rows = 8;
@@ -859,7 +865,7 @@ import "../styles/global.css";
           );
           const submit = document.createElement("button");
           submit.type = "submit";
-          submit.className = "button";
+          submit.className = "ui-button ui-button--primary ui-button--md";
           submit.textContent = "Save revision";
           const status = liveStatus();
           form.append(submit, status);
@@ -891,7 +897,7 @@ import "../styles/global.css";
       ): HTMLButtonElement {
         const button = document.createElement("button");
         button.type = "button";
-        button.className = "button";
+        button.className = "ui-button ui-button--primary ui-button--md";
         button.textContent = label;
         button.addEventListener("click", async () => {
           button.disabled = true;
@@ -921,7 +927,7 @@ import "../styles/global.css";
           "Publication",
           "Provider-observed publishing and deployment state.",
         );
-        const body = card.querySelector<HTMLElement>(".card__body")!;
+        const body = card.querySelector<HTMLElement>(".ui-card__body")!;
         if (publications.kind !== "ok") {
           body.append(
             errorAlert(describeFailure(publications, "Publications")),
@@ -938,7 +944,7 @@ import "../styles/global.css";
         } else {
           for (const publication of publications.data) {
             const row = document.createElement("div");
-            row.className = "activity-row";
+            row.className = "ui-inline ui-inline--center ui-inline--spread";
             const info = document.createElement("div");
             const title = document.createElement("h4");
             title.textContent = publication.target_path || "Publication";
@@ -950,8 +956,8 @@ import "../styles/global.css";
             row.append(
               info,
               statusBadge(
-                publication.status,
-                publication.status.replace(/_/g, " "),
+                statusTone(publication.status),
+                statusLabel(publication.status),
               ),
             );
             if (publication.published_url) {
@@ -975,7 +981,7 @@ import "../styles/global.css";
           "Recent activity",
           "A concise history of work on this item.",
         );
-        const body = card.querySelector<HTMLElement>(".card__body")!;
+        const body = card.querySelector<HTMLElement>(".ui-card__body")!;
         if (audit.kind !== "ok") {
           body.append(errorAlert(describeFailure(audit, "Activity")));
         } else if (audit.data.length === 0) {

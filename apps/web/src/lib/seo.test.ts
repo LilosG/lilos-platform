@@ -39,7 +39,7 @@ describe("describeCrawlResult", () => {
         stop_reason: "Crawl completed",
         safe_result: { pages_crawled: 1 },
       }),
-    ).toBe("Status: success · 1 page crawled · Crawl completed");
+    ).toBe("Status: Success · 1 page crawled · Crawl completed");
   });
 
   it("does not invent result counts that the API omitted", () => {
@@ -51,6 +51,6 @@ describe("describeCrawlResult", () => {
         stop_reason: null,
         safe_result: {},
       }),
-    ).toBe("Status: partial");
+    ).toBe("Status: Partial");
   });
 });

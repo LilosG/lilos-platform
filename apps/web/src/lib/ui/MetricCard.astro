@@ -1,0 +1,37 @@
+---
+import Card from "./Card.astro";
+
+interface Props {
+  label: string;
+  value: string;
+  meta?: string;
+  id?: string;
+  missing?: boolean;
+  labelId?: string;
+  valueId?: string;
+}
+
+const {
+  label,
+  value,
+  meta,
+  id,
+  missing = false,
+  labelId,
+  valueId,
+} = Astro.props;
+---
+
+<Card id={id} class="ui-metric-card">
+  <p class="ui-metric-card__label" id={labelId}>{label}</p>
+  <p
+    id={valueId}
+    class:list={[
+      "ui-metric-card__value",
+      missing && "ui-metric-card__value--missing",
+    ]}
+  >
+    {value}
+  </p>
+  {meta && <p class="ui-metric-card__meta">{meta}</p>}
+</Card>

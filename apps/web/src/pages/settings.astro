@@ -1,5 +1,24 @@
 ---
 import AppShell from "../components/AppShell.astro";
+import {
+  Boxes,
+  Building2,
+  Globe,
+  MapPin,
+  ShieldCheck,
+  Users,
+} from "@lucide/astro";
+import {
+  Button,
+  Card,
+  CardGrid,
+  EmptyState,
+  Icon,
+  PageHeader,
+  PageShell,
+  Region,
+  Skeleton,
+} from "../lib/ui/primitives";
 import "../styles/global.css";
 ---
 
@@ -13,143 +32,127 @@ import "../styles/global.css";
   </head>
   <body>
     <AppShell>
-      <div id="boot-not-configured" role="status">
-        <h1>This deployment is not configured</h1>
-        <p>No Supabase or API connection is configured for this build.</p>
-      </div>
+      <PageShell id="boot-not-configured" width="narrow">
+        <EmptyState
+          heading="This deployment is not configured"
+          description="Connect the platform runtime configuration to enable Settings."
+        />
+      </PageShell>
 
-      <div id="boot-loading" role="status" aria-live="polite" hidden>
-        <p class="loading-state">Loading settings…</p>
-      </div>
+      <PageShell id="boot-loading" width="narrow" hidden>
+        <Skeleton lines={4} label="Loading settings" />
+      </PageShell>
 
-      <div id="boot-error" role="alert" hidden></div>
+      <Region
+        id="boot-error"
+        as="div"
+        role="alert"
+        label="Settings error"
+        hidden
+      />
 
-      <div id="workspace-empty" role="status" hidden>
-        <div class="empty-state">
-          <span class="empty-state__icon" aria-hidden="true">○</span>
-          <h3>No organization access yet</h3>
-          <p>
-            Your account is not a member of any organization. Ask an
-            administrator to invite you.
-          </p>
-        </div>
-      </div>
+      <PageShell id="workspace-empty" width="narrow" hidden>
+        <EmptyState
+          heading="No organization access yet"
+          description="Your account is not a member of any organization. Ask an administrator to invite you."
+        />
+      </PageShell>
 
-      <div id="settings-content" hidden>
+      <PageShell id="settings-content" hidden>
         <!-- Settings directory -->
-        <div id="settings-directory">
-          <div class="page-head">
-            <div class="page-head__intro">
-              <p class="eyebrow">Manage</p>
-              <h1>Settings</h1>
-              <p>
-                Configure this organization's business information, locations,
-                website, users, and governance.
-              </p>
-            </div>
-          </div>
+        <Region
+          id="settings-directory"
+          as="section"
+          labelledBy="settings-title"
+        >
+          <PageHeader
+            eyebrow="Manage"
+            title="Settings"
+            titleId="settings-title"
+            description="Configure this organization's business information, locations, website, users, and governance."
+          />
 
-          <div class="directory-grid" id="settings-cards">
-            <button class="settings-card" data-domain="business" type="button">
-              <div class="settings-card__header">
-                <span class="settings-card__icon" aria-hidden="true">B</span>
-                <div>
-                  <div class="settings-card__title">Business Information</div>
-                </div>
-              </div>
-              <p class="settings-card__desc">
-                Brand name, description, claims, tone, and call to action.
-              </p>
-            </button>
-
-            <button class="settings-card" data-domain="locations" type="button">
-              <div class="settings-card__header">
-                <span class="settings-card__icon" aria-hidden="true">L</span>
-                <div>
-                  <div class="settings-card__title">Locations</div>
-                </div>
-              </div>
-              <p class="settings-card__desc">
-                Manage business locations and their status.
-              </p>
-            </button>
-
-            <button class="settings-card" data-domain="website" type="button">
-              <div class="settings-card__header">
-                <span class="settings-card__icon" aria-hidden="true">W</span>
-                <div>
-                  <div class="settings-card__title">Website & Domain</div>
-                </div>
-              </div>
-              <p class="settings-card__desc">
-                Domains associated with this organization.
-              </p>
-            </button>
-
-            <button class="settings-card" data-domain="users" type="button">
-              <div class="settings-card__header">
-                <span class="settings-card__icon" aria-hidden="true">U</span>
-                <div>
-                  <div class="settings-card__title">Users & Access</div>
-                </div>
-              </div>
-              <p class="settings-card__desc">
-                Team members, invitations, and role assignments.
-              </p>
-            </button>
-
-            <button
-              class="settings-card"
-              data-domain="governance"
-              type="button"
+          <CardGrid id="settings-cards">
+            <Card
+              as="button"
+              interactive
+              dataDomain="business"
+              heading="Business Information"
+              description="Brand name, description, approved claims, and default call to action."
+              ><Icon icon={Building2} size="lg" /></Card
             >
-              <div class="settings-card__header">
-                <span class="settings-card__icon" aria-hidden="true">G</span>
-                <div>
-                  <div class="settings-card__title">Governance & Approvals</div>
-                </div>
-              </div>
-              <p class="settings-card__desc">
-                Approval policies, verified business details, and notification
-                rules.
-              </p>
-            </button>
-
-            <button class="settings-card" data-domain="products" type="button">
-              <div class="settings-card__header">
-                <span class="settings-card__icon" aria-hidden="true">P</span>
-                <div>
-                  <div class="settings-card__title">Products</div>
-                </div>
-              </div>
-              <p class="settings-card__desc">
-                Product access and operational readiness.
-              </p>
-            </button>
-          </div>
-        </div>
+            <Card
+              as="button"
+              interactive
+              dataDomain="locations"
+              heading="Locations"
+              description="Manage business locations and their status."
+              ><Icon icon={MapPin} size="lg" /></Card
+            >
+            <Card
+              as="button"
+              interactive
+              dataDomain="website"
+              heading="Website & Domain"
+              description="Review domains associated with this organization."
+              ><Icon icon={Globe} size="lg" /></Card
+            >
+            <Card
+              as="button"
+              interactive
+              dataDomain="users"
+              heading="Users & Access"
+              description="Team members, invitations, and role assignments."
+              ><Icon icon={Users} size="lg" /></Card
+            >
+            <Card
+              as="button"
+              interactive
+              dataDomain="governance"
+              heading="Governance & Approvals"
+              description="Approval policies, verified business details, and notification rules."
+              ><Icon icon={ShieldCheck} size="lg" /></Card
+            >
+            <Card
+              as="button"
+              interactive
+              dataDomain="products"
+              heading="Products"
+              description="Open the organization's entitled product workspaces."
+              ><Icon icon={Boxes} size="lg" /></Card
+            >
+          </CardGrid>
+        </Region>
 
         <!-- Domain workspace (shown when a card is selected) -->
-        <div id="settings-domain" hidden>
-          <div class="page-head">
-            <div class="page-head__intro">
-              <p class="eyebrow">Settings</p>
-              <h1 id="domain-title">—</h1>
-              <p id="domain-description"></p>
-            </div>
-            <div class="page-head__meta">
-              <div class="page-head__actions">
-                <button
-                  type="button"
-                  class="button button--secondary button--sm"
-                  id="back-to-settings">← Back to Settings</button
-                >
-              </div>
-            </div>
-          </div>
-          <div id="domain-content"></div>
-        </div>
-      </div>
+        <Region
+          id="settings-domain"
+          as="section"
+          labelledBy="domain-title"
+          hidden
+        >
+          <PageHeader
+            eyebrow="Settings"
+            title="—"
+            titleId="domain-title"
+            description="Loading setting details."
+            descriptionId="domain-description"
+          >
+            <Button
+              slot="actions"
+              variant="secondary"
+              size="sm"
+              id="back-to-settings">Back to Settings</Button
+            >
+          </PageHeader>
+          <Region
+            id="domain-content"
+            as="div"
+            label="Settings details"
+            class="ui-region--flow"
+          />
+        </Region>
+      </PageShell>
     </AppShell>
     <script>
       import {
@@ -160,11 +163,9 @@ import "../styles/global.css";
       } from "../lib/settings";
       import {
         fetchLocations,
-        fetchProductReadiness,
         PRODUCT_KEYS,
         PRODUCT_LABELS,
       } from "../lib/workspace";
-      import { summarizeReadiness } from "../lib/dashboard-logic";
       import {
         fetchBusinessFactCandidates,
         fetchEffectiveBusinessFacts,
@@ -193,6 +194,7 @@ import "../styles/global.css";
         canUsePlatformAdministration,
         type BootRegions,
       } from "../lib/ui";
+      import { statusLabel } from "../lib/status-language";
 
       let organizationId = "";
       let isAgencyWorkspace = false;
@@ -229,7 +231,7 @@ import "../styles/global.css";
 
       function createLoading(): HTMLDivElement {
         const el = document.createElement("div");
-        el.className = "loading-state";
+        el.className = "ui-skeleton-group";
         el.textContent = "Loading…";
         return el;
       }
@@ -298,7 +300,7 @@ import "../styles/global.css";
         const form = document.createElement("form");
         form.id = "profile-form";
         const grid = document.createElement("div");
-        grid.className = "form-grid";
+        grid.className = "ui-form-grid";
 
         function field(
           id: string,
@@ -307,8 +309,9 @@ import "../styles/global.css";
           multiline = false,
         ): HTMLDivElement {
           const f = document.createElement("div");
-          f.className = "field";
+          f.className = "ui-field";
           const lbl = document.createElement("label");
+          lbl.className = "ui-field__label";
           lbl.htmlFor = id;
           lbl.textContent = label;
           f.append(lbl);
@@ -316,6 +319,7 @@ import "../styles/global.css";
             ? document.createElement("textarea")
             : document.createElement("input");
           inp.id = id;
+          inp.className = multiline ? "ui-textarea" : "ui-input";
           (inp as HTMLInputElement).value = value ?? "";
           if (multiline) (inp as HTMLTextAreaElement).rows = 3;
           f.append(inp);
@@ -341,28 +345,28 @@ import "../styles/global.css";
           profile.business_description,
           true,
         );
-        desc.classList.add("field--full");
+        desc.classList.add("ui-field--full");
         grid.append(desc);
         const claims = field(
           "profile-approved-claims",
           "Approved claims (comma-separated)",
           (profile.approved_claims ?? []).join(", "),
         );
-        claims.classList.add("field--full");
+        claims.classList.add("ui-field--full");
         grid.append(claims);
         form.append(grid);
 
         const actions = document.createElement("div");
-        actions.className = "form-actions";
+        actions.className = "ui-inline ui-inline--center";
         const submit = document.createElement("button");
         submit.type = "submit";
-        submit.className = "button";
+        submit.className = "ui-button ui-button--primary ui-button--md";
         submit.textContent = "Save business profile";
         const status = document.createElement("p");
         status.id = "profile-save-status";
         status.setAttribute("role", "status");
         status.setAttribute("aria-live", "polite");
-        status.className = "text-sm muted";
+        status.className = "ui-text-secondary";
         actions.append(submit, status);
         form.append(actions);
 
@@ -446,7 +450,7 @@ import "../styles/global.css";
           return;
         }
         const list = document.createElement("ul");
-        list.className = "product-list";
+        list.className = "ui-record-list";
         for (const loc of result.data) {
           const item = document.createElement("li");
           const info = document.createElement("div");
@@ -454,12 +458,12 @@ import "../styles/global.css";
           name.textContent = loc.name;
           const detail = document.createElement("p");
           detail.textContent = loc.is_primary
-            ? `${loc.status} · Primary`
-            : loc.status;
+            ? `${statusLabel(loc.status)} · Primary`
+            : statusLabel(loc.status);
           info.append(name, detail);
           const badge = statusBadge(
             loc.is_primary ? "ready" : "neutral",
-            loc.status,
+            statusLabel(loc.status),
           );
           item.append(info, badge);
           list.append(item);
@@ -494,7 +498,7 @@ import "../styles/global.css";
           return;
         }
         const list = document.createElement("ul");
-        list.className = "product-list";
+        list.className = "ui-record-list";
         for (const dom of result.data) {
           const item = document.createElement("li");
           const info = document.createElement("div");
@@ -530,25 +534,25 @@ import "../styles/global.css";
 
         if (membersResult.kind === "ok" && membersResult.data.length > 0) {
           const card = document.createElement("div");
-          card.className = "card";
+          card.className = "ui-card";
           const header = document.createElement("div");
-          header.className = "card__header";
+          header.className = "ui-card__header";
           header.append(
             Object.assign(document.createElement("h3"), {
-              className: "card__title",
+              className: "ui-card__heading",
               textContent: "Members",
             }),
           );
           card.append(header);
           const body = document.createElement("div");
-          body.className = "card__body";
+          body.className = "ui-card__body";
           const list = document.createElement("ul");
-          list.className = "product-list";
+          list.className = "ui-record-list";
           for (const member of membersResult.data) {
             const item = document.createElement("li");
             const info = document.createElement("div");
             const name = document.createElement("h3");
-            name.textContent = `${member.membership_type.replace(/_/g, " ")} member`;
+            name.textContent = `${statusLabel(member.membership_type)} member`;
             const detail = document.createElement("p");
             detail.textContent =
               "Identity details are protected; access is managed by membership status.";
@@ -570,20 +574,20 @@ import "../styles/global.css";
           invitationsResult.data.length > 0
         ) {
           const card = document.createElement("div");
-          card.className = "card";
+          card.className = "ui-card";
           const header = document.createElement("div");
-          header.className = "card__header";
+          header.className = "ui-card__header";
           header.append(
             Object.assign(document.createElement("h3"), {
-              className: "card__title",
+              className: "ui-card__heading",
               textContent: "Pending Invitations",
             }),
           );
           card.append(header);
           const body = document.createElement("div");
-          body.className = "card__body";
+          body.className = "ui-card__body";
           const list = document.createElement("ul");
-          list.className = "product-list";
+          list.className = "ui-record-list";
           for (const inv of invitationsResult.data) {
             const item = document.createElement("li");
             const info = document.createElement("div");
@@ -663,12 +667,8 @@ import "../styles/global.css";
           if (rows && rows.length > 0) {
             for (const row of rows) {
               const rowEl = document.createElement("div");
-              rowEl.style.display = "flex";
-              rowEl.style.gap = "1.5rem";
-              rowEl.style.padding = "0.125rem 0";
+              rowEl.className = "ui-fact-row";
               const daySpan = document.createElement("span");
-              daySpan.style.minWidth = "7rem";
-              daySpan.style.fontWeight = "500";
               daySpan.textContent = row.dayLabel;
               const timeSpan = document.createElement("span");
               timeSpan.textContent = row.timeLabel;
@@ -691,21 +691,21 @@ import "../styles/global.css";
           | { kind: "not-found" },
       ): HTMLElement {
         const card = document.createElement("div");
-        card.className = "card";
+        card.className = "ui-card";
         const header = document.createElement("div");
-        header.className = "card__header";
+        header.className = "ui-card__header";
         const title = document.createElement("h3");
-        title.className = "card__title";
+        title.className = "ui-card__heading";
         title.textContent = "Approval Policy";
         header.append(title);
         card.append(header);
         const body = document.createElement("div");
-        body.className = "card__body";
+        body.className = "ui-card__body";
 
         if (policyResult.kind === "ok" && policyResult.data.length > 0) {
           body.append(statusBadge("ready", "Active"));
           const note = document.createElement("p");
-          note.className = "text-sm muted";
+          note.className = "ui-text-secondary";
           note.textContent = "An approval policy is in place.";
           body.append(note);
         } else if (
@@ -714,12 +714,11 @@ import "../styles/global.css";
         ) {
           body.append(statusBadge("blocked", "Missing"));
           const note = document.createElement("p");
-          note.className = "text-sm muted";
+          note.className = "ui-text-secondary";
           note.textContent = "No approval policy yet.";
           body.append(note);
           if (canOperateClientSettings) {
             const btn = _makeBtn("Provision default policy", "secondary", "sm");
-            btn.style.marginTop = "0.75rem";
             btn.addEventListener("click", async () => {
               btn.disabled = true;
               btn.textContent = "Provisioning\u2026";
@@ -738,7 +737,7 @@ import "../styles/global.css";
             body.append(_buildMfaNudge());
           } else {
             const contact = document.createElement("p");
-            contact.className = "text-sm muted";
+            contact.className = "ui-text-secondary";
             contact.textContent =
               "Ask your account team to configure the approval policy.";
             body.append(contact);
@@ -765,16 +764,16 @@ import "../styles/global.css";
         locationNames: Map<string, string>,
       ): HTMLElement {
         const card = document.createElement("div");
-        card.className = "card";
+        card.className = "ui-card";
         const header = document.createElement("div");
-        header.className = "card__header";
+        header.className = "ui-card__header";
         const title = document.createElement("h3");
-        title.className = "card__title";
+        title.className = "ui-card__heading";
         title.textContent = "Verified Business Details";
         header.append(title);
         card.append(header);
         const body = document.createElement("div");
-        body.className = "card__body";
+        body.className = "ui-card__body";
 
         if (result.kind !== "ok") {
           body.append(errorAlert(describeFailure(result, "Business details")));
@@ -790,7 +789,7 @@ import "../styles/global.css";
         }
 
         const list = document.createElement("ul");
-        list.className = "product-list";
+        list.className = "ui-record-list";
 
         for (const key of CORE_FACT_KEYS) {
           const entries = factsByKey.get(key) || [];
@@ -803,7 +802,7 @@ import "../styles/global.css";
             const detail = document.createElement("p");
             detail.textContent = "Not configured";
             const explain = document.createElement("span");
-            explain.className = "text-xs muted";
+            explain.className = "ui-text-secondary";
             explain.textContent =
               "Approved claims control which claims are permitted in governed content.";
             detail.append(" ", explain);
@@ -825,10 +824,7 @@ import "../styles/global.css";
             const item = document.createElement("li");
             const info = document.createElement("div");
             const hdr = document.createElement("div");
-            hdr.style.display = "flex";
-            hdr.style.alignItems = "baseline";
-            hdr.style.gap = "0.5rem";
-            hdr.style.flexWrap = "wrap";
+            hdr.className = "ui-inline ui-inline--center ui-inline--tight";
 
             const h3 = document.createElement("h3");
             h3.textContent = businessFactLabel(fact.fact_key);
@@ -836,7 +832,7 @@ import "../styles/global.css";
 
             if (fact.location_id) {
               const locBadge = document.createElement("span");
-              locBadge.className = "text-xs muted";
+              locBadge.className = "ui-text-secondary";
               locBadge.textContent =
                 locationNames.get(fact.location_id) || "Location";
               hdr.append(locBadge);
@@ -846,7 +842,7 @@ import "../styles/global.css";
             _renderFactValue(detail, fact.fact_key, fact.value);
 
             const scopeInfo = document.createElement("span");
-            scopeInfo.className = "text-xs muted";
+            scopeInfo.className = "ui-text-secondary";
             scopeInfo.textContent = factSourceLabel(fact.source);
             detail.append(scopeInfo);
 
@@ -861,7 +857,7 @@ import "../styles/global.css";
             const h3 = document.createElement("h3");
             h3.textContent = businessFactLabel(key);
             const detail = document.createElement("p");
-            detail.className = "text-sm muted";
+            detail.className = "ui-text-secondary";
             detail.textContent = "Not configured";
             info.append(h3, detail);
             item.append(info, statusBadge("missing", "Missing"));
@@ -881,17 +877,13 @@ import "../styles/global.css";
         locationNames: Map<string, string>,
       ): HTMLElement {
         const card = document.createElement("div");
-        card.className = "card";
+        card.className = "ui-card";
         const header = document.createElement("div");
-        header.className = "card__header";
+        header.className = "ui-card__header";
         const hdrRow = document.createElement("div");
-        hdrRow.style.display = "flex";
-        hdrRow.style.justifyContent = "space-between";
-        hdrRow.style.alignItems = "flex-start";
-        hdrRow.style.width = "100%";
-        hdrRow.style.gap = "0.75rem";
+        hdrRow.className = "ui-inline ui-inline--start ui-inline--spread";
         const title = document.createElement("h3");
-        title.className = "card__title";
+        title.className = "ui-card__heading";
         title.textContent = "Pending Confirmations";
         hdrRow.append(title);
         if (canOperateClientSettings) {
@@ -902,7 +894,7 @@ import "../styles/global.css";
         header.append(hdrRow);
         card.append(header);
         const body = document.createElement("div");
-        body.className = "card__body";
+        body.className = "ui-card__body";
 
         if (result.kind !== "ok") {
           body.append(
@@ -914,8 +906,7 @@ import "../styles/global.css";
 
         const count = result.data.length;
         const summary = document.createElement("p");
-        summary.className = "text-sm muted";
-        summary.style.marginBottom = "0.75rem";
+        summary.className = "ui-text-secondary";
         summary.textContent =
           count === 0
             ? "No items requiring review."
@@ -928,22 +919,19 @@ import "../styles/global.css";
         }
 
         const list = document.createElement("ul");
-        list.className = "product-list";
+        list.className = "ui-record-list";
         for (const candidate of result.data) {
           const item = document.createElement("li");
           const info = document.createElement("div");
           const hdr = document.createElement("div");
-          hdr.style.display = "flex";
-          hdr.style.alignItems = "baseline";
-          hdr.style.gap = "0.5rem";
-          hdr.style.flexWrap = "wrap";
+          hdr.className = "ui-inline ui-inline--center ui-inline--tight";
           const name = document.createElement("h3");
           name.textContent = businessFactLabel(candidate.fact_key);
           hdr.append(name);
 
           if (candidate.location_id) {
             const locBadge = document.createElement("span");
-            locBadge.className = "text-xs muted";
+            locBadge.className = "ui-text-secondary";
             locBadge.textContent =
               locationNames.get(candidate.location_id) || "Location";
             hdr.append(locBadge);
@@ -954,7 +942,7 @@ import "../styles/global.css";
           info.append(hdr, detail);
 
           const meta = document.createElement("span");
-          meta.className = "text-xs muted";
+          meta.className = "ui-text-secondary";
           const mp: string[] = [];
           if (candidate.authority === "system_derived") {
             mp.push("System-derived");
@@ -966,9 +954,7 @@ import "../styles/global.css";
           detail.append(" ", meta);
 
           const actions = document.createElement("div");
-          actions.style.display = "flex";
-          actions.style.gap = "0.5rem";
-          actions.style.alignItems = "center";
+          actions.className = "ui-inline ui-inline--center ui-inline--tight";
 
           const confirmBtn = _makeBtn("Confirm", "primary", "sm");
           confirmBtn.addEventListener("click", async () => {
@@ -1021,9 +1007,7 @@ import "../styles/global.css";
       ): HTMLButtonElement {
         const btn = document.createElement("button");
         btn.type = "button";
-        btn.className = "button";
-        if (variant === "secondary") btn.classList.add("button--secondary");
-        if (size === "sm") btn.classList.add("button--sm");
+        btn.className = `ui-button ui-button--${variant} ui-button--${size}`;
         btn.textContent = label;
         return btn;
       }
@@ -1049,13 +1033,11 @@ import "../styles/global.css";
 
       function _buildMfaNudge(): HTMLDivElement {
         const nudge = document.createElement("div");
-        nudge.className = "text-sm muted";
-        nudge.style.marginTop = "0.75rem";
+        nudge.className = "ui-stack ui-stack--2 ui-text-secondary";
         const msg = document.createElement("p");
         msg.textContent =
           "Operator controls require MFA. Complete MFA to manage this workspace's governance.";
         const action = _makeBtn("Complete MFA", "secondary", "sm");
-        action.style.marginTop = "0.5rem";
         action.addEventListener("click", () => {
           const next = encodeURIComponent(
             window.location.pathname + window.location.search,
@@ -1069,41 +1051,42 @@ import "../styles/global.css";
       async function openProducts(): Promise<void> {
         showDomain(
           "Products",
-          "Operational readiness for each product in this organization.",
+          "Open product workspaces. Provider health and connection setup are managed in Integrations.",
         );
-        const results = await Promise.all(
-          PRODUCT_KEYS.map((key) => fetchProductReadiness(organizationId, key)),
-        );
+        const dependency = document.createElement("div");
+        dependency.className = "ui-notice ui-notice--info";
+        const dependencyCopy = document.createElement("div");
+        const dependencyTitle = document.createElement("strong");
+        dependencyTitle.textContent = "Connections and provider health";
+        const dependencyDetail = document.createElement("span");
+        dependencyDetail.textContent =
+          "Managed centrally for this organization.";
+        dependencyCopy.append(dependencyTitle, dependencyDetail);
+        const dependencyLink = document.createElement("a");
+        dependencyLink.href = "/integrations";
+        dependencyLink.textContent = "Manage integrations";
+        dependency.append(dependencyCopy, dependencyLink);
         const list = document.createElement("ul");
-        list.className = "product-list";
-        PRODUCT_KEYS.forEach((key, index) => {
-          const readiness = summarizeReadiness(results[index]);
+        list.className = "ui-record-list";
+        PRODUCT_KEYS.forEach((key) => {
           const item = document.createElement("li");
           const info = document.createElement("div");
           const name = document.createElement("h3");
           name.textContent = PRODUCT_LABELS[key];
           const detail = document.createElement("p");
-          detail.textContent = readiness.detail;
+          detail.textContent = "Operational workspace";
           info.append(name, detail);
           const actions = document.createElement("div");
-          actions.className = "list-actions";
-          const badge = statusBadge(
-            readiness.status,
-            readiness.status === "ready"
-              ? "Operational"
-              : readiness.status === "blocked"
-                ? "Needs attention"
-                : "Setup required",
-          );
+          actions.className = "ui-inline ui-inline--end ui-inline--tight";
           const link = document.createElement("a");
-          link.className = "button button--secondary button--sm";
+          link.className = "ui-button ui-button--secondary ui-button--sm";
           link.href = `/${key}`;
           link.textContent = "Open";
-          actions.append(badge, link);
+          actions.append(link);
           item.append(info, actions);
           list.append(item);
         });
-        domainContent.replaceChildren(list);
+        domainContent.replaceChildren(dependency, list);
       }
 
       async function loadOrganization(

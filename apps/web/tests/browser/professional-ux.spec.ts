@@ -5,6 +5,34 @@ import { expect, test } from "@playwright/test";
 // and the design-system shell consistency across all main routes.
 
 test.describe("Professional UX shell", () => {
+  test("workspace surfaces expose the shared loading, empty, failure, and success regions", async ({
+    page,
+  }) => {
+    const surfaces = [
+      ["/", "#workspace-content"],
+      ["/gbp", "#gbp-content"],
+      ["/reviews", "#reviews-content"],
+      ["/leads", "#leads-content"],
+      ["/content", "#content-workspace"],
+      ["/seo", "#seo-content"],
+      ["/automations", "#workspace-content"],
+      ["/insights", "#insights-content"],
+      ["/settings", "#settings-content"],
+      ["/integrations", "#integrations-content"],
+    ] as const;
+
+    for (const [route, successRegion] of surfaces) {
+      await page.goto(route);
+      await expect(page.locator("#boot-loading")).toBeAttached();
+      await expect(page.locator("#workspace-empty")).toBeAttached();
+      await expect(page.locator("#boot-error")).toBeAttached();
+      await expect(
+        page.locator("#boot-error[role='alert'], #boot-error [role='alert']"),
+      ).toHaveCount(1);
+      await expect(page.locator(successRegion)).toBeAttached();
+    }
+  });
+
   test("sidebar navigation is grouped into sections", async ({ page }) => {
     await page.goto("/");
     const headings = await page
@@ -45,14 +73,17 @@ test.describe("Professional UX shell", () => {
       "/leads",
       "/content",
       "/seo",
+      "/automations",
       "/insights",
       "/settings",
       "/integrations",
     ];
     for (const route of routes) {
       await page.goto(route);
-      const eyebrow = page.locator(".page-head .eyebrow");
-      const title = page.locator(".page-head h1");
+      const eyebrow = page.locator(
+        ".ui-page-header .ui-page-header__identity > .ui-overline",
+      );
+      const title = page.locator(".ui-page-header h1");
       const eyebrowCount = await eyebrow.count();
       const titleCount = await title.count();
       expect(
@@ -115,15 +146,15 @@ test.describe("Integrations directory", () => {
 test.describe("GBP workspace tabs", () => {
   test("GBP workspace has tab navigation", async ({ page }) => {
     await page.goto("/gbp");
-    const tabs = page.locator("#gbp-tabs .tabs__tab");
+    const tabs = page.locator("#gbp-tabs .ui-tabs__tab");
     await expect(tabs).toHaveCount(5);
     const tabLabels = await tabs.allTextContents();
     expect(tabLabels).toEqual([
       "Overview",
-      "Profile",
-      "Hours",
+      "Profile changes",
+      "Special hours",
       "Posts",
-      "Media",
+      "Media records",
     ]);
   });
 });
@@ -131,7 +162,7 @@ test.describe("GBP workspace tabs", () => {
 test.describe("SEO workspace tabs", () => {
   test("SEO workspace has tab navigation", async ({ page }) => {
     await page.goto("/seo");
-    const tabs = page.locator("#seo-tabs .tabs__tab");
+    const tabs = page.locator("#seo-tabs .ui-tabs__tab");
     await expect(tabs).toHaveCount(4);
     const tabLabels = await tabs.allTextContents();
     expect(tabLabels).toEqual([
@@ -146,7 +177,7 @@ test.describe("SEO workspace tabs", () => {
 test.describe("Content workspace tabs", () => {
   test("Content workspace has tab navigation", async ({ page }) => {
     await page.goto("/content");
-    const tabs = page.locator("#content-tabs .tabs__tab");
+    const tabs = page.locator("#content-tabs .ui-tabs__tab");
     await expect(tabs).toHaveCount(3);
     const tabLabels = await tabs.allTextContents();
     expect(tabLabels).toEqual(["Pipeline", "Opportunities", "Publishing"]);
@@ -168,6 +199,9 @@ test.describe("Keyboard interaction", () => {
     page,
   }) => {
     await page.goto("/content");
+    await expect(
+      page.getByRole("heading", { name: "This deployment is not configured" }),
+    ).toBeVisible();
     // The browser suite intentionally runs without deployment credentials, so
     // configured workspace regions stay hidden. Reveal this region only to
     // exercise the attached tab interaction as it behaves after a real boot.
@@ -207,12 +241,12 @@ test.describe("Design system consistency", () => {
   test("metric cards use consistent class", async ({ page }) => {
     await page.goto("/");
     // In the not-configured state the metric-grid is inside hidden content
-    await expect(page.locator(".metric-grid")).toBeAttached();
+    await expect(page.locator(".ui-card-grid").first()).toBeAttached();
   });
 
   test("empty states use the design-system class", async ({ page }) => {
     await page.goto("/");
     // The workspace-empty region has an empty-state
-    await expect(page.locator(".empty-state")).toBeAttached();
+    await expect(page.locator(".ui-empty-state").first()).toBeAttached();
   });
 });

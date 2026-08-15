@@ -154,7 +154,7 @@ describe("platform-admin entitlement client functions target the production plat
 
     const outcome = await transitionProductEntitlement("org-1", "ent-1", {
       target_status: "setup_required",
-      reason: "Operator restored gbp entitlement to setup_required.",
+      reason: "Operator restored gbp entitlement to its initial setup state.",
       expected_version: 1,
     });
 
@@ -170,7 +170,7 @@ describe("platform-admin entitlement client functions target the production plat
     // lifecycle guard; the client must not strip either.
     expect(callBody).toEqual({
       target_status: "setup_required",
-      reason: "Operator restored gbp entitlement to setup_required.",
+      reason: "Operator restored gbp entitlement to its initial setup state.",
       expected_version: 1,
     });
     expect(outcome.kind).toBe("ok");

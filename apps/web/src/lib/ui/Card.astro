@@ -1,0 +1,65 @@
+---
+interface Props {
+  as?: "article" | "section" | "div" | "button";
+  id?: string;
+  heading?: string;
+  description?: string;
+  interactive?: boolean;
+  active?: boolean;
+  disabled?: boolean;
+  state?: "default" | "loading" | "error";
+  class?: string;
+  hidden?: boolean;
+  dataDomain?: string;
+  dataProvider?: string;
+}
+
+const {
+  as: Element = "div",
+  id,
+  heading,
+  description,
+  interactive = false,
+  active = false,
+  disabled = false,
+  state = "default",
+  class: className,
+  hidden = false,
+  dataDomain,
+  dataProvider,
+}: Props = Astro.props;
+---
+
+<Element
+  id={id}
+  class:list={["ui-card", interactive && "ui-card--interactive", className]}
+  data-active={active ? "true" : undefined}
+  data-state={state}
+  aria-disabled={disabled ? "true" : undefined}
+  aria-busy={state === "loading" ? "true" : undefined}
+  tabindex={interactive && !disabled ? 0 : undefined}
+  type={Element === "button" ? "button" : undefined}
+  hidden={hidden}
+  data-domain={dataDomain}
+  data-provider={dataProvider}
+>
+  {
+    (heading || description || Astro.slots.has("header-actions")) && (
+      <header class="ui-card__header">
+        <div>
+          {heading && <h3 class="ui-card__heading">{heading}</h3>}
+          {description && <p class="ui-card__description">{description}</p>}
+        </div>
+        <slot name="header-actions" />
+      </header>
+    )
+  }
+  <div class="ui-card__body"><slot /></div>
+  {
+    Astro.slots.has("footer") && (
+      <footer class="ui-card__footer">
+        <slot name="footer" />
+      </footer>
+    )
+  }
+</Element>

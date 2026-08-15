@@ -8,4 +8,17 @@ export default defineConfig(
   eslint.configs.recommended,
   tseslint.configs.recommended,
   astro.configs["flat/recommended"],
+  {
+    files: ["**/*.astro"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "JSXAttribute[name.name='style']",
+          message:
+            "Inline style attributes bypass design-system tokens and primitives.",
+        },
+      ],
+    },
+  },
 );
