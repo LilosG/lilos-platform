@@ -235,7 +235,7 @@ def test_sc4a_max_pages_binds() -> None:
 def test_sc4a_depth_binds_and_recorded() -> None:
     async def run() -> None:
         chain = (
-            '<html><head><title>Deep {d}</title></head>'
+            "<html><head><title>Deep {d}</title></head>"
             '<body><a href="/deep{nd}">Deeper</a></body></html>'
         )
         responses: dict[str, httpx.Response] = {
@@ -431,11 +431,7 @@ def test_host_same_check() -> None:
 # SC4A-R-ALLOW  — Allow overrides broader Disallow by longest match
 # ---------------------------------------------------------------------------
 
-ALLOW_ROBOTS = (
-    "User-agent: *\n"
-    "Disallow: /admin/\n"
-    "Allow: /admin/public\n"
-)
+ALLOW_ROBOTS = "User-agent: *\nDisallow: /admin/\nAllow: /admin/public\n"
 
 
 def test_allow_overrides_broader_disallow() -> None:
@@ -452,10 +448,10 @@ def test_allow_overrides_broader_disallow() -> None:
 # ---------------------------------------------------------------------------
 
 NOFOLLOW_HTML = (
-    '<html><head><title>Nofollow</title>'
+    "<html><head><title>Nofollow</title>"
     '<meta name="description" content="desc">'
     '<meta name="robots" content="index, follow">'
-    '</head><body><h1>Heading</h1>'
+    "</head><body><h1>Heading</h1>"
     '<a href="/followed">Followed</a>'
     '<a href="/nofollow" rel="nofollow">Nofollow</a>'
     "</body></html>"
@@ -507,14 +503,10 @@ def test_sitemap_vs_crawl_comparison() -> None:
             ),
             "https://example.test/sitemap.xml": sitemap_response(sm_xml),
             "https://example.test/": ok_html(ROOT_ONLY_HTML),
-            "https://example.test/page1": ok_html(
-                ROOT_ONLY_HTML, "https://example.test/page1"
-            ),
+            "https://example.test/page1": ok_html(ROOT_ONLY_HTML, "https://example.test/page1"),
         }
         # page2 → 404 (non-indexable); page3 → never reached (max_pages=3, concurrency=1)
-        _, report = await _crawl_with_config(
-            base_config(max_pages=3, concurrency=1), responses
-        )
+        _, report = await _crawl_with_config(base_config(max_pages=3, concurrency=1), responses)
         assert "https://example.test/page3" in report.sitemap_not_reached
         assert "https://example.test/" in report.crawled_not_in_sitemap
         assert "https://example.test/page2" in report.sitemap_non_indexable

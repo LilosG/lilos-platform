@@ -40,9 +40,7 @@ BROKEN_PAGE_HTML = "<html><head></head><body>No title, no meta, no h1.</body></h
 
 def mock_handler(request: httpx.Request) -> httpx.Response:
     if request.url.path == "/broken":
-        return httpx.Response(
-            200, text=BROKEN_PAGE_HTML, headers={"content-type": "text/html"}
-        )
+        return httpx.Response(200, text=BROKEN_PAGE_HTML, headers={"content-type": "text/html"})
     return httpx.Response(200, text=GOOD_PAGE_HTML, headers={"content-type": "text/html"})
 
 

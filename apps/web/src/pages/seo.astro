@@ -110,7 +110,7 @@ import "../styles/global.css";
         crawlTerminalState,
         isSEOOpportunityActionable,
         type SEOCrawlRun,
-          } from "../lib/seo";
+      } from "../lib/seo";
       import { fetchSearchConsolePerformance } from "../lib/search-console";
       import { startWorkflowRun } from "../lib/workflows";
       import {
@@ -413,7 +413,10 @@ import "../styles/global.css";
         statusRow.style.cssText =
           "display:flex;align-items:center;justify-content:space-between;gap:var(--space-4);margin-bottom:var(--space-4);flex-wrap:wrap;";
         statusRow.append(
-          statusBadge(crawlStatusKind(run.status), crawlStatusLabel(run.status)),
+          statusBadge(
+            crawlStatusKind(run.status),
+            crawlStatusLabel(run.status),
+          ),
         );
         const pages = run.safe_result.pages_crawled;
         if (typeof pages === "number") {
@@ -483,7 +486,9 @@ import "../styles/global.css";
             indexTd.append(
               statusBadge(
                 page.indexability === "indexable" ? "ready" : "neutral",
-                page.indexability === "indexable" ? "Indexable" : "Not indexable",
+                page.indexability === "indexable"
+                  ? "Indexable"
+                  : "Not indexable",
               ),
             );
             tr.append(urlTd, statusTd, depthTd, titleTd, indexTd);
