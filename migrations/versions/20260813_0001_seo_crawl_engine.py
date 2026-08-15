@@ -105,10 +105,7 @@ def _add_column_if_not_exists(
     dialect = op.get_context().dialect
     compiled_type = col_type.compile(dialect=dialect)
     op.execute(
-        sa.text(
-            f"ALTER TABLE {table_name} ADD COLUMN IF NOT EXISTS "
-            f"{col_name} {compiled_type}"
-        )
+        sa.text(f"ALTER TABLE {table_name} ADD COLUMN IF NOT EXISTS {col_name} {compiled_type}")
     )
 
 

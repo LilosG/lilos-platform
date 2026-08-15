@@ -663,9 +663,7 @@ class CrawlEngine:
         }
         sitemap_not_reached = sorted(canonical_sitemap_urls - crawled_urls)
         crawled_not_in_sitemap = sorted(crawled_urls - canonical_sitemap_urls)
-        sitemap_non_indexable = sorted(
-            u for u in canonical_sitemap_urls if u in non_indexable_urls
-        )
+        sitemap_non_indexable = sorted(u for u in canonical_sitemap_urls if u in non_indexable_urls)
 
         return CrawlReport(
             terminal_state=terminal_state,

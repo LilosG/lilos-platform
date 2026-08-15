@@ -495,9 +495,7 @@ async def list_crawl_pages(
     crawl_run = await service.get_crawl_run(session, organization_id, crawl_run_id)
     if not crawl_run:
         raise SEOCrawlRunNotFoundError
-    items = await service.list_pages(
-        session, organization_id, website_id=crawl_run.website_id
-    )
+    items = await service.list_pages(session, organization_id, website_id=crawl_run.website_id)
     return {"data": [page_row(item) for item in items], "meta": meta(request)}
 
 
