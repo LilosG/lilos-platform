@@ -67,6 +67,8 @@ class RuntimeOptions:
     maximum_poll_seconds: float = 10.0
     heartbeat_seconds: float = 15.0
     lease_seconds: int = 60
+    sweep_seconds: float = 60.0
+    sweep_batch_size: int = 100
     database_failure_limit: int = 3
     shutdown_seconds: float = 270.0
 
@@ -77,6 +79,10 @@ class RuntimeOptions:
             raise ValueError("heartbeat interval is invalid")
         if not 5 <= self.lease_seconds <= 3600:
             raise ValueError("lease duration is invalid")
+        if not 0 < self.sweep_seconds <= 3600:
+            raise ValueError("sweep interval is invalid")
+        if self.sweep_batch_size < 1:
+            raise ValueError("sweep batch size is invalid")
         if self.database_failure_limit < 1:
             raise ValueError("database failure limit is invalid")
         if self.shutdown_seconds <= 0:
@@ -137,6 +143,9 @@ class DurableProcessBackend:
     async def cycle(self) -> bool:
         raise NotImplementedError
 
+    async def sweep(self) -> None:
+        """Periodic reconciliation hook; the base process performs no work."""
+
     async def close(self) -> None:
         await self.database.dispose()
 
@@ -183,6 +192,13 @@ class WorkerBackend(DurableProcessBackend):
             },
         )
         return True
+
+    async def sweep(self) -> None:
+        """Reconcile abandoned leases that have no live worker owner."""
+        async with self.sessions() as session, session.begin():
+            await self.execution.sweep_abandoned_leases(
+                session, limit=self.options.sweep_batch_size
+            )
 
     async def _execute_with_lease(self, job: Job) -> JobOutcome:
         task = asyncio.create_task(self._execute(job))
@@ -395,6 +411,7 @@ async def run_process(
     delay = backend.options.minimum_poll_seconds
     failures = 0
     next_heartbeat = monotonic()
+    next_sweep = monotonic()
     started = False
     try:
         await backend.startup()
@@ -412,6 +429,9 @@ async def run_process(
                 if monotonic() >= next_heartbeat:
                     await backend.heartbeat("running")
                     next_heartbeat = monotonic() + backend.options.heartbeat_seconds
+                if monotonic() >= next_sweep:
+                    await backend.sweep()
+                    next_sweep = monotonic() + backend.options.sweep_seconds
                 worked = await asyncio.wait_for(
                     backend.cycle(), timeout=backend.options.shutdown_seconds
                 )
