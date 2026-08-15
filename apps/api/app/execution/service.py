@@ -346,39 +346,113 @@ class ExecutionService:
         self, session: AsyncSession, worker_id: str, lease_seconds: int = 60
     ) -> Job | None:
         now = datetime.now(UTC)
-        job = await session.scalar(
-            select(Job)
-            .where(
-                or_(
-                    Job.status.in_(("queued", "retry_scheduled")),
-                    (Job.status == "claimed") & (Job.lease_expires_at < now),
-                ),
-                Job.available_at <= now,
-                Job.cancellation_requested_at.is_(None),
+        while True:
+            job = await session.scalar(
+                select(Job)
+                .where(
+                    or_(
+                        Job.status.in_(("queued", "retry_scheduled")),
+                        (Job.status == "claimed") & (Job.lease_expires_at < now),
+                    ),
+                    Job.available_at <= now,
+                    Job.cancellation_requested_at.is_(None),
+                )
+                .order_by(Job.priority, Job.created_at)
+                .with_for_update(skip_locked=True)
+                .limit(1)
             )
-            .order_by(Job.priority, Job.created_at)
-            .with_for_update(skip_locked=True)
-            .limit(1)
-        )
-        if not job:
-            return None
-        job.status, job.lease_owner, job.lease_expires_at = (
-            "claimed",
-            worker_id,
-            now + timedelta(seconds=lease_seconds),
-        )
-        job.attempt_count += 1
-        session.add(
-            JobAttempt(
-                organization_id=job.organization_id,
-                job_id=job.id,
-                attempt_number=job.attempt_count,
-                status="running",
-                worker_id=worker_id,
+            if not job:
+                return None
+
+            if job.status == "claimed":
+                # Lease expired. A job that already exhausted its attempts must
+                # never be reclaimed; close its abandoned attempt and move it to
+                # a terminal state instead of cycling forever.
+                if job.attempt_count >= job.max_attempts:
+                    await self._close_abandoned_attempt(session, job, now)
+                    job.status = "dead_lettered"
+                    job.lease_owner = None
+                    job.lease_expires_at = None
+                    await session.flush()
+                    continue
+                # Reclaim after lease expiry: close the prior attempt before
+                # opening a new one so it cannot linger as ``running``.
+                await self._close_abandoned_attempt(session, job, now)
+
+            job.status, job.lease_owner, job.lease_expires_at = (
+                "claimed",
+                worker_id,
+                now + timedelta(seconds=lease_seconds),
             )
-        )
+            job.attempt_count += 1
+            session.add(
+                JobAttempt(
+                    organization_id=job.organization_id,
+                    job_id=job.id,
+                    attempt_number=job.attempt_count,
+                    status="running",
+                    worker_id=worker_id,
+                )
+            )
+            await session.flush()
+            return job
+
+    async def _close_abandoned_attempt(
+        self, session: AsyncSession, job: Job, now: datetime
+    ) -> None:
+        """Close any open attempts so none can linger as ``running``."""
+        attempts = (
+            await session.scalars(
+                select(JobAttempt)
+                .where(
+                    JobAttempt.job_id == job.id,
+                    JobAttempt.status == "running",
+                )
+                .with_for_update()
+            )
+        ).all()
+        for attempt in attempts:
+            attempt.status = "timed_out"
+            attempt.completed_at = now
+            attempt.error_category = "lease_expired"
+            attempt.safe_error = "LEASE_EXPIRED"
+
+    async def sweep_abandoned_leases(
+        self,
+        session: AsyncSession,
+        *,
+        limit: int = 100,
+    ) -> int:
+        """Reconcile jobs whose lease expired with no live owner.
+
+        Closes the abandoned attempt and either requeues (within
+        ``max_attempts``) or dead-letters (at or beyond it). Returns the
+        number of jobs reconciled.
+        """
+        now = datetime.now(UTC)
+        jobs = (
+            await session.scalars(
+                select(Job)
+                .where(
+                    Job.status == "claimed",
+                    Job.lease_expires_at < now,
+                )
+                .order_by(Job.created_at)
+                .with_for_update(skip_locked=True)
+                .limit(limit)
+            )
+        ).all()
+        for job in jobs:
+            await self._close_abandoned_attempt(session, job, now)
+            if job.attempt_count >= job.max_attempts:
+                job.status = "dead_lettered"
+            else:
+                job.status = "retry_scheduled"
+                job.available_at = now + timedelta(seconds=min(3600, 2**job.attempt_count))
+            job.lease_owner = None
+            job.lease_expires_at = None
         await session.flush()
-        return job
+        return len(jobs)
 
     async def finish(
         self, session: AsyncSession, organization_id: UUID, job_id: UUID, outcome: JobOutcome

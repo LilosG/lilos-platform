@@ -32,6 +32,36 @@ def test_json_formatter_redacts_sensitive_extra() -> None:
     assert "correlation_id" in payload
 
 
+def test_json_formatter_passes_through_diagnostic_extra_fields() -> None:
+    record = logging.LogRecord("lilos", logging.ERROR, "", 0, "db error", (), None)
+    record.constraint_name = "uq_seo_active_opportunity"
+    record.table_name = "seo_opportunities"
+    record.schema_name = "public"
+    record.sqlstate = "23505"
+    record.safe_detail = "Key (organization_id, deduplication_key, active_marker)"
+    payload = json.loads(JsonFormatter(Settings()).format(record))
+    assert payload["constraint_name"] == "uq_seo_active_opportunity"
+    assert payload["table_name"] == "seo_opportunities"
+    assert payload["schema_name"] == "public"
+    assert payload["sqlstate"] == "23505"
+    assert "organization_id" in repr(payload["safe_detail"])
+
+
+def test_json_formatter_still_includes_previous_allowlist_fields() -> None:
+    record = logging.LogRecord("lilos", logging.INFO, "", 0, "ok", (), None)
+    record.operation = "poll"
+    record.normalized_error_code = "DATABASE_DETERMINISTIC_ERROR"
+    record.exception_type = "IntegrityError"
+    record.retry_count = 1
+    record.job_id = "e5062557"
+    payload = json.loads(JsonFormatter(Settings()).format(record))
+    assert payload["operation"] == "poll"
+    assert payload["normalized_error_code"] == "DATABASE_DETERMINISTIC_ERROR"
+    assert payload["exception_type"] == "IntegrityError"
+    assert payload["retry_count"] == 1
+    assert payload["job_id"] == "e5062557"
+
+
 def test_metric_labels_are_bounded_and_low_cardinality() -> None:
     point = MetricPoint.create("api.requests", 1, {"service": "api", "outcome": "success"})
     assert point.labels == (("outcome", "success"), ("service", "api"))

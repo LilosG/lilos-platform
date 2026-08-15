@@ -3,13 +3,49 @@
 import json
 import logging
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Final
 
 from apps.api.app.config import Settings
 from apps.api.app.context import current_correlation_id
 from apps.api.app.observability.telemetry import redact
 
 APPLICATION_LOGGER_NAME = "lilos"
+
+_RESERVED_FIELDS: Final = frozenset(
+    {
+        "timestamp",
+        "severity",
+        "environment",
+        "service",
+        "deployment_version",
+        "release",
+        "event_name",
+        "message",
+        "correlation_id",
+        "args",
+        "asctime",
+        "created",
+        "exc_info",
+        "exc_text",
+        "filename",
+        "funcName",
+        "levelname",
+        "levelno",
+        "lineno",
+        "module",
+        "msecs",
+        "msg",
+        "name",
+        "pathname",
+        "process",
+        "processName",
+        "relativeCreated",
+        "stack_info",
+        "thread",
+        "threadName",
+        "taskName",
+    }
+)
 
 
 class JsonFormatter(logging.Formatter):
@@ -38,28 +74,10 @@ class JsonFormatter(logging.Formatter):
                 current_correlation_id(),
             ),
         }
-        for field_name in (
-            "method",
-            "route",
-            "status_code",
-            "duration_ms",
-            "outcome",
-            "normalized_error_code",
-            "exception_type",
-            "platform_user_id",
-            "assurance_level",
-            "organization_id",
-            "permission_key",
-            "resource_scope",
-            "minimum_assurance_level",
-            "job_id",
-            "workflow_run_id",
-            "operation",
-            "retry_count",
-        ):
-            value = getattr(record, field_name, None)
-            if value is not None:
-                payload[field_name] = value
+        for field_name, value in record.__dict__.items():
+            if field_name in _RESERVED_FIELDS or value is None:
+                continue
+            payload[field_name] = value
         return json.dumps(redact(payload), separators=(",", ":"), ensure_ascii=True)
 
 
