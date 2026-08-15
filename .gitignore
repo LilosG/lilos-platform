@@ -29,3 +29,4 @@ __pycache__/
 # Temporary files
 *.tmp
 *.swp
+apps/web/.playwright-visual-output/

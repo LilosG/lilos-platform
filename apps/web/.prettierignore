@@ -3,3 +3,4 @@ coverage/
 dist/
 .playwright-output/
 playwright-report/
+.playwright-visual-output/
