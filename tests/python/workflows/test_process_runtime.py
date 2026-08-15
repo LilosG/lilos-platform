@@ -9,7 +9,7 @@ from alembic import command
 from alembic.config import Config
 from pydantic import PostgresDsn, TypeAdapter
 from sqlalchemy import select, text
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from apps.api.app.config import EnvironmentName, Settings
 from apps.api.app.database.runtime import create_database_runtime
@@ -21,6 +21,7 @@ from apps.api.app.execution.runtime import (
     SchedulerBackend,
     WorkerBackend,
     install_signal_handlers,
+    postgres_error_context,
     process_main,
     run_process,
 )
@@ -344,3 +345,64 @@ async def test_postgresql_worker_scheduler_and_heartbeat_contracts(
         }
     finally:
         await runtime.dispose()
+
+
+def _integrity_error(constraint_name: str) -> IntegrityError:
+    """Build an ``IntegrityError`` carrying a synthetic asyncpg ``.orig``."""
+    orig = type(
+        "FakeOrig",
+        (),
+        {
+            "constraint_name": constraint_name,
+            "table_name": "seo_opportunities",
+            "schema_name": "public",
+            "sqlstate": "23505",
+            "detail": (
+                "Key (organization_id, deduplication_key, active_marker)="
+                "(secret-org, 'secret-key', 'active') already exists."
+            ),
+        },
+    )()
+    return IntegrityError("INSERT INTO seo_opportunities", {}, orig)
+
+
+def test_postgres_error_context_redacts_row_values() -> None:
+    context = postgres_error_context(_integrity_error("uq_seo_active_opportunity"))
+    assert context["constraint_name"] == "uq_seo_active_opportunity"
+    assert context["table_name"] == "seo_opportunities"
+    assert context["schema_name"] == "public"
+    assert context["sqlstate"] == "23505"
+    assert context["safe_detail"] == "Key (organization_id, deduplication_key, active_marker)"
+    assert "secret" not in str(context)
+
+
+def test_postgres_error_context_without_orig_is_empty() -> None:
+    assert postgres_error_context(SQLAlchemyError("synthetic")) == {
+        "constraint_name": None,
+        "table_name": None,
+        "schema_name": None,
+        "sqlstate": None,
+        "safe_detail": None,
+    }
+
+
+@pytest.mark.anyio
+async def test_process_survives_deterministic_database_error() -> None:
+    options = RuntimeOptions(
+        minimum_poll_seconds=0.001,
+        maximum_poll_seconds=0.001,
+        heartbeat_seconds=1,
+        database_failure_limit=2,
+        shutdown_seconds=1,
+    )
+    stop = asyncio.Event()
+    backend = FakeBackend(
+        options,
+        [_integrity_error("uq_seo_active_opportunity")],
+        lambda index: stop.set() if index == 3 else None,
+    )
+
+    await run_process(backend, stop)
+
+    assert len(backend.cycle_times) == 4
+    assert backend.closed
