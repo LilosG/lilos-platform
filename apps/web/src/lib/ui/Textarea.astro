@@ -35,12 +35,25 @@ const {
 } = Astro.props;
 const descriptionId = description ? `${id}-description` : undefined;
 const errorId = error ? `${id}-error` : undefined;
-const describedBy = [descriptionId, errorId].filter(Boolean).join(" ") || undefined;
+const describedBy =
+  [descriptionId, errorId].filter(Boolean).join(" ") || undefined;
 ---
 
-<div class:list={["ui-field", className]} data-state={error ? "error" : loading ? "loading" : "default"} data-active={active ? "true" : undefined}>
-  <label class="ui-field__label" for={id}>{label}{required && <span aria-hidden="true"> *</span>}</label>
-  {description && <p class="ui-field__description" id={descriptionId}>{description}</p>}
+<div
+  class:list={["ui-field", className]}
+  data-state={error ? "error" : loading ? "loading" : "default"}
+  data-active={active ? "true" : undefined}
+>
+  <label class="ui-field__label" for={id}
+    >{label}{required && <span aria-hidden="true"> *</span>}</label
+  >
+  {
+    description && (
+      <p class="ui-field__description" id={descriptionId}>
+        {description}
+      </p>
+    )
+  }
   <div class="ui-field__control-wrap">
     <textarea
       class="ui-textarea"
@@ -52,9 +65,20 @@ const describedBy = [descriptionId, errorId].filter(Boolean).join(" ") || undefi
       disabled={disabled || loading}
       aria-invalid={error ? "true" : undefined}
       aria-describedby={describedBy}
-      aria-busy={loading ? "true" : undefined}
-    >{value}</textarea>
-    {loading && <Icon icon={LoaderCircle} class="ui-field__status-icon ui-icon--spin" />}
+      aria-busy={loading ? "true" : undefined}>{value}</textarea
+    >
+    {
+      loading && (
+        <Icon icon={LoaderCircle} class="ui-field__status-icon ui-icon--spin" />
+      )
+    }
   </div>
-  {error && <p class="ui-field__error" id={errorId}><Icon icon={CircleAlert} size="sm" />{error}</p>}
+  {
+    error && (
+      <p class="ui-field__error" id={errorId}>
+        <Icon icon={CircleAlert} size="sm" />
+        {error}
+      </p>
+    )
+  }
 </div>

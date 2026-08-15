@@ -10,20 +10,55 @@ interface Props {
   eyebrowId?: string;
   titleId?: string;
 }
-const { id, eyebrow, title, description, density = "default", class: className, hidden = false, eyebrowId, titleId } = Astro.props;
-const headingId = titleId ?? (title ? `${id ?? title.toLocaleLowerCase().replaceAll(/[^a-z0-9]+/g, "-")}-title` : undefined);
+const {
+  id,
+  eyebrow,
+  title,
+  description,
+  density = "default",
+  class: className,
+  hidden = false,
+  eyebrowId,
+  titleId,
+} = Astro.props;
+const headingId =
+  titleId ??
+  (title
+    ? `${id ?? title.toLocaleLowerCase().replaceAll(/[^a-z0-9]+/g, "-")}-title`
+    : undefined);
 ---
 
-<section id={id} class:list={["ui-page-section", density === "compact" && "ui-page-section--compact", className]} aria-labelledby={headingId} hidden={hidden}>
-  {(eyebrow || title || description || Astro.slots.has("actions")) && (
-    <header class="ui-page-section__header">
-      <div>
-        {eyebrow && <p class="ui-overline" id={eyebrowId}>{eyebrow}</p>}
-        {title && <h2 id={headingId}>{title}</h2>}
-        {description && <p class="ui-page-section__description">{description}</p>}
-      </div>
-      {Astro.slots.has("actions") && <div class="ui-page-section__actions"><slot name="actions" /></div>}
-    </header>
-  )}
+<section
+  id={id}
+  class:list={[
+    "ui-page-section",
+    density === "compact" && "ui-page-section--compact",
+    className,
+  ]}
+  aria-labelledby={headingId}
+  hidden={hidden}
+>
+  {
+    (eyebrow || title || description || Astro.slots.has("actions")) && (
+      <header class="ui-page-section__header">
+        <div>
+          {eyebrow && (
+            <p class="ui-overline" id={eyebrowId}>
+              {eyebrow}
+            </p>
+          )}
+          {title && <h2 id={headingId}>{title}</h2>}
+          {description && (
+            <p class="ui-page-section__description">{description}</p>
+          )}
+        </div>
+        {Astro.slots.has("actions") && (
+          <div class="ui-page-section__actions">
+            <slot name="actions" />
+          </div>
+        )}
+      </header>
+    )
+  }
   <div class="ui-page-section__content"><slot /></div>
 </section>

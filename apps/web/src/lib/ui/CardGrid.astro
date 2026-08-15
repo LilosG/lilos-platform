@@ -8,6 +8,10 @@ interface Props {
 const { id, minimum = "md", class: className, hidden = false } = Astro.props;
 ---
 
-<div id={id} class:list={["ui-card-grid", `ui-card-grid--${minimum}`, className]} hidden={hidden}>
+<div
+  id={id}
+  class:list={["ui-card-grid", `ui-card-grid--${minimum}`, className]}
+  hidden={hidden}
+>
   <slot />
 </div>

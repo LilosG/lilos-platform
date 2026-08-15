@@ -7,9 +7,19 @@ interface Props {
   class?: string;
 }
 
-const { id, as: Element = "div", gap = "4", hidden = false, class: className }: Props = Astro.props;
+const {
+  id,
+  as: Element = "div",
+  gap = "4",
+  hidden = false,
+  class: className,
+}: Props = Astro.props;
 ---
 
-<Element id={id} class:list={["ui-stack", `ui-stack--${gap}`, className]} hidden={hidden}>
+<Element
+  id={id}
+  class:list={["ui-stack", `ui-stack--${gap}`, className]}
+  hidden={hidden}
+>
   <slot />
 </Element>

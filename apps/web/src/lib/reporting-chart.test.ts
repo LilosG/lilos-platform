@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  trendChartModel,
-  trendSummary,
-} from "./reporting-chart";
+import { trendChartModel, trendSummary } from "./reporting-chart";
 
 describe("shared reporting trend chart", () => {
   it("passes missing days to Chart.js as truthful null gaps", () => {
@@ -17,11 +14,7 @@ describe("shared reporting trend chart", () => {
       ],
     });
 
-    expect(model.labels).toEqual([
-      "2026-08-10",
-      "2026-08-11",
-      "2026-08-12",
-    ]);
+    expect(model.labels).toEqual(["2026-08-10", "2026-08-11", "2026-08-12"]);
     expect(model.values).toEqual([4, null, 7]);
   });
 

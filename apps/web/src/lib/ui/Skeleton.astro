@@ -9,9 +9,36 @@ interface Props {
   disabled?: boolean;
 }
 
-const { shape = "text", size = "md", lines = 1, label = "Loading content", error = false, active = false, disabled = false } = Astro.props;
+const {
+  shape = "text",
+  size = "md",
+  lines = 1,
+  label = "Loading content",
+  error = false,
+  active = false,
+  disabled = false,
+} = Astro.props;
 ---
 
-<div class:list={["ui-skeleton-group", error && "ui-skeleton-group--error"]} role="status" aria-label={error ? "Content failed to load" : label} aria-busy={error ? undefined : "true"} aria-disabled={disabled ? "true" : undefined} data-state={error ? "error" : "loading"} data-active={active ? "true" : undefined}>
-  {Array.from({ length: lines }, (_, index) => <span class:list={["ui-skeleton", `ui-skeleton--${shape}`, `ui-skeleton--${size}`]} data-last={index === lines - 1 ? "true" : undefined}></span>)}
+<div
+  class:list={["ui-skeleton-group", error && "ui-skeleton-group--error"]}
+  role="status"
+  aria-label={error ? "Content failed to load" : label}
+  aria-busy={error ? undefined : "true"}
+  aria-disabled={disabled ? "true" : undefined}
+  data-state={error ? "error" : "loading"}
+  data-active={active ? "true" : undefined}
+>
+  {
+    Array.from({ length: lines }, (_, index) => (
+      <span
+        class:list={[
+          "ui-skeleton",
+          `ui-skeleton--${shape}`,
+          `ui-skeleton--${size}`,
+        ]}
+        data-last={index === lines - 1 ? "true" : undefined}
+      />
+    ))
+  }
 </div>

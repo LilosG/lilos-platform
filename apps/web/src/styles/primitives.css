@@ -1040,7 +1040,8 @@
   gap: var(--space-4);
   padding: var(--space-4) var(--space-5);
   border-bottom: var(--border-width) solid var(--color-table-row-border);
-  transition: background-color var(--motion-duration-fast) var(--motion-easing-standard);
+  transition: background-color var(--motion-duration-fast)
+    var(--motion-easing-standard);
 }
 .ui-record-list > li:last-child {
   border-bottom: 0;
@@ -1216,7 +1217,8 @@
 .ui-stage-strip__item[aria-pressed="true"] {
   background: var(--palette-forest-50);
   color: var(--color-action-primary);
-  box-shadow: inset 0 calc(var(--border-width-strong) * -1) 0 var(--color-action-primary);
+  box-shadow: inset 0 calc(var(--border-width-strong) * -1) 0
+    var(--color-action-primary);
 }
 .ui-stage-strip__count {
   min-width: var(--control-height-sm);
@@ -1237,9 +1239,15 @@
   display: block;
   min-height: var(--type-body-line);
   border-radius: var(--radius-sm);
-  background: linear-gradient(90deg, var(--color-surface-sunken), var(--palette-neutral-200), var(--color-surface-sunken));
+  background: linear-gradient(
+    90deg,
+    var(--color-surface-sunken),
+    var(--palette-neutral-200),
+    var(--color-surface-sunken)
+  );
   background-size: 200% 100%;
-  animation: ui-skeleton var(--motion-duration-slow) var(--motion-easing-standard) infinite alternate;
+  animation: ui-skeleton var(--motion-duration-slow)
+    var(--motion-easing-standard) infinite alternate;
 }
 .ui-skeleton--text[data-last="true"] {
   width: 70%;

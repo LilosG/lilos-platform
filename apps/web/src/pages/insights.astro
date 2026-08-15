@@ -21,26 +21,58 @@ import "../styles/global.css";
   </head>
   <body>
     <AppShell>
-      <PageShell id="boot-not-configured"><EmptyState heading="This deployment is not configured" description="Connect the platform runtime configuration to enable Insights." /></PageShell>
-      <PageShell id="boot-loading" hidden><Skeleton lines={3} label="Loading insights" /></PageShell>
+      <PageShell id="boot-not-configured"
+        ><EmptyState
+          heading="This deployment is not configured"
+          description="Connect the platform runtime configuration to enable Insights."
+        /></PageShell
+      >
+      <PageShell id="boot-loading" hidden
+        ><Skeleton lines={3} label="Loading insights" /></PageShell
+      >
       <PageShell id="boot-error" hidden><Region role="alert" /></PageShell>
-      <PageShell id="workspace-empty" hidden><EmptyState heading="No organization access yet" description="Ask an administrator to invite your account to an organization." /></PageShell>
+      <PageShell id="workspace-empty" hidden
+        ><EmptyState
+          heading="No organization access yet"
+          description="Ask an administrator to invite your account to an organization."
+        /></PageShell
+      >
 
       <PageShell id="insights-content" hidden>
-        <PageHeader eyebrow="Operations" title="Insights" description="Client-facing reporting from observed operational and provider data.">
-          <Button slot="actions" href="/integrations" variant="secondary" size="sm">Manage data sources</Button>
+        <PageHeader
+          eyebrow="Operations"
+          title="Insights"
+          description="Client-facing reporting from observed operational and provider data."
+        >
+          <Button
+            slot="actions"
+            href="/integrations"
+            variant="secondary"
+            size="sm">Manage data sources</Button
+          >
           <Region slot="meta" id="insights-reporting-controls" />
         </PageHeader>
         <PageSection eyebrow="Analytics" title="Website performance">
           <Region slot="actions" id="analytics-provenance" />
-          <Region id="website-performance-panel"><Skeleton lines={4} label="Loading website performance" /></Region>
+          <Region id="website-performance-panel"
+            ><Skeleton lines={4} label="Loading website performance" /></Region
+          >
         </PageSection>
         <PageSection eyebrow="Search Console" title="Organic search">
           <Region slot="actions" id="search-console-provenance" />
           <Region id="organic-search-panel" />
         </PageSection>
-        <PageSection eyebrow="Operational data" title="Cross-product digest"><Region id="digest-panel" /></PageSection>
-        <Notice title="Reporting data sources"><p>Connection and provider health are managed centrally.</p><Button slot="action" href="/integrations" variant="secondary" size="sm">Manage integrations</Button></Notice>
+        <PageSection eyebrow="Operational data" title="Cross-product digest"
+          ><Region id="digest-panel" /></PageSection
+        >
+        <Notice title="Reporting data sources"
+          ><p>Connection and provider health are managed centrally.</p><Button
+            slot="action"
+            href="/integrations"
+            variant="secondary"
+            size="sm">Manage integrations</Button
+          ></Notice
+        >
       </PageShell>
     </AppShell>
     <script>
@@ -140,7 +172,9 @@ import "../styles/global.css";
         ga4Res: Awaited<ReturnType<typeof fetchAnalyticsPerformance>>,
       ): void {
         const panel = document.getElementById("website-performance-panel")!;
-        const provenancePanel = document.getElementById("analytics-provenance")!;
+        const provenancePanel = document.getElementById(
+          "analytics-provenance",
+        )!;
         panel.replaceChildren();
         provenancePanel.replaceChildren();
 

@@ -27,50 +27,132 @@ import "../styles/global.css";
   </head>
   <body>
     <AppShell>
-      <PageShell id="boot-not-configured"><EmptyState heading="This deployment is not configured" description="Connect the platform runtime configuration to enable Reviews." /></PageShell>
-      <PageShell id="boot-loading" hidden><Skeleton lines={3} label="Loading reviews" /></PageShell>
+      <PageShell id="boot-not-configured"
+        ><EmptyState
+          heading="This deployment is not configured"
+          description="Connect the platform runtime configuration to enable Reviews."
+        /></PageShell
+      >
+      <PageShell id="boot-loading" hidden
+        ><Skeleton lines={3} label="Loading reviews" /></PageShell
+      >
       <PageShell id="boot-error" hidden><Region role="alert" /></PageShell>
-      <PageShell id="workspace-empty" hidden><EmptyState heading="No organization access yet" description="Ask an administrator to invite your account to an organization." /></PageShell>
+      <PageShell id="workspace-empty" hidden
+        ><EmptyState
+          heading="No organization access yet"
+          description="Ask an administrator to invite your account to an organization."
+        /></PageShell
+      >
 
       <PageShell id="reviews-content" hidden>
-        <PageHeader eyebrow="Operations" title="Reviews" description="Triage customer reviews, prepare governed responses, and verify publication outcomes.">
-          <Select slot="actions" id="location-select" label="Select location" options={[]} />
-          <Button slot="actions" id="ingest-reviews-button" variant="secondary" size="sm">Sync from Google</Button>
+        <PageHeader
+          eyebrow="Operations"
+          title="Reviews"
+          description="Triage customer reviews, prepare governed responses, and verify publication outcomes."
+        >
+          <Select
+            slot="actions"
+            id="location-select"
+            label="Select location"
+            options={[]}
+          />
+          <Button
+            slot="actions"
+            id="ingest-reviews-button"
+            variant="secondary"
+            size="sm">Sync from Google</Button
+          >
         </PageHeader>
 
-        <Notice title="Google reviews"><p>Connection health and location mapping are managed centrally.</p><Button slot="action" href="/integrations" variant="secondary" size="sm">Manage integrations</Button></Notice>
-        <Region id="no-locations" hidden><Notice tone="warning" title="Location setup required"><p>Add a location before reviews can be synced and answered.</p><Button slot="action" href="/settings" variant="secondary" size="sm">Manage locations</Button></Notice></Region>
+        <Notice title="Google reviews"
+          ><p>
+            Connection health and location mapping are managed centrally.
+          </p><Button
+            slot="action"
+            href="/integrations"
+            variant="secondary"
+            size="sm">Manage integrations</Button
+          ></Notice
+        >
+        <Region id="no-locations" hidden
+          ><Notice tone="warning" title="Location setup required"
+            ><p>
+              Add a location before reviews can be synced and answered.
+            </p><Button
+              slot="action"
+              href="/settings"
+              variant="secondary"
+              size="sm">Manage locations</Button
+            ></Notice
+          ></Region
+        >
 
         <Region id="reviews-workspace" hidden>
-          <PageSection eyebrow="Performance" title="Review outcomes"><CardGrid id="reviews-metrics" minimum="sm" /></PageSection>
-          <PageSection eyebrow="Workflow" title="Response stages" description="Counts reflect all synced reviews. Select a stage to filter the loaded inbox.">
-            <StageStrip id="review-stages" label="Review response stages" items={[
-              { id: "all", label: "All" },
-              { id: "inbox", label: "Inbox" },
-              { id: "draft", label: "Draft" },
-              { id: "approval", label: "Approval" },
-              { id: "publish", label: "Publishing" },
-              { id: "responded", label: "Responded" },
-            ]} />
+          <PageSection eyebrow="Performance" title="Review outcomes"
+            ><CardGrid id="reviews-metrics" minimum="sm" /></PageSection
+          >
+          <PageSection
+            eyebrow="Workflow"
+            title="Response stages"
+            description="Counts reflect all synced reviews. Select a stage to filter the loaded inbox."
+          >
+            <StageStrip
+              id="review-stages"
+              label="Review response stages"
+              items={[
+                { id: "all", label: "All" },
+                { id: "inbox", label: "Inbox" },
+                { id: "draft", label: "Draft" },
+                { id: "approval", label: "Approval" },
+                { id: "publish", label: "Publishing" },
+                { id: "responded", label: "Responded" },
+              ]}
+            />
           </PageSection>
           <PageSection eyebrow="Inbox" title="Reviews">
             <Card>
               <Inline>
-                <Select id="status-filter" label="Status" options={[
-                  { value: "", label: "All statuses" }, { value: "new", label: "New" },
-                  { value: "classified", label: "Classified" }, { value: "escalated", label: "Escalated" },
-                  { value: "publishing", label: "Pending Google moderation" }, { value: "publication_failed", label: "Response failed" },
-                  { value: "responded", label: "Responded" }, { value: "restricted", label: "Restricted" },
-                ]} />
-                <Input id="search-input" type="search" label="Search reviews" placeholder="Search review text" />
-                <Button id="apply-filters" variant="secondary" size="sm">Apply filters</Button>
+                <Select
+                  id="status-filter"
+                  label="Status"
+                  options={[
+                    { value: "", label: "All statuses" },
+                    { value: "new", label: "New" },
+                    { value: "classified", label: "Classified" },
+                    { value: "escalated", label: "Escalated" },
+                    { value: "publishing", label: "Pending Google moderation" },
+                    { value: "publication_failed", label: "Response failed" },
+                    { value: "responded", label: "Responded" },
+                    { value: "restricted", label: "Restricted" },
+                  ]}
+                />
+                <Input
+                  id="search-input"
+                  type="search"
+                  label="Search reviews"
+                  placeholder="Search review text"
+                />
+                <Button id="apply-filters" variant="secondary" size="sm"
+                  >Apply filters</Button
+                >
               </Inline>
             </Card>
             <Region id="reviews-list-panel" />
           </PageSection>
 
-          <PageSection id="review-detail" eyebrow="Review detail" title="Selected review" titleId="review-detail-title" hidden>
-            <Button slot="actions" id="close-detail" variant="secondary" size="sm">Back to list</Button>
+          <PageSection
+            id="review-detail"
+            eyebrow="Review detail"
+            title="Selected review"
+            titleId="review-detail-title"
+            hidden
+          >
+            <Button
+              slot="actions"
+              id="close-detail"
+              variant="secondary"
+              size="sm">Back to list</Button
+            >
             <Region id="review-detail-content" />
           </PageSection>
         </Region>
@@ -122,7 +204,14 @@ import "../styles/global.css";
       let latestReviews: ReviewSummary[] = [];
 
       const REVIEW_STAGE_STATUSES: Record<string, string[]> = {
-        inbox: ["new", "classified", "triaged", "escalated", "disputed", "restricted"],
+        inbox: [
+          "new",
+          "classified",
+          "triaged",
+          "escalated",
+          "disputed",
+          "restricted",
+        ],
         draft: ["drafting"],
         approval: ["awaiting_approval", "approved"],
         publish: ["publishing", "publication_failed"],
@@ -141,15 +230,24 @@ import "../styles/global.css";
         document.getElementById("review-detail")!.hidden = true;
       });
 
-      document.querySelectorAll<HTMLButtonElement>("#review-stages [data-stage]").forEach((button) => {
-        button.addEventListener("click", () => {
-          activeReviewStage = button.dataset.stage ?? "all";
-          document.querySelectorAll<HTMLButtonElement>("#review-stages [data-stage]").forEach((candidate) => {
-            candidate.setAttribute("aria-pressed", String(candidate === button));
+      document
+        .querySelectorAll<HTMLButtonElement>("#review-stages [data-stage]")
+        .forEach((button) => {
+          button.addEventListener("click", () => {
+            activeReviewStage = button.dataset.stage ?? "all";
+            document
+              .querySelectorAll<HTMLButtonElement>(
+                "#review-stages [data-stage]",
+              )
+              .forEach((candidate) => {
+                candidate.setAttribute(
+                  "aria-pressed",
+                  String(candidate === button),
+                );
+              });
+            renderReviewRows(latestReviews);
           });
-          renderReviewRows(latestReviews);
         });
-      });
 
       async function loadOrganization(
         org: import("../lib/workspace").MyOrganization,
@@ -178,7 +276,10 @@ import "../styles/global.css";
         const select = document.getElementById("location-select")!;
         setSelectOptions(
           "location-select",
-          locations.map((location) => ({ value: location.id, label: location.name })),
+          locations.map((location) => ({
+            value: location.id,
+            label: location.name,
+          })),
           locations[0]?.id,
         );
         select.addEventListener("change", async () => {
@@ -257,15 +358,25 @@ import "../styles/global.css";
         );
       }
 
-      function renderReviewStages(stats: import("../lib/reviews").ReviewSummaryStats): void {
+      function renderReviewStages(
+        stats: import("../lib/reviews").ReviewSummaryStats,
+      ): void {
         const byStatus = stats.by_status ?? {};
-        const total = Object.values(byStatus).reduce((sum, count) => sum + count, 0);
+        const total = Object.values(byStatus).reduce(
+          (sum, count) => sum + count,
+          0,
+        );
         const counts: Record<string, number> = { all: total };
         for (const [stage, statuses] of Object.entries(REVIEW_STAGE_STATUSES)) {
-          counts[stage] = statuses.reduce((sum, status) => sum + (byStatus[status] ?? 0), 0);
+          counts[stage] = statuses.reduce(
+            (sum, status) => sum + (byStatus[status] ?? 0),
+            0,
+          );
         }
         for (const [stage, count] of Object.entries(counts)) {
-          const target = document.getElementById(`review-stages-${stage}-count`);
+          const target = document.getElementById(
+            `review-stages-${stage}-count`,
+          );
           if (target) target.textContent = String(count);
         }
       }
@@ -293,7 +404,9 @@ import "../styles/global.css";
         if (visibleReviews.length === 0) {
           panel.append(
             emptyState(
-              activeReviewStage === "all" ? "No reviews yet" : "No reviews in this stage",
+              activeReviewStage === "all"
+                ? "No reviews yet"
+                : "No reviews in this stage",
               activeReviewStage === "all"
                 ? "Sync from Google to import reviews into this workspace."
                 : "Choose another stage or sync again when new provider activity is available.",
@@ -315,33 +428,72 @@ import "../styles/global.css";
         panel.append(freshness);
         const table = buildDataTable(
           [
-            { key: "rating", header: "Rating", format: { unit: "decimal", precision: 1 }, render: (review: ReviewSummary) => review.rating },
             {
-              key: "status", header: "Status", render: (review: ReviewSummary) => statusBadge(
-                review.status === "new" ? "setup" : review.status === "responded" ? "ready" : "neutral",
-                statusLabel(review.status),
-              ),
+              key: "rating",
+              header: "Rating",
+              format: { unit: "decimal", precision: 1 },
+              render: (review: ReviewSummary) => review.rating,
             },
-            { key: "sentiment", header: "Sentiment", render: (review: ReviewSummary) => sentimentLabel(review.sentiment) },
             {
-              key: "risk", header: "Risk", render: (review: ReviewSummary) => statusBadge(
-                review.risk_level === "high" || review.risk_level === "critical"
-                  ? "blocked" : review.risk_level === "medium" ? "setup" : "neutral",
-                statusLabel(review.risk_level),
-              ),
+              key: "status",
+              header: "Status",
+              render: (review: ReviewSummary) =>
+                statusBadge(
+                  review.status === "new"
+                    ? "setup"
+                    : review.status === "responded"
+                      ? "ready"
+                      : "neutral",
+                  statusLabel(review.status),
+                ),
             },
-            { key: "date", header: "Review date", width: "content", render: (review: ReviewSummary) => formatTimestamp(review.review_created_at) },
-            { key: "actions", header: "Actions", width: "content", render: (review: ReviewSummary) => {
-              const action = document.createElement("span");
-              action.className = "ui-inline ui-inline--center";
-          const openButton = document.createElement("button");
-          openButton.type = "button";
-          openButton.className = "ui-button ui-button--secondary ui-button--sm";
-          openButton.textContent = "Review";
-          openButton.addEventListener("click", () => void openReview(review));
-              action.append(openButton);
-              return action;
-            } },
+            {
+              key: "sentiment",
+              header: "Sentiment",
+              render: (review: ReviewSummary) =>
+                sentimentLabel(review.sentiment),
+            },
+            {
+              key: "risk",
+              header: "Risk",
+              render: (review: ReviewSummary) =>
+                statusBadge(
+                  review.risk_level === "high" ||
+                    review.risk_level === "critical"
+                    ? "blocked"
+                    : review.risk_level === "medium"
+                      ? "setup"
+                      : "neutral",
+                  statusLabel(review.risk_level),
+                ),
+            },
+            {
+              key: "date",
+              header: "Review date",
+              width: "content",
+              render: (review: ReviewSummary) =>
+                formatTimestamp(review.review_created_at),
+            },
+            {
+              key: "actions",
+              header: "Actions",
+              width: "content",
+              render: (review: ReviewSummary) => {
+                const action = document.createElement("span");
+                action.className = "ui-inline ui-inline--center";
+                const openButton = document.createElement("button");
+                openButton.type = "button";
+                openButton.className =
+                  "ui-button ui-button--secondary ui-button--sm";
+                openButton.textContent = "Review";
+                openButton.addEventListener(
+                  "click",
+                  () => void openReview(review),
+                );
+                action.append(openButton);
+                return action;
+              },
+            },
           ],
           visibleReviews,
         );
@@ -594,7 +746,8 @@ import "../styles/global.css";
             if (resp.status === "awaiting_approval") {
               const approveBtn = document.createElement("button");
               approveBtn.type = "button";
-              approveBtn.className = "ui-button ui-button--primary ui-button--sm";
+              approveBtn.className =
+                "ui-button ui-button--primary ui-button--sm";
               approveBtn.textContent = "Approve";
               approveBtn.addEventListener("click", async () => {
                 approveBtn.disabled = true;
@@ -615,7 +768,8 @@ import "../styles/global.css";
             if (resp.status === "approved") {
               const publishBtn = document.createElement("button");
               publishBtn.type = "button";
-              publishBtn.className = "ui-button ui-button--primary ui-button--sm";
+              publishBtn.className =
+                "ui-button ui-button--primary ui-button--sm";
               publishBtn.textContent = "Publish";
               publishBtn.addEventListener("click", async () => {
                 publishBtn.disabled = true;

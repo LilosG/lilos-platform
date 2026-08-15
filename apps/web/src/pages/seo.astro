@@ -23,21 +23,60 @@ import "../styles/global.css";
   </head>
   <body>
     <AppShell>
-      <PageShell id="boot-not-configured"><EmptyState heading="This deployment is not configured" description="Connect the platform runtime configuration to enable SEO." /></PageShell>
-      <PageShell id="boot-loading" hidden><Skeleton lines={3} label="Loading SEO" /></PageShell>
+      <PageShell id="boot-not-configured"
+        ><EmptyState
+          heading="This deployment is not configured"
+          description="Connect the platform runtime configuration to enable SEO."
+        /></PageShell
+      >
+      <PageShell id="boot-loading" hidden
+        ><Skeleton lines={3} label="Loading SEO" /></PageShell
+      >
       <PageShell id="boot-error" hidden><Region role="alert" /></PageShell>
-      <PageShell id="workspace-empty" hidden><EmptyState heading="No organization access yet" description="Ask an administrator to invite your account to an organization." /></PageShell>
+      <PageShell id="workspace-empty" hidden
+        ><EmptyState
+          heading="No organization access yet"
+          description="Ask an administrator to invite your account to an organization."
+        /></PageShell
+      >
 
       <PageShell id="seo-content" hidden>
-        <PageHeader eyebrow="Operations" title="SEO" description="Inspect crawl health, prioritize governed opportunities, and track observed search performance.">
-          <Button slot="actions" href="/integrations" variant="secondary" size="sm">Manage integrations</Button>
+        <PageHeader
+          eyebrow="Operations"
+          title="SEO"
+          description="Inspect crawl health, prioritize governed opportunities, and track observed search performance."
+        >
+          <Button
+            slot="actions"
+            href="/integrations"
+            variant="secondary"
+            size="sm">Manage integrations</Button
+          >
         </PageHeader>
-        <Notice title="Search data"><p>Search Console and Analytics connection health are managed centrally.</p><Button slot="action" href="/integrations" variant="secondary" size="sm">Manage integrations</Button></Notice>
-        <PageSection eyebrow="Performance" title="SEO outcomes"><CardGrid id="seo-metrics" minimum="sm" /></PageSection>
-        <Tabs id="seo-tabs" label="SEO workspace" items={[
-          { id: "overview", label: "Overview" }, { id: "crawl", label: "Crawl" },
-          { id: "opportunities", label: "Opportunities" }, { id: "search-console", label: "Search Console" },
-        ]}>
+        <Notice title="Search data"
+          ><p>
+            Search Console and Analytics connection health are managed
+            centrally.
+          </p><Button
+            slot="action"
+            href="/integrations"
+            variant="secondary"
+            size="sm">Manage integrations</Button
+          ></Notice
+        >
+        <PageSection eyebrow="Performance" title="SEO outcomes"
+          ><CardGrid id="seo-metrics" minimum="sm" /></PageSection
+        >
+        <Tabs
+          id="seo-tabs"
+          label="SEO workspace"
+          items={[
+            { id: "overview", label: "Overview" },
+            { id: "crawl", label: "Crawl" },
+            { id: "opportunities", label: "Opportunities" },
+            { id: "search-console", label: "Search Console" },
+          ]}
+        >
           <Region id="tab-overview" tabPanel="overview" />
           <Region id="tab-crawl" tabPanel="crawl" hidden />
           <Region id="tab-opportunities" tabPanel="opportunities" hidden />
@@ -958,8 +997,7 @@ import "../styles/global.css";
           // Top queries
           if (data.top_queries && data.top_queries.length > 0) {
             const queriesSection = document.createElement("div");
-            queriesSection.className =
-              "ui-card ui-card--spaced ui-card--flush";
+            queriesSection.className = "ui-card ui-card--spaced ui-card--flush";
             const qHeader = document.createElement("div");
             qHeader.className = "ui-card__header";
             const qTitle = document.createElement("h3");
@@ -1004,8 +1042,7 @@ import "../styles/global.css";
           // Top pages
           if (data.top_pages && data.top_pages.length > 0) {
             const pagesSection = document.createElement("div");
-            pagesSection.className =
-              "ui-card ui-card--spaced ui-card--flush";
+            pagesSection.className = "ui-card ui-card--spaced ui-card--flush";
             const pHeader = document.createElement("div");
             pHeader.className = "ui-card__header";
             const pTitle = document.createElement("h3");

@@ -49,25 +49,42 @@ let configured = false;
 function cssNumber(styles: CSSStyleDeclaration, property: string): number {
   const value = styles.getPropertyValue(property).trim();
   if (value.endsWith("rem")) {
-    return Number.parseFloat(value) * Number.parseFloat(getComputedStyle(document.documentElement).fontSize);
+    return (
+      Number.parseFloat(value) *
+      Number.parseFloat(getComputedStyle(document.documentElement).fontSize)
+    );
   }
   return Number.parseFloat(value) || 12;
 }
 
 function themeFrom(element: HTMLElement): ChartTheme {
-  const styles = getComputedStyle(element.isConnected ? element : document.documentElement);
+  const styles = getComputedStyle(
+    element.isConnected ? element : document.documentElement,
+  );
   return {
     series: [1, 2, 3, 4, 5, 6].map(
-      (index) => styles.getPropertyValue(`--chart-series-${index}`).trim() || "currentColor",
+      (index) =>
+        styles.getPropertyValue(`--chart-series-${index}`).trim() ||
+        "currentColor",
     ),
-    fillStart: styles.getPropertyValue("--chart-series-1-fill-start").trim() || "currentColor",
-    fillEnd: styles.getPropertyValue("--chart-series-1-fill-end").trim() || "transparent",
+    fillStart:
+      styles.getPropertyValue("--chart-series-1-fill-start").trim() ||
+      "currentColor",
+    fillEnd:
+      styles.getPropertyValue("--chart-series-1-fill-end").trim() ||
+      "transparent",
     grid: styles.getPropertyValue("--chart-grid").trim() || "transparent",
-    gridVertical: styles.getPropertyValue("--chart-grid-vertical").trim() || "transparent",
+    gridVertical:
+      styles.getPropertyValue("--chart-grid-vertical").trim() || "transparent",
     axis: styles.getPropertyValue("--chart-axis").trim() || "currentColor",
-    tooltipBackground: styles.getPropertyValue("--chart-tooltip-background").trim() || "currentColor",
-    tooltipForeground: styles.getPropertyValue("--chart-tooltip-foreground").trim() || "currentColor",
-    fontFamily: styles.getPropertyValue("--font-family-sans").trim() || "sans-serif",
+    tooltipBackground:
+      styles.getPropertyValue("--chart-tooltip-background").trim() ||
+      "currentColor",
+    tooltipForeground:
+      styles.getPropertyValue("--chart-tooltip-foreground").trim() ||
+      "currentColor",
+    fontFamily:
+      styles.getPropertyValue("--font-family-sans").trim() || "sans-serif",
     captionSize: cssNumber(styles, "--type-caption-size"),
     captionLineHeight: cssNumber(styles, "--type-caption-line"),
     lineWidth: cssNumber(styles, "--chart-line-width"),
@@ -116,7 +133,8 @@ function roundStep(value: number): number {
   const exponent = Math.floor(Math.log10(value));
   const magnitude = 10 ** exponent;
   const fraction = value / magnitude;
-  const factor = fraction <= 1.5 ? 1 : fraction <= 3 ? 2 : fraction <= 7 ? 5 : 10;
+  const factor =
+    fraction <= 1.5 ? 1 : fraction <= 3 ? 2 : fraction <= 7 ? 5 : 10;
   return factor * magnitude;
 }
 
@@ -168,10 +186,19 @@ export function themedLineDataset(
     backgroundColor: (context: ScriptableContext<"line">) => {
       const area = context.chart.chartArea;
       if (!area || area.bottom <= area.top) return theme.fillEnd;
-      if (!gradient || gradientTop !== area.top || gradientBottom !== area.bottom) {
+      if (
+        !gradient ||
+        gradientTop !== area.top ||
+        gradientBottom !== area.bottom
+      ) {
         gradientTop = area.top;
         gradientBottom = area.bottom;
-        gradient = context.chart.ctx.createLinearGradient(0, area.top, 0, area.bottom);
+        gradient = context.chart.ctx.createLinearGradient(
+          0,
+          area.top,
+          0,
+          area.bottom,
+        );
         gradient?.addColorStop(0, theme.fillStart);
         gradient?.addColorStop(1, theme.fillEnd);
       }

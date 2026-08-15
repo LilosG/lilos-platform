@@ -10,14 +10,26 @@ interface Props {
 }
 
 const { id, tone = "info", title, hidden = false } = Astro.props;
-const icon = tone === "success" ? CircleCheck : tone === "info" ? Info : CircleAlert;
+const icon =
+  tone === "success" ? CircleCheck : tone === "info" ? Info : CircleAlert;
 ---
 
-<aside id={id} class:list={["ui-notice", `ui-notice--${tone}`]} role={tone === "danger" ? "alert" : "status"} hidden={hidden}>
+<aside
+  id={id}
+  class:list={["ui-notice", `ui-notice--${tone}`]}
+  role={tone === "danger" ? "alert" : "status"}
+  hidden={hidden}
+>
   <Icon icon={icon} />
   <div class="ui-notice__content">
     {title && <strong>{title}</strong>}
     <slot />
   </div>
-  {Astro.slots.has("action") && <div class="ui-notice__action"><slot name="action" /></div>}
+  {
+    Astro.slots.has("action") && (
+      <div class="ui-notice__action">
+        <slot name="action" />
+      </div>
+    )
+  }
 </aside>

@@ -41,7 +41,11 @@ export interface ErrorContent {
 
 export const ACTION_LANGUAGE: Record<ActionName, ActionLanguage> = {
   approve: { idle: "Approve", working: "Approving…", complete: "Approved" },
-  configure: { idle: "Configure", working: "Configuring…", complete: "Configured" },
+  configure: {
+    idle: "Configure",
+    working: "Configuring…",
+    complete: "Configured",
+  },
   connect: { idle: "Connect", working: "Connecting…", complete: "Connected" },
   map: { idle: "Map", working: "Mapping…", complete: "Mapped" },
   open: { idle: "Open", working: "Opening…", complete: "Opened" },
@@ -53,7 +57,10 @@ export const ACTION_LANGUAGE: Record<ActionName, ActionLanguage> = {
   sync: { idle: "Sync", working: "Syncing…", complete: "Synced" },
 };
 
-export function actionLabel(action: ActionName, phase: ActionPhase = "idle"): string {
+export function actionLabel(
+  action: ActionName,
+  phase: ActionPhase = "idle",
+): string {
   return ACTION_LANGUAGE[action][phase];
 }
 
@@ -64,12 +71,21 @@ export function statusPresentation(status: string | null | undefined): {
   return { label: statusLabel(status), tone: statusTone(status) };
 }
 
-export function emptyStateContent(content: EmptyStateContent): EmptyStateContent {
+export function emptyStateContent(
+  content: EmptyStateContent,
+): EmptyStateContent {
   if (!content.heading.trim() || !content.situation.trim()) {
-    throw new Error("Empty states require one heading and one situation statement.");
+    throw new Error(
+      "Empty states require one heading and one situation statement.",
+    );
   }
-  if (content.action && (!content.action.label.trim() || !content.action.href.trim())) {
-    throw new Error("Empty-state actions require both a label and destination.");
+  if (
+    content.action &&
+    (!content.action.label.trim() || !content.action.href.trim())
+  ) {
+    throw new Error(
+      "Empty-state actions require both a label and destination.",
+    );
   }
   return content;
 }
@@ -85,7 +101,9 @@ export function errorContent(args: {
   const happened = args.happened.trim();
   const recovery = args.recovery.trim();
   if (!operation || !happened || !recovery || !args.recoveryLabel.trim()) {
-    throw new Error("Errors require an operation, explanation, recovery instruction, and recovery action.");
+    throw new Error(
+      "Errors require an operation, explanation, recovery instruction, and recovery action.",
+    );
   }
   return {
     title: `Could not ${operation}`,
@@ -96,4 +114,3 @@ export function errorContent(args: {
     },
   };
 }
-

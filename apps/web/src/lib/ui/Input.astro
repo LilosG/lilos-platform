@@ -37,7 +37,8 @@ const {
 } = Astro.props;
 const descriptionId = description ? `${id}-description` : undefined;
 const errorId = error ? `${id}-error` : undefined;
-const describedBy = [descriptionId, errorId].filter(Boolean).join(" ") || undefined;
+const describedBy =
+  [descriptionId, errorId].filter(Boolean).join(" ") || undefined;
 ---
 
 <div
@@ -45,8 +46,16 @@ const describedBy = [descriptionId, errorId].filter(Boolean).join(" ") || undefi
   data-state={error ? "error" : loading ? "loading" : "default"}
   data-active={active ? "true" : undefined}
 >
-  <label class="ui-field__label" for={id}>{label}{required && <span aria-hidden="true"> *</span>}</label>
-  {description && <p class="ui-field__description" id={descriptionId}>{description}</p>}
+  <label class="ui-field__label" for={id}
+    >{label}{required && <span aria-hidden="true"> *</span>}</label
+  >
+  {
+    description && (
+      <p class="ui-field__description" id={descriptionId}>
+        {description}
+      </p>
+    )
+  }
   <div class="ui-field__control-wrap">
     <input
       class="ui-input"
@@ -62,7 +71,18 @@ const describedBy = [descriptionId, errorId].filter(Boolean).join(" ") || undefi
       aria-busy={loading ? "true" : undefined}
       autocomplete={autocomplete}
     />
-    {loading && <Icon icon={LoaderCircle} class="ui-field__status-icon ui-icon--spin" />}
+    {
+      loading && (
+        <Icon icon={LoaderCircle} class="ui-field__status-icon ui-icon--spin" />
+      )
+    }
   </div>
-  {error && <p class="ui-field__error" id={errorId}><Icon icon={CircleAlert} size="sm" />{error}</p>}
+  {
+    error && (
+      <p class="ui-field__error" id={errorId}>
+        <Icon icon={CircleAlert} size="sm" />
+        {error}
+      </p>
+    )
+  }
 </div>

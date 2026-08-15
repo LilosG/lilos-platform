@@ -8,15 +8,47 @@ interface Props {
   titleId?: string;
   descriptionId?: string;
 }
-const { eyebrow, title, description, class: className, eyebrowId, titleId, descriptionId } = Astro.props;
+const {
+  eyebrow,
+  title,
+  description,
+  class: className,
+  eyebrowId,
+  titleId,
+  descriptionId,
+} = Astro.props;
 ---
 
 <header class:list={["ui-page-header", className]}>
   <div class="ui-page-header__identity">
-    {eyebrow && <p class="ui-overline" id={eyebrowId}>{eyebrow}</p>}
+    {
+      eyebrow && (
+        <p class="ui-overline" id={eyebrowId}>
+          {eyebrow}
+        </p>
+      )
+    }
     <h1 id={titleId}>{title}</h1>
-    {description && <p class="ui-page-header__description" id={descriptionId}>{description}</p>}
+    {
+      description && (
+        <p class="ui-page-header__description" id={descriptionId}>
+          {description}
+        </p>
+      )
+    }
   </div>
-  {Astro.slots.has("actions") && <div class="ui-page-header__actions"><slot name="actions" /></div>}
-  {Astro.slots.has("meta") && <div class="ui-page-header__meta"><slot name="meta" /></div>}
+  {
+    Astro.slots.has("actions") && (
+      <div class="ui-page-header__actions">
+        <slot name="actions" />
+      </div>
+    )
+  }
+  {
+    Astro.slots.has("meta") && (
+      <div class="ui-page-header__meta">
+        <slot name="meta" />
+      </div>
+    )
+  }
 </header>

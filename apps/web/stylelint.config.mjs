@@ -2,9 +2,8 @@ export default {
   rules: {
     "color-no-hex": true,
     "declaration-property-value-disallowed-list": {
-      "/^(?:margin|padding|gap|row-gap|column-gap|inset|top|right|bottom|left)(?:-.+)?$/": [
-        "/(?:^|\\s)-?\\d*\\.?\\d+(?:px|rem)(?:\\s|$)/",
-      ],
+      "/^(?:margin|padding|gap|row-gap|column-gap|inset|top|right|bottom|left)(?:-.+)?$/":
+        ["/(?:^|\\s)-?\\d*\\.?\\d+(?:px|rem)(?:\\s|$)/"],
     },
   },
   overrides: [

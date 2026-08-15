@@ -24,31 +24,76 @@ import "../styles/global.css";
   </head>
   <body>
     <AppShell>
-      <PageShell id="boot-not-configured"><EmptyState heading="This deployment is not configured" description="Connect the platform runtime configuration to enable Content." /></PageShell>
-      <PageShell id="boot-loading" hidden><Skeleton lines={3} label="Loading content" /></PageShell>
+      <PageShell id="boot-not-configured"
+        ><EmptyState
+          heading="This deployment is not configured"
+          description="Connect the platform runtime configuration to enable Content."
+        /></PageShell
+      >
+      <PageShell id="boot-loading" hidden
+        ><Skeleton lines={3} label="Loading content" /></PageShell
+      >
       <PageShell id="boot-error" hidden><Region role="alert" /></PageShell>
-      <PageShell id="workspace-empty" hidden><EmptyState heading="No organization access yet" description="Ask an administrator to invite your account to an organization." /></PageShell>
+      <PageShell id="workspace-empty" hidden
+        ><EmptyState
+          heading="No organization access yet"
+          description="Ask an administrator to invite your account to an organization."
+        /></PageShell
+      >
 
       <PageShell id="content-workspace" hidden>
-        <PageHeader eyebrow="Operations" title="Content" description="Turn governed opportunities into reviewed, approved, and verified publications.">
-          <Button slot="actions" href="/integrations" variant="secondary" size="sm">Manage publishing</Button>
+        <PageHeader
+          eyebrow="Operations"
+          title="Content"
+          description="Turn governed opportunities into reviewed, approved, and verified publications."
+        >
+          <Button
+            slot="actions"
+            href="/integrations"
+            variant="secondary"
+            size="sm">Manage publishing</Button
+          >
         </PageHeader>
-        <Notice title="Publishing destination"><p>GitHub connection and repository access are managed centrally.</p><Button slot="action" href="/integrations" variant="secondary" size="sm">Manage integrations</Button></Notice>
+        <Notice title="Publishing destination"
+          ><p>
+            GitHub connection and repository access are managed centrally.
+          </p><Button
+            slot="action"
+            href="/integrations"
+            variant="secondary"
+            size="sm">Manage integrations</Button
+          ></Notice
+        >
 
-        <PageSection eyebrow="Performance" title="Content scope"><CardGrid id="content-metrics" minimum="sm" /></PageSection>
-        <Tabs id="content-tabs" label="Content workspace" items={[
-          { id: "pipeline", label: "Pipeline" },
-          { id: "opportunities", label: "Opportunities" },
-          { id: "publishing", label: "Publishing" },
-        ]}>
+        <PageSection eyebrow="Performance" title="Content scope"
+          ><CardGrid id="content-metrics" minimum="sm" /></PageSection
+        >
+        <Tabs
+          id="content-tabs"
+          label="Content workspace"
+          items={[
+            { id: "pipeline", label: "Pipeline" },
+            { id: "opportunities", label: "Opportunities" },
+            { id: "publishing", label: "Publishing" },
+          ]}
+        >
           <Region id="tab-pipeline" tabPanel="pipeline">
-            <PageSection eyebrow="Pipeline filter" title="Publishing stages" description="Counts are all-time summary totals. Select a stage to filter the currently loaded pipeline." density="compact">
-              <StageStrip id="content-stages" label="Pipeline stage filter" items={[
-                { id: "all", label: "Loaded items" },
-                { id: "draft", label: "Draft" },
-                { id: "approval", label: "Approval" },
-                { id: "published", label: "Published · all time" },
-              ]} />
+            <PageSection
+              eyebrow="Pipeline filter"
+              title="Publishing stages"
+              description="Counts are all-time summary totals. Select a stage to filter the currently loaded pipeline."
+              density="compact"
+            >
+              <StageStrip
+                id="content-stages"
+                label="Pipeline stage filter"
+                items={[
+                  { id: "all", label: "Loaded items" },
+                  { id: "draft", label: "Draft" },
+                  { id: "approval", label: "Approval" },
+                  { id: "published", label: "Published · all time" },
+                ]}
+              />
             </PageSection>
             <Region id="pipeline-list" />
           </Region>
@@ -56,8 +101,18 @@ import "../styles/global.css";
           <Region id="tab-publishing" tabPanel="publishing" hidden />
         </Tabs>
 
-        <PageSection id="content-detail" eyebrow="Content item" title="Content workflow" hidden>
-          <Button slot="actions" id="back-to-content-pipeline" variant="secondary" size="sm">Back to pipeline</Button>
+        <PageSection
+          id="content-detail"
+          eyebrow="Content item"
+          title="Content workflow"
+          hidden
+        >
+          <Button
+            slot="actions"
+            id="back-to-content-pipeline"
+            variant="secondary"
+            size="sm">Back to pipeline</Button
+          >
           <Region id="content-detail-body" live="polite" />
         </PageSection>
       </PageShell>
@@ -129,16 +184,25 @@ import "../styles/global.css";
         .getElementById("back-to-content-pipeline")!
         .addEventListener("click", showContentPipeline);
 
-      document.querySelectorAll<HTMLButtonElement>("#content-stages [data-stage]").forEach((button) => {
-        button.addEventListener("click", () => {
-          const stage = button.dataset.stage ?? "all";
-          document.querySelectorAll<HTMLButtonElement>("#content-stages [data-stage]").forEach((candidate) => {
-            candidate.setAttribute("aria-pressed", String(candidate === button));
+      document
+        .querySelectorAll<HTMLButtonElement>("#content-stages [data-stage]")
+        .forEach((button) => {
+          button.addEventListener("click", () => {
+            const stage = button.dataset.stage ?? "all";
+            document
+              .querySelectorAll<HTMLButtonElement>(
+                "#content-stages [data-stage]",
+              )
+              .forEach((candidate) => {
+                candidate.setAttribute(
+                  "aria-pressed",
+                  String(candidate === button),
+                );
+              });
+            activeContentStage = stage;
+            renderContentRows(loadedContentItems);
           });
-          activeContentStage = stage;
-          renderContentRows(loadedContentItems);
         });
-      });
 
       async function loadOrganization(
         org: import("../lib/workspace").MyOrganization,
@@ -232,14 +296,24 @@ import "../styles/global.css";
             summary.kind === "ok"
               ? summary.data.open_opportunities
               : opportunities.kind === "ok"
-                ? opportunities.data.filter((item) => isContentOpportunityActionable(item.status)).length
+                ? opportunities.data.filter((item) =>
+                    isContentOpportunityActionable(item.status),
+                  ).length
                 : 0,
-          draft: (byStatus.drafting ?? 0) + (byStatus.draft ?? 0) + (byStatus.briefing ?? 0),
-          approval: (byStatus.awaiting_approval ?? 0) + (byStatus.approved ?? 0) + (byStatus.approved_for_publish ?? 0),
+          draft:
+            (byStatus.drafting ?? 0) +
+            (byStatus.draft ?? 0) +
+            (byStatus.briefing ?? 0),
+          approval:
+            (byStatus.awaiting_approval ?? 0) +
+            (byStatus.approved ?? 0) +
+            (byStatus.approved_for_publish ?? 0),
           published: (byStatus.publishing ?? 0) + (byStatus.published ?? 0),
         };
         for (const [stage, count] of Object.entries(counts)) {
-          const target = document.getElementById(`content-stages-${stage}-count`);
+          const target = document.getElementById(
+            `content-stages-${stage}-count`,
+          );
           if (target) target.textContent = String(count);
         }
       }
@@ -290,7 +364,10 @@ import "../styles/global.css";
                 key: "status",
                 header: "Stage",
                 render: (item: ContentItem) =>
-                  statusBadge(statusTone(item.status), statusLabel(item.status)),
+                  statusBadge(
+                    statusTone(item.status),
+                    statusLabel(item.status),
+                  ),
               },
               {
                 key: "published",

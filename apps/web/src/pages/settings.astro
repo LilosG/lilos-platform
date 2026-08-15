@@ -1,6 +1,13 @@
 ---
 import AppShell from "../components/AppShell.astro";
-import { Boxes, Building2, Globe, MapPin, ShieldCheck, Users } from "@lucide/astro";
+import {
+  Boxes,
+  Building2,
+  Globe,
+  MapPin,
+  ShieldCheck,
+  Users,
+} from "@lucide/astro";
 import {
   Button,
   Card,
@@ -26,40 +33,124 @@ import "../styles/global.css";
   <body>
     <AppShell>
       <PageShell id="boot-not-configured" width="narrow">
-        <EmptyState heading="This deployment is not configured" description="Connect the platform runtime configuration to enable Settings." />
+        <EmptyState
+          heading="This deployment is not configured"
+          description="Connect the platform runtime configuration to enable Settings."
+        />
       </PageShell>
 
       <PageShell id="boot-loading" width="narrow" hidden>
         <Skeleton lines={4} label="Loading settings" />
       </PageShell>
 
-      <Region id="boot-error" as="div" role="alert" label="Settings error" hidden />
+      <Region
+        id="boot-error"
+        as="div"
+        role="alert"
+        label="Settings error"
+        hidden
+      />
 
       <PageShell id="workspace-empty" width="narrow" hidden>
-        <EmptyState heading="No organization access yet" description="Your account is not a member of any organization. Ask an administrator to invite you." />
+        <EmptyState
+          heading="No organization access yet"
+          description="Your account is not a member of any organization. Ask an administrator to invite you."
+        />
       </PageShell>
 
       <PageShell id="settings-content" hidden>
         <!-- Settings directory -->
-        <Region id="settings-directory" as="section" labelledBy="settings-title">
-          <PageHeader eyebrow="Manage" title="Settings" titleId="settings-title" description="Configure this organization's business information, locations, website, users, and governance." />
+        <Region
+          id="settings-directory"
+          as="section"
+          labelledBy="settings-title"
+        >
+          <PageHeader
+            eyebrow="Manage"
+            title="Settings"
+            titleId="settings-title"
+            description="Configure this organization's business information, locations, website, users, and governance."
+          />
 
           <CardGrid id="settings-cards">
-            <Card as="button" interactive dataDomain="business" heading="Business Information" description="Brand name, description, approved claims, and default call to action."><Icon icon={Building2} size="lg" /></Card>
-            <Card as="button" interactive dataDomain="locations" heading="Locations" description="Manage business locations and their status."><Icon icon={MapPin} size="lg" /></Card>
-            <Card as="button" interactive dataDomain="website" heading="Website & Domain" description="Review domains associated with this organization."><Icon icon={Globe} size="lg" /></Card>
-            <Card as="button" interactive dataDomain="users" heading="Users & Access" description="Team members, invitations, and role assignments."><Icon icon={Users} size="lg" /></Card>
-            <Card as="button" interactive dataDomain="governance" heading="Governance & Approvals" description="Approval policies, verified business details, and notification rules."><Icon icon={ShieldCheck} size="lg" /></Card>
-            <Card as="button" interactive dataDomain="products" heading="Products" description="Open the organization's entitled product workspaces."><Icon icon={Boxes} size="lg" /></Card>
+            <Card
+              as="button"
+              interactive
+              dataDomain="business"
+              heading="Business Information"
+              description="Brand name, description, approved claims, and default call to action."
+              ><Icon icon={Building2} size="lg" /></Card
+            >
+            <Card
+              as="button"
+              interactive
+              dataDomain="locations"
+              heading="Locations"
+              description="Manage business locations and their status."
+              ><Icon icon={MapPin} size="lg" /></Card
+            >
+            <Card
+              as="button"
+              interactive
+              dataDomain="website"
+              heading="Website & Domain"
+              description="Review domains associated with this organization."
+              ><Icon icon={Globe} size="lg" /></Card
+            >
+            <Card
+              as="button"
+              interactive
+              dataDomain="users"
+              heading="Users & Access"
+              description="Team members, invitations, and role assignments."
+              ><Icon icon={Users} size="lg" /></Card
+            >
+            <Card
+              as="button"
+              interactive
+              dataDomain="governance"
+              heading="Governance & Approvals"
+              description="Approval policies, verified business details, and notification rules."
+              ><Icon icon={ShieldCheck} size="lg" /></Card
+            >
+            <Card
+              as="button"
+              interactive
+              dataDomain="products"
+              heading="Products"
+              description="Open the organization's entitled product workspaces."
+              ><Icon icon={Boxes} size="lg" /></Card
+            >
           </CardGrid>
         </Region>
 
         <!-- Domain workspace (shown when a card is selected) -->
-        <Region id="settings-domain" as="section" labelledBy="domain-title" hidden>
-          <PageHeader eyebrow="Settings" title="—" titleId="domain-title" description="Loading setting details." descriptionId="domain-description">
-            <Button slot="actions" variant="secondary" size="sm" id="back-to-settings">Back to Settings</Button>
+        <Region
+          id="settings-domain"
+          as="section"
+          labelledBy="domain-title"
+          hidden
+        >
+          <PageHeader
+            eyebrow="Settings"
+            title="—"
+            titleId="domain-title"
+            description="Loading setting details."
+            descriptionId="domain-description"
+          >
+            <Button
+              slot="actions"
+              variant="secondary"
+              size="sm"
+              id="back-to-settings">Back to Settings</Button
+            >
           </PageHeader>
-          <Region id="domain-content" as="div" label="Settings details" class="ui-region--flow" />
+          <Region
+            id="domain-content"
+            as="div"
+            label="Settings details"
+            class="ui-region--flow"
+          />
         </Region>
       </PageShell>
     </AppShell>

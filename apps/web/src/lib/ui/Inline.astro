@@ -8,9 +8,25 @@ interface Props {
   class?: string;
 }
 
-const { id, as: Element = "div", align = "center", spread = false, hidden = false, class: className }: Props = Astro.props;
+const {
+  id,
+  as: Element = "div",
+  align = "center",
+  spread = false,
+  hidden = false,
+  class: className,
+}: Props = Astro.props;
 ---
 
-<Element id={id} class:list={["ui-inline", `ui-inline--${align}`, spread && "ui-inline--spread", className]} hidden={hidden}>
+<Element
+  id={id}
+  class:list={[
+    "ui-inline",
+    `ui-inline--${align}`,
+    spread && "ui-inline--spread",
+    className,
+  ]}
+  hidden={hidden}
+>
   <slot />
 </Element>

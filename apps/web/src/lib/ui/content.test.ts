@@ -33,9 +33,9 @@ describe("content standards", () => {
       }),
     ).toEqual({
       title: "Could not publish content",
-      description: "GitHub rejected the publishing request. Reconnect GitHub, then retry publishing.",
+      description:
+        "GitHub rejected the publishing request. Reconnect GitHub, then retry publishing.",
       recovery: { label: "Manage integration", href: "/integrations" },
     });
   });
 });
-

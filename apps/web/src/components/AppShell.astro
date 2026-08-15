@@ -101,7 +101,9 @@ const productKeys = [
                     data-nav-key={item.key}
                     aria-current={isActive(item.href) ? "page" : undefined}
                   >
-                    {item.icon && navIcons[item.icon] && <Icon icon={navIcons[item.icon]} class="sidebar__icon" />}
+                    {item.icon && navIcons[item.icon] && (
+                      <Icon icon={navIcons[item.icon]} class="sidebar__icon" />
+                    )}
                     {item.label}
                   </a>
                 </li>
@@ -141,11 +143,8 @@ const productKeys = [
           hidden
         />
         <div class="topbar__divider"></div>
-        <Button
-          id="sign-out-button"
-          variant="secondary"
-          size="sm"
-          hidden>Sign out</Button
+        <Button id="sign-out-button" variant="secondary" size="sm" hidden
+          >Sign out</Button
         >
       </div>
     </header>

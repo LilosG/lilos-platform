@@ -55,5 +55,11 @@ const {
     )
   }
   <div class="ui-card__body"><slot /></div>
-  {Astro.slots.has("footer") && <footer class="ui-card__footer"><slot name="footer" /></footer>}
+  {
+    Astro.slots.has("footer") && (
+      <footer class="ui-card__footer">
+        <slot name="footer" />
+      </footer>
+    )
+  }
 </Element>

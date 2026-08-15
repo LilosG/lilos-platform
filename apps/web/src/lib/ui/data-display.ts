@@ -45,7 +45,10 @@ function fixed(value: number, precision: number): string {
   });
 }
 
-function durationInSeconds(value: number, unit: MetricFormat["durationUnit"]): number {
+function durationInSeconds(
+  value: number,
+  unit: MetricFormat["durationUnit"],
+): number {
   if (unit === "milliseconds") return value / 1000;
   if (unit === "minutes") return value * 60;
   if (unit === "hours") return value * 3600;
@@ -53,7 +56,10 @@ function durationInSeconds(value: number, unit: MetricFormat["durationUnit"]): n
 }
 
 function formatDuration(value: number, format: MetricFormat): string {
-  const seconds = Math.max(0, Math.round(durationInSeconds(value, format.durationUnit)));
+  const seconds = Math.max(
+    0,
+    Math.round(durationInSeconds(value, format.durationUnit)),
+  );
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
   const remainder = seconds % 60;
@@ -70,13 +76,18 @@ export function formatMetricValue(
   value: MetricValue,
   format: MetricFormat = { unit: "text" },
 ): string {
-  if (format.unit === "text") return value === null || value === undefined || value === "" ? "—" : String(value);
+  if (format.unit === "text")
+    return value === null || value === undefined || value === ""
+      ? "—"
+      : String(value);
   const numeric = numericValue(value);
   if (numeric === null) return "—";
 
   if (format.unit === "count") return wholeNumber.format(Math.round(numeric));
-  if (format.unit === "percentage") return `${fixed(scaledPercentage(numeric, format), format.precision ?? 1)}%`;
-  if (format.unit === "percentagePoint") return `${fixed(scaledPercentage(numeric, format), format.precision ?? 1)}pp`;
+  if (format.unit === "percentage")
+    return `${fixed(scaledPercentage(numeric, format), format.precision ?? 1)}%`;
+  if (format.unit === "percentagePoint")
+    return `${fixed(scaledPercentage(numeric, format), format.precision ?? 1)}pp`;
   if (format.unit === "position") return fixed(numeric, format.precision ?? 1);
   if (format.unit === "currency") {
     return new Intl.NumberFormat("en-US", {
@@ -90,9 +101,14 @@ export function formatMetricValue(
   return fixed(numeric, format.precision ?? 1);
 }
 
-export function metricOutcome(value: number, format: MetricFormat): MetricOutcome {
-  if (value === 0 || format.outcome === "neutral" || !format.outcome) return "neutral";
-  const improved = format.outcome === "higher-is-better" ? value > 0 : value < 0;
+export function metricOutcome(
+  value: number,
+  format: MetricFormat,
+): MetricOutcome {
+  if (value === 0 || format.outcome === "neutral" || !format.outcome)
+    return "neutral";
+  const improved =
+    format.outcome === "higher-is-better" ? value > 0 : value < 0;
   return improved ? "positive" : "negative";
 }
 
@@ -107,4 +123,3 @@ export function formatMetricDelta(
   const sign = value > 0 ? "+" : value < 0 ? "−" : "";
   return { text: `${sign}${rendered}`, outcome: metricOutcome(value, format) };
 }
-

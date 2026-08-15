@@ -24,12 +24,20 @@ import "../styles/global.css";
   <body>
     <AppShell>
       <PageShell id="boot-not-configured">
-        <EmptyState heading="This deployment is not configured" description="Connect the platform runtime configuration to enable sign-in." />
+        <EmptyState
+          heading="This deployment is not configured"
+          description="Connect the platform runtime configuration to enable sign-in."
+        />
       </PageShell>
-      <PageShell id="boot-loading" hidden><Skeleton lines={3} label="Loading your workspace" /></PageShell>
+      <PageShell id="boot-loading" hidden
+        ><Skeleton lines={3} label="Loading your workspace" /></PageShell
+      >
       <PageShell id="boot-error" hidden><Region role="alert" /></PageShell>
       <PageShell id="workspace-empty" hidden>
-        <EmptyState heading="No organization access yet" description="Ask an administrator to invite your account to an organization." />
+        <EmptyState
+          heading="No organization access yet"
+          description="Ask an administrator to invite your account to an organization."
+        />
       </PageShell>
 
       <PageShell id="workspace-content" hidden>
@@ -41,39 +49,87 @@ import "../styles/global.css";
           description="Current performance, urgent work, and recent results for this organization."
           descriptionId="overview-description"
         >
-          <Button slot="actions" href="/insights" variant="secondary" size="sm">View reporting</Button>
+          <Button slot="actions" href="/insights" variant="secondary" size="sm"
+            >View reporting</Button
+          >
         </PageHeader>
 
-        <PageSection eyebrow="Context" title="Client and reporting scope" density="compact">
+        <PageSection
+          eyebrow="Context"
+          title="Client and reporting scope"
+          density="compact"
+        >
           <CardGrid minimum="sm">
-            <MetricCard id="overview-client-context" label="Client" labelId="overview-client-label" value="Current organization" valueId="overview-client-name" />
-            <MetricCard label="Reporting period" value="All recorded activity" />
+            <MetricCard
+              id="overview-client-context"
+              label="Client"
+              labelId="overview-client-label"
+              value="Current organization"
+              valueId="overview-client-name"
+            />
+            <MetricCard
+              label="Reporting period"
+              value="All recorded activity"
+            />
           </CardGrid>
         </PageSection>
 
-        <PageSection id="kpi-section" eyebrow="Results" title="Recorded outcomes">
-          <CardGrid id="kpi-grid" minimum="sm"><MetricCard label="Loading" value="—" missing /></CardGrid>
+        <PageSection
+          id="kpi-section"
+          eyebrow="Results"
+          title="Recorded outcomes"
+        >
+          <CardGrid id="kpi-grid" minimum="sm"
+            ><MetricCard label="Loading" value="—" missing /></CardGrid
+          >
         </PageSection>
 
-        <PageSection id="attention-section" eyebrow="Actionable work" title="Needs attention">
-          <Region id="attention-panel"><Skeleton lines={2} label="Loading work queue" /></Region>
+        <PageSection
+          id="attention-section"
+          eyebrow="Actionable work"
+          title="Needs attention"
+        >
+          <Region id="attention-panel"
+            ><Skeleton lines={2} label="Loading work queue" /></Region
+          >
         </PageSection>
 
-        <PageSection eyebrow="Priority queue" eyebrowId="work-eyebrow" title="Today’s work" titleId="work-title" id="work-section">
-          <Region id="work-panel"><Skeleton lines={2} label="Loading current work" /></Region>
+        <PageSection
+          eyebrow="Priority queue"
+          eyebrowId="work-eyebrow"
+          title="Today’s work"
+          titleId="work-title"
+          id="work-section"
+        >
+          <Region id="work-panel"
+            ><Skeleton lines={2} label="Loading current work" /></Region
+          >
         </PageSection>
 
-        <PageSection id="activity-section" eyebrow="Across products" title="Operational activity">
-          <Region id="activity-panel"><Skeleton lines={2} label="Loading activity" /></Region>
+        <PageSection
+          id="activity-section"
+          eyebrow="Across products"
+          title="Operational activity"
+        >
+          <Region id="activity-panel"
+            ><Skeleton lines={2} label="Loading activity" /></Region
+          >
         </PageSection>
 
         <PageSection eyebrow="Workspace scope" title="Locations">
-          <Region id="locations-panel"><Skeleton lines={2} label="Loading locations" /></Region>
+          <Region id="locations-panel"
+            ><Skeleton lines={2} label="Loading locations" /></Region
+          >
         </PageSection>
 
         <Notice title="Connections and provider health">
           <p>Managed centrally for this organization.</p>
-          <Button slot="action" href="/integrations" variant="secondary" size="sm">Manage integrations</Button>
+          <Button
+            slot="action"
+            href="/integrations"
+            variant="secondary"
+            size="sm">Manage integrations</Button
+          >
         </Notice>
       </PageShell>
     </AppShell>
@@ -148,8 +204,7 @@ import "../styles/global.css";
         document.getElementById("attention-section")!.hidden =
           !activityRecorded;
         document.getElementById("work-section")!.hidden = !activityRecorded;
-        document.getElementById("activity-section")!.hidden =
-          !activityRecorded;
+        document.getElementById("activity-section")!.hidden = !activityRecorded;
         renderKPIs(insightData);
         renderAttention(insightData, isAgency);
         renderWork(insightData, isAgency);

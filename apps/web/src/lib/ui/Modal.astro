@@ -14,28 +14,64 @@ interface Props {
   disabled?: boolean;
 }
 
-const { id, title, description, size = "md", open = false, loading = false, error = false, disabled = false } = Astro.props;
+const {
+  id,
+  title,
+  description,
+  size = "md",
+  open = false,
+  loading = false,
+  error = false,
+  disabled = false,
+} = Astro.props;
 ---
 
-<dialog class:list={["ui-modal", `ui-modal--${size}`]} id={id} open={open} aria-labelledby={`${id}-title`} aria-describedby={description ? `${id}-description` : undefined} aria-busy={loading ? "true" : undefined} aria-disabled={disabled ? "true" : undefined} data-state={error ? "error" : loading ? "loading" : "default"} data-active={open ? "true" : undefined} data-modal>
+<dialog
+  class:list={["ui-modal", `ui-modal--${size}`]}
+  id={id}
+  open={open}
+  aria-labelledby={`${id}-title`}
+  aria-describedby={description ? `${id}-description` : undefined}
+  aria-busy={loading ? "true" : undefined}
+  aria-disabled={disabled ? "true" : undefined}
+  data-state={error ? "error" : loading ? "loading" : "default"}
+  data-active={open ? "true" : undefined}
+  data-modal
+>
   <div class="ui-modal__surface">
     <header class="ui-modal__header">
-      <div><h2 id={`${id}-title`}>{title}</h2>{description && <p id={`${id}-description`}>{description}</p>}</div>
-      <Button variant="ghost" iconOnly label="Close dialog" modalClose><Icon icon={X} /></Button>
+      <div>
+        <h2 id={`${id}-title`}>{title}</h2>{
+          description && <p id={`${id}-description`}>{description}</p>
+        }
+      </div>
+      <Button variant="ghost" iconOnly label="Close dialog" modalClose
+        ><Icon icon={X} /></Button
+      >
     </header>
     <div class="ui-modal__body"><slot /></div>
-    {Astro.slots.has("footer") && <footer class="ui-modal__footer"><slot name="footer" /></footer>}
+    {
+      Astro.slots.has("footer") && (
+        <footer class="ui-modal__footer">
+          <slot name="footer" />
+        </footer>
+      )
+    }
   </div>
 </dialog>
 
 <script>
   const modalOpeners = new WeakMap<HTMLDialogElement, HTMLElement>();
   document.addEventListener("click", (event) => {
-    const element = (event.target as Element).closest<HTMLElement>("[data-modal-open], [data-modal-close]");
+    const element = (event.target as Element).closest<HTMLElement>(
+      "[data-modal-open], [data-modal-close]",
+    );
     if (!element) return;
     if (element.hasAttribute("data-modal-open")) {
       const id = element.dataset.modalOpen;
-      const dialog = id ? document.getElementById(id) as HTMLDialogElement | null : null;
+      const dialog = id
+        ? (document.getElementById(id) as HTMLDialogElement | null)
+        : null;
       if (dialog) {
         modalOpeners.set(dialog, element);
         dialog.showModal();
@@ -46,10 +82,12 @@ const { id, title, description, size = "md", open = false, loading = false, erro
       dialog?.close();
     }
   });
-  document.querySelectorAll<HTMLDialogElement>("[data-modal]").forEach((dialog) => {
-    dialog.addEventListener("click", (event) => {
-      if (event.target === dialog) dialog.close();
+  document
+    .querySelectorAll<HTMLDialogElement>("[data-modal]")
+    .forEach((dialog) => {
+      dialog.addEventListener("click", (event) => {
+        if (event.target === dialog) dialog.close();
+      });
+      dialog.addEventListener("close", () => modalOpeners.get(dialog)?.focus());
     });
-    dialog.addEventListener("close", () => modalOpeners.get(dialog)?.focus());
-  });
 </script>

@@ -23,30 +23,73 @@ import "../styles/global.css";
   <body>
     <AppShell>
       <PageShell id="boot-not-configured" width="narrow">
-        <EmptyState heading="This deployment is not configured" description="Connect the platform runtime configuration to enable Integrations." />
+        <EmptyState
+          heading="This deployment is not configured"
+          description="Connect the platform runtime configuration to enable Integrations."
+        />
       </PageShell>
 
       <PageShell id="boot-loading" width="narrow" hidden>
         <Skeleton lines={4} label="Loading integrations" />
       </PageShell>
 
-      <Region id="boot-error" as="div" role="alert" label="Integrations error" hidden />
+      <Region
+        id="boot-error"
+        as="div"
+        role="alert"
+        label="Integrations error"
+        hidden
+      />
 
       <PageShell id="workspace-empty" width="narrow" hidden>
-        <EmptyState heading="No organization access yet" description="Your account is not a member of any organization. Ask an administrator to invite you." />
+        <EmptyState
+          heading="No organization access yet"
+          description="Your account is not a member of any organization. Ask an administrator to invite you."
+        />
       </PageShell>
 
       <PageShell id="integrations-content" hidden>
-        <Region id="integrations-directory" as="section" labelledBy="integrations-title">
-          <PageHeader eyebrow="Manage" title="Integrations" titleId="integrations-title" description="Connect external providers here. Product pages consume confirmed connections and mappings." />
+        <Region
+          id="integrations-directory"
+          as="section"
+          labelledBy="integrations-title"
+        >
+          <PageHeader
+            eyebrow="Manage"
+            title="Integrations"
+            titleId="integrations-title"
+            description="Connect external providers here. Product pages consume confirmed connections and mappings."
+          />
           <CardGrid id="integration-cards" />
         </Region>
 
-        <Region id="provider-workspace" as="section" labelledBy="provider-title" hidden>
-          <PageHeader eyebrow="Integrations" eyebrowId="provider-eyebrow" title="—" titleId="provider-title" description="Loading provider details." descriptionId="provider-description">
-            <Button slot="actions" variant="secondary" size="sm" id="back-to-integrations">Back to Integrations</Button>
+        <Region
+          id="provider-workspace"
+          as="section"
+          labelledBy="provider-title"
+          hidden
+        >
+          <PageHeader
+            eyebrow="Integrations"
+            eyebrowId="provider-eyebrow"
+            title="—"
+            titleId="provider-title"
+            description="Loading provider details."
+            descriptionId="provider-description"
+          >
+            <Button
+              slot="actions"
+              variant="secondary"
+              size="sm"
+              id="back-to-integrations">Back to Integrations</Button
+            >
           </PageHeader>
-          <Region id="provider-content" as="div" label="Provider details" class="ui-region--flow" />
+          <Region
+            id="provider-content"
+            as="div"
+            label="Provider details"
+            class="ui-region--flow"
+          />
         </Region>
       </PageShell>
     </AppShell>
@@ -273,7 +316,9 @@ import "../styles/global.css";
 
         const connCard = makeCard("Connection");
         content.append(connCard);
-        const connBody = connCard.querySelector(".ui-card__body") as HTMLElement;
+        const connBody = connCard.querySelector(
+          ".ui-card__body",
+        ) as HTMLElement;
 
         const [wsResult] = await Promise.all([
           fetchGoogleWorkspace(organizationId),
@@ -288,7 +333,9 @@ import "../styles/global.css";
 
           const capsCard = makeCard("Connected Services");
           content.append(capsCard);
-          const capsBody = capsCard.querySelector(".ui-card__body") as HTMLElement;
+          const capsBody = capsCard.querySelector(
+            ".ui-card__body",
+          ) as HTMLElement;
           renderCapabilities(capsBody, ws);
 
           if (ws.mapped_resources.length > 0) {
@@ -469,7 +516,8 @@ import "../styles/global.css";
         if (state.status === "connected" || state.status === "degraded") {
           const disconnectBtn = document.createElement("button");
           disconnectBtn.type = "button";
-          disconnectBtn.className = "ui-button ui-button--secondary ui-button--md";
+          disconnectBtn.className =
+            "ui-button ui-button--secondary ui-button--md";
           disconnectBtn.textContent = "Disconnect";
           disconnectBtn.addEventListener("click", () => {
             disconnectBtn.disabled = true;
@@ -714,7 +762,9 @@ import "../styles/global.css";
 
         const connCard = makeCard("Connection");
         content.append(connCard);
-        const connBody = connCard.querySelector(".ui-card__body") as HTMLElement;
+        const connBody = connCard.querySelector(
+          ".ui-card__body",
+        ) as HTMLElement;
 
         const [connectionsResult] = await Promise.all([
           fetchGitHubConnections(organizationId),
@@ -777,7 +827,8 @@ import "../styles/global.css";
 
         const disconnectBtn = document.createElement("button");
         disconnectBtn.type = "button";
-        disconnectBtn.className = "ui-button ui-button--secondary ui-button--md";
+        disconnectBtn.className =
+          "ui-button ui-button--secondary ui-button--md";
         disconnectBtn.textContent = "Disconnect GitHub App";
         disconnectBtn.addEventListener("click", () => {
           disconnectBtn.disabled = true;

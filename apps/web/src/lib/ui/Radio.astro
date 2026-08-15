@@ -31,13 +31,33 @@ const {
 } = Astro.props;
 ---
 
-<div class="ui-choice-field" data-state={error ? "error" : loading ? "loading" : "default"} data-active={active ? "true" : undefined}>
+<div
+  class="ui-choice-field"
+  data-state={error ? "error" : loading ? "loading" : "default"}
+  data-active={active ? "true" : undefined}
+>
   <label class="ui-choice" for={id}>
-    <input id={id} name={name} type="radio" value={value} checked={checked} required={required} disabled={disabled || loading} aria-invalid={error ? "true" : undefined} />
-    <span class="ui-choice__control ui-choice__control--radio" aria-hidden="true">
+    <input
+      id={id}
+      name={name}
+      type="radio"
+      value={value}
+      checked={checked}
+      required={required}
+      disabled={disabled || loading}
+      aria-invalid={error ? "true" : undefined}
+    />
+    <span
+      class="ui-choice__control ui-choice__control--radio"
+      aria-hidden="true"
+    >
       {loading && <Icon icon={LoaderCircle} size="sm" class="ui-icon--spin" />}
     </span>
-    <span><span class="ui-choice__label">{label}</span>{description && <span class="ui-choice__description">{description}</span>}</span>
+    <span
+      ><span class="ui-choice__label">{label}</span>{
+        description && <span class="ui-choice__description">{description}</span>
+      }</span
+    >
   </label>
   {error && <p class="ui-field__error">{error}</p>}
 </div>

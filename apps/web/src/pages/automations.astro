@@ -23,20 +23,48 @@ import "../styles/global.css";
   >
   <body
     ><AppShell>
-      <PageShell id="boot-not-configured"><EmptyState heading="This deployment is not configured" description="Connect the platform runtime configuration to enable Automations." /></PageShell>
-      <PageShell id="boot-loading" hidden><Skeleton lines={3} label="Loading automations" /></PageShell>
+      <PageShell id="boot-not-configured"
+        ><EmptyState
+          heading="This deployment is not configured"
+          description="Connect the platform runtime configuration to enable Automations."
+        /></PageShell
+      >
+      <PageShell id="boot-loading" hidden
+        ><Skeleton lines={3} label="Loading automations" /></PageShell
+      >
       <PageShell id="boot-error" hidden><Region role="alert" /></PageShell>
-      <PageShell id="workspace-empty" hidden><EmptyState heading="No organization access yet" description="Ask an administrator to invite your account to an organization." /></PageShell>
+      <PageShell id="workspace-empty" hidden
+        ><EmptyState
+          heading="No organization access yet"
+          description="Ask an administrator to invite your account to an organization."
+        /></PageShell
+      >
 
       <PageShell id="workspace-content" hidden>
-        <PageHeader eyebrow="Operations" title="Automations" description="Monitor governed workflows, recurring schedules, outcomes, retries, and upcoming execution." />
-        <Notice title="Automation dependencies"><p>Provider connection health is managed centrally.</p></Notice>
-        <PageSection eyebrow="Health" title="Automation summary"><CardGrid id="automation-metrics" minimum="sm" /></PageSection>
-        <PageSection eyebrow="Workflows" title="Automation catalog" description="Every row combines its schedule with the latest recorded outcome and failure history.">
-          <Region id="workflow-catalog"><Skeleton lines={4} label="Loading automation catalog" /></Region>
+        <PageHeader
+          eyebrow="Operations"
+          title="Automations"
+          description="Monitor governed workflows, recurring schedules, outcomes, retries, and upcoming execution."
+        />
+        <Notice title="Automation dependencies"
+          ><p>Provider connection health is managed centrally.</p></Notice
+        >
+        <PageSection eyebrow="Health" title="Automation summary"
+          ><CardGrid id="automation-metrics" minimum="sm" /></PageSection
+        >
+        <PageSection
+          eyebrow="Workflows"
+          title="Automation catalog"
+          description="Every row combines its schedule with the latest recorded outcome and failure history."
+        >
+          <Region id="workflow-catalog"
+            ><Skeleton lines={4} label="Loading automation catalog" /></Region
+          >
         </PageSection>
         <PageSection eyebrow="Activity" title="Recent runs">
-          <Region id="run-history"><Skeleton lines={4} label="Loading run history" /></Region>
+          <Region id="run-history"
+            ><Skeleton lines={4} label="Loading run history" /></Region
+          >
         </PageSection>
       </PageShell>
     </AppShell>
@@ -213,7 +241,10 @@ import "../styles/global.css";
                     (item) => item.workflow_key === workflow.key,
                   );
                   return run
-                    ? statusBadge(statusTone(run.status), statusLabel(run.status))
+                    ? statusBadge(
+                        statusTone(run.status),
+                        statusLabel(run.status),
+                      )
                     : statusBadge("neutral", "No result");
                 },
               },

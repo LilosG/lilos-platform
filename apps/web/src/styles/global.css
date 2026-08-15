@@ -964,7 +964,8 @@ main {
 }
 .data-table__row--clickable {
   cursor: pointer;
-  transition: background-color var(--motion-duration-fast) var(--motion-easing-standard);
+  transition: background-color var(--motion-duration-fast)
+    var(--motion-easing-standard);
 }
 .data-table__row--clickable:hover {
   background: var(--surface-alt);
@@ -1025,7 +1026,8 @@ td {
   align-items: center;
   padding: var(--space-4) var(--space-5);
   border-bottom: var(--border-width) solid var(--line);
-  transition: background-color var(--motion-duration-fast) var(--motion-easing-standard);
+  transition: background-color var(--motion-duration-fast)
+    var(--motion-easing-standard);
 }
 .product-list li:last-child {
   border: 0;
@@ -1105,7 +1107,8 @@ td {
   font-size: var(--text-sm);
   background: var(--card);
   color: var(--ink);
-  transition: border-color var(--motion-duration-fast) var(--motion-easing-standard);
+  transition: border-color var(--motion-duration-fast)
+    var(--motion-easing-standard);
 }
 input:not([type="checkbox"]):not([type="radio"]),
 select,
@@ -1519,7 +1522,8 @@ textarea {
   height: 100%;
   background: var(--green);
   border-radius: var(--radius-full);
-  transition: width var(--motion-duration-standard) var(--motion-easing-standard);
+  transition: width var(--motion-duration-standard)
+    var(--motion-easing-standard);
 }
 
 /* ============================================================

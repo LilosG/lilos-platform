@@ -30,41 +30,122 @@ import "../styles/global.css";
   >
   <body
     ><AppShell>
-      <PageShell id="boot-not-configured"><EmptyState heading="This deployment is not configured" description="Connect the platform runtime configuration to enable Leads." /></PageShell>
-      <PageShell id="boot-loading" hidden><Skeleton lines={3} label="Loading leads" /></PageShell>
+      <PageShell id="boot-not-configured"
+        ><EmptyState
+          heading="This deployment is not configured"
+          description="Connect the platform runtime configuration to enable Leads."
+        /></PageShell
+      >
+      <PageShell id="boot-loading" hidden
+        ><Skeleton lines={3} label="Loading leads" /></PageShell
+      >
       <PageShell id="boot-error" hidden><Region role="alert" /></PageShell>
-      <PageShell id="workspace-empty" hidden><EmptyState heading="No organization access yet" description="Ask an administrator to invite your account to an organization." /></PageShell>
+      <PageShell id="workspace-empty" hidden
+        ><EmptyState
+          heading="No organization access yet"
+          description="Ask an administrator to invite your account to an organization."
+        /></PageShell
+      >
 
       <PageShell id="leads-content" hidden>
-        <PageHeader eyebrow="Operations" title="Leads" description="Triage incoming demand, coordinate accountable follow-up, and track lifecycle outcomes." />
-        <Notice title="Lead delivery providers"><p>Email and SMS availability are managed centrally.</p><Button slot="action" href="/integrations" variant="secondary" size="sm">Manage integrations</Button></Notice>
+        <PageHeader
+          eyebrow="Operations"
+          title="Leads"
+          description="Triage incoming demand, coordinate accountable follow-up, and track lifecycle outcomes."
+        />
+        <Notice title="Lead delivery providers"
+          ><p>Email and SMS availability are managed centrally.</p><Button
+            slot="action"
+            href="/integrations"
+            variant="secondary"
+            size="sm">Manage integrations</Button
+          ></Notice
+        >
         <Region id="readiness-panel" hidden />
-        <PageSection eyebrow="Performance" title="Lead outcomes"><CardGrid id="summary-panel" minimum="sm" /></PageSection>
-        <PageSection eyebrow="Inbox" title="Leads" description="Review contact details, urgency, response timing, and lifecycle status.">
+        <PageSection eyebrow="Performance" title="Lead outcomes"
+          ><CardGrid id="summary-panel" minimum="sm" /></PageSection
+        >
+        <PageSection
+          eyebrow="Inbox"
+          title="Leads"
+          description="Review contact details, urgency, response timing, and lifecycle status."
+        >
           <Inline id="filter-form" as="form">
-            <Select id="status-filter" label="Status" options={[
-              { value: "", label: "All statuses" }, { value: "new", label: "New" }, { value: "validating", label: "Validating" },
-              { value: "unassigned", label: "Unassigned" }, { value: "assigned", label: "Assigned" }, { value: "acknowledged", label: "Acknowledged" },
-              { value: "contact_attempted", label: "Contact attempted" }, { value: "contacted", label: "Contacted" }, { value: "qualifying", label: "Qualifying" },
-              { value: "qualified", label: "Qualified" }, { value: "appointment_requested", label: "Appointment requested" },
-              { value: "appointment_scheduled", label: "Appointment scheduled" }, { value: "converted", label: "Converted" }, { value: "nurture", label: "Nurture" },
-              { value: "unresponsive", label: "Unresponsive" }, { value: "disqualified", label: "Disqualified" }, { value: "lost", label: "Lost" },
-              { value: "spam", label: "Spam" }, { value: "duplicate", label: "Duplicate" }, { value: "cancelled", label: "Cancelled" }, { value: "archived", label: "Archived" },
-            ]} />
-            <Select id="urgency-filter" label="Urgency" options={[
-              { value: "", label: "All urgency" }, { value: "routine", label: "Routine" }, { value: "same_day", label: "Same day" },
-              { value: "urgent", label: "Urgent" }, { value: "emergency", label: "Emergency" }, { value: "unknown", label: "Unknown" },
-            ]} />
-            <Input id="search-input" type="search" label="Search leads" placeholder="Search permitted lead fields" />
-            <Button type="submit" variant="secondary" size="sm">Apply filters</Button>
+            <Select
+              id="status-filter"
+              label="Status"
+              options={[
+                { value: "", label: "All statuses" },
+                { value: "new", label: "New" },
+                { value: "validating", label: "Validating" },
+                { value: "unassigned", label: "Unassigned" },
+                { value: "assigned", label: "Assigned" },
+                { value: "acknowledged", label: "Acknowledged" },
+                { value: "contact_attempted", label: "Contact attempted" },
+                { value: "contacted", label: "Contacted" },
+                { value: "qualifying", label: "Qualifying" },
+                { value: "qualified", label: "Qualified" },
+                {
+                  value: "appointment_requested",
+                  label: "Appointment requested",
+                },
+                {
+                  value: "appointment_scheduled",
+                  label: "Appointment scheduled",
+                },
+                { value: "converted", label: "Converted" },
+                { value: "nurture", label: "Nurture" },
+                { value: "unresponsive", label: "Unresponsive" },
+                { value: "disqualified", label: "Disqualified" },
+                { value: "lost", label: "Lost" },
+                { value: "spam", label: "Spam" },
+                { value: "duplicate", label: "Duplicate" },
+                { value: "cancelled", label: "Cancelled" },
+                { value: "archived", label: "Archived" },
+              ]}
+            />
+            <Select
+              id="urgency-filter"
+              label="Urgency"
+              options={[
+                { value: "", label: "All urgency" },
+                { value: "routine", label: "Routine" },
+                { value: "same_day", label: "Same day" },
+                { value: "urgent", label: "Urgent" },
+                { value: "emergency", label: "Emergency" },
+                { value: "unknown", label: "Unknown" },
+              ]}
+            />
+            <Input
+              id="search-input"
+              type="search"
+              label="Search leads"
+              placeholder="Search permitted lead fields"
+            />
+            <Button type="submit" variant="secondary" size="sm"
+              >Apply filters</Button
+            >
           </Inline>
           <Region id="leads-list-panel"><Region id="leads-list" /></Region>
         </PageSection>
 
-        <PageSection eyebrow="Sources" title="Source performance"><Region as="ul" id="sources-list" /></PageSection>
+        <PageSection eyebrow="Sources" title="Source performance"
+          ><Region as="ul" id="sources-list" /></PageSection
+        >
 
-        <PageSection id="detail-section" eyebrow="Lead detail" title="Selected lead" titleId="detail-title" hidden>
-          <Button slot="actions" id="close-lead-detail" variant="secondary" size="sm">Back to queue</Button>
+        <PageSection
+          id="detail-section"
+          eyebrow="Lead detail"
+          title="Selected lead"
+          titleId="detail-title"
+          hidden
+        >
+          <Button
+            slot="actions"
+            id="close-lead-detail"
+            variant="secondary"
+            size="sm">Back to queue</Button
+          >
           <CardGrid minimum="lg">
             <Card as="article" heading="Contact and lifecycle">
               <Stack gap="5">
@@ -72,27 +153,76 @@ import "../styles/global.css";
                 <Region id="lifecycle-facts" />
                 <Inline>
                   <Select id="status-select" label="Status" options={[]} />
-                  <Button id="status-button" variant="secondary">Change status</Button>
+                  <Button id="status-button" variant="secondary"
+                    >Change status</Button
+                  >
                 </Inline>
                 <Stack gap="3">
-                  <Select id="assignee-select" label="Assign to teammate" options={[{ value: "", label: "Unassigned" }]} disabled />
-                  <Region id="assignee-status" role="status" live="polite">Loading teammates…</Region>
+                  <Select
+                    id="assignee-select"
+                    label="Assign to teammate"
+                    options={[{ value: "", label: "Unassigned" }]}
+                    disabled
+                  />
+                  <Region id="assignee-status" role="status" live="polite"
+                    >Loading teammates…</Region
+                  >
                   <Button id="assign-button" disabled>Assign</Button>
                 </Stack>
-                <Inline><Input id="conversion-value" type="number" label="Conversion value" placeholder="Optional amount" /><Button id="convert-button" variant="secondary">Mark converted</Button></Inline>
-                <Inline><Input id="loss-reason" label="Loss reason" placeholder="Reason required" /><Button id="loss-button" variant="secondary">Mark lost</Button></Inline>
+                <Inline
+                  ><Input
+                    id="conversion-value"
+                    type="number"
+                    label="Conversion value"
+                    placeholder="Optional amount"
+                  /><Button id="convert-button" variant="secondary"
+                    >Mark converted</Button
+                  ></Inline
+                >
+                <Inline
+                  ><Input
+                    id="loss-reason"
+                    label="Loss reason"
+                    placeholder="Reason required"
+                  /><Button id="loss-button" variant="secondary"
+                    >Mark lost</Button
+                  ></Inline
+                >
                 <Notice id="terminal-note" hidden />
                 <Region id="action-status" role="status" live="polite" />
-                <Textarea id="note-text" label="Add note" rows={3} /><Button id="note-button">Save note</Button>
-                <Input id="task-title" label="Follow-up task" placeholder="Task title" /><Button id="task-button">Create task</Button>
+                <Textarea id="note-text" label="Add note" rows={3} /><Button
+                  id="note-button">Save note</Button
+                >
+                <Input
+                  id="task-title"
+                  label="Follow-up task"
+                  placeholder="Task title"
+                /><Button id="task-button">Create task</Button>
               </Stack>
             </Card>
             <Card as="article" heading="Activity" id="activity">
               <Stack gap="5">
-                <Stack gap="2"><h3>Notes</h3><Region as="ol" id="notes-list" /></Stack>
-                <Stack gap="2"><h3>Follow-up tasks</h3><Region as="ol" id="tasks-list" /></Stack>
-                <Stack gap="2"><h3>Communications</h3><p>Delivery appears only when a provider event has been recorded.</p><Region as="ol" id="communications-list" /></Stack>
-                <Stack gap="2"><h3>Audit history</h3><Region as="ol" id="audit-history" /></Stack>
+                <Stack gap="2"
+                  ><h3>Notes</h3><Region as="ol" id="notes-list" /></Stack
+                >
+                <Stack gap="2"
+                  ><h3>Follow-up tasks</h3><Region
+                    as="ol"
+                    id="tasks-list"
+                  /></Stack
+                >
+                <Stack gap="2"
+                  ><h3>Communications</h3><p>
+                    Delivery appears only when a provider event has been
+                    recorded.
+                  </p><Region as="ol" id="communications-list" /></Stack
+                >
+                <Stack gap="2"
+                  ><h3>Audit history</h3><Region
+                    as="ol"
+                    id="audit-history"
+                  /></Stack
+                >
               </Stack>
             </Card>
           </CardGrid>
@@ -346,7 +476,10 @@ import "../styles/global.css";
         const details = await Promise.all(
           outcome.data.map(async (lead) => {
             const detail = await fetchLead(organizationId, lead.id);
-            return [lead.id, detail.kind === "ok" ? detail.data : null] as const;
+            return [
+              lead.id,
+              detail.kind === "ok" ? detail.data : null,
+            ] as const;
           }),
         );
         const detailById = new Map(details);
@@ -379,8 +512,7 @@ import "../styles/global.css";
                 width: "content",
                 render: ({ lead }) =>
                   statusBadge(
-                    lead.urgency === "urgent" ||
-                      lead.urgency === "emergency"
+                    lead.urgency === "urgent" || lead.urgency === "emergency"
                       ? "blocked"
                       : lead.urgency === "same_day"
                         ? "setup"
@@ -411,7 +543,11 @@ import "../styles/global.css";
       }
 
       function leadIdentity(detail: LeadDetail | null): HTMLDivElement {
-        if (!detail) return cellMeta("Identity unavailable", "Contact details unavailable");
+        if (!detail)
+          return cellMeta(
+            "Identity unavailable",
+            "Contact details unavailable",
+          );
         const fullName = [detail.first_name, detail.last_name]
           .filter(Boolean)
           .join(" ");
@@ -503,7 +639,9 @@ import "../styles/global.css";
        * displays the real state and can never be submitted.
        */
       function setLeadStatusSelect(status: string): void {
-        const statuses = Array.from(LEAD_TRANSITION_TARGET_STATUSES as readonly string[]);
+        const statuses = Array.from(
+          LEAD_TRANSITION_TARGET_STATUSES as readonly string[],
+        );
         if (!statuses.includes(status)) statuses.unshift(status);
         setSelectOptions(
           "status-select",
@@ -562,7 +700,11 @@ import "../styles/global.css";
         // Drop any previous organization's members immediately so a stale
         // teammate can never be selected while the new list loads.
         assignees = [];
-        setSelectOptions("assignee-select", [{ value: "", label: "Unassigned" }], "");
+        setSelectOptions(
+          "assignee-select",
+          [{ value: "", label: "Unassigned" }],
+          "",
+        );
 
         const outcome = await fetchLeadAssignees(organizationId);
         if (outcome.kind === "forbidden") {
@@ -574,7 +716,8 @@ import "../styles/global.css";
           return;
         }
         if (outcome.kind === "disconnected") {
-          status.textContent = "Could not reach the platform service. Try again.";
+          status.textContent =
+            "Could not reach the platform service. Try again.";
           return;
         }
         if (outcome.kind !== "ok") {

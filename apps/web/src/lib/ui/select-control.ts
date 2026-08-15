@@ -65,7 +65,9 @@ export function createSelectControl(
   };
   const choose = (option: HTMLLIElement): void => {
     if (option.getAttribute("aria-disabled") === "true") return;
-    for (const candidate of listbox.querySelectorAll<HTMLElement>("[role='option']")) {
+    for (const candidate of listbox.querySelectorAll<HTMLElement>(
+      "[role='option']",
+    )) {
       candidate.setAttribute("aria-selected", String(candidate === option));
     }
     input.value = option.dataset.value ?? "";
@@ -93,11 +95,17 @@ export function createSelectControl(
 
   const focusOption = (offset: number): void => {
     const enabled = Array.from(
-      listbox.querySelectorAll<HTMLLIElement>("[role='option']:not([aria-disabled='true'])"),
+      listbox.querySelectorAll<HTMLLIElement>(
+        "[role='option']:not([aria-disabled='true'])",
+      ),
     );
     if (enabled.length === 0) return;
-    const current = enabled.findIndex((option) => option === document.activeElement);
-    enabled[(Math.max(current, 0) + offset + enabled.length) % enabled.length]?.focus();
+    const current = enabled.findIndex(
+      (option) => option === document.activeElement,
+    );
+    enabled[
+      (Math.max(current, 0) + offset + enabled.length) % enabled.length
+    ]?.focus();
   };
   trigger.addEventListener("click", () => {
     const opening = listbox.hidden;
@@ -115,7 +123,10 @@ export function createSelectControl(
       if (listbox.hidden) trigger.click();
       focusOption(event.key === "ArrowDown" ? 1 : -1);
     }
-    if ((event.key === "Enter" || event.key === " ") && document.activeElement?.getAttribute("role") === "option") {
+    if (
+      (event.key === "Enter" || event.key === " ") &&
+      document.activeElement?.getAttribute("role") === "option"
+    ) {
       event.preventDefault();
       choose(document.activeElement as HTMLLIElement);
     }
@@ -129,7 +140,10 @@ export function createSelectControl(
 }
 
 function selectRoot(id: string): HTMLElement | null {
-  return document.getElementById(id)?.closest<HTMLElement>("[data-select-root]") ?? null;
+  return (
+    document.getElementById(id)?.closest<HTMLElement>("[data-select-root]") ??
+    null
+  );
 }
 
 export function setSelectOptions(

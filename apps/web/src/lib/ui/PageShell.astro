@@ -8,6 +8,10 @@ interface Props {
 const { id, width = "default", class: className, hidden = false } = Astro.props;
 ---
 
-<div id={id} class:list={["ui-page-shell", `ui-page-shell--${width}`, className]} hidden={hidden}>
+<div
+  id={id}
+  class:list={["ui-page-shell", `ui-page-shell--${width}`, className]}
+  hidden={hidden}
+>
   <slot />
 </div>

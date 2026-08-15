@@ -155,9 +155,7 @@ export function populateSwitcher(
   onSelect: (org: import("../workspace").MyOrganization) => void,
 ): void {
   const select = document.getElementById("organization-switcher") as
-    | HTMLInputElement
-    | HTMLSelectElement
-    | null;
+    HTMLInputElement | HTMLSelectElement | null;
   if (!select) return;
   const customRoot = select.closest<HTMLElement>("[data-select-root]");
   if (select instanceof HTMLSelectElement) {
@@ -204,9 +202,7 @@ export function setActiveOrganization(
     }
   }
   const switcher = document.getElementById("organization-switcher") as
-    | HTMLInputElement
-    | HTMLSelectElement
-    | null;
+    HTMLInputElement | HTMLSelectElement | null;
   if (switcher) {
     const customRoot =
       typeof switcher.closest === "function"

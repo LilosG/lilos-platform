@@ -155,7 +155,9 @@ function responseFor(pathname) {
   }
   if (pathname === `${organizationBase}/leads`) return fixtures.leads;
   if (pathname.startsWith(`${organizationBase}/leads/`)) {
-    return fixtures.leadDetails.find((lead) => pathname.endsWith(`/${lead.id}`));
+    return fixtures.leadDetails.find((lead) =>
+      pathname.endsWith(`/${lead.id}`),
+    );
   }
   if (pathname === `${organizationBase}/workflows/schedules`) {
     return fixtures.workflowSchedules;

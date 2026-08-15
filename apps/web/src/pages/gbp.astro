@@ -21,10 +21,22 @@ import "../styles/global.css";
   </head>
   <body>
     <AppShell>
-      <PageShell id="boot-not-configured"><EmptyState heading="This deployment is not configured" description="Connect the platform runtime configuration to enable Business Profile." /></PageShell>
-      <PageShell id="boot-loading" hidden><Skeleton lines={3} label="Loading Business Profile" /></PageShell>
+      <PageShell id="boot-not-configured"
+        ><EmptyState
+          heading="This deployment is not configured"
+          description="Connect the platform runtime configuration to enable Business Profile."
+        /></PageShell
+      >
+      <PageShell id="boot-loading" hidden
+        ><Skeleton lines={3} label="Loading Business Profile" /></PageShell
+      >
       <PageShell id="boot-error" hidden><Region role="alert" /></PageShell>
-      <PageShell id="workspace-empty" hidden><EmptyState heading="No organization access yet" description="Ask an administrator to invite your account to an organization." /></PageShell>
+      <PageShell id="workspace-empty" hidden
+        ><EmptyState
+          heading="No organization access yet"
+          description="Ask an administrator to invite your account to an organization."
+        /></PageShell
+      >
 
       <PageShell id="gbp-content" hidden>
         <PageHeader
@@ -33,24 +45,46 @@ import "../styles/global.css";
           titleId="gbp-page-title"
           description="Review confirmed mappings and operate the Business Profile records available to this workspace."
         >
-          <Button slot="actions" id="change-gbp-location" variant="secondary" size="sm" hidden>Change location</Button>
-          <Button slot="actions" href="/integrations" variant="secondary" size="sm">Manage connection</Button>
+          <Button
+            slot="actions"
+            id="change-gbp-location"
+            variant="secondary"
+            size="sm"
+            hidden>Change location</Button
+          >
+          <Button
+            slot="actions"
+            href="/integrations"
+            variant="secondary"
+            size="sm">Manage connection</Button
+          >
         </PageHeader>
 
         <Region id="connection-status-panel" />
 
-        <PageSection id="location-picker-section" eyebrow="Location" title="Business location" description="Choose a confirmed provider mapping to open its available operational records.">
-          <Region id="location-picker-panel"><Skeleton lines={2} label="Loading locations" /></Region>
+        <PageSection
+          id="location-picker-section"
+          eyebrow="Location"
+          title="Business location"
+          description="Choose a confirmed provider mapping to open its available operational records."
+        >
+          <Region id="location-picker-panel"
+            ><Skeleton lines={2} label="Loading locations" /></Region
+          >
         </PageSection>
 
         <Region id="gbp-workspace" hidden>
-          <Tabs id="gbp-tabs" label="Business Profile workspace" items={[
-            { id: "overview", label: "Overview" },
-            { id: "profile", label: "Profile changes" },
-            { id: "hours", label: "Special hours" },
-            { id: "posts", label: "Posts" },
-            { id: "media", label: "Media records" },
-          ]}>
+          <Tabs
+            id="gbp-tabs"
+            label="Business Profile workspace"
+            items={[
+              { id: "overview", label: "Overview" },
+              { id: "profile", label: "Profile changes" },
+              { id: "hours", label: "Special hours" },
+              { id: "posts", label: "Posts" },
+              { id: "media", label: "Media records" },
+            ]}
+          >
             <Region id="tab-overview" tabPanel="overview" />
             <Region id="tab-profile" tabPanel="profile" hidden />
             <Region id="tab-hours" tabPanel="hours" hidden />
@@ -717,7 +751,8 @@ import "../styles/global.css";
             if (cs.status === "awaiting_approval") {
               const approveBtn = document.createElement("button");
               approveBtn.type = "button";
-              approveBtn.className = "ui-button ui-button--primary ui-button--sm";
+              approveBtn.className =
+                "ui-button ui-button--primary ui-button--sm";
               approveBtn.textContent = "Approve";
               approveBtn.addEventListener("click", async () => {
                 await decideChangeSet(
@@ -888,7 +923,8 @@ import "../styles/global.css";
             if (hours.status === "awaiting_approval") {
               const approveBtn = document.createElement("button");
               approveBtn.type = "button";
-              approveBtn.className = "ui-button ui-button--primary ui-button--sm";
+              approveBtn.className =
+                "ui-button ui-button--primary ui-button--sm";
               approveBtn.textContent = "Approve";
               approveBtn.addEventListener("click", async () => {
                 await decideSpecialHours(
@@ -1065,7 +1101,8 @@ import "../styles/global.css";
             if (post.status === "awaiting_approval") {
               const approveBtn = document.createElement("button");
               approveBtn.type = "button";
-              approveBtn.className = "ui-button ui-button--primary ui-button--sm";
+              approveBtn.className =
+                "ui-button ui-button--primary ui-button--sm";
               approveBtn.textContent = "Approve";
               approveBtn.addEventListener("click", async () => {
                 await decidePostRevision(
@@ -1081,7 +1118,8 @@ import "../styles/global.css";
             if (post.status === "approved") {
               const publishBtn = document.createElement("button");
               publishBtn.type = "button";
-              publishBtn.className = "ui-button ui-button--primary ui-button--sm";
+              publishBtn.className =
+                "ui-button ui-button--primary ui-button--sm";
               publishBtn.textContent = "Publish";
               publishBtn.addEventListener("click", async () => {
                 status.textContent = "Starting publication…";

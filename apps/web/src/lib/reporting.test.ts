@@ -115,9 +115,7 @@ describe("periodLabelFromDays", () => {
 
 describe("formatDateRange", () => {
   it("keeps API date-only boundaries stable across local timezones", () => {
-    expect(formatDateRange("2026-07-18", "2026-08-14")).toBe(
-      "Jul 18 – Aug 14",
-    );
+    expect(formatDateRange("2026-07-18", "2026-08-14")).toBe("Jul 18 – Aug 14");
   });
 });
 
