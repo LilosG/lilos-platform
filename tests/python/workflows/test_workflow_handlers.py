@@ -21,6 +21,7 @@ from uuid import UUID, uuid4
 import pytest
 from alembic import command
 from alembic.config import Config
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from apps.api.app.authentication.models import UserProfile
@@ -303,6 +304,118 @@ async def test_runtime_fails_closed_for_catalog_key_with_no_handler(
             assert refreshed is not None
             assert refreshed.status == "failed"
             assert refreshed.failure_code == "WORKFLOW_HANDLER_NOT_REGISTERED"
+    finally:
+        del WORKFLOW_TYPES[test_key]
+
+
+@pytest.mark.integration
+@pytest.mark.anyio
+async def test_handler_integrity_error_fails_job_and_keeps_transaction_usable(
+    clean_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """A handler raising IntegrityError fails the job through the outcome path.
+
+    The outer transaction must remain usable so finish can record the terminal
+    state.  The worker process must survive — this test proves the savepoint
+    protects the outer transaction and the deterministic catch converts the
+    error to a permanent failure.
+    """
+    test_key = f"test.integrity_error.{uuid4().hex[:8]}"
+
+    async def handler_that_raises(
+        session: AsyncSession,
+        *,
+        organization_id: UUID,
+        location_id: UUID | None,
+        input_document: dict[str, object],
+        correlation_id: str,
+    ) -> JobOutcome:
+        orig = type(
+            "FakeOrig",
+            (),
+            {
+                "constraint_name": "uq_seo_active_opportunity",
+                "table_name": "seo_opportunities",
+                "schema_name": "public",
+                "sqlstate": "23505",
+                "detail": (
+                    "Key (organization_id, deduplication_key, active_marker)="
+                    "(secret-org, 'secret-key', 'active') already exists."
+                ),
+            },
+        )()
+        raise IntegrityError("INSERT INTO seo_opportunities", {}, orig)
+
+    register_workflow_handler(test_key, handler_that_raises)
+    from apps.api.app.execution.workflow_catalog import WORKFLOW_TYPES
+
+    WORKFLOW_TYPES[test_key] = ("Integrity Error", "test")
+    try:
+        async with clean_session_factory.begin() as session:
+            org = Organization(
+                name="Integrity Error Test",
+                slug=f"integrity-error-test-{uuid4().hex[:8]}",
+                organization_type=OrganizationType.TEST,
+                status=OrganizationStatus.ACTIVE,
+                timezone="UTC",
+                default_currency="USD",
+                version=1,
+            )
+            session.add(org)
+            await session.flush()
+
+            definition = WorkflowDefinition(
+                key=test_key, name="Integrity Error", owner="test", status="active"
+            )
+            session.add(definition)
+            await session.flush()
+            version = WorkflowVersion(
+                definition_id=definition.id,
+                version=1,
+                status="approved",
+                input_schema={},
+                output_schema={},
+                step_specification=[],
+                retry_policy={},
+                timeout_seconds=30,
+            )
+            session.add(version)
+            await session.flush()
+            run = WorkflowRun(
+                organization_id=org.id,
+                workflow_version_id=version.id,
+                product_key="test",
+                status="queued",
+                trigger_type="api",
+                idempotency_key="integrity-error-test-key-001",
+                request_hash="i" * 64,
+                input_document={"hello": "world"},
+                correlation_id="integrity-error-test",
+            )
+            session.add(run)
+            await session.flush()
+            job = Job(
+                organization_id=org.id,
+                workflow_run_id=run.id,
+                job_type="workflow.execute",
+                status="queued",
+                idempotency_key="integrity-error-job-key-001",
+                payload={"run_id": str(run.id)},
+            )
+            session.add(job)
+            await session.flush()
+            run_id = run.id
+
+            outcome = await _execute_workflow_job(session, job)
+
+        assert outcome.result == "permanent_failure"
+        assert outcome.safe_error == "DATABASE_DETERMINISTIC_ERROR"
+
+        async with clean_session_factory() as session:
+            refreshed = await session.get(WorkflowRun, run_id)
+            assert refreshed is not None
+            assert refreshed.status == "failed"
+            assert refreshed.failure_code == "DATABASE_DETERMINISTIC_ERROR"
     finally:
         del WORKFLOW_TYPES[test_key]
 

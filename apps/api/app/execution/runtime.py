@@ -14,7 +14,7 @@ from types import FrameType
 
 from sqlalchemy import select, text
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import DataError, IntegrityError, ProgrammingError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.app.config import Settings
@@ -26,6 +26,37 @@ from apps.api.app.observability.models import ServiceHeartbeat
 from apps.api.app.observability.telemetry import MetricPoint
 
 logger = logging.getLogger("lilos")
+
+# Database errors that are deterministic: retrying them yields the identical
+# failure, so they must fail the individual job rather than the process loop.
+DETERMINISTIC_DB_ERRORS = (IntegrityError, DataError, ProgrammingError)
+
+
+def is_deterministic_db_error(exc: BaseException) -> bool:
+    """Return whether an exception is a deterministic (non-transient) DB error."""
+    return isinstance(exc, DETERMINISTIC_DB_ERRORS)
+
+
+def postgres_error_context(exc: BaseException) -> dict[str, object]:
+    """Extract a safe, redacted Postgres error context for diagnostics.
+
+    ``IntegrityError`` and friends carry the underlying driver exception on
+    ``.orig``, exposing the constraint name, table, and detail. A detail
+    message contains row values, so only the column context (the portion
+    before any ``=``) is retained — never the values.
+    """
+    orig = getattr(exc, "orig", None)
+    detail = getattr(orig, "detail", None)
+    safe_detail: str | None = None
+    if isinstance(detail, str) and "=" in detail:
+        safe_detail = detail.split("=", 1)[0].strip() or None
+    return {
+        "constraint_name": getattr(orig, "constraint_name", None),
+        "table_name": getattr(orig, "table_name", None),
+        "schema_name": getattr(orig, "schema_name", None),
+        "sqlstate": getattr(orig, "sqlstate", None),
+        "safe_detail": safe_detail,
+    }
 
 
 @dataclass(frozen=True, slots=True)
@@ -254,12 +285,29 @@ async def _execute_workflow_job(session: AsyncSession, job: Job) -> JobOutcome:
             await session.flush()
 
             try:
-                outcome = await handler(
-                    session,
-                    organization_id=run.organization_id,
-                    location_id=run.location_id,
-                    input_document=run.input_document,
-                    correlation_id=f"workflow-{run.id}",
+                async with session.begin_nested():
+                    outcome = await handler(
+                        session,
+                        organization_id=run.organization_id,
+                        location_id=run.location_id,
+                        input_document=run.input_document,
+                        correlation_id=f"workflow-{run.id}",
+                    )
+            except DETERMINISTIC_DB_ERRORS as exc:
+                run.status = "failed"
+                run.failure_code = "DATABASE_DETERMINISTIC_ERROR"
+                logger.error(
+                    "Workflow handler raised a deterministic database error",
+                    extra={
+                        "event_name": "workflow.handler.database_error",
+                        "workflow_key": workflow_key,
+                        "workflow_run_id": str(run.id),
+                        "exception_type": type(exc).__name__,
+                        **postgres_error_context(exc),
+                    },
+                )
+                return JobOutcome(
+                    result="permanent_failure", safe_error="DATABASE_DETERMINISTIC_ERROR"
                 )
             except Exception as exc:
                 run.status = "failed"
@@ -369,21 +417,37 @@ async def run_process(
                 )
                 failures = 0
             except SQLAlchemyError as exc:
-                failures += 1
-                logger.error(
-                    "Durable process database operation failed",
-                    extra={
-                        "event_name": "process.database.failed",
-                        "operation": "poll",
-                        "outcome": "failure",
-                        "normalized_error_code": "DATABASE_UNAVAILABLE",
-                        "exception_type": type(exc).__name__,
-                        "retry_count": failures,
-                    },
-                )
-                if failures >= backend.options.database_failure_limit:
-                    raise
-                worked = False
+                context = postgres_error_context(exc)
+                if is_deterministic_db_error(exc):
+                    logger.error(
+                        "Durable process encountered a deterministic database error",
+                        extra={
+                            "event_name": "process.database.deterministic_error",
+                            "operation": "poll",
+                            "outcome": "failure",
+                            "normalized_error_code": "DATABASE_DETERMINISTIC_ERROR",
+                            "exception_type": type(exc).__name__,
+                            **context,
+                        },
+                    )
+                    worked = False
+                else:
+                    failures += 1
+                    logger.error(
+                        "Durable process database operation failed",
+                        extra={
+                            "event_name": "process.database.failed",
+                            "operation": "poll",
+                            "outcome": "failure",
+                            "normalized_error_code": "DATABASE_UNAVAILABLE",
+                            "exception_type": type(exc).__name__,
+                            "retry_count": failures,
+                            **context,
+                        },
+                    )
+                    if failures >= backend.options.database_failure_limit:
+                        raise
+                    worked = False
             except TimeoutError:
                 logger.error(
                     "Durable process cycle timed out",
