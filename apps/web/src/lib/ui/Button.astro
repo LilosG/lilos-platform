@@ -1,0 +1,98 @@
+---
+import { LoaderCircle } from "@lucide/astro";
+import Icon from "./Icon.astro";
+import type { UiSize, UiState } from "./primitive-types";
+
+interface Props {
+  variant?: "primary" | "secondary" | "ghost" | "danger";
+  size?: UiSize;
+  type?: "button" | "submit" | "reset";
+  href?: string;
+  disabled?: boolean;
+  active?: boolean;
+  state?: UiState;
+  iconOnly?: boolean;
+  label?: string;
+  class?: string;
+  id?: string;
+  modalClose?: boolean;
+  hidden?: boolean;
+  dataDomain?: string;
+  expanded?: boolean;
+  controls?: string;
+}
+
+const {
+  variant = "primary",
+  size = "md",
+  type = "button",
+  href,
+  disabled = false,
+  active = false,
+  state = "default",
+  iconOnly = false,
+  label,
+  class: className,
+  id,
+  modalClose = false,
+  hidden = false,
+  dataDomain,
+  expanded,
+  controls,
+} = Astro.props;
+const classes = [
+  "ui-button",
+  `ui-button--${variant}`,
+  `ui-button--${size}`,
+  iconOnly && "ui-button--icon-only",
+  className,
+];
+const unavailable = disabled || state === "loading";
+---
+
+{
+  href ? (
+    <a
+      id={id}
+      class:list={classes}
+      href={unavailable ? undefined : href}
+      aria-label={iconOnly ? label : undefined}
+      aria-disabled={unavailable ? "true" : undefined}
+      aria-busy={state === "loading" ? "true" : undefined}
+      data-active={active ? "true" : undefined}
+      data-state={state}
+      tabindex={unavailable ? -1 : undefined}
+      data-modal-close={modalClose ? "" : undefined}
+      hidden={hidden}
+      data-domain={dataDomain}
+      aria-expanded={expanded}
+      aria-controls={controls}
+    >
+      {state === "loading" && (
+        <Icon icon={LoaderCircle} class="ui-icon--spin" />
+      )}
+      <slot />
+    </a>
+  ) : (
+    <button
+      id={id}
+      class:list={classes}
+      type={type}
+      disabled={unavailable}
+      aria-label={iconOnly ? label : undefined}
+      aria-busy={state === "loading" ? "true" : undefined}
+      data-active={active ? "true" : undefined}
+      data-state={state}
+      data-modal-close={modalClose ? "" : undefined}
+      hidden={hidden}
+      data-domain={dataDomain}
+      aria-expanded={expanded}
+      aria-controls={controls}
+    >
+      {state === "loading" && (
+        <Icon icon={LoaderCircle} class="ui-icon--spin" />
+      )}
+      <slot />
+    </button>
+  )
+}

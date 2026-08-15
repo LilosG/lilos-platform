@@ -1,0 +1,38 @@
+---
+interface Props {
+  id?: string;
+  as?: "div" | "section" | "article" | "form" | "ol" | "ul";
+  role?: "alert" | "status" | "region";
+  label?: string;
+  labelledBy?: string;
+  live?: "polite" | "assertive";
+  hidden?: boolean;
+  class?: string;
+  tabPanel?: string;
+}
+
+const {
+  id,
+  as: Element = "div",
+  role,
+  label,
+  labelledBy,
+  live,
+  hidden = false,
+  class: className,
+  tabPanel,
+}: Props = Astro.props;
+---
+
+<Element
+  id={id}
+  class:list={["ui-region", className]}
+  role={role}
+  aria-label={label}
+  aria-labelledby={labelledBy}
+  aria-live={live}
+  hidden={hidden}
+  data-tab-panel={tabPanel}
+>
+  <slot />
+</Element>

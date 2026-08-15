@@ -6,6 +6,7 @@
 # JavaScript and Astro
 node_modules/
 apps/web/.playwright-output/
+apps/web/.playwright-visual-output/
 apps/web/playwright-report/
 dist/
 .astro/

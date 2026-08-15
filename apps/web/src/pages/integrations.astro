@@ -1,5 +1,14 @@
 ---
 import AppShell from "../components/AppShell.astro";
+import {
+  Button,
+  CardGrid,
+  EmptyState,
+  PageHeader,
+  PageShell,
+  Region,
+  Skeleton,
+} from "../lib/ui/primitives";
 import "../styles/global.css";
 ---
 
@@ -13,60 +22,33 @@ import "../styles/global.css";
   </head>
   <body>
     <AppShell>
-      <div id="boot-not-configured" role="status">
-        <h1>This deployment is not configured</h1>
-        <p>No Supabase or API connection is configured for this build.</p>
-      </div>
+      <PageShell id="boot-not-configured" width="narrow">
+        <EmptyState heading="This deployment is not configured" description="Connect the platform runtime configuration to enable Integrations." />
+      </PageShell>
 
-      <div id="boot-loading" role="status" aria-live="polite" hidden>
-        <p class="loading-state">Loading integrations…</p>
-      </div>
+      <PageShell id="boot-loading" width="narrow" hidden>
+        <Skeleton lines={4} label="Loading integrations" />
+      </PageShell>
 
-      <div id="boot-error" role="alert" hidden></div>
+      <Region id="boot-error" as="div" role="alert" label="Integrations error" hidden />
 
-      <div id="workspace-empty" role="status" hidden>
-        <div class="empty-state">
-          <span class="empty-state__icon" aria-hidden="true">○</span>
-          <h3>No organization access yet</h3>
-          <p>Your account is not a member of any organization.</p>
-        </div>
-      </div>
+      <PageShell id="workspace-empty" width="narrow" hidden>
+        <EmptyState heading="No organization access yet" description="Your account is not a member of any organization. Ask an administrator to invite you." />
+      </PageShell>
 
-      <div id="integrations-content" hidden>
-        <div id="integrations-directory">
-          <div class="page-head">
-            <div class="page-head__intro">
-              <p class="eyebrow">Manage</p>
-              <h1>Integrations</h1>
-              <p>
-                Connect external providers below. Product pages consume these
-                connections automatically.
-              </p>
-            </div>
-          </div>
-          <div class="directory-grid" id="integration-cards"></div>
-        </div>
+      <PageShell id="integrations-content" hidden>
+        <Region id="integrations-directory" as="section" labelledBy="integrations-title">
+          <PageHeader eyebrow="Manage" title="Integrations" titleId="integrations-title" description="Connect external providers here. Product pages consume confirmed connections and mappings." />
+          <CardGrid id="integration-cards" />
+        </Region>
 
-        <div id="provider-workspace" hidden>
-          <div class="page-head">
-            <div class="page-head__intro">
-              <p class="eyebrow" id="provider-eyebrow">Integrations</p>
-              <h1 id="provider-title">—</h1>
-              <p id="provider-description"></p>
-            </div>
-            <div class="page-head__meta">
-              <div class="page-head__actions">
-                <button
-                  type="button"
-                  class="button button--secondary button--sm"
-                  id="back-to-integrations">← Back to Integrations</button
-                >
-              </div>
-            </div>
-          </div>
-          <div id="provider-content"></div>
-        </div>
-      </div>
+        <Region id="provider-workspace" as="section" labelledBy="provider-title" hidden>
+          <PageHeader eyebrow="Integrations" eyebrowId="provider-eyebrow" title="—" titleId="provider-title" description="Loading provider details." descriptionId="provider-description">
+            <Button slot="actions" variant="secondary" size="sm" id="back-to-integrations">Back to Integrations</Button>
+          </PageHeader>
+          <Region id="provider-content" as="div" label="Provider details" class="ui-region--flow" />
+        </Region>
+      </PageShell>
     </AppShell>
     <script>
       import {
@@ -100,8 +82,11 @@ import "../styles/global.css";
         describeFailure,
         formatTimestamp,
         confirmInline,
+        canUsePlatformAdministration,
+        createSelectControl,
         type BootRegions,
       } from "../lib/ui";
+      import { statusLabel, statusTone } from "../lib/status-language";
       import { apiRequest } from "../lib/api-client";
       import { fetchLocations, type LocationSummary } from "../lib/workspace";
 
@@ -145,24 +130,9 @@ import "../styles/global.css";
 
       function createLoading(): HTMLDivElement {
         const el = document.createElement("div");
-        el.className = "loading-state";
+        el.className = "ui-skeleton-group";
         el.textContent = "Loading…";
         return el;
-      }
-
-      function cardIcon(key: string): string {
-        switch (key) {
-          case "google":
-            return "G";
-          case "github":
-            return "⌥";
-          case "email":
-            return "@";
-          case "sms":
-            return "✉";
-          default:
-            return "○";
-        }
       }
 
       document
@@ -249,27 +219,24 @@ import "../styles/global.css";
         onClick: () => void,
       ): HTMLButtonElement {
         const card = document.createElement("button");
-        card.className = "integration-card";
+        card.className = "ui-card ui-card--interactive";
         card.type = "button";
         card.dataset.provider = key;
         card.addEventListener("click", onClick);
 
-        const header = document.createElement("div");
-        header.className = "integration-card__header";
-        const icon = document.createElement("span");
-        icon.className = "integration-card__icon";
-        icon.textContent = cardIcon(key);
-        const title = document.createElement("div");
-        title.className = "integration-card__title";
+        const header = document.createElement("header");
+        header.className = "ui-card__header";
+        const title = document.createElement("h3");
+        title.className = "ui-card__heading";
         title.textContent = name;
-        header.append(icon, title);
+        header.append(title);
 
         const desc = document.createElement("p");
-        desc.className = "integration-card__desc";
+        desc.className = "ui-card__description";
         desc.textContent = description;
 
-        const footer = document.createElement("div");
-        footer.className = "integration-card__footer";
+        const footer = document.createElement("footer");
+        footer.className = "ui-card__footer";
         const badgeKind =
           status === "connected"
             ? "ready"
@@ -288,7 +255,10 @@ import "../styles/global.css";
                 : "Not connected";
         footer.append(statusBadge(badgeKind, label));
 
-        card.append(header, desc, footer);
+        const body = document.createElement("div");
+        body.className = "ui-card__body";
+        body.append(desc);
+        card.append(header, body, footer);
         return card;
       }
 
@@ -303,7 +273,7 @@ import "../styles/global.css";
 
         const connCard = makeCard("Connection");
         content.append(connCard);
-        const connBody = connCard.querySelector(".card__body") as HTMLElement;
+        const connBody = connCard.querySelector(".ui-card__body") as HTMLElement;
 
         const [wsResult] = await Promise.all([
           fetchGoogleWorkspace(organizationId),
@@ -318,19 +288,21 @@ import "../styles/global.css";
 
           const capsCard = makeCard("Connected Services");
           content.append(capsCard);
-          const capsBody = capsCard.querySelector(".card__body") as HTMLElement;
+          const capsBody = capsCard.querySelector(".ui-card__body") as HTMLElement;
           renderCapabilities(capsBody, ws);
 
           if (ws.mapped_resources.length > 0) {
             const mappedCard = makeCard("Mapped Resources");
             content.append(mappedCard);
             renderMappedResources(
-              mappedCard.querySelector(".card__body") as HTMLElement,
+              mappedCard.querySelector(".ui-card__body") as HTMLElement,
               ws,
             );
           }
 
-          await renderUnmappedQueue(content, wsResult);
+          if (canUsePlatformAdministration()) {
+            await renderUnmappedQueue(content, wsResult);
+          }
         }
       }
 
@@ -363,7 +335,7 @@ import "../styles/global.css";
         if (state === null || state.status === "disconnected") {
           const connectBtn = document.createElement("button");
           connectBtn.type = "button";
-          connectBtn.className = "button";
+          connectBtn.className = "ui-button ui-button--primary ui-button--md";
           connectBtn.textContent = "Connect Google";
           connectBtn.addEventListener("click", async () => {
             connectBtn.disabled = true;
@@ -385,7 +357,7 @@ import "../styles/global.css";
           panel.append(connectBtn);
           panel.append(
             Object.assign(document.createElement("p"), {
-              className: "text-sm muted",
+              className: "ui-text-secondary",
               textContent:
                 "Connect your Google account to enable Business Profile, Search Console, and Analytics.",
             }),
@@ -404,34 +376,31 @@ import "../styles/global.css";
             badgeKind,
             state.status === "reconnect_required"
               ? "Reconnect required"
-              : state.status.replace(/_/g, " "),
+              : statusLabel(state.status),
           ),
         );
 
         if (state.last_verified_at) {
           const verified = document.createElement("p");
-          verified.className = "text-sm muted";
+          verified.className = "ui-text-secondary";
           verified.textContent = `Last verified ${formatTimestamp(state.last_verified_at)}`;
           panel.append(verified);
         }
         if (state.token_expires_at) {
           const expires = document.createElement("p");
-          expires.className = "text-sm muted";
+          expires.className = "ui-text-secondary";
           expires.textContent = `Token expires ${formatTimestamp(state.token_expires_at)}`;
           panel.append(expires);
         }
 
         const actions = document.createElement("div");
-        actions.className = "form-actions";
-        actions.style.borderTop = "none";
-        actions.style.paddingTop = "0";
-        actions.style.marginTop = "0.5rem";
+        actions.className = "ui-inline ui-inline--center";
 
         const authorizationAction = googleAuthorizationAction(state);
         if (authorizationAction.kind === "reconnect") {
           const reconnectBtn = document.createElement("button");
           reconnectBtn.type = "button";
-          reconnectBtn.className = "button";
+          reconnectBtn.className = "ui-button ui-button--primary ui-button--md";
           reconnectBtn.textContent = "Reconnect Google";
           reconnectBtn.addEventListener("click", async () => {
             const result = await beginConnection(organizationId);
@@ -445,7 +414,7 @@ import "../styles/global.css";
         if (authorizationAction.kind === "authorize_missing") {
           const authorizeBtn = document.createElement("button");
           authorizeBtn.type = "button";
-          authorizeBtn.className = "button";
+          authorizeBtn.className = "ui-button ui-button--primary ui-button--md";
           authorizeBtn.textContent = "Authorize missing Google services";
           authorizeBtn.addEventListener("click", async () => {
             authorizeBtn.disabled = true;
@@ -467,17 +436,20 @@ import "../styles/global.css";
           actions.append(authorizeBtn);
           panel.append(
             Object.assign(document.createElement("p"), {
-              className: "text-sm muted",
+              className: "ui-text-secondary",
               textContent:
                 "Authorize the remaining read-only Google services to enable Analytics and Search Console discovery.",
             }),
           );
         }
 
-        if (state.status === "connected" || state.status === "degraded") {
+        if (
+          (state.status === "connected" || state.status === "degraded") &&
+          canUsePlatformAdministration()
+        ) {
           const discoverBtn = document.createElement("button");
           discoverBtn.type = "button";
-          discoverBtn.className = "button";
+          discoverBtn.className = "ui-button ui-button--primary ui-button--md";
           discoverBtn.textContent = "Discover accounts and locations";
           discoverBtn.addEventListener("click", async () => {
             discoverBtn.disabled = true;
@@ -492,10 +464,12 @@ import "../styles/global.css";
             }
           });
           actions.append(discoverBtn);
+        }
 
+        if (state.status === "connected" || state.status === "degraded") {
           const disconnectBtn = document.createElement("button");
           disconnectBtn.type = "button";
-          disconnectBtn.className = "button button--secondary";
+          disconnectBtn.className = "ui-button ui-button--secondary ui-button--md";
           disconnectBtn.textContent = "Disconnect";
           disconnectBtn.addEventListener("click", () => {
             disconnectBtn.disabled = true;
@@ -532,7 +506,7 @@ import "../styles/global.css";
         ws: GoogleWorkspace,
       ): void {
         const list = document.createElement("ul");
-        list.className = "product-list";
+        list.className = "ui-record-list";
         for (const cap of ws.capabilities) {
           const item = document.createElement("li");
           const info = document.createElement("div");
@@ -556,7 +530,7 @@ import "../styles/global.css";
         ws: GoogleWorkspace,
       ): void {
         const list = document.createElement("ul");
-        list.className = "product-list";
+        list.className = "ui-record-list";
         for (const res of ws.mapped_resources) {
           const item = document.createElement("li");
           const info = document.createElement("div");
@@ -603,20 +577,23 @@ import "../styles/global.css";
         if (wsResult.kind !== "ok" || wsResult.data.unmapped_count === 0)
           return;
 
-        const card = makeCard(
-          `Unmapped Resources (${wsResult.data.unmapped_count})`,
-        );
-        parent.append(card);
-        const body = card.querySelector(".card__body") as HTMLElement;
+        const disclosure = document.createElement("details");
+        disclosure.className = "ui-card";
+        const summary = document.createElement("summary");
+        summary.className = "ui-card__header";
+        summary.textContent = `Unmapped resources (${wsResult.data.unmapped_count})`;
+        const body = document.createElement("div");
+        body.className = "ui-card__body";
+        disclosure.append(summary, body);
+        parent.append(disclosure);
 
         // Search
         const searchRow = document.createElement("div");
-        searchRow.style.marginBottom = "0.75rem";
+        searchRow.className = "ui-control--compact";
         const searchInput = document.createElement("input");
         searchInput.type = "search";
         searchInput.placeholder = "Search unmapped locations…";
-        searchInput.className = "form-input";
-        searchInput.style.maxWidth = "320px";
+        searchInput.className = "ui-input";
         searchRow.append(searchInput);
         body.append(searchRow);
 
@@ -647,7 +624,7 @@ import "../styles/global.css";
             return;
           }
           const list = document.createElement("ul");
-          list.className = "product-list";
+          list.className = "ui-record-list";
           for (const resource of result.data) {
             const item = document.createElement("li");
             const info = document.createElement("div");
@@ -659,35 +636,30 @@ import "../styles/global.css";
 
             // Location picker + map button
             const rowActions = document.createElement("div");
-            rowActions.style.display = "flex";
-            rowActions.style.gap = "0.5rem";
-            rowActions.style.alignItems = "center";
+            rowActions.className =
+              "ui-inline ui-inline--center ui-inline--tight";
 
-            const locationSelect = document.createElement("select");
-            locationSelect.className = "form-input";
-            locationSelect.style.maxWidth = "200px";
-            locationSelect.style.fontSize = "0.8rem";
-
-            const placeholderOpt = document.createElement("option");
-            placeholderOpt.value = "";
-            placeholderOpt.textContent = "Select location…";
-            locationSelect.append(placeholderOpt);
-            for (const loc of availableLocations) {
-              const opt = document.createElement("option");
-              opt.value = loc.id;
-              opt.textContent = loc.name;
-              locationSelect.append(opt);
-            }
+            const locationSelect = createSelectControl(
+              `mapping-location-${resource.id}`,
+              "LILOs location",
+              availableLocations.map((location) => ({
+                value: location.id,
+                label: location.name,
+              })),
+              "",
+              "Select location…",
+            );
+            locationSelect.root.classList.add("ui-control--compact");
 
             const mapBtn = document.createElement("button");
             mapBtn.type = "button";
-            mapBtn.className = "button button--sm";
+            mapBtn.className = "ui-button ui-button--primary ui-button--sm";
             mapBtn.textContent = "Map";
             mapBtn.addEventListener("click", async () => {
-              const selectedLocationId = locationSelect.value;
+              const selectedLocationId = locationSelect.input.value;
               if (!selectedLocationId) {
                 const errorEl = document.createElement("p");
-                errorEl.className = "text-error";
+                errorEl.className = "ui-text-danger";
                 errorEl.textContent = "Select a location first.";
                 item.append(errorEl);
                 return;
@@ -711,7 +683,7 @@ import "../styles/global.css";
               }
             });
 
-            rowActions.append(locationSelect, mapBtn);
+            rowActions.append(locationSelect.root, mapBtn);
             info.append(rowActions);
 
             item.append(info);
@@ -742,7 +714,7 @@ import "../styles/global.css";
 
         const connCard = makeCard("Connection");
         content.append(connCard);
-        const connBody = connCard.querySelector(".card__body") as HTMLElement;
+        const connBody = connCard.querySelector(".ui-card__body") as HTMLElement;
 
         const [connectionsResult] = await Promise.all([
           fetchGitHubConnections(organizationId),
@@ -760,7 +732,7 @@ import "../styles/global.css";
         ) {
           const installBtn = document.createElement("button");
           installBtn.type = "button";
-          installBtn.className = "button";
+          installBtn.className = "ui-button ui-button--primary ui-button--md";
           installBtn.textContent = "Install GitHub App";
           installBtn.addEventListener("click", async () => {
             installBtn.disabled = true;
@@ -777,7 +749,7 @@ import "../styles/global.css";
           connBody.append(installBtn);
           connBody.append(
             Object.assign(document.createElement("p"), {
-              className: "text-sm muted",
+              className: "ui-text-secondary",
               textContent:
                 "Install the LILOs GitHub App to enable content publishing to your repositories.",
             }),
@@ -788,20 +760,24 @@ import "../styles/global.css";
         const conn = appConnections[0] || null;
         connBody.append(
           statusBadge(
-            conn?.status === "active" ? "ready" : "setup",
-            conn?.status || "connected",
+            statusTone(conn?.status ?? "connected"),
+            statusLabel(conn?.status ?? "connected"),
           ),
         );
+        const accountReference =
+          ws?.external_account_reference ?? conn?.external_account_reference;
         connBody.append(
           Object.assign(document.createElement("p"), {
-            className: "text-sm muted",
-            textContent: "The LILOs GitHub App is installed.",
+            className: "ui-text-secondary",
+            textContent: accountReference
+              ? `Connected account: ${accountReference}`
+              : "The LILOs GitHub App is installed.",
           }),
         );
 
         const disconnectBtn = document.createElement("button");
         disconnectBtn.type = "button";
-        disconnectBtn.className = "button button--secondary";
+        disconnectBtn.className = "ui-button ui-button--secondary ui-button--md";
         disconnectBtn.textContent = "Disconnect GitHub App";
         disconnectBtn.addEventListener("click", () => {
           disconnectBtn.disabled = true;
@@ -823,10 +799,10 @@ import "../styles/global.css";
           const reposCard = makeCard("Accessible Repositories");
           content.append(reposCard);
           const reposBody = reposCard.querySelector(
-            ".card__body",
+            ".ui-card__body",
           ) as HTMLElement;
           const list = document.createElement("ul");
-          list.className = "product-list";
+          list.className = "ui-record-list";
           for (const repo of ws.repositories) {
             const item = document.createElement("li");
             const info = document.createElement("div");
@@ -865,11 +841,11 @@ import "../styles/global.css";
         content.replaceChildren();
         const card = makeCard("Email Configuration");
         content.append(card);
-        const body = card.querySelector(".card__body") as HTMLElement;
+        const body = card.querySelector(".ui-card__body") as HTMLElement;
         body.append(statusBadge("missing", "Not configured"));
         body.append(
           Object.assign(document.createElement("p"), {
-            className: "text-sm muted",
+            className: "ui-text-secondary",
             textContent:
               "Email delivery is configured through the Resend provider. Contact LILOs to enable transactional email.",
           }),
@@ -882,11 +858,11 @@ import "../styles/global.css";
         content.replaceChildren();
         const card = makeCard("SMS Configuration");
         content.append(card);
-        const body = card.querySelector(".card__body") as HTMLElement;
+        const body = card.querySelector(".ui-card__body") as HTMLElement;
         body.append(statusBadge("missing", "Not configured"));
         body.append(
           Object.assign(document.createElement("p"), {
-            className: "text-sm muted",
+            className: "ui-text-secondary",
             textContent:
               "SMS messaging is not currently configured. SMS integration will be available in a future platform release.",
           }),
@@ -897,16 +873,16 @@ import "../styles/global.css";
 
       function makeCard(title: string): HTMLDivElement {
         const card = document.createElement("div");
-        card.className = "card";
+        card.className = "ui-card";
         const header = document.createElement("div");
-        header.className = "card__header";
+        header.className = "ui-card__header";
         const titleEl = document.createElement("h3");
-        titleEl.className = "card__title";
+        titleEl.className = "ui-card__heading";
         titleEl.textContent = title;
         header.append(titleEl);
         card.append(header);
         const body = document.createElement("div");
-        body.className = "card__body";
+        body.className = "ui-card__body";
         card.append(body);
         return card;
       }

@@ -1,5 +1,13 @@
 ---
 import AppShell from "../components/AppShell.astro";
+import CardGrid from "../lib/ui/CardGrid.astro";
+import EmptyState from "../lib/ui/EmptyState.astro";
+import Notice from "../lib/ui/Notice.astro";
+import PageHeader from "../lib/ui/PageHeader.astro";
+import PageSection from "../lib/ui/PageSection.astro";
+import PageShell from "../lib/ui/PageShell.astro";
+import Region from "../lib/ui/Region.astro";
+import Skeleton from "../lib/ui/Skeleton.astro";
 import "../styles/global.css";
 ---
 
@@ -15,86 +23,22 @@ import "../styles/global.css";
   >
   <body
     ><AppShell>
-      <div id="boot-not-configured" role="status">
-        <h1>This deployment is not configured</h1><p>
-          No Supabase or API connection is configured for this build.
-        </p>
-      </div>
+      <PageShell id="boot-not-configured"><EmptyState heading="This deployment is not configured" description="Connect the platform runtime configuration to enable Automations." /></PageShell>
+      <PageShell id="boot-loading" hidden><Skeleton lines={3} label="Loading automations" /></PageShell>
+      <PageShell id="boot-error" hidden><Region role="alert" /></PageShell>
+      <PageShell id="workspace-empty" hidden><EmptyState heading="No organization access yet" description="Ask an administrator to invite your account to an organization." /></PageShell>
 
-      <div id="boot-loading" role="status" aria-live="polite" hidden>
-        <p>Loading Automations…</p>
-      </div>
-
-      <div id="boot-error" role="alert" hidden></div>
-
-      <div id="workspace-empty" role="status" hidden>
-        <h1>No organization access yet</h1><p>
-          Your account is not a member of any organization. Ask an administrator
-          to invite you.
-        </p>
-      </div>
-
-      <div id="workspace-content" hidden>
-        <div class="page-head">
-          <div class="page-head__intro">
-            <p class="eyebrow">Operations</p>
-            <h1>Automations</h1>
-            <p>
-              Scheduled workflows, background tasks, and governed automation
-              runs for this organization.
-            </p>
-          </div>
-        </div>
-
-        <!-- Workflow catalog -->
-        <section
-          aria-labelledby="automations-workflows-title"
-          style="margin-bottom: var(--space-8);"
-        >
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow">Workflows</p>
-              <h2 id="automations-workflows-title">Automation catalog</h2>
-            </div>
-          </div>
-          <div
-            id="workflow-catalog"
-            class="grid grid--3col"
-            style="--grid-min: 280px;"
-          >
-            <p class="text-sm muted">Loading catalog…</p>
-          </div>
-        </section>
-
-        <!-- Schedules -->
-        <section
-          aria-labelledby="automations-schedules-title"
-          style="margin-bottom: var(--space-8);"
-        >
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow">Schedules</p>
-              <h2 id="automations-schedules-title">Recurring execution</h2>
-            </div>
-          </div>
-          <div id="schedule-list">
-            <p class="text-sm muted">Loading schedules…</p>
-          </div>
-        </section>
-
-        <!-- Recent runs -->
-        <section aria-labelledby="automations-runs-title">
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow">Activity</p>
-              <h2 id="automations-runs-title">Recent runs</h2>
-            </div>
-          </div>
-          <div id="run-history">
-            <p class="text-sm muted">Loading run history…</p>
-          </div>
-        </section>
-      </div>
+      <PageShell id="workspace-content" hidden>
+        <PageHeader eyebrow="Operations" title="Automations" description="Monitor governed workflows, recurring schedules, outcomes, retries, and upcoming execution." />
+        <Notice title="Automation dependencies"><p>Provider connection health is managed centrally.</p></Notice>
+        <PageSection eyebrow="Health" title="Automation summary"><CardGrid id="automation-metrics" minimum="sm" /></PageSection>
+        <PageSection eyebrow="Workflows" title="Automation catalog" description="Every row combines its schedule with the latest recorded outcome and failure history.">
+          <Region id="workflow-catalog"><Skeleton lines={4} label="Loading automation catalog" /></Region>
+        </PageSection>
+        <PageSection eyebrow="Activity" title="Recent runs">
+          <Region id="run-history"><Skeleton lines={4} label="Loading run history" /></Region>
+        </PageSection>
+      </PageShell>
     </AppShell>
     <script>
       import {
@@ -102,7 +46,15 @@ import "../styles/global.css";
         applyBootResult,
         populateSwitcher,
         setActiveOrganization,
+        buildDataTable,
+        cellMeta,
+        metricCard,
+        statusBadge,
+        emptyState,
+        errorAlert,
+        describeFailure,
       } from "../lib/ui";
+      import { statusLabel, statusTone } from "../lib/status-language";
       import {
         listWorkflowTypes,
         listSchedules,
@@ -121,34 +73,6 @@ import "../styles/global.css";
       };
 
       let activeOrgId = "";
-
-      // ------------------------------------------------------------------
-      // Status badge helper
-      // ------------------------------------------------------------------
-      function statusBadge(status: string): string {
-        const mapping: Record<string, string> = {
-          active: '<span class="badge badge--success">Active</span>',
-          paused: '<span class="badge badge--warning">Paused</span>',
-          cancelled: '<span class="badge badge--muted">Cancelled</span>',
-          completed: '<span class="badge badge--success">Completed</span>',
-          running: '<span class="badge badge--info">Running</span>',
-          queued: '<span class="badge badge--info">Queued</span>',
-          failed: '<span class="badge badge--danger">Failed</span>',
-          dead_lettered:
-            '<span class="badge badge--danger">Dead-lettered</span>',
-          retry_scheduled: '<span class="badge badge--warning">Retrying</span>',
-          escalated: '<span class="badge badge--danger">Escalated</span>',
-          cancelled_workflow:
-            '<span class="badge badge--muted">Cancelled</span>',
-          waiting_approval:
-            '<span class="badge badge--warning">Awaiting Approval</span>',
-          not_persisted:
-            '<span class="badge badge--muted">Not activated</span>',
-        };
-        return (
-          mapping[status] ?? `<span class="badge badge--muted">${status}</span>`
-        );
-      }
 
       function formatTime(iso: string | null): string {
         if (!iso) return "—";
@@ -178,88 +102,151 @@ import "../styles/global.css";
         }
       }
 
-      // ------------------------------------------------------------------
-      // Render catalog cards
-      // ------------------------------------------------------------------
-      function renderCatalog(items: WorkflowTypeEntry[]): void {
-        const container = document.getElementById("workflow-catalog")!;
-        if (items.length === 0) {
-          container.innerHTML =
-            '<p class="text-sm muted">No workflow types registered.</p>';
-          return;
-        }
-        container.innerHTML = items
-          .map(
-            (w) => `
-            <div class="card">
-              <div class="card__body">
-                <div style="display:flex;justify-content:space-between;align-items:flex-start;">
-                  <div>
-                    <h3 class="card__title" style="font-size:var(--text-base);">${w.display_name}</h3>
-                    <p class="text-xs muted">${w.key}</p>
-                  </div>
-                  ${statusBadge(w.definition_status)}
-                </div>
-                <div style="margin-top:var(--space-2);font-size:var(--text-xs);color:var(--color-muted);">
-                  Product: ${w.product_key}
-                  ${w.latest_version ? ` · v${w.latest_version}` : ""}
-                </div>
-              </div>
-            </div>`,
-          )
-          .join("");
+      function scheduleLabel(cron: string): string {
+        const labels: Record<string, string> = {
+          "0 * * * *": "Every hour",
+          "0 0 * * *": "Daily",
+          "0 0 * * 1": "Weekly",
+          "0 0 1 * *": "Monthly",
+        };
+        return labels[cron] ?? "Custom schedule";
+      }
+
+      function renderMetrics(
+        catalog: WorkflowTypeEntry[] | null,
+        schedules: WorkflowScheduleEntry[] | null,
+        runs: WorkflowRunSummary[] | null,
+      ): void {
+        const panel = document.getElementById("automation-metrics")!;
+        panel.replaceChildren();
+        const failed = runs?.filter((run) =>
+          ["failed", "dead_lettered", "escalated"].includes(run.status),
+        ).length;
+        const active = schedules?.filter(
+          (schedule) => schedule.status === "active",
+        ).length;
+        panel.append(
+          metricCard(
+            "Available automations",
+            catalog && catalog.length > 0 ? String(catalog.length) : "No data",
+            catalog ? "Governed workflow catalog" : "Catalog unavailable",
+          ),
+          metricCard(
+            "Active schedules",
+            schedules && schedules.length > 0 ? String(active) : "No data",
+            schedules ? "Recurring work" : "Schedules unavailable",
+          ),
+          metricCard(
+            "Recent runs",
+            runs && runs.length > 0 ? String(runs.length) : "No data",
+            runs ? "Latest recorded activity" : "Run history unavailable",
+          ),
+          metricCard(
+            "Needs attention",
+            runs && runs.length > 0 ? String(failed) : "No data",
+            runs ? "Failed or escalated runs" : "Run history unavailable",
+          ),
+        );
       }
 
       // ------------------------------------------------------------------
-      // Render schedules
+      // Render catalog rows with their real schedule and run context.
       // ------------------------------------------------------------------
-      function renderSchedules(items: WorkflowScheduleEntry[]): void {
-        const container = document.getElementById("schedule-list")!;
+      function renderCatalog(
+        items: WorkflowTypeEntry[],
+        schedules: WorkflowScheduleEntry[],
+        runs: WorkflowRunSummary[],
+      ): void {
+        const container = document.getElementById("workflow-catalog")!;
+        container.replaceChildren();
         if (items.length === 0) {
-          container.innerHTML = `
-            <div class="empty-state">
-              <span class="empty-state__icon" aria-hidden="true">○</span>
-              <h3>No schedules configured</h3>
-              <p>Recurring workflows such as GBP sync and review ingestion are
-                 configured here. Schedules are created by organization
-                 administrators.</p>
-            </div>`;
+          container.append(
+            emptyState(
+              "No automations available",
+              "Governed automations will appear here when they are enabled for this workspace.",
+            ),
+          );
           return;
         }
-        const rows = items
-          .map(
-            (s) => `
-            <tr>
-              <td>
-                <div class="text-sm fw-medium">${s.workflow_name ?? s.workflow_key ?? s.key}</div>
-                <div class="text-xs muted">${s.key}</div>
-              </td>
-              <td><code class="text-xs">${s.cron_expression}</code></td>
-              <td>${statusBadge(s.status)}</td>
-              <td>
-                <div class="text-xs">${formatTime(s.last_run_at)}</div>
-              </td>
-              <td>
-                <div class="text-xs">${formatTime(s.next_run_at)}</div>
-              </td>
-            </tr>`,
-          )
-          .join("");
-        container.innerHTML = `
-          <div class="table-wrap">
-            <table class="table">
-              <thead>
-                <tr>
-                  <th>Workflow</th>
-                  <th>Schedule</th>
-                  <th>Status</th>
-                  <th>Last run</th>
-                  <th>Next run</th>
-                </tr>
-              </thead>
-              <tbody>${rows}</tbody>
-            </table>
-          </div>`;
+        container.append(
+          buildDataTable(
+            [
+              {
+                key: "workflow",
+                header: "Automation",
+                render: (workflow: WorkflowTypeEntry) =>
+                  cellMeta(
+                    workflow.display_name,
+                    `${statusLabel(workflow.product_key)} · version ${workflow.latest_version ?? "not published"}`,
+                  ),
+              },
+              {
+                key: "schedule",
+                header: "Schedule",
+                render: (workflow: WorkflowTypeEntry) => {
+                  const schedule = schedules.find(
+                    (item) => item.workflow_key === workflow.key,
+                  );
+                  return schedule
+                    ? `${scheduleLabel(schedule.cron_expression)} · ${schedule.timezone}`
+                    : "Manual only";
+                },
+              },
+              {
+                key: "lastRun",
+                header: "Last run",
+                width: "content",
+                render: (workflow: WorkflowTypeEntry) => {
+                  const run = runs.find(
+                    (item) => item.workflow_key === workflow.key,
+                  );
+                  return run?.created_at
+                    ? `${elapsed(run.created_at)} · ${formatTime(run.created_at)}`
+                    : "Not run yet";
+                },
+              },
+              {
+                key: "result",
+                header: "Result",
+                render: (workflow: WorkflowTypeEntry) => {
+                  const run = runs.find(
+                    (item) => item.workflow_key === workflow.key,
+                  );
+                  return run
+                    ? statusBadge(statusTone(run.status), statusLabel(run.status))
+                    : statusBadge("neutral", "No result");
+                },
+              },
+              {
+                key: "nextRun",
+                header: "Next run",
+                width: "content",
+                render: (workflow: WorkflowTypeEntry) => {
+                  const schedule = schedules.find(
+                    (item) => item.workflow_key === workflow.key,
+                  );
+                  return schedule?.next_run_at
+                    ? formatTime(schedule.next_run_at)
+                    : "Not scheduled";
+                },
+              },
+              {
+                key: "failures",
+                header: "Failures",
+                format: { unit: "count" },
+                render: (workflow: WorkflowTypeEntry) =>
+                  runs.filter(
+                    (run) =>
+                      run.workflow_key === workflow.key &&
+                      ["failed", "dead_lettered", "escalated"].includes(
+                        run.status,
+                      ),
+                  ).length,
+              },
+            ],
+            items,
+          ),
+        );
       }
 
       // ------------------------------------------------------------------
@@ -267,50 +254,58 @@ import "../styles/global.css";
       // ------------------------------------------------------------------
       function renderRuns(items: WorkflowRunSummary[]): void {
         const container = document.getElementById("run-history")!;
+        container.replaceChildren();
         if (items.length === 0) {
-          container.innerHTML = `
-            <div class="empty-state">
-              <span class="empty-state__icon" aria-hidden="true">○</span>
-              <h3>No runs recorded</h3>
-              <p>Workflow runs will appear here as automated and manual
-                 executions complete.</p>
-            </div>`;
+          container.append(
+            emptyState(
+              "No runs recorded",
+              "Completed and failed automation runs will appear here with their recovery state.",
+            ),
+          );
           return;
         }
-        const rows = items
-          .map(
-            (r) => `
-            <tr>
-              <td>
-                <div class="text-sm fw-medium">${r.workflow_name ?? r.workflow_key ?? "—"}</div>
-                <div class="text-xs muted">${r.trigger_type}</div>
-              </td>
-              <td>${statusBadge(r.status)}</td>
-              <td>
-                <div class="text-xs">${formatTime(r.created_at)}</div>
-                <div class="text-xs muted">${elapsed(r.created_at)}</div>
-              </td>
-              <td class="text-xs muted">
-                ${r.job_attempt_count != null ? `Attempt ${r.job_attempt_count}` : "—"}
-                ${r.failure_code ? `<br/><span class="text-xs" style="color:var(--color-danger);">${r.failure_code}</span>` : ""}
-              </td>
-            </tr>`,
-          )
-          .join("");
-        container.innerHTML = `
-          <div class="table-wrap">
-            <table class="table">
-              <thead>
-                <tr>
-                  <th>Workflow</th>
-                  <th>Status</th>
-                  <th>Started</th>
-                  <th>Details</th>
-                </tr>
-              </thead>
-              <tbody>${rows}</tbody>
-            </table>
-          </div>`;
+        container.append(
+          buildDataTable(
+            [
+              {
+                key: "workflow",
+                header: "Automation",
+                render: (run: WorkflowRunSummary) =>
+                  cellMeta(
+                    run.workflow_name ?? "Automation",
+                    statusLabel(run.trigger_type),
+                  ),
+              },
+              {
+                key: "status",
+                header: "Result",
+                render: (run: WorkflowRunSummary) =>
+                  statusBadge(statusTone(run.status), statusLabel(run.status)),
+              },
+              {
+                key: "started",
+                header: "Started",
+                render: (run: WorkflowRunSummary) =>
+                  run.created_at
+                    ? `${elapsed(run.created_at)} · ${formatTime(run.created_at)}`
+                    : "Time unavailable",
+              },
+              {
+                key: "recovery",
+                header: "Recovery",
+                render: (run: WorkflowRunSummary) =>
+                  ["failed", "dead_lettered", "escalated"].includes(run.status)
+                    ? run.job_attempt_count !== null &&
+                      run.job_max_attempts !== null &&
+                      run.job_attempt_count < run.job_max_attempts
+                      ? `Retry eligible · attempt ${run.job_attempt_count} of ${run.job_max_attempts}`
+                      : "Needs operator review"
+                    : "No action required",
+              },
+            ],
+            items,
+          ),
+        );
       }
 
       // ------------------------------------------------------------------
@@ -326,25 +321,29 @@ import "../styles/global.css";
         ]);
 
         if (cat.kind === "ok") {
-          renderCatalog(cat.data);
+          renderCatalog(
+            cat.data,
+            sched.kind === "ok" ? sched.data : [],
+            runs.kind === "ok" ? runs.data : [],
+          );
         } else {
-          document.getElementById("workflow-catalog")!.innerHTML =
-            '<p class="text-sm muted">Could not load workflow catalog.</p>';
-        }
-
-        if (sched.kind === "ok") {
-          renderSchedules(sched.data);
-        } else {
-          document.getElementById("schedule-list")!.innerHTML =
-            '<p class="text-sm muted">Could not load schedules.</p>';
+          document
+            .getElementById("workflow-catalog")!
+            .replaceChildren(errorAlert(describeFailure(cat, "Catalog")));
         }
 
         if (runs.kind === "ok") {
           renderRuns(runs.data);
         } else {
-          document.getElementById("run-history")!.innerHTML =
-            '<p class="text-sm muted">Could not load run history.</p>';
+          document
+            .getElementById("run-history")!
+            .replaceChildren(errorAlert(describeFailure(runs, "Run history")));
         }
+        renderMetrics(
+          cat.kind === "ok" ? cat.data : null,
+          sched.kind === "ok" ? sched.data : null,
+          runs.kind === "ok" ? runs.data : null,
+        );
       }
 
       // ------------------------------------------------------------------

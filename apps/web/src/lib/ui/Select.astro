@@ -1,0 +1,223 @@
+---
+import { Check, ChevronDown, CircleAlert, LoaderCircle } from "@lucide/astro";
+import Icon from "./Icon.astro";
+
+export interface SelectOption {
+  value: string;
+  label: string;
+  disabled?: boolean;
+}
+
+interface Props {
+  id: string;
+  name?: string;
+  label: string;
+  options: SelectOption[];
+  value?: string;
+  placeholder?: string;
+  description?: string;
+  error?: string;
+  required?: boolean;
+  disabled?: boolean;
+  loading?: boolean;
+  class?: string;
+  hidden?: boolean;
+}
+
+const {
+  id,
+  name = id,
+  label,
+  options,
+  value = "",
+  placeholder = "Select an option",
+  description,
+  error,
+  required = false,
+  disabled = false,
+  loading = false,
+  class: className,
+  hidden = false,
+} = Astro.props;
+const selected = options.find((option) => option.value === value);
+const descriptionId = description ? `${id}-description` : undefined;
+const errorId = error ? `${id}-error` : undefined;
+const describedBy = [descriptionId, errorId].filter(Boolean).join(" ") || undefined;
+---
+
+<div
+  id={`${id}-field`}
+  class:list={["ui-field", "ui-select", className]}
+  data-select-root
+  data-state={error ? "error" : loading ? "loading" : "default"}
+  hidden={hidden}
+>
+  <label class="ui-field__label" id={`${id}-label`}>{label}{required && <span aria-hidden="true"> *</span>}</label>
+  {description && <p class="ui-field__description" id={descriptionId}>{description}</p>}
+  <input id={id} type="hidden" name={name} value={selected?.value ?? ""} data-select-input required={required} disabled={disabled || loading} />
+  <button
+    class="ui-select__trigger"
+    id={`${id}-trigger`}
+    type="button"
+    role="combobox"
+    aria-controls={`${id}-listbox`}
+    aria-expanded="false"
+    aria-haspopup="listbox"
+    aria-labelledby={`${id}-label ${id}-value`}
+    aria-describedby={describedBy}
+    aria-invalid={error ? "true" : undefined}
+    aria-busy={loading ? "true" : undefined}
+    disabled={disabled || loading}
+    data-select-trigger
+  >
+    <span id={`${id}-value`} data-select-value data-placeholder={selected ? undefined : "true"}>{selected?.label ?? placeholder}</span>
+    <Icon icon={loading ? LoaderCircle : ChevronDown} class:list={[loading && "ui-icon--spin"]} />
+  </button>
+  <ul class="ui-select__listbox" id={`${id}-listbox`} role="listbox" aria-labelledby={`${id}-label`} hidden data-select-listbox>
+    {options.map((option) => (
+      <li
+        id={`${id}-option-${option.value}`}
+        class="ui-select__option"
+        role="option"
+        aria-selected={option.value === selected?.value ? "true" : "false"}
+        aria-disabled={option.disabled ? "true" : undefined}
+        data-value={option.value}
+        data-label={option.label}
+        tabindex="-1"
+      >
+        <span>{option.label}</span><Icon icon={Check} size="sm" />
+      </li>
+    ))}
+  </ul>
+  {error && <p class="ui-field__error" id={errorId}><Icon icon={CircleAlert} size="sm" />{error}</p>}
+</div>
+
+<script>
+  function initializeSelect(root: HTMLElement): void {
+    if (root.dataset.initialized === "true") return;
+    root.dataset.initialized = "true";
+    const trigger = root.querySelector<HTMLButtonElement>("[data-select-trigger]");
+    const listbox = root.querySelector<HTMLElement>("[data-select-listbox]");
+    const input = root.querySelector<HTMLInputElement>("[data-select-input]");
+    const value = root.querySelector<HTMLElement>("[data-select-value]");
+    if (!trigger || !listbox || !input || !value) return;
+    const currentOptions = (): HTMLElement[] => Array.from(root.querySelectorAll<HTMLElement>("[role='option']"));
+    let activeIndex = Math.max(0, currentOptions().findIndex((option) => option.getAttribute("aria-selected") === "true"));
+    let typeahead = "";
+    let typeaheadTimer = 0;
+
+    const enabled = (index: number): boolean => currentOptions()[index]?.getAttribute("aria-disabled") !== "true";
+    const setActive = (index: number): void => {
+      const options = currentOptions();
+      if (options.length === 0) return;
+      let next = (index + options.length) % options.length;
+      while (!enabled(next) && next !== activeIndex) next = (next + 1) % options.length;
+      activeIndex = next;
+      trigger.setAttribute("aria-activedescendant", options[next].id);
+      options[next].focus();
+    };
+    const open = (): void => {
+      listbox.hidden = false;
+      trigger.setAttribute("aria-expanded", "true");
+      root.dataset.active = "true";
+      requestAnimationFrame(() => setActive(activeIndex));
+    };
+    const close = (restoreFocus = true): void => {
+      listbox.hidden = true;
+      trigger.setAttribute("aria-expanded", "false");
+      delete root.dataset.active;
+      if (restoreFocus) trigger.focus();
+    };
+    const choose = (option: HTMLElement, notify = true): void => {
+      const options = currentOptions();
+      if (option.getAttribute("aria-disabled") === "true") return;
+      for (const candidate of options) candidate.setAttribute("aria-selected", String(candidate === option));
+      input.value = option.dataset.value ?? "";
+      value.textContent = option.dataset.label ?? "";
+      delete value.dataset.placeholder;
+      if (notify) {
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        input.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+      close();
+    };
+
+    trigger.addEventListener("click", () => trigger.getAttribute("aria-expanded") === "true" ? close() : open());
+    trigger.addEventListener("keydown", (event) => {
+      if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
+        event.preventDefault();
+        if (listbox.hidden) open();
+        if (event.key === "ArrowDown") setActive(activeIndex + 1);
+        if (event.key === "ArrowUp") setActive(activeIndex - 1);
+        if (event.key === "Home") setActive(0);
+        if (event.key === "End") setActive(currentOptions().length - 1);
+      }
+    });
+    listbox.addEventListener("click", (event) => {
+      const option = (event.target as Element).closest<HTMLElement>("[role='option']");
+      if (option) choose(option);
+    });
+    listbox.addEventListener("keydown", (event) => {
+      const options = currentOptions();
+      if (event.key === "Escape" || event.key === "Tab") return close(event.key !== "Tab");
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        return choose(options[activeIndex]);
+      }
+      if (event.key === "ArrowDown" || event.key === "ArrowUp" || event.key === "Home" || event.key === "End") {
+        event.preventDefault();
+        if (event.key === "ArrowDown") setActive(activeIndex + 1);
+        if (event.key === "ArrowUp") setActive(activeIndex - 1);
+        if (event.key === "Home") setActive(0);
+        if (event.key === "End") setActive(options.length - 1);
+        return;
+      }
+      if (event.key.length === 1) {
+        window.clearTimeout(typeaheadTimer);
+        typeahead += event.key.toLocaleLowerCase();
+        const match = options.findIndex((option) => enabled(options.indexOf(option)) && option.dataset.label?.toLocaleLowerCase().startsWith(typeahead));
+        if (match >= 0) setActive(match);
+        typeaheadTimer = window.setTimeout(() => { typeahead = ""; }, 500);
+      }
+    });
+    document.addEventListener("pointerdown", (event) => {
+      if (!root.contains(event.target as Node) && !listbox.hidden) close(false);
+    });
+    root.addEventListener("ui:set-options", (event) => {
+      const detail = (event as CustomEvent<{ options: Array<{ value: string; label: string; disabled?: boolean }>; value?: string }>).detail;
+      listbox.replaceChildren();
+      for (const item of detail.options) {
+        const option = document.createElement("li");
+        option.id = `${input.id}-option-${item.value}`;
+        option.className = "ui-select__option";
+        option.setAttribute("role", "option");
+        option.setAttribute("aria-selected", String(item.value === detail.value));
+        if (item.disabled) option.setAttribute("aria-disabled", "true");
+        option.dataset.value = item.value;
+        option.dataset.label = item.label;
+        option.tabIndex = -1;
+        const label = document.createElement("span");
+        label.textContent = item.label;
+        option.append(label);
+        listbox.append(option);
+      }
+      const selectedOption = detail.options.find((item) => item.value === detail.value) ?? detail.options[0];
+      input.value = selectedOption?.value ?? "";
+      value.textContent = selectedOption?.label ?? "Select an option";
+      value.toggleAttribute("data-placeholder", !selectedOption);
+      activeIndex = Math.max(0, currentOptions().findIndex((option) => option.getAttribute("aria-selected") === "true"));
+    });
+    root.addEventListener("ui:set-disabled", (event) => {
+      const disabled = (event as CustomEvent<{ disabled: boolean }>).detail.disabled;
+      input.disabled = disabled;
+      trigger.disabled = disabled;
+    });
+    root.addEventListener("ui:set-value", (event) => {
+      const nextValue = (event as CustomEvent<{ value: string }>).detail.value;
+      const option = currentOptions().find((candidate) => candidate.dataset.value === nextValue);
+      if (option) choose(option, false);
+    });
+  }
+
+  document.querySelectorAll<HTMLElement>("[data-select-root]").forEach(initializeSelect);
+</script>

@@ -178,7 +178,19 @@ describe("setProductNavigationVisibility", () => {
 });
 
 function element(hidden: boolean): HTMLElement {
-  return { hidden, textContent: "" } as HTMLElement;
+  const node = {
+    hidden,
+    textContent: "",
+    querySelector: () => null,
+    replaceChildren: (...children: HTMLElement[]) => {
+      node.textContent = children.map((child) => child.textContent).join("");
+    },
+    append: (...children: HTMLElement[]) => {
+      node.textContent += children.map((child) => child.textContent).join("");
+    },
+    addEventListener: vi.fn(),
+  };
+  return node as unknown as HTMLElement;
 }
 
 function documentItem(hidden = false, navKey?: string): HTMLElement {
@@ -205,6 +217,8 @@ function regions(): BootRegions {
 }
 
 describe("applyBootResult", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
   it("reveals authenticated content and clears the loading state", () => {
     const bootRegions = regions();
     const result: BootResult = {
@@ -228,6 +242,10 @@ describe("applyBootResult", () => {
 
   it("keeps authenticated content hidden when boot fails", () => {
     const bootRegions = regions();
+    vi.stubGlobal("document", {
+      createElement: () => element(false),
+    });
+    vi.stubGlobal("window", { location: { reload: vi.fn() } });
 
     expect(
       applyBootResult(bootRegions, {
@@ -238,7 +256,22 @@ describe("applyBootResult", () => {
     expect(bootRegions.content.hidden).toBe(true);
     expect(bootRegions.loading.hidden).toBe(true);
     expect(bootRegions.error.hidden).toBe(false);
-    expect(bootRegions.error.textContent).toBe("Workspace failed to load.");
+    expect(bootRegions.error.textContent).toContain(
+      "Workspace failed to load.",
+    );
+    expect(bootRegions.error.textContent).toContain("Try again");
+  });
+
+  it("adds a recovery action when organization access is empty", () => {
+    const bootRegions = regions();
+    vi.stubGlobal("document", {
+      createElement: () => element(false),
+    });
+    vi.stubGlobal("window", { location: { reload: vi.fn() } });
+
+    expect(applyBootResult(bootRegions, { kind: "empty" })).toBe(false);
+    expect(bootRegions.empty.hidden).toBe(false);
+    expect(bootRegions.empty.textContent).toContain("Refresh access");
   });
 });
 

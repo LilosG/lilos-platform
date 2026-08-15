@@ -3,11 +3,14 @@ import { describe, expect, it } from "vitest";
 import {
   deltaClass,
   formatDelta,
+  formatDateRange,
+  formatMetricDelta,
   formatPercentDelta,
   metricAwareDeltaClass,
   periodLabelFromDays,
   toTimeSeriesPoints,
 } from "./reporting";
+import { trendChartModel, trendSummary } from "./reporting-chart";
 
 describe("formatDelta", () => {
   it("prefixes positive values with +", () => {
@@ -38,6 +41,18 @@ describe("formatPercentDelta", () => {
 
   it("returns null for non-finite", () => {
     expect(formatPercentDelta(Infinity)).toBeNull();
+  });
+});
+
+describe("formatMetricDelta", () => {
+  it("formats CTR proportion deltas as percentage points", () => {
+    expect(formatMetricDelta("ctr", 0.003)).toBe("+0.3pp");
+    expect(formatMetricDelta("ctr", -0.003)).toBe("-0.3pp");
+  });
+
+  it("keeps count and position deltas in their source units", () => {
+    expect(formatMetricDelta("clicks", 123)).toBe("+123");
+    expect(formatMetricDelta("position", -0.7)).toBe("-0.7");
   });
 });
 
@@ -98,6 +113,14 @@ describe("periodLabelFromDays", () => {
   });
 });
 
+describe("formatDateRange", () => {
+  it("keeps API date-only boundaries stable across local timezones", () => {
+    expect(formatDateRange("2026-07-18", "2026-08-14")).toBe(
+      "Jul 18 – Aug 14",
+    );
+  });
+});
+
 describe("toTimeSeriesPoints (missing vs zero)", () => {
   it("preserves real zero as 0", () => {
     const points = toTimeSeriesPoints(
@@ -145,5 +168,36 @@ describe("toTimeSeriesPoints (missing vs zero)", () => {
       "2026-08-01",
       "2026-08-02",
     ]);
+  });
+});
+
+describe("shared reporting trend", () => {
+  it("creates truthful visual gaps for missing days", () => {
+    const model = trendChartModel({
+      key: "sessions",
+      label: "Sessions",
+      points: [
+        { date: "2026-08-01", value: 10 },
+        { date: "2026-08-02", value: null },
+        { date: "2026-08-03", value: 12 },
+      ],
+    });
+    expect(model.values).toEqual([10, null, 12]);
+  });
+
+  it("summarizes observed and missing days accessibly", () => {
+    expect(
+      trendSummary({
+        key: "clicks",
+        label: "Clicks",
+        points: [
+          { date: "2026-08-01", value: 0 },
+          { date: "2026-08-02", value: null },
+          { date: "2026-08-03", value: 12 },
+        ],
+      }),
+    ).toBe(
+      "Clicks ranged from 0 to 12 across 2 reported days, with 1 day missing.",
+    );
   });
 });

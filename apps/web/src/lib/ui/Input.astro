@@ -1,0 +1,68 @@
+---
+import { CircleAlert, LoaderCircle } from "@lucide/astro";
+import Icon from "./Icon.astro";
+
+interface Props {
+  id: string;
+  name?: string;
+  label: string;
+  type?: "text" | "email" | "password" | "search" | "tel" | "url" | "number";
+  value?: string | number;
+  placeholder?: string;
+  description?: string;
+  error?: string;
+  required?: boolean;
+  disabled?: boolean;
+  loading?: boolean;
+  active?: boolean;
+  autocomplete?: string;
+  class?: string;
+}
+
+const {
+  id,
+  name = id,
+  label,
+  type = "text",
+  value,
+  placeholder,
+  description,
+  error,
+  required = false,
+  disabled = false,
+  loading = false,
+  active = false,
+  autocomplete,
+  class: className,
+} = Astro.props;
+const descriptionId = description ? `${id}-description` : undefined;
+const errorId = error ? `${id}-error` : undefined;
+const describedBy = [descriptionId, errorId].filter(Boolean).join(" ") || undefined;
+---
+
+<div
+  class:list={["ui-field", className]}
+  data-state={error ? "error" : loading ? "loading" : "default"}
+  data-active={active ? "true" : undefined}
+>
+  <label class="ui-field__label" for={id}>{label}{required && <span aria-hidden="true"> *</span>}</label>
+  {description && <p class="ui-field__description" id={descriptionId}>{description}</p>}
+  <div class="ui-field__control-wrap">
+    <input
+      class="ui-input"
+      id={id}
+      name={name}
+      type={type}
+      value={value}
+      placeholder={placeholder}
+      required={required}
+      disabled={disabled || loading}
+      aria-invalid={error ? "true" : undefined}
+      aria-describedby={describedBy}
+      aria-busy={loading ? "true" : undefined}
+      autocomplete={autocomplete}
+    />
+    {loading && <Icon icon={LoaderCircle} class="ui-field__status-icon ui-icon--spin" />}
+  </div>
+  {error && <p class="ui-field__error" id={errorId}><Icon icon={CircleAlert} size="sm" />{error}</p>}
+</div>

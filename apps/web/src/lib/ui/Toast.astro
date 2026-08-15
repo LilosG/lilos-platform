@@ -1,0 +1,48 @@
+---
+import { CircleAlert, Info, LoaderCircle, X } from "@lucide/astro";
+import Icon from "./Icon.astro";
+
+interface Props {
+  id?: string;
+  title: string;
+  message?: string;
+  tone?: "neutral" | "success" | "warning" | "danger" | "info";
+  state?: "default" | "loading" | "error";
+  dismissible?: boolean;
+  duration?: number;
+  disabled?: boolean;
+}
+
+const {
+  id,
+  title,
+  message,
+  tone = "neutral",
+  state = "default",
+  dismissible = true,
+  duration = 0,
+  disabled = false,
+} = Astro.props;
+const alert = tone === "danger" || state === "error";
+---
+
+<div class:list={["ui-toast", `ui-toast--${tone}`]} id={id} role={alert ? "alert" : "status"} aria-live={alert ? "assertive" : "polite"} aria-busy={state === "loading" ? "true" : undefined} aria-disabled={disabled ? "true" : undefined} data-state={state} data-toast data-duration={duration || undefined}>
+  <Icon icon={state === "loading" ? LoaderCircle : alert ? CircleAlert : Info} class:list={[state === "loading" && "ui-icon--spin"]} />
+  <div class="ui-toast__content"><strong>{title}</strong>{message && <p>{message}</p>}</div>
+  {dismissible && <button class="ui-toast__dismiss" type="button" aria-label="Dismiss notification" data-toast-dismiss><Icon icon={X} size="sm" /></button>}
+</div>
+
+<script>
+  function dismissToast(toast: HTMLElement): void {
+    toast.dataset.active = "false";
+    toast.addEventListener("transitionend", () => toast.remove(), { once: true });
+  }
+  document.querySelectorAll<HTMLElement>("[data-toast]").forEach((toast) => {
+    if (toast.dataset.initialized === "true") return;
+    toast.dataset.initialized = "true";
+    toast.dataset.active = "true";
+    toast.querySelector("[data-toast-dismiss]")?.addEventListener("click", () => dismissToast(toast));
+    const duration = Number(toast.dataset.duration ?? 0);
+    if (duration > 0) window.setTimeout(() => dismissToast(toast), duration);
+  });
+</script>

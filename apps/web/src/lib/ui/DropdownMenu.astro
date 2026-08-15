@@ -1,0 +1,89 @@
+---
+import { Ellipsis, LoaderCircle } from "@lucide/astro";
+import Icon from "./Icon.astro";
+
+export interface DropdownItem {
+  id: string;
+  label: string;
+  href?: string;
+  disabled?: boolean;
+  danger?: boolean;
+}
+
+interface Props {
+  id: string;
+  label: string;
+  items: DropdownItem[];
+  disabled?: boolean;
+  loading?: boolean;
+  error?: boolean;
+}
+
+const { id, label, items, disabled = false, loading = false, error = false } = Astro.props;
+---
+
+<div class="ui-dropdown" data-dropdown-root data-state={error ? "error" : loading ? "loading" : "default"}>
+  <button class="ui-button ui-button--ghost ui-button--md ui-button--icon-only" type="button" aria-label={label} aria-haspopup="menu" aria-controls={`${id}-menu`} aria-expanded="false" disabled={disabled || loading} data-dropdown-trigger>
+    <Icon icon={loading ? LoaderCircle : Ellipsis} class:list={[loading && "ui-icon--spin"]} />
+  </button>
+  <div class="ui-dropdown__menu" id={`${id}-menu`} role="menu" hidden data-dropdown-menu>
+    {items.map((item) => item.href ? (
+      <a class:list={["ui-dropdown__item", item.danger && "ui-dropdown__item--danger"]} role="menuitem" href={item.disabled ? undefined : item.href} aria-disabled={item.disabled ? "true" : undefined} tabindex="-1" data-dropdown-item>{item.label}</a>
+    ) : (
+      <button class:list={["ui-dropdown__item", item.danger && "ui-dropdown__item--danger"]} id={item.id} type="button" role="menuitem" disabled={item.disabled} tabindex="-1" data-dropdown-item>{item.label}</button>
+    ))}
+  </div>
+</div>
+
+<script>
+  function initializeDropdown(root: HTMLElement): void {
+    if (root.dataset.initialized === "true") return;
+    root.dataset.initialized = "true";
+    const trigger = root.querySelector<HTMLButtonElement>("[data-dropdown-trigger]");
+    const menu = root.querySelector<HTMLElement>("[data-dropdown-menu]");
+    const items = Array.from(root.querySelectorAll<HTMLElement>("[data-dropdown-item]:not([aria-disabled='true']):not(:disabled)"));
+    if (!trigger || !menu) return;
+    let index = 0;
+    const close = (restoreFocus = true): void => {
+      menu.hidden = true;
+      trigger.setAttribute("aria-expanded", "false");
+      delete root.dataset.active;
+      if (restoreFocus) trigger.focus();
+    };
+    const focusItem = (next: number): void => {
+      if (items.length === 0) return;
+      index = (next + items.length) % items.length;
+      items[index].focus();
+    };
+    const open = (): void => {
+      menu.hidden = false;
+      trigger.setAttribute("aria-expanded", "true");
+      root.dataset.active = "true";
+      requestAnimationFrame(() => focusItem(index));
+    };
+    trigger.addEventListener("click", () => menu.hidden ? open() : close());
+    trigger.addEventListener("keydown", (event) => {
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        index = event.key === "ArrowUp" ? items.length - 1 : 0;
+        open();
+      }
+    });
+    menu.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" || event.key === "Tab") return close(event.key !== "Tab");
+      if (event.key === "ArrowDown" || event.key === "ArrowUp" || event.key === "Home" || event.key === "End") {
+        event.preventDefault();
+        if (event.key === "ArrowDown") focusItem(index + 1);
+        if (event.key === "ArrowUp") focusItem(index - 1);
+        if (event.key === "Home") focusItem(0);
+        if (event.key === "End") focusItem(items.length - 1);
+      }
+    });
+    menu.addEventListener("click", () => close(false));
+    document.addEventListener("pointerdown", (event) => {
+      if (!root.contains(event.target as Node) && !menu.hidden) close(false);
+    });
+  }
+  document.querySelectorAll<HTMLElement>("[data-dropdown-root]").forEach(initializeDropdown);
+</script>
+

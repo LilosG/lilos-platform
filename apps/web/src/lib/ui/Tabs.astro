@@ -1,0 +1,72 @@
+---
+export interface TabItem {
+  id: string;
+  label: string;
+  disabled?: boolean;
+}
+
+interface Props {
+  id: string;
+  label: string;
+  items: TabItem[];
+  activeId?: string;
+  loading?: boolean;
+  error?: boolean;
+}
+
+const { id, label, items, activeId = items[0]?.id, loading = false, error = false } = Astro.props;
+---
+
+<div id={id} class="ui-tabs" data-tabs-root data-state={error ? "error" : loading ? "loading" : "default"}>
+  <div class="ui-tabs__list" role="tablist" aria-label={label} aria-busy={loading ? "true" : undefined}>
+    {items.map((item) => (
+      <button class="ui-tabs__tab" id={`${id}-tab-${item.id}`} type="button" role="tab" aria-selected={item.id === activeId ? "true" : "false"} aria-controls={`tab-${item.id}`} tabindex={item.id === activeId ? 0 : -1} disabled={item.disabled || loading} data-tab-id={item.id} data-tab={item.id}>{item.label}</button>
+    ))}
+  </div>
+  <div class="ui-tabs__panels"><slot /></div>
+</div>
+
+<script>
+  function initializeTabs(root: HTMLElement): void {
+    if (root.dataset.initialized === "true") return;
+    root.dataset.initialized = "true";
+    const tabs = Array.from(root.querySelectorAll<HTMLButtonElement>("[role='tab']"));
+    const panels = Array.from(root.querySelectorAll<HTMLElement>("[data-tab-panel]"));
+    for (const panel of panels) {
+      panel.setAttribute("role", "tabpanel");
+      panel.setAttribute(
+        "aria-labelledby",
+        `${root.id}-tab-${panel.dataset.tabPanel ?? ""}`,
+      );
+      panel.tabIndex = 0;
+    }
+    const activate = (tab: HTMLButtonElement, focus = true): void => {
+      const id = tab.dataset.tabId;
+      for (const candidate of tabs) {
+        const active = candidate === tab;
+        candidate.setAttribute("aria-selected", String(active));
+        candidate.tabIndex = active ? 0 : -1;
+      }
+      for (const panel of panels) panel.hidden = panel.dataset.tabPanel !== id;
+      if (focus) tab.focus();
+      root.dispatchEvent(new CustomEvent("ui:tab-change", { bubbles: true, detail: { id } }));
+    };
+    tabs.forEach((tab) => tab.addEventListener("click", () => activate(tab, false)));
+    root.addEventListener("keydown", (event) => {
+      const current = tabs.indexOf(document.activeElement as HTMLButtonElement);
+      if (current < 0) return;
+      const enabled = tabs.filter((tab) => !tab.disabled);
+      const enabledCurrent = enabled.indexOf(tabs[current]);
+      if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) {
+        event.preventDefault();
+        if (event.key === "Home") return activate(enabled[0]);
+        if (event.key === "End") return activate(enabled[enabled.length - 1]);
+        const delta = event.key === "ArrowRight" ? 1 : -1;
+        activate(enabled[(enabledCurrent + delta + enabled.length) % enabled.length]);
+      }
+    });
+    const current = tabs.find((tab) => tab.getAttribute("aria-selected") === "true") ?? tabs[0];
+    if (current) activate(current, false);
+  }
+  document.querySelectorAll<HTMLElement>("[data-tabs-root]").forEach(initializeTabs);
+</script>

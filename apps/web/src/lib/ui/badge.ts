@@ -1,3 +1,5 @@
+import { statusLabel } from "../status-language";
+
 export type BadgeKind =
   | "ready"
   | "blocked"
@@ -77,10 +79,7 @@ export function badgeKindFor(status: string): BadgeKind {
 }
 
 export function badgeLabel(status: string): string {
-  return status
-    .replace(/_/g, " ")
-    .replace(/\b\w/g, (c) => c.toUpperCase())
-    .trim();
+  return statusLabel(status);
 }
 
 export function statusBadge(
@@ -90,10 +89,20 @@ export function statusBadge(
 ): HTMLSpanElement {
   const kind = kindOverride ?? badgeKindFor(status);
   const badge = document.createElement("span");
-  badge.className = `status status--${kind}`;
+  const tone =
+    kind === "ready" || kind === "connected"
+      ? "success"
+      : kind === "blocked"
+        ? "danger"
+        : kind === "setup" || kind === "degraded" || kind === "partial"
+          ? "warning"
+          : kind === "missing"
+            ? "info"
+            : "neutral";
+  badge.className = `ui-badge ui-badge--${tone}`;
   const dot = document.createElement("span");
   dot.setAttribute("aria-hidden", "true");
-  dot.className = "status__dot";
+  dot.className = "ui-badge__dot";
   badge.append(dot, document.createTextNode(label ?? badgeLabel(status)));
   return badge;
 }

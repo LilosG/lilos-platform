@@ -1,9 +1,16 @@
+import {
+  formatMetricValue,
+  isNumericMetric,
+  type MetricFormat,
+  type MetricValue,
+} from "./data-display";
+
 export type TableColumn<T> = {
   key: string;
   header: string;
-  render: (row: T) => HTMLElement | string | null;
-  width?: string;
-  align?: "left" | "right" | "center";
+  render: (row: T) => HTMLElement | MetricValue;
+  format?: MetricFormat;
+  width?: "auto" | "content";
 };
 
 export function buildDataTable<T>(
@@ -19,24 +26,20 @@ export function buildDataTable<T>(
   },
 ): HTMLDivElement {
   const wrap = document.createElement("div");
-  wrap.className = "data-table";
+  wrap.className = "ui-table-frame ui-table-frame--interactive";
 
   if (rows.length === 0) {
     const empty = document.createElement("div");
-    empty.className = "data-table__empty";
-    const icon = document.createElement("span");
-    icon.className = "empty-state__icon";
-    icon.setAttribute("aria-hidden", "true");
-    icon.textContent = "○";
+    empty.className = "ui-table__state";
     const heading = document.createElement("h3");
     heading.textContent = options?.emptyHeading ?? "No records yet";
     const body = document.createElement("p");
     body.textContent =
       options?.emptyDescription ?? "Records will appear here once available.";
-    empty.append(icon, heading, body);
+    empty.append(heading, body);
     if (options?.emptyActionLabel && options?.emptyActionHref) {
       const link = document.createElement("a");
-      link.className = "button button--secondary button--sm";
+      link.className = "ui-button ui-button--secondary ui-button--sm";
       link.href = options.emptyActionHref;
       link.textContent = options.emptyActionLabel;
       empty.append(link);
@@ -45,14 +48,18 @@ export function buildDataTable<T>(
     return wrap;
   }
 
+  const scroll = document.createElement("div");
+  scroll.className = "ui-table-frame__scroll";
   const table = document.createElement("table");
+  table.className = "ui-table";
   const thead = document.createElement("thead");
   const headerRow = document.createElement("tr");
   for (const col of columns) {
     const th = document.createElement("th");
     th.textContent = col.header;
-    if (col.width) th.style.width = col.width;
-    if (col.align) th.style.textAlign = col.align;
+    const numeric = isNumericMetric(col.format);
+    th.dataset.columnWidth = col.width ?? (numeric ? "content" : "auto");
+    if (numeric) th.dataset.numeric = "true";
     headerRow.append(th);
   }
   thead.append(headerRow);
@@ -62,7 +69,7 @@ export function buildDataTable<T>(
   for (const row of rows) {
     const tr = document.createElement("tr");
     if (options?.onRowClick) {
-      tr.classList.add("data-table__row--clickable");
+      tr.dataset.interactive = "true";
       tr.addEventListener("click", () => options.onRowClick!(row));
     }
     for (const col of columns) {
@@ -70,16 +77,19 @@ export function buildDataTable<T>(
       const rendered = col.render(row);
       if (rendered instanceof HTMLElement) {
         td.append(rendered);
-      } else if (rendered !== null) {
-        td.textContent = rendered;
+      } else {
+        td.textContent = formatMetricValue(rendered, col.format);
       }
-      if (col.align) td.style.textAlign = col.align;
+      const numeric = isNumericMetric(col.format);
+      td.dataset.columnWidth = col.width ?? (numeric ? "content" : "auto");
+      if (numeric) td.classList.add("ui-table__numeric");
       tr.append(td);
     }
     tbody.append(tr);
   }
   table.append(tbody);
-  wrap.append(table);
+  scroll.append(table);
+  wrap.append(scroll);
   return wrap;
 }
 
@@ -89,24 +99,24 @@ export function cellText(text: string | null | undefined): string {
 
 export function cellBadge(status: string, label?: string): HTMLSpanElement {
   const badge = document.createElement("span");
-  badge.className = `status status--${status}`;
+  badge.className = `ui-badge ui-badge--${status}`;
   const dot = document.createElement("span");
   dot.setAttribute("aria-hidden", "true");
-  dot.className = "status__dot";
+  dot.className = "ui-badge__dot";
   badge.append(dot, document.createTextNode(label ?? status));
   return badge;
 }
 
 export function cellMeta(primary: string, secondary?: string): HTMLDivElement {
   const div = document.createElement("div");
-  div.className = "cell-meta";
+  div.className = "ui-table__cell-stack";
   const primaryEl = document.createElement("span");
-  primaryEl.className = "cell-meta__primary";
+  primaryEl.className = "ui-table__cell-primary";
   primaryEl.textContent = primary;
   div.append(primaryEl);
   if (secondary) {
     const secondaryEl = document.createElement("span");
-    secondaryEl.className = "cell-meta__secondary";
+    secondaryEl.className = "ui-table__cell-secondary";
     secondaryEl.textContent = secondary;
     div.append(secondaryEl);
   }

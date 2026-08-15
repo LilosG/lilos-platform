@@ -1,25 +1,41 @@
 ---
 import { navigationGroups } from "../lib/platform";
+import {
+  ChartNoAxesCombined,
+  Building2,
+  FileText,
+  House,
+  Inbox,
+  Menu,
+  Plug,
+  Plus,
+  Search,
+  Settings,
+  Shield,
+  Star,
+  type AstroComponent,
+} from "@lucide/astro";
+import Button from "../lib/ui/Button.astro";
+import Icon from "../lib/ui/Icon.astro";
+import Select from "../lib/ui/Select.astro";
 
 const currentPath = Astro.url.pathname;
 function isActive(href: string): boolean {
   return href === "/" ? currentPath === "/" : currentPath.startsWith(href);
 }
 
-const iconPaths: Record<string, string> = {
-  home: "M3 12l9-9 9 9M5 10v10h14V10",
-  building: "M4 21V7l8-4 8 4v14M9 21v-6h6v6",
-  star: "M12 2l3 7h7l-5.5 4 2 7L12 16l-6.5 4 2-7L2 9h7z",
-  inbox:
-    "M22 12h-6l-2 3h-4l-2-3H2M5.45 5.11L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6l-3.45-6.89A2 2 0 0016.76 4H7.24a2 2 0 00-1.79 1.11z",
-  document: "M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z M14 2v6h6",
-  search: "M11 19a8 8 0 100-16 8 8 0 000 16zM21 21l-4.35-4.35",
-  chart: "M3 3v18h18M7 14l4-4 4 4 5-5",
-  settings:
-    "M12 15a3 3 0 100-6 3 3 0 000 6z M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z",
-  plug: "M12 2v6m0 0a4 4 0 014 4v4a4 4 0 01-4 4 4 4 0 01-4-4v-4a4 4 0 014-4zM12 22v-4",
-  shield: "M12 2l8 4v6c0 5-3.5 9-8 10-4.5-1-8-5-8-10V6z",
-  plus: "M12 5v14M5 12h14",
+const navIcons: Record<string, AstroComponent> = {
+  home: House,
+  building: Building2,
+  star: Star,
+  inbox: Inbox,
+  document: FileText,
+  search: Search,
+  chart: ChartNoAxesCombined,
+  settings: Settings,
+  plug: Plug,
+  shield: Shield,
+  plus: Plus,
 };
 const productKeys = [
   "gbp",
@@ -47,24 +63,18 @@ const productKeys = [
           <small>Growth operations</small>
         </span>
       </a>
-      <button
-        type="button"
+      <Button
+        variant="ghost"
+        size="sm"
+        iconOnly
+        label="Open navigation"
+        expanded={false}
+        controls="workspace-navigation-menu"
         class="mobile-nav-toggle"
         id="mobile-navigation-toggle"
-        aria-expanded="false"
-        aria-controls="workspace-navigation-menu"
       >
-        <span class="sr-only">Open navigation</span>
-        <svg
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          aria-hidden="true"
-        >
-          <path d="M4 7h16M4 12h16M4 17h16"></path>
-        </svg>
-      </button>
+        <Icon icon={Menu} />
+      </Button>
     </div>
     <nav
       class="sidebar__nav"
@@ -91,20 +101,7 @@ const productKeys = [
                     data-nav-key={item.key}
                     aria-current={isActive(item.href) ? "page" : undefined}
                   >
-                    {item.icon && (
-                      <svg
-                        class="sidebar__icon"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="2"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        aria-hidden="true"
-                      >
-                        <path d={iconPaths[item.icon] ?? ""} />
-                      </svg>
-                    )}
+                    {item.icon && navIcons[item.icon] && <Icon icon={navIcons[item.icon]} class="sidebar__icon" />}
                     {item.label}
                   </a>
                 </li>
@@ -137,19 +134,18 @@ const productKeys = [
         </div>
       </div>
       <div class="topbar__actions">
-        <label class="sr-only" for="organization-switcher"
-          >Switch organization</label
-        >
-        <select
+        <Select
           id="organization-switcher"
-          class="button button--secondary button--sm"
-          hidden></select>
+          label="Switch organization"
+          options={[]}
+          hidden
+        />
         <div class="topbar__divider"></div>
-        <button
-          type="button"
+        <Button
           id="sign-out-button"
-          class="button button--secondary button--sm"
-          hidden>Sign out</button
+          variant="secondary"
+          size="sm"
+          hidden>Sign out</Button
         >
       </div>
     </header>

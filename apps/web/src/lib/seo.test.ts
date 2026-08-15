@@ -38,7 +38,7 @@ describe("describeCrawlResult", () => {
         safe_result: { pages_crawled: 1, opportunities_found: 2 },
         opportunities_created: [],
       }),
-    ).toBe("Status: completed · 1 page crawled · 2 opportunities found");
+    ).toBe("Status: Completed · 1 page crawled · 2 opportunities found");
   });
 
   it("does not invent result counts that the API omitted", () => {
@@ -49,6 +49,6 @@ describe("describeCrawlResult", () => {
         safe_result: {},
         opportunities_created: [],
       }),
-    ).toBe("Status: partial");
+    ).toBe("Status: Partial");
   });
 });

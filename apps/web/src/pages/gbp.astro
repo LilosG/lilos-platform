@@ -1,5 +1,13 @@
 ---
 import AppShell from "../components/AppShell.astro";
+import Button from "../lib/ui/Button.astro";
+import EmptyState from "../lib/ui/EmptyState.astro";
+import PageHeader from "../lib/ui/PageHeader.astro";
+import PageSection from "../lib/ui/PageSection.astro";
+import PageShell from "../lib/ui/PageShell.astro";
+import Region from "../lib/ui/Region.astro";
+import Skeleton from "../lib/ui/Skeleton.astro";
+import Tabs from "../lib/ui/Tabs.astro";
 import "../styles/global.css";
 ---
 
@@ -13,119 +21,44 @@ import "../styles/global.css";
   </head>
   <body>
     <AppShell>
-      <div id="boot-not-configured" role="status">
-        <h1>This deployment is not configured</h1>
-        <p>No Supabase or API connection is configured for this build.</p>
-      </div>
+      <PageShell id="boot-not-configured"><EmptyState heading="This deployment is not configured" description="Connect the platform runtime configuration to enable Business Profile." /></PageShell>
+      <PageShell id="boot-loading" hidden><Skeleton lines={3} label="Loading Business Profile" /></PageShell>
+      <PageShell id="boot-error" hidden><Region role="alert" /></PageShell>
+      <PageShell id="workspace-empty" hidden><EmptyState heading="No organization access yet" description="Ask an administrator to invite your account to an organization." /></PageShell>
 
-      <div id="boot-loading" role="status" aria-live="polite" hidden>
-        <p class="loading-state">Loading Business Profile…</p>
-      </div>
+      <PageShell id="gbp-content" hidden>
+        <PageHeader
+          eyebrow="Operations"
+          title="Business Profile"
+          titleId="gbp-page-title"
+          description="Review confirmed mappings and operate the Business Profile records available to this workspace."
+        >
+          <Button slot="actions" id="change-gbp-location" variant="secondary" size="sm" hidden>Change location</Button>
+          <Button slot="actions" href="/integrations" variant="secondary" size="sm">Manage connection</Button>
+        </PageHeader>
 
-      <div id="boot-error" role="alert" hidden></div>
+        <Region id="connection-status-panel" />
 
-      <div id="workspace-empty" role="status" hidden>
-        <div class="empty-state">
-          <span class="empty-state__icon" aria-hidden="true">○</span>
-          <h3>No organization access yet</h3>
-          <p>
-            Your account is not a member of any organization. Ask an
-            administrator to invite you.
-          </p>
-        </div>
-      </div>
+        <PageSection id="location-picker-section" eyebrow="Location" title="Business location" description="Choose a confirmed provider mapping to open its available operational records.">
+          <Region id="location-picker-panel"><Skeleton lines={2} label="Loading locations" /></Region>
+        </PageSection>
 
-      <div id="gbp-content" hidden>
-        <div class="page-head">
-          <div class="page-head__intro">
-            <p class="eyebrow">Operations</p>
-            <h1>Business Profile</h1>
-            <p>
-              Manage your Google Business Profile location data, hours, posts,
-              and media.
-            </p>
-          </div>
-          <div class="page-head__meta">
-            <div class="page-head__actions">
-              <button
-                type="button"
-                class="button button--secondary button--sm"
-                id="change-gbp-location"
-                hidden>Change location</button
-              >
-              <a
-                class="button button--secondary button--sm"
-                href="/integrations">Manage connection</a
-              >
-            </div>
-          </div>
-        </div>
-
-        <div id="connection-status-panel"></div>
-
-        <div id="location-picker-section">
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow">Location</p>
-              <h2>Business location</h2>
-            </div>
-          </div>
-          <div id="location-picker-panel">
-            <div class="loading-state">Loading locations…</div>
-          </div>
-        </div>
-
-        <div id="gbp-workspace" hidden>
-          <div class="tabs" role="tablist" id="gbp-tabs">
-            <button
-              class="tabs__tab"
-              role="tab"
-              aria-selected="true"
-              data-tab="overview">Overview</button
-            >
-            <button
-              class="tabs__tab"
-              role="tab"
-              aria-selected="false"
-              data-tab="profile">Profile</button
-            >
-            <button
-              class="tabs__tab"
-              role="tab"
-              aria-selected="false"
-              data-tab="hours">Hours</button
-            >
-            <button
-              class="tabs__tab"
-              role="tab"
-              aria-selected="false"
-              data-tab="posts">Posts</button
-            >
-            <button
-              class="tabs__tab"
-              role="tab"
-              aria-selected="false"
-              data-tab="media">Media</button
-            >
-          </div>
-
-          <div id="tab-overview" class="tab-panel"></div>
-          <div id="tab-profile" class="tab-panel" hidden>
-            <select
-              id="change-task"
-              class="sr-only"
-              aria-label="What to edit"
-              hidden
-            >
-              <option value="">Choose what to edit…</option>
-              <option value="profile.description">Business description</option>
-            </select>
-          </div>
-          <div id="tab-hours" class="tab-panel" hidden></div>
-          <div id="tab-posts" class="tab-panel" hidden></div>
-          <div id="tab-media" class="tab-panel" hidden></div>
-        </div>
-      </div>
+        <Region id="gbp-workspace" hidden>
+          <Tabs id="gbp-tabs" label="Business Profile workspace" items={[
+            { id: "overview", label: "Overview" },
+            { id: "profile", label: "Profile changes" },
+            { id: "hours", label: "Special hours" },
+            { id: "posts", label: "Posts" },
+            { id: "media", label: "Media records" },
+          ]}>
+            <Region id="tab-overview" tabPanel="overview" />
+            <Region id="tab-profile" tabPanel="profile" hidden />
+            <Region id="tab-hours" tabPanel="hours" hidden />
+            <Region id="tab-posts" tabPanel="posts" hidden />
+            <Region id="tab-media" tabPanel="media" hidden />
+          </Tabs>
+        </Region>
+      </PageShell>
     </AppShell>
     <script>
       import {
@@ -161,16 +94,28 @@ import "../styles/global.css";
         statusBadge,
         emptyState,
         errorAlert,
+        createSelectControl,
+        buildDataTable,
+        cellMeta,
         describeFailure,
         formatTimestamp,
-        setupTabs,
         type BootRegions,
       } from "../lib/ui";
       import { startWorkflowRun } from "../lib/workflows";
+      import { statusLabel, statusTone } from "../lib/status-language";
 
       let organizationId = "";
       let selectedPlatformLocationId: string | null = null;
       let selectedGbpLocationId: string | null = null;
+      let googleConnectionReady = false;
+
+      type LocationOperationalRow = {
+        location: GBPLocationSummary;
+        managedPosts: Awaited<ReturnType<typeof fetchPostRevisions>> | null;
+        providerPosts: Awaited<ReturnType<typeof fetchProviderPosts>> | null;
+        media: Awaited<ReturnType<typeof fetchMedia>> | null;
+        specialHours: Awaited<ReturnType<typeof fetchSpecialHours>> | null;
+      };
 
       const regions: BootRegions = {
         notConfigured: document.getElementById("boot-not-configured")!,
@@ -179,8 +124,6 @@ import "../styles/global.css";
         empty: document.getElementById("workspace-empty")!,
         content: document.getElementById("gbp-content")!,
       };
-
-      setupTabs(document.getElementById("gbp-tabs")!);
 
       document
         .getElementById("change-gbp-location")!
@@ -202,7 +145,10 @@ import "../styles/global.css";
 
         renderConnectionStatus(connectionResult);
         if (locationsResult.kind === "ok") {
-          renderLocationPicker(locationsResult.data);
+          await renderLocationPicker(
+            locationsResult.data,
+            googleConnectionReady,
+          );
         } else {
           const panel = document.getElementById("location-picker-panel")!;
           panel.replaceChildren(
@@ -218,19 +164,20 @@ import "../styles/global.css";
       ): void {
         const panel = document.getElementById("connection-status-panel")!;
         panel.replaceChildren();
+        googleConnectionReady = false;
 
         if (
           outcome.kind === "error" &&
           outcome.code === "INTEGRATION_NOT_CONFIGURED"
         ) {
           const alert = document.createElement("div");
-          alert.className = "alert alert--warning";
+          alert.className = "ui-notice ui-notice--warning";
           const text = document.createElement("p");
           text.textContent =
             "Google is not connected. Connect in Integrations to start using Business Profile.";
           alert.append(text);
           const link = document.createElement("a");
-          link.className = "button button--secondary button--sm";
+          link.className = "ui-button ui-button--secondary ui-button--sm";
           link.href = "/integrations";
           link.textContent = "Go to Integrations";
           alert.append(link);
@@ -247,13 +194,13 @@ import "../styles/global.css";
         const state = outcome.data;
         if (state === null || state.status === "disconnected") {
           const alert = document.createElement("div");
-          alert.className = "alert alert--info";
+          alert.className = "ui-notice ui-notice--warning";
           const text = document.createElement("p");
           text.textContent =
             "Google is not connected. Connect in Integrations to discover and map your Business Profile locations.";
           alert.append(text);
           const link = document.createElement("a");
-          link.className = "button button--secondary button--sm";
+          link.className = "ui-button ui-button--secondary ui-button--sm";
           link.href = "/integrations";
           link.textContent = "Connect Google";
           alert.append(link);
@@ -263,13 +210,13 @@ import "../styles/global.css";
 
         if (state.status === "reconnect_required") {
           const alert = document.createElement("div");
-          alert.className = "alert alert--error";
+          alert.className = "ui-notice ui-notice--warning";
           const text = document.createElement("p");
           text.textContent =
             "Google connection needs attention. Reconnect in Integrations.";
           alert.append(text);
           const link = document.createElement("a");
-          link.className = "button button--secondary button--sm";
+          link.className = "ui-button ui-button--secondary ui-button--sm";
           link.href = "/integrations";
           link.textContent = "Reconnect";
           alert.append(link);
@@ -277,23 +224,29 @@ import "../styles/global.css";
           return;
         }
 
+        googleConnectionReady = true;
         const info = document.createElement("div");
-        info.className = "alert alert--success";
-        info.style.marginBottom = "0";
-        const badge = statusBadge(
-          state.status === "connected" ? "ready" : "degraded",
-          state.status,
-        );
+        info.className = "ui-notice ui-notice--success";
+        const detail = document.createElement("div");
+        const label = document.createElement("strong");
+        label.textContent = "Google Business Profile";
         const text = document.createElement("p");
-        text.className = "text-sm";
+        text.className = "ui-card__description";
         text.textContent = state.last_verified_at
-          ? `Connection verified ${formatTimestamp(state.last_verified_at)}`
+          ? `Connected · verified ${formatTimestamp(state.last_verified_at)}`
           : "Connected";
-        info.append(badge, text);
+        detail.append(label, text);
+        const link = document.createElement("a");
+        link.href = "/integrations";
+        link.textContent = "Manage integrations";
+        info.append(detail, link);
         panel.append(info);
       }
 
-      function renderLocationPicker(locations: GBPLocationSummary[]): void {
+      async function renderLocationPicker(
+        locations: GBPLocationSummary[],
+        connectionReady: boolean,
+      ): Promise<void> {
         const panel = document.getElementById("location-picker-panel")!;
         panel.replaceChildren();
 
@@ -309,50 +262,156 @@ import "../styles/global.css";
           return;
         }
 
-        const managedHeading = document.createElement("div");
-        managedHeading.className = "list-heading";
-        managedHeading.append(
-          Object.assign(document.createElement("h3"), {
-            textContent: "Managed locations",
-          }),
-          Object.assign(document.createElement("p"), {
-            textContent: "Confirmed mappings appear as managed business data.",
+        const rows: LocationOperationalRow[] = await Promise.all(
+          locations.map(async (location) => {
+            const context = workspaceContextFor(location);
+            if (!context) {
+              return {
+                location,
+                managedPosts: null,
+                providerPosts: null,
+                media: null,
+                specialHours: null,
+              };
+            }
+            const [managedPosts, providerPosts, media, specialHours] =
+              await Promise.all([
+                fetchPostRevisions(
+                  organizationId,
+                  context.platformLocationId,
+                  context.gbpLocationId,
+                ),
+                fetchProviderPosts(
+                  organizationId,
+                  context.platformLocationId,
+                  context.gbpLocationId,
+                ),
+                fetchMedia(
+                  organizationId,
+                  context.platformLocationId,
+                  context.gbpLocationId,
+                ),
+                fetchSpecialHours(
+                  organizationId,
+                  context.platformLocationId,
+                  context.gbpLocationId,
+                ),
+              ]);
+            return {
+              location,
+              managedPosts,
+              providerPosts,
+              media,
+              specialHours,
+            };
           }),
         );
-        panel.append(managedHeading);
-        const list = document.createElement("ul");
-        list.className = "product-list";
-        for (const loc of locations) {
-          const item = document.createElement("li");
-          const info = document.createElement("div");
-          const name = document.createElement("h3");
-          name.textContent = loc.business_name;
-          const detail = document.createElement("p");
-          detail.textContent = loc.last_synced_at
-            ? `Last synced ${formatTimestamp(loc.last_synced_at)}`
-            : "Not yet synced";
-          info.append(name, detail);
-          const openBtn = document.createElement("button");
-          openBtn.type = "button";
-          openBtn.className = "button button--sm";
-          openBtn.textContent = "Open";
-          openBtn.addEventListener("click", () => void openWorkspace(loc));
-          const actions = document.createElement("div");
-          actions.className = "list-actions";
-          actions.append(
-            statusBadge(
-              loc.last_synced_at ? "ready" : "setup",
-              loc.last_synced_at ? "Synced" : "Awaiting sync",
-            ),
-            openBtn,
+
+        panel.append(
+          buildDataTable(
+            [
+              {
+                key: "location",
+                header: "Location",
+                render: ({ location }) => location.business_name,
+              },
+              {
+                key: "mapping",
+                header: "Mapping",
+                render: ({ location }) =>
+                  mappingFact(location, connectionReady),
+              },
+              {
+                key: "sync",
+                header: "Discovery and sync",
+                render: ({ location }) =>
+                  cellMeta(
+                    `Discovered ${formatTimestamp(location.last_discovered_at)}`,
+                    location.last_synced_at
+                      ? `Last successful sync ${formatTimestamp(location.last_synced_at)}`
+                      : "First sync pending",
+                  ),
+              },
+              {
+                key: "records",
+                header: "Operational records",
+                render: (row) => operationalRecordFact(row),
+              },
+              {
+                key: "actions",
+                header: "Actions",
+                width: "content",
+                render: ({ location }) =>
+                  locationOpenButton(location, connectionReady),
+              },
+            ],
+            rows,
+          ),
+        );
+      }
+
+      function mappingFact(
+        location: GBPLocationSummary,
+        connectionReady: boolean,
+      ): HTMLDivElement {
+        const fact = document.createElement("div");
+        fact.className = "ui-stack ui-stack--1";
+        fact.append(
+          statusBadge(
+            location.mapping_status === "confirmed" ? "ready" : "setup",
+            statusLabel(location.mapping_status),
+          ),
+          Object.assign(document.createElement("span"), {
+            className: "ui-text-secondary",
+            textContent: location.write_enabled
+              ? "Provider writes enabled"
+              : "Read only",
+          }),
+        );
+        if (!connectionReady) {
+          fact.append(
+            Object.assign(document.createElement("span"), {
+              className: "ui-text-secondary",
+              textContent: "Reconnect to resume operations",
+            }),
           );
-          item.append(info, actions);
-          list.append(item);
         }
-        panel.append(list);
+        return fact;
+      }
+
+      function operationalRecordFact(
+        row: LocationOperationalRow,
+      ): HTMLDivElement {
+        const posts =
+          row.managedPosts?.kind === "ok" && row.providerPosts?.kind === "ok"
+            ? `${row.managedPosts.data.length} managed post${row.managedPosts.data.length === 1 ? "" : "s"} · ${row.providerPosts.data.length} on Google`
+            : "Posts unavailable";
+        const media =
+          row.media?.kind === "ok"
+            ? `${row.media.data.length} media record${row.media.data.length === 1 ? "" : "s"}`
+            : "Media unavailable";
+        const hours =
+          row.specialHours?.kind === "ok"
+            ? `${row.specialHours.data.length} special-hours record${row.specialHours.data.length === 1 ? "" : "s"}`
+            : "Special hours unavailable";
+        return cellMeta(posts, `${media} · ${hours}`);
+      }
+
+      function locationOpenButton(
+        location: GBPLocationSummary,
+        connectionReady: boolean,
+      ): HTMLButtonElement {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "ui-button ui-button--primary ui-button--sm";
+        button.textContent = "Open";
+        button.disabled = !connectionReady || !workspaceContextFor(location);
+        button.addEventListener("click", () => void openWorkspace(location));
+        return button;
       }
 
       async function openWorkspace(loc: GBPLocationSummary): Promise<void> {
+        if (!googleConnectionReady) return;
         const context = workspaceContextFor(loc);
         if (!context) return;
         selectedPlatformLocationId = context.platformLocationId;
@@ -362,9 +421,7 @@ import "../styles/global.css";
         document.getElementById("change-gbp-location")!.hidden = false;
 
         // Update page title to show selected location
-        const titleEl = document.querySelector(
-          "#gbp-content .page-head__intro h1",
-        );
+        const titleEl = document.getElementById("gbp-page-title");
         if (titleEl) titleEl.textContent = loc.business_name;
 
         await Promise.all([
@@ -382,9 +439,7 @@ import "../styles/global.css";
         document.getElementById("gbp-workspace")!.hidden = true;
         document.getElementById("location-picker-section")!.hidden = false;
         document.getElementById("change-gbp-location")!.hidden = true;
-        const title = document.querySelector(
-          "#gbp-content .page-head__intro h1",
-        );
+        const title = document.getElementById("gbp-page-title");
         if (title) title.textContent = "Business Profile";
       }
 
@@ -415,18 +470,18 @@ import "../styles/global.css";
 
         // Completeness
         const compCard = document.createElement("div");
-        compCard.className = "card";
+        compCard.className = "ui-card";
         const compHeader = document.createElement("div");
-        compHeader.className = "card__header";
+        compHeader.className = "ui-card__header";
         compHeader.append(
           Object.assign(document.createElement("h3"), {
-            className: "card__title",
+            className: "ui-card__heading",
             textContent: "Profile completeness",
           }),
         );
         compCard.append(compHeader);
         const compBody = document.createElement("div");
-        compBody.className = "card__body";
+        compBody.className = "ui-card__body";
         if (completenessResult.kind === "ok") {
           compBody.append(
             statusBadge(
@@ -436,8 +491,7 @@ import "../styles/global.css";
           );
           if (!completenessResult.data.complete) {
             const missing = document.createElement("p");
-            missing.className = "text-sm muted";
-            missing.style.marginTop = "0.5rem";
+            missing.className = "ui-card__description";
             missing.textContent = `Missing: ${completenessResult.data.unknown.join(", ") || "none"}`;
             compBody.append(missing);
           }
@@ -451,18 +505,18 @@ import "../styles/global.css";
 
         // Items needing attention
         const attentionCard = document.createElement("div");
-        attentionCard.className = "card";
+        attentionCard.className = "ui-card";
         const attentionHeader = document.createElement("div");
-        attentionHeader.className = "card__header";
+        attentionHeader.className = "ui-card__header";
         attentionHeader.append(
           Object.assign(document.createElement("h3"), {
-            className: "card__title",
+            className: "ui-card__heading",
             textContent: "Needs attention",
           }),
         );
         attentionCard.append(attentionHeader);
         const attentionBody = document.createElement("div");
-        attentionBody.className = "card__body";
+        attentionBody.className = "ui-card__body";
         const pending = [];
         if (
           suspensionResult.kind === "ok" &&
@@ -477,7 +531,7 @@ import "../styles/global.css";
         } else {
           for (const item of pending) {
             const p = document.createElement("p");
-            p.className = "text-sm";
+            p.className = "ui-text-secondary";
             p.textContent = `• ${item}`;
             attentionBody.append(p);
           }
@@ -487,21 +541,21 @@ import "../styles/global.css";
 
         // Recent activity
         const activityCard = document.createElement("div");
-        activityCard.className = "card";
+        activityCard.className = "ui-card";
         const activityHeader = document.createElement("div");
-        activityHeader.className = "card__header";
+        activityHeader.className = "ui-card__header";
         activityHeader.append(
           Object.assign(document.createElement("h3"), {
-            className: "card__title",
+            className: "ui-card__heading",
             textContent: "Recent activity",
           }),
         );
         activityCard.append(activityHeader);
         const activityBody = document.createElement("div");
-        activityBody.className = "card__body";
+        activityBody.className = "ui-card__body";
         if (auditResult.kind === "ok" && auditResult.data.length > 0) {
           const list = document.createElement("ol");
-          list.className = "timeline";
+          list.className = "ui-record-list";
           for (const event of auditResult.data.slice(0, 10)) {
             const item = document.createElement("li");
             const strong = document.createElement("strong");
@@ -540,29 +594,21 @@ import "../styles/global.css";
 
         // Propose change form
         const formCard = document.createElement("div");
-        formCard.className = "card";
+        formCard.className = "ui-card";
         const formHeader = document.createElement("div");
-        formHeader.className = "card__header";
+        formHeader.className = "ui-card__header";
         formHeader.append(
           Object.assign(document.createElement("h3"), {
-            className: "card__title",
+            className: "ui-card__heading",
             textContent: "Propose a change",
           }),
         );
         formCard.append(formHeader);
         const formBody = document.createElement("div");
-        formBody.className = "card__body";
+        formBody.className = "ui-card__body";
 
         const grid = document.createElement("div");
-        grid.className = "form-grid";
-        const taskField = document.createElement("div");
-        taskField.className = "field";
-        const taskLabel = document.createElement("label");
-        taskLabel.htmlFor = "change-task";
-        taskLabel.textContent = "What to edit";
-        const taskSelect = document.createElement("select");
-        taskSelect.id = "change-task";
-        taskSelect.className = "button button--secondary";
+        grid.className = "ui-form-grid";
         const taskOptions = [
           { value: "", label: "Choose what to edit…" },
           { value: "profile.description", label: "Business description" },
@@ -571,21 +617,23 @@ import "../styles/global.css";
           { value: "websiteUri.websiteUri", label: "Website URL" },
           { value: "categories.categories", label: "Categories" },
         ];
-        for (const opt of taskOptions) {
-          const o = document.createElement("option");
-          o.value = opt.value;
-          o.textContent = opt.label;
-          taskSelect.append(o);
-        }
-        taskField.append(taskLabel, taskSelect);
-        grid.append(taskField);
+        const taskSelect = createSelectControl(
+          "change-task",
+          "What to edit",
+          taskOptions,
+          "",
+          "Choose what to edit…",
+        );
+        grid.append(taskSelect.root);
 
         const valueField = document.createElement("div");
-        valueField.className = "field";
+        valueField.className = "ui-field";
         const valueLabel = document.createElement("label");
+        valueLabel.className = "ui-field__label";
         valueLabel.htmlFor = "change-value";
         valueLabel.textContent = "New value";
         const valueInput = document.createElement("input");
+        valueInput.className = "ui-input";
         valueInput.id = "change-value";
         valueInput.type = "text";
         valueInput.placeholder = "new value";
@@ -595,14 +643,14 @@ import "../styles/global.css";
 
         const proposeBtn = document.createElement("button");
         proposeBtn.type = "button";
-        proposeBtn.className = "button";
+        proposeBtn.className = "ui-button ui-button--primary ui-button--md";
         proposeBtn.textContent = "Propose change";
         const status = document.createElement("p");
         status.setAttribute("role", "status");
         status.setAttribute("aria-live", "polite");
-        status.className = "text-sm muted";
+        status.className = "ui-text-secondary";
         proposeBtn.addEventListener("click", async () => {
-          const task = taskSelect.value.trim();
+          const task = taskSelect.input.value.trim();
           const value = valueInput.value.trim();
           if (!task || !value) {
             status.textContent = "Choose what to edit and enter a value first.";
@@ -628,9 +676,7 @@ import "../styles/global.css";
         });
 
         const actions = document.createElement("div");
-        actions.className = "form-actions";
-        actions.style.borderTop = "none";
-        actions.style.paddingTop = "0.5rem";
+        actions.className = "ui-inline ui-inline--center";
         actions.append(proposeBtn, status);
         formBody.append(actions);
         formCard.append(formBody);
@@ -642,39 +688,36 @@ import "../styles/global.css";
           changeSetsResult.data.length > 0
         ) {
           const pendingCard = document.createElement("div");
-          pendingCard.className = "card";
+          pendingCard.className = "ui-card";
           const pendingHeader = document.createElement("div");
-          pendingHeader.className = "card__header";
+          pendingHeader.className = "ui-card__header";
           pendingHeader.append(
             Object.assign(document.createElement("h3"), {
-              className: "card__title",
+              className: "ui-card__heading",
               textContent: "Pending changes",
             }),
           );
           pendingCard.append(pendingHeader);
           const pendingBody = document.createElement("div");
-          pendingBody.className = "card__body";
+          pendingBody.className = "ui-card__body";
           const list = document.createElement("ul");
-          list.className = "product-list";
+          list.className = "ui-record-list";
           for (const cs of changeSetsResult.data) {
             const item = document.createElement("li");
             const info = document.createElement("div");
             const name = document.createElement("h3");
             name.textContent = `Revision ${cs.revision}`;
             const detail = document.createElement("p");
-            detail.textContent = `Status: ${cs.status}`;
+            detail.textContent = `Status: ${statusLabel(cs.status)}`;
             info.append(name, detail);
             item.append(
               info,
-              statusBadge(
-                cs.status === "awaiting_approval" ? "setup" : "ready",
-                cs.status,
-              ),
+              statusBadge(statusTone(cs.status), statusLabel(cs.status)),
             );
             if (cs.status === "awaiting_approval") {
               const approveBtn = document.createElement("button");
               approveBtn.type = "button";
-              approveBtn.className = "button button--sm";
+              approveBtn.className = "ui-button ui-button--primary ui-button--sm";
               approveBtn.textContent = "Approve";
               approveBtn.addEventListener("click", async () => {
                 await decideChangeSet(
@@ -709,44 +752,48 @@ import "../styles/global.css";
 
         // Propose special hours form
         const formCard = document.createElement("div");
-        formCard.className = "card";
+        formCard.className = "ui-card";
         const formHeader = document.createElement("div");
-        formHeader.className = "card__header";
+        formHeader.className = "ui-card__header";
         formHeader.append(
           Object.assign(document.createElement("h3"), {
-            className: "card__title",
+            className: "ui-card__heading",
             textContent: "Add special hours",
           }),
         );
         formCard.append(formHeader);
         const formBody = document.createElement("div");
-        formBody.className = "card__body";
+        formBody.className = "ui-card__body";
 
         const grid = document.createElement("div");
-        grid.className = "form-grid";
+        grid.className = "ui-form-grid";
         const dateField = document.createElement("div");
-        dateField.className = "field";
+        dateField.className = "ui-field";
         dateField.append(
           Object.assign(document.createElement("label"), {
+            className: "ui-field__label",
             htmlFor: "special-hours-date",
             textContent: "Service date",
           }),
         );
         const dateInput = document.createElement("input");
+        dateInput.className = "ui-input";
         dateInput.id = "special-hours-date";
         dateInput.type = "date";
         dateField.append(dateInput);
         grid.append(dateField);
 
         const opensField = document.createElement("div");
-        opensField.className = "field";
+        opensField.className = "ui-field";
         opensField.append(
           Object.assign(document.createElement("label"), {
+            className: "ui-field__label",
             htmlFor: "special-hours-opens",
             textContent: "Opens",
           }),
         );
         const opensInput = document.createElement("input");
+        opensInput.className = "ui-input";
         opensInput.id = "special-hours-opens";
         opensInput.type = "time";
         opensInput.value = "09:00";
@@ -754,14 +801,16 @@ import "../styles/global.css";
         grid.append(opensField);
 
         const closesField = document.createElement("div");
-        closesField.className = "field";
+        closesField.className = "ui-field";
         closesField.append(
           Object.assign(document.createElement("label"), {
+            className: "ui-field__label",
             htmlFor: "special-hours-closes",
             textContent: "Closes",
           }),
         );
         const closesInput = document.createElement("input");
+        closesInput.className = "ui-input";
         closesInput.id = "special-hours-closes";
         closesInput.type = "time";
         closesInput.value = "17:00";
@@ -771,12 +820,12 @@ import "../styles/global.css";
 
         const proposeBtn = document.createElement("button");
         proposeBtn.type = "button";
-        proposeBtn.className = "button";
+        proposeBtn.className = "ui-button ui-button--primary ui-button--md";
         proposeBtn.textContent = "Propose special hours";
         const status = document.createElement("p");
         status.setAttribute("role", "status");
         status.setAttribute("aria-live", "polite");
-        status.className = "text-sm muted";
+        status.className = "ui-text-secondary";
         proposeBtn.addEventListener("click", async () => {
           const serviceDate = dateInput.value;
           if (!serviceDate) {
@@ -801,9 +850,7 @@ import "../styles/global.css";
         });
 
         const actions = document.createElement("div");
-        actions.className = "form-actions";
-        actions.style.borderTop = "none";
-        actions.style.paddingTop = "0.5rem";
+        actions.className = "ui-inline ui-inline--center";
         actions.append(proposeBtn, status);
         formBody.append(actions);
         formCard.append(formBody);
@@ -812,39 +859,36 @@ import "../styles/global.css";
         // Existing special hours
         if (hoursResult.kind === "ok" && hoursResult.data.length > 0) {
           const listCard = document.createElement("div");
-          listCard.className = "card";
+          listCard.className = "ui-card";
           const listHeader = document.createElement("div");
-          listHeader.className = "card__header";
+          listHeader.className = "ui-card__header";
           listHeader.append(
             Object.assign(document.createElement("h3"), {
-              className: "card__title",
+              className: "ui-card__heading",
               textContent: "Special hours",
             }),
           );
           listCard.append(listHeader);
           const listBody = document.createElement("div");
-          listBody.className = "card__body";
+          listBody.className = "ui-card__body";
           const list = document.createElement("ul");
-          list.className = "product-list";
+          list.className = "ui-record-list";
           for (const hours of hoursResult.data) {
             const item = document.createElement("li");
             const info = document.createElement("div");
             const name = document.createElement("h3");
             name.textContent = hours.service_date;
             const detail = document.createElement("p");
-            detail.textContent = `Status: ${hours.status}`;
+            detail.textContent = `Status: ${statusLabel(hours.status)}`;
             info.append(name, detail);
             item.append(
               info,
-              statusBadge(
-                hours.status === "awaiting_approval" ? "setup" : "ready",
-                hours.status,
-              ),
+              statusBadge(statusTone(hours.status), statusLabel(hours.status)),
             );
             if (hours.status === "awaiting_approval") {
               const approveBtn = document.createElement("button");
               approveBtn.type = "button";
-              approveBtn.className = "button button--sm";
+              approveBtn.className = "ui-button ui-button--primary ui-button--sm";
               approveBtn.textContent = "Approve";
               approveBtn.addEventListener("click", async () => {
                 await decideSpecialHours(
@@ -883,24 +927,24 @@ import "../styles/global.css";
         );
 
         const providerCard = document.createElement("div");
-        providerCard.className = "card";
+        providerCard.className = "ui-card";
         const providerHeader = document.createElement("div");
-        providerHeader.className = "card__header";
+        providerHeader.className = "ui-card__header";
         providerHeader.append(
           Object.assign(document.createElement("h3"), {
-            className: "card__title",
+            className: "ui-card__heading",
             textContent: "Google Local Posts",
           }),
         );
         providerCard.append(providerHeader);
         const providerBody = document.createElement("div");
-        providerBody.className = "card__body";
+        providerBody.className = "ui-card__body";
         const reconcileBtn = document.createElement("button");
         reconcileBtn.type = "button";
-        reconcileBtn.className = "button";
+        reconcileBtn.className = "ui-button ui-button--primary ui-button--md";
         reconcileBtn.textContent = "Refresh from Google";
         const providerStatus = document.createElement("p");
-        providerStatus.className = "text-sm muted";
+        providerStatus.className = "ui-text-secondary";
         reconcileBtn.addEventListener("click", async () => {
           reconcileBtn.disabled = true;
           reconcileBtn.textContent = "Refreshing…";
@@ -927,7 +971,7 @@ import "../styles/global.css";
             (post) => post.status === "present",
           ).length;
           const observed = document.createElement("p");
-          observed.className = "text-sm muted";
+          observed.className = "ui-text-secondary";
           observed.textContent = `${current} post(s) currently visible on Google · ${providerPostsResult.data.length} observed over time.`;
           providerBody.append(observed);
         }
@@ -936,18 +980,18 @@ import "../styles/global.css";
 
         // Draft post form
         const formCard = document.createElement("div");
-        formCard.className = "card";
+        formCard.className = "ui-card";
         const formHeader = document.createElement("div");
-        formHeader.className = "card__header";
+        formHeader.className = "ui-card__header";
         formHeader.append(
           Object.assign(document.createElement("h3"), {
-            className: "card__title",
+            className: "ui-card__heading",
             textContent: "Draft a post",
           }),
         );
         formCard.append(formHeader);
         const formBody = document.createElement("div");
-        formBody.className = "card__body";
+        formBody.className = "ui-card__body";
         const contentArea = document.createElement("textarea");
         contentArea.id = "post-content";
         contentArea.rows = 3;
@@ -955,12 +999,12 @@ import "../styles/global.css";
         formBody.append(contentArea);
         const draftBtn = document.createElement("button");
         draftBtn.type = "button";
-        draftBtn.className = "button";
+        draftBtn.className = "ui-button ui-button--primary ui-button--md";
         draftBtn.textContent = "Draft post";
         const status = document.createElement("p");
         status.setAttribute("role", "status");
         status.setAttribute("aria-live", "polite");
-        status.className = "text-sm muted";
+        status.className = "ui-text-secondary";
         draftBtn.addEventListener("click", async () => {
           const content = contentArea.value;
           if (!content.trim()) {
@@ -980,9 +1024,7 @@ import "../styles/global.css";
           if (result.kind === "ok") await renderPosts();
         });
         const actions = document.createElement("div");
-        actions.className = "form-actions";
-        actions.style.borderTop = "none";
-        actions.style.paddingTop = "0.5rem";
+        actions.className = "ui-inline ui-inline--center";
         actions.append(draftBtn, status);
         formBody.append(actions);
         formCard.append(formBody);
@@ -991,20 +1033,20 @@ import "../styles/global.css";
         // Posts list
         if (postsResult.kind === "ok" && postsResult.data.length > 0) {
           const listCard = document.createElement("div");
-          listCard.className = "card";
+          listCard.className = "ui-card";
           const listHeader = document.createElement("div");
-          listHeader.className = "card__header";
+          listHeader.className = "ui-card__header";
           listHeader.append(
             Object.assign(document.createElement("h3"), {
-              className: "card__title",
+              className: "ui-card__heading",
               textContent: "Posts",
             }),
           );
           listCard.append(listHeader);
           const listBody = document.createElement("div");
-          listBody.className = "card__body";
+          listBody.className = "ui-card__body";
           const list = document.createElement("ul");
-          list.className = "product-list";
+          list.className = "ui-record-list";
           for (const post of postsResult.data) {
             const item = document.createElement("li");
             const info = document.createElement("div");
@@ -1014,23 +1056,16 @@ import "../styles/global.css";
                 ? post.content.slice(0, 80) + "…"
                 : post.content;
             const detail = document.createElement("p");
-            detail.textContent = `Status: ${post.status}`;
+            detail.textContent = `Status: ${statusLabel(post.status)}`;
             info.append(name, detail);
             item.append(
               info,
-              statusBadge(
-                post.status === "awaiting_approval"
-                  ? "setup"
-                  : post.status === "approved"
-                    ? "ready"
-                    : "neutral",
-                post.status,
-              ),
+              statusBadge(statusTone(post.status), statusLabel(post.status)),
             );
             if (post.status === "awaiting_approval") {
               const approveBtn = document.createElement("button");
               approveBtn.type = "button";
-              approveBtn.className = "button button--sm";
+              approveBtn.className = "ui-button ui-button--primary ui-button--sm";
               approveBtn.textContent = "Approve";
               approveBtn.addEventListener("click", async () => {
                 await decidePostRevision(
@@ -1046,7 +1081,7 @@ import "../styles/global.css";
             if (post.status === "approved") {
               const publishBtn = document.createElement("button");
               publishBtn.type = "button";
-              publishBtn.className = "button button--sm";
+              publishBtn.className = "ui-button ui-button--primary ui-button--sm";
               publishBtn.textContent = "Publish";
               publishBtn.addEventListener("click", async () => {
                 status.textContent = "Starting publication…";
@@ -1101,27 +1136,29 @@ import "../styles/global.css";
 
         // Propose media form
         const formCard = document.createElement("div");
-        formCard.className = "card";
+        formCard.className = "ui-card";
         const formHeader = document.createElement("div");
-        formHeader.className = "card__header";
+        formHeader.className = "ui-card__header";
         formHeader.append(
           Object.assign(document.createElement("h3"), {
-            className: "card__title",
+            className: "ui-card__heading",
             textContent: "Upload media",
           }),
         );
         formCard.append(formHeader);
         const formBody = document.createElement("div");
-        formBody.className = "card__body";
+        formBody.className = "ui-card__body";
         const urlField = document.createElement("div");
-        urlField.className = "field";
+        urlField.className = "ui-field";
         urlField.append(
           Object.assign(document.createElement("label"), {
+            className: "ui-field__label",
             htmlFor: "media-reference",
             textContent: "Media URL",
           }),
         );
         const urlInput = document.createElement("input");
+        urlInput.className = "ui-input";
         urlInput.id = "media-reference";
         urlInput.type = "text";
         urlInput.placeholder = "https://example.com/photo.jpg";
@@ -1129,12 +1166,12 @@ import "../styles/global.css";
         formBody.append(urlField);
         const proposeBtn = document.createElement("button");
         proposeBtn.type = "button";
-        proposeBtn.className = "button";
+        proposeBtn.className = "ui-button ui-button--primary ui-button--md";
         proposeBtn.textContent = "Propose media";
         const status = document.createElement("p");
         status.setAttribute("role", "status");
         status.setAttribute("aria-live", "polite");
-        status.className = "text-sm muted";
+        status.className = "ui-text-secondary";
         proposeBtn.addEventListener("click", async () => {
           const reference = urlInput.value.trim();
           if (!reference) {
@@ -1158,9 +1195,7 @@ import "../styles/global.css";
           if (result.kind === "ok") await renderMedia();
         });
         const actions = document.createElement("div");
-        actions.className = "form-actions";
-        actions.style.borderTop = "none";
-        actions.style.paddingTop = "0.5rem";
+        actions.className = "ui-inline ui-inline--center";
         actions.append(proposeBtn, status);
         formBody.append(actions);
         formCard.append(formBody);
@@ -1169,34 +1204,31 @@ import "../styles/global.css";
         // Media list
         if (mediaResult.kind === "ok" && mediaResult.data.length > 0) {
           const listCard = document.createElement("div");
-          listCard.className = "card";
+          listCard.className = "ui-card";
           const listHeader = document.createElement("div");
-          listHeader.className = "card__header";
+          listHeader.className = "ui-card__header";
           listHeader.append(
             Object.assign(document.createElement("h3"), {
-              className: "card__title",
+              className: "ui-card__heading",
               textContent: "Media",
             }),
           );
           listCard.append(listHeader);
           const listBody = document.createElement("div");
-          listBody.className = "card__body";
+          listBody.className = "ui-card__body";
           const list = document.createElement("ul");
-          list.className = "product-list";
+          list.className = "ui-record-list";
           for (const media of mediaResult.data) {
             const item = document.createElement("li");
             const info = document.createElement("div");
             const name = document.createElement("h3");
-            name.textContent = media.media_type;
+            name.textContent = statusLabel(media.media_type);
             const detail = document.createElement("p");
-            detail.textContent = `Status: ${media.status}`;
+            detail.textContent = `Status: ${statusLabel(media.status)}`;
             info.append(name, detail);
             item.append(
               info,
-              statusBadge(
-                media.status === "awaiting_approval" ? "setup" : "ready",
-                media.status,
-              ),
+              statusBadge(statusTone(media.status), statusLabel(media.status)),
             );
             list.append(item);
           }

@@ -1,5 +1,19 @@
 ---
 import AppShell from "../components/AppShell.astro";
+import Button from "../lib/ui/Button.astro";
+import Card from "../lib/ui/Card.astro";
+import CardGrid from "../lib/ui/CardGrid.astro";
+import EmptyState from "../lib/ui/EmptyState.astro";
+import Inline from "../lib/ui/Inline.astro";
+import Input from "../lib/ui/Input.astro";
+import Notice from "../lib/ui/Notice.astro";
+import PageHeader from "../lib/ui/PageHeader.astro";
+import PageSection from "../lib/ui/PageSection.astro";
+import PageShell from "../lib/ui/PageShell.astro";
+import Region from "../lib/ui/Region.astro";
+import Select from "../lib/ui/Select.astro";
+import Skeleton from "../lib/ui/Skeleton.astro";
+import StageStrip from "../lib/ui/StageStrip.astro";
 import "../styles/global.css";
 ---
 
@@ -13,127 +27,54 @@ import "../styles/global.css";
   </head>
   <body>
     <AppShell>
-      <div id="boot-not-configured" role="status">
-        <h1>This deployment is not configured</h1>
-        <p>No Supabase or API connection is configured for this build.</p>
-      </div>
+      <PageShell id="boot-not-configured"><EmptyState heading="This deployment is not configured" description="Connect the platform runtime configuration to enable Reviews." /></PageShell>
+      <PageShell id="boot-loading" hidden><Skeleton lines={3} label="Loading reviews" /></PageShell>
+      <PageShell id="boot-error" hidden><Region role="alert" /></PageShell>
+      <PageShell id="workspace-empty" hidden><EmptyState heading="No organization access yet" description="Ask an administrator to invite your account to an organization." /></PageShell>
 
-      <div id="boot-loading" role="status" aria-live="polite" hidden>
-        <p class="loading-state">Loading reviews…</p>
-      </div>
+      <PageShell id="reviews-content" hidden>
+        <PageHeader eyebrow="Operations" title="Reviews" description="Triage customer reviews, prepare governed responses, and verify publication outcomes.">
+          <Select slot="actions" id="location-select" label="Select location" options={[]} />
+          <Button slot="actions" id="ingest-reviews-button" variant="secondary" size="sm">Sync from Google</Button>
+        </PageHeader>
 
-      <div id="boot-error" role="alert" hidden></div>
+        <Notice title="Google reviews"><p>Connection health and location mapping are managed centrally.</p><Button slot="action" href="/integrations" variant="secondary" size="sm">Manage integrations</Button></Notice>
+        <Region id="no-locations" hidden><Notice tone="warning" title="Location setup required"><p>Add a location before reviews can be synced and answered.</p><Button slot="action" href="/settings" variant="secondary" size="sm">Manage locations</Button></Notice></Region>
 
-      <div id="workspace-empty" role="status" hidden>
-        <div class="empty-state">
-          <span class="empty-state__icon" aria-hidden="true">○</span>
-          <h3>No organization access yet</h3>
-          <p>
-            Your account is not a member of any organization. Ask an
-            administrator to invite you.
-          </p>
-        </div>
-      </div>
+        <Region id="reviews-workspace" hidden>
+          <PageSection eyebrow="Performance" title="Review outcomes"><CardGrid id="reviews-metrics" minimum="sm" /></PageSection>
+          <PageSection eyebrow="Workflow" title="Response stages" description="Counts reflect all synced reviews. Select a stage to filter the loaded inbox.">
+            <StageStrip id="review-stages" label="Review response stages" items={[
+              { id: "all", label: "All" },
+              { id: "inbox", label: "Inbox" },
+              { id: "draft", label: "Draft" },
+              { id: "approval", label: "Approval" },
+              { id: "publish", label: "Publishing" },
+              { id: "responded", label: "Responded" },
+            ]} />
+          </PageSection>
+          <PageSection eyebrow="Inbox" title="Reviews">
+            <Card>
+              <Inline>
+                <Select id="status-filter" label="Status" options={[
+                  { value: "", label: "All statuses" }, { value: "new", label: "New" },
+                  { value: "classified", label: "Classified" }, { value: "escalated", label: "Escalated" },
+                  { value: "publishing", label: "Pending Google moderation" }, { value: "publication_failed", label: "Response failed" },
+                  { value: "responded", label: "Responded" }, { value: "restricted", label: "Restricted" },
+                ]} />
+                <Input id="search-input" type="search" label="Search reviews" placeholder="Search review text" />
+                <Button id="apply-filters" variant="secondary" size="sm">Apply filters</Button>
+              </Inline>
+            </Card>
+            <Region id="reviews-list-panel" />
+          </PageSection>
 
-      <div id="reviews-content" hidden>
-        <div class="page-head">
-          <div class="page-head__intro">
-            <p class="eyebrow">Operations</p>
-            <h1>Reviews</h1>
-            <p>
-              Manage customer reviews, draft responses, and publish replies.
-            </p>
-          </div>
-          <div class="page-head__meta">
-            <div class="page-head__actions">
-              <select
-                id="location-select"
-                class="button button--secondary button--sm"
-                aria-label="Select location"></select>
-              <button
-                type="button"
-                class="button button--secondary button--sm"
-                id="ingest-reviews-button">Sync from Google</button
-              >
-            </div>
-          </div>
-        </div>
-
-        <div id="no-locations" hidden>
-          <div class="empty-state">
-            <span class="empty-state__icon" aria-hidden="true">○</span>
-            <h3>No locations available</h3>
-            <p>Add locations to this organization to start managing reviews.</p>
-          </div>
-        </div>
-
-        <div id="reviews-workspace" hidden>
-          <div class="metric-grid" id="reviews-metrics"></div>
-
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow">Inbox</p>
-              <h2>Reviews</h2>
-            </div>
-          </div>
-
-          <div class="card" style="margin-bottom: 1rem">
-            <div
-              class="card__body"
-              style="display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center"
-            >
-              <label class="sr-only" for="status-filter"
-                >Filter reviews by status</label
-              >
-              <select
-                id="status-filter"
-                class="button button--secondary button--sm"
-                aria-label="Filter reviews by status"
-              >
-                <option value="">All statuses</option>
-                <option value="new">New</option>
-                <option value="classified">Classified</option>
-                <option value="escalated">Escalated</option>
-                <option value="publishing">Pending Google moderation</option>
-                <option value="publication_failed">Response failed</option>
-                <option value="responded">Responded</option>
-                <option value="restricted">Restricted</option>
-              </select>
-              <label class="sr-only" for="search-input">Search reviews</label>
-              <input
-                id="search-input"
-                type="search"
-                placeholder="Search reviews…"
-                aria-label="Search reviews"
-                class="button button--secondary button--sm"
-                style="flex: 1; min-width: 12rem"
-              />
-              <button
-                type="button"
-                class="button button--secondary button--sm"
-                id="apply-filters">Apply</button
-              >
-            </div>
-          </div>
-
-          <div id="reviews-list-panel"></div>
-
-          <div id="review-detail" hidden>
-            <div class="section-heading">
-              <div>
-                <p class="eyebrow">Review detail</p>
-                <h2 id="review-detail-title">—</h2>
-              </div>
-              <button
-                type="button"
-                class="button button--secondary button--sm"
-                id="close-detail">← Back to list</button
-              >
-            </div>
-            <div id="review-detail-content"></div>
-          </div>
-        </div>
-      </div>
+          <PageSection id="review-detail" eyebrow="Review detail" title="Selected review" titleId="review-detail-title" hidden>
+            <Button slot="actions" id="close-detail" variant="secondary" size="sm">Back to list</Button>
+            <Region id="review-detail-content" />
+          </PageSection>
+        </Region>
+      </PageShell>
     </AppShell>
     <script>
       import {
@@ -158,17 +99,35 @@ import "../styles/global.css";
         applyBootResult,
         populateSwitcher,
         setActiveOrganization,
+        buildDataTable,
         statusBadge,
         metricCard,
         emptyState,
         errorAlert,
         describeFailure,
         formatTimestamp,
+        selectValue,
+        setSelectOptions,
         type BootRegions,
       } from "../lib/ui";
+      import {
+        sentimentLabel,
+        statusLabel,
+        statusTone,
+      } from "../lib/status-language";
 
       let organizationId = "";
       let selectedLocationId = "";
+      let activeReviewStage = "all";
+      let latestReviews: ReviewSummary[] = [];
+
+      const REVIEW_STAGE_STATUSES: Record<string, string[]> = {
+        inbox: ["new", "classified", "triaged", "escalated", "disputed", "restricted"],
+        draft: ["drafting"],
+        approval: ["awaiting_approval", "approved"],
+        publish: ["publishing", "publication_failed"],
+        responded: ["responded"],
+      };
 
       const regions: BootRegions = {
         notConfigured: document.getElementById("boot-not-configured")!,
@@ -180,6 +139,16 @@ import "../styles/global.css";
 
       document.getElementById("close-detail")!.addEventListener("click", () => {
         document.getElementById("review-detail")!.hidden = true;
+      });
+
+      document.querySelectorAll<HTMLButtonElement>("#review-stages [data-stage]").forEach((button) => {
+        button.addEventListener("click", () => {
+          activeReviewStage = button.dataset.stage ?? "all";
+          document.querySelectorAll<HTMLButtonElement>("#review-stages [data-stage]").forEach((candidate) => {
+            candidate.setAttribute("aria-pressed", String(candidate === button));
+          });
+          renderReviewRows(latestReviews);
+        });
       });
 
       async function loadOrganization(
@@ -206,18 +175,14 @@ import "../styles/global.css";
       function populateLocationSelect(
         locations: import("../lib/workspace").LocationSummary[],
       ): void {
-        const select = document.getElementById(
+        const select = document.getElementById("location-select")!;
+        setSelectOptions(
           "location-select",
-        ) as HTMLSelectElement;
-        select.replaceChildren();
-        for (const loc of locations) {
-          const opt = document.createElement("option");
-          opt.value = loc.id;
-          opt.textContent = loc.name;
-          select.append(opt);
-        }
+          locations.map((location) => ({ value: location.id, label: location.name })),
+          locations[0]?.id,
+        );
         select.addEventListener("change", async () => {
-          selectedLocationId = select.value;
+          selectedLocationId = selectValue("location-select");
           await loadReviews();
         });
       }
@@ -233,13 +198,12 @@ import "../styles/global.css";
         ]);
 
         renderMetrics(summaryResult);
+        if (summaryResult.kind === "ok") renderReviewStages(summaryResult.data);
         renderList(reviewsResult);
       }
 
       function getFilters(): { statusFilter?: string; search?: string } {
-        const status = (
-          document.getElementById("status-filter") as HTMLSelectElement
-        ).value;
+        const status = selectValue("status-filter");
         const search = (
           document.getElementById("search-input") as HTMLInputElement
         ).value;
@@ -260,21 +224,50 @@ import "../styles/global.css";
         }
         const stats = summary.data;
         const counts = summarizeReviewStatuses(stats);
+        const hasObservations = counts.total > 0;
+        const noDataMeta = "No reviews synced yet";
         grid.append(
           metricCard(
             "Average rating",
-            stats.average_rating ? stats.average_rating.toFixed(1) : "—",
-            "Out of 5",
+            stats.average_rating !== null
+              ? stats.average_rating.toFixed(1)
+              : "No data",
+            hasObservations ? "Out of 5" : noDataMeta,
           ),
-          metricCard("Total reviews", String(counts.total), "All time"),
-          metricCard("Responded", String(counts.responded), "Provider truth"),
-          metricCard("New", String(counts.newCount), "Awaiting review"),
+          metricCard(
+            "Total reviews",
+            hasObservations ? String(counts.total) : "No data",
+            hasObservations ? "All synced reviews" : noDataMeta,
+          ),
+          metricCard(
+            "Responded",
+            hasObservations ? String(counts.responded) : "No data",
+            hasObservations ? "Observed on Google" : noDataMeta,
+          ),
+          metricCard(
+            "New",
+            hasObservations ? String(counts.newCount) : "No data",
+            hasObservations ? "Awaiting review" : noDataMeta,
+          ),
           metricCard(
             "Needs response",
-            String(counts.needsResponse),
-            "Action required",
+            hasObservations ? String(counts.needsResponse) : "No data",
+            hasObservations ? "Action required" : noDataMeta,
           ),
         );
+      }
+
+      function renderReviewStages(stats: import("../lib/reviews").ReviewSummaryStats): void {
+        const byStatus = stats.by_status ?? {};
+        const total = Object.values(byStatus).reduce((sum, count) => sum + count, 0);
+        const counts: Record<string, number> = { all: total };
+        for (const [stage, statuses] of Object.entries(REVIEW_STAGE_STATUSES)) {
+          counts[stage] = statuses.reduce((sum, status) => sum + (byStatus[status] ?? 0), 0);
+        }
+        for (const [stage, count] of Object.entries(counts)) {
+          const target = document.getElementById(`review-stages-${stage}-count`);
+          if (target) target.textContent = String(count);
+        }
       }
 
       function renderList(
@@ -286,83 +279,72 @@ import "../styles/global.css";
           panel.append(errorAlert(describeFailure(reviews, "Reviews")));
           return;
         }
-        if (reviews.data.length === 0) {
+        latestReviews = reviews.data;
+        renderReviewRows(reviews.data);
+      }
+
+      function renderReviewRows(reviews: ReviewSummary[]): void {
+        const panel = document.getElementById("reviews-list-panel")!;
+        panel.replaceChildren();
+        const stageStatuses = REVIEW_STAGE_STATUSES[activeReviewStage];
+        const visibleReviews = stageStatuses
+          ? reviews.filter((review) => stageStatuses.includes(review.status))
+          : reviews;
+        if (visibleReviews.length === 0) {
           panel.append(
             emptyState(
-              "No reviews yet",
-              "Reviews will appear here once they are synced from Google. Click \u201cSync from Google\u201d to import.",
+              activeReviewStage === "all" ? "No reviews yet" : "No reviews in this stage",
+              activeReviewStage === "all"
+                ? "Sync from Google to import reviews into this workspace."
+                : "Choose another stage or sync again when new provider activity is available.",
             ),
           );
           return;
         }
-        const latestSync = reviews.data
+        const latestSync = reviews
           .map((review) => review.last_synced_at)
           .filter(Boolean)
           .sort()
           .at(-1);
         const freshness = document.createElement("div");
-        freshness.className = "source-note source-note--inline";
+        freshness.className = "ui-notice ui-notice--info";
         freshness.setAttribute("role", "status");
         freshness.textContent = latestSync
           ? `Google review data last synced ${formatTimestamp(latestSync)}`
           : "Review freshness is not yet available.";
         panel.append(freshness);
-        const table = document.createElement("div");
-        table.className = "data-table";
-        const t = document.createElement("table");
-        const thead = document.createElement("thead");
-        thead.innerHTML =
-          "<tr><th>Rating</th><th>Status</th><th>Sentiment</th><th>Risk</th><th>Date</th><th><span class='sr-only'>Actions</span></th></tr>";
-        t.append(thead);
-        const tbody = document.createElement("tbody");
-        for (const review of reviews.data) {
-          const tr = document.createElement("tr");
-          const ratingTd = document.createElement("td");
-          ratingTd.textContent = review.rating ? `${review.rating}★` : "—";
-
-          const statusTd = document.createElement("td");
-          statusTd.append(
-            statusBadge(
-              review.status === "new"
-                ? "setup"
-                : review.status === "responded"
-                  ? "ready"
-                  : "neutral",
-              review.status,
-            ),
-          );
-
-          const sentimentTd = document.createElement("td");
-          sentimentTd.textContent = review.sentiment.replace(/_/g, " ");
-
-          const riskTd = document.createElement("td");
-          riskTd.append(
-            statusBadge(
-              review.risk_level === "high" || review.risk_level === "critical"
-                ? "blocked"
-                : review.risk_level === "medium"
-                  ? "setup"
-                  : "neutral",
-              review.risk_level.replace(/_/g, " "),
-            ),
-          );
-
-          const dateTd = document.createElement("td");
-          dateTd.textContent = formatTimestamp(review.review_created_at);
-
-          const actionTd = document.createElement("td");
+        const table = buildDataTable(
+          [
+            { key: "rating", header: "Rating", format: { unit: "decimal", precision: 1 }, render: (review: ReviewSummary) => review.rating },
+            {
+              key: "status", header: "Status", render: (review: ReviewSummary) => statusBadge(
+                review.status === "new" ? "setup" : review.status === "responded" ? "ready" : "neutral",
+                statusLabel(review.status),
+              ),
+            },
+            { key: "sentiment", header: "Sentiment", render: (review: ReviewSummary) => sentimentLabel(review.sentiment) },
+            {
+              key: "risk", header: "Risk", render: (review: ReviewSummary) => statusBadge(
+                review.risk_level === "high" || review.risk_level === "critical"
+                  ? "blocked" : review.risk_level === "medium" ? "setup" : "neutral",
+                statusLabel(review.risk_level),
+              ),
+            },
+            { key: "date", header: "Review date", width: "content", render: (review: ReviewSummary) => formatTimestamp(review.review_created_at) },
+            { key: "actions", header: "Actions", width: "content", render: (review: ReviewSummary) => {
+              const action = document.createElement("span");
+              action.className = "ui-inline ui-inline--center";
           const openButton = document.createElement("button");
           openButton.type = "button";
-          openButton.className = "button button--secondary button--sm";
+          openButton.className = "ui-button ui-button--secondary ui-button--sm";
           openButton.textContent = "Review";
           openButton.addEventListener("click", () => void openReview(review));
-          actionTd.append(openButton);
-
-          tr.append(ratingTd, statusTd, sentimentTd, riskTd, dateTd, actionTd);
-          tbody.append(tr);
-        }
-        t.append(tbody);
-        table.append(t);
+              action.append(openButton);
+              return action;
+            } },
+          ],
+          visibleReviews,
+        );
         panel.append(table);
       }
 
@@ -391,18 +373,18 @@ import "../styles/global.css";
 
         // Review content
         const reviewCard = document.createElement("div");
-        reviewCard.className = "card";
+        reviewCard.className = "ui-card";
         const reviewHeader = document.createElement("div");
-        reviewHeader.className = "card__header";
+        reviewHeader.className = "ui-card__header";
         reviewHeader.append(
           Object.assign(document.createElement("h3"), {
-            className: "card__title",
+            className: "ui-card__heading",
             textContent: "Review content",
           }),
         );
         reviewCard.append(reviewHeader);
         const reviewBody = document.createElement("div");
-        reviewBody.className = "card__body";
+        reviewBody.className = "ui-card__body";
         const latestRevision = detailResult.data.revisions[0];
         if (latestRevision) {
           if (latestRevision.title) {
@@ -412,14 +394,14 @@ import "../styles/global.css";
           }
           if (latestRevision.body) {
             const body = document.createElement("p");
-            body.className = "text-sm";
+            body.className = "ui-text-secondary";
             body.textContent = latestRevision.body;
             reviewBody.append(body);
           }
         }
         reviewBody.append(
           Object.assign(document.createElement("p"), {
-            className: "text-xs muted",
+            className: "ui-text-secondary",
             textContent: `Provider: ${review.provider} · ${formatTimestamp(review.review_created_at)} · Last synced ${formatTimestamp(detailResult.data.last_synced_at)}`,
           }),
         );
@@ -428,40 +410,40 @@ import "../styles/global.css";
 
         // Compose response
         const composeCard = document.createElement("div");
-        composeCard.className = "card";
+        composeCard.className = "ui-card";
         const composeHeader = document.createElement("div");
-        composeHeader.className = "card__header";
+        composeHeader.className = "ui-card__header";
         composeHeader.append(
           Object.assign(document.createElement("h3"), {
-            className: "card__title",
+            className: "ui-card__heading",
             textContent: "Compose response",
           }),
         );
         composeCard.append(composeHeader);
         const composeBody = document.createElement("div");
-        composeBody.className = "card__body";
+        composeBody.className = "ui-card__body";
         const textarea = document.createElement("textarea");
+        textarea.className = "ui-textarea";
         textarea.id = "review-response-draft";
         textarea.rows = 4;
         textarea.placeholder = "Write a response…";
         const textareaLabel = document.createElement("label");
         textareaLabel.htmlFor = textarea.id;
-        textareaLabel.className = "field-label";
+        textareaLabel.className = "ui-field__label";
         textareaLabel.textContent = "Response draft";
         composeBody.append(textareaLabel, textarea);
         const btnRow = document.createElement("div");
-        btnRow.className = "flex-row gap-2";
-        btnRow.style.marginTop = "0.5rem";
+        btnRow.className = "ui-inline ui-inline--center ui-inline--tight";
         const saveBtn = document.createElement("button");
         saveBtn.type = "button";
-        saveBtn.className = "button button--secondary button--sm";
+        saveBtn.className = "ui-button ui-button--secondary ui-button--sm";
         saveBtn.textContent = "Save draft";
         const aiBtn = document.createElement("button");
         aiBtn.type = "button";
-        aiBtn.className = "button button--sm";
+        aiBtn.className = "ui-button ui-button--primary ui-button--sm";
         aiBtn.textContent = "Generate AI draft";
         const status = document.createElement("p");
-        status.className = "text-sm muted";
+        status.className = "ui-text-secondary";
         status.setAttribute("role", "status");
         status.setAttribute("aria-live", "polite");
 
@@ -562,18 +544,18 @@ import "../styles/global.css";
         // Response history
         if (responsesResult.kind === "ok" && responsesResult.data.length > 0) {
           const historyCard = document.createElement("div");
-          historyCard.className = "card";
+          historyCard.className = "ui-card";
           const historyHeader = document.createElement("div");
-          historyHeader.className = "card__header";
+          historyHeader.className = "ui-card__header";
           historyHeader.append(
             Object.assign(document.createElement("h3"), {
-              className: "card__title",
+              className: "ui-card__heading",
               textContent: "Response history",
             }),
           );
           historyCard.append(historyHeader);
           const historyBody = document.createElement("div");
-          historyBody.className = "card__body";
+          historyBody.className = "ui-card__body";
           if (
             review.status === "responded" ||
             responsesResult.data.some(
@@ -581,11 +563,11 @@ import "../styles/global.css";
             )
           ) {
             const providerNotice = document.createElement("div");
-            providerNotice.className = "alert alert--success";
+            providerNotice.className = "ui-notice ui-notice--success";
             providerNotice.append(
               statusBadge("ready", "Observed on Google"),
               Object.assign(document.createElement("p"), {
-                className: "text-sm",
+                className: "ui-text-secondary",
                 textContent:
                   "Google reports a public response for this review. LILOs will not invite a duplicate reply.",
               }),
@@ -593,12 +575,12 @@ import "../styles/global.css";
             historyBody.append(providerNotice);
           }
           const list = document.createElement("ul");
-          list.className = "product-list";
+          list.className = "ui-record-list";
           for (const resp of responsesResult.data) {
             const item = document.createElement("li");
             const info = document.createElement("div");
             const name = document.createElement("h3");
-            name.textContent = `${reviewResponseSourceLabel(resp.generated_by_type)} · ${resp.status}`;
+            name.textContent = `${reviewResponseSourceLabel(resp.generated_by_type)} · ${statusLabel(resp.status)}`;
             const detail = document.createElement("p");
             detail.textContent =
               resp.response_text.length > 100
@@ -607,19 +589,12 @@ import "../styles/global.css";
             info.append(name, detail);
             item.append(
               info,
-              statusBadge(
-                resp.status === "published"
-                  ? "ready"
-                  : resp.status === "approved"
-                    ? "ready"
-                    : "setup",
-                resp.status,
-              ),
+              statusBadge(statusTone(resp.status), statusLabel(resp.status)),
             );
             if (resp.status === "awaiting_approval") {
               const approveBtn = document.createElement("button");
               approveBtn.type = "button";
-              approveBtn.className = "button button--sm";
+              approveBtn.className = "ui-button ui-button--primary ui-button--sm";
               approveBtn.textContent = "Approve";
               approveBtn.addEventListener("click", async () => {
                 approveBtn.disabled = true;
@@ -640,7 +615,7 @@ import "../styles/global.css";
             if (resp.status === "approved") {
               const publishBtn = document.createElement("button");
               publishBtn.type = "button";
-              publishBtn.className = "button button--sm";
+              publishBtn.className = "ui-button ui-button--primary ui-button--sm";
               publishBtn.textContent = "Publish";
               publishBtn.addEventListener("click", async () => {
                 publishBtn.disabled = true;
@@ -673,7 +648,7 @@ import "../styles/global.css";
 
       function createLoading(): HTMLDivElement {
         const el = document.createElement("div");
-        el.className = "loading-state";
+        el.className = "ui-skeleton-group";
         el.textContent = "Loading…";
         return el;
       }

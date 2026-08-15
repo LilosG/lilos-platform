@@ -1,5 +1,15 @@
 ---
 import AppShell from "../components/AppShell.astro";
+import Button from "../lib/ui/Button.astro";
+import CardGrid from "../lib/ui/CardGrid.astro";
+import EmptyState from "../lib/ui/EmptyState.astro";
+import Notice from "../lib/ui/Notice.astro";
+import PageHeader from "../lib/ui/PageHeader.astro";
+import PageSection from "../lib/ui/PageSection.astro";
+import PageShell from "../lib/ui/PageShell.astro";
+import Region from "../lib/ui/Region.astro";
+import Skeleton from "../lib/ui/Skeleton.astro";
+import Tabs from "../lib/ui/Tabs.astro";
 import "../styles/global.css";
 ---
 
@@ -13,82 +23,27 @@ import "../styles/global.css";
   </head>
   <body>
     <AppShell>
-      <div id="boot-not-configured" role="status">
-        <h1>This deployment is not configured</h1>
-        <p>No Supabase or API connection is configured for this build.</p>
-      </div>
+      <PageShell id="boot-not-configured"><EmptyState heading="This deployment is not configured" description="Connect the platform runtime configuration to enable SEO." /></PageShell>
+      <PageShell id="boot-loading" hidden><Skeleton lines={3} label="Loading SEO" /></PageShell>
+      <PageShell id="boot-error" hidden><Region role="alert" /></PageShell>
+      <PageShell id="workspace-empty" hidden><EmptyState heading="No organization access yet" description="Ask an administrator to invite your account to an organization." /></PageShell>
 
-      <div id="boot-loading" role="status" aria-live="polite" hidden>
-        <p class="loading-state">Loading SEO…</p>
-      </div>
-
-      <div id="boot-error" role="alert" hidden></div>
-
-      <div id="workspace-empty" role="status" hidden>
-        <div class="empty-state">
-          <span class="empty-state__icon" aria-hidden="true">○</span>
-          <h3>No organization access yet</h3>
-          <p>
-            Your account is not a member of any organization. Ask an
-            administrator to invite you.
-          </p>
-        </div>
-      </div>
-
-      <div id="seo-content" hidden>
-        <div class="page-head">
-          <div class="page-head__intro">
-            <p class="eyebrow">Operations</p>
-            <h1>SEO</h1>
-            <p>
-              Crawl your website, identify opportunities, and track Search
-              Console performance.
-            </p>
-          </div>
-          <div class="page-head__meta">
-            <div class="page-head__actions">
-              <a
-                class="button button--secondary button--sm"
-                href="/integrations">Manage integrations</a
-              >
-            </div>
-          </div>
-        </div>
-
-        <div class="metric-grid" id="seo-metrics"></div>
-
-        <div class="tabs" role="tablist" id="seo-tabs">
-          <button
-            class="tabs__tab"
-            role="tab"
-            aria-selected="true"
-            data-tab="overview">Overview</button
-          >
-          <button
-            class="tabs__tab"
-            role="tab"
-            aria-selected="false"
-            data-tab="crawl">Crawl</button
-          >
-          <button
-            class="tabs__tab"
-            role="tab"
-            aria-selected="false"
-            data-tab="opportunities">Opportunities</button
-          >
-          <button
-            class="tabs__tab"
-            role="tab"
-            aria-selected="false"
-            data-tab="search-console">Search Console</button
-          >
-        </div>
-
-        <div id="tab-overview" class="tab-panel"></div>
-        <div id="tab-crawl" class="tab-panel" hidden></div>
-        <div id="tab-opportunities" class="tab-panel" hidden></div>
-        <div id="tab-search-console" class="tab-panel" hidden></div>
-      </div>
+      <PageShell id="seo-content" hidden>
+        <PageHeader eyebrow="Operations" title="SEO" description="Inspect crawl health, prioritize governed opportunities, and track observed search performance.">
+          <Button slot="actions" href="/integrations" variant="secondary" size="sm">Manage integrations</Button>
+        </PageHeader>
+        <Notice title="Search data"><p>Search Console and Analytics connection health are managed centrally.</p><Button slot="action" href="/integrations" variant="secondary" size="sm">Manage integrations</Button></Notice>
+        <PageSection eyebrow="Performance" title="SEO outcomes"><CardGrid id="seo-metrics" minimum="sm" /></PageSection>
+        <Tabs id="seo-tabs" label="SEO workspace" items={[
+          { id: "overview", label: "Overview" }, { id: "crawl", label: "Crawl" },
+          { id: "opportunities", label: "Opportunities" }, { id: "search-console", label: "Search Console" },
+        ]}>
+          <Region id="tab-overview" tabPanel="overview" />
+          <Region id="tab-crawl" tabPanel="crawl" hidden />
+          <Region id="tab-opportunities" tabPanel="opportunities" hidden />
+          <Region id="tab-search-console" tabPanel="search-console" hidden />
+        </Tabs>
+      </PageShell>
     </AppShell>
     <script>
       import {
@@ -119,22 +74,24 @@ import "../styles/global.css";
         errorAlert,
         describeFailure,
         formatTimestamp,
-        setupTabs,
         sectionCard,
         detailFact,
         liveStatus,
         formField,
+        createSelectControl,
+        buildDataTable,
         type BootRegions,
       } from "../lib/ui";
       import {
         reportingPeriodSelector,
         comparisonKPI,
-        timeSeriesChart,
         sourceFreshness,
+        formatFreshness,
         formatDateRange,
         buildGscDataTable,
       } from "../lib/reporting";
-      import { apiGet, type ApiOutcome } from "../lib/api-client";
+      import { reportingTrendChart } from "../lib/reporting-chart";
+      import { statusLabel, statusTone } from "../lib/status-language";
 
       let organizationId = "";
 
@@ -146,26 +103,20 @@ import "../styles/global.css";
         content: document.getElementById("seo-content")!,
       };
 
-      setupTabs(document.getElementById("seo-tabs")!);
-
       async function loadOrganization(
         org: import("../lib/workspace").MyOrganization,
       ): Promise<void> {
         setActiveOrganization(org);
         organizationId = org.organization_id;
 
-        const [summaryResult, websitesResult, oppsResult, websiteReadinessRes] =
-          await Promise.all([
-            fetchSEOSummary(organizationId),
-            fetchWebsites(organizationId),
-            fetchOpportunities(organizationId),
-            apiGet<Record<string, unknown>>(
-              `/api/v1/organizations/${organizationId}/insights/website-readiness`,
-            ),
-          ]);
+        const [summaryResult, websitesResult, oppsResult] = await Promise.all([
+          fetchSEOSummary(organizationId),
+          fetchWebsites(organizationId),
+          fetchOpportunities(organizationId),
+        ]);
 
         renderMetrics(summaryResult, websitesResult, oppsResult);
-        renderOverview(websitesResult, oppsResult, websiteReadinessRes);
+        renderOverview(websitesResult, oppsResult);
         renderCrawl(websitesResult);
         renderOpportunities(oppsResult);
         renderSearchConsole(websitesResult);
@@ -224,102 +175,86 @@ import "../styles/global.css";
         }
       }
 
-      function clientWebsiteStatus(
-        status: string,
-        wr: Record<string, unknown> | null,
-      ): { kind: string; label: string; note: string } {
-        const configured = !!wr?.canonical_domain_configured;
-        const scConnected = !!wr?.search_console_connected;
-        const analyticsConnected = !!wr?.analytics_connected;
-        const crawlReady = !!wr?.crawl_ready;
-        const lastCrawl = wr?.last_crawl_at as string | null;
-
+      function clientWebsiteStatus(status: string): {
+        kind: string;
+        label: string;
+        note: string;
+      } {
         if (status === "archived") {
-          return { kind: "neutral", label: "Archived", note: "" };
+          return { kind: "neutral", label: "Unavailable", note: "Archived" };
         }
         if (status === "paused") {
-          return { kind: "setup", label: "Paused", note: "" };
+          return { kind: "setup", label: "Needs attention", note: "Paused" };
         }
-
-        const ready =
-          configured && scConnected && analyticsConnected && crawlReady;
-        if (ready) {
-          const note = lastCrawl
-            ? `Last crawl ${formatTimestamp(lastCrawl)}`
-            : "Website operational";
-          return { kind: "ready", label: "Ready", note };
-        }
-
-        // Distinct reasons for needing attention
-        const reasons: string[] = [];
-        if (!configured) reasons.push("domain not configured");
-        if (!scConnected) reasons.push("Search Console not connected");
-        if (!analyticsConnected) reasons.push("Analytics not connected");
-        if (!crawlReady) reasons.push("no successful crawl");
         return {
-          kind: "setup",
-          label: "Needs attention",
-          note: reasons.join(" · "),
+          kind: statusTone(status),
+          label: status === "active" ? "Ready" : statusLabel(status),
+          note: "Website configured",
         };
       }
 
       function renderOverview(
         websites: Awaited<ReturnType<typeof fetchWebsites>>,
         opps: Awaited<ReturnType<typeof fetchOpportunities>>,
-        websiteReadinessRes: ApiOutcome<Record<string, unknown>>,
       ): void {
         const panel = document.getElementById("tab-overview")!;
         panel.replaceChildren();
 
         if (websites.kind !== "ok" || websites.data.length === 0) {
-          panel.append(
-            emptyState(
-              "No websites configured",
-              "Add a website to start crawling and identifying SEO opportunities.",
-            ),
+          const banner = document.createElement("div");
+          banner.className = "ui-notice ui-notice--warning";
+          const copy = document.createElement("div");
+          copy.append(
+            Object.assign(document.createElement("strong"), {
+              textContent: "Website setup required",
+            }),
+            Object.assign(document.createElement("p"), {
+              textContent:
+                "Add the organization website before crawl and opportunity work can begin.",
+            }),
           );
+          const link = document.createElement("a");
+          link.className = "ui-button ui-button--secondary ui-button--sm";
+          link.href = "/settings";
+          link.textContent = "Manage website";
+          banner.append(copy, link);
+          panel.append(banner);
           return;
         }
-
-        // Derive readiness facts from the dedicated endpoint
-        const wr =
-          websiteReadinessRes.kind === "ok" ? websiteReadinessRes.data : null;
 
         // Website status cards using client terminology
         for (const website of websites.data) {
           const card = document.createElement("div");
-          card.className = "card";
+          card.className = "ui-card";
           const header = document.createElement("div");
-          header.className = "card__header";
+          header.className = "ui-card__header";
           header.append(
             Object.assign(document.createElement("h3"), {
-              className: "card__title",
+              className: "ui-card__heading",
               textContent: website.name,
             }),
           );
           header.append(
             Object.assign(document.createElement("p"), {
-              className: "card__description",
+              className: "ui-card__description",
               textContent: website.canonical_origin,
             }),
           );
           card.append(header);
           const body = document.createElement("div");
-          body.className = "card__body";
+          body.className = "ui-card__body";
 
-          const websiteTerm = clientWebsiteStatus(website.status, wr);
+          const websiteTerm = clientWebsiteStatus(website.status);
           body.append(statusBadge(websiteTerm.kind, websiteTerm.label));
           if (websiteTerm.note) {
             const detail = document.createElement("p");
-            detail.className = "text-sm muted";
-            detail.style.marginTop = "0.5rem";
+            detail.className = "ui-text-secondary";
             detail.textContent = websiteTerm.note;
             body.append(detail);
           }
           if (website.verified_at) {
             const verified = document.createElement("p");
-            verified.className = "text-sm muted";
-            verified.style.marginTop = "0.25rem";
+            verified.className = "ui-text-secondary";
             verified.textContent = `Verified ${formatTimestamp(website.verified_at)}`;
             body.append(verified);
           }
@@ -330,33 +265,31 @@ import "../styles/global.css";
         // Recent opportunities
         if (opps.kind === "ok" && opps.data.length > 0) {
           const card = document.createElement("div");
-          card.className = "card";
+          card.className = "ui-card";
           const header = document.createElement("div");
-          header.className = "card__header";
+          header.className = "ui-card__header";
           header.append(
             Object.assign(document.createElement("h3"), {
-              className: "card__title",
+              className: "ui-card__heading",
               textContent: "Recent opportunities",
             }),
           );
           card.append(header);
           const body = document.createElement("div");
-          body.className = "card__body";
+          body.className = "ui-card__body";
           const list = document.createElement("ul");
-          list.className = "product-list";
+          list.className = "ui-record-list";
           for (const opp of opps.data.slice(0, 5)) {
             const item = document.createElement("li");
             const info = document.createElement("div");
             const name = document.createElement("h3");
-            name.textContent = opp.opportunity_type
-              .replace(/_/g, " ")
-              .replace(/\b\w/g, (c) => c.toUpperCase());
+            name.textContent = statusLabel(opp.opportunity_type);
             const detail = document.createElement("p");
-            detail.textContent = `Priority ${opp.priority_score} · ${opp.status}`;
+            detail.textContent = `Priority ${opp.priority_score} · ${statusLabel(opp.status)}`;
             info.append(name, detail);
             item.append(
               info,
-              statusBadge(opp.status, opp.status.replace(/_/g, " ")),
+              statusBadge(statusTone(opp.status), statusLabel(opp.status)),
             );
             list.append(item);
           }
@@ -384,28 +317,30 @@ import "../styles/global.css";
 
         for (const website of websites.data) {
           const card = document.createElement("div");
-          card.className = "card";
+          card.className = "ui-card";
           const header = document.createElement("div");
-          header.className = "card__header";
+          header.className = "ui-card__header";
           header.append(
             Object.assign(document.createElement("h3"), {
-              className: "card__title",
+              className: "ui-card__heading",
               textContent: `Crawl ${website.name}`,
             }),
           );
           card.append(header);
           const body = document.createElement("div");
-          body.className = "card__body";
+          body.className = "ui-card__body";
 
           const maxPagesField = document.createElement("div");
-          maxPagesField.className = "field";
+          maxPagesField.className = "ui-field";
           maxPagesField.append(
             Object.assign(document.createElement("label"), {
+              className: "ui-field__label",
               htmlFor: `crawl-max-pages-${website.id}`,
               textContent: "Max pages",
             }),
           );
           const maxPagesInput = document.createElement("input");
+          maxPagesInput.className = "ui-input";
           maxPagesInput.id = `crawl-max-pages-${website.id}`;
           maxPagesInput.type = "number";
           maxPagesInput.min = "1";
@@ -416,10 +351,10 @@ import "../styles/global.css";
 
           const crawlBtn = document.createElement("button");
           crawlBtn.type = "button";
-          crawlBtn.className = "button";
+          crawlBtn.className = "ui-button ui-button--primary ui-button--md";
           crawlBtn.textContent = "Run crawl";
           const status = document.createElement("p");
-          status.className = "text-sm muted";
+          status.className = "ui-text-secondary";
           status.setAttribute("role", "status");
           status.setAttribute("aria-live", "polite");
           crawlBtn.addEventListener("click", async () => {
@@ -452,17 +387,13 @@ import "../styles/global.css";
               crawlBtn.disabled = false;
               crawlBtn.textContent = "Run again";
               status.textContent = describeCrawlResult(result.data);
-              const [updatedSummary, updatedOpps, updatedReadiness] =
-                await Promise.all([
-                  fetchSEOSummary(crawlOrganizationId),
-                  fetchOpportunities(crawlOrganizationId),
-                  apiGet<Record<string, unknown>>(
-                    `/api/v1/organizations/${crawlOrganizationId}/insights/website-readiness`,
-                  ),
-                ]);
+              const [updatedSummary, updatedOpps] = await Promise.all([
+                fetchSEOSummary(crawlOrganizationId),
+                fetchOpportunities(crawlOrganizationId),
+              ]);
               if (organizationId !== crawlOrganizationId) return;
               renderMetrics(updatedSummary, websites, updatedOpps);
-              renderOverview(websites, updatedOpps, updatedReadiness);
+              renderOverview(websites, updatedOpps);
               renderOpportunities(updatedOpps);
             } else {
               crawlBtn.disabled = false;
@@ -471,9 +402,7 @@ import "../styles/global.css";
             }
           });
           const actions = document.createElement("div");
-          actions.className = "form-actions";
-          actions.style.borderTop = "none";
-          actions.style.paddingTop = "0.5rem";
+          actions.className = "ui-inline ui-inline--center";
           actions.append(crawlBtn, status);
           body.append(actions);
           card.append(body);
@@ -501,50 +430,60 @@ import "../styles/global.css";
           return;
         }
 
-        const table = document.createElement("div");
-        table.className = "data-table";
-        const t = document.createElement("table");
-        const thead = document.createElement("thead");
-        thead.innerHTML =
-          "<tr><th>Type</th><th>Priority</th><th>Status</th><th><span class='sr-only'>Actions</span></th></tr>";
-        t.append(thead);
-        const tbody = document.createElement("tbody");
-        for (const opp of opps.data) {
-          const tr = document.createElement("tr");
-          const typeTd = document.createElement("td");
-          typeTd.textContent = opp.opportunity_type
-            .replace(/_/g, " ")
-            .replace(/\b\w/g, (c) => c.toUpperCase());
-          const priorityTd = document.createElement("td");
-          const priorityBadge = statusBadge(
-            opp.priority_score >= 70
-              ? "blocked"
-              : opp.priority_score >= 40
-                ? "setup"
-                : "neutral",
-            String(opp.priority_score),
-          );
-          priorityTd.append(priorityBadge);
-          const statusTd = document.createElement("td");
-          statusTd.append(
-            statusBadge(opp.status, opp.status.replace(/_/g, " ")),
-          );
-          const actionTd = document.createElement("td");
-          const action = document.createElement("button");
-          action.type = "button";
-          action.className = "button button--secondary button--sm";
-          action.textContent = "Review";
-          action.addEventListener(
-            "click",
-            () => void renderOpportunityDetail(opp, opps),
-          );
-          actionTd.append(action);
-          tr.append(typeTd, priorityTd, statusTd, actionTd);
-          tbody.append(tr);
-        }
-        t.append(tbody);
-        table.append(t);
-        panel.append(table);
+        panel.append(
+          buildDataTable(
+            [
+              {
+                key: "type",
+                header: "Type",
+                render: (opportunity: (typeof opps.data)[number]) =>
+                  statusLabel(opportunity.opportunity_type),
+              },
+              {
+                key: "priority",
+                header: "Priority",
+                width: "content",
+                format: { unit: "count" },
+                render: (opportunity: (typeof opps.data)[number]) =>
+                  statusBadge(
+                    opportunity.priority_score >= 70
+                      ? "blocked"
+                      : opportunity.priority_score >= 40
+                        ? "setup"
+                        : "neutral",
+                    String(opportunity.priority_score),
+                  ),
+              },
+              {
+                key: "status",
+                header: "Status",
+                render: (opportunity: (typeof opps.data)[number]) =>
+                  statusBadge(
+                    statusTone(opportunity.status),
+                    statusLabel(opportunity.status),
+                  ),
+              },
+              {
+                key: "actions",
+                header: "Actions",
+                width: "content",
+                render: (opportunity: (typeof opps.data)[number]) => {
+                  const action = document.createElement("button");
+                  action.type = "button";
+                  action.className =
+                    "ui-button ui-button--secondary ui-button--sm";
+                  action.textContent = "Review";
+                  action.addEventListener(
+                    "click",
+                    () => void renderOpportunityDetail(opportunity, opps),
+                  );
+                  return action;
+                },
+              },
+            ],
+            opps.data,
+          ),
+        );
       }
 
       async function renderOpportunityDetail(
@@ -554,7 +493,7 @@ import "../styles/global.css";
         const panel = document.getElementById("tab-opportunities")!;
         panel.replaceChildren(
           Object.assign(document.createElement("div"), {
-            className: "loading-state",
+            className: "ui-skeleton-group",
             textContent: "Loading recommendation workspace…",
           }),
         );
@@ -565,22 +504,20 @@ import "../styles/global.css";
         panel.replaceChildren();
         const back = document.createElement("button");
         back.type = "button";
-        back.className = "button button--secondary button--sm";
-        back.textContent = "← Back to opportunities";
+        back.className = "ui-button ui-button--secondary ui-button--sm";
+        back.textContent = "Back to opportunities";
         back.addEventListener("click", () =>
           renderOpportunities(opportunityList),
         );
 
         const heading = document.createElement("div");
-        heading.className = "page-head page-head--detail";
+        heading.className = "ui-page-header";
         const intro = document.createElement("div");
-        intro.className = "page-head__intro";
-        const type = opportunity.opportunity_type
-          .replace(/_/g, " ")
-          .replace(/\b\w/g, (character) => character.toUpperCase());
+        intro.className = "ui-page-header__identity";
+        const type = statusLabel(opportunity.opportunity_type);
         intro.append(
           Object.assign(document.createElement("p"), {
-            className: "eyebrow",
+            className: "ui-overline",
             textContent: "SEO opportunity",
           }),
           Object.assign(document.createElement("h2"), { textContent: type }),
@@ -603,7 +540,7 @@ import "../styles/global.css";
         panel.append(back, heading);
 
         const grid = document.createElement("div");
-        grid.className = "detail-grid";
+        grid.className = "ui-card-grid ui-card-grid--lg";
         grid.append(
           renderEvidenceCard(opportunity),
           await renderRecommendationCard(opportunity, recommendations),
@@ -618,14 +555,14 @@ import "../styles/global.css";
           "Why this matters",
           "Evidence and score factors recorded by the latest analysis.",
         );
-        const body = card.querySelector<HTMLElement>(".card__body")!;
+        const body = card.querySelector<HTMLElement>(".ui-card__body")!;
         const factors = Object.entries(opportunity.score_explanation);
         if (factors.length > 0) {
           const list = document.createElement("dl");
-          list.className = "fact-list";
+          list.className = "ui-stack ui-stack--2";
           for (const [key, value] of factors) {
             const term = document.createElement("dt");
-            term.textContent = key.replace(/_/g, " ");
+            term.textContent = statusLabel(key);
             const detail = document.createElement("dd");
             detail.textContent = String(value);
             list.append(term, detail);
@@ -637,7 +574,7 @@ import "../styles/global.css";
           const title = document.createElement("h4");
           title.textContent = "Supporting evidence";
           const list = document.createElement("ul");
-          list.className = "plain-list";
+          list.className = "ui-stack ui-stack--2";
           for (const line of evidence) {
             const item = document.createElement("li");
             item.textContent = line;
@@ -663,7 +600,7 @@ import "../styles/global.css";
           "Recommended action",
           "Recommendations are governed revisions, separate from implementation.",
         );
-        const body = card.querySelector<HTMLElement>(".card__body")!;
+        const body = card.querySelector<HTMLElement>(".ui-card__body")!;
         if (recommendations.kind !== "ok") {
           body.append(
             errorAlert(describeFailure(recommendations, "Recommendations")),
@@ -677,14 +614,14 @@ import "../styles/global.css";
             detailFact("Expected result", latest.expected_result_hypothesis),
             detailFact(
               "Effort and risk",
-              `${latest.effort} effort · ${latest.risk} risk`,
+              `${statusLabel(latest.effort)} effort · ${statusLabel(latest.risk)} risk`,
             ),
-            statusBadge(latest.status, latest.status.replace(/_/g, " ")),
+            statusBadge(statusTone(latest.status), statusLabel(latest.status)),
           );
           if (latest.status === "awaiting_approval") {
             const approve = document.createElement("button");
             approve.type = "button";
-            approve.className = "button";
+            approve.className = "ui-button ui-button--primary ui-button--md";
             approve.textContent = "Approve recommendation";
             approve.addEventListener("click", async () => {
               approve.disabled = true;
@@ -715,10 +652,10 @@ import "../styles/global.css";
             for (const task of tasks.data) {
               body.append(
                 detailFact(
-                  task.target_type.replace(/_/g, " "),
+                  statusLabel(task.target_type),
                   task.verified_at
                     ? `Verified ${formatTimestamp(task.verified_at)}`
-                    : task.status.replace(/_/g, " "),
+                    : statusLabel(task.status),
                 ),
               );
             }
@@ -727,15 +664,23 @@ import "../styles/global.css";
         }
 
         const form = document.createElement("form");
-        form.className = "form-grid";
+        form.className = "ui-form-grid";
         const action = document.createElement("textarea");
         action.required = true;
         action.rows = 4;
         const outcome = document.createElement("textarea");
         outcome.required = true;
         outcome.rows = 3;
-        const risk = optionSelect(["low", "medium", "high"]);
-        const effort = optionSelect(["low", "medium", "high"]);
+        const risk = optionSelect(
+          ["low", "medium", "high"],
+          `seo-risk-${opportunity.id}`,
+          "Risk",
+        );
+        const effort = optionSelect(
+          ["low", "medium", "high"],
+          `seo-effort-${opportunity.id}`,
+          "Effort",
+        );
         form.append(
           formField("Proposed action", action, {
             full: true,
@@ -745,12 +690,12 @@ import "../styles/global.css";
             full: true,
             id: `seo-outcome-${opportunity.id}`,
           }),
-          formField("Risk", risk, { id: `seo-risk-${opportunity.id}` }),
-          formField("Effort", effort, { id: `seo-effort-${opportunity.id}` }),
+          risk.root,
+          effort.root,
         );
         const submit = document.createElement("button");
         submit.type = "submit";
-        submit.className = "button";
+        submit.className = "ui-button ui-button--primary ui-button--md";
         submit.textContent = "Create recommendation";
         const status = liveStatus();
         form.append(submit, status);
@@ -764,8 +709,8 @@ import "../styles/global.css";
             {
               proposedAction: action.value,
               expectedResultHypothesis: outcome.value,
-              risk: risk.value as "low" | "medium" | "high",
-              effort: effort.value as "low" | "medium" | "high",
+              risk: risk.input.value as "low" | "medium" | "high",
+              effort: effort.input.value as "low" | "medium" | "high",
             },
           );
           if (result.kind === "ok") {
@@ -784,7 +729,7 @@ import "../styles/global.css";
       function readableEvidence(evidence: Record<string, unknown>): string[] {
         const lines: string[] = [];
         for (const [key, value] of Object.entries(evidence)) {
-          const label = key.replace(/_/g, " ");
+          const label = statusLabel(key);
           if (["string", "number", "boolean"].includes(typeof value)) {
             lines.push(`${label}: ${String(value)}`);
           } else if (
@@ -797,17 +742,16 @@ import "../styles/global.css";
         return lines;
       }
 
-      function optionSelect(values: string[]): HTMLSelectElement {
-        const select = document.createElement("select");
-        for (const value of values) {
-          const option = document.createElement("option");
-          option.value = value;
-          option.textContent = value.replace(/\b\w/g, (character) =>
-            character.toUpperCase(),
-          );
-          select.append(option);
-        }
-        return select;
+      function optionSelect(values: string[], id: string, label: string) {
+        return createSelectControl(
+          id,
+          label,
+          values.map((value) => ({
+            value,
+            label: statusLabel(value),
+          })),
+          values[0] ?? "",
+        );
       }
 
       let searchConsolePeriodDays = 28;
@@ -831,18 +775,16 @@ import "../styles/global.css";
         for (const website of websites.data) {
           // Website header
           const websiteHeader = document.createElement("div");
-          websiteHeader.className = "card";
-          websiteHeader.style.marginBottom = "var(--space-4)";
+          websiteHeader.className = "ui-card";
           const whBody = document.createElement("div");
-          whBody.className = "card__body";
+          whBody.className = "ui-card__body";
           const whRow = document.createElement("div");
-          whRow.style.cssText =
-            "display:flex;align-items:center;justify-content:space-between;gap:var(--space-4);flex-wrap:wrap;";
+          whRow.className = "ui-inline ui-inline--center ui-inline--spread";
           const whInfo = document.createElement("div");
           const whTitle = document.createElement("h3");
           whTitle.textContent = website.name;
           const whDomain = document.createElement("p");
-          whDomain.className = "text-sm muted";
+          whDomain.className = "ui-text-secondary";
           whDomain.textContent = website.canonical_origin;
           whInfo.append(whTitle, whDomain);
           whRow.append(whInfo);
@@ -898,10 +840,10 @@ import "../styles/global.css";
           // Freshness
           if (data.freshness && data.range) {
             const freshnessRow = document.createElement("div");
-            freshnessRow.style.cssText =
-              "display:flex;align-items:center;justify-content:space-between;gap:var(--space-4);margin-bottom:var(--space-4);flex-wrap:wrap;";
+            freshnessRow.className =
+              "ui-inline ui-inline--center ui-inline--spread";
             const dateLabel = document.createElement("p");
-            dateLabel.className = "text-sm muted";
+            dateLabel.className = "ui-text-secondary";
             dateLabel.textContent = `${formatDateRange(data.range.start, data.range.end)} · vs ${formatDateRange(data.comparison_range?.start || "", data.comparison_range?.end || "")}`;
             freshnessRow.append(
               dateLabel,
@@ -928,7 +870,8 @@ import "../styles/global.css";
           };
 
           const gscGrid = document.createElement("div");
-          gscGrid.className = "metric-grid";
+          gscGrid.className = "ui-card-grid ui-card-grid--sm";
+          const searchContext = `Google Search Console · ${searchConsolePeriodDays} days · ${formatFreshness(data.freshness.last_synced_at, data.freshness.status)}`;
           for (const key of ["clicks", "impressions", "ctr", "position"]) {
             const metric = data.metrics[key];
             if (metric) {
@@ -938,10 +881,11 @@ import "../styles/global.css";
                 metric.previous as number | null,
                 metric.delta as number | null,
                 metric.percent_delta as number | null,
-                "",
+                searchContext,
                 key,
+                `${searchConsolePeriodDays} days`,
               );
-              const valueEl = card.querySelector(".kpi-card__value");
+              const valueEl = card.querySelector(".ui-metric-card__value");
               if (valueEl) {
                 valueEl.textContent = gscFormatters[key](
                   metric.current as number | null,
@@ -955,25 +899,56 @@ import "../styles/global.css";
           // Daily chart
           if (data.series && data.series.length > 0) {
             const chartSection = document.createElement("div");
-            chartSection.className = "card";
-            chartSection.style.marginTop = "var(--space-5)";
+            chartSection.className =
+              "ui-card ui-card--spaced ui-card--flush reporting-chart-card";
             const chartHeader = document.createElement("div");
-            chartHeader.className = "card__header";
+            chartHeader.className = "ui-card__header";
             const chartTitle = document.createElement("h3");
-            chartTitle.className = "card__title";
-            chartTitle.textContent = "Daily impressions";
+            chartTitle.className = "ui-card__heading";
+            chartTitle.textContent = "Organic search trend";
             chartHeader.append(chartTitle);
             chartSection.append(chartHeader);
             const chartBody = document.createElement("div");
-            chartBody.className = "card__body";
-            chartBody.style.padding = "0";
+            chartBody.className = "ui-card__body";
             chartBody.append(
-              timeSeriesChart(
-                data.series.map((s) => ({
-                  date: s.date,
-                  value: s.impressions,
-                })),
-                "Impressions",
+              reportingTrendChart(
+                [
+                  {
+                    key: "clicks",
+                    label: "Clicks",
+                    points: data.series.map((item) => ({
+                      date: item.date,
+                      value: item.clicks ?? null,
+                    })),
+                  },
+                  {
+                    key: "impressions",
+                    label: "Impressions",
+                    points: data.series.map((item) => ({
+                      date: item.date,
+                      value: item.impressions ?? null,
+                    })),
+                  },
+                  {
+                    key: "ctr",
+                    label: "CTR",
+                    points: data.series.map((item) => ({
+                      date: item.date,
+                      value: item.ctr ?? null,
+                    })),
+                    formatValue: (value) => `${(value * 100).toFixed(1)}%`,
+                  },
+                  {
+                    key: "position",
+                    label: "Avg position",
+                    points: data.series.map((item) => ({
+                      date: item.date,
+                      value: item.position ?? null,
+                    })),
+                    formatValue: (value) => value.toFixed(1),
+                  },
+                ],
+                "clicks",
               ),
             );
             chartSection.append(chartBody);
@@ -983,29 +958,45 @@ import "../styles/global.css";
           // Top queries
           if (data.top_queries && data.top_queries.length > 0) {
             const queriesSection = document.createElement("div");
-            queriesSection.className = "card";
-            queriesSection.style.marginTop = "var(--space-4)";
+            queriesSection.className =
+              "ui-card ui-card--spaced ui-card--flush";
             const qHeader = document.createElement("div");
-            qHeader.className = "card__header";
+            qHeader.className = "ui-card__header";
             const qTitle = document.createElement("h3");
-            qTitle.className = "card__title";
+            qTitle.className = "ui-card__heading";
             qTitle.textContent = "Top search queries";
             qHeader.append(qTitle);
             queriesSection.append(qHeader);
             const qBody = document.createElement("div");
-            qBody.className = "card__body";
-            qBody.style.padding = "0";
+            qBody.className = "ui-card__body";
+            const queryRows = data.top_queries.map((q) => ({
+              primary: q.query,
+              clicks: q.clicks,
+              impressions: q.impressions,
+              ctr: q.ctr !== null ? `${(q.ctr * 100).toFixed(1)}%` : "—",
+              position: q.position !== null ? q.position.toFixed(1) : "—",
+            }));
             const qTable = buildGscDataTable(
               ["Query", "Clicks", "Impressions", "CTR", "Position"],
-              data.top_queries.map((q) => ({
-                primary: q.query,
-                clicks: q.clicks,
-                impressions: q.impressions,
-                ctr: q.ctr !== null ? `${(q.ctr * 100).toFixed(1)}%` : "—",
-                position: q.position !== null ? q.position.toFixed(1) : "—",
-              })),
+              queryRows.slice(0, 5),
             );
             qBody.append(qTable);
+            if (data.top_queries.length > 5) {
+              const viewAll = document.createElement("button");
+              viewAll.type = "button";
+              viewAll.className =
+                "ui-button ui-button--secondary ui-button--sm";
+              viewAll.textContent = `View all ${data.top_queries.length} queries`;
+              viewAll.addEventListener("click", () => {
+                qBody.replaceChildren(
+                  buildGscDataTable(
+                    ["Query", "Clicks", "Impressions", "CTR", "Position"],
+                    queryRows,
+                  ),
+                );
+              });
+              qBody.append(viewAll);
+            }
             queriesSection.append(qBody);
             panel.append(queriesSection);
           }
@@ -1013,36 +1004,52 @@ import "../styles/global.css";
           // Top pages
           if (data.top_pages && data.top_pages.length > 0) {
             const pagesSection = document.createElement("div");
-            pagesSection.className = "card";
-            pagesSection.style.marginTop = "var(--space-4)";
+            pagesSection.className =
+              "ui-card ui-card--spaced ui-card--flush";
             const pHeader = document.createElement("div");
-            pHeader.className = "card__header";
+            pHeader.className = "ui-card__header";
             const pTitle = document.createElement("h3");
+            pTitle.className = "ui-card__heading";
             pTitle.textContent = "Top landing pages";
             pHeader.append(pTitle);
             pagesSection.append(pHeader);
             const pBody = document.createElement("div");
-            pBody.className = "card__body";
-            pBody.style.padding = "0";
+            pBody.className = "ui-card__body";
+            const pageRows = data.top_pages.map((page) => ({
+              primary: page.page,
+              clicks: page.clicks,
+              impressions: page.impressions,
+              ctr: page.ctr !== null ? `${(page.ctr * 100).toFixed(1)}%` : "—",
+              position: page.position !== null ? page.position.toFixed(1) : "—",
+            }));
             const pTable = buildGscDataTable(
               ["Page", "Clicks", "Impressions", "CTR", "Position"],
-              data.top_pages.map((q) => ({
-                primary: q.page,
-                clicks: q.clicks,
-                impressions: q.impressions,
-                ctr: q.ctr !== null ? `${(q.ctr * 100).toFixed(1)}%` : "—",
-                position: q.position !== null ? q.position.toFixed(1) : "—",
-              })),
+              pageRows.slice(0, 5),
             );
             pBody.append(pTable);
+            if (data.top_pages.length > 5) {
+              const viewAll = document.createElement("button");
+              viewAll.type = "button";
+              viewAll.className =
+                "ui-button ui-button--secondary ui-button--sm";
+              viewAll.textContent = `View all ${data.top_pages.length} pages`;
+              viewAll.addEventListener("click", () => {
+                pBody.replaceChildren(
+                  buildGscDataTable(
+                    ["Page", "Clicks", "Impressions", "CTR", "Position"],
+                    pageRows,
+                  ),
+                );
+              });
+              pBody.append(viewAll);
+            }
             pagesSection.append(pBody);
             panel.append(pagesSection);
           }
 
           // Property info (compact)
           const propSection = document.createElement("div");
-          propSection.className = "source-note";
-          propSection.style.marginTop = "var(--space-4)";
+          propSection.className = "ui-notice ui-notice--info";
           propSection.textContent =
             propsResult.data.length === 1
               ? `Property: ${propsResult.data[0].external_property_id}`
