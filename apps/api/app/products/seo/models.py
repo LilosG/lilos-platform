@@ -4,8 +4,10 @@ from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     DateTime,
+    Float,
     ForeignKey,
     ForeignKeyConstraint,
     Integer,
@@ -102,7 +104,22 @@ class SEOPage(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     canonical_url: Mapped[str | None] = mapped_column(String(2000))
     normalization_reasons: Mapped[list[object]] = mapped_column(JSONB, nullable=False)
     http_status: Mapped[int | None] = mapped_column(Integer)
+    content_type: Mapped[str | None] = mapped_column(String(255))
+    title: Mapped[str | None] = mapped_column(String(2000))
+    meta_description: Mapped[str | None] = mapped_column(String(2000))
+    h1: Mapped[str | None] = mapped_column(String(2000))
+    robots_directives: Mapped[list[object]] = mapped_column(JSONB, nullable=False)
+    internal_links: Mapped[list[object]] = mapped_column(JSONB, nullable=False)
+    external_links: Mapped[list[object]] = mapped_column(JSONB, nullable=False)
+    word_count: Mapped[int | None] = mapped_column(Integer)
+    structured_data_present: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false"
+    )
+    content_hash: Mapped[str | None] = mapped_column(String(64))
     indexability: Mapped[str] = mapped_column(String(24), nullable=False)
+    technical_issues: Mapped[list[object]] = mapped_column(JSONB, nullable=False)
+    crawl_depth: Mapped[int | None] = mapped_column(Integer)
+    redirect_destination: Mapped[str | None] = mapped_column(String(2000))
     quality_status: Mapped[str] = mapped_column(String(24), nullable=False)
     observed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
@@ -130,7 +147,11 @@ class SEOCrawlRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
     status: Mapped[str] = mapped_column(String(24), nullable=False)
     max_pages: Mapped[int] = mapped_column(Integer, nullable=False)
+    max_depth: Mapped[int | None] = mapped_column(Integer)
+    crawl_delay_seconds: Mapped[float | None] = mapped_column(Float)
+    stop_reason: Mapped[str | None] = mapped_column(String(500))
     safe_result: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 

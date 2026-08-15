@@ -1,6 +1,7 @@
 import { apiGet, apiRequest, type ApiOutcome } from "./api-client";
 
 export const MAX_CRAWL_PAGES = 20;
+export const MAX_CRAWL_DEPTH = 10;
 export const SEO_ACTIONABLE_OPPORTUNITY_STATUSES = [
   "identified",
   "recommended",
@@ -16,6 +17,11 @@ export function isSEOOpportunityActionable(status: string): boolean {
 export function normalizeCrawlPageLimit(value: number): number {
   if (!Number.isFinite(value)) return MAX_CRAWL_PAGES;
   return Math.min(MAX_CRAWL_PAGES, Math.max(1, Math.trunc(value)));
+}
+
+export function normalizeCrawlDepthLimit(value: number): number {
+  if (!Number.isFinite(value)) return MAX_CRAWL_DEPTH;
+  return Math.min(MAX_CRAWL_DEPTH, Math.max(1, Math.trunc(value)));
 }
 
 export type SEOWebsite = {
@@ -76,24 +82,62 @@ export type SEOSummaryStats = {
   crawl_run_count: number;
 };
 
-export type SEOCrawlResult = {
-  crawl_run_id: string;
+export type SEOCrawlRun = {
+  id: string;
+  website_id: string;
   status: string;
-  safe_result: Record<string, number>;
-  opportunities_created: SEOOpportunity[];
+  max_pages: number;
+  max_depth: number | null;
+  crawl_delay_seconds: number | null;
+  stop_reason: string | null;
+  safe_result: Record<string, unknown>;
+  started_at: string | null;
+  completed_at: string | null;
+  created_at: string | null;
 };
+
+export type SEOPageRecord = {
+  id: string;
+  website_id: string;
+  normalized_url: string;
+  observed_url: string;
+  http_status: number | null;
+  content_type: string | null;
+  title: string | null;
+  meta_description: string | null;
+  h1: string | null;
+  canonical_url: string | null;
+  robots_directives: string[];
+  internal_links_count: number;
+  external_links_count: number;
+  word_count: number | null;
+  structured_data_present: boolean;
+  content_hash: string | null;
+  indexability: string;
+  crawl_depth: number | null;
+  redirect_destination: string | null;
+};
+
+export type SEOCrawlResult = {
+  id: string;
+  status: string;
+  max_pages: number;
+  stop_reason: string | null;
+  safe_result: Record<string, unknown>;
+};
+
+export function crawlTerminalState(status: string): boolean {
+  return ["success", "partial", "error"].includes(status);
+}
 
 export function describeCrawlResult(result: SEOCrawlResult): string {
   const pages = result.safe_result.pages_crawled;
-  const opportunities = result.safe_result.opportunities_found;
   const details: string[] = [`Status: ${result.status}`];
-  if (Number.isFinite(pages)) {
+  if (typeof pages === "number") {
     details.push(`${pages} page${pages === 1 ? "" : "s"} crawled`);
   }
-  if (Number.isFinite(opportunities)) {
-    details.push(
-      `${opportunities} opportunit${opportunities === 1 ? "y" : "ies"} found`,
-    );
+  if (result.stop_reason) {
+    details.push(result.stop_reason);
   }
   return details.join(" · ");
 }
@@ -177,6 +221,8 @@ export function runCrawl(
     workflowRunId: string;
     seedPaths: string[];
     maxPages: number;
+    maxDepth: number;
+    crawlDelaySeconds: number;
     idempotencyKey: string;
   },
 ): Promise<ApiOutcome<SEOCrawlResult>> {
@@ -186,9 +232,37 @@ export function runCrawl(
       workflow_run_id: crawl.workflowRunId,
       seed_paths: crawl.seedPaths,
       max_pages: normalizeCrawlPageLimit(crawl.maxPages),
+      max_depth: normalizeCrawlDepthLimit(crawl.maxDepth),
+      crawl_delay_seconds: crawl.crawlDelaySeconds,
       idempotency_key: crawl.idempotencyKey,
     },
   });
+}
+
+export function fetchCrawlRun(
+  organizationId: string,
+  crawlRunId: string,
+): Promise<ApiOutcome<SEOCrawlRun>> {
+  return apiGet<SEOCrawlRun>(
+    `${base(organizationId)}/crawl-runs/${crawlRunId}`,
+  );
+}
+
+export function fetchCrawlRuns(
+  organizationId: string,
+  websiteId?: string,
+): Promise<ApiOutcome<SEOCrawlRun[]>> {
+  const query = websiteId ? `?website_id=${websiteId}` : "";
+  return apiGet<SEOCrawlRun[]>(`${base(organizationId)}/crawl-runs${query}`);
+}
+
+export function fetchCrawlPages(
+  organizationId: string,
+  crawlRunId: string,
+): Promise<ApiOutcome<SEOPageRecord[]>> {
+  return apiGet<SEOPageRecord[]>(
+    `${base(organizationId)}/crawl-runs/${crawlRunId}/pages`,
+  );
 }
 
 export function fetchSEOSummary(

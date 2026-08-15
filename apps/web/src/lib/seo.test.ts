@@ -33,21 +33,23 @@ describe("describeCrawlResult", () => {
   it("renders the truthful completed crawl result", () => {
     expect(
       describeCrawlResult({
-        crawl_run_id: "crawl-1",
-        status: "completed",
-        safe_result: { pages_crawled: 1, opportunities_found: 2 },
-        opportunities_created: [],
+        id: "crawl-1",
+        status: "success",
+        max_pages: 20,
+        stop_reason: "Crawl completed",
+        safe_result: { pages_crawled: 1 },
       }),
-    ).toBe("Status: completed · 1 page crawled · 2 opportunities found");
+    ).toBe("Status: success · 1 page crawled · Crawl completed");
   });
 
   it("does not invent result counts that the API omitted", () => {
     expect(
       describeCrawlResult({
-        crawl_run_id: "crawl-2",
+        id: "crawl-2",
         status: "partial",
+        max_pages: 20,
+        stop_reason: null,
         safe_result: {},
-        opportunities_created: [],
       }),
     ).toBe("Status: partial");
   });
