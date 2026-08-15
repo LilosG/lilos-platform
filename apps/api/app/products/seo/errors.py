@@ -63,6 +63,11 @@ class SEOCrawlTargetInvalidError(ConflictError):
     public_message = "The crawl target is not within the confirmed website scope."
 
 
+class SEOCrawlRunNotFoundError(NotFoundError):
+    code = "SEO_CRAWL_RUN_NOT_FOUND"
+    public_message = "The requested crawl run was not found."
+
+
 class SEOQueryInvalidError(ConflictError):
     code = "SEO_QUERY_INVALID"
     public_message = "The SEO query parameters are invalid."

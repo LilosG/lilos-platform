@@ -2,16 +2,16 @@
 
 import hashlib
 import ipaddress
-import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import cast
+from typing import Any, cast
 from urllib.parse import quote, unquote, urlsplit, urlunsplit
 from uuid import UUID
 
 import httpx
 from sqlalchemy import Select, func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.app.audit.contracts import AuditEventCreate
@@ -19,6 +19,7 @@ from apps.api.app.audit.enums import AuditActorType, AuditResult
 from apps.api.app.audit.metadata import JsonValue
 from apps.api.app.audit.repository import AuditEventRepository
 from apps.api.app.audit.service import AuditEventService
+from apps.api.app.execution.models import Job, WorkflowRun
 from apps.api.app.execution.service import ExecutionService
 from apps.api.app.integrations.models import IntegrationConnection
 from apps.api.app.locations.models import Location
@@ -33,6 +34,14 @@ from apps.api.app.products.seo.contracts import (
     RecommendationDecision,
     SearchPropertyCreate,
     WebsiteCreate,
+)
+from apps.api.app.products.seo.crawl_engine import (
+    LILOS_USER_AGENT,
+    CrawlConfig,
+    CrawlEngine,
+    CrawlReport,
+    host_of,
+    normalize_crawl_url,
 )
 from apps.api.app.products.seo.errors import (
     SEOImplementationTaskNotFoundError,
@@ -141,54 +150,6 @@ def opportunity_score(
 
 def metric_value(value: int | float | None, quality: str) -> dict[str, object]:
     return {"value": value, "state": "missing" if value is None else quality}
-
-
-TITLE_PATTERN = re.compile(r"<title[^>]*>(.*?)</title>", re.IGNORECASE | re.DOTALL)
-META_DESCRIPTION_PATTERN = re.compile(
-    r'<meta[^>]+name=["\']description["\'][^>]+content=["\']([^"\']*)["\']', re.IGNORECASE
-)
-CANONICAL_PATTERN = re.compile(
-    r'<link[^>]+rel=["\']canonical["\'][^>]+href=["\']([^"\']*)["\']', re.IGNORECASE
-)
-H1_PATTERN = re.compile(r"<h1[^>]*>", re.IGNORECASE)
-
-
-class PageSignals:
-    def __init__(self, http_status: int, body: str) -> None:
-        self.http_status = http_status
-        title_match = TITLE_PATTERN.search(body)
-        self.title = title_match.group(1).strip() if title_match else None
-        description_match = META_DESCRIPTION_PATTERN.search(body)
-        self.meta_description = description_match.group(1).strip() if description_match else None
-        canonical_match = CANONICAL_PATTERN.search(body)
-        self.canonical_url = canonical_match.group(1).strip() if canonical_match else None
-        self.h1_count = len(H1_PATTERN.findall(body))
-
-    def indexability(self) -> str:
-        return "indexable" if self.http_status == 200 else "not_indexable"
-
-    def quality_status(self) -> str:
-        issues = self.technical_issues()
-        return "issues_detected" if issues else "clean"
-
-    def technical_issues(self) -> list[str]:
-        issues = []
-        if self.http_status != 200:
-            issues.append("non_200_status")
-        if not self.title:
-            issues.append("missing_title")
-        if not self.meta_description:
-            issues.append("missing_meta_description")
-        if self.h1_count == 0:
-            issues.append("missing_h1")
-        if self.h1_count > 1:
-            issues.append("multiple_h1")
-        return issues
-
-
-async def fetch_page(client: httpx.AsyncClient, url: str) -> PageSignals:
-    response = await client.get(url, timeout=10.0, follow_redirects=True)
-    return PageSignals(response.status_code, response.text)
 
 
 class SEOService:
@@ -389,176 +350,371 @@ class SEOService:
             )
         )
 
-    async def run_crawl(
+    async def enqueue_crawl(
         self,
         session: AsyncSession,
         organization_id: UUID,
         website_id: UUID,
-        workflow_run_id: UUID,
         command: CrawlRequest,
         *,
         actor_id: UUID | None,
         correlation_id: str,
-    ) -> tuple[SEOCrawlRun, list[SEOOpportunity]]:
-        """Run a bounded, same-host, read-only crawl of the confirmed website.
+    ) -> SEOCrawlRun:
+        """HTTP path: create a queued crawl run and enqueue the worker job.
+        Returns promptly — the crawl executes in the worker."""
+        website = await self.get_website(session, organization_id, website_id)
 
-        Requires no external credentials — this fetches the tenant's own
-        confirmed public website only, validated by `validate_crawl_target`
-        against the website's canonical origin host, with a small page cap
-        and a strict timeout.
-        """
-        existing_run = await session.scalar(
+        existing = await session.scalar(
             select(SEOCrawlRun).where(
                 SEOCrawlRun.organization_id == organization_id,
                 SEOCrawlRun.idempotency_key == command.idempotency_key,
             )
         )
-        if existing_run:
-            opportunities = list(
-                await session.scalars(
-                    select(SEOOpportunity).where(
-                        SEOOpportunity.organization_id == organization_id,
-                        SEOOpportunity.website_id == website_id,
-                    )
-                )
+        if existing:
+            return existing
+
+        workflow_run = await session.scalar(
+            select(WorkflowRun)
+            .where(
+                WorkflowRun.organization_id == organization_id,
+                WorkflowRun.id == command.workflow_run_id,
             )
-            return existing_run, opportunities
-
-        workflow_run = await self.execution.resolve_for_consumption(
-            session, organization_id, workflow_run_id, "seo.crawl_or_analysis"
+            .with_for_update()
         )
-        website = await self.get_website(session, organization_id, website_id)
-        allowed_host = urlsplit(normalize_url(website.canonical_origin).value).hostname
-        allowed_hosts = frozenset({allowed_host} if allowed_host else set())
+        if not workflow_run:
+            raise ValueError("workflow run not found")
 
-        targets: list[str] = []
-        for seed_path in command.seed_paths[: command.max_pages]:
-            if seed_path.startswith("http"):
-                candidate = seed_path
-            else:
-                candidate = website.canonical_origin.rstrip("/") + "/" + seed_path.lstrip("/")
-            validate_crawl_target(candidate, allowed_hosts)
-            targets.append(normalize_url(candidate).value)
-
-        created_opportunities: list[SEOOpportunity] = []
-        async with self._http_client_factory() as client:
-            for target_url in targets:
-                try:
-                    signals = await fetch_page(client, target_url)
-                except httpx.HTTPError:
-                    signals = PageSignals(0, "")
-                digest = hashlib.sha256(target_url.encode()).hexdigest()
-                page = await session.scalar(
-                    select(SEOPage).where(
-                        SEOPage.website_id == website.id, SEOPage.normalized_url == target_url
-                    )
-                )
-                if page is None:
-                    page = SEOPage(
-                        organization_id=organization_id,
-                        website_id=website.id,
-                        normalized_url=target_url,
-                        observed_url=target_url,
-                        canonical_url=signals.canonical_url,
-                        normalization_reasons=[],
-                        http_status=signals.http_status,
-                        indexability=signals.indexability(),
-                        quality_status=signals.quality_status(),
-                        observed_at=datetime.now(UTC),
-                    )
-                    session.add(page)
-                else:
-                    page.http_status = signals.http_status
-                    page.indexability = signals.indexability()
-                    page.quality_status = signals.quality_status()
-                    page.canonical_url = signals.canonical_url
-                    page.observed_at = datetime.now(UTC)
-                await session.flush()
-
-                for issue in signals.technical_issues():
-                    dedup_key = f"{digest}.{issue}"
-                    score, explanation = opportunity_score(
-                        search_potential=40,
-                        business_value=40,
-                        relevance=60,
-                        confidence=90,
-                        urgency=30,
-                        effort=10,
-                    )
-                    existing_opportunity = await session.scalar(
-                        select(SEOOpportunity).where(
-                            SEOOpportunity.organization_id == organization_id,
-                            SEOOpportunity.deduplication_key == dedup_key,
-                            SEOOpportunity.active_marker == "active",
-                        )
-                    )
-                    if existing_opportunity:
-                        continue
-                    opportunity = SEOOpportunity(
-                        organization_id=organization_id,
-                        location_id=website.location_id,
-                        website_id=website.id,
-                        page_id=page.id,
-                        opportunity_type=issue,
-                        deduplication_key=dedup_key,
-                        active_marker="active",
-                        evidence={"url": target_url, "issue": issue},
-                        source_versions=["crawl.v1"],
-                        score_version=1,
-                        priority_score=score,
-                        score_explanation=explanation,
-                        status="identified",
-                        version=1,
-                    )
-                    session.add(opportunity)
-                    await session.flush()
-                    created_opportunities.append(opportunity)
+        workflow_run.input_document = {
+            "website_id": str(website.id),
+            "crawl_run_id": "",  # filled after flush
+            "workflow_run_id": str(command.workflow_run_id),
+            "idempotency_key": command.idempotency_key,
+            "max_pages": command.max_pages,
+            "max_depth": command.max_depth,
+            "crawl_delay_seconds": command.crawl_delay_seconds,
+            "request_timeout_seconds": command.request_timeout_seconds,
+            "total_timeout_seconds": command.total_timeout_seconds,
+            "max_redirects": command.max_redirects,
+            "concurrency": command.concurrency,
+            "retry_limit": command.retry_limit,
+            "seed_paths": list(command.seed_paths),
+        }
+        await session.flush()
 
         crawl_run = SEOCrawlRun(
             organization_id=organization_id,
             website_id=website.id,
             workflow_run_id=workflow_run.id,
             idempotency_key=command.idempotency_key,
-            status="completed",
+            status="queued",
             max_pages=command.max_pages,
-            safe_result={
-                "pages_crawled": len(targets),
-                "opportunities_found": len(created_opportunities),
-            },
-            completed_at=datetime.now(UTC),
+            max_depth=command.max_depth,
+            crawl_delay_seconds=command.crawl_delay_seconds,
+            safe_result={},
         )
         session.add(crawl_run)
-        workflow_run.status = "completed"
-        workflow_run.completed_at = datetime.now(UTC)
         await session.flush()
+
+        workflow_run.input_document = {
+            **workflow_run.input_document,
+            "crawl_run_id": str(crawl_run.id),
+        }
+        await session.flush()
+
+        session.add(
+            Job(
+                organization_id=organization_id,
+                workflow_run_id=workflow_run.id,
+                job_type="workflow.execute",
+                status="queued",
+                idempotency_key=f"run:{workflow_run.id}",
+                payload={"run_id": str(workflow_run.id)},
+            )
+        )
+        await session.flush()
+
         await self._audit(
             session,
-            event="seo.crawl.completed",
+            event="seo.crawl.queued",
             organization_id=organization_id,
             location_id=website.location_id,
             actor_id=actor_id,
             resource_type="seo_website",
             resource_id=website.id,
             correlation_id=correlation_id,
-            summary=(
-                f"Crawl completed: {len(targets)} pages, "
-                f"{len(created_opportunities)} opportunities."
-            ),
+            summary=f"Crawl queued: max={command.max_pages} pages, depth={command.max_depth}.",
             metadata={"crawl_run_id": str(crawl_run.id)},
         )
-        for opportunity in created_opportunities:
-            await self._notify(
-                session,
-                organization_id=organization_id,
-                location_id=website.location_id,
-                event_type="seo.opportunity.identified",
-                idempotency_key=f"seo.opportunity.{opportunity.id}",
-                context={
-                    "opportunity_id": str(opportunity.id),
-                    "type": opportunity.opportunity_type,
+        return crawl_run
+
+    async def execute_crawl(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        crawl_run_id: UUID,
+        *,
+        correlation_id: str,
+    ) -> tuple[SEOCrawlRun, list[SEOOpportunity]]:
+        """Worker path: run the crawl engine to completion, persisting pages incrementally."""
+        crawl_run = await session.scalar(
+            select(SEOCrawlRun)
+            .where(
+                SEOCrawlRun.organization_id == organization_id,
+                SEOCrawlRun.id == crawl_run_id,
+            )
+            .with_for_update()
+        )
+        if not crawl_run:
+            raise ValueError("crawl run not found")
+        if crawl_run.status not in ("queued", "running"):
+            if crawl_run.status in ("success", "partial", "error"):
+                return crawl_run, []
+            raise ValueError(f"crawl run not executable: {crawl_run.status}")
+
+        website = await self.get_website(session, organization_id, crawl_run.website_id)
+        now = datetime.now(UTC)
+        crawl_run.status = "running"
+        crawl_run.started_at = now
+        await session.flush()
+
+        allowed_host_raw = host_of(normalize_crawl_url(website.canonical_origin))
+        if not allowed_host_raw:
+            crawl_run.status = "error"
+            crawl_run.stop_reason = "Could not determine host from canonical origin"
+            await session.flush()
+            return crawl_run, []
+        allowed_host = allowed_host_raw.casefold()
+
+        workflow_run = await session.scalar(
+            select(WorkflowRun).where(
+                WorkflowRun.organization_id == organization_id,
+                WorkflowRun.id == crawl_run.workflow_run_id,
+            )
+        )
+        input_doc: dict[str, Any] = workflow_run.input_document if workflow_run else {}
+
+        seeds: list[str] = [website.canonical_origin.rstrip("/") + "/"]
+        seed_paths = input_doc.get("seed_paths", ["/"])
+        if isinstance(seed_paths, list):
+            for sp in seed_paths:
+                if isinstance(sp, str):
+                    if sp.startswith("http"):
+                        seeds.append(sp)
+                    else:
+                        seeds.append(website.canonical_origin.rstrip("/") + "/" + sp.lstrip("/"))
+
+        seeds = list(dict.fromkeys(seeds))
+
+        config = CrawlConfig(
+            base_origin=f"{urlsplit(website.canonical_origin).scheme}://{allowed_host_raw}",
+            allowed_host=allowed_host,
+            seeds=tuple(seeds),
+            max_pages=crawl_run.max_pages,
+            max_depth=int(input_doc.get("max_depth", 3)),
+            crawl_delay=float(input_doc.get("crawl_delay_seconds", 1.0)),
+            request_timeout=float(input_doc.get("request_timeout_seconds", 10.0)),
+            total_timeout=float(input_doc.get("total_timeout_seconds", 600.0)),
+            max_redirects=int(input_doc.get("max_redirects", 5)),
+            concurrency=int(input_doc.get("concurrency", 4)),
+            retry_limit=int(input_doc.get("retry_limit", 2)),
+            user_agent=LILOS_USER_AGENT,
+            query_param_policy="keep",
+        )
+
+        created_opportunities: list[SEOOpportunity] = []
+
+        async def persist_page(page_data: Any) -> None:
+            from apps.api.app.products.seo.crawl_engine import CrawledPage
+
+            cp: CrawledPage = page_data
+
+            upsert_values = {
+                "organization_id": organization_id,
+                "website_id": website.id,
+                "normalized_url": cp.url,
+                "observed_url": cp.observed_url,
+                "canonical_url": cp.canonical_url,
+                "normalization_reasons": [],
+                "http_status": cp.http_status,
+                "content_type": cp.content_type,
+                "title": cp.title,
+                "meta_description": cp.meta_description,
+                "h1": cp.h1,
+                "robots_directives": list(cp.robots_directives),
+                "internal_links": list(cp.internal_links),
+                "external_links": list(cp.external_links),
+                "word_count": cp.word_count,
+                "structured_data_present": cp.structured_data_present,
+                "content_hash": cp.content_hash,
+                "indexability": cp.indexability,
+                "technical_issues": list(cp.technical_issues),
+                "crawl_depth": cp.depth,
+                "redirect_destination": cp.redirect_destination,
+                "quality_status": cp.quality_status,
+                "observed_at": datetime.now(UTC),
+            }
+            stmt = pg_insert(SEOPage).values(**upsert_values)
+            stmt = stmt.on_conflict_do_update(
+                constraint="uq_seo_page_normalized_url",
+                set_={
+                    "observed_url": cp.observed_url,
+                    "canonical_url": cp.canonical_url,
+                    "http_status": cp.http_status,
+                    "content_type": cp.content_type,
+                    "title": cp.title,
+                    "meta_description": cp.meta_description,
+                    "h1": cp.h1,
+                    "robots_directives": list(cp.robots_directives),
+                    "internal_links": list(cp.internal_links),
+                    "external_links": list(cp.external_links),
+                    "word_count": cp.word_count,
+                    "structured_data_present": cp.structured_data_present,
+                    "content_hash": cp.content_hash,
+                    "indexability": cp.indexability,
+                    "technical_issues": list(cp.technical_issues),
+                    "crawl_depth": cp.depth,
+                    "redirect_destination": cp.redirect_destination,
+                    "quality_status": cp.quality_status,
+                    "observed_at": datetime.now(UTC),
                 },
             )
+            result = await session.execute(stmt.returning(SEOPage))
+            page = result.scalar_one()
+
+            digest = hashlib.sha256(cp.url.encode()).hexdigest()
+            for issue in cp.technical_issues:
+                dedup_key = f"{digest}.{issue}"
+                score, explanation = opportunity_score(
+                    search_potential=40,
+                    business_value=40,
+                    relevance=60,
+                    confidence=90,
+                    urgency=30,
+                    effort=10,
+                )
+                existing_opportunity = await session.scalar(
+                    select(SEOOpportunity).where(
+                        SEOOpportunity.organization_id == organization_id,
+                        SEOOpportunity.deduplication_key == dedup_key,
+                        SEOOpportunity.active_marker == "active",
+                    )
+                )
+                if existing_opportunity:
+                    continue
+                opportunity = SEOOpportunity(
+                    organization_id=organization_id,
+                    location_id=website.location_id,
+                    website_id=website.id,
+                    page_id=page.id,
+                    opportunity_type=issue,
+                    deduplication_key=dedup_key,
+                    active_marker="active",
+                    evidence={"url": cp.url, "issue": issue},
+                    source_versions=["crawl.v1"],
+                    score_version=1,
+                    priority_score=score,
+                    score_explanation=explanation,
+                    status="identified",
+                    version=1,
+                )
+                session.add(opportunity)
+                await session.flush()
+                created_opportunities.append(opportunity)
+
+        report: CrawlReport = CrawlReport(
+            terminal_state="error", reason="Engine did not produce a report"
+        )
+        async with self._http_client_factory() as client:
+            engine = CrawlEngine(config, client)
+            report = await engine.crawl(on_page=persist_page)
+
+        crawl_run.status = report.terminal_state
+        crawl_run.stop_reason = report.reason
+        crawl_run.completed_at = datetime.now(UTC)
+        crawl_run.safe_result = {
+            "pages_crawled": report.pages_fetched,
+            "pages_queued": report.pages_queued,
+            "max_depth_reached": report.max_depth_reached,
+            "robots_available": report.robots_available,
+            "robots_disallow_count": len(report.robots_disallowed),
+            "robots_disallowed": list(report.robots_disallowed),
+            "sitemap_files": list(report.sitemap_file_urls),
+            "sitemap_page_count": report.sitemap_page_count,
+            "sitemap_page_urls": list(report.sitemap_page_urls),
+            "sitemap_not_reached": list(report.sitemap_not_reached),
+            "crawled_not_in_sitemap": list(report.crawled_not_in_sitemap),
+            "sitemap_non_indexable": list(report.sitemap_non_indexable),
+        }
+        await session.flush()
+
+        await self._audit(
+            session,
+            event=f"seo.crawl.{report.terminal_state}",
+            organization_id=organization_id,
+            location_id=website.location_id,
+            actor_id=None,
+            resource_type="seo_website",
+            resource_id=website.id,
+            correlation_id=correlation_id,
+            summary=(
+                f"Crawl {report.terminal_state}: {report.pages_fetched} pages fetched, "
+                f"{report.sitemap_page_count} sitemap URLs. {report.reason}"
+            ),
+            metadata={
+                "crawl_run_id": str(crawl_run.id),
+                "pages_fetched": report.pages_fetched,
+            },
+        )
         return crawl_run, created_opportunities
+
+    async def get_crawl_run(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        crawl_run_id: UUID,
+    ) -> SEOCrawlRun | None:
+        run = await session.scalar(
+            select(SEOCrawlRun).where(
+                SEOCrawlRun.organization_id == organization_id,
+                SEOCrawlRun.id == crawl_run_id,
+            )
+        )
+        return run
+
+    async def list_crawl_runs(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        *,
+        website_id: UUID | None = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> list[SEOCrawlRun]:
+        stmt: Select[tuple[SEOCrawlRun]] = select(SEOCrawlRun).where(
+            SEOCrawlRun.organization_id == organization_id
+        )
+        if website_id:
+            stmt = stmt.where(SEOCrawlRun.website_id == website_id)
+        stmt = stmt.order_by(SEOCrawlRun.created_at.desc()).limit(limit).offset(offset)
+        return list(await session.scalars(stmt))
+
+    async def list_pages(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        *,
+        website_id: UUID | None = None,
+        crawl_run_id: UUID | None = None,
+        limit: int = 500,
+        offset: int = 0,
+    ) -> list[SEOPage]:
+        stmt: Select[tuple[SEOPage]] = select(SEOPage).where(
+            SEOPage.organization_id == organization_id
+        )
+        if website_id:
+            stmt = stmt.where(SEOPage.website_id == website_id)
+        stmt = stmt.order_by(SEOPage.crawl_depth, SEOPage.observed_at).limit(limit).offset(offset)
+        return list(await session.scalars(stmt))
 
     async def list_opportunities(
         self,
