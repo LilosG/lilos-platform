@@ -10,6 +10,7 @@ import asyncio
 from uuid import uuid4
 
 import pytest
+from pydantic import PostgresDsn, TypeAdapter
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -22,6 +23,8 @@ from apps.api.app.execution.runtime import RuntimeOptions, WorkerBackend
 from apps.api.app.execution.service import ExecutionService
 from apps.api.app.organizations.enums import OrganizationStatus, OrganizationType
 from apps.api.app.organizations.models import Organization
+
+POSTGRES_DSN_ADAPTER = TypeAdapter(PostgresDsn)
 
 
 async def _sleeping_handler(
@@ -75,7 +78,7 @@ async def test_long_running_job_renews_lease_and_completes(
         monkeypatch.setenv("LILOS_MIGRATION_DATABASE_URL", postgresql_test_url)
         settings = Settings(
             environment=EnvironmentName.TEST,
-            database_url=postgresql_test_url,
+            database_url=POSTGRES_DSN_ADAPTER.validate_python(postgresql_test_url),
             release="lease-renew-test",
         )
         runtime = create_database_runtime(settings)

@@ -3,12 +3,13 @@
 import hashlib
 import json
 from datetime import UTC, datetime, timedelta
-from typing import cast
+from typing import Any, cast
 from uuid import UUID
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from croniter import croniter
 from sqlalchemy import func, or_, select, update
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.app.audit.contracts import AuditEventCreate
@@ -507,18 +508,21 @@ class ExecutionService:
         row was updated.
         """
         new_expiry = datetime.now(UTC) + timedelta(seconds=lease_seconds)
-        result = await session.execute(
-            update(Job)
-            .where(
-                Job.organization_id == organization_id,
-                Job.id == job_id,
-                Job.status == "claimed",
-                Job.lease_owner == worker_id,
-                Job.cancellation_requested_at.is_(None),
-            )
-            .values(lease_expires_at=new_expiry)
+        result = cast(
+            "CursorResult[Any]",
+            await session.execute(
+                update(Job)
+                .where(
+                    Job.organization_id == organization_id,
+                    Job.id == job_id,
+                    Job.status == "claimed",
+                    Job.lease_owner == worker_id,
+                    Job.cancellation_requested_at.is_(None),
+                )
+                .values(lease_expires_at=new_expiry)
+            ),
         )
-        return result.rowcount == 1
+        return bool(result.rowcount == 1)
 
     # ------------------------------------------------------------------
     # Read-model queries for Automation & Agents product surface
