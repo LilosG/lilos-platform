@@ -50,7 +50,6 @@ async def test_long_running_job_renews_lease_and_completes(
     previous = handlers._REGISTRY.get(key)
     handlers.register_workflow_handler(key, _sleeping_handler)
     svc = ExecutionService()
-    worker_id = f"worker-{uuid4().hex[:8]}"
     try:
         async with workflows_session_factory.begin() as session:
             org = Organization(

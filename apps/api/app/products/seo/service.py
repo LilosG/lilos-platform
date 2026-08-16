@@ -625,10 +625,9 @@ class SEOService:
             terminal_state="error", reason="Engine did not produce a report"
         )
         try:
-            async with session.begin_nested():
-                async with self._http_client_factory() as client:
-                    engine = CrawlEngine(config, client)
-                    report = await engine.crawl(on_page=persist_page)
+            async with session.begin_nested(), self._http_client_factory() as client:
+                engine = CrawlEngine(config, client)
+                report = await engine.crawl(on_page=persist_page)
         except Exception as exc:
             report = CrawlReport(
                 terminal_state="error",
