@@ -98,16 +98,17 @@ async def test_long_running_job_renews_lease_and_completes(
 
         async with workflows_session_factory.begin() as session:
             job = (
-                await session.execute(
-                    select(Job)
-                    .where(Job.organization_id == org.id)
-                    .order_by(Job.created_at)
+                (
+                    await session.execute(
+                        select(Job).where(Job.organization_id == org.id).order_by(Job.created_at)
+                    )
                 )
-            ).scalars().first()
+                .scalars()
+                .first()
+            )
             assert job is not None
             assert job.status == "completed", (
-                f"expected completed, got {job.status} "
-                f"(attempt {job.attempt_count})"
+                f"expected completed, got {job.status} (attempt {job.attempt_count})"
             )
             assert job.lease_owner is None
             assert job.lease_expires_at is None
