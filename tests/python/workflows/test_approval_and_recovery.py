@@ -432,9 +432,7 @@ async def test_retryable_failure_schedules_retry_with_backoff(
         session.add(org)
         await session.flush()
 
-        wf_def = WorkflowDefinition(
-            key="gbp.sync", name="GBP Sync", owner="gbp", status="active"
-        )
+        wf_def = WorkflowDefinition(key="gbp.sync", name="GBP Sync", owner="gbp", status="active")
         session.add(wf_def)
         await session.flush()
         wf_ver = WorkflowVersion(
@@ -507,9 +505,7 @@ async def test_permanent_failure_marks_failed_immediately(
         session.add(org)
         await session.flush()
 
-        wf_def = WorkflowDefinition(
-            key="gbp.sync", name="GBP Sync", owner="gbp", status="active"
-        )
+        wf_def = WorkflowDefinition(key="gbp.sync", name="GBP Sync", owner="gbp", status="active")
         session.add(wf_def)
         await session.flush()
         wf_ver = WorkflowVersion(
@@ -578,9 +574,7 @@ async def test_terminal_failure_after_max_attempts(
         session.add(org)
         await session.flush()
 
-        wf_def = WorkflowDefinition(
-            key="gbp.sync", name="GBP Sync", owner="gbp", status="active"
-        )
+        wf_def = WorkflowDefinition(key="gbp.sync", name="GBP Sync", owner="gbp", status="active")
         session.add(wf_def)
         await session.flush()
         wf_ver = WorkflowVersion(
@@ -650,9 +644,7 @@ async def test_succeeded_outcome_marks_completed(
         session.add(org)
         await session.flush()
 
-        wf_def = WorkflowDefinition(
-            key="gbp.sync", name="GBP Sync", owner="gbp", status="active"
-        )
+        wf_def = WorkflowDefinition(key="gbp.sync", name="GBP Sync", owner="gbp", status="active")
         session.add(wf_def)
         await session.flush()
         wf_ver = WorkflowVersion(

@@ -35,18 +35,29 @@ class FakeProvider:
 
 
 def _request(**overrides: Any) -> AIGatewayRequest:
-    base = {
-        "organization_id": uuid4(),
+    org_id = uuid4()
+    fact_id = uuid4()
+    kwargs: dict[str, Any] = {
+        "organization_id": org_id,
         "location_id": None,
         "task_key": "content.draft_revision",
         "input_document": {"audience": "local"},
         "input_references": (),
-        "approved_fact_revision_ids": (uuid4(),),
+        "approved_fact_revision_ids": (fact_id,),
         "maximum_cost_microunits": 10_000,
         "maximum_latency_ms": 5_000,
     }
-    base.update(overrides)
-    return AIGatewayRequest(**base)
+    kwargs.update(overrides)
+    return AIGatewayRequest(
+        organization_id=kwargs["organization_id"],
+        location_id=kwargs["location_id"],
+        task_key=kwargs["task_key"],
+        input_document=kwargs["input_document"],
+        input_references=kwargs["input_references"],
+        approved_fact_revision_ids=kwargs["approved_fact_revision_ids"],
+        maximum_cost_microunits=kwargs["maximum_cost_microunits"],
+        maximum_latency_ms=kwargs["maximum_latency_ms"],
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -65,9 +76,7 @@ async def test_gateway_requires_approved_facts() -> None:
 async def test_gateway_rejects_secret_bearing_input() -> None:
     gateway = AIGateway(FakeProvider({"draft": "x"}))
     with pytest.raises(ValueError, match="secret"):
-        await gateway.execute(
-            _request(input_document={"audience": "local", "api_key": "sk-123"})
-        )
+        await gateway.execute(_request(input_document={"audience": "local", "api_key": "sk-123"}))
 
 
 @pytest.mark.anyio
@@ -167,9 +176,7 @@ async def test_deterministic_provider_is_clearly_identified() -> None:
 
 
 def test_factory_deterministic_allowed_outside_production() -> None:
-    settings = Settings(
-        environment=EnvironmentName.TEST, ai_provider="deterministic"
-    )
+    settings = Settings(environment=EnvironmentName.TEST, ai_provider="deterministic")
     provider = resolve_ai_provider(settings)
     assert isinstance(provider, DeterministicAIProvider)
 
@@ -188,9 +195,7 @@ def test_factory_deterministic_rejected_in_production() -> None:
 
 
 def test_factory_openrouter_requires_key() -> None:
-    settings = Settings(
-        environment=EnvironmentName.TEST, ai_provider="openrouter"
-    )
+    settings = Settings(environment=EnvironmentName.TEST, ai_provider="openrouter")
     with pytest.raises(AIProviderConfigurationError):
         resolve_ai_provider(settings)
 
@@ -208,9 +213,7 @@ def test_factory_openrouter_builds_provider_with_key(
 
 
 def test_factory_unknown_provider_rejected() -> None:
-    settings = Settings(
-        environment=EnvironmentName.TEST, ai_provider="nonexistent"
-    )
+    settings = Settings(environment=EnvironmentName.TEST, ai_provider="nonexistent")
     with pytest.raises(AIProviderConfigurationError):
         resolve_ai_provider(settings)
 

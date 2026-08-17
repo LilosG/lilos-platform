@@ -1292,9 +1292,7 @@ async def _handle_gbp_sync(
             if len(confirmed) == 1:
                 location = confirmed[0]
             else:
-                return JobOutcome(
-                    result="permanent_failure", safe_error="GBP_LOCATION_AMBIGUOUS"
-                )
+                return JobOutcome(result="permanent_failure", safe_error="GBP_LOCATION_AMBIGUOUS")
         else:
             return JobOutcome(result="permanent_failure", safe_error="GBP_LOCATION_NOT_FOUND")
     else:
@@ -1398,9 +1396,7 @@ async def _handle_reviews_ingest(
             if len(confirmed) == 1:
                 location = confirmed[0]
             else:
-                return JobOutcome(
-                    result="permanent_failure", safe_error="GBP_LOCATION_AMBIGUOUS"
-                )
+                return JobOutcome(result="permanent_failure", safe_error="GBP_LOCATION_AMBIGUOUS")
         else:
             return JobOutcome(result="permanent_failure", safe_error="GBP_LOCATION_NOT_FOUND")
     else:

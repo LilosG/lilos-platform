@@ -156,15 +156,11 @@ class OpenRouterProvider:
         # Extract the assistant message content
         choices = body.get("choices", [])
         if not choices:
-            raise AIProviderError(
-                "provider", "AI provider returned no completion choices"
-            )
+            raise AIProviderError("provider", "AI provider returned no completion choices")
         message = choices[0].get("message", {})
         content_text = str(message.get("content", "")).strip()
         if not content_text:
-            raise AIProviderError(
-                "provider", "AI provider returned empty content"
-            )
+            raise AIProviderError("provider", "AI provider returned empty content")
 
         # Parse the JSON content
         try:
@@ -176,9 +172,7 @@ class OpenRouterProvider:
 
         draft = str(parsed.get("draft", "")).strip()
         if not draft:
-            raise AIProviderError(
-                "provider", "AI provider returned content with no draft field"
-            )
+            raise AIProviderError("provider", "AI provider returned content with no draft field")
 
         # Usage metadata
         usage = body.get("usage", {}) or {}

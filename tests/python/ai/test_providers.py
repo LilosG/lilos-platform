@@ -39,9 +39,7 @@ class FakeClient:
         return self.response
 
 
-def _fake_http(
-    monkeypatch: pytest.MonkeyPatch, response: FakeResponse
-) -> FakeClient:
+def _fake_http(monkeypatch: pytest.MonkeyPatch, response: FakeResponse) -> FakeClient:
     client = FakeClient(response)
 
     def factory(*args: object, **kwargs: object) -> FakeClient:

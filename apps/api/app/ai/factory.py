@@ -49,8 +49,7 @@ def resolve_ai_provider(settings: Settings | None = None) -> AIProvider:
         )
 
     raise AIProviderConfigurationError(
-        f"Unknown AI provider '{provider_key}'. "
-        "Supported values: deterministic, openrouter."
+        f"Unknown AI provider '{provider_key}'. Supported values: deterministic, openrouter."
     )
 
 

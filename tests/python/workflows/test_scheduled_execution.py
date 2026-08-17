@@ -228,9 +228,7 @@ async def test_scheduled_execution_end_to_end(
         assert dispatched is True, "scheduler must dispatch the due schedule"
 
         async with workflows_session_factory() as session:
-            schedule = await session.scalar(
-                select(Schedule).where(Schedule.key.like("p5-sched-%"))
-            )
+            schedule = await session.scalar(select(Schedule).where(Schedule.key.like("p5-sched-%")))
             assert schedule is not None
             schedule_id = schedule.id
             # Authoritative schedule state advanced atomically
@@ -250,9 +248,7 @@ async def test_scheduled_execution_end_to_end(
             run_id = run.id
             assert run.status == "queued"
             assert run.location_id == location_id
-            job = await session.scalar(
-                select(Job).where(Job.workflow_run_id == run_id)
-            )
+            job = await session.scalar(select(Job).where(Job.workflow_run_id == run_id))
             assert job is not None
             assert job.status == "queued"
             assert job.job_type == "workflow.execute"
