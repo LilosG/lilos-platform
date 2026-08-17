@@ -163,9 +163,13 @@ import "../styles/global.css";
           (schedule) => schedule.status === "active",
         ).length;
         const running = runs?.filter((run) =>
-          ["queued", "running", "retry_scheduled", "waiting", "waiting_approval"].includes(
-            run.status,
-          ),
+          [
+            "queued",
+            "running",
+            "retry_scheduled",
+            "waiting",
+            "waiting_approval",
+          ].includes(run.status),
         ).length;
         panel.append(
           metricCard(
@@ -314,7 +318,8 @@ import "../styles/global.css";
             : end;
         const seconds = Math.max(0, Math.round((end - start) / 1000));
         if (seconds < 60) return `${seconds}s`;
-        if (seconds < 3600) return `${Math.round(seconds / 60)}m ${seconds % 60}s`;
+        if (seconds < 3600)
+          return `${Math.round(seconds / 60)}m ${seconds % 60}s`;
         return `${Math.floor(seconds / 3600)}h ${Math.round((seconds % 3600) / 60)}m`;
       }
 
@@ -405,7 +410,9 @@ import "../styles/global.css";
                 header: "Workflow",
                 render: (schedule: WorkflowScheduleEntry) =>
                   cellMeta(
-                    schedule.workflow_name ?? schedule.workflow_key ?? "Automation",
+                    schedule.workflow_name ??
+                      schedule.workflow_key ??
+                      "Automation",
                     scheduleLabel(schedule.cron_expression),
                   ),
               },
@@ -436,7 +443,9 @@ import "../styles/global.css";
                 key: "nextRun",
                 header: "Next run",
                 render: (schedule: WorkflowScheduleEntry) =>
-                  schedule.next_run_at ? formatTime(schedule.next_run_at) : "Not scheduled",
+                  schedule.next_run_at
+                    ? formatTime(schedule.next_run_at)
+                    : "Not scheduled",
               },
             ],
             items,
