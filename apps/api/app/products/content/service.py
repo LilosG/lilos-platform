@@ -10,7 +10,8 @@ from uuid import UUID
 from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from apps.api.app.ai.gateway import AIGateway, AIGatewayRequest, DeterministicAIProvider
+from apps.api.app.ai.factory import build_ai_gateway
+from apps.api.app.ai.gateway import AIGatewayRequest
 from apps.api.app.ai.models import AIExecution, AITaskDefinition
 from apps.api.app.audit.contracts import AuditEventCreate
 from apps.api.app.audit.enums import AuditActorType, AuditResult
@@ -94,7 +95,7 @@ class ContentService:
         self.audit = AuditEventService()
         self.audit_repository = AuditEventRepository()
         self.notifications = NotificationService()
-        self.ai_gateway = AIGateway(DeterministicAIProvider())
+        self.ai_gateway = build_ai_gateway()
         self.execution = ExecutionService()
 
     async def _audit(
@@ -514,9 +515,9 @@ class ContentService:
     ) -> tuple[ContentRevision, AIExecution]:
         """Generate a content draft through the shared AI Gateway.
 
-        Uses the gateway's deterministic, always-safe fallback provider — a real,
-        governed execution path requiring human (editorial then client) review,
-        not a live large-language-model integration.
+        Routes through the configured production provider (or deterministic
+        fixture in local/test). Always requires human (editorial then client)
+        review before publication.
         """
         item = await session.scalar(
             select(ContentItem).where(
@@ -585,6 +586,7 @@ class ContentService:
                 maximum_latency_ms=task.maximum_latency_ms,
             )
             output = await self.ai_gateway.execute(request)
+            usage = output.get("usage", {}) or {}
             execution = AIExecution(
                 organization_id=organization_id,
                 location_id=item.location_id,
@@ -597,6 +599,10 @@ class ContentService:
                 approved_fact_revision_ids=[str(x) for x in fact_ids],
                 output_document=output,
                 output_hash=hashlib.sha256(str(output.get("draft", "")).encode()).hexdigest(),
+                input_tokens=usage.get("input_tokens"),
+                output_tokens=usage.get("output_tokens"),
+                estimated_cost_microunits=output.get("cost_microunits"),
+                latency_ms=output.get("latency_ms"),
                 requires_human_review=bool(output.get("requires_human_review", True)),
                 completed_at=datetime.now(UTC),
             )

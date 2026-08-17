@@ -61,6 +61,15 @@ import "../styles/global.css";
             ><Skeleton lines={4} label="Loading automation catalog" /></Region
           >
         </PageSection>
+        <PageSection
+          eyebrow="Recurring"
+          title="Schedules"
+          description="Authoritative recurring work with its most recent outcomes and upcoming execution."
+        >
+          <Region id="schedule-list"
+            ><Skeleton lines={3} label="Loading schedules" /></Region
+          >
+        </PageSection>
         <PageSection eyebrow="Activity" title="Recent runs">
           <Region id="run-history"
             ><Skeleton lines={4} label="Loading run history" /></Region
@@ -153,6 +162,11 @@ import "../styles/global.css";
         const active = schedules?.filter(
           (schedule) => schedule.status === "active",
         ).length;
+        const running = runs?.filter((run) =>
+          ["queued", "running", "retry_scheduled", "waiting", "waiting_approval"].includes(
+            run.status,
+          ),
+        ).length;
         panel.append(
           metricCard(
             "Available automations",
@@ -163,6 +177,11 @@ import "../styles/global.css";
             "Active schedules",
             schedules && schedules.length > 0 ? String(active) : "No data",
             schedules ? "Recurring work" : "Schedules unavailable",
+          ),
+          metricCard(
+            "Running now",
+            runs && runs.length > 0 ? String(running) : "No data",
+            runs ? "In progress or queued" : "Run history unavailable",
           ),
           metricCard(
             "Recent runs",
@@ -205,7 +224,9 @@ import "../styles/global.css";
                 render: (workflow: WorkflowTypeEntry) =>
                   cellMeta(
                     workflow.display_name,
-                    `${statusLabel(workflow.product_key)} · version ${workflow.latest_version ?? "not published"}`,
+                    workflow.definition_status === "not_persisted"
+                      ? "Not activated"
+                      : "Available for scheduling",
                   ),
               },
               {
@@ -283,6 +304,20 @@ import "../styles/global.css";
       // ------------------------------------------------------------------
       // Render run history
       // ------------------------------------------------------------------
+      function durationLabel(run: WorkflowRunSummary): string {
+        if (!run.completed_at) return "—";
+        const end = new Date(run.completed_at).getTime();
+        const start = run.started_at
+          ? new Date(run.started_at).getTime()
+          : run.created_at
+            ? new Date(run.created_at).getTime()
+            : end;
+        const seconds = Math.max(0, Math.round((end - start) / 1000));
+        if (seconds < 60) return `${seconds}s`;
+        if (seconds < 3600) return `${Math.round(seconds / 60)}m ${seconds % 60}s`;
+        return `${Math.floor(seconds / 3600)}h ${Math.round((seconds % 3600) / 60)}m`;
+      }
+
       function renderRuns(items: WorkflowRunSummary[]): void {
         const container = document.getElementById("run-history")!;
         container.replaceChildren();
@@ -322,16 +357,86 @@ import "../styles/global.css";
                     : "Time unavailable",
               },
               {
+                key: "duration",
+                header: "Duration",
+                width: "content",
+                render: (run: WorkflowRunSummary) => durationLabel(run),
+              },
+              {
                 key: "recovery",
                 header: "Recovery",
                 render: (run: WorkflowRunSummary) =>
-                  ["failed", "dead_lettered", "escalated"].includes(run.status)
-                    ? run.job_attempt_count !== null &&
-                      run.job_max_attempts !== null &&
-                      run.job_attempt_count < run.job_max_attempts
-                      ? `Retry eligible · attempt ${run.job_attempt_count} of ${run.job_max_attempts}`
-                      : "Needs operator review"
-                    : "No action required",
+                  run.status === "failed"
+                    ? "Needs operator review"
+                    : run.status === "dead_lettered"
+                      ? "Retries exhausted"
+                      : run.status === "escalated"
+                        ? "Escalated for review"
+                        : run.status === "retry_scheduled"
+                          ? "Retry scheduled"
+                          : "No action required",
+              },
+            ],
+            items,
+          ),
+        );
+      }
+
+      // ------------------------------------------------------------------
+      // Render schedules
+      // ------------------------------------------------------------------
+      function renderSchedules(items: WorkflowScheduleEntry[]): void {
+        const container = document.getElementById("schedule-list")!;
+        container.replaceChildren();
+        if (items.length === 0) {
+          container.append(
+            emptyState(
+              "No schedules configured",
+              "Recurring schedules will appear here when they are created for a workflow.",
+            ),
+          );
+          return;
+        }
+        container.append(
+          buildDataTable(
+            [
+              {
+                key: "workflow",
+                header: "Workflow",
+                render: (schedule: WorkflowScheduleEntry) =>
+                  cellMeta(
+                    schedule.workflow_name ?? schedule.workflow_key ?? "Automation",
+                    scheduleLabel(schedule.cron_expression),
+                  ),
+              },
+              {
+                key: "status",
+                header: "Status",
+                render: (schedule: WorkflowScheduleEntry) =>
+                  statusBadge(
+                    schedule.status === "active" ? "ready" : "neutral",
+                    statusLabel(schedule.status),
+                  ),
+              },
+              {
+                key: "cadence",
+                header: "Cadence",
+                render: (schedule: WorkflowScheduleEntry) =>
+                  `${scheduleLabel(schedule.cron_expression)} · ${schedule.timezone}`,
+              },
+              {
+                key: "lastRun",
+                header: "Last run",
+                render: (schedule: WorkflowScheduleEntry) =>
+                  schedule.last_run_at
+                    ? `${elapsed(schedule.last_run_at)} · ${formatTime(schedule.last_run_at)}`
+                    : "Not run yet",
+              },
+              {
+                key: "nextRun",
+                header: "Next run",
+                render: (schedule: WorkflowScheduleEntry) =>
+                  schedule.next_run_at ? formatTime(schedule.next_run_at) : "Not scheduled",
               },
             ],
             items,
@@ -361,6 +466,14 @@ import "../styles/global.css";
           document
             .getElementById("workflow-catalog")!
             .replaceChildren(errorAlert(describeFailure(cat, "Catalog")));
+        }
+
+        if (sched.kind === "ok") {
+          renderSchedules(sched.data);
+        } else {
+          document
+            .getElementById("schedule-list")!
+            .replaceChildren(errorAlert(describeFailure(sched, "Schedules")));
         }
 
         if (runs.kind === "ok") {

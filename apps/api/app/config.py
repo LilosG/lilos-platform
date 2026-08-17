@@ -83,6 +83,25 @@ class Settings(BaseSettings):
     github_app_client_id: Annotated[str, Field(min_length=1, max_length=64)] | None = None
     github_app_private_key: Annotated[str, Field(min_length=1, max_length=20_000)] | None = None
     github_app_installation_redirect_uri: HttpUrl | None = None
+    # ── AI Gateway ──────────────────────────────────────────────────────
+    ai_provider: Annotated[str, Field(min_length=1, max_length=64)] = "deterministic"
+    ai_openrouter_api_key: Annotated[
+        str | None,
+        Field(
+            min_length=1,
+            max_length=255,
+            validation_alias="LILOS_OPENROUTER_API_KEY",
+        ),
+    ] = None
+    ai_openrouter_base_url: Annotated[
+        str,
+        Field(min_length=1, max_length=512, validation_alias="LILOS_OPENROUTER_BASE_URL"),
+    ] = "https://openrouter.ai/api/v1"
+    ai_default_model: Annotated[str, Field(min_length=1, max_length=128)] | None = None
+    ai_task_model_overrides: Annotated[str, Field(max_length=4_096)] = ""
+    ai_timeout_seconds: Annotated[float, Field(gt=0, le=300)] = 60.0
+    ai_max_output_tokens: Annotated[int, Field(ge=1, le=32_768)] = 2_000
+    ai_maximum_cost_microunits: Annotated[int, Field(ge=0, le=10_000_000)] = 200_000
     service_name: ClassVar[str] = "lilos-api"
 
     @field_validator("web_origins")
@@ -179,6 +198,18 @@ class Settings(BaseSettings):
         if self.supabase_auth_issuer is None or self.supabase_auth_jwks_url is None:
             raise ValueError("Supabase authentication issuer and JWKS URL must be configured")
         return str(self.supabase_auth_issuer).rstrip("/"), str(self.supabase_auth_jwks_url)
+
+    def ai_task_model_map(self) -> dict[str, str]:
+        """Parse LILOS_AI_TASK_MODEL_OVERRIDES as a JSON map of task_key → model."""
+        raw = self.ai_task_model_overrides.strip()
+        if not raw:
+            return {}
+        import json
+
+        parsed = json.loads(raw)
+        if not isinstance(parsed, dict):
+            raise ValueError("LILOS_AI_TASK_MODEL_OVERRIDES must be a JSON object")
+        return {str(k): str(v) for k, v in parsed.items()}
 
 
 def _normalize_postgresql_url(value: PostgresDsn | None) -> str | None:

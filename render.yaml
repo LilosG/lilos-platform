@@ -69,6 +69,8 @@ services:
         sync: false
       - key: LILOS_GITHUB_APP_INSTALLATION_REDIRECT_URI
         sync: false
+      - key: LILOS_OPENROUTER_API_KEY
+        sync: false
 
   - name: lilos-worker
     type: worker
@@ -107,6 +109,8 @@ services:
         sync: false
       - key: LILOS_GITHUB_APP_INSTALLATION_REDIRECT_URI
         sync: false
+      - key: LILOS_OPENROUTER_API_KEY
+        sync: false
 
   - name: lilos-scheduler
     type: worker
@@ -144,4 +148,6 @@ services:
       - key: LILOS_GITHUB_APP_PRIVATE_KEY
         sync: false
       - key: LILOS_GITHUB_APP_INSTALLATION_REDIRECT_URI
+        sync: false
+      - key: LILOS_OPENROUTER_API_KEY
         sync: false
