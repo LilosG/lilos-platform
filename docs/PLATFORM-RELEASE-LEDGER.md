@@ -172,6 +172,23 @@ The **Implementation** column uses the formal status vocabulary. The **Live acce
 - Remaining blockers: Auditor review pending. Integration tests require `LILOS_TEST_DATABASE_URL`.
 - Accepted: no (auditor pending)
 
+### Packet 9D — SEO Crawl Column-Length Overflow
+
+- Branch / SHA: `packet/9d-column-lengths` / pending (not committed)
+- Auditor result: NOT RUN
+- Principal result: IMPLEMENTED_NOT_ACCEPTED
+- Focused checks: `uv run ruff format --check` PASS, `uv run ruff check` PASS, `uv run mypy` PASS, `uv run pytest` (seo + migration + audit suites) 68 passed.
+- Root cause: `h1` extraction used `start + absolute_close_index` (adding an absolute index as a relative offset), capturing the entire tag-stripped page body instead of just the `<h1>` text. Real site yielded h1 values 3,001–7,691 characters, exceeding `varchar(2000)`. One overflow value aborted the entire crawl — zero pages persisted.
+- Fix category — content: title, meta_description, h1 truncated at ingest to 2000 characters with explicit `…[truncated]` marker and `*_truncated` technical issue.
+- Fix category — URLs: four URL columns widened to `text` (migration `20260817_0001` with expand-and-contract documented). Crawler enforces `MAX_URL_LENGTH = 2048`; over-long page URL skipped with reason. Btree index `uq_seo_page_normalized_url` verified with a 2051-character URL insert.
+- Resilience: each page persists inside its own savepoint; a failing page rolls back its own savepoint and the crawl continues.
+- Regression test: database-backed crawl with over-length title (6,200 chars), meta_description (7,000 chars), and h1 (6,000 chars) completes `status: success`, persisted values are truncated to 2,000 with marker, no `page_failures`. Fails against pre-fix main.
+- Adjacent work discovered: the `h1` extraction slice bug (`start + abs_index`) was the root cause producing the absurd h1 values; fixed here because it is the same signal-extraction surface as the truncation work.
+- Files changed: `crawl_engine.py`, `service.py`, `models.py`, migration `20260817_0001`, `test_crawl_engine.py`, `test_seo_api.py`, `PLATFORM-RELEASE-LEDGER.md`, new packet doc `PACKET-9D-COLUMN-LENGTHS.md`.
+- Remaining risks: none identified; content truncation + URL widening + per-page savepoint provide defence-in-depth. Downgrade of migration restores `varchar(2000)` and fails loudly if a 2001–2048 char URL was persisted, which is acceptable (fail-loud over silent data loss).
+
+---
+
 ### Packet 4 — Operational Product Convergence and Design System
 
 - Branch / base: `packet/4-product-convergence` / `01e733e1bc786a3fb141f00c74befb9c07de7b1b` (working tree; not committed)

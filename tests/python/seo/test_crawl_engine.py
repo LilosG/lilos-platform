@@ -415,6 +415,109 @@ def test_broken_page_indexability() -> None:
     assert signals["indexability"] == "indexable"
 
 
+# ---------------------------------------------------------------------------
+# SC9D — over-length content truncated at ingest, over-length URLs skipped
+# ---------------------------------------------------------------------------
+
+
+def _long(value: str, size: int) -> str:
+    return value * (size // len(value) + 1)
+
+
+def test_content_signal_truncation_with_marker() -> None:
+    from apps.api.app.products.seo.crawl_engine import (
+        CONTENT_TRUNCATION_MARKER,
+        MAX_CONTENT_LENGTH,
+        _truncate_content,
+    )
+
+    short, truncated = _truncate_content("short title")
+    assert short == "short title" and truncated is False
+
+    over = "x" * (MAX_CONTENT_LENGTH + 500)
+    value, truncated = _truncate_content(over)
+    assert truncated is True
+    assert value is not None
+    assert len(value) == MAX_CONTENT_LENGTH
+    assert value.endswith(CONTENT_TRUNCATION_MARKER)
+    assert value.startswith("x" * (MAX_CONTENT_LENGTH - len(CONTENT_TRUNCATION_MARKER)))
+
+    assert _truncate_content(None) == (None, False)
+
+
+def test_overlong_title_and_meta_description_truncated() -> None:
+    over_title = _long("A very long title ", 3000)
+    over_meta = _long("A very long description ", 3000)
+    html = (
+        "<html><head>"
+        f"<title>{over_title}</title>"
+        f'<meta name="description" content="{over_meta}">'
+        "</head><body><h1>Heading</h1></body></html>"
+    )
+    signals = extract_page_signals(html, 200, "https://example.test/", [])
+    assert signals["title"] is not None and len(signals["title"]) == 2000
+    assert signals["meta_description"] is not None and len(signals["meta_description"]) == 2000
+    assert "…[truncated]" in signals["title"]
+    assert "…[truncated]" in signals["meta_description"]
+    assert "title_truncated" in signals["technical_issues"]
+    assert "meta_description_truncated" in signals["technical_issues"]
+    assert signals["quality_status"] == "issues_detected"
+
+
+def test_h1_extracts_only_h1_not_page_body() -> None:
+    # Regression: the old h1 slice used start + absolute_close_index, capturing
+    # the entire page body after the first <h1>. It must capture only the h1.
+    html = (
+        "<html><head><title>T</title></head><body>"
+        "<h1>Real Heading</h1>"
+        + _long("<p>body text that must not leak into h1 </p>", 20)
+        + "</body></html>"
+    )
+    signals = extract_page_signals(html, 200, "https://example.test/", [])
+    assert signals["h1"] == "Real Heading"
+
+
+def test_overlong_h1_truncated_with_marker() -> None:
+    over_h1 = _long("Overlong heading ", 3000)
+    html = f"<html><head><title>T</title></head><body><h1>{over_h1}</h1></body></html>"
+    signals = extract_page_signals(html, 200, "https://example.test/", [])
+    assert signals["h1"] is not None
+    assert len(signals["h1"]) == 2000
+    assert signals["h1"].endswith("…[truncated]")
+    assert "h1_truncated" in signals["technical_issues"]
+
+
+def test_overlong_canonical_url_omitted_with_issue() -> None:
+    over_canonical = "https://example.test/" + _long("a", 3000)
+    html = (
+        "<html><head><title>T</title>"
+        f'<link rel="canonical" href="{over_canonical}">'
+        "</head><body></body></html>"
+    )
+    signals = extract_page_signals(html, 200, "https://example.test/", [])
+    assert signals["canonical_url"] is None
+    assert "canonical_url_too_long" in signals["technical_issues"]
+
+
+def test_crawl_skips_overlong_url_with_reason() -> None:
+    async def run() -> None:
+        long_seed = "https://example.test/" + _long("a", 3000)
+        responses: dict[str, httpx.Response] = {
+            "https://example.test/robots.txt": ok_html(""),
+            long_seed: ok_html(ROOT_ONLY_HTML, long_seed),
+        }
+        collected: list[CrawledPage] = []
+        async with make_client(responses) as client:
+            engine = CrawlEngine(base_config(seeds=(long_seed,)), client)
+            report = await engine.crawl(on_page=collected.append)  # type: ignore[arg-type]
+        assert len(collected) == 0
+        assert report.pages_skipped == 1
+        assert "url_too_long" in report.skip_reasons
+        assert report.pages_fetched == 0
+
+    asyncio.run(run())
+
+
 def test_canonicalize_url_resolves_dots() -> None:
     result = canonicalize_url("https://example.test/a/b/../c/./d")
     assert result == "https://example.test/a/c/d"

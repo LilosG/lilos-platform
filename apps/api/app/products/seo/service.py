@@ -522,104 +522,116 @@ class SEOService:
         )
 
         created_opportunities: list[SEOOpportunity] = []
+        page_failures: list[dict[str, str]] = []
 
         async def persist_page(page_data: Any) -> None:
             from apps.api.app.products.seo.crawl_engine import CrawledPage
 
             cp: CrawledPage = page_data
-
-            upsert_values = {
-                "organization_id": organization_id,
-                "website_id": website.id,
-                "normalized_url": cp.url,
-                "observed_url": cp.observed_url,
-                "canonical_url": cp.canonical_url,
-                "normalization_reasons": [],
-                "http_status": cp.http_status,
-                "content_type": cp.content_type,
-                "title": cp.title,
-                "meta_description": cp.meta_description,
-                "h1": cp.h1,
-                "robots_directives": list(cp.robots_directives),
-                "internal_links": list(cp.internal_links),
-                "external_links": list(cp.external_links),
-                "word_count": cp.word_count,
-                "structured_data_present": cp.structured_data_present,
-                "content_hash": cp.content_hash,
-                "indexability": cp.indexability,
-                "technical_issues": list(cp.technical_issues),
-                "crawl_depth": cp.depth,
-                "redirect_destination": cp.redirect_destination,
-                "quality_status": cp.quality_status,
-                "observed_at": datetime.now(UTC),
-            }
-            stmt = pg_insert(SEOPage).values(**upsert_values)
-            stmt = stmt.on_conflict_do_update(
-                constraint="uq_seo_page_normalized_url",
-                set_={
-                    "observed_url": cp.observed_url,
-                    "canonical_url": cp.canonical_url,
-                    "http_status": cp.http_status,
-                    "content_type": cp.content_type,
-                    "title": cp.title,
-                    "meta_description": cp.meta_description,
-                    "h1": cp.h1,
-                    "robots_directives": list(cp.robots_directives),
-                    "internal_links": list(cp.internal_links),
-                    "external_links": list(cp.external_links),
-                    "word_count": cp.word_count,
-                    "structured_data_present": cp.structured_data_present,
-                    "content_hash": cp.content_hash,
-                    "indexability": cp.indexability,
-                    "technical_issues": list(cp.technical_issues),
-                    "crawl_depth": cp.depth,
-                    "redirect_destination": cp.redirect_destination,
-                    "quality_status": cp.quality_status,
-                    "observed_at": datetime.now(UTC),
-                },
-            )
-            result = await session.execute(stmt.returning(SEOPage))
-            page = result.scalar_one()
-
-            digest = hashlib.sha256(cp.url.encode()).hexdigest()
-            for issue in cp.technical_issues:
-                dedup_key = f"{digest}.{issue}"
-                score, explanation = opportunity_score(
-                    search_potential=40,
-                    business_value=40,
-                    relevance=60,
-                    confidence=90,
-                    urgency=30,
-                    effort=10,
-                )
-                existing_opportunity = await session.scalar(
-                    select(SEOOpportunity).where(
-                        SEOOpportunity.organization_id == organization_id,
-                        SEOOpportunity.deduplication_key == dedup_key,
-                        SEOOpportunity.active_marker == "active",
+            new_opportunities: list[SEOOpportunity] = []
+            try:
+                async with session.begin_nested():
+                    upsert_values = {
+                        "organization_id": organization_id,
+                        "website_id": website.id,
+                        "normalized_url": cp.url,
+                        "observed_url": cp.observed_url,
+                        "canonical_url": cp.canonical_url,
+                        "normalization_reasons": [],
+                        "http_status": cp.http_status,
+                        "content_type": cp.content_type,
+                        "title": cp.title,
+                        "meta_description": cp.meta_description,
+                        "h1": cp.h1,
+                        "robots_directives": list(cp.robots_directives),
+                        "internal_links": list(cp.internal_links),
+                        "external_links": list(cp.external_links),
+                        "word_count": cp.word_count,
+                        "structured_data_present": cp.structured_data_present,
+                        "content_hash": cp.content_hash,
+                        "indexability": cp.indexability,
+                        "technical_issues": list(cp.technical_issues),
+                        "crawl_depth": cp.depth,
+                        "redirect_destination": cp.redirect_destination,
+                        "quality_status": cp.quality_status,
+                        "observed_at": datetime.now(UTC),
+                    }
+                    stmt = pg_insert(SEOPage).values(**upsert_values)
+                    stmt = stmt.on_conflict_do_update(
+                        constraint="uq_seo_page_normalized_url",
+                        set_={
+                            "observed_url": cp.observed_url,
+                            "canonical_url": cp.canonical_url,
+                            "http_status": cp.http_status,
+                            "content_type": cp.content_type,
+                            "title": cp.title,
+                            "meta_description": cp.meta_description,
+                            "h1": cp.h1,
+                            "robots_directives": list(cp.robots_directives),
+                            "internal_links": list(cp.internal_links),
+                            "external_links": list(cp.external_links),
+                            "word_count": cp.word_count,
+                            "structured_data_present": cp.structured_data_present,
+                            "content_hash": cp.content_hash,
+                            "indexability": cp.indexability,
+                            "technical_issues": list(cp.technical_issues),
+                            "crawl_depth": cp.depth,
+                            "redirect_destination": cp.redirect_destination,
+                            "quality_status": cp.quality_status,
+                            "observed_at": datetime.now(UTC),
+                        },
                     )
+                    result = await session.execute(stmt.returning(SEOPage))
+                    page = result.scalar_one()
+
+                    digest = hashlib.sha256(cp.url.encode()).hexdigest()
+                    for issue in cp.technical_issues:
+                        dedup_key = f"{digest}.{issue}"
+                        score, explanation = opportunity_score(
+                            search_potential=40,
+                            business_value=40,
+                            relevance=60,
+                            confidence=90,
+                            urgency=30,
+                            effort=10,
+                        )
+                        existing_opportunity = await session.scalar(
+                            select(SEOOpportunity).where(
+                                SEOOpportunity.organization_id == organization_id,
+                                SEOOpportunity.deduplication_key == dedup_key,
+                                SEOOpportunity.active_marker == "active",
+                            )
+                        )
+                        if existing_opportunity:
+                            continue
+                        opportunity = SEOOpportunity(
+                            organization_id=organization_id,
+                            location_id=website.location_id,
+                            website_id=website.id,
+                            page_id=page.id,
+                            opportunity_type=issue,
+                            deduplication_key=dedup_key,
+                            active_marker="active",
+                            evidence={"url": cp.url, "issue": issue},
+                            source_versions=["crawl.v1"],
+                            score_version=1,
+                            priority_score=score,
+                            score_explanation=explanation,
+                            status="identified",
+                            version=1,
+                        )
+                        session.add(opportunity)
+                        await session.flush()
+                        new_opportunities.append(opportunity)
+            except Exception as exc:
+                page_failures.append(
+                    {
+                        "url": cp.url[:2048],
+                        "error": f"{type(exc).__name__}: {str(exc)[:400]}",
+                    }
                 )
-                if existing_opportunity:
-                    continue
-                opportunity = SEOOpportunity(
-                    organization_id=organization_id,
-                    location_id=website.location_id,
-                    website_id=website.id,
-                    page_id=page.id,
-                    opportunity_type=issue,
-                    deduplication_key=dedup_key,
-                    active_marker="active",
-                    evidence={"url": cp.url, "issue": issue},
-                    source_versions=["crawl.v1"],
-                    score_version=1,
-                    priority_score=score,
-                    score_explanation=explanation,
-                    status="identified",
-                    version=1,
-                )
-                session.add(opportunity)
-                await session.flush()
-                created_opportunities.append(opportunity)
+                return
+            created_opportunities.extend(new_opportunities)
 
         report: CrawlReport = CrawlReport(
             terminal_state="error", reason="Engine did not produce a report"
@@ -640,6 +652,9 @@ class SEOService:
         crawl_run.safe_result = {
             "pages_crawled": report.pages_fetched,
             "pages_queued": report.pages_queued,
+            "pages_skipped": report.pages_skipped,
+            "skip_reasons": list(report.skip_reasons),
+            "page_failures": page_failures,
             "max_depth_reached": report.max_depth_reached,
             "robots_available": report.robots_available,
             "robots_disallow_count": len(report.robots_disallowed),
