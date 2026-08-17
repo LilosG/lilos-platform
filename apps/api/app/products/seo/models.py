@@ -13,6 +13,7 @@ from sqlalchemy import (
     Integer,
     Numeric,
     String,
+    Text,
     UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import JSONB
@@ -99,9 +100,9 @@ class SEOPage(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         PGUUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
     )
     website_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
-    normalized_url: Mapped[str] = mapped_column(String(2000), nullable=False)
-    observed_url: Mapped[str] = mapped_column(String(2000), nullable=False)
-    canonical_url: Mapped[str | None] = mapped_column(String(2000))
+    normalized_url: Mapped[str] = mapped_column(Text, nullable=False)
+    observed_url: Mapped[str] = mapped_column(Text, nullable=False)
+    canonical_url: Mapped[str | None] = mapped_column(Text)
     normalization_reasons: Mapped[list[object]] = mapped_column(JSONB, nullable=False)
     http_status: Mapped[int | None] = mapped_column(Integer)
     content_type: Mapped[str | None] = mapped_column(String(255))
@@ -119,7 +120,7 @@ class SEOPage(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     indexability: Mapped[str] = mapped_column(String(24), nullable=False)
     technical_issues: Mapped[list[object]] = mapped_column(JSONB, nullable=False)
     crawl_depth: Mapped[int | None] = mapped_column(Integer)
-    redirect_destination: Mapped[str | None] = mapped_column(String(2000))
+    redirect_destination: Mapped[str | None] = mapped_column(Text)
     quality_status: Mapped[str] = mapped_column(String(24), nullable=False)
     observed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 

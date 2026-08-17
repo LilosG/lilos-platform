@@ -26,7 +26,7 @@ from apps.api.app.locations.models import Location
 from apps.api.app.main import create_app
 from apps.api.app.organizations.enums import OrganizationStatus, OrganizationType
 from apps.api.app.organizations.models import Organization
-from apps.api.app.products.seo.models import SEOOpportunity, SEOPage
+from apps.api.app.products.seo.models import SEOCrawlRun, SEOOpportunity, SEOPage, SEOWebsite
 from apps.api.app.products.seo.service import SEOService
 
 GOOD_PAGE_HTML = (
@@ -601,3 +601,157 @@ def test_cross_tenant_crawl_run_and_pages_not_found(
 
     pages_resp = client.get(f"{other_base}/crawl-runs/{crawl_run_id}/pages", headers=HEADERS)
     assert pages_resp.status_code in (403, 404)
+
+
+# ---------------------------------------------------------------------------
+# SC9D — over-length content truncated, over-length URL skipped, crawl survives
+# ---------------------------------------------------------------------------
+
+
+OVERLONG_TITLE = "This is an absurdly long title " * 200  # ~6200 chars
+OVERLONG_META = "This is an absurdly long meta description " * 200  # ~7000 chars
+OVERLONG_H1 = "This is an absurdly long h1 heading " * 200  # ~6000 chars
+
+_OVERLONG_HTML = (
+    f"<html><head><title>{OVERLONG_TITLE}</title>"
+    f'<meta name="description" content="{OVERLONG_META}">'
+    f'<link rel="canonical" href="https://example.test/">'
+    "</head><body>"
+    f"<h1>{OVERLONG_H1}</h1>"
+    '<a href="/ok-page">OK</a>'
+    "</body></html>"
+)
+
+
+@pytest.mark.integration
+def test_crawl_survives_overlength_content_and_truncates_with_marker(
+    seo_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Regression: over-length title, meta_description, and h1 must not abort the
+    crawl. Values are truncated at ingest with an explicit marker and the crawl
+    completes successfully. This test would fail on the current main branch
+    (StringDataRightTruncationError on insert into seo_pages)."""
+
+    def mock_handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/ok-page":
+            return httpx.Response(
+                200,
+                text=GOOD_PAGE_HTML,
+                headers={"content-type": "text/html"},
+                request=request,
+            )
+        return httpx.Response(
+            200, text=_OVERLONG_HTML, headers={"content-type": "text/html"}, request=request
+        )
+
+    def custom_http_client_factory() -> httpx.AsyncClient:
+        return httpx.AsyncClient(transport=httpx.MockTransport(mock_handler))
+
+    async def _run() -> None:
+        seo_service = SEOService(http_client_factory=custom_http_client_factory)
+
+        async with seo_session_factory.begin() as session:
+            org = Organization(
+                name="SC9D Org",
+                slug="sc9d-org",
+                organization_type=OrganizationType.TEST,
+                status=OrganizationStatus.ACTIVE,
+                timezone="UTC",
+                default_currency="USD",
+                version=1,
+            )
+            session.add(org)
+            await session.flush()
+
+            website = SEOWebsite(
+                organization_id=org.id,
+                key="sc9d-site",
+                name="SC9D Site",
+                canonical_origin="https://example.test",
+                status="active",
+                ownership_status="verified",
+                version=1,
+            )
+            session.add(website)
+            await session.flush()
+
+            workflow_def = WorkflowDefinition(key="sc9d.crawl", name="SC9D Crawl", owner="seo")
+            session.add(workflow_def)
+            await session.flush()
+            workflow_ver = WorkflowVersion(
+                definition_id=workflow_def.id,
+                version=1,
+                status="approved",
+                input_schema={},
+                output_schema={},
+                step_specification=[],
+                retry_policy={},
+                timeout_seconds=60,
+            )
+            session.add(workflow_ver)
+            await session.flush()
+            workflow_run = WorkflowRun(
+                organization_id=org.id,
+                workflow_version_id=workflow_ver.id,
+                product_key="seo",
+                trigger_type="manual",
+                idempotency_key="sc9d-crawl-001",
+                request_hash="sc9d-hash",
+                input_document={},
+                correlation_id="sc9d-test",
+            )
+            session.add(workflow_run)
+            await session.flush()
+
+            crawl_run = SEOCrawlRun(
+                organization_id=org.id,
+                website_id=website.id,
+                workflow_run_id=workflow_run.id,
+                idempotency_key="sc9d-crawl-001",
+                status="queued",
+                max_pages=3,
+                safe_result={},
+            )
+            session.add(crawl_run)
+            await session.flush()
+
+            org_id = org.id
+            website_id = website.id
+            crawl_run_id = crawl_run.id
+
+        async with seo_session_factory.begin() as session:
+            crawl_run_ret, _ = await seo_service.execute_crawl(
+                session, org_id, crawl_run_id, correlation_id="sc9d-test"
+            )
+
+            assert crawl_run_ret.status == "success", (
+                f"expected success, got {crawl_run_ret.status}: {crawl_run_ret.stop_reason}"
+            )
+
+            page_row = await session.scalar(
+                select(SEOPage).where(
+                    SEOPage.organization_id == org_id,
+                    SEOPage.website_id == website_id,
+                    SEOPage.normalized_url == "https://example.test/",
+                )
+            )
+            assert page_row is not None, "overlong landing page must be persisted"
+
+            assert page_row.title is not None
+            assert len(page_row.title) == 2000
+            assert page_row.title.endswith("…[truncated]")
+            assert "title_truncated" in page_row.technical_issues
+
+            assert page_row.meta_description is not None
+            assert len(page_row.meta_description) == 2000
+            assert page_row.meta_description.endswith("…[truncated]")
+            assert "meta_description_truncated" in page_row.technical_issues
+
+            assert page_row.h1 is not None
+            assert len(page_row.h1) == 2000
+            assert page_row.h1.endswith("…[truncated]")
+            assert "h1_truncated" in page_row.technical_issues
+
+            assert len(crawl_run_ret.safe_result["page_failures"]) == 0  # type: ignore[arg-type]
+
+    asyncio.run(_run())

@@ -22,6 +22,15 @@ import httpx
 
 LILOS_USER_AGENT = "LILOs-Crawler/1.0 (+https://lilos.io)"
 
+# Documented ingest limits. Content columns (title, meta_description, h1) are
+# truncated at MAX_CONTENT_LENGTH with an explicit marker; URL columns are
+# widened to text in the schema but capped at MAX_URL_LENGTH so the
+# uq_seo_page_normalized_url btree index stays within PostgreSQL's ~2704-byte
+# per-entry limit (see migration 20260817_0001).
+MAX_URL_LENGTH = 2048
+MAX_CONTENT_LENGTH = 2000
+CONTENT_TRUNCATION_MARKER = "…[truncated]"
+
 ANCHOR_TAG_PATTERN = re.compile(r"<a\b[^>]*>", re.IGNORECASE)
 ANCHOR_HREF_ATTR_PATTERN = re.compile(r"""href\s*=\s*["']([^"']+)["']""", re.IGNORECASE)
 ANCHOR_NOFOLLOW_PATTERN = re.compile(
@@ -68,6 +77,7 @@ class CrawlConfig:
     retry_limit: int = 2
     query_param_policy: str = "keep"
     exclusion_patterns: tuple[str, ...] = ()
+    max_url_length: int = MAX_URL_LENGTH
 
 
 @dataclass
@@ -100,6 +110,8 @@ class CrawlReport:
     reason: str
     pages_fetched: int = 0
     pages_queued: int = 0
+    pages_skipped: int = 0
+    skip_reasons: list[str] = field(default_factory=list)
     max_depth_reached: int = 0
     robots_available: bool = False
     robots_disallowed: list[str] = field(default_factory=list)
@@ -312,29 +324,54 @@ def _parse_content_type(response: httpx.Response) -> str | None:
     return ct.strip().lower() or None
 
 
+def _truncate_content(value: str | None) -> tuple[str | None, bool]:
+    """Bound a content signal to ``MAX_CONTENT_LENGTH`` with an explicit marker.
+
+    Returns ``(value, truncated)``. A value at or under the limit is returned
+    unchanged with ``truncated=False``. An over-limit value is cut to make room
+    for ``CONTENT_TRUNCATION_MARKER`` so the marker — not silent loss — records
+    that truncation occurred.
+    """
+    if value is None or len(value) <= MAX_CONTENT_LENGTH:
+        return value, False
+    keep = MAX_CONTENT_LENGTH - len(CONTENT_TRUNCATION_MARKER)
+    return value[:keep] + CONTENT_TRUNCATION_MARKER, True
+
+
 def extract_page_signals(
     html: str, http_status: int, base_url: str, robots_directives: list[str]
 ) -> dict[str, Any]:
     title_match = TITLE_PATTERN.search(html)
-    title = title_match.group(1).strip() if title_match else None
+    title, title_truncated = _truncate_content(
+        title_match.group(1).strip() if title_match else None
+    )
 
     meta_desc_match = META_DESCRIPTION_PATTERN.search(html)
-    meta_description = meta_desc_match.group(1).strip() if meta_desc_match else None
+    meta_description, meta_description_truncated = _truncate_content(
+        meta_desc_match.group(1).strip() if meta_desc_match else None
+    )
 
     canonical_match = CANONICAL_LINK_PATTERN.search(html)
     canonical_url = None
+    canonical_url_too_long = False
     if canonical_match:
-        canonical_url = normalize_crawl_url(canonical_match.group(1).strip(), base_url)
+        candidate = normalize_crawl_url(canonical_match.group(1).strip(), base_url)
+        if len(candidate) <= MAX_URL_LENGTH:
+            canonical_url = candidate
+        else:
+            canonical_url_too_long = True
 
     h1_matches = H1_PATTERN.findall(html)
     h1_count = len(h1_matches)
     h1_text: str | None = None
+    h1_truncated = False
     if h1_matches:
         start = H1_PATTERN.search(html).end()  # type: ignore[union-attr]
         lower = html.lower()
-        end_rel = lower.find("</h1>", start)
-        end = start if end_rel < 0 else start + end_rel
-        h1_text = HTML_TAG_PATTERN.sub("", html[start:end]).strip() or None
+        end_abs = lower.find("</h1>", start)
+        end = start if end_abs < 0 else end_abs
+        raw_h1 = HTML_TAG_PATTERN.sub("", html[start:end]).strip()
+        h1_text, h1_truncated = _truncate_content(raw_h1 or None)
 
     stripped = SCRIPT_STYLE_PATTERN.sub("", html)
     text_only = HTML_TAG_PATTERN.sub(" ", stripped)
@@ -359,6 +396,14 @@ def extract_page_signals(
         technical_issues.append("missing_h1")
     if h1_count > 1:
         technical_issues.append("multiple_h1")
+    if title_truncated:
+        technical_issues.append("title_truncated")
+    if meta_description_truncated:
+        technical_issues.append("meta_description_truncated")
+    if h1_truncated:
+        technical_issues.append("h1_truncated")
+    if canonical_url_too_long:
+        technical_issues.append("canonical_url_too_long")
 
     quality_status = "issues_detected" if technical_issues else "clean"
 
@@ -431,6 +476,8 @@ class CrawlEngine:
         queue: deque[tuple[str, int]] = deque()
         pages_fetched = 0
         pages_queued = 0
+        pages_skipped = 0
+        skip_reasons: list[str] = []
         max_depth_reached = 0
         timed_out = False
         page_limit_reached = False
@@ -527,8 +574,12 @@ class CrawlEngine:
                 last_request_at = monotonic()
 
         async def process_one(url: str, depth: int) -> None:
-            nonlocal pages_fetched
+            nonlocal pages_fetched, pages_skipped
 
+            if len(url) > config.max_url_length:
+                pages_skipped += 1
+                skip_reasons.append("url_too_long")
+                return
             if self._is_excluded(url):
                 return
             if _url_is_disallowed(url, disallow_rules, allow_rules):
@@ -560,13 +611,26 @@ class CrawlEngine:
             http_status = response.status_code
             content_type = _parse_content_type(response)
 
+            observed_url_too_long = len(observed_url) > config.max_url_length
+            if observed_url_too_long:
+                observed_url = url
+
             redirect_dest: str | None = None
+            redirect_destination_too_long = False
             if response.history:
                 final_url = str(response.url)
                 if final_url != url:
-                    redirect_dest = canonicalize_url(normalize_crawl_url(final_url))
-                    if same_host(host_of(final_url), config.allowed_host) and final_url not in seen:
-                        enqueue(canonicalize_url(normalize_crawl_url(final_url)), depth)
+                    normalized_final = canonicalize_url(normalize_crawl_url(final_url))
+                    if len(normalized_final) > config.max_url_length:
+                        redirect_dest = None
+                        redirect_destination_too_long = True
+                    else:
+                        redirect_dest = normalized_final
+                        if (
+                            same_host(host_of(final_url), config.allowed_host)
+                            and final_url not in seen
+                        ):
+                            enqueue(normalized_final, depth)
 
             robots_directives: list[str] = []
             robots_meta = ROBOTS_META_PATTERN.search(response.text or "")
@@ -581,6 +645,17 @@ class CrawlEngine:
                 signals = extract_page_signals(
                     response.text, http_status, observed_url, robots_directives
                 )
+
+            extra_issues: list[str] = []
+            if observed_url_too_long:
+                extra_issues.append("observed_url_too_long")
+            if redirect_destination_too_long:
+                extra_issues.append("redirect_destination_too_long")
+
+            technical_issues = list(signals.get("technical_issues", [])) + extra_issues
+            quality_status = signals.get("quality_status", "clean")
+            if extra_issues and quality_status == "clean":
+                quality_status = "issues_detected"
 
             page = CrawledPage(
                 url=url,
@@ -600,8 +675,8 @@ class CrawlEngine:
                 indexability=signals.get(
                     "indexability", "indexable" if http_status == 200 else "not_indexable"
                 ),
-                technical_issues=signals.get("technical_issues", []),
-                quality_status=signals.get("quality_status", "clean"),
+                technical_issues=technical_issues,
+                quality_status=quality_status,
                 redirect_destination=redirect_dest,
                 depth=depth,
             )
@@ -670,6 +745,8 @@ class CrawlEngine:
             reason=reason,
             pages_fetched=pages_fetched,
             pages_queued=pages_queued,
+            pages_skipped=pages_skipped,
+            skip_reasons=skip_reasons,
             max_depth_reached=max_depth_reached,
             robots_available=robots_available,
             robots_disallowed=disallow_rules,
