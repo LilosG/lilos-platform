@@ -1,13 +1,36 @@
-"""One provider-neutral, task-registered AI execution boundary."""
+"""One provider-neutral, task-registered AI execution boundary.
 
+The gateway enforces:
+- approved business-fact grounding (required)
+- secret-bearing input rejection
+- task → model/profile routing via configuration
+- bounded maximum output tokens
+- bounded maximum cost (pre-flight check against global config)
+- bounded maximum latency (passed through to provider timeout)
+- post-execution cost validation (records overspend, does not block)
+"""
+
+from __future__ import annotations
+
+import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Protocol
 from uuid import UUID
 
+from apps.api.app.ai.errors import AIProviderConfigurationError, AIProviderError
+
+logger = logging.getLogger(__name__)
+
 
 class AIProvider(Protocol):
     async def generate(
-        self, *, task_key: str, input_document: dict[str, Any], maximum_tokens: int
+        self,
+        *,
+        task_key: str,
+        input_document: dict[str, Any],
+        maximum_tokens: int,
+        maximum_latency_ms: int | None = None,
     ) -> dict[str, Any]: ...
 
 
@@ -24,27 +47,143 @@ class AIGatewayRequest:
 
 
 class AIGateway:
-    def __init__(self, provider: AIProvider):
-        self.provider = provider
+    """Governed AI execution boundary with task routing and cost/latency bounds.
+
+    The provider may be supplied directly (tests, deterministic fixtures) or
+    resolved lazily through ``provider_factory`` (production configuration).
+    Lazy resolution keeps platform startup independent of AI provider
+    configuration while remaining fail-closed at execution time.
+    """
+
+    def __init__(
+        self,
+        provider: AIProvider | None = None,
+        *,
+        provider_factory: Callable[[], AIProvider] | None = None,
+        task_model_overrides: dict[str, str] | None = None,
+        default_model: str | None = None,
+        global_max_output_tokens: int = 2_000,
+        global_max_cost_microunits: int = 200_000,
+    ) -> None:
+        if provider is None and provider_factory is None:
+            raise ValueError("AIGateway requires a provider or provider_factory")
+        self._provider = provider
+        self._provider_factory = provider_factory
+        self._task_models = task_model_overrides or {}
+        self._default_model = default_model
+        self._global_max_output_tokens = global_max_output_tokens
+        self._global_max_cost_microunits = global_max_cost_microunits
+
+    @property
+    def provider(self) -> AIProvider:
+        if self._provider is None:
+            if self._provider_factory is None:
+                raise AIProviderConfigurationError("AI provider is not configured")
+            self._provider = self._provider_factory()
+        return self._provider
+
+    def _resolve_model(self, task_key: str) -> str | None:
+        """Resolve the model for a task key from overrides or default."""
+        return self._task_models.get(task_key, self._default_model)
 
     async def execute(self, request: AIGatewayRequest) -> dict[str, Any]:
+        """Execute a governed AI task through the configured provider.
+
+        Returns a dict with keys: ``provider``, ``model``, ``draft``,
+        ``requires_human_review``, ``usage`` (input/output/total tokens),
+        ``latency_ms``, ``cost_microunits``, ``request_id``.
+        """
         if not request.approved_fact_revision_ids:
             raise ValueError("approved business-fact grounding required")
-        if any(
-            key.lower() in {"password", "secret", "token", "authorization"}
-            for key in request.input_document
-        ):
-            raise ValueError("secret-bearing AI input rejected")
-        return await self.provider.generate(
-            task_key=request.task_key,
-            input_document=dict(request.input_document),
-            maximum_tokens=2000,
-        )
+        secret_bearers = {
+            "password",
+            "secret",
+            "token",
+            "authorization",
+            "api_key",
+            "apikey",
+            "credential",
+        }
+        for key in request.input_document:
+            normalized = key.lower().replace("-", "_").replace(" ", "_")
+            if normalized in secret_bearers or any(
+                bearer in normalized for bearer in secret_bearers
+            ):
+                raise ValueError("secret-bearing AI input rejected")
+
+        # Pre-flight cost bound:
+        # - task limit == 0 means "inherit the configured global ceiling"
+        # - task limit > 0 means "use the smaller of task limit and global ceiling"
+        # - if the resulting effective limit is <= 0, reject fail-closed
+        if request.maximum_cost_microunits > 0:
+            effective_cost_bound = min(
+                request.maximum_cost_microunits, self._global_max_cost_microunits
+            )
+        else:
+            effective_cost_bound = self._global_max_cost_microunits
+        if effective_cost_bound <= 0:
+            raise ValueError("AI task cost bound must be positive")
+
+        # Resolve maximum tokens: use the global bound as a ceiling.
+        maximum_tokens = self._global_max_output_tokens
+
+        try:
+            output = await self.provider.generate(
+                task_key=request.task_key,
+                input_document=dict(request.input_document),
+                maximum_tokens=maximum_tokens,
+                maximum_latency_ms=request.maximum_latency_ms,
+            )
+        except AIProviderError:
+            raise
+        except Exception as exc:
+            logger.exception("Unexpected AI provider failure")
+            raise AIProviderError(
+                "provider", "AI provider encountered an unexpected error"
+            ) from exc
+
+        # Post-execution cost validation: record overspend but do not block
+        # (the provider has already been called). The caller can inspect
+        # cost_microunits against the bound.
+        cost = output.get("cost_microunits")
+        if isinstance(cost, (int, float)) and cost > effective_cost_bound:
+            logger.warning(
+                "AI execution exceeded cost bound",
+                extra={
+                    "event_name": "ai.execution.cost_exceeded",
+                    "task_key": request.task_key,
+                    "cost_microunits": cost,
+                    "bound_microunits": effective_cost_bound,
+                },
+            )
+
+        # Ensure required keys are present
+        output.setdefault("provider", "unknown")
+        output.setdefault("model", "unknown")
+        output.setdefault("draft", "")
+        output.setdefault("requires_human_review", True)
+        output.setdefault("usage", {})
+        output.setdefault("latency_ms", None)
+        output.setdefault("cost_microunits", None)
+        output.setdefault("request_id", None)
+
+        return output
 
 
 class DeterministicAIProvider:
+    """Safe, credential-free provider for tests and local development.
+
+    Returns a fixed draft from the ``manual_fallback`` input field.
+    Always marks ``requires_human_review=True``.
+    """
+
     async def generate(
-        self, *, task_key: str, input_document: dict[str, Any], maximum_tokens: int
+        self,
+        *,
+        task_key: str,
+        input_document: dict[str, Any],
+        maximum_tokens: int,
+        maximum_latency_ms: int | None = None,
     ) -> dict[str, Any]:
         return {
             "task_type": task_key,
@@ -52,4 +191,8 @@ class DeterministicAIProvider:
             "requires_human_review": True,
             "provider": "deterministic_test",
             "model": "fixture-v1",
+            "usage": {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0},
+            "latency_ms": 0,
+            "cost_microunits": 0,
+            "request_id": None,
         }

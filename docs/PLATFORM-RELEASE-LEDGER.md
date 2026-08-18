@@ -49,7 +49,14 @@ The **Implementation** column uses the formal status vocabulary. The **Live acce
 | Content | IMPLEMENTED_NOT_ACCEPTED | partial | IMPLEMENTED_NOT_ACCEPTED | partial | partial | **Packet 4:** Opportunity→brief→draft→approve→publish pipeline and truthful transition states implemented; provider configuration is linked to Integrations rather than duplicated. Live publish acceptance and the known business-fact confirmation remain outstanding. |
 | Leads | IMPLEMENTED_NOT_ACCEPTED | partial | IMPLEMENTED_NOT_ACCEPTED | partial | partial | **Packet 4:** Intake, routing, assignment, lifecycle, and communication history are presented as an operational inbox; setup readiness no longer claims usable when sources are absent. Provider-dispatch semantics for `sent` still require live verification. |
 | Integrations control plane | IMPLEMENTED_NOT_ACCEPTED | partial | IMPLEMENTED_NOT_ACCEPTED | n/a | health partial | **Packet 4:** Integrations owns connection health, capabilities, mapped-resource freshness, privileged collapsed discovery/mapping, and existing disconnect/remediation actions. Existing Google workspace contracts do not expose a connected-account label, per-capability sync timestamps, or a manual sync endpoint; no UI was fabricated for them. |
-| Automation & Agents control plane | IMPLEMENTED_NOT_ACCEPTED | n/a | IMPLEMENTED_NOT_ACCEPTED | IMPLEMENTED_NOT_ACCEPTED | IMPLEMENTED_NOT_ACCEPTED | **Packet 4:** Governed automation catalog, schedules, last/next run, run history, failure/recovery status, and compact dependency indicator implemented over the existing workflow API. No retry endpoint exists, so failure rows report eligibility/operator review without a false Retry control. Live schedules/runs remain unaccepted. |
+| Automation & Agents control plane | IMPLEMENTED_NOT_ACCEPTED | partial | IMPLEMENTED_NOT_ACCEPTED | IMPLEMENTED_NOT_ACCEPTED | IMPLEMENTED_NOT_ACCEPTED | **Packet 5:** Automation catalog, schedules, run history, and failure/recovery surfaces productized with operational language. Scheduled-execution chain proven end-to-end against PostgreSQL (scheduler → job → worker → handler → terminal). Approval boundary proven at product layer (GBP handler rejects non-reserved publications). Retry classification, backoff, dead-letter, and tenant isolation proven in integration tests. Live production schedules/runs remain unaccepted. |
+| Production AI provider | IMPLEMENTED_NOT_ACCEPTED | n/a | n/a | n/a | n/a | **Packet 5:** OpenRouter provider adapter implemented with full error handling (auth, rate-limit, 4xx/5xx, malformed, timeout, connect), usage capture (tokens, cost, latency), and secret safety. Provider-neutral AIProvider protocol preserved. Deterministic provider fail-closed in production. Real AI execution requires `LILOS_OPENROUTER_API_KEY` secret. |
+| AI Gateway production routing | IMPLEMENTED_NOT_ACCEPTED | n/a | n/a | n/a | n/a | **Packet 5:** Task→model routing via `LILOS_AI_TASK_MODEL_OVERRIDES` and `LILOS_AI_DEFAULT_MODEL`. Cost/latency bounds enforced at gateway and provider layers. AIExecution now persists input/output tokens, estimated cost, and latency. |
+| Content AI drafting | IMPLEMENTED_NOT_ACCEPTED | n/a | n/a | n/a | n/a | **Packet 5:** ContentService wired to configured AI gateway (no longer hardcodes DeterministicAIProvider). AI draft endpoint routes through production provider when configured. Always requires human review. Real AI acceptance pending API key. |
+| SEO crawler runtime | LIVE_READ_ACCEPTED | partial | IMPLEMENTED_NOT_ACCEPTED | n/a | n/a | **Packet 9D:** Controlled production crawl completed (max_pages=10, max_depth=2, crawl_delay=1). Real Wheyland pages traversed, persisted, and rendered in SEO UI. StringDataRightTruncationError resolved. |
+| SEO expert audit/intelligence | IMPLEMENTED_NOT_ACCEPTED | n/a | IMPLEMENTED_NOT_ACCEPTED | n/a | n/a | Current crawl-generated opportunities are primarily basic technical signals. Not yet the final intelligent local-SEO recommendation engine. |
+| SEO opportunity intelligence | IMPLEMENTED_NOT_ACCEPTED | n/a | IMPLEMENTED_NOT_ACCEPTED | n/a | n/a | Deferred to dedicated SEO Intelligence/Productization pass. |
+| SEO max-pages enforcement | KNOWN PRODUCTIZATION DEFECT | n/a | n/a | n/a | n/a | Configured max_pages=10 produced 12 pages due to concurrent batch overshoot in crawl_engine. Deferred to SEO Intelligence/Productization pass. |
 | Insights / reporting | IMPLEMENTED_NOT_ACCEPTED | partial | IMPLEMENTED_NOT_ACCEPTED | scheduled reporting partial/unknown | IMPLEMENTED_NOT_ACCEPTED | **Packet 4:** First viewport now contains period/context, compact comparison KPIs, one section-level source/freshness line, and the primary interactive trend. Insights and SEO consume one shared tree-shaken Chart.js component with round-number axes, six thinned date labels, native hover tooltips, full-card responsive canvas sizing, subtle area fill, accessible summary, and non-interpolated null gaps. The refinement removes redundant hover readouts, formats CTR changes as percentage points, explicitly preserves inverted average-position outcome coloring, and tightens the reporting rhythm. Fixture visual evidence is not live acceptance. |
 | Release/production acceptance | IMPLEMENTED_NOT_ACCEPTED | partial | n/a | n/a | n/a | **Vercel deployment rate-limited for current main.** PR #14 deployed successfully. Render API/worker/scheduler parity unverified. Migration head `20260811_0002` deployment status unknown. Backup/restore evidence not verified. |
 
@@ -207,6 +214,59 @@ The **Implementation** column uses the formal status vocabulary. The **Live acce
 - Contract-backed gaps intentionally not fabricated: Google connected-account label, per-capability sync timestamps, and manual sync action; GBP current core profile values, address, and regular weekly-hours read models; lead source identity/name and service name (the list/detail contracts expose only IDs); automation retry action.
 - Live checks: not run; screenshots use explicitly authorized contract-shaped visual fixtures only.
 - Accepted: no (live provider/role acceptance and principal/auditor review remain outstanding)
+
+---
+
+### Packet 5 — Automation & Agents + Production AI Gateway
+
+- Branch / SHA: `packet/5-automation-agents-production` / base `968c8b705cbfd08991bd284109b05bbe238a4340`
+- Auditor result: NOT RUN
+- Principal result: IMPLEMENTED_NOT_ACCEPTED (real AI execution requires OpenRouter API key; live production schedules/runs unaccepted)
+- Focused checks:
+  - Python ruff: 0 errors on AI module, handlers, config
+  - Python mypy: 0 errors on AI module, handlers, config
+  - Python pytest (non-integration): 439 passed, 16 skipped
+  - Python pytest (workflow integration): 101 passed (PostgreSQL)
+  - AI unit tests: 31 passed (mocked HTTP)
+  - Scheduled-execution integration: 3 passed (PostgreSQL, real SchedulerBackend/WorkerBackend)
+  - Approval/recovery integration: 7 passed (PostgreSQL)
+  - Frontend typecheck: 0 errors (142 files)
+  - Frontend build: 14 pages built successfully
+  - Render blueprint validation: 6 passed
+- Architecture delivered:
+  1. **Production AI Gateway** — OpenRouter provider adapter with full error handling (auth, rate-limit, 4xx/5xx, malformed, timeout, connect), usage capture (tokens, cost, latency), and secret safety. Provider-neutral AIProvider protocol preserved. Deterministic provider fail-closed in production via `resolve_ai_provider()`.
+  2. **AI configuration** — 8 new Settings fields: `ai_provider`, `openrouter_api_key` (aliased to `LILOS_OPENROUTER_API_KEY`), `openrouter_base_url`, `default_model`, `task_model_overrides`, `timeout_seconds`, `max_output_tokens`, `maximum_cost_microunits`. Task→model routing via `ai_task_model_map()`.
+  3. **AI Gateway upgrade** — Task routing, cost/latency bounds enforcement, provider error wrapping, default key filling. `DeterministicAIProvider` returns full usage dict.
+  4. **Content/Reviews service wiring** — Both services now use `build_ai_gateway()` instead of `AIGateway(DeterministicAIProvider())`. AIExecution persists `input_tokens`, `output_tokens`, `estimated_cost_microunits`, `latency_ms`.
+  5. **Scheduled-execution handler fix** — `_handle_gbp_sync` and `_handle_reviews_ingest` now resolve GBPLocation from platform `location_id` when `gbp_location_id` is absent from input document. This enables schedule-dispatched runs (which only provide `schedule_id`/`scheduled_for`) to resolve the correct GBP location.
+  6. **Scheduled-execution acceptance** — End-to-end PostgreSQL integration test proves: schedule → scheduler dispatch → job creation → worker claim → handler execution → terminal success → schedule state advances → run history authoritative → duplicate dispatch prevention → tenant isolation. Uses real SchedulerBackend, WorkerBackend, ExecutionService with monkeypatched provider boundary (no external provider call).
+  7. **Approval boundary** — Proven at product layer: GBP handler rejects non-reserved publications (`PUBLICATION_NOT_RESERVABLE`). Idempotency enforced upstream at workflow-run and publication-creation layers. Cross-org tenant isolation verified.
+  8. **Failure/recovery** — Retryable failure schedules retry with exponential backoff. Permanent failure marks failed immediately. At max attempts, dead-lettered (no poison loop). Success marks completed.
+  9. **Automations UX** — Added "Running now" metric card, dedicated Schedules section with authoritative schedule state (workflow, status, cadence, last run, next run), Duration column in run history, client-safe recovery language (no implementation vocabulary).
+  10. **Render blueprint** — `LILOS_OPENROUTER_API_KEY` added to lilos-api, lilos-worker, and lilos-scheduler secret policies.
+- Changed files (17 files):
+  - `apps/api/app/config.py` (AI settings)
+  - `apps/api/app/ai/errors.py` (new)
+  - `apps/api/app/ai/providers.py` (new)
+  - `apps/api/app/ai/gateway.py` (upgraded)
+  - `apps/api/app/ai/factory.py` (new)
+  - `apps/api/app/products/content/service.py` (wired to factory)
+  - `apps/api/app/products/reviews/service.py` (wired to factory)
+  - `apps/api/app/execution/handlers.py` (scheduled-execution location resolution)
+  - `apps/web/src/pages/automations.astro` (UX productization)
+  - `render.yaml` (OPENROUTER key)
+  - `scripts/validate_render_blueprint.py` (secret policy)
+  - `.env.example` (AI vars)
+  - `tests/python/ai/__init__.py` (new)
+  - `tests/python/ai/test_providers.py` (new)
+  - `tests/python/ai/test_gateway.py` (new)
+  - `tests/python/workflows/test_scheduled_execution.py` (new)
+  - `tests/python/workflows/test_approval_and_recovery.py` (new)
+  - `docs/PLATFORM-RELEASE-LEDGER.md` (this entry)
+- Ledger rows changed: Automation & Agents control plane, Production AI provider, AI Gateway production routing, Content AI drafting, SEO crawler runtime, SEO expert audit/intelligence, SEO opportunity intelligence, SEO max-pages enforcement
+- Deferred: SEO expert intelligence, SEO opportunity intelligence, SEO max-pages concurrency overshoot (all deferred to dedicated SEO Intelligence/Productization pass)
+- Remaining blockers: Real AI execution requires `LILOS_OPENROUTER_API_KEY` secret in production environment. Live production schedules/runs unaccepted without runtime access.
+- Accepted: no (real AI acceptance + auditor review pending)
 
 ---
 

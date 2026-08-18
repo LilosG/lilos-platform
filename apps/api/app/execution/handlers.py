@@ -1239,11 +1239,17 @@ async def _handle_gbp_sync(
     input_document: dict[str, Any],
     correlation_id: str,
 ) -> JobOutcome:
-    """Scheduled GBP discovery and profile sync for a location.
+    """Scheduled GBP discovery and profile sync.
 
     Performs a read-only discover-and-sync pass against the Google
-    Business Profile provider for the configured location. This is
-    a scheduled refresh operation — it does not perform writes.
+    Business Profile provider for the organization. This is a scheduled
+    refresh operation — it does not perform writes.
+
+    Resolves a GBP location from ``gbp_location_id`` in the input document
+    (product-managed runs) or, for schedule-dispatched runs, from the
+    workflow run's platform ``location_id``. The resolved location validates
+    that the organization has at least one confirmed GBP location; the
+    actual sync operates on the entire organization.
     """
     from uuid import UUID as _UUID
 
@@ -1254,20 +1260,45 @@ async def _handle_gbp_sync(
     from apps.api.app.products.gbp.models import GBPLocation
 
     gbp_location_id_raw = input_document.get("gbp_location_id")
-    if not gbp_location_id_raw:
+    location: GBPLocation | None = None
+    if gbp_location_id_raw:
+        try:
+            gbp_loc_id = _UUID(str(gbp_location_id_raw))
+        except (ValueError, TypeError):
+            return JobOutcome(result="permanent_failure", safe_error="LOCATION_ID_INVALID")
+        location = await session.scalar(
+            select(GBPLocation).where(
+                GBPLocation.organization_id == organization_id,
+                GBPLocation.id == gbp_loc_id,
+            )
+        )
+    elif location_id is not None:
+        candidates = (
+            await session.scalars(
+                select(GBPLocation)
+                .where(
+                    GBPLocation.organization_id == organization_id,
+                    GBPLocation.location_id == location_id,
+                )
+                .order_by(
+                    (GBPLocation.mapping_status == "confirmed").desc(),
+                    GBPLocation.created_at.asc(),
+                )
+            )
+        ).all()
+        if len(candidates) == 1:
+            location = candidates[0]
+        elif len(candidates) > 1:
+            confirmed = [c for c in candidates if c.mapping_status == "confirmed"]
+            if len(confirmed) == 1:
+                location = confirmed[0]
+            else:
+                return JobOutcome(result="permanent_failure", safe_error="GBP_LOCATION_AMBIGUOUS")
+        else:
+            return JobOutcome(result="permanent_failure", safe_error="GBP_LOCATION_NOT_FOUND")
+    else:
         return JobOutcome(result="permanent_failure", safe_error="LOCATION_ID_MISSING")
 
-    try:
-        gbp_loc_id = _UUID(str(gbp_location_id_raw))
-    except (ValueError, TypeError):
-        return JobOutcome(result="permanent_failure", safe_error="LOCATION_ID_INVALID")
-
-    location = await session.scalar(
-        select(GBPLocation).where(
-            GBPLocation.organization_id == organization_id,
-            GBPLocation.id == gbp_loc_id,
-        )
-    )
     if not location:
         return JobOutcome(result="permanent_failure", safe_error="GBP_LOCATION_NOT_FOUND")
 
@@ -1319,6 +1350,10 @@ async def _handle_reviews_ingest(
 
     Performs a read-only ingest pass against the Google Business
     Profile reviews API for the configured location.
+
+    Resolves the GBP location from ``gbp_location_id`` in the input document
+    (product-managed runs) or, for schedule-dispatched runs, from the
+    workflow run's platform ``location_id``.
     """
     from uuid import UUID as _UUID
 
@@ -1329,22 +1364,54 @@ async def _handle_reviews_ingest(
     from apps.api.app.products.reviews.ingestion_service import ReviewIngestionService
 
     gbp_location_id_raw = input_document.get("gbp_location_id")
-    if not gbp_location_id_raw:
+    location: GBPLocation | None = None
+    if gbp_location_id_raw:
+        try:
+            gbp_loc_id = _UUID(str(gbp_location_id_raw))
+        except (ValueError, TypeError):
+            return JobOutcome(result="permanent_failure", safe_error="LOCATION_ID_INVALID")
+        location = await session.scalar(
+            select(GBPLocation).where(
+                GBPLocation.organization_id == organization_id,
+                GBPLocation.id == gbp_loc_id,
+            )
+        )
+    elif location_id is not None:
+        candidates = (
+            await session.scalars(
+                select(GBPLocation)
+                .where(
+                    GBPLocation.organization_id == organization_id,
+                    GBPLocation.location_id == location_id,
+                )
+                .order_by(
+                    (GBPLocation.mapping_status == "confirmed").desc(),
+                    GBPLocation.created_at.asc(),
+                )
+            )
+        ).all()
+        if len(candidates) == 1:
+            location = candidates[0]
+        elif len(candidates) > 1:
+            confirmed = [c for c in candidates if c.mapping_status == "confirmed"]
+            if len(confirmed) == 1:
+                location = confirmed[0]
+            else:
+                return JobOutcome(result="permanent_failure", safe_error="GBP_LOCATION_AMBIGUOUS")
+        else:
+            return JobOutcome(result="permanent_failure", safe_error="GBP_LOCATION_NOT_FOUND")
+    else:
         return JobOutcome(result="permanent_failure", safe_error="LOCATION_ID_MISSING")
 
-    try:
-        gbp_loc_id = _UUID(str(gbp_location_id_raw))
-    except (ValueError, TypeError):
-        return JobOutcome(result="permanent_failure", safe_error="LOCATION_ID_INVALID")
-
-    location = await session.scalar(
-        select(GBPLocation).where(
-            GBPLocation.organization_id == organization_id,
-            GBPLocation.id == gbp_loc_id,
-        )
-    )
     if not location:
         return JobOutcome(result="permanent_failure", safe_error="GBP_LOCATION_NOT_FOUND")
+
+    # Resolve the platform location id for the ingest service.
+    # ingest_for_location expects a platform location UUID (matching
+    # ProviderResourceMapping.platform_resource_id), not a GBPLocation.id.
+    platform_location_id = location.location_id
+    if platform_location_id is None:
+        return JobOutcome(result="permanent_failure", safe_error="GBP_LOCATION_NO_PLATFORM_LINK")
 
     try:
         _, _ = await _token_resolver(session, organization_id)
@@ -1357,7 +1424,7 @@ async def _handle_reviews_ingest(
             session,
             Settings(),
             organization_id,
-            gbp_loc_id,
+            platform_location_id,
             actor_id=None,
             correlation_id=correlation_id,
         )

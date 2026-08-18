@@ -18,6 +18,8 @@ envVarGroups:
         value: "false"
       - key: LILOS_PROVIDER_WRITES_ENABLED
         value: "false"
+      - key: LILOS_AI_PROVIDER
+        value: openrouter
       - key: UV_CACHE_DIR
         value: /tmp/uv-cache
       - key: LILOS_SUPABASE_AUTH_AUDIENCE
@@ -69,6 +71,8 @@ services:
         sync: false
       - key: LILOS_GITHUB_APP_INSTALLATION_REDIRECT_URI
         sync: false
+      - key: LILOS_OPENROUTER_API_KEY
+        sync: false
 
   - name: lilos-worker
     type: worker
@@ -107,6 +111,8 @@ services:
         sync: false
       - key: LILOS_GITHUB_APP_INSTALLATION_REDIRECT_URI
         sync: false
+      - key: LILOS_OPENROUTER_API_KEY
+        sync: false
 
   - name: lilos-scheduler
     type: worker
@@ -144,4 +150,6 @@ services:
       - key: LILOS_GITHUB_APP_PRIVATE_KEY
         sync: false
       - key: LILOS_GITHUB_APP_INSTALLATION_REDIRECT_URI
+        sync: false
+      - key: LILOS_OPENROUTER_API_KEY
         sync: false
