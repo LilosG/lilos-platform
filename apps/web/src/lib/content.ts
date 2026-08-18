@@ -318,6 +318,11 @@ export function generateAIDraft(
   return apiRequest(`${base(organizationId)}/${itemId}/revisions/ai-draft`, {
     method: "POST",
     body: { brief_id: briefId, idempotency_key: idempotencyKey },
+    /** AI generation can legitimately exceed the default 15-second client
+     *  timeout.  60 seconds gives the backend room to complete while still
+     *  being bounded — a stalled connection will resolve to `disconnected`
+     *  after 60 s instead of the default 15 s. */
+    timeoutMs: 60_000,
   });
 }
 
@@ -386,4 +391,176 @@ export function deriveSlug(title: string): string {
     .replace(/-+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 200);
+}
+
+/* ------------------------------------------------------------------ */
+/*  Content brief character limits                                     */
+/* ------------------------------------------------------------------ */
+
+/** Maximum characters the backend accepts for a content goal / intent. */
+export const CONTENT_GOAL_MAXLENGTH = 500;
+
+/** Maximum characters the backend accepts for audience. */
+export const AUDIENCE_MAXLENGTH = 500;
+
+/* ------------------------------------------------------------------ */
+/*  Document rendering                                                 */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Render long-form document body text into a safe, readable DOM fragment.
+ *
+ * The text is interpreted as a lightweight Markdown subset (paragraphs
+ * separated by blank lines, ATX headings, unordered lists, and plain
+ * inline text).  Everything is built with DOM text nodes — there is no
+ * innerHTML injection and therefore no XSS vector from user/AI content.
+ *
+ * The returned `<article>` element carries the `.content-document` class
+ * so CSS can apply readable line-length, heading/paragraph/list spacing,
+ * and review-appropriate typography.
+ */
+export function renderDocumentBody(body: string): HTMLElement {
+  const article = document.createElement("article");
+  article.className = "content-document";
+
+  if (!body || !body.trim()) {
+    const empty = document.createTextNode(
+      "No document body available for this revision.",
+    );
+    article.append(empty);
+    return article;
+  }
+
+  // Normalise line endings.
+  const normalised = body.replace(/\r\n?/g, "\n");
+
+  // Split into logical blocks separated by blank lines.
+  const blocks = normalised.split(/\n{2,}/);
+
+  for (const rawBlock of blocks) {
+    const trimmed = rawBlock.trim();
+    if (!trimmed) continue;
+
+    // --- ATX heading (# … through ###### …) ---
+    const headingMatch = trimmed.match(/^(#{1,6})\s+(.+)$/);
+    if (headingMatch) {
+      const level = Math.min(headingMatch[1].length, 6);
+      const heading = document.createElement(
+        `h${level}` as "h1" | "h2" | "h3" | "h4" | "h5" | "h6",
+      );
+      heading.textContent = headingMatch[2];
+      article.append(heading);
+      continue;
+    }
+
+    // --- Unordered list block (every line starts with `- `, `* `, or `+ `) ---
+    const lines = trimmed.split("\n");
+    const allListLines = lines.every(
+      (line) => /^[-*+]\s/.test(line) || line.trim() === "",
+    );
+    if (allListLines && lines.some((line) => /^[-*+]\s/.test(line))) {
+      const list = document.createElement("ul");
+      for (const line of lines) {
+        const itemMatch = line.match(/^[-*+]\s+(.+)$/);
+        if (!itemMatch) continue;
+        const li = document.createElement("li");
+        li.textContent = itemMatch[1];
+        list.append(li);
+      }
+      article.append(list);
+      continue;
+    }
+
+    // --- Plain paragraph ---
+    const paragraph = document.createElement("p");
+    // Collapse single newlines inside a paragraph block into spaces.
+    paragraph.textContent = trimmed.replace(/\n/g, " ");
+    article.append(paragraph);
+  }
+
+  return article;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Validation helpers                                                 */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Format a "N / M characters" label for a character-count constraint.
+ * Returns `"0 / 500 characters"`, `"500 / 500 characters"`, etc.
+ */
+export function formatCharacterCount(current: number, max: number): string {
+  return `${Math.max(0, current)} / ${max} characters`;
+}
+
+/**
+ * Whether the given count exceeds the limit (useful for submit guards).
+ */
+export function isOverCharacterLimit(count: number, limit: number): boolean {
+  return count > limit;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Field-specific API error helpers                                   */
+/* ------------------------------------------------------------------ */
+
+export type FieldValidationError = {
+  field: string;
+  message: string;
+};
+
+/**
+ * Extract validation errors scoped to a specific field from an API error
+ * outcome's `details` array.
+ *
+ * Returns `null` when the outcome is not an error or has no relevant
+ * detail — the caller should fall back to the generic outcome message.
+ */
+export function fieldErrorFromDetails(
+  outcome: ApiOutcome<unknown>,
+  fieldName: string,
+): string | null {
+  if (outcome.kind !== "error") return null;
+  if (!outcome.details || outcome.details.length === 0) return null;
+  const match = outcome.details.find(
+    (detail) => detail.field?.toLowerCase() === fieldName.toLowerCase(),
+  );
+  return match?.message ?? null;
+}
+
+/**
+ * Build a user-facing error summary from the outcome and optional context.
+ * When field-level details are present they take priority over the generic
+ * error envelope.
+ */
+export function describeContentFailure(
+  outcome: ApiOutcome<unknown>,
+  context?: string,
+): string {
+  if (outcome.kind === "error" && outcome.details?.length) {
+    const messages = outcome.details
+      .map((detail) => (detail.field ? `${detail.message}` : detail.message))
+      .filter(Boolean);
+    if (messages.length > 0) {
+      return messages.join(" ");
+    }
+  }
+  // Fall through to the generic outcome description.
+  const prefix = context ? `${context}: ` : "";
+  switch (outcome.kind) {
+    case "forbidden":
+      return `${prefix}You do not have permission to perform this action.`;
+    case "not-found":
+      return `${prefix}The requested resource could not be found.`;
+    case "disconnected":
+      return `${prefix}The request could not reach the platform. If you were generating a draft, the operation may still be processing — check back shortly.`;
+    case "unauthenticated":
+      return `${prefix}Your session has expired. Sign in again.`;
+    case "not-configured":
+      return `${prefix}This deployment is not configured.`;
+    case "error":
+      return outcome.message || `${prefix}The request failed.`;
+    case "ok":
+      return "";
+  }
 }

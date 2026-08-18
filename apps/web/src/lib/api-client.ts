@@ -25,6 +25,11 @@ type ErrorEnvelope = {
 export type ApiRequestOptions = {
   method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   body?: unknown;
+  /** Operation-specific timeout in milliseconds. Falls back to the 15-second
+   *  default when omitted, so short polls stay fast while long-running AI/
+   *  generation endpoints can opt into a longer window without affecting
+   *  every other request on the page. */
+  timeoutMs?: number;
 };
 
 /**
@@ -94,12 +99,10 @@ async function attemptRequest<T>(
   token: string,
 ): Promise<ApiOutcome<T>> {
   const method = options.method ?? "GET";
+  const timeoutMs = options.timeoutMs ?? REQUEST_TIMEOUT_MS;
   let response: Response;
   const timeoutController = new AbortController();
-  const timeoutId = setTimeout(
-    () => timeoutController.abort(),
-    REQUEST_TIMEOUT_MS,
-  );
+  const timeoutId = setTimeout(() => timeoutController.abort(), timeoutMs);
   try {
     response = await fetch(`${apiBaseUrl}${path}`, {
       method,
