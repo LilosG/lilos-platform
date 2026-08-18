@@ -370,3 +370,20 @@ export function reservePublication(
     },
   );
 }
+
+/**
+ * Derive a URL-friendly slug from a title.
+ * Matches the backend slug contract: lowercase alphanumeric with hyphens,
+ * no leading/trailing hyphens, no consecutive hyphens.
+ */
+export function deriveSlug(title: string): string {
+  return title
+    .toLowerCase()
+    .replace(/['']/g, "")
+    .replace(/[^a-z0-9\s-]/g, "")
+    .trim()
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 200);
+}
