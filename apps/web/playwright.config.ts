@@ -1,5 +1,3 @@
-import process from "node:process";
-
 import { defineConfig, devices } from "@playwright/test";
 
 export default defineConfig({
@@ -16,14 +14,14 @@ export default defineConfig({
       name: "chromium-desktop",
       use: {
         ...devices["Desktop Chrome"],
-        channel: process.env.CI ? "chrome" : undefined,
+        channel: "chrome",
       },
     },
     {
       name: "chromium-mobile",
       use: {
         ...devices["Pixel 7"],
-        channel: process.env.CI ? "chrome" : undefined,
+        channel: "chrome",
       },
     },
   ],
