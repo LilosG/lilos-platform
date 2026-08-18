@@ -123,20 +123,35 @@ import "../styles/global.css";
         </PageSection>
       </PageShell>
     </AppShell>
-    <dialog id="new-content-item-modal" class="ui-modal ui-modal--md" aria-labelledby="new-content-modal-title">
+    <dialog
+      id="new-content-item-modal"
+      class="ui-modal ui-modal--md"
+      aria-labelledby="new-content-modal-title"
+    >
       <div class="ui-modal__surface">
         <header class="ui-modal__header">
           <div>
             <h2 id="new-content-modal-title">New content item</h2>
-            <p>Create a standalone content item to begin the governed pipeline.</p>
+            <p>
+              Create a standalone content item to begin the governed pipeline.
+            </p>
           </div>
-          <button type="button" class="ui-button ui-button--ghost" aria-label="Close dialog" id="new-content-modal-close">✕</button>
+          <button
+            type="button"
+            class="ui-button ui-button--ghost"
+            aria-label="Close dialog"
+            id="new-content-modal-close">✕</button
+          >
         </header>
         <div class="ui-modal__body">
           <form id="new-content-form" class="ui-form-grid">
             <div class="ui-field">
-              <label class="ui-field__label" for="new-content-type">Content type</label>
-              <p class="ui-field__description">The kind of content you are creating</p>
+              <label class="ui-field__label" for="new-content-type"
+                >Content type</label
+              >
+              <p class="ui-field__description">
+                The kind of content you are creating
+              </p>
               <select id="new-content-type" class="ui-input" required>
                 <option value="">Select a type</option>
                 <option value="blog">Blog post</option>
@@ -147,28 +162,67 @@ import "../styles/global.css";
               </select>
             </div>
             <div class="ui-field ui-field--full">
-              <label class="ui-field__label" for="new-content-title">Title</label>
-              <p class="ui-field__description">A clear, descriptive title for this content item</p>
-              <input id="new-content-title" class="ui-input" type="text" required maxlength="300" />
+              <label class="ui-field__label" for="new-content-title"
+                >Title</label
+              >
+              <p class="ui-field__description">
+                A clear, descriptive title for this content item
+              </p>
+              <input
+                id="new-content-title"
+                class="ui-input"
+                type="text"
+                required
+                maxlength="300"
+              />
             </div>
             <div class="ui-field ui-field--full">
               <label class="ui-field__label" for="new-content-slug">Slug</label>
-              <p class="ui-field__description">URL-friendly identifier — derived from your title</p>
-              <input id="new-content-slug" class="ui-input" type="text" required maxlength="200" pattern="^[a-z0-9]+(?:-[a-z0-9]+)*$" />
+              <p class="ui-field__description">
+                URL-friendly identifier — derived from your title
+              </p>
+              <input
+                id="new-content-slug"
+                class="ui-input"
+                type="text"
+                required
+                maxlength="200"
+                pattern="^[a-z0-9]+(?:-[a-z0-9]+)*$"
+              />
             </div>
             <div class="ui-field" id="new-content-location-field">
-              <label class="ui-field__label" for="new-content-location">Location (optional)</label>
-              <p class="ui-field__description">Link this item to a specific business location</p>
+              <label class="ui-field__label" for="new-content-location"
+                >Location (optional)</label
+              >
+              <p class="ui-field__description">
+                Link this item to a specific business location
+              </p>
               <select id="new-content-location" class="ui-input">
                 <option value="">No location</option>
               </select>
             </div>
           </form>
-          <div id="new-content-form-status" class="ui-text-secondary" role="status" aria-live="polite" hidden></div>
+          <div
+            id="new-content-form-status"
+            class="ui-text-secondary"
+            role="status"
+            aria-live="polite"
+            hidden
+          >
+          </div>
         </div>
         <footer class="ui-modal__footer">
-          <button type="button" class="ui-button ui-button--secondary ui-button--md" id="new-content-cancel">Cancel</button>
-          <button type="submit" form="new-content-form" class="ui-button ui-button--primary ui-button--md" id="new-content-submit">Create item</button>
+          <button
+            type="button"
+            class="ui-button ui-button--secondary ui-button--md"
+            id="new-content-cancel">Cancel</button
+          >
+          <button
+            type="submit"
+            form="new-content-form"
+            class="ui-button ui-button--primary ui-button--md"
+            id="new-content-submit">Create item</button
+          >
         </footer>
       </div>
     </dialog>
