@@ -49,6 +49,12 @@ import "../styles/global.css";
         >
           <Button
             slot="actions"
+            id="new-content-item-button"
+            variant="primary"
+            size="sm">New content item</Button
+          >
+          <Button
+            slot="actions"
             href="/integrations"
             variant="secondary"
             size="sm">Manage publishing</Button
@@ -117,6 +123,109 @@ import "../styles/global.css";
         </PageSection>
       </PageShell>
     </AppShell>
+    <dialog
+      id="new-content-item-modal"
+      class="ui-modal ui-modal--md"
+      aria-labelledby="new-content-modal-title"
+    >
+      <div class="ui-modal__surface">
+        <header class="ui-modal__header">
+          <div>
+            <h2 id="new-content-modal-title">New content item</h2>
+            <p>
+              Create a standalone content item to begin the governed pipeline.
+            </p>
+          </div>
+          <button
+            type="button"
+            class="ui-button ui-button--ghost"
+            aria-label="Close dialog"
+            id="new-content-modal-close">✕</button
+          >
+        </header>
+        <div class="ui-modal__body">
+          <form id="new-content-form" class="ui-form-grid">
+            <div class="ui-field">
+              <label class="ui-field__label" for="new-content-type"
+                >Content type</label
+              >
+              <p class="ui-field__description">
+                The kind of content you are creating
+              </p>
+              <select id="new-content-type" class="ui-input" required>
+                <option value="">Select a type</option>
+                <option value="blog">Blog post</option>
+                <option value="page">Page</option>
+                <option value="article">Article</option>
+                <option value="guide">Guide</option>
+                <option value="landing">Landing page</option>
+              </select>
+            </div>
+            <div class="ui-field ui-field--full">
+              <label class="ui-field__label" for="new-content-title"
+                >Title</label
+              >
+              <p class="ui-field__description">
+                A clear, descriptive title for this content item
+              </p>
+              <input
+                id="new-content-title"
+                class="ui-input"
+                type="text"
+                required
+                maxlength="300"
+              />
+            </div>
+            <div class="ui-field ui-field--full">
+              <label class="ui-field__label" for="new-content-slug">Slug</label>
+              <p class="ui-field__description">
+                URL-friendly identifier — derived from your title
+              </p>
+              <input
+                id="new-content-slug"
+                class="ui-input"
+                type="text"
+                required
+                maxlength="200"
+                pattern="^[a-z0-9]+(?:-[a-z0-9]+)*$"
+              />
+            </div>
+            <div class="ui-field" id="new-content-location-field">
+              <label class="ui-field__label" for="new-content-location"
+                >Location (optional)</label
+              >
+              <p class="ui-field__description">
+                Link this item to a specific business location
+              </p>
+              <select id="new-content-location" class="ui-input">
+                <option value="">No location</option>
+              </select>
+            </div>
+          </form>
+          <div
+            id="new-content-form-status"
+            class="ui-text-secondary"
+            role="status"
+            aria-live="polite"
+            hidden
+          >
+          </div>
+        </div>
+        <footer class="ui-modal__footer">
+          <button
+            type="button"
+            class="ui-button ui-button--secondary ui-button--md"
+            id="new-content-cancel">Cancel</button
+          >
+          <button
+            type="submit"
+            form="new-content-form"
+            class="ui-button ui-button--primary ui-button--md"
+            id="new-content-submit">Create item</button
+          >
+        </footer>
+      </div>
+    </dialog>
     <script>
       import {
         fetchContentSummary,
@@ -133,11 +242,14 @@ import "../styles/global.css";
         createRevision,
         generateAIDraft,
         decideRevision,
+        createContentItem,
         isContentOpportunityActionable,
         CONTENT_REQUIRED_FACT_KEYS,
+        deriveSlug,
         type ContentItem,
       } from "../lib/content";
       import { fetchGitHubRepositories } from "../lib/github-app";
+      import { fetchLocations } from "../lib/workspace";
       import {
         businessFactLabel,
         resolveBusinessFact,
@@ -204,12 +316,145 @@ import "../styles/global.css";
           });
         });
 
+      function setupNewContentItemModal(): void {
+        const modal = document.getElementById(
+          "new-content-item-modal",
+        ) as HTMLDialogElement | null;
+        const openButton = document.getElementById("new-content-item-button");
+        const closeButton = document.getElementById("new-content-modal-close");
+        const cancelButton = document.getElementById("new-content-cancel");
+        const titleInput = document.getElementById(
+          "new-content-title",
+        ) as HTMLInputElement | null;
+        const slugInput = document.getElementById(
+          "new-content-slug",
+        ) as HTMLInputElement | null;
+        const form = document.getElementById(
+          "new-content-form",
+        ) as HTMLFormElement | null;
+        const submitButton = document.getElementById(
+          "new-content-submit",
+        ) as HTMLButtonElement | null;
+        const statusEl = document.getElementById("new-content-form-status");
+
+        if (
+          !modal ||
+          !openButton ||
+          !closeButton ||
+          !cancelButton ||
+          !titleInput ||
+          !slugInput ||
+          !form ||
+          !submitButton ||
+          !statusEl
+        )
+          return;
+
+        function openModal(): void {
+          form!.reset();
+          slugInput!.value = "";
+          statusEl!.hidden = true;
+          statusEl!.textContent = "";
+          submitButton!.disabled = false;
+          modal!.showModal();
+        }
+
+        function closeModal(): void {
+          modal!.close();
+        }
+
+        openButton.addEventListener("click", openModal);
+        closeButton.addEventListener("click", closeModal);
+        cancelButton.addEventListener("click", closeModal);
+        modal.addEventListener("click", (event) => {
+          if (event.target === modal) closeModal();
+        });
+
+        titleInput.addEventListener("input", () => {
+          if (document.activeElement !== slugInput) {
+            slugInput!.value = deriveSlug(titleInput!.value);
+          }
+        });
+
+        slugInput.addEventListener("input", () => {
+          slugInput.value = slugInput.value
+            .toLowerCase()
+            .replace(/[^a-z0-9-]/g, "")
+            .replace(/-+/g, "-")
+            .replace(/^-+|-+$/g, "")
+            .slice(0, 200);
+        });
+
+        form.addEventListener("submit", async (event) => {
+          event.preventDefault();
+          if (!organizationId) return;
+          submitButton!.disabled = true;
+          statusEl!.hidden = false;
+          statusEl!.textContent = "Creating content item…";
+
+          const contentType = (
+            document.getElementById("new-content-type") as HTMLSelectElement
+          ).value;
+          const title = titleInput!.value.trim();
+          const slug = slugInput!.value.trim();
+          const locationSelect = document.getElementById(
+            "new-content-location",
+          ) as HTMLSelectElement | null;
+          const locationId = locationSelect?.value || null;
+
+          const result = await createContentItem(organizationId, {
+            contentType,
+            title,
+            slug,
+            locationId: locationId ?? undefined,
+          });
+
+          if (result.kind === "ok") {
+            closeModal();
+            const [s, i, o, t] = await Promise.all([
+              fetchContentSummary(organizationId),
+              fetchContentItems(organizationId),
+              fetchOpportunities(organizationId),
+              fetchPublishingTargets(organizationId),
+            ]);
+            renderMetrics(s, i, o, t);
+            renderContentStages(s, i, o);
+            renderPipeline(i);
+            renderOpportunities(o);
+            void renderPublishing(t);
+            await openContentItem(result.data);
+          } else {
+            submitButton!.disabled = false;
+            statusEl!.textContent = describeFailure(result, "Content item");
+          }
+        });
+      }
+
+      async function populateLocationSelector(): Promise<void> {
+        const select = document.getElementById(
+          "new-content-location",
+        ) as HTMLSelectElement | null;
+        if (!select) return;
+        const result = await fetchLocations(organizationId);
+        if (result.kind === "ok") {
+          for (const loc of result.data) {
+            const option = document.createElement("option");
+            option.value = loc.id;
+            option.textContent = loc.name;
+            select.append(option);
+          }
+        }
+      }
+
+      setupNewContentItemModal();
+
       async function loadOrganization(
         org: import("../lib/workspace").MyOrganization,
       ): Promise<void> {
         setActiveOrganization(org);
         organizationId = org.organization_id;
         showContentPipeline();
+        void populateLocationSelector();
 
         const [summaryResult, itemsResult, oppsResult, targetsResult] =
           await Promise.all([
@@ -346,7 +591,7 @@ import "../styles/global.css";
                 ? "No content items yet"
                 : "No loaded items in this stage",
               activeContentStage === "all"
-                ? "Accept a content opportunity to start the governed pipeline."
+                ? "Create a new content item or accept a content opportunity to begin."
                 : "Choose another stage or load the next pipeline page.",
             ),
           );
