@@ -111,11 +111,16 @@ class AIGateway:
             ):
                 raise ValueError("secret-bearing AI input rejected")
 
-        # Pre-flight cost bound: if the task's maximum_cost_microunits exceeds
-        # the global safety bound, reject before any provider call.
-        effective_cost_bound = min(
-            request.maximum_cost_microunits, self._global_max_cost_microunits
-        )
+        # Pre-flight cost bound:
+        # - task limit == 0 means "inherit the configured global ceiling"
+        # - task limit > 0 means "use the smaller of task limit and global ceiling"
+        # - if the resulting effective limit is <= 0, reject fail-closed
+        if request.maximum_cost_microunits > 0:
+            effective_cost_bound = min(
+                request.maximum_cost_microunits, self._global_max_cost_microunits
+            )
+        else:
+            effective_cost_bound = self._global_max_cost_microunits
         if effective_cost_bound <= 0:
             raise ValueError("AI task cost bound must be positive")
 

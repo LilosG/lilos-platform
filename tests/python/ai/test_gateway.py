@@ -80,8 +80,35 @@ async def test_gateway_rejects_secret_bearing_input() -> None:
 
 
 @pytest.mark.anyio
-async def test_gateway_rejects_zero_cost_bound() -> None:
-    gateway = AIGateway(FakeProvider({"draft": "x"}))
+async def test_gateway_task_limit_zero_inherits_global_limit() -> None:
+    """task maximum_cost_microunits == 0 inherits the configured global ceiling."""
+    gateway = AIGateway(FakeProvider({"draft": "x"}), global_max_cost_microunits=200_000)
+    output = await gateway.execute(_request(maximum_cost_microunits=0))
+    assert output["draft"] == "x"
+
+
+@pytest.mark.anyio
+async def test_gateway_positive_task_limit_lower_than_global_wins() -> None:
+    """When task limit is positive and lower than global, the task limit is the effective bound."""
+    provider = FakeProvider({"draft": "x", "cost_microunits": 5_000})
+    gateway = AIGateway(provider, global_max_cost_microunits=200_000)
+    await gateway.execute(_request(maximum_cost_microunits=10_000))
+    # effective bound = min(10_000, 200_000) = 10_000; cost 5_000 is within bound
+
+
+@pytest.mark.anyio
+async def test_gateway_global_limit_lower_than_task_wins() -> None:
+    """When global limit is lower than task limit, the global limit is the effective bound."""
+    provider = FakeProvider({"draft": "x", "cost_microunits": 5_000})
+    gateway = AIGateway(provider, global_max_cost_microunits=10_000)
+    await gateway.execute(_request(maximum_cost_microunits=200_000))
+    # effective bound = min(200_000, 10_000) = 10_000; cost 5_000 is within bound
+
+
+@pytest.mark.anyio
+async def test_gateway_rejects_when_effective_global_limit_is_zero() -> None:
+    """When the global limit is zero (or negative), execution is rejected fail-closed."""
+    gateway = AIGateway(FakeProvider({"draft": "x"}), global_max_cost_microunits=0)
     with pytest.raises(ValueError, match="cost"):
         await gateway.execute(_request(maximum_cost_microunits=0))
 
