@@ -13,11 +13,12 @@ The gateway enforces:
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Protocol
 from uuid import UUID
 
-from apps.api.app.ai.errors import AIProviderError
+from apps.api.app.ai.errors import AIProviderConfigurationError, AIProviderError
 
 logger = logging.getLogger(__name__)
 
@@ -46,22 +47,40 @@ class AIGatewayRequest:
 
 
 class AIGateway:
-    """Governed AI execution boundary with task routing and cost/latency bounds."""
+    """Governed AI execution boundary with task routing and cost/latency bounds.
+
+    The provider may be supplied directly (tests, deterministic fixtures) or
+    resolved lazily through ``provider_factory`` (production configuration).
+    Lazy resolution keeps platform startup independent of AI provider
+    configuration while remaining fail-closed at execution time.
+    """
 
     def __init__(
         self,
-        provider: AIProvider,
+        provider: AIProvider | None = None,
         *,
+        provider_factory: Callable[[], AIProvider] | None = None,
         task_model_overrides: dict[str, str] | None = None,
         default_model: str | None = None,
         global_max_output_tokens: int = 2_000,
         global_max_cost_microunits: int = 200_000,
     ) -> None:
-        self.provider = provider
+        if provider is None and provider_factory is None:
+            raise ValueError("AIGateway requires a provider or provider_factory")
+        self._provider = provider
+        self._provider_factory = provider_factory
         self._task_models = task_model_overrides or {}
         self._default_model = default_model
         self._global_max_output_tokens = global_max_output_tokens
         self._global_max_cost_microunits = global_max_cost_microunits
+
+    @property
+    def provider(self) -> AIProvider:
+        if self._provider is None:
+            if self._provider_factory is None:
+                raise AIProviderConfigurationError("AI provider is not configured")
+            self._provider = self._provider_factory()
+        return self._provider
 
     def _resolve_model(self, task_key: str) -> str | None:
         """Resolve the model for a task key from overrides or default."""

@@ -54,13 +54,18 @@ def resolve_ai_provider(settings: Settings | None = None) -> AIProvider:
 
 
 def build_ai_gateway(settings: Settings | None = None) -> AIGateway:
-    """Build a fully configured AIGateway from environment settings."""
+    """Build a fully configured AIGateway from environment settings.
+
+    The provider is resolved lazily on first execution so that platform
+    startup is independent of AI provider configuration. A missing or
+    misconfigured provider raises ``AIProviderConfigurationError`` at
+    execution time, not at import.
+    """
     if settings is None:
         settings = Settings()
 
-    provider = resolve_ai_provider(settings)
     return AIGateway(
-        provider,
+        provider_factory=lambda: resolve_ai_provider(settings),
         task_model_overrides=settings.ai_task_model_map(),
         default_model=settings.ai_default_model,
         global_max_output_tokens=settings.ai_max_output_tokens,

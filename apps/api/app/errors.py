@@ -187,6 +187,34 @@ async def http_exception_handler(
     )
 
 
+async def ai_provider_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Return a governed, safe response for AI provider failures.
+
+    The AI provider error message is already sanitized (no secrets, no raw
+    provider payloads). Configuration failures are not retryable; provider
+    outages are.
+    """
+    from apps.api.app.ai.errors import AIProviderConfigurationError, AIProviderError
+
+    if isinstance(exc, AIProviderConfigurationError):
+        status_code = HTTPStatus.SERVICE_UNAVAILABLE
+        retryable = False
+        code = "AI_PROVIDER_NOT_CONFIGURED"
+    else:
+        assert isinstance(exc, AIProviderError)
+        status_code = HTTPStatus.BAD_GATEWAY
+        retryable = exc.category in {"provider", "retryable"}
+        code = "AI_PROVIDER_UNAVAILABLE"
+    return error_response(
+        request,
+        status_code=status_code,
+        code=code,
+        message=exc.safe_message,
+        category=ErrorCategory.SYSTEM,
+        retryable=retryable,
+    )
+
+
 async def unexpected_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     """Log an opaque internal failure and return a safe generic response."""
     correlation_id = request_correlation_id(request)
@@ -211,6 +239,8 @@ async def unexpected_exception_handler(request: Request, exc: Exception) -> JSON
 
 def register_exception_handlers(app: FastAPI) -> None:
     """Register every standard API exception handler."""
+    from apps.api.app.ai.errors import AIProviderError
+
     app.add_exception_handler(
         RequestValidationError,
         cast(ExceptionHandler, validation_exception_handler),
@@ -219,5 +249,9 @@ def register_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(
         StarletteHTTPException,
         cast(ExceptionHandler, http_exception_handler),
+    )
+    app.add_exception_handler(
+        AIProviderError,
+        cast(ExceptionHandler, ai_provider_exception_handler),
     )
     app.add_exception_handler(Exception, unexpected_exception_handler)

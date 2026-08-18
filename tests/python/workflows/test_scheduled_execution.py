@@ -416,3 +416,78 @@ async def test_scheduled_gbp_sync_requires_location_resolution(
         )
         assert outcome.result == "permanent_failure"
         assert outcome.safe_error == "LOCATION_ID_MISSING"
+
+
+@pytest.mark.integration
+@pytest.mark.anyio
+async def test_reviews_ingest_schedule_dispatch_path_resolves_platform_location(
+    postgresql_test_url: str,
+    workflows_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression: reviews.ingest schedule-dispatched runs (no gbp_location_id in
+    input document) must resolve the platform location from run.location_id and
+    pass it to ingest_for_location — no NameError, no GBPLocation.id misuse."""
+    import asyncio
+
+    from apps.api.app.execution import handlers as handlers_module
+    from apps.api.app.products.reviews.ingestion_service import ReviewIngestionService
+
+    monkeypatch.setenv("LILOS_MIGRATION_DATABASE_URL", postgresql_test_url)
+    config = Config(ROOT / "alembic.ini")
+    await asyncio.to_thread(command.upgrade, config, "head")
+
+    async with workflows_session_factory.begin() as session:
+        org, location, _gbp, _provider, _connection = await _seed_org(
+            session, "Reviews Ingest Org", f"rvingest-{uuid4().hex[:12]}"
+        )
+        org_id = org.id
+        platform_location_id = location.id
+
+    ingest_calls: list[dict[str, Any]] = []
+
+    async def fake_token_resolver(
+        session: AsyncSession, organization_id: Any
+    ) -> tuple[str, IntegrationConnection]:
+        return "fake-token", _connection
+
+    async def fake_ingest_for_location(
+        self: ReviewIngestionService,
+        session: AsyncSession,
+        settings: Settings,
+        organization_id: Any,
+        location_id: Any,
+        *,
+        actor_id: Any,
+        correlation_id: str,
+    ) -> dict[str, object]:
+        ingest_calls.append({"organization_id": organization_id, "location_id": location_id})
+        return {"ingested": 0, "updated": 0, "total": 0}
+
+    monkeypatch.setattr(handlers_module, "_token_resolver", fake_token_resolver)
+    monkeypatch.setattr(ReviewIngestionService, "ingest_for_location", fake_ingest_for_location)
+
+    # Schedule-dispatch path: input_document has schedule fields only
+    async with workflows_session_factory() as session:
+        from apps.api.app.execution.handlers import _handle_reviews_ingest
+
+        outcome = await _handle_reviews_ingest(
+            session,
+            organization_id=org_id,
+            location_id=platform_location_id,
+            input_document={
+                "schedule_id": str(uuid4()),
+                "scheduled_for": datetime.now(UTC).isoformat(),
+            },
+            correlation_id="p5-rvingest-scheduled",
+        )
+
+        assert outcome.result == "succeeded", (
+            f"reviews.ingest schedule-dispatch path failed: {outcome.safe_error}"
+        )
+
+    assert len(ingest_calls) == 1
+    assert ingest_calls[0]["organization_id"] == org_id
+    assert ingest_calls[0]["location_id"] == platform_location_id, (
+        "ingest_for_location must receive the platform location id, not a GBPLocation.id"
+    )

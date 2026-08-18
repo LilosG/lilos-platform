@@ -1239,16 +1239,17 @@ async def _handle_gbp_sync(
     input_document: dict[str, Any],
     correlation_id: str,
 ) -> JobOutcome:
-    """Scheduled GBP discovery and profile sync for a location.
+    """Scheduled GBP discovery and profile sync.
 
     Performs a read-only discover-and-sync pass against the Google
-    Business Profile provider for the configured location. This is
-    a scheduled refresh operation — it does not perform writes.
+    Business Profile provider for the organization. This is a scheduled
+    refresh operation — it does not perform writes.
 
-    Resolves the GBP location from ``gbp_location_id`` in the input document
+    Resolves a GBP location from ``gbp_location_id`` in the input document
     (product-managed runs) or, for schedule-dispatched runs, from the
-    workflow run's platform ``location_id`` (the schedule carries the
-    platform location).
+    workflow run's platform ``location_id``. The resolved location validates
+    that the organization has at least one confirmed GBP location; the
+    actual sync operates on the entire organization.
     """
     from uuid import UUID as _UUID
 
@@ -1405,6 +1406,13 @@ async def _handle_reviews_ingest(
     if not location:
         return JobOutcome(result="permanent_failure", safe_error="GBP_LOCATION_NOT_FOUND")
 
+    # Resolve the platform location id for the ingest service.
+    # ingest_for_location expects a platform location UUID (matching
+    # ProviderResourceMapping.platform_resource_id), not a GBPLocation.id.
+    platform_location_id = location.location_id
+    if platform_location_id is None:
+        return JobOutcome(result="permanent_failure", safe_error="GBP_LOCATION_NO_PLATFORM_LINK")
+
     try:
         _, _ = await _token_resolver(session, organization_id)
     except Exception:
@@ -1416,7 +1424,7 @@ async def _handle_reviews_ingest(
             session,
             Settings(),
             organization_id,
-            gbp_loc_id,
+            platform_location_id,
             actor_id=None,
             correlation_id=correlation_id,
         )
