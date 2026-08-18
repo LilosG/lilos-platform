@@ -270,6 +270,43 @@ The **Implementation** column uses the formal status vocabulary. The **Live acce
 
 ---
 
+### Track C — Source-Driven Business Knowledge Reconciliation
+
+- Branch / SHA: `fix/business-knowledge-reconciliation` / base `5dea6dc8e9f15df98a7386ad4459d9b01f9abd8b`
+- Auditor result: NOT RUN
+- Principal result: IMPLEMENTED_NOT_ACCEPTED (integration tests require `LILOS_TEST_DATABASE_URL`)
+- Focused checks:
+  - Python ruff: 0 errors on `administration/service.py`, `test_reconciliation.py`
+  - Python mypy: 0 errors on changed files
+  - Python pytest (collection): 17 tests collected (7 existing + 10 new)
+  - Syntax: clean
+- Architecture delivered:
+  1. **Source-driven `brand.approved_claims` derivation** — Reconciliation now produces service/claim candidates from canonical persisted LILOs data (GBP profile snapshot categories + serviceItems, organization profile primary_services + approved_claims, SEO crawl page H1 signals on service-context pages) instead of requiring an operator to type the same knowledge into the organization profile first. Removes the circular dependency where Content required approved claims → reconciliation needed profile approved claims → operator manually typed approved claims.
+  2. **Claim safety filtering** — Provider/crawl-derived names pass a safety filter that rejects superlatives, awards, licensing, bonding, insurance, guarantees, warranties, pricing, certifications, years-in-business, financing, free-estimate, emergency/24-7, performance-statistic, and other material claims. Explicitly supplied profile knowledge is preserved as-is.
+  3. **Provenance tracking** — Composite source strings (e.g. `"gbp_profile_snapshot+organization_profile+seo_crawl"`) identify which source families contributed. Audit metadata records per-source candidate counts.
+  4. **Normalization and deduplication** — Case/punctuation/whitespace variants normalize to one entry. Cross-source duplicates collapse to a single claim.
+  5. **Idempotent reconciliation** — Repeated reconciliation with unchanged source data proposes no duplicates. Source data changes produce a proper next revision via the existing immutable revision architecture (same fact_identity, incremented revision, supersedes link).
+  6. **Conflict surfacing** — When GBP and profile sources produce distinct names, both are retained in the proposed candidate list; neither is silently dropped. The operator reviews and confirms.
+  7. **Tenant/location safety** — All source reads are organization-scoped. GBP data from other organizations or non-primary locations does not leak into candidates.
+  8. **SEO crawl evidence quality** — Only H1 text from pages with service-context URL segments or multi-word slug-H1 corroboration is considered. Generic furniture pages (home, contact, about, blog, etc.) are excluded.
+- Changed files (2 files):
+  - `apps/api/app/administration/service.py` — Added module-level helpers (`_normalize_service_name`, `_service_claim_key`, `_website_matches_domain`, `_is_safe_service_claim`, `_clean_provider_name`, `_gbp_category_names`, `_gbp_service_item_names`, `_profile_service_names`, `_seo_service_names`), claim-safety patterns, service URL segment lists, non-service path/H1 patterns. Refactored `reconcile_business_facts` to look up GBP snapshot once for both hours and service candidates, added source-driven `brand.approved_claims` derivation from GBP + profile + SEO crawl sources, enriched audit metadata with per-source candidate counts.
+  - `tests/python/administration/test_reconciliation.py` — Added 10 new tests: GBP-derived service candidates, SEO crawl-derived candidates, duplicate normalization, risky claim filtering, no-sources unresolved, confirmation required (propose → approve → resolved), conflict surfacing, cross-tenant isolation, idempotency, source-change next-revision. Added `_seo_page` fixture helper. Updated imports for `SEOPage`, `SEOWebsite`, `BusinessFactDecision`.
+- Ledger rows changed: Content (business-fact confirmation gap addressed)
+- Adjacent work intentionally not implemented:
+  - No Content frontend changes.
+  - No Content AI generation runtime changes.
+  - No Integrations redesign.
+  - No new scraping/provider framework.
+  - No external provider calls — uses only persisted canonical source data.
+  - No new fact key/schema — reuses existing `brand.approved_claims`.
+  - No per-claim provenance model extension — uses existing `source` field + audit metadata.
+  - No brand-summary derivation (not required to unblock Content).
+- Remaining blockers: Integration tests require `LILOS_TEST_DATABASE_URL`. Live Wheyland acceptance requires runtime access to verify GBP snapshot + SEO crawl data produces expected candidates.
+- Accepted: no (integration test run + auditor review pending)
+
+---
+
 ## Known baseline questions — Round 0 answers
 
 | Question | Answer |

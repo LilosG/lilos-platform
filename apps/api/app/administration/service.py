@@ -1,11 +1,13 @@
 # ruff: noqa: E501
 """Transactional Phase 4 mutation services and read-only resolvers."""
 
+import re
 from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import datetime
 from json import dumps as _json_dumps
 from typing import cast
+from urllib.parse import urlparse
 from uuid import UUID, uuid4
 
 from sqlalchemy import select
@@ -154,6 +156,340 @@ async def _location(
     if item is None:
         raise LocationNotFoundError
     return item
+
+
+# ── Source-driven business-knowledge candidate extraction ──────────────────
+#
+# Reconciliation proposes ``brand.approved_claims`` candidates from canonical
+# persisted source data (GBP profile snapshots, organization profile service
+# lists, SEO crawl page signals) instead of requiring an operator to type the
+# same knowledge into the profile first. Claim safety and normalization below
+# keep weak or risky text from becoming authoritative claims.
+
+_SERVICE_CLAIM_MAX_LENGTH = 200
+
+# Claim text patterns that must never be silently promoted into an approved
+# claim candidate. Ordinary service capabilities are allowed; superlatives,
+# material claims, and evidence-dependent statements are not.
+_RISKY_CLAIM_PATTERNS: tuple[re.Pattern[str], ...] = tuple(
+    re.compile(pattern, re.IGNORECASE)
+    for pattern in (
+        r"\bbest\b",
+        r"#\s*1\b",
+        r"\bnumber\s*(?:one|1)\b",
+        r"\baward(?:s|ed|ing)?\b",
+        r"\bwinning\b",
+        r"\blicensed\b",
+        r"\bbonded\b",
+        r"\binsured\b",
+        r"\bguarante(?:e|ed|es)\b",
+        r"\bwarrant(?:y|ies)\b",
+        r"\bcertified\b",
+        r"\bcertification(?:s)?\b",
+        r"\bfinancing\b",
+        r"\bfree\s+(?:estimates?|consultations?|quotes?)\b",
+        r"\bemergency\b",
+        r"24\s*[/-]\s*7",
+        r"\b24\s*hours?\b",
+        r"\byears?\s+(?:in\s+)?(?:business|experience|operation)\b",
+        r"\b\d+\s*(?:%|percent)\s+(?:off|discount|savings?)\b",
+        r"\b(?:cheapest|cheap|affordable)\b",
+        r"\b(?:premium|luxury|exclusive)\b",
+        r"\btop[- ]?rated\b",
+        r"\bhighest[- ]?rated\b",
+        r"\b(?:leading|premier|premiere)\b",
+        r"\bunbeatable\b",
+        r"\bmoney[- ]back\b",
+        r"\bprice\s+(?:match|guarantee)\b",
+        r"\bsatisfaction\s+guaranteed\b",
+        r"\bno[- ]obligation\b",
+        r"\blifetime\b",
+        r"\bunlimited\b",
+        r"\bestablished\s+in\b",
+        r"\bsince\s+\d{4}\b",
+        r"\bmost\s+trusted\b",
+        r"\b#\s*\d+\b",
+    )
+)
+
+# H1 text that is page furniture, never a service name.
+_NON_SERVICE_H1_PATTERNS: tuple[re.Pattern[str], ...] = tuple(
+    re.compile(pattern, re.IGNORECASE)
+    for pattern in (
+        r"^home$",
+        r"^welcome",
+        r"^contact\s*us",
+        r"^about\s*us",
+        r"^get\s+in\s+touch",
+        r"^our\s+story",
+        r"^our\s+team",
+        r"^blog$",
+        r"^news$",
+        r"^faq",
+        r"^privacy\s+policy",
+        r"^terms",
+        r"^login$",
+        r"^sign\s+up",
+        r"^search",
+        r"^404",
+        r"^page\s+not\s+found",
+        r"^error",
+        r"^sitemap",
+        r"^accessibility",
+        r"^services?$",
+        r"^gallery$",
+        r"^photos?$",
+        r"^reviews?$",
+        r"^testimonials?$",
+        r"^schedule",
+        r"^book\s+(?:an?\s+)?appointment",
+        r"^request\s+(?:an?\s+)?(?:quote|estimate)",
+    )
+)
+
+# URL path segments that suggest a crawled page describes a service.
+_SERVICE_URL_SEGMENTS: frozenset[str] = frozenset(
+    {
+        "services",
+        "service",
+        "solutions",
+        "offerings",
+        "electrical",
+        "plumbing",
+        "hvac",
+        "roofing",
+        "landscaping",
+        "installation",
+        "install",
+        "installations",
+        "repair",
+        "repairs",
+        "maintenance",
+        "remodel",
+        "remodeling",
+        "renovation",
+        "renovations",
+        "construction",
+        "cleaning",
+        "painting",
+        "moving",
+        "delivery",
+        "consulting",
+        "training",
+        "coaching",
+        "design",
+        "development",
+        "marketing",
+        "photography",
+        "catering",
+        "electrician",
+        "contractor",
+        "contractors",
+        "handyman",
+        "lawn-care",
+        "tutoring",
+    }
+)
+
+# Path segments that mark a page as non-service content even when another
+# segment looks service-related (e.g. /blog/electrical-tips).
+_NON_SERVICE_PATH_SEGMENTS: frozenset[str] = frozenset(
+    {
+        "blog",
+        "news",
+        "article",
+        "articles",
+        "post",
+        "posts",
+        "help",
+        "support",
+        "faq",
+        "faqs",
+        "about",
+        "about-us",
+        "careers",
+        "jobs",
+        "privacy",
+        "privacy-policy",
+        "terms",
+        "terms-of-service",
+        "legal",
+        "media",
+        "press",
+        "resources",
+        "contact",
+        "contact-us",
+        "gallery",
+        "reviews",
+        "testimonials",
+        "team",
+        "our-team",
+        "story",
+        "our-story",
+        "login",
+        "signup",
+        "sign-up",
+        "account",
+        "cart",
+        "checkout",
+        "sitemap",
+        "search",
+        "404",
+    }
+)
+
+# Maximum H1 length that still plausibly names a service.
+_SERVICE_H1_MAX_LENGTH = 120
+
+
+def _normalize_service_name(name: str) -> str:
+    """Collapse whitespace and normalize case/separator variants of a service name."""
+    return re.sub(r"\s+", " ", name.strip())
+
+
+def _service_claim_key(name: str) -> str:
+    """Deduplication key: lowercase, punctuation-stripped service name."""
+    return re.sub(r"[^\w\s]", "", _normalize_service_name(name).lower())
+
+
+def _website_matches_domain(canonical_origin: str, domain: str) -> bool:
+    """Return True when a website's canonical origin belongs to the domain."""
+    try:
+        host = (urlparse(canonical_origin).hostname or "").lower().strip(".")
+    except ValueError:
+        return False
+    domain_clean = domain.lower().strip(".")
+    return bool(host) and (host == domain_clean or host.endswith(f".{domain_clean}"))
+
+
+def _is_safe_service_claim(claim: str) -> bool:
+    """Return True when a claim is an ordinary service capability, not a risky statement.
+
+    Risky claims (superlatives, awards, licensing, guarantees, pricing,
+    certifications, years in business, etc.) must never be silently promoted
+    from source text into approved-claim candidates.
+    """
+    stripped = _normalize_service_name(claim)
+    if not stripped or len(stripped) < 3 or len(stripped) > _SERVICE_CLAIM_MAX_LENGTH:
+        return False
+    return not any(pattern.search(stripped) for pattern in _RISKY_CLAIM_PATTERNS)
+
+
+def _clean_provider_name(raw: str) -> str:
+    """Normalize a Google provider resource name into a human-readable label.
+
+    Google resource names like ``categories/electrician`` or
+    ``serviceItems/ev_charger_installation`` are stripped to their final
+    component and underscore-separated tokens are replaced with spaces.
+    """
+    value = raw.strip()
+    if "/" in value:
+        value = value.rsplit("/", 1)[-1]
+    return value.replace("_", " ").strip()
+
+
+def _gbp_category_names(categories: object) -> list[str]:
+    """Extract category display names from either Google categories shape.
+
+    Google Business Profile API may return ``categories`` as an object with
+    ``primaryCategory`` / ``additionalCategories`` (Business Information API)
+    or as a plain list of category objects (older v4 shape).
+    """
+    names: list[str] = []
+
+    def _append(category: object) -> None:
+        if isinstance(category, dict):
+            name = category.get("displayName") or category.get("name")
+            if isinstance(name, str) and name.strip():
+                cleaned = _clean_provider_name(name)
+                if cleaned:
+                    names.append(cleaned)
+
+    if isinstance(categories, dict):
+        _append(categories.get("primaryCategory"))
+        additional = categories.get("additionalCategories")
+        if isinstance(additional, list):
+            for item in additional:
+                _append(item)
+    elif isinstance(categories, list):
+        for item in categories:
+            _append(item)
+    return names
+
+
+def _gbp_service_item_names(service_items: object) -> list[str]:
+    """Extract service item display names from the GBP serviceItems list."""
+    names: list[str] = []
+    if isinstance(service_items, list):
+        for item in service_items:
+            if isinstance(item, dict):
+                name = item.get("displayName") or item.get("name")
+                if isinstance(name, str) and name.strip():
+                    cleaned = _clean_provider_name(name)
+                    if cleaned:
+                        names.append(cleaned)
+    return names
+
+
+def _profile_service_names(profile: OrganizationProfile | None) -> list[str]:
+    """Extract explicitly supplied service/claim names from the organization profile."""
+    names: list[str] = []
+    if profile is None:
+        return names
+    for collection in (profile.primary_services, profile.approved_claims):
+        if collection:
+            names.extend(
+                item.strip() for item in collection if isinstance(item, str) and item.strip()
+            )
+    return names
+
+
+def _seo_service_names(pages: list[object]) -> list[str]:
+    """Extract candidate service names from persisted SEO crawl page signals.
+
+    Only H1 text from pages with sufficient persisted evidence is considered:
+    either the URL path contains a service-context segment, or the final URL
+    slug is a multi-word match for the page's own H1 (the conventional shape
+    of a service landing page, e.g. H1 "EV Charger Installation" on
+    ``/services/ev-charger-installation``, or H1 "Electrical Panel Upgrades"
+    on ``/panel-upgrades``). Generic furniture pages (home, contact, about,
+    blog, …) are excluded so weak incidental text never becomes an
+    authoritative claim.
+    """
+    names: list[str] = []
+    for page in pages:
+        h1 = getattr(page, "h1", None)
+        normalized_url = getattr(page, "normalized_url", "")
+        if not isinstance(h1, str) or not h1.strip():
+            continue
+        h1_clean = _normalize_service_name(h1)
+        if len(h1_clean) > _SERVICE_H1_MAX_LENGTH:
+            continue
+        if any(pattern.search(h1_clean) for pattern in _NON_SERVICE_H1_PATTERNS):
+            continue
+        try:
+            path_segments = [
+                segment.lower()
+                for segment in urlparse(normalized_url).path.strip("/").split("/")
+                if segment
+            ]
+        except ValueError:
+            path_segments = []
+        if any(segment in _NON_SERVICE_PATH_SEGMENTS for segment in path_segments):
+            continue
+        has_service_url = any(segment in _SERVICE_URL_SEGMENTS for segment in path_segments)
+        final_segment = path_segments[-1] if path_segments else ""
+        h1_slug = _service_claim_key(h1_clean).replace(" ", "-")
+        slug_words = h1_slug.split("-") if h1_slug else []
+        slug_corroborated = bool(
+            final_segment
+            and len(slug_words) >= 2
+            and len(final_segment.split("-")) >= 2
+            and (final_segment == h1_slug or h1_slug.endswith(f"-{final_segment}"))
+        )
+        if has_service_url or slug_corroborated:
+            names.append(h1_clean)
+    return names
 
 
 _INTEGRATION_LABELS = {
@@ -765,15 +1101,23 @@ class AdministrationService:
     ) -> dict[str, object]:
         """Derive business-fact candidates from authoritative client data.
 
-        Reads the organization profile, primary location, primary domain, and
-        GBP profile snapshot and proposes ``system_derived`` business facts
-        for the keys products actually require (``business.name``,
+        Reads the organization profile, primary location, primary domain, GBP
+        profile snapshot, and SEO crawl pages and proposes ``system_derived``
+        business facts for the keys products actually require (``business.name``,
         ``business.address``, ``business.hours``, ``brand.approved_claims``).
         Each candidate is proposed (NOT auto-approved) so a human still
         confirms it; an already-active or already-proposed fact with the same
         value is never duplicated. Facts with no derivable source are reported
         as ``unresolved`` so the operator knows they need manual entry rather
         than silently passing.
+
+        ``brand.approved_claims`` candidates are source-driven: they combine
+        explicitly supplied profile knowledge (primary_services /
+        approved_claims), provider-observed GBP categories/serviceItems, and
+        crawl-derived service-page H1 signals. This removes the circular
+        requirement that an operator type the service list into the profile
+        before reconciliation can propose it. Provider/crawl-derived names are
+        claim-safety filtered; explicit profile knowledge is preserved as-is.
         """
         await _organization(session, organization_id, lock=True)
         organization = await _organization(session, organization_id)
@@ -835,23 +1179,13 @@ class AdministrationService:
                     None,
                 )
             )
-        # brand.approved_claims ← organization profile approved claims list.
-        if profile is not None and profile.approved_claims:
-            candidates.append(
-                (
-                    "brand.approved_claims",
-                    "string_list",
-                    "organization_profile",
-                    list(profile.approved_claims),
-                    None,
-                )
-            )
+        # GBP: look up the latest profile snapshot for the confirmed GBP
+        # location mapped to the primary location. One snapshot read feeds
+        # both ``business.hours`` and service/claim candidate derivation.
+        from apps.api.app.products.gbp.models import GBPLocation, GBPProfileSnapshot
 
-        # business.hours ← GBP regularHours from the latest profile snapshot
-        # for the GBP location mapped to the primary location.
+        gbp_snapshot: GBPProfileSnapshot | None = None
         if primary_location is not None:
-            from apps.api.app.products.gbp.models import GBPLocation, GBPProfileSnapshot
-
             gbp_location = await session.scalar(
                 select(GBPLocation).where(
                     GBPLocation.organization_id == organization_id,
@@ -860,7 +1194,7 @@ class AdministrationService:
                 )
             )
             if gbp_location is not None:
-                latest_snapshot = await session.scalar(
+                gbp_snapshot = await session.scalar(
                     select(GBPProfileSnapshot)
                     .where(
                         GBPProfileSnapshot.organization_id == organization_id,
@@ -869,18 +1203,100 @@ class AdministrationService:
                     .order_by(GBPProfileSnapshot.observed_at.desc())
                     .limit(1)
                 )
-                if latest_snapshot is not None:
-                    regular_hours = latest_snapshot.normalized_profile.get("regularHours")
-                    if regular_hours and isinstance(regular_hours, dict) and len(regular_hours) > 0:
-                        candidates.append(
-                            (
-                                "business.hours",
-                                "object",
-                                "gbp_profile_snapshot",
-                                regular_hours,
-                                primary_location.id,
-                            )
+
+        # business.hours ← GBP regularHours from the latest profile snapshot.
+        if gbp_snapshot is not None and primary_location is not None:
+            regular_hours = gbp_snapshot.normalized_profile.get("regularHours")
+            if regular_hours and isinstance(regular_hours, dict) and len(regular_hours) > 0:
+                candidates.append(
+                    (
+                        "business.hours",
+                        "object",
+                        "gbp_profile_snapshot",
+                        regular_hours,
+                        primary_location.id,
+                    )
+                )
+
+        # brand.approved_claims ← source-driven service/claim candidates from
+        # canonical persisted LILOs data instead of requiring an operator to
+        # type the same knowledge into the organization profile first.
+        #
+        # Sources, strongest first:
+        #   1. organization profile primary_services / approved_claims
+        #      (explicitly supplied by client/operator — included as-is);
+        #   2. GBP profile snapshot categories + serviceItems
+        #      (provider-observed — claim-safety filtered);
+        #   3. SEO crawl page H1 signals on service-context pages
+        #      (crawl-derived — claim-safety filtered, furniture excluded).
+        claim_sources: dict[str, list[str]] = {}
+        for name in _profile_service_names(profile):
+            claim_sources.setdefault("organization_profile", []).append(name)
+        if gbp_snapshot is not None:
+            for name in [
+                *_gbp_category_names(gbp_snapshot.normalized_profile.get("categories")),
+                *_gbp_service_item_names(gbp_snapshot.normalized_profile.get("serviceItems")),
+            ]:
+                claim_sources.setdefault("gbp_profile_snapshot", []).append(name)
+        if primary_domain is not None:
+            from apps.api.app.products.seo.models import SEOPage, SEOWebsite
+
+            seo_websites = list(
+                await session.scalars(
+                    select(SEOWebsite).where(
+                        SEOWebsite.organization_id == organization_id,
+                        SEOWebsite.status == "active",
+                    )
+                )
+            )
+            matching_websites = [
+                website
+                for website in seo_websites
+                if _website_matches_domain(website.canonical_origin, primary_domain.domain)
+            ]
+            seo_pages: list[object] = []
+            for website in matching_websites:
+                seo_pages.extend(
+                    await session.scalars(
+                        select(SEOPage)
+                        .where(
+                            SEOPage.organization_id == organization_id,
+                            SEOPage.website_id == website.id,
+                            SEOPage.http_status == 200,
                         )
+                        .limit(100)
+                    )
+                )
+            for name in _seo_service_names(seo_pages):
+                claim_sources.setdefault("seo_crawl", []).append(name)
+
+        # Normalize, deduplicate, and safety-filter before proposing. Explicitly
+        # supplied profile knowledge is trusted input; provider/crawl-derived
+        # names must survive claim-safety filtering so risky marketing/legal
+        # statements are never silently promoted into approved-claim candidates.
+        safe_claims: list[str] = []
+        seen_keys: set[str] = set()
+        contributing_sources: set[str] = set()
+        for source, names in claim_sources.items():
+            for raw in names:
+                key = _service_claim_key(raw)
+                if key in seen_keys:
+                    continue
+                if source != "organization_profile" and not _is_safe_service_claim(raw):
+                    continue
+                seen_keys.add(key)
+                safe_claims.append(_normalize_service_name(raw))
+                contributing_sources.add(source)
+        if safe_claims:
+            candidates.append(
+                (
+                    "brand.approved_claims",
+                    "string_list",
+                    "+".join(sorted(contributing_sources)),
+                    safe_claims,
+                    None,
+                )
+            )
 
         proposed: list[dict[str, object]] = []
         unresolved: list[str] = []
@@ -945,6 +1361,9 @@ class AdministrationService:
                 "operation": "reconcile",
                 "proposed": len(proposed),
                 "unresolved": len(unresolved),
+                "claim_candidate_sources": {
+                    source: len(names) for source, names in claim_sources.items()
+                },
             },
         )
         return {"proposed": proposed, "unresolved": unresolved}
