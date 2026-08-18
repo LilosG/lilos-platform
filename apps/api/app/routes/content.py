@@ -4,6 +4,8 @@ from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request, Response, status
+from fastapi.responses import JSONResponse
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.app.access_control.enums import ScopeType
@@ -458,7 +460,7 @@ async def create_revision(
 
 @router.post(
     "/{item_id}/revisions/ai-draft",
-    status_code=status.HTTP_201_CREATED,
+    status_code=status.HTTP_202_ACCEPTED,
     dependencies=[Depends(no_store)],
 )
 async def ai_draft(
@@ -469,21 +471,92 @@ async def ai_draft(
     session: Session,
     principal: Authenticated,
     _: Annotated[AuthorizationDecision, policy("content.edit")],
-) -> dict[str, object]:
-    revision, execution = await service.generate_ai_draft(
+    sync: bool = False,
+) -> JSONResponse | dict[str, object]:
+    """Start durable (or synchronous) AI-assisted content draft generation.
+
+    By default, submits a durable ``content.draft_revision`` workflow run and
+    returns immediately with a ``workflow_run_id``. The AI generation executes
+    asynchronously via the platform worker. Poll
+    ``GET /workflows/runs/{run_id}`` for status.
+
+    When ``sync=true`` is supplied, executes inline and returns the revision
+    (backward compatibility for synchronous callers and tests).
+    """
+    if sync:
+        revision, execution = await service.generate_ai_draft(
+            session,
+            organization_id,
+            item_id,
+            command,
+            principal.platform_user_id,
+            correlation_id=request_correlation_id(request),
+        )
+        return JSONResponse(
+            content={
+                "data": {
+                    **revision_row(revision),
+                    "ai_execution_id": str(execution.id),
+                    "requires_human_review": execution.requires_human_review,
+                    "provider": execution.provider_key,
+                },
+                "meta": meta(request),
+            },
+            status_code=201,
+        )
+
+    # --- durable path ---
+    # Pre-validate that the item exists (fail-fast)
+    existing_item = await session.scalar(
+        select(ContentItem).where(
+            ContentItem.organization_id == organization_id,
+            ContentItem.id == item_id,
+        )
+    )
+    if not existing_item:
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=404, detail="Content item not found")
+    brief = await session.scalar(
+        select(ContentBrief).where(
+            ContentBrief.organization_id == organization_id,
+            ContentBrief.id == command.brief_id,
+            ContentBrief.content_item_id == item_id,
+        )
+    )
+    if not brief:
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=404, detail="Content brief not found")
+
+    run = await service.execution.start_named(
         session,
         organization_id,
-        item_id,
-        command,
-        principal.platform_user_id,
+        "content.draft_revision",
+        idempotency_key=command.idempotency_key,
+        location_id=existing_item.location_id,
+        input_document={
+            "item_id": str(item_id),
+            "brief_id": str(command.brief_id),
+            "idempotency_key": command.idempotency_key,
+            "user_id": str(principal.platform_user_id) if principal.platform_user_id else None,
+        },
         correlation_id=request_correlation_id(request),
+        actor_id=principal.platform_user_id,
+        enqueue_job=True,
     )
+    # Mutate the input document to include the workflow_run_id
+    # so the handler can link AIExecution to this run for observability.
+    if run.input_document is not None:
+        run.input_document["workflow_run_id"] = str(run.id)
+        await session.flush()
+
     return {
         "data": {
-            **revision_row(revision),
-            "ai_execution_id": str(execution.id),
-            "requires_human_review": execution.requires_human_review,
-            "provider": execution.provider_key,
+            "workflow_run_id": str(run.id),
+            "status": run.status,
+            "workflow_key": "content.draft_revision",
+            "item_id": str(item_id),
         },
         "meta": meta(request),
     }

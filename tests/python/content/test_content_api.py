@@ -14,6 +14,7 @@ from apps.api.app.access_control.catalog import AccessCatalogSeeder
 from apps.api.app.access_control.contracts import MembershipCreate, RoleAssignmentCreate
 from apps.api.app.access_control.enums import MembershipType, ScopeType
 from apps.api.app.access_control.service import AccessControlService
+from apps.api.app.administration.models import BusinessFactRevision
 from apps.api.app.authentication.contracts import VerifiedProviderClaims
 from apps.api.app.authentication.enums import AssuranceLevel, UserStatus
 from apps.api.app.authentication.models import UserProfile
@@ -177,6 +178,25 @@ def content_client(
             session.add(workflow_run)
             await session.flush()
 
+            approved_fact = BusinessFactRevision(
+                organization_id=organization.id,
+                location_id=location.id,
+                fact_identity=uuid4(),
+                fact_key="business.name",
+                value_type="string",
+                value="Winter HVAC Pros",
+                source="client_input",
+                authority="client_approved",
+                status="approved",
+                revision=1,
+                proposed_by=profile.id,
+                approved_by=profile.id,
+                approved_at=datetime.now(UTC),
+                change_reason="Content API test fixture",
+            )
+            session.add(approved_fact)
+            await session.flush()
+
             identifiers = {
                 "organization": organization.id,
                 "other_organization": other_organization.id,
@@ -184,6 +204,7 @@ def content_client(
                 "assigned_subject": profile.auth_user_id,
                 "target": target.id,
                 "workflow_run": workflow_run.id,
+                "approved_fact": approved_fact.id,
             }
             return claims(profile.auth_user_id), identifiers
 
@@ -337,6 +358,7 @@ def test_ai_draft_generates_grounded_revision_requiring_human_review(
 ) -> None:
     client, ids = content_client
     org = ids["organization"]
+    approved_fact = ids["approved_fact"]
     base = f"/api/v1/organizations/{org}/content"
 
     item = client.post(
@@ -355,13 +377,13 @@ def test_ai_draft_generates_grounded_revision_requiring_human_review(
             "audience": "Homeowners preparing for winter",
             "intent": "educate",
             "target_reference": "/blog/winter-hvac-tips",
-            "approved_fact_revision_ids": [str(uuid4())],
+            "approved_fact_revision_ids": [str(approved_fact)],
         },
     )
     brief_id = brief.json()["data"]["id"]
 
     draft = client.post(
-        f"{base}/{item_id}/revisions/ai-draft",
+        f"{base}/{item_id}/revisions/ai-draft?sync=true",
         headers=HEADERS,
         json={"brief_id": brief_id, "idempotency_key": "content-ai-draft-key-001"},
     )

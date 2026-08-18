@@ -10,6 +10,7 @@ from uuid import UUID
 from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from apps.api.app.administration.models import BusinessFactRevision
 from apps.api.app.ai.factory import build_ai_gateway
 from apps.api.app.ai.gateway import AIGatewayRequest
 from apps.api.app.ai.models import AIExecution, AITaskDefinition
@@ -88,6 +89,85 @@ def validate_content(
     if "<script" in lower:
         errors.append("executable_content")
     return {"valid": not errors, "errors": sorted(set(errors))}
+
+
+# ---------------------------------------------------------------------------
+# Governed business-fact resolution
+# ---------------------------------------------------------------------------
+
+
+class FactResolutionError(ValueError):
+    """Raised when a supplied fact revision is invalid for the organization/scope."""
+
+
+class GovernedFact(TypedDict):
+    fact_key: str
+    value: object
+    authority: str
+    revision_id: str
+
+
+async def resolve_governed_facts(
+    session: AsyncSession,
+    organization_id: UUID,
+    fact_revision_ids: list[UUID],
+    *,
+    location_id: UUID | None = None,
+) -> list[GovernedFact]:
+    """Resolve approved business-fact revision IDs into their actual values.
+
+    Validates:
+    - organization ownership
+    - active/approved status
+    - applicable location scope where relevant
+    - fact identity/key present
+
+    Returns a list of ``GovernedFact`` dicts suitable for AI input.
+    Raises ``FactResolutionError`` if any supplied fact revision is invalid.
+    """
+    if not fact_revision_ids:
+        return []
+
+    revisions = (
+        await session.scalars(
+            select(BusinessFactRevision).where(
+                BusinessFactRevision.organization_id == organization_id,
+                BusinessFactRevision.id.in_(fact_revision_ids),
+            )
+        )
+    ).all()
+
+    found_ids = {r.id for r in revisions}
+    missing = set(fact_revision_ids) - found_ids
+    if missing:
+        raise FactResolutionError(
+            f"fact revisions not found for organization: {[str(m) for m in missing]}"
+        )
+
+    results: list[GovernedFact] = []
+    for rev in revisions:
+        if rev.status not in ("approved", "active"):
+            raise FactResolutionError(
+                f"fact revision {rev.id} has non-operational status: {rev.status}"
+            )
+        if (
+            location_id is not None
+            and rev.location_id is not None
+            and rev.location_id != location_id
+        ):
+            raise FactResolutionError(f"fact revision {rev.id} is scoped to a different location")
+        results.append(
+            {
+                "fact_key": rev.fact_key,
+                "value": rev.value,
+                "authority": rev.authority,
+                "revision_id": str(rev.id),
+            }
+        )
+    return results
+
+
+CONTENT_AI_LATENCY_MS = 120_000  # 2 minutes, realistic for content generation
 
 
 class ContentService:
@@ -503,6 +583,188 @@ class ContentService:
             )
         return revision
 
+    async def execute_ai_draft_workflow(
+        self,
+        session: AsyncSession,
+        *,
+        organization_id: UUID,
+        item_id: UUID,
+        brief_id: UUID,
+        idempotency_key: str,
+        workflow_run_id: UUID | None = None,
+        user_id: UUID | None = None,
+        correlation_id: str,
+    ) -> tuple[ContentRevision, AIExecution]:
+        """Execute the AI content draft generation as a durable workflow step.
+
+        Called by the ``content.draft_revision`` workflow handler. Resolves
+        governed business facts, calls the AI provider through the shared
+        gateway, and persists the AIExecution and ContentRevision with full
+        observability metadata.
+
+        Idempotent: duplicate calls with the same *idempotency_key* return
+        the already-persisted execution and revision.
+        """
+        item = await session.scalar(
+            select(ContentItem).where(
+                ContentItem.organization_id == organization_id, ContentItem.id == item_id
+            )
+        )
+        if not item:
+            raise ContentItemNotFoundError
+        brief = await session.scalar(
+            select(ContentBrief).where(
+                ContentBrief.organization_id == organization_id,
+                ContentBrief.id == brief_id,
+                ContentBrief.content_item_id == item_id,
+            )
+        )
+        if not brief:
+            raise ContentBriefNotFoundError
+
+        task = await session.scalar(
+            select(AITaskDefinition).where(
+                AITaskDefinition.key == AI_TASK_KEY, AITaskDefinition.status == "active"
+            )
+        )
+        if task is None:
+            task = AITaskDefinition(
+                key=AI_TASK_KEY,
+                version=1,
+                owning_product="content",
+                purpose="Draft grounded, policy-compliant content for editorial and client review.",
+                input_schema={"audience": "string", "intent": "string"},
+                output_schema={"draft": "string"},
+                risk_level="medium",
+                maximum_cost_microunits=0,
+                maximum_latency_ms=CONTENT_AI_LATENCY_MS,
+                requires_human_review=True,
+                retention_policy_key="content.ai_draft.default",
+                status="active",
+            )
+            session.add(task)
+            await session.flush()
+
+        fact_ids = [UUID(str(x)) for x in brief.approved_fact_revision_ids]
+
+        # --- idempotency guard ---
+        existing_execution = await session.scalar(
+            select(AIExecution).where(
+                AIExecution.organization_id == organization_id,
+                AIExecution.idempotency_key == idempotency_key,
+            )
+        )
+        if existing_execution is not None:
+            # Resolve the previously-created revision
+            revision = await session.scalar(
+                select(ContentRevision).where(
+                    ContentRevision.ai_execution_id == existing_execution.id,
+                )
+            )
+            return revision or (
+                await self._create_ai_revision(
+                    session,
+                    organization_id,
+                    item,
+                    brief,
+                    existing_execution,
+                    user_id,
+                    correlation_id,
+                )
+            ), existing_execution
+
+        # --- resolve governed business facts ---
+        governed_facts = await resolve_governed_facts(
+            session,
+            organization_id,
+            fact_ids,
+            location_id=item.location_id,
+        )
+
+        # --- build AI input with resolved fact values ---
+        fallback = (
+            f"# {item.title}\n\nContent for {brief.audience} addressing {brief.intent}. "
+            "This draft requires human review before publication."
+        )
+        request = AIGatewayRequest(
+            organization_id=organization_id,
+            location_id=item.location_id,
+            task_key=AI_TASK_KEY,
+            input_document={
+                "audience": brief.audience,
+                "intent": brief.intent,
+                "manual_fallback": fallback,
+                "content_title": item.title,
+                "content_type": item.content_type,
+                "governed_facts": governed_facts,
+            },
+            input_references=(brief.id,),
+            approved_fact_revision_ids=tuple(fact_ids),
+            maximum_cost_microunits=task.maximum_cost_microunits,
+            maximum_latency_ms=task.maximum_latency_ms,
+        )
+        output = await self.ai_gateway.execute(request)
+
+        # --- persist AI execution ---
+        usage = output.get("usage", {}) or {}
+        execution = AIExecution(
+            organization_id=organization_id,
+            location_id=item.location_id,
+            task_definition_id=task.id,
+            workflow_run_id=workflow_run_id,
+            idempotency_key=idempotency_key,
+            status="completed",
+            provider_key=str(output.get("provider")),
+            model_key=str(output.get("model")),
+            input_references=[str(brief.id)],
+            approved_fact_revision_ids=[str(x) for x in fact_ids],
+            output_document=output,
+            output_hash=hashlib.sha256(str(output.get("draft", "")).encode()).hexdigest(),
+            input_tokens=usage.get("input_tokens"),
+            output_tokens=usage.get("output_tokens"),
+            estimated_cost_microunits=output.get("cost_microunits"),
+            latency_ms=output.get("latency_ms"),
+            requires_human_review=bool(output.get("requires_human_review", True)),
+            completed_at=datetime.now(UTC),
+        )
+        session.add(execution)
+        await session.flush()
+
+        # --- create content revision ---
+        revision = await self._create_ai_revision(
+            session, organization_id, item, brief, execution, user_id, correlation_id
+        )
+        return revision, execution
+
+    async def _create_ai_revision(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        item: ContentItem,
+        brief: ContentBrief,
+        execution: AIExecution,
+        user_id: UUID | None,
+        correlation_id: str,
+    ) -> ContentRevision:
+        """Create a ContentRevision from an AI execution output."""
+        fact_ids = [UUID(str(x)) for x in brief.approved_fact_revision_ids]
+        draft_text = str((execution.output_document or {}).get("draft", ""))
+        return await self.create_revision(
+            session,
+            organization_id,
+            item.id,
+            RevisionCreate(
+                body=draft_text,
+                frontmatter={"title": item.title},
+                created_by_type="ai",
+                approved_fact_revision_ids=fact_ids,
+                ai_execution_id=execution.id,
+                prohibited_claims=[str(x) for x in brief.prohibited_claims],
+            ),
+            user_id or item.organization_id,
+            correlation_id=correlation_id,
+        )
+
     async def generate_ai_draft(
         self,
         session: AsyncSession,
@@ -551,7 +813,7 @@ class ContentService:
                 output_schema={"draft": "string"},
                 risk_level="medium",
                 maximum_cost_microunits=0,
-                maximum_latency_ms=5_000,
+                maximum_latency_ms=CONTENT_AI_LATENCY_MS,
                 requires_human_review=True,
                 retention_policy_key="content.ai_draft.default",
                 status="active",
@@ -567,6 +829,14 @@ class ContentService:
             )
         )
         if existing_execution is None:
+            # --- resolve governed business facts ---
+            governed_facts = await resolve_governed_facts(
+                session,
+                organization_id,
+                fact_ids,
+                location_id=item.location_id,
+            )
+
             fallback = (
                 f"# {item.title}\n\nContent for {brief.audience} addressing {brief.intent}. "
                 "This draft requires human review before publication."
@@ -579,6 +849,9 @@ class ContentService:
                     "audience": brief.audience,
                     "intent": brief.intent,
                     "manual_fallback": fallback,
+                    "content_title": item.title,
+                    "content_type": item.content_type,
+                    "governed_facts": governed_facts,
                 },
                 input_references=(brief.id,),
                 approved_fact_revision_ids=tuple(fact_ids),

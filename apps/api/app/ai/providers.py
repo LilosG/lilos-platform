@@ -215,8 +215,24 @@ _SYSTEM_PROMPT = (
     "You produce grounded, policy-compliant content for human review. "
     "Always return a JSON object with a single key 'draft' containing the "
     "generated text. Never include secrets, credentials, or personally "
-    "identifiable information in your output."
+    "identifiable information in your output. "
+    "Only use approved business facts provided in the prompt. "
+    "Never invent claims, capabilities, guarantees, or business details "
+    "that are not present in the approved facts."
 )
+
+
+def _format_governed_facts(facts: list[dict[str, object]]) -> str:
+    """Format resolved governed facts for inclusion in the AI prompt."""
+    if not facts:
+        return ""
+    lines: list[str] = []
+    for f in facts:
+        fact_key = str(f.get("fact_key", "unknown"))
+        value = f.get("value")
+        authority = str(f.get("authority", "unknown"))
+        lines.append(f"- {fact_key}: {value} (authority: {authority})")
+    return "\n".join(lines)
 
 
 def _build_prompt(task_key: str, input_document: dict[str, Any]) -> str:
@@ -225,15 +241,32 @@ def _build_prompt(task_key: str, input_document: dict[str, Any]) -> str:
     intent = str(input_document.get("intent", "inform"))
     rating = input_document.get("rating")
     manual_fallback = str(input_document.get("manual_fallback", ""))
+    content_title = str(input_document.get("content_title", ""))
+    content_type = str(input_document.get("content_type", ""))
+    governed_facts = input_document.get("governed_facts", [])
 
     if task_key == "content.draft_revision":
-        return (
-            f"Write a content draft for the following audience and intent.\n\n"
-            f"Audience: {audience}\n"
-            f"Intent: {intent}\n\n"
-            f"Produce a well-structured, professional draft. "
-            f"Return ONLY a JSON object with the key 'draft'."
+        facts_section = _format_governed_facts(governed_facts) if governed_facts else ""
+        parts = [
+            "Write a content draft for the following audience, intent, and approved business facts."
+        ]
+        if content_title:
+            parts.append(f"\nTitle: {content_title}")
+        if content_type:
+            parts.append(f"Type: {content_type}")
+        parts.append(f"\nAudience: {audience}")
+        parts.append(f"Intent: {intent}")
+        if facts_section:
+            parts.append(
+                "\nAPPROVED BUSINESS FACTS "
+                "(authoritative — do not invent anything not listed here):"
+                f"\n{facts_section}"
+            )
+        parts.append(
+            "\nProduce a well-structured, professional draft. "
+            "Return ONLY a JSON object with the key 'draft'."
         )
+        return "\n".join(parts)
     if task_key == "reviews.draft_response":
         rating_text = f"Rating: {rating}/5" if rating is not None else "Rating: not provided"
         return (

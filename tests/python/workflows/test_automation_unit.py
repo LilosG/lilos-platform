@@ -83,9 +83,9 @@ def test_job_outcome_queued_semantics() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_all_nine_workflow_types_registered() -> None:
-    """Verify the WORKFLOW_TYPES registry has exactly 9 entries."""
-    assert len(WORKFLOW_TYPES) == 9
+def test_all_ten_workflow_types_registered() -> None:
+    """Verify the WORKFLOW_TYPES registry has exactly 10 entries."""
+    assert len(WORKFLOW_TYPES) == 10
 
 
 def test_workflow_keys_follow_naming_convention() -> None:
