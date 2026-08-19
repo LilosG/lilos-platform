@@ -690,6 +690,7 @@ def test_lead_communication_handler_sets_queued_not_sent(
             location_id=None,
             input_document={"communication_id": str(comm.id)},
             correlation_id="p5-lead-comm-test",
+            workflow_run_id=uuid4(),
         )
 
         await session.refresh(comm)
@@ -820,6 +821,7 @@ def test_lead_communication_idempotent_on_queued_status(
             location_id=None,
             input_document={"communication_id": str(comm.id)},
             correlation_id="p5-idem-test-1",
+            workflow_run_id=uuid4(),
         )
         await session.refresh(comm)
         status1 = comm.status
@@ -831,6 +833,7 @@ def test_lead_communication_idempotent_on_queued_status(
             location_id=None,
             input_document={"communication_id": str(comm.id)},
             correlation_id="p5-idem-test-2",
+            workflow_run_id=uuid4(),
         )
         await session.refresh(comm)
         status2 = comm.status
@@ -842,6 +845,7 @@ def test_lead_communication_idempotent_on_queued_status(
             location_id=None,
             input_document={"communication_id": str(comm.id)},
             correlation_id="p5-idem-test-3",
+            workflow_run_id=uuid4(),
         )
         await session.refresh(comm)
 
@@ -1025,6 +1029,7 @@ def test_lead_communication_handler_failure_does_not_rollback_outer_transaction(
                 location_id=None,
                 input_document={"communication_id": str(comm.id)},
                 correlation_id="p5-txn-test",
+                workflow_run_id=uuid4(),
             )
         await session.refresh(comm)
 

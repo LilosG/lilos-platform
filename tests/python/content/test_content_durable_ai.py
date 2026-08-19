@@ -377,14 +377,10 @@ async def test_durable_ai_draft_execution_start_returns_workflow_run(
                 "brief_id": str(brief_id),
                 "idempotency_key": idemp_key,
                 "user_id": None,
-                "workflow_run_id": str(uuid4()),  # placeholder — will be updated
             },
             correlation_id="test-durable-start",
             enqueue_job=True,
         )
-        # Update with real workflow_run_id
-        run.input_document["workflow_run_id"] = str(run.id)
-        await session.flush()
 
         assert run.status == "queued"
         assert run.id is not None
@@ -473,7 +469,6 @@ async def test_durable_ai_draft_idempotency_prevents_duplicates(
                 "brief_id": str(brief_id),
                 "idempotency_key": idemp_key,
                 "user_id": None,
-                "workflow_run_id": "pending",
             },
             correlation_id="test-idemp-1",
             enqueue_job=True,
@@ -491,7 +486,6 @@ async def test_durable_ai_draft_idempotency_prevents_duplicates(
                 "brief_id": str(brief_id),
                 "idempotency_key": idemp_key,
                 "user_id": None,
-                "workflow_run_id": "pending",
             },
             correlation_id="test-idemp-2",
             enqueue_job=True,
@@ -929,3 +923,157 @@ def test_prompt_builder_without_facts_still_works() -> None:
     )
     assert "audience" in prompt.lower() or "Audience" in prompt
     assert "APPROVED BUSINESS FACTS" not in prompt
+
+
+# ---------------------------------------------------------------------------
+# Observability linkage — workflow_run_id propagation
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+@pytest.mark.anyio
+async def test_ai_execution_workflow_run_id_matches_workflow_run(
+    content_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """A persisted AIExecution.workflow_run_id equals the authoritative WorkflowRun.id.
+
+    This proves the workflow_run_id is propagated from _execute_workflow_job
+    through the handler protocol to ContentService.execute_ai_draft_workflow,
+    rather than relying on an unreliable in-place JSONB mutation.
+    """
+    from apps.api.app.execution.handlers import _handle_content_draft_revision
+    from apps.api.app.execution.models import Job, WorkflowDefinition, WorkflowRun, WorkflowVersion
+
+    async with content_session_factory() as session:
+        org_id = uuid4()
+        user_id = uuid4()
+        await _seed_organization(session, org_id)
+        await _seed_user(session, user_id)
+        item_id = uuid4()
+        brief_id = uuid4()
+        fact_id = uuid4()
+        idemp_key = f"obs-link-{uuid4().hex[:16]}"
+
+        item = ContentItem(
+            id=item_id,
+            organization_id=org_id,
+            content_type="blog_post",
+            title="Obs Link Test",
+            slug="obs-link-test",
+            status="brief_ready",
+        )
+        brief = ContentBrief(
+            id=brief_id,
+            organization_id=org_id,
+            content_item_id=item_id,
+            revision_number=1,
+            audience="devs",
+            intent="educate",
+            target_reference="/blog/obs-link",
+            approved_fact_revision_ids=[str(fact_id)],
+            required_claims=[],
+            prohibited_claims=[],
+            required_local_references=[],
+            source_evidence_references=[],
+            validation_requirements={},
+            status="ready",
+        )
+        fact = BusinessFactRevision(
+            id=fact_id,
+            organization_id=org_id,
+            fact_identity=uuid4(),
+            fact_key="business.name",
+            value_type="string",
+            value="ObsLinkCo",
+            source="client_input",
+            authority="client_approved",
+            status="approved",
+            revision=1,
+            proposed_by=user_id,
+            approved_by=user_id,
+            approved_at=datetime.now(UTC),
+            change_reason="test",
+        )
+        session.add(item)
+        await session.flush()
+        session.add_all([brief, fact])
+        await session.flush()
+
+        # Create a real WorkflowRun + Job (simulating what start_named does)
+        definition = WorkflowDefinition(
+            key="content.draft_revision",
+            name="Generate AI-assisted content draft",
+            owner="content",
+            status="active",
+        )
+        session.add(definition)
+        await session.flush()
+        version = WorkflowVersion(
+            definition_id=definition.id,
+            version=1,
+            status="approved",
+            input_schema={},
+            output_schema={},
+            step_specification=[],
+            retry_policy={},
+            timeout_seconds=120,
+        )
+        session.add(version)
+        await session.flush()
+        run = WorkflowRun(
+            organization_id=org_id,
+            workflow_version_id=version.id,
+            product_key="content",
+            status="queued",
+            trigger_type="api",
+            idempotency_key=idemp_key,
+            request_hash="a" * 64,
+            input_document={
+                "item_id": str(item_id),
+                "brief_id": str(brief_id),
+                "idempotency_key": idemp_key,
+                "user_id": None,
+            },
+            correlation_id="test-obs-link",
+        )
+        session.add(run)
+        await session.flush()
+        job = Job(
+            organization_id=org_id,
+            workflow_run_id=run.id,
+            job_type="workflow.execute",
+            status="queued",
+            idempotency_key=f"run:{run.id}",
+            payload={"run_id": str(run.id)},
+        )
+        session.add(job)
+        await session.flush()
+
+        workflow_run_id = run.id
+
+        # Call the handler directly with the authoritative workflow_run_id
+        outcome = await _handle_content_draft_revision(
+            session,
+            organization_id=org_id,
+            location_id=None,
+            input_document=run.input_document,
+            correlation_id="test-obs-link",
+            workflow_run_id=workflow_run_id,
+        )
+
+        assert outcome.result == "succeeded"
+
+        # Verify the AIExecution was persisted with the correct workflow_run_id
+        execution = await session.scalar(
+            select(AIExecution).where(
+                AIExecution.organization_id == org_id,
+                AIExecution.idempotency_key == idemp_key,
+            )
+        )
+        assert execution is not None
+        assert execution.workflow_run_id == workflow_run_id
+
+        # Reload the WorkflowRun and verify it still matches
+        reloaded_run = await session.get(WorkflowRun, workflow_run_id)
+        assert reloaded_run is not None
+        assert execution.workflow_run_id == reloaded_run.id

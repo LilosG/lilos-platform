@@ -545,3 +545,134 @@ def test_create_target_with_unconnected_connection_is_rejected(
         },
     )
     assert response.status_code == 409
+
+
+# ---------------------------------------------------------------------------
+# Durable AI draft — HTTP integration tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_ai_draft_durable_returns_202_with_workflow_metadata(
+    content_client: tuple[TestClient, dict[str, UUID]],
+) -> None:
+    """POST /revisions/ai-draft (without ?sync=true) returns 202 Accepted
+    with workflow_run_id, status=queued, workflow_key, and correct item_id."""
+    client, ids = content_client
+    org, location, fact = ids["organization"], ids["location"], ids["approved_fact"]
+    base = f"/api/v1/organizations/{org}/content"
+
+    # Create a content item
+    item_resp = client.post(
+        base,
+        headers=HEADERS,
+        json={
+            "content_type": "blog",
+            "title": "Durable AI Draft HTTP Test",
+            "slug": "durable-ai-draft-http-test",
+            "location_id": str(location),
+        },
+    )
+    assert item_resp.status_code == 201, item_resp.text
+    item_id = item_resp.json()["data"]["id"]
+
+    # Create a brief
+    brief_resp = client.post(
+        f"{base}/{item_id}/briefs",
+        headers=HEADERS,
+        json={
+            "audience": "homeowners",
+            "intent": "Test durable AI draft endpoint",
+            "target_reference": "/blog/durable-test",
+            "approved_fact_revision_ids": [str(fact)],
+        },
+    )
+    assert brief_resp.status_code == 201, brief_resp.text
+    brief_id = brief_resp.json()["data"]["id"]
+
+    # Start durable AI draft (no ?sync=true)
+    import uuid as _uuid
+
+    idemp_key = f"http-durable-{_uuid.uuid4().hex[:16]}"
+    draft_resp = client.post(
+        f"{base}/{item_id}/revisions/ai-draft",
+        headers=HEADERS,
+        json={
+            "brief_id": brief_id,
+            "idempotency_key": idemp_key,
+        },
+    )
+    assert draft_resp.status_code == 202, draft_resp.text
+    data = draft_resp.json()["data"]
+
+    assert "workflow_run_id" in data
+    assert data["status"] == "queued"
+    assert data["workflow_key"] == "content.draft_revision"
+    assert data["item_id"] == item_id
+
+    # Verify the workflow_run_id is a valid UUID
+    run_id = _uuid.UUID(data["workflow_run_id"])
+    assert run_id is not None
+
+
+@pytest.mark.integration
+def test_ai_draft_cross_tenant_isolation(
+    content_client: tuple[TestClient, dict[str, UUID]],
+) -> None:
+    """One organization cannot start AI draft generation for another
+    organization's content item."""
+    client, ids = content_client
+    org = ids["organization"]
+    other_org = ids["other_organization"]
+    location = ids["location"]
+    fact = ids["approved_fact"]
+    base = f"/api/v1/organizations/{org}/content"
+    other_base = f"/api/v1/organizations/{other_org}/content"
+
+    # Create a content item in the primary org
+    item_resp = client.post(
+        base,
+        headers=HEADERS,
+        json={
+            "content_type": "blog",
+            "title": "Cross-Tenant Isolation Test",
+            "slug": "cross-tenant-isolation-test",
+            "location_id": str(location),
+        },
+    )
+    assert item_resp.status_code == 201, item_resp.text
+    item_id = item_resp.json()["data"]["id"]
+
+    # Create a brief in the primary org
+    brief_resp = client.post(
+        f"{base}/{item_id}/briefs",
+        headers=HEADERS,
+        json={
+            "audience": "test",
+            "intent": "Cross-tenant isolation",
+            "target_reference": "/blog/cross-tenant",
+            "approved_fact_revision_ids": [str(fact)],
+        },
+    )
+    assert brief_resp.status_code == 201, brief_resp.text
+    brief_id = brief_resp.json()["data"]["id"]
+
+    # Attempt to start AI draft using the OTHER organization's base URL
+    # with the primary org's item_id — this must be rejected.
+    import uuid as _uuid
+
+    idemp_key = f"cross-tenant-{_uuid.uuid4().hex[:16]}"
+    cross_resp = client.post(
+        f"{other_base}/{item_id}/revisions/ai-draft",
+        headers=HEADERS,
+        json={
+            "brief_id": brief_id,
+            "idempotency_key": idemp_key,
+        },
+    )
+    # Must be rejected — the item does not belong to other_org.
+    # The API returns 403 (authorization denied) or 404 (not found in scope).
+    assert cross_resp.status_code in (403, 404), (
+        f"Expected 403/404 for cross-tenant AI draft, "
+        f"got {cross_resp.status_code}: {cross_resp.text}"
+    )

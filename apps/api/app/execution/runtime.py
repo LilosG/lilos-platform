@@ -308,6 +308,7 @@ async def _execute_workflow_job(session: AsyncSession, job: Job) -> JobOutcome:
                         location_id=run.location_id,
                         input_document=run.input_document,
                         correlation_id=f"workflow-{run.id}",
+                        workflow_run_id=run.id,
                     )
             except DETERMINISTIC_DB_ERRORS as exc:
                 run.status = "failed"

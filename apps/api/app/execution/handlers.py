@@ -112,6 +112,7 @@ class WorkflowStepHandler(Protocol):
         location_id: UUID | None,
         input_document: dict[str, Any],
         correlation_id: str,
+        workflow_run_id: UUID,
     ) -> JobOutcome: ...
 
 
@@ -143,6 +144,7 @@ async def _handle_gbp_publish_change(
     location_id: UUID | None,
     input_document: dict[str, Any],
     correlation_id: str,
+    workflow_run_id: UUID,
 ) -> JobOutcome:
     """Publish an approved GBP profile change via the GBP adapter.
 
@@ -311,6 +313,7 @@ async def _handle_gbp_publish_post(
     location_id: UUID | None,
     input_document: dict[str, Any],
     correlation_id: str,
+    workflow_run_id: UUID,
 ) -> JobOutcome:
     """Publish an approved GBP Local Post via ``accounts.locations.localPosts.create``.
 
@@ -513,6 +516,7 @@ async def _handle_seo_crawl(
     location_id: UUID | None,
     input_document: dict[str, Any],
     correlation_id: str,
+    workflow_run_id: UUID,
 ) -> JobOutcome:
     """Execute a bounded SEO crawl using the existing SEOService crawl engine."""
     from uuid import UUID as _UUID
@@ -559,6 +563,7 @@ async def _handle_content_draft_revision(
     location_id: UUID | None,
     input_document: dict[str, Any],
     correlation_id: str,
+    workflow_run_id: UUID,
 ) -> JobOutcome:
     """Generate an AI-assisted content draft as a durable workflow step.
 
@@ -600,6 +605,7 @@ async def _handle_content_draft_revision(
             item_id=item_id,
             brief_id=brief_id,
             idempotency_key=str(idempotency_key_raw),
+            workflow_run_id=workflow_run_id,
             user_id=user_id,
             correlation_id=correlation_id,
         )
@@ -637,6 +643,7 @@ async def _handle_content_publish(
     location_id: UUID | None,
     input_document: dict[str, Any],
     correlation_id: str,
+    workflow_run_id: UUID,
 ) -> JobOutcome:
     """Publish governed content to a configured GitHub publishing target.
 
@@ -807,6 +814,7 @@ async def _handle_reviews_publish_response(
     location_id: UUID | None,
     input_document: dict[str, Any],
     correlation_id: str,
+    workflow_run_id: UUID,
 ) -> JobOutcome:
     """Publish an approved review response to Google via updateReply.
 
@@ -985,6 +993,7 @@ async def _handle_gbp_upload_media(
     location_id: UUID | None,
     input_document: dict[str, Any],
     correlation_id: str,
+    workflow_run_id: UUID,
 ) -> JobOutcome:
     """Upload an approved GBP media item via the GBP adapter.
 
@@ -1159,6 +1168,7 @@ async def _handle_leads_send_communication(
     location_id: UUID | None,
     input_document: dict[str, Any],
     correlation_id: str,
+    workflow_run_id: UUID,
 ) -> JobOutcome:
     """Dispatch a planned lead communication through the notification system.
 
@@ -1316,6 +1326,7 @@ async def _handle_gbp_sync(
     location_id: UUID | None,
     input_document: dict[str, Any],
     correlation_id: str,
+    workflow_run_id: UUID,
 ) -> JobOutcome:
     """Scheduled GBP discovery and profile sync.
 
@@ -1423,6 +1434,7 @@ async def _handle_reviews_ingest(
     location_id: UUID | None,
     input_document: dict[str, Any],
     correlation_id: str,
+    workflow_run_id: UUID,
 ) -> JobOutcome:
     """Scheduled reviews ingestion for a location.
 

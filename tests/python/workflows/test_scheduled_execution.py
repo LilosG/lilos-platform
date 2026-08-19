@@ -413,6 +413,7 @@ async def test_scheduled_gbp_sync_requires_location_resolution(
             location_id=None,
             input_document={},
             correlation_id="p5-noloc",
+            workflow_run_id=uuid4(),
         )
         assert outcome.result == "permanent_failure"
         assert outcome.safe_error == "LOCATION_ID_MISSING"
@@ -480,6 +481,7 @@ async def test_reviews_ingest_schedule_dispatch_path_resolves_platform_location(
                 "scheduled_for": datetime.now(UTC).isoformat(),
             },
             correlation_id="p5-rvingest-scheduled",
+            workflow_run_id=uuid4(),
         )
 
         assert outcome.result == "succeeded", (

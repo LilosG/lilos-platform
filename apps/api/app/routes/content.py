@@ -546,11 +546,6 @@ async def ai_draft(
         actor_id=principal.platform_user_id,
         enqueue_job=True,
     )
-    # Mutate the input document to include the workflow_run_id
-    # so the handler can link AIExecution to this run for observability.
-    if run.input_document is not None:
-        run.input_document["workflow_run_id"] = str(run.id)
-        await session.flush()
 
     return {
         "data": {

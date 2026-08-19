@@ -146,6 +146,7 @@ async def test_runtime_invokes_registered_handler_for_catalog_key(
         location_id: UUID | None,
         input_document: dict[str, object],
         correlation_id: str,
+        workflow_run_id: UUID,
     ) -> JobOutcome:
         invoked["called"] = True
         invoked["input"] = input_document
@@ -329,6 +330,7 @@ async def test_handler_integrity_error_fails_job_and_keeps_transaction_usable(
         location_id: UUID | None,
         input_document: dict[str, object],
         correlation_id: str,
+        workflow_run_id: UUID,
     ) -> JobOutcome:
         orig = type(
             "FakeOrig",
@@ -603,6 +605,7 @@ async def test_gbp_publish_change_resolves_provider_location_from_revision(
                 location_id=location.id,
                 input_document={"publication_id": str(publication_id)},
                 correlation_id="gbp-profile-handler",
+                workflow_run_id=uuid4(),
             )
 
         assert outcome.result == "succeeded"
@@ -819,6 +822,7 @@ async def test_gbp_publish_post_creates_local_post_and_verifies(
                 location_id=location.id,
                 input_document={"publication_id": str(post_pub_id)},
                 correlation_id="test",
+                workflow_run_id=uuid4(),
             )
 
         assert outcome.result == "succeeded"
@@ -854,6 +858,7 @@ async def test_provider_write_kill_switch_blocks_before_adapter(
         location_id=None,
         input_document={"publication_id": str(uuid4())},
         correlation_id="provider-write-kill-switch",
+        workflow_run_id=uuid4(),
     )
 
     assert outcome.result == "permanent_failure"
@@ -887,6 +892,7 @@ async def test_content_publish_fails_closed_for_missing_publication(
             location_id=None,
             input_document={"publication_id": str(uuid4())},
             correlation_id="test",
+            workflow_run_id=uuid4(),
         )
 
     assert outcome.result == "permanent_failure"
@@ -901,6 +907,7 @@ async def test_content_publish_requires_publication_id() -> None:
         location_id=None,
         input_document={},
         correlation_id="test",
+        workflow_run_id=uuid4(),
     )
     assert outcome.result == "permanent_failure"
 
@@ -1108,6 +1115,7 @@ async def test_reviews_publish_response_publishes_and_verifies(
                 location_id=location.id,
                 input_document={"response_id": str(response_id)},
                 correlation_id="test",
+                workflow_run_id=uuid4(),
             )
 
         assert outcome.result == "succeeded"
@@ -1318,6 +1326,7 @@ async def test_reviews_publish_response_verification_mismatch_marks_reconciliati
                 location_id=location.id,
                 input_document={"response_id": str(response_id)},
                 correlation_id="test",
+                workflow_run_id=uuid4(),
             )
 
         assert outcome.result == "permanent_failure"
@@ -1342,6 +1351,7 @@ async def test_reviews_publish_response_requires_response_id() -> None:
         location_id=None,
         input_document={},
         correlation_id="test",
+        workflow_run_id=uuid4(),
     )
     assert outcome.result == "permanent_failure"
     assert outcome.safe_error == "MISSING_RESPONSE_ID"
@@ -1574,6 +1584,7 @@ async def test_gbp_publish_post_processing_state_does_not_become_verified(
                 location_id=None,
                 input_document={"publication_id": str(post_pub_id)},
                 correlation_id="test",
+                workflow_run_id=uuid4(),
             )
 
         assert outcome.result == "retryable_failure"
@@ -1625,6 +1636,7 @@ async def test_gbp_publish_post_processing_reread_does_not_become_verified(
                 location_id=None,
                 input_document={"publication_id": str(post_pub_id)},
                 correlation_id="test",
+                workflow_run_id=uuid4(),
             )
 
         assert outcome.result == "retryable_failure"
@@ -1674,6 +1686,7 @@ async def test_gbp_publish_post_processing_then_live_becomes_verified_on_retry(
                 location_id=None,
                 input_document={"publication_id": str(post_pub_id)},
                 correlation_id="test",
+                workflow_run_id=uuid4(),
             )
 
         assert outcome.result == "succeeded"
@@ -1722,6 +1735,7 @@ async def test_gbp_publish_post_rejected_remains_failed(
                 location_id=None,
                 input_document={"publication_id": str(post_pub_id)},
                 correlation_id="test",
+                workflow_run_id=uuid4(),
             )
 
         assert outcome.result == "permanent_failure"
@@ -1920,6 +1934,7 @@ async def test_reviews_publish_response_persists_safe_error_code_provider_mappin
                 location_id=None,
                 input_document={"response_id": str(response_id)},
                 correlation_id="test",
+                workflow_run_id=uuid4(),
             )
 
         assert outcome.result == "permanent_failure"
@@ -1963,6 +1978,7 @@ async def test_reviews_publish_response_persists_safe_error_code_gbp_location_no
                 location_id=None,
                 input_document={"response_id": str(response_id)},
                 correlation_id="test",
+                workflow_run_id=uuid4(),
             )
 
         assert outcome.result == "permanent_failure"
@@ -2028,6 +2044,7 @@ async def test_reviews_publish_response_persists_safe_error_code_gbp_account_not
                 location_id=None,
                 input_document={"response_id": str(response_id)},
                 correlation_id="test",
+                workflow_run_id=uuid4(),
             )
 
         assert outcome.result == "permanent_failure"
@@ -2075,6 +2092,7 @@ async def test_reviews_publish_response_persists_safe_error_code_no_connected_in
                 location_id=None,
                 input_document={"response_id": str(response_id)},
                 correlation_id="test",
+                workflow_run_id=uuid4(),
             )
 
         assert outcome.result == "permanent_failure"
@@ -2162,6 +2180,7 @@ async def test_reviews_publish_response_persists_safe_error_code_provider_write_
                 location_id=None,
                 input_document={"response_id": str(response_id)},
                 correlation_id="test",
+                workflow_run_id=uuid4(),
             )
 
         assert outcome.result == "retryable_failure"
@@ -2209,6 +2228,7 @@ async def test_reviews_publish_response_persists_safe_error_code_token_refresh_f
                 location_id=None,
                 input_document={"response_id": str(response_id)},
                 correlation_id="test",
+                workflow_run_id=uuid4(),
             )
 
         assert outcome.result == "retryable_failure"
@@ -2296,6 +2316,7 @@ async def test_reviews_publish_response_persists_safe_error_code_verification_re
                 location_id=None,
                 input_document={"response_id": str(response_id)},
                 correlation_id="test",
+                workflow_run_id=uuid4(),
             )
 
         assert outcome.result == "retryable_failure"

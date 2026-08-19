@@ -237,6 +237,7 @@ async def test_gbp_handler_rejects_non_reserved_publication(
             location_id=location.id,
             input_document={"publication_id": str(publication.id)},
             correlation_id="p5-approval-boundary",
+            workflow_run_id=uuid4(),
         )
 
         assert outcome.result == "permanent_failure"
@@ -318,6 +319,7 @@ async def test_gbp_handler_idempotency_is_upstream(
             location_id=location.id,
             input_document={"publication_id": str(publication.id)},
             correlation_id="p5-idempotent",
+            workflow_run_id=uuid4(),
         )
 
         # Already-verified publication rejected by the handler — NOT_RESERVABLE.
@@ -400,6 +402,7 @@ async def test_gbp_handler_cross_org_publication_not_found(
             location_id=None,
             input_document={"publication_id": str(publication.id)},
             correlation_id="p5-tenant-isolation",
+            workflow_run_id=uuid4(),
         )
 
         assert outcome.result == "permanent_failure"
