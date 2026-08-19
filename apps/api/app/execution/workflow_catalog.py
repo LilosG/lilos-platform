@@ -8,6 +8,7 @@ so a run started for one workflow type can never be substituted for another.
 
 WORKFLOW_TYPES: dict[str, tuple[str, str]] = {
     "content.publish": ("Publish governed content", "content"),
+    "content.draft_revision": ("Generate AI-assisted content draft", "content"),
     "seo.crawl_or_analysis": ("Run SEO crawl or analysis execution", "seo"),
     "gbp.publish_change": ("Publish an approved Business Profile change", "gbp"),
     "gbp.publish_post": ("Publish an approved Business Profile post", "gbp"),

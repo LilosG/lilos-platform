@@ -7,7 +7,7 @@ transaction.
 """
 
 import asyncio
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from pydantic import PostgresDsn, TypeAdapter
@@ -34,8 +34,9 @@ async def _sleeping_handler(
     location_id: object,
     input_document: object,
     correlation_id: object,
+    workflow_run_id: UUID,
 ) -> JobOutcome:
-    del session, organization_id, location_id, input_document, correlation_id
+    del session, organization_id, location_id, input_document, correlation_id, workflow_run_id
     await asyncio.sleep(7.0)
     return JobOutcome(result="succeeded", result_reference="sleeping:done")
 

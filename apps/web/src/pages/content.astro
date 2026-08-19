@@ -246,7 +246,20 @@ import "../styles/global.css";
         isContentOpportunityActionable,
         CONTENT_REQUIRED_FACT_KEYS,
         deriveSlug,
+        renderDocumentBody,
+        CONTENT_GOAL_MAXLENGTH,
+        AUDIENCE_MAXLENGTH,
+        formatCharacterCount,
+        describeContentFailure,
+        storeInFlightAIDraft,
+        recoverInFlightAIDraft,
+        clearInFlightAIDraft,
+        pollAIDraftRun,
+        describeAIDraftStatus,
+        isAIDraftTerminal,
         type ContentItem,
+        type DurableAIDraftStart,
+        type InFlightAIDraft,
       } from "../lib/content";
       import { fetchGitHubRepositories } from "../lib/github-app";
       import { fetchLocations } from "../lib/workspace";
@@ -800,6 +813,89 @@ import "../styles/global.css";
         selectContentTab("pipeline");
       }
 
+      // Track an in-flight AI draft generation via sessionStorage so a
+      // browser refresh can recover the operation truthfully.  The
+      // idempotency key is reused across retries until the operation is
+      // definitively completed, failed, or the user navigates away.
+      function getActiveAiDraftState(
+        itemId: string,
+        briefId: string,
+      ): InFlightAIDraft | null {
+        return recoverInFlightAIDraft(organizationId, itemId, briefId);
+      }
+
+      function setActiveAiDraftState(state: InFlightAIDraft): void {
+        storeInFlightAIDraft(organizationId, state);
+      }
+
+      function clearAiDraftState(itemId: string, briefId: string): void {
+        clearInFlightAIDraft(organizationId, itemId, briefId);
+      }
+
+      /**
+       * Resume polling a previously-started durable AI draft operation.
+       *
+       * Called on page load when sessionStorage contains an in-flight
+       * operation, and also after a successful start.  Polls every 3
+       * seconds until the run reaches a terminal state, then refreshes
+       * the workspace or shows the failure.
+       */
+      async function resumeAIDraftPolling(
+        item: ContentItem,
+        brief: { id: string },
+        state: InFlightAIDraft,
+        documentArea: HTMLElement,
+      ): Promise<void> {
+        const POLL_INTERVAL_MS = 3_000;
+        const MAX_POLL_ATTEMPTS = 200; // ~10 minutes at 3s intervals
+
+        for (let attempt = 0; attempt < MAX_POLL_ATTEMPTS; attempt++) {
+          const pollResult = await pollAIDraftRun(organizationId, state.runId);
+
+          if (!pollResult) {
+            // Run not found — may have been cleaned up.  Refresh to
+            // check whether a revision was created.
+            clearAiDraftState(item.id, brief.id);
+            await openContentItem(item);
+            return;
+          }
+
+          const { status } = pollResult;
+
+          // Update the UI status text if the button/status elements are
+          // still in the DOM.
+          const aiStatus = documentArea.querySelector<HTMLElement>(
+            "[data-ai-draft-status]",
+          );
+          if (aiStatus) {
+            aiStatus.textContent = describeAIDraftStatus(status);
+          }
+
+          if (isAIDraftTerminal(status)) {
+            clearAiDraftState(item.id, brief.id);
+            if (status === "completed") {
+              await openContentItem(item);
+            }
+            // For failed/cancelled, the status text already shows the
+            // message; the button is re-enabled by the caller.
+            return;
+          }
+
+          // Wait before polling again.
+          await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+        }
+
+        // Exceeded max attempts — treat as failed.
+        clearAiDraftState(item.id, brief.id);
+        const aiStatus = documentArea.querySelector<HTMLElement>(
+          "[data-ai-draft-status]",
+        );
+        if (aiStatus) {
+          aiStatus.textContent =
+            "Draft generation is taking longer than expected.  The platform is still working — refresh the page to check for updates.";
+        }
+      }
+
       async function openContentItem(item: ContentItem): Promise<void> {
         document.getElementById("content-metrics")!.hidden = true;
         document.getElementById("content-tabs")!.hidden = true;
@@ -844,6 +940,8 @@ import "../styles/global.css";
 
         const current = itemResult.data;
         body.replaceChildren();
+
+        // ---- Item header ----
         const header = document.createElement("div");
         header.className = "ui-page-header";
         const intro = document.createElement("div");
@@ -867,45 +965,121 @@ import "../styles/global.css";
         );
         body.append(header);
 
-        const grid = document.createElement("div");
-        grid.className = "ui-card-grid ui-card-grid--lg";
-        grid.append(
-          renderBriefWorkspace(current, briefs, factResolutions),
-          renderRevisionWorkspace(current, briefs, revisions),
-          renderPublicationWorkspace(publications),
-          renderContentActivity(audit),
+        // ---- Editorial workspace (two-column on desktop) ----
+        const workspace = document.createElement("div");
+        workspace.className = "content-editorial-workspace";
+
+        const contextRail = document.createElement("aside");
+        contextRail.className = "content-editorial__context";
+
+        const documentArea = document.createElement("div");
+        documentArea.className = "content-editorial__document";
+
+        workspace.append(contextRail, documentArea);
+        body.append(workspace);
+
+        renderContextRail(
+          contextRail,
+          current,
+          briefs,
+          factResolutions,
+          revisions,
         );
-        body.append(grid);
+        renderRevisionWorkspace(documentArea, current, briefs, revisions);
+
+        // ---- Secondary area: publication + activity ----
+        const secondary = document.createElement("div");
+        secondary.className = "content-editorial__secondary";
+
+        // Publication is visible as a secondary card once the item is
+        // past early-stage editorial phases.  It must not dominate the
+        // primary editing viewport while the user is still drafting.
+        const pubVisibilityStages = [
+          "approved",
+          "approved_for_publish",
+          "publishing",
+          "published",
+        ];
+        const showPublication = pubVisibilityStages.includes(current.status);
+        if (showPublication) {
+          secondary.append(renderPublicationWorkspace(publications));
+        }
+        secondary.append(renderContentActivity(audit));
+        body.append(secondary);
+
+        // ---- Recover in-flight AI draft operation ----
+        const latestBrief = briefs.kind === "ok" ? briefs.data[0] : undefined;
+        if (latestBrief) {
+          const inFlight = getActiveAiDraftState(item.id, latestBrief.id);
+          if (inFlight) {
+            void resumeAIDraftPolling(
+              item,
+              latestBrief,
+              inFlight,
+              documentArea,
+            );
+          }
+        }
       }
 
-      function renderBriefWorkspace(
+      /* ----------------------------------------------------------------
+         CONTEXT RAIL (~30 % of the editorial workspace on desktop)
+         ---------------------------------------------------------------- */
+      function renderContextRail(
+        container: HTMLElement,
         item: ContentItem,
         briefs: Awaited<ReturnType<typeof fetchBriefs>>,
         factResolutions: Awaited<ReturnType<typeof resolveBusinessFact>>[],
-      ): HTMLElement {
+        revisions: Awaited<ReturnType<typeof fetchRevisions>>,
+      ): void {
         const card = sectionCard(
-          "Brief",
-          "Audience, intent, and approved business context.",
+          "Context",
+          "Audience, intent, approved business details, and source information.",
         );
         const body = card.querySelector<HTMLElement>(".ui-card__body")!;
+        container.append(card);
+
         if (briefs.kind !== "ok") {
           body.append(errorAlert(describeFailure(briefs, "Briefs")));
-          return card;
-        }
-        const latest = briefs.data[0];
-        if (latest) {
-          body.append(
-            detailFact("Audience", latest.audience),
-            detailFact("Intent", latest.intent),
-            detailFact(
-              "Approved business details",
-              `${latest.approved_fact_revision_ids.length} governed revision${latest.approved_fact_revision_ids.length === 1 ? "" : "s"}`,
-            ),
-            statusBadge(statusTone(latest.status), statusLabel(latest.status)),
-          );
-          return card;
+          return;
         }
 
+        const latestBrief = briefs.data[0];
+        const latestRevision =
+          revisions.kind === "ok" ? revisions.data[0] : undefined;
+
+        if (latestBrief) {
+          body.append(
+            detailFact("Audience", latestBrief.audience),
+            detailFact("Intent", latestBrief.intent),
+            detailFact(
+              "Business details",
+              `${latestBrief.approved_fact_revision_ids.length} governed revision${latestBrief.approved_fact_revision_ids.length === 1 ? "" : "s"}`,
+            ),
+          );
+          if (latestRevision) {
+            body.append(
+              detailFact(
+                "Current revision",
+                `Revision ${latestRevision.revision_number} · ${statusLabel(latestRevision.status)}`,
+              ),
+            );
+          }
+          body.append(
+            statusBadge(
+              statusTone(latestBrief.status),
+              statusLabel(latestBrief.status),
+            ),
+          );
+          // Also show the existing brief form for creating a new brief
+          // when the operator wants to change direction.  We reuse the
+          // brief-creation form but present it collapsed behind a
+          // `<details>` element so it does not dominate the context rail.
+          renderBriefCreationForm(body, item, factResolutions);
+          return;
+        }
+
+        // ---- No brief yet: show fact readiness and the creation form ----
         const facts = CONTENT_REQUIRED_FACT_KEYS.map((key, index) => ({
           key,
           outcome: factResolutions[index],
@@ -917,6 +1091,7 @@ import "../styles/global.css";
             ? [outcome.data.selected_revision_id]
             : [],
         );
+
         const factList = document.createElement("div");
         factList.className = "ui-stack ui-stack--2";
         for (const { key, outcome } of facts) {
@@ -950,91 +1125,188 @@ import "../styles/global.css";
               "/settings",
             ),
           );
-          return card;
+          return;
+        }
+
+        renderBriefCreationForm(
+          body,
+          item,
+          factResolutions,
+          approvedFactRevisionIds,
+        );
+      }
+
+      /** Append the brief creation form.  When `approvedFactRevisionIds` is
+       *  omitted the form is placed behind a `<details>` element because a
+       *  brief already exists. */
+      function renderBriefCreationForm(
+        container: HTMLElement,
+        item: ContentItem,
+        factResolutions: Awaited<ReturnType<typeof resolveBusinessFact>>[],
+        precomputedFactRevisionIds?: string[],
+      ): void {
+        const facts = CONTENT_REQUIRED_FACT_KEYS.map((key, index) => ({
+          key,
+          outcome: factResolutions[index],
+        }));
+        const approvedFactRevisionIds =
+          precomputedFactRevisionIds ??
+          facts.flatMap(({ outcome }) =>
+            outcome.kind === "ok" &&
+            outcome.data.state === "resolved" &&
+            outcome.data.selected_revision_id
+              ? [outcome.data.selected_revision_id]
+              : [],
+          );
+
+        if (
+          approvedFactRevisionIds.length !== CONTENT_REQUIRED_FACT_KEYS.length
+        ) {
+          return;
         }
 
         const form = document.createElement("form");
         form.className = "ui-form-grid";
-        const audience = document.createElement("input");
-        audience.required = true;
-        const intent = document.createElement("textarea");
-        intent.required = true;
-        intent.rows = 4;
+
+        const audienceInput = document.createElement("input");
+        audienceInput.type = "text";
+        audienceInput.required = true;
+        audienceInput.maxLength = AUDIENCE_MAXLENGTH;
+
+        const intentInput = document.createElement("textarea");
+        intentInput.required = true;
+        intentInput.rows = 3;
+        intentInput.maxLength = CONTENT_GOAL_MAXLENGTH;
+
         form.append(
-          formField("Audience", audience, {
-            hint: "Who this content should help",
+          formField("Audience", audienceInput, {
+            hint: `Who this content should help · ${formatCharacterCount(0, AUDIENCE_MAXLENGTH)} maximum`,
             id: `content-audience-${item.id}`,
+            characterLimit: AUDIENCE_MAXLENGTH,
           }),
-          formField("Content goal", intent, {
-            hint: "The question or outcome this content should address",
+          formField("Content goal", intentInput, {
+            hint: `The question or outcome this content should address · ${formatCharacterCount(0, CONTENT_GOAL_MAXLENGTH)} maximum`,
             full: true,
             id: `content-intent-${item.id}`,
+            characterLimit: CONTENT_GOAL_MAXLENGTH,
           }),
         );
+
         const submit = document.createElement("button");
         submit.className = "ui-button ui-button--primary ui-button--md";
         submit.type = "submit";
         submit.textContent = "Create brief";
         const status = liveStatus();
         form.append(submit, status);
+
         form.addEventListener("submit", async (event) => {
           event.preventDefault();
+          // Client-side guard mirroring the backend contract.
+          if (intentInput.value.length > CONTENT_GOAL_MAXLENGTH) {
+            status.textContent = `Content goal must be ${CONTENT_GOAL_MAXLENGTH} characters or fewer.`;
+            return;
+          }
+          if (audienceInput.value.length > AUDIENCE_MAXLENGTH) {
+            status.textContent = `Audience must be ${AUDIENCE_MAXLENGTH} characters or fewer.`;
+            return;
+          }
           submit.disabled = true;
           status.textContent = "Creating brief…";
           const result = await createBrief(organizationId, item.id, {
-            audience: audience.value,
-            intent: intent.value,
+            audience: audienceInput.value.trim(),
+            intent: intentInput.value.trim(),
             targetReference: item.slug,
             approvedFactRevisionIds,
           });
           if (result.kind === "ok") await openContentItem(item);
           else {
             submit.disabled = false;
-            status.textContent = describeFailure(result, "Brief");
+            status.textContent = describeContentFailure(result, "Brief");
           }
         });
-        body.append(form);
-        return card;
+
+        const wrapper = document.createElement("div");
+        wrapper.className = "stack-top-4";
+        // When a brief already exists, use <details> to collapse the
+        // creation form so the operator can still create a fresh brief
+        // without it dominating the context rail.
+        if (precomputedFactRevisionIds === undefined) {
+          wrapper.append(form);
+        } else {
+          const details = document.createElement("details");
+          const summary = document.createElement("summary");
+          summary.textContent = "Create a new brief";
+          details.append(summary, form);
+          wrapper.append(details);
+        }
+        container.append(wrapper);
       }
 
+      /* ----------------------------------------------------------------
+         REVISION / DOCUMENT WORKSPACE
+         ---------------------------------------------------------------- */
       function renderRevisionWorkspace(
+        container: HTMLElement,
         item: ContentItem,
         briefs: Awaited<ReturnType<typeof fetchBriefs>>,
         revisions: Awaited<ReturnType<typeof fetchRevisions>>,
-      ): HTMLElement {
-        const card = sectionCard(
-          "Draft and review",
-          "Every revision remains reviewable and requires explicit approval.",
-        );
-        const body = card.querySelector<HTMLElement>(".ui-card__body")!;
+      ): void {
         if (revisions.kind !== "ok") {
+          container.append(sectionCard("Revision", undefined));
+          const card = container.lastElementChild!;
+          const body = card.querySelector<HTMLElement>(".ui-card__body")!;
           body.append(errorAlert(describeFailure(revisions, "Revisions")));
-          return card;
+          return;
         }
+
         const latestBrief = briefs.kind === "ok" ? briefs.data[0] : undefined;
         const latest = revisions.data[0];
+
         if (latest) {
-          const article = document.createElement("article");
-          article.className = "ui-notice ui-notice--info";
-          const title = document.createElement("h4");
-          title.textContent = `Revision ${latest.revision_number}`;
-          const copy = document.createElement("p");
-          copy.className = "ui-text-secondary";
-          copy.textContent = latest.body;
-          article.append(
-            title,
-            statusBadge(statusTone(latest.status), statusLabel(latest.status)),
-            copy,
+          // ---- Render the revision with safe structured document output ----
+          const section = sectionCard(
+            `Revision ${latest.revision_number}`,
+            undefined,
           );
-          if (!latest.validation_document.valid) {
-            const warning = errorAlert(
-              latest.validation_document.errors.join(" · ") ||
-                "This revision did not pass validation.",
-            );
-            article.append(warning);
+          const body = section.querySelector<HTMLElement>(".ui-card__body")!;
+
+          // Status bar
+          const statusBar = document.createElement("div");
+          statusBar.className =
+            "ui-inline ui-inline--center ui-inline--spread stack-bottom-4";
+          statusBar.append(
+            statusBadge(statusTone(latest.status), statusLabel(latest.status)),
+          );
+          if (latest.approved_at) {
+            const approvedInfo = document.createElement("span");
+            approvedInfo.className = "ui-text-secondary";
+            approvedInfo.textContent = `Approved ${formatTimestamp(latest.approved_at)}`;
+            statusBar.append(approvedInfo);
           }
+          body.append(statusBar);
+
+          // Rendered document body (safe DOM rendering, no innerHTML)
+          const docContainer = renderDocumentBody(latest.body);
+
+          // Validation state
+          if (!latest.validation_document.valid) {
+            const validationNote = document.createElement("div");
+            validationNote.className =
+              "ui-notice ui-notice--warning stack-top-4";
+            const vText = document.createElement("p");
+            vText.textContent =
+              latest.validation_document.errors.join(" · ") ||
+              "This revision did not pass validation.";
+            validationNote.append(vText);
+            body.append(validationNote);
+          }
+
+          body.append(docContainer);
+
+          // Approval actions tied to the current revision stage
           const actions = document.createElement("div");
-          actions.className = "ui-inline ui-inline--center ui-inline--tight";
+          actions.className =
+            "ui-inline ui-inline--center ui-inline--tight stack-top-4";
           if (latest.status === "awaiting_editorial") {
             actions.append(
               revisionDecisionButton(
@@ -1054,9 +1326,14 @@ import "../styles/global.css";
               ),
             );
           }
-          article.append(actions);
-          body.append(article);
+          body.append(actions);
+          container.append(section);
         } else {
+          const section = sectionCard(
+            "Document",
+            "No draft yet.  Create a brief, then generate or write the first revision.",
+          );
+          const body = section.querySelector<HTMLElement>(".ui-card__body")!;
           body.append(
             emptyState(
               "No draft yet",
@@ -1065,42 +1342,132 @@ import "../styles/global.css";
                 : "Create a brief before starting a draft.",
             ),
           );
+          container.append(section);
         }
 
+        // ---- Generation / manual-entry actions (always shown when a
+        //      brief exists regardless of revision state) ----
         if (latestBrief) {
-          const actions = document.createElement("div");
-          actions.className = "ui-inline ui-inline--center ui-inline--tight";
+          const actionSection = sectionCard(
+            "Actions",
+            "Generate an AI-assisted draft or write a revision manually.",
+          );
+          const actionsBody =
+            actionSection.querySelector<HTMLElement>(".ui-card__body")!;
+
+          // AI Draft generation
+          const genRow = document.createElement("div");
+          genRow.className = "ui-inline ui-inline--center ui-inline--spread";
+          const genInfo = document.createElement("div");
+          const genTitle = document.createElement("h4");
+          genTitle.textContent = "Assisted draft";
+          const genHint = document.createElement("p");
+          genHint.className = "ui-text-secondary";
+          genHint.textContent =
+            "AI generation runs in the background.  The page will update automatically when complete.";
+          genInfo.append(genTitle, genHint);
+
           const aiButton = document.createElement("button");
           aiButton.type = "button";
           aiButton.className = "ui-button ui-button--secondary ui-button--md";
           aiButton.textContent = "Generate assisted draft";
           const aiStatus = liveStatus();
+          aiStatus.setAttribute("data-ai-draft-status", "");
+          const genActions = document.createElement("div");
+          genActions.className = "ui-inline ui-inline--center ui-inline--tight";
+          genActions.append(aiButton, aiStatus);
+          genRow.append(genInfo, genActions);
+
+          // If an in-flight operation exists for this item+brief, resume
+          // polling and disable the button immediately.
+          const existingState = getActiveAiDraftState(item.id, latestBrief.id);
+          if (existingState) {
+            aiButton.disabled = true;
+            aiStatus.textContent = describeAIDraftStatus("queued");
+            void resumeAIDraftPolling(
+              item,
+              latestBrief,
+              existingState,
+              container,
+            ).then(() => {
+              // Re-enable the button on terminal failure.
+              const currentState = getActiveAiDraftState(
+                item.id,
+                latestBrief.id,
+              );
+              if (!currentState) {
+                aiButton.disabled = false;
+              }
+            });
+          }
+
           aiButton.addEventListener("click", async () => {
             aiButton.disabled = true;
-            aiStatus.textContent = "Generating draft…";
+            aiStatus.textContent = "Starting generation…";
+
+            // Reuse the existing idempotency key if this is a retry of
+            // the same brief within the same item view.  A new UUID is
+            // only minted the first time or after a clear.
+            let state = getActiveAiDraftState(item.id, latestBrief.id);
+            if (!state) {
+              state = {
+                itemId: item.id,
+                briefId: latestBrief.id,
+                idempotencyKey: crypto.randomUUID(),
+                runId: "", // filled after start response
+              };
+            }
+
             const result = await generateAIDraft(
               organizationId,
               item.id,
               latestBrief.id,
-              crypto.randomUUID(),
+              state.idempotencyKey,
             );
-            if (result.kind === "ok") await openContentItem(item);
-            else {
+
+            if (result.kind === "ok") {
+              const startData: DurableAIDraftStart = result.data;
+              state.runId = startData.workflow_run_id;
+              setActiveAiDraftState(state);
+              aiStatus.textContent = describeAIDraftStatus("queued");
+              void resumeAIDraftPolling(
+                item,
+                latestBrief,
+                state,
+                container,
+              ).then(() => {
+                const currentState = getActiveAiDraftState(
+                  item.id,
+                  latestBrief.id,
+                );
+                if (!currentState) {
+                  aiButton.disabled = false;
+                }
+              });
+            } else {
               aiButton.disabled = false;
-              aiStatus.textContent = describeFailure(
+              aiStatus.textContent = describeContentFailure(
                 result,
                 "Draft generation",
               );
+              // Do NOT clear the idempotency key on failure so a retry
+              // uses the same identity.  The backend is expected to
+              // handle the duplicate idempotency key safely.
             }
           });
-          actions.append(aiButton, aiStatus);
-          body.append(actions);
+
+          actionsBody.append(genRow);
+
+          // Manual revision entry
+          const divider = document.createElement("hr");
+          divider.className = "ui-divider";
+          actionsBody.append(divider);
 
           const form = document.createElement("form");
           form.className = "ui-form-grid";
           const copy = document.createElement("textarea");
           copy.required = true;
-          copy.rows = 8;
+          copy.rows = 10;
           form.append(
             formField("Write a revision", copy, {
               hint: "Use approved business facts and review before publishing",
@@ -1126,12 +1493,39 @@ import "../styles/global.css";
             if (result.kind === "ok") await openContentItem(item);
             else {
               submit.disabled = false;
-              status.textContent = describeFailure(result, "Revision");
+              status.textContent = describeContentFailure(result, "Revision");
             }
           });
-          body.append(form);
+          actionsBody.append(form);
+          container.append(actionSection);
         }
-        return card;
+
+        // ---- Revision history ----
+        if (revisions.data.length > 1) {
+          const historySection = sectionCard(
+            "Revision history",
+            "Previous revisions remain reviewable.",
+          );
+          const historyBody =
+            historySection.querySelector<HTMLElement>(".ui-card__body")!;
+          for (const rev of revisions.data.slice(1, 6)) {
+            const row = document.createElement("div");
+            row.className = "ui-inline ui-inline--center ui-inline--spread";
+            const info = document.createElement("div");
+            const revNum = document.createElement("strong");
+            revNum.textContent = `Revision ${rev.revision_number}`;
+            const meta = document.createElement("span");
+            meta.className = "ui-text-secondary";
+            meta.textContent = ` · ${statusLabel(rev.status)}`;
+            info.append(revNum, meta);
+            row.append(
+              info,
+              statusBadge(statusTone(rev.status), statusLabel(rev.status)),
+            );
+            historyBody.append(row);
+          }
+          container.append(historySection);
+        }
       }
 
       function revisionDecisionButton(
@@ -1158,7 +1552,7 @@ import "../styles/global.css";
             button.disabled = false;
             button.insertAdjacentElement(
               "afterend",
-              errorAlert(describeFailure(result, "Approval")),
+              errorAlert(describeContentFailure(result, "Approval")),
             );
           }
         });
@@ -1175,13 +1569,13 @@ import "../styles/global.css";
         const body = card.querySelector<HTMLElement>(".ui-card__body")!;
         if (publications.kind !== "ok") {
           body.append(
-            errorAlert(describeFailure(publications, "Publications")),
+            errorAlert(describeContentFailure(publications, "Publications")),
           );
         } else if (publications.data.length === 0) {
           body.append(
             emptyState(
               "Not submitted for publishing",
-              "After final approval, publishing requires a configured target and an accepted publishing connector. LILOs does not report success until provider state confirms it.",
+              "After final approval, publishing requires a configured target and an accepted publishing connector.",
               "Review publishing setup",
               "/integrations",
             ),
@@ -1228,7 +1622,7 @@ import "../styles/global.css";
         );
         const body = card.querySelector<HTMLElement>(".ui-card__body")!;
         if (audit.kind !== "ok") {
-          body.append(errorAlert(describeFailure(audit, "Activity")));
+          body.append(errorAlert(describeContentFailure(audit, "Activity")));
         } else if (audit.data.length === 0) {
           body.append(
             emptyState(

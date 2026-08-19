@@ -1,4 +1,5 @@
 import { apiGet, apiRequest, type ApiOutcome } from "./api-client";
+import { getWorkflowRun, type WorkflowRunDetail } from "./workflows";
 
 export type ContentOpportunity = {
   id: string;
@@ -302,23 +303,194 @@ export function createRevision(
   });
 }
 
+/* ------------------------------------------------------------------ */
+/*  Durable AI draft generation                                        */
+/* ------------------------------------------------------------------ */
+
+/** Response shape from the durable (202) AI draft start endpoint. */
+export type DurableAIDraftStart = {
+  workflow_run_id: string;
+  status: string;
+  workflow_key: string;
+  item_id: string;
+};
+
+/**
+ * Start a durable AI-assisted content draft generation.
+ *
+ * The backend returns 202 Accepted with a ``workflow_run_id`` immediately.
+ * The AI generation executes asynchronously via the platform worker.
+ * Poll ``GET /workflows/runs/{run_id}`` for status.
+ *
+ * The same ``idempotencyKey`` + same brief/item produces the same
+ * workflow run — repeated clicks do not create duplicates.
+ */
 export function generateAIDraft(
   organizationId: string,
   itemId: string,
   briefId: string,
   idempotencyKey: string,
-): Promise<
-  ApiOutcome<
-    ContentRevision & {
-      requires_human_review: boolean;
-      provider: string | null;
-    }
-  >
-> {
+): Promise<ApiOutcome<DurableAIDraftStart>> {
   return apiRequest(`${base(organizationId)}/${itemId}/revisions/ai-draft`, {
     method: "POST",
     body: { brief_id: briefId, idempotency_key: idempotencyKey },
+    /** The durable start returns promptly — no need for a 60-second
+     *  timeout.  The default 15-second client timeout is sufficient. */
   });
+}
+
+/* ------------------------------------------------------------------ */
+/*  Durable AI draft polling and status mapping                        */
+/* ------------------------------------------------------------------ */
+
+/** Client-appropriate Content status derived from a workflow run. */
+export type ContentAIDraftStatus =
+  "queued" | "running" | "retrying" | "completed" | "failed" | "cancelled";
+
+/**
+ * Map raw workflow-run state into a client/operator-appropriate Content
+ * status.  Internal worker IDs, safe-error codes, and job-level detail
+ * are never exposed to the UX.
+ */
+export function mapWorkflowRunToContentStatus(
+  run: WorkflowRunDetail,
+): ContentAIDraftStatus {
+  const runStatus = run.status;
+  const jobStatus = run.jobs?.[0]?.status;
+
+  if (runStatus === "completed") return "completed";
+  if (runStatus === "cancelled" || runStatus === "expired") return "cancelled";
+
+  // The runtime sets run.status="failed" for both permanent and retryable
+  // failures.  When the job is still retry_scheduled, the operation is
+  // still in progress — surface it truthfully as "retrying".
+  if (runStatus === "failed" && jobStatus === "retry_scheduled") {
+    return "retrying";
+  }
+  if (runStatus === "failed") return "failed";
+
+  if (runStatus === "running") return "running";
+  if (runStatus === "queued" || runStatus === "created") return "queued";
+
+  // Unknown / unexpected states — treat as queued (still in progress).
+  return "queued";
+}
+
+/** Human-readable label for a Content AI draft generation status. */
+export function describeAIDraftStatus(status: ContentAIDraftStatus): string {
+  switch (status) {
+    case "queued":
+      return "Queued — waiting for a worker…";
+    case "running":
+      return "Generating draft…";
+    case "retrying":
+      return "Retrying — a previous attempt did not complete.  The platform will try again automatically.";
+    case "completed":
+      return "Draft complete.";
+    case "failed":
+      return "Draft generation did not complete.  You can try again.";
+    case "cancelled":
+      return "Draft generation was cancelled.";
+  }
+}
+
+/** Whether the status is terminal (no further polling needed). */
+export function isAIDraftTerminal(status: ContentAIDraftStatus): boolean {
+  return (
+    status === "completed" || status === "failed" || status === "cancelled"
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  In-flight operation persistence (sessionStorage)                   */
+/* ------------------------------------------------------------------ */
+
+export type InFlightAIDraft = {
+  itemId: string;
+  briefId: string;
+  idempotencyKey: string;
+  runId: string;
+};
+
+function storageKey(
+  organizationId: string,
+  itemId: string,
+  briefId: string,
+): string {
+  return `lilos.content.ai-draft.${organizationId}.${itemId}.${briefId}`;
+}
+
+/** Persist an in-flight AI draft operation so a browser refresh can recover it. */
+export function storeInFlightAIDraft(
+  organizationId: string,
+  state: InFlightAIDraft,
+): void {
+  try {
+    sessionStorage.setItem(
+      storageKey(organizationId, state.itemId, state.briefId),
+      JSON.stringify(state),
+    );
+  } catch {
+    // sessionStorage unavailable — graceful degradation.
+  }
+}
+
+/** Recover a previously-stored in-flight operation, if any. */
+export function recoverInFlightAIDraft(
+  organizationId: string,
+  itemId: string,
+  briefId: string,
+): InFlightAIDraft | null {
+  try {
+    const raw = sessionStorage.getItem(
+      storageKey(organizationId, itemId, briefId),
+    );
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as InFlightAIDraft;
+    if (
+      parsed.itemId === itemId &&
+      parsed.briefId === briefId &&
+      parsed.idempotencyKey &&
+      parsed.runId
+    ) {
+      return parsed;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/** Clear the stored in-flight operation (terminal state or navigation away). */
+export function clearInFlightAIDraft(
+  organizationId: string,
+  itemId: string,
+  briefId: string,
+): void {
+  try {
+    sessionStorage.removeItem(storageKey(organizationId, itemId, briefId));
+  } catch {
+    // sessionStorage unavailable — graceful degradation.
+  }
+}
+
+/**
+ * Poll a workflow run for the current Content AI draft status.
+ *
+ * Returns the mapped status and the full run detail (for output_reference
+ * resolution on completion).  Returns ``null`` when the run cannot be
+ * fetched (e.g. 404 — the run may have been cleaned up).
+ */
+export async function pollAIDraftRun(
+  organizationId: string,
+  runId: string,
+): Promise<{ status: ContentAIDraftStatus; run: WorkflowRunDetail } | null> {
+  const result = await getWorkflowRun(organizationId, runId);
+  if (result.kind !== "ok") return null;
+  return {
+    status: mapWorkflowRunToContentStatus(result.data),
+    run: result.data,
+  };
 }
 
 export function decideRevision(
@@ -386,4 +558,176 @@ export function deriveSlug(title: string): string {
     .replace(/-+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 200);
+}
+
+/* ------------------------------------------------------------------ */
+/*  Content brief character limits                                     */
+/* ------------------------------------------------------------------ */
+
+/** Maximum characters the backend accepts for a content goal / intent. */
+export const CONTENT_GOAL_MAXLENGTH = 500;
+
+/** Maximum characters the backend accepts for audience. */
+export const AUDIENCE_MAXLENGTH = 500;
+
+/* ------------------------------------------------------------------ */
+/*  Document rendering                                                 */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Render long-form document body text into a safe, readable DOM fragment.
+ *
+ * The text is interpreted as a lightweight Markdown subset (paragraphs
+ * separated by blank lines, ATX headings, unordered lists, and plain
+ * inline text).  Everything is built with DOM text nodes — there is no
+ * innerHTML injection and therefore no XSS vector from user/AI content.
+ *
+ * The returned `<article>` element carries the `.content-document` class
+ * so CSS can apply readable line-length, heading/paragraph/list spacing,
+ * and review-appropriate typography.
+ */
+export function renderDocumentBody(body: string): HTMLElement {
+  const article = document.createElement("article");
+  article.className = "content-document";
+
+  if (!body || !body.trim()) {
+    const empty = document.createTextNode(
+      "No document body available for this revision.",
+    );
+    article.append(empty);
+    return article;
+  }
+
+  // Normalise line endings.
+  const normalised = body.replace(/\r\n?/g, "\n");
+
+  // Split into logical blocks separated by blank lines.
+  const blocks = normalised.split(/\n{2,}/);
+
+  for (const rawBlock of blocks) {
+    const trimmed = rawBlock.trim();
+    if (!trimmed) continue;
+
+    // --- ATX heading (# … through ###### …) ---
+    const headingMatch = trimmed.match(/^(#{1,6})\s+(.+)$/);
+    if (headingMatch) {
+      const level = Math.min(headingMatch[1].length, 6);
+      const heading = document.createElement(
+        `h${level}` as "h1" | "h2" | "h3" | "h4" | "h5" | "h6",
+      );
+      heading.textContent = headingMatch[2];
+      article.append(heading);
+      continue;
+    }
+
+    // --- Unordered list block (every line starts with `- `, `* `, or `+ `) ---
+    const lines = trimmed.split("\n");
+    const allListLines = lines.every(
+      (line) => /^[-*+]\s/.test(line) || line.trim() === "",
+    );
+    if (allListLines && lines.some((line) => /^[-*+]\s/.test(line))) {
+      const list = document.createElement("ul");
+      for (const line of lines) {
+        const itemMatch = line.match(/^[-*+]\s+(.+)$/);
+        if (!itemMatch) continue;
+        const li = document.createElement("li");
+        li.textContent = itemMatch[1];
+        list.append(li);
+      }
+      article.append(list);
+      continue;
+    }
+
+    // --- Plain paragraph ---
+    const paragraph = document.createElement("p");
+    // Collapse single newlines inside a paragraph block into spaces.
+    paragraph.textContent = trimmed.replace(/\n/g, " ");
+    article.append(paragraph);
+  }
+
+  return article;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Validation helpers                                                 */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Format a "N / M characters" label for a character-count constraint.
+ * Returns `"0 / 500 characters"`, `"500 / 500 characters"`, etc.
+ */
+export function formatCharacterCount(current: number, max: number): string {
+  return `${Math.max(0, current)} / ${max} characters`;
+}
+
+/**
+ * Whether the given count exceeds the limit (useful for submit guards).
+ */
+export function isOverCharacterLimit(count: number, limit: number): boolean {
+  return count > limit;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Field-specific API error helpers                                   */
+/* ------------------------------------------------------------------ */
+
+export type FieldValidationError = {
+  field: string;
+  message: string;
+};
+
+/**
+ * Extract validation errors scoped to a specific field from an API error
+ * outcome's `details` array.
+ *
+ * Returns `null` when the outcome is not an error or has no relevant
+ * detail — the caller should fall back to the generic outcome message.
+ */
+export function fieldErrorFromDetails(
+  outcome: ApiOutcome<unknown>,
+  fieldName: string,
+): string | null {
+  if (outcome.kind !== "error") return null;
+  if (!outcome.details || outcome.details.length === 0) return null;
+  const match = outcome.details.find(
+    (detail) => detail.field?.toLowerCase() === fieldName.toLowerCase(),
+  );
+  return match?.message ?? null;
+}
+
+/**
+ * Build a user-facing error summary from the outcome and optional context.
+ * When field-level details are present they take priority over the generic
+ * error envelope.
+ */
+export function describeContentFailure(
+  outcome: ApiOutcome<unknown>,
+  context?: string,
+): string {
+  if (outcome.kind === "error" && outcome.details?.length) {
+    const messages = outcome.details
+      .map((detail) => (detail.field ? `${detail.message}` : detail.message))
+      .filter(Boolean);
+    if (messages.length > 0) {
+      return messages.join(" ");
+    }
+  }
+  // Fall through to the generic outcome description.
+  const prefix = context ? `${context}: ` : "";
+  switch (outcome.kind) {
+    case "forbidden":
+      return `${prefix}You do not have permission to perform this action.`;
+    case "not-found":
+      return `${prefix}The requested resource could not be found.`;
+    case "disconnected":
+      return `${prefix}Could not confirm the platform received your request.  Try again — your request will not be duplicated.`;
+    case "unauthenticated":
+      return `${prefix}Your session has expired. Sign in again.`;
+    case "not-configured":
+      return `${prefix}This deployment is not configured.`;
+    case "error":
+      return outcome.message || `${prefix}The request failed.`;
+    case "ok":
+      return "";
+  }
 }

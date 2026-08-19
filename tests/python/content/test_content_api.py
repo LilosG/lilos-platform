@@ -14,6 +14,7 @@ from apps.api.app.access_control.catalog import AccessCatalogSeeder
 from apps.api.app.access_control.contracts import MembershipCreate, RoleAssignmentCreate
 from apps.api.app.access_control.enums import MembershipType, ScopeType
 from apps.api.app.access_control.service import AccessControlService
+from apps.api.app.administration.models import BusinessFactRevision
 from apps.api.app.authentication.contracts import VerifiedProviderClaims
 from apps.api.app.authentication.enums import AssuranceLevel, UserStatus
 from apps.api.app.authentication.models import UserProfile
@@ -177,6 +178,25 @@ def content_client(
             session.add(workflow_run)
             await session.flush()
 
+            approved_fact = BusinessFactRevision(
+                organization_id=organization.id,
+                location_id=location.id,
+                fact_identity=uuid4(),
+                fact_key="business.name",
+                value_type="string",
+                value="Winter HVAC Pros",
+                source="client_input",
+                authority="client_approved",
+                status="approved",
+                revision=1,
+                proposed_by=profile.id,
+                approved_by=profile.id,
+                approved_at=datetime.now(UTC),
+                change_reason="Content API test fixture",
+            )
+            session.add(approved_fact)
+            await session.flush()
+
             identifiers = {
                 "organization": organization.id,
                 "other_organization": other_organization.id,
@@ -184,6 +204,7 @@ def content_client(
                 "assigned_subject": profile.auth_user_id,
                 "target": target.id,
                 "workflow_run": workflow_run.id,
+                "approved_fact": approved_fact.id,
             }
             return claims(profile.auth_user_id), identifiers
 
@@ -337,12 +358,18 @@ def test_ai_draft_generates_grounded_revision_requiring_human_review(
 ) -> None:
     client, ids = content_client
     org = ids["organization"]
+    approved_fact = ids["approved_fact"]
     base = f"/api/v1/organizations/{org}/content"
 
     item = client.post(
         base,
         headers=HEADERS,
-        json={"content_type": "blog_post", "title": "Winter HVAC Tips", "slug": "winter-hvac-tips"},
+        json={
+            "content_type": "blog_post",
+            "title": "Winter HVAC Tips",
+            "slug": "winter-hvac-tips",
+            "location_id": str(ids["location"]),
+        },
     )
     assert item.status_code == 201
     item_id = item.json()["data"]["id"]
@@ -355,13 +382,13 @@ def test_ai_draft_generates_grounded_revision_requiring_human_review(
             "audience": "Homeowners preparing for winter",
             "intent": "educate",
             "target_reference": "/blog/winter-hvac-tips",
-            "approved_fact_revision_ids": [str(uuid4())],
+            "approved_fact_revision_ids": [str(approved_fact)],
         },
     )
     brief_id = brief.json()["data"]["id"]
 
     draft = client.post(
-        f"{base}/{item_id}/revisions/ai-draft",
+        f"{base}/{item_id}/revisions/ai-draft?sync=true",
         headers=HEADERS,
         json={"brief_id": brief_id, "idempotency_key": "content-ai-draft-key-001"},
     )
@@ -518,3 +545,134 @@ def test_create_target_with_unconnected_connection_is_rejected(
         },
     )
     assert response.status_code == 409
+
+
+# ---------------------------------------------------------------------------
+# Durable AI draft — HTTP integration tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_ai_draft_durable_returns_202_with_workflow_metadata(
+    content_client: tuple[TestClient, dict[str, UUID]],
+) -> None:
+    """POST /revisions/ai-draft (without ?sync=true) returns 202 Accepted
+    with workflow_run_id, status=queued, workflow_key, and correct item_id."""
+    client, ids = content_client
+    org, location, fact = ids["organization"], ids["location"], ids["approved_fact"]
+    base = f"/api/v1/organizations/{org}/content"
+
+    # Create a content item
+    item_resp = client.post(
+        base,
+        headers=HEADERS,
+        json={
+            "content_type": "blog",
+            "title": "Durable AI Draft HTTP Test",
+            "slug": "durable-ai-draft-http-test",
+            "location_id": str(location),
+        },
+    )
+    assert item_resp.status_code == 201, item_resp.text
+    item_id = item_resp.json()["data"]["id"]
+
+    # Create a brief
+    brief_resp = client.post(
+        f"{base}/{item_id}/briefs",
+        headers=HEADERS,
+        json={
+            "audience": "homeowners",
+            "intent": "Test durable AI draft endpoint",
+            "target_reference": "/blog/durable-test",
+            "approved_fact_revision_ids": [str(fact)],
+        },
+    )
+    assert brief_resp.status_code == 201, brief_resp.text
+    brief_id = brief_resp.json()["data"]["id"]
+
+    # Start durable AI draft (no ?sync=true)
+    import uuid as _uuid
+
+    idemp_key = f"http-durable-{_uuid.uuid4().hex[:16]}"
+    draft_resp = client.post(
+        f"{base}/{item_id}/revisions/ai-draft",
+        headers=HEADERS,
+        json={
+            "brief_id": brief_id,
+            "idempotency_key": idemp_key,
+        },
+    )
+    assert draft_resp.status_code == 202, draft_resp.text
+    data = draft_resp.json()["data"]
+
+    assert "workflow_run_id" in data
+    assert data["status"] == "queued"
+    assert data["workflow_key"] == "content.draft_revision"
+    assert data["item_id"] == item_id
+
+    # Verify the workflow_run_id is a valid UUID
+    run_id = _uuid.UUID(data["workflow_run_id"])
+    assert run_id is not None
+
+
+@pytest.mark.integration
+def test_ai_draft_cross_tenant_isolation(
+    content_client: tuple[TestClient, dict[str, UUID]],
+) -> None:
+    """One organization cannot start AI draft generation for another
+    organization's content item."""
+    client, ids = content_client
+    org = ids["organization"]
+    other_org = ids["other_organization"]
+    location = ids["location"]
+    fact = ids["approved_fact"]
+    base = f"/api/v1/organizations/{org}/content"
+    other_base = f"/api/v1/organizations/{other_org}/content"
+
+    # Create a content item in the primary org
+    item_resp = client.post(
+        base,
+        headers=HEADERS,
+        json={
+            "content_type": "blog",
+            "title": "Cross-Tenant Isolation Test",
+            "slug": "cross-tenant-isolation-test",
+            "location_id": str(location),
+        },
+    )
+    assert item_resp.status_code == 201, item_resp.text
+    item_id = item_resp.json()["data"]["id"]
+
+    # Create a brief in the primary org
+    brief_resp = client.post(
+        f"{base}/{item_id}/briefs",
+        headers=HEADERS,
+        json={
+            "audience": "test",
+            "intent": "Cross-tenant isolation",
+            "target_reference": "/blog/cross-tenant",
+            "approved_fact_revision_ids": [str(fact)],
+        },
+    )
+    assert brief_resp.status_code == 201, brief_resp.text
+    brief_id = brief_resp.json()["data"]["id"]
+
+    # Attempt to start AI draft using the OTHER organization's base URL
+    # with the primary org's item_id — this must be rejected.
+    import uuid as _uuid
+
+    idemp_key = f"cross-tenant-{_uuid.uuid4().hex[:16]}"
+    cross_resp = client.post(
+        f"{other_base}/{item_id}/revisions/ai-draft",
+        headers=HEADERS,
+        json={
+            "brief_id": brief_id,
+            "idempotency_key": idemp_key,
+        },
+    )
+    # Must be rejected — the item does not belong to other_org.
+    # The API returns 403 (authorization denied) or 404 (not found in scope).
+    assert cross_resp.status_code in (403, 404), (
+        f"Expected 403/404 for cross-tenant AI draft, "
+        f"got {cross_resp.status_code}: {cross_resp.text}"
+    )

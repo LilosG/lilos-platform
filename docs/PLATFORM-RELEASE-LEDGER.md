@@ -46,7 +46,7 @@ The **Implementation** column uses the formal status vocabulary. The **Live acce
 | Search Console | IMPLEMENTED_NOT_ACCEPTED | unknown | IMPLEMENTED_NOT_ACCEPTED | sync unknown | partial | `SearchConsoleService` with discovery, mapping, sync. `SearchConsoleAdapter` for API calls. Live mapping/sync/freshness unverified. |
 | GA4 | IMPLEMENTED_NOT_ACCEPTED | partial | IMPLEMENTED_NOT_ACCEPTED | sync unknown | IMPLEMENTED_NOT_ACCEPTED | **Packet 4 repository evidence:** Insights consumes the existing 7/28/90-day report, prior-period comparisons, source, freshness, and daily series. Historical live metrics exist, but the current period/comparison contract has not been accepted against a live provider. |
 | SEO | IMPLEMENTED_NOT_ACCEPTED | partial | IMPLEMENTED_NOT_ACCEPTED | partial | partial | **Packet 4:** Crawl overview/history hierarchy, compact opportunities, evidence-linked detail, and Search Console reporting now reuse the shared Chart.js reporting component. Live crawl/GSC/recommendation lifecycle remains unverified. |
-| Content | IMPLEMENTED_NOT_ACCEPTED | partial | IMPLEMENTED_NOT_ACCEPTED | partial | partial | **Packet 4:** Opportunity→brief→draft→approve→publish pipeline and truthful transition states implemented; provider configuration is linked to Integrations rather than duplicated. Live publish acceptance and the known business-fact confirmation remain outstanding. |
+| Content | IMPLEMENTED_NOT_ACCEPTED | partial | IMPLEMENTED_NOT_ACCEPTED | partial | partial | **Integration packet:** Durable AI draft generation with governed fact grounding, source-driven Business Knowledge reconciliation, editorial Content workspace with safe document rendering, and varchar(100)→varchar(500) intent widening implemented. Live publish acceptance and deployed AI provider acceptance remain outstanding. |
 | Leads | IMPLEMENTED_NOT_ACCEPTED | partial | IMPLEMENTED_NOT_ACCEPTED | partial | partial | **Packet 4:** Intake, routing, assignment, lifecycle, and communication history are presented as an operational inbox; setup readiness no longer claims usable when sources are absent. Provider-dispatch semantics for `sent` still require live verification. |
 | Integrations control plane | IMPLEMENTED_NOT_ACCEPTED | partial | IMPLEMENTED_NOT_ACCEPTED | n/a | health partial | **Packet 4:** Integrations owns connection health, capabilities, mapped-resource freshness, privileged collapsed discovery/mapping, and existing disconnect/remediation actions. Existing Google workspace contracts do not expose a connected-account label, per-capability sync timestamps, or a manual sync endpoint; no UI was fabricated for them. |
 | Automation & Agents control plane | IMPLEMENTED_NOT_ACCEPTED | partial | IMPLEMENTED_NOT_ACCEPTED | IMPLEMENTED_NOT_ACCEPTED | IMPLEMENTED_NOT_ACCEPTED | **Packet 5:** Automation catalog, schedules, run history, and failure/recovery surfaces productized with operational language. Scheduled-execution chain proven end-to-end against PostgreSQL (scheduler → job → worker → handler → terminal). Approval boundary proven at product layer (GBP handler rejects non-reserved publications). Retry classification, backoff, dead-letter, and tenant isolation proven in integration tests. Live production schedules/runs remain unaccepted. |
@@ -267,6 +267,80 @@ The **Implementation** column uses the formal status vocabulary. The **Live acce
 - Deferred: SEO expert intelligence, SEO opportunity intelligence, SEO max-pages concurrency overshoot (all deferred to dedicated SEO Intelligence/Productization pass)
 - Remaining blockers: Real AI execution requires `LILOS_OPENROUTER_API_KEY` secret in production environment. Live production schedules/runs unaccepted without runtime access.
 - Accepted: no (real AI acceptance + auditor review pending)
+
+---
+
+### Track C — Source-Driven Business Knowledge Reconciliation
+
+- Branch / SHA: `fix/business-knowledge-reconciliation` / base `5dea6dc8e9f15df98a7386ad4459d9b01f9abd8b`
+- Auditor result: NOT RUN
+- Principal result: IMPLEMENTED_NOT_ACCEPTED (integration tests require `LILOS_TEST_DATABASE_URL`)
+- Focused checks:
+  - Python ruff: 0 errors on `administration/service.py`, `test_reconciliation.py`
+  - Python mypy: 0 errors on changed files
+  - Python pytest (collection): 17 tests collected (7 existing + 10 new)
+  - Syntax: clean
+- Architecture delivered:
+  1. **Source-driven `brand.approved_claims` derivation** — Reconciliation now produces service/claim candidates from canonical persisted LILOs data (GBP profile snapshot categories + serviceItems, organization profile primary_services + approved_claims, SEO crawl page H1 signals on service-context pages) instead of requiring an operator to type the same knowledge into the organization profile first. Removes the circular dependency where Content required approved claims → reconciliation needed profile approved claims → operator manually typed approved claims.
+  2. **Claim safety filtering** — Provider/crawl-derived names pass a safety filter that rejects superlatives, awards, licensing, bonding, insurance, guarantees, warranties, pricing, certifications, years-in-business, financing, free-estimate, emergency/24-7, performance-statistic, and other material claims. Explicitly supplied profile knowledge is preserved as-is.
+  3. **Provenance tracking** — Composite source strings (e.g. `"gbp_profile_snapshot+organization_profile+seo_crawl"`) identify which source families contributed. Audit metadata records per-source candidate counts.
+  4. **Normalization and deduplication** — Case/punctuation/whitespace variants normalize to one entry. Cross-source duplicates collapse to a single claim.
+  5. **Idempotent reconciliation** — Repeated reconciliation with unchanged source data proposes no duplicates. Source data changes produce a proper next revision via the existing immutable revision architecture (same fact_identity, incremented revision, supersedes link).
+  6. **Conflict surfacing** — When GBP and profile sources produce distinct names, both are retained in the proposed candidate list; neither is silently dropped. The operator reviews and confirms.
+  7. **Tenant/location safety** — All source reads are organization-scoped. GBP data from other organizations or non-primary locations does not leak into candidates.
+  8. **SEO crawl evidence quality** — Only H1 text from pages with service-context URL segments or multi-word slug-H1 corroboration is considered. Generic furniture pages (home, contact, about, blog, etc.) are excluded.
+- Changed files (2 files):
+  - `apps/api/app/administration/service.py` — Added module-level helpers (`_normalize_service_name`, `_service_claim_key`, `_website_matches_domain`, `_is_safe_service_claim`, `_clean_provider_name`, `_gbp_category_names`, `_gbp_service_item_names`, `_profile_service_names`, `_seo_service_names`), claim-safety patterns, service URL segment lists, non-service path/H1 patterns. Refactored `reconcile_business_facts` to look up GBP snapshot once for both hours and service candidates, added source-driven `brand.approved_claims` derivation from GBP + profile + SEO crawl sources, enriched audit metadata with per-source candidate counts.
+  - `tests/python/administration/test_reconciliation.py` — Added 10 new tests: GBP-derived service candidates, SEO crawl-derived candidates, duplicate normalization, risky claim filtering, no-sources unresolved, confirmation required (propose → approve → resolved), conflict surfacing, cross-tenant isolation, idempotency, source-change next-revision. Added `_seo_page` fixture helper. Updated imports for `SEOPage`, `SEOWebsite`, `BusinessFactDecision`.
+- Ledger rows changed: Content (business-fact confirmation gap addressed)
+- Adjacent work intentionally not implemented:
+  - No Content frontend changes.
+  - No Content AI generation runtime changes.
+  - No Integrations redesign.
+  - No new scraping/provider framework.
+  - No external provider calls — uses only persisted canonical source data.
+  - No new fact key/schema — reuses existing `brand.approved_claims`.
+  - No per-claim provenance model extension — uses existing `source` field + audit metadata.
+  - No brand-summary derivation (not required to unblock Content).
+- Remaining blockers: Integration tests require `LILOS_TEST_DATABASE_URL`. Live Wheyland acceptance requires runtime access to verify GBP snapshot + SEO crawl data produces expected candidates.
+- Accepted: no (integration test run + auditor review pending)
+
+---
+
+### Content Integration — Durable AI, Grounding, Knowledge, and Editorial Workflow
+
+- Branch / SHA: `release/platform-consolidation` / working tree (not yet committed)
+- Auditor result: NOT RUN
+- Principal result: IMPLEMENTED_NOT_ACCEPTED (deployed/live-tested acceptance remains outstanding)
+- Focused checks:
+  - Prettier: formatted (3 frontend files)
+  - format:check:web: PASS
+  - lint:web (ESLint + Stylelint): PASS
+  - typecheck:web (astro check, 143 files): PASS (0 errors, 0 warnings)
+  - test:web (vitest, 31 files): 261 passed, 2 failed (dashboard-logic.test.ts — pre-existing localStorage issue, unrelated to Content)
+  - build:web (astro build): 14 pages built
+  - check:browser (Playwright, 218 tests): 218 passed (desktop + mobile)
+  - Backend (previously accepted): 109/109 focused backend tests PASS, 18/18 Business Knowledge reconciliation tests PASS, 5/5 governed fact scope tests PASS
+- Architecture delivered:
+  1. **Durable Content AI** — Frontend/backend integration for asynchronous AI draft generation via the platform workflow engine. `generateAIDraft()` returns 202 with `workflow_run_id`; polling via `getWorkflowRun()` with status mapping (`mapWorkflowRunToContentStatus`), human-readable labels (`describeAIDraftStatus`), and terminal detection (`isAIDraftTerminal`). Idempotency key reuse across retries. sessionStorage persistence for browser-refresh recovery (`storeInFlightAIDraft`/`recoverInFlightAIDraft`/`clearInFlightAIDraft`). Polling at 3s intervals with 200-attempt max (~10 min).
+  2. **Governed fact grounding** — `CONTENT_REQUIRED_FACT_KEYS` (`business.name`, `brand.approved_claims`) enforced at the frontend contract layer. Brief creation requires all required facts to be resolved. Fact resolution state surfaced in the context rail (Approved / Needs review / Missing / Unavailable).
+  3. **Editorial Content workspace** — Two-column editorial layout (context rail + document area) with safe DOM-based document rendering (`renderDocumentBody` — no innerHTML, XSS-safe). Revision history, approval actions (editorial/client stages), publication workspace, and activity audit trail.
+  4. **Source-driven Business Knowledge** — Reconciliation produces service/claim candidates from canonical persisted LILOs data (GBP profile snapshot, organization profile, SEO crawl page H1 signals). Claim safety filtering, provenance tracking, normalization/deduplication, idempotent reconciliation, conflict surfacing, and tenant/location safety.
+  5. **Intent widening** — Migration `20260818_0001` widens `content_briefs.intent` from `varchar(100)` to `varchar(500)`. Model, contract, and frontend constants (`CONTENT_GOAL_MAXLENGTH=500`, `AUDIENCE_MAXLENGTH=500`) all aligned.
+- Changed files (9 files):
+  - `migrations/versions/20260818_0001_widen_content_brief_intent.py` (new)
+  - `apps/api/app/administration/service.py` (source-driven reconciliation)
+  - `apps/api/app/products/content/service.py` (durable AI wiring)
+  - `apps/api/app/routes/content.py` (durable AI endpoint)
+  - `apps/web/src/lib/content.ts` (durable AI types, status mapping, sessionStorage, document rendering, validation helpers)
+  - `apps/web/src/lib/content.test.ts` (durable AI status mapping tests, validation tests)
+  - `apps/web/src/pages/content.astro` (editorial workspace, AI draft generation UI, polling, context rail, safe document rendering)
+  - `tests/python/administration/test_reconciliation.py` (Business Knowledge reconciliation tests)
+  - `tests/python/content/test_content_api.py` (Content API tests)
+  - `tests/python/content/test_content_durable_ai.py` (durable AI tests)
+- Ledger rows changed: Content
+- Remaining blockers: Live AI provider acceptance requires `LILOS_OPENROUTER_API_KEY`. Live publish/provider acceptance requires runtime access. Dashboard-logic.test.ts has 2 pre-existing localStorage failures unrelated to Content.
+- Accepted: no (deployed/live-tested acceptance remains outstanding)
 
 ---
 

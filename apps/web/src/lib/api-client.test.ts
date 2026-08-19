@@ -184,3 +184,19 @@ describe("ApiRequestOptions supports PATCH", () => {
     expect(opts.body).toEqual({ status: "active" });
   });
 });
+
+describe("ApiRequestOptions timeoutMs", () => {
+  it("allows callers to supply an operation-specific timeout", () => {
+    const opts: ApiRequestOptions = {
+      method: "POST",
+      body: { brief_id: "b1" },
+      timeoutMs: 60_000,
+    };
+    expect(opts.timeoutMs).toBe(60_000);
+  });
+
+  it("defaults to undefined so the client fallback applies", () => {
+    const opts: ApiRequestOptions = { method: "GET" };
+    expect(opts.timeoutMs).toBeUndefined();
+  });
+});

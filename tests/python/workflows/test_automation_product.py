@@ -185,7 +185,7 @@ def p5_client(
 
 
 @pytest.mark.integration
-def test_list_workflow_types_returns_all_nine(p5_client: P5Context) -> None:
+def test_list_workflow_types_returns_all_ten(p5_client: P5Context) -> None:
     client, org = p5_client.client, p5_client.ids["organization"]
     resp = client.get(f"/api/v1/organizations/{org}/workflows", headers=HEADERS)
     assert resp.status_code == 200, resp.text
@@ -193,10 +193,11 @@ def test_list_workflow_types_returns_all_nine(p5_client: P5Context) -> None:
     assert isinstance(data, list)
     keys = {item["key"] for item in data}
     assert "content.publish" in keys
+    assert "content.draft_revision" in keys
     assert "gbp.sync" in keys
     assert "reviews.ingest" in keys
     assert "leads.send_communication" in keys
-    assert len(data) == 9, f"Expected 9 workflow types, got {len(data)}"
+    assert len(data) == 10, f"Expected 10 workflow types, got {len(data)}"
 
 
 @pytest.mark.integration
@@ -689,6 +690,7 @@ def test_lead_communication_handler_sets_queued_not_sent(
             location_id=None,
             input_document={"communication_id": str(comm.id)},
             correlation_id="p5-lead-comm-test",
+            workflow_run_id=uuid4(),
         )
 
         await session.refresh(comm)
@@ -819,6 +821,7 @@ def test_lead_communication_idempotent_on_queued_status(
             location_id=None,
             input_document={"communication_id": str(comm.id)},
             correlation_id="p5-idem-test-1",
+            workflow_run_id=uuid4(),
         )
         await session.refresh(comm)
         status1 = comm.status
@@ -830,6 +833,7 @@ def test_lead_communication_idempotent_on_queued_status(
             location_id=None,
             input_document={"communication_id": str(comm.id)},
             correlation_id="p5-idem-test-2",
+            workflow_run_id=uuid4(),
         )
         await session.refresh(comm)
         status2 = comm.status
@@ -841,6 +845,7 @@ def test_lead_communication_idempotent_on_queued_status(
             location_id=None,
             input_document={"communication_id": str(comm.id)},
             correlation_id="p5-idem-test-3",
+            workflow_run_id=uuid4(),
         )
         await session.refresh(comm)
 
@@ -1024,6 +1029,7 @@ def test_lead_communication_handler_failure_does_not_rollback_outer_transaction(
                 location_id=None,
                 input_document={"communication_id": str(comm.id)},
                 correlation_id="p5-txn-test",
+                workflow_run_id=uuid4(),
             )
         await session.refresh(comm)
 
@@ -1089,7 +1095,7 @@ def test_service_list_workflow_types(
     async def scenario(session: AsyncSession) -> int:
         svc = ExecutionService()
         items = await svc.list_workflow_types(session)
-        assert len(items) == 9
+        assert len(items) == 10
         for item in items:
             assert "key" in item
             assert "display_name" in item
@@ -1097,7 +1103,7 @@ def test_service_list_workflow_types(
         return len(items)
 
     count = run_db(postgresql_test_url, scenario)
-    assert count == 9
+    assert count == 10
 
 
 @pytest.mark.integration

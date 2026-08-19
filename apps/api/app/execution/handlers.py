@@ -112,6 +112,7 @@ class WorkflowStepHandler(Protocol):
         location_id: UUID | None,
         input_document: dict[str, Any],
         correlation_id: str,
+        workflow_run_id: UUID,
     ) -> JobOutcome: ...
 
 
@@ -143,6 +144,7 @@ async def _handle_gbp_publish_change(
     location_id: UUID | None,
     input_document: dict[str, Any],
     correlation_id: str,
+    workflow_run_id: UUID,
 ) -> JobOutcome:
     """Publish an approved GBP profile change via the GBP adapter.
 
@@ -311,6 +313,7 @@ async def _handle_gbp_publish_post(
     location_id: UUID | None,
     input_document: dict[str, Any],
     correlation_id: str,
+    workflow_run_id: UUID,
 ) -> JobOutcome:
     """Publish an approved GBP Local Post via ``accounts.locations.localPosts.create``.
 
@@ -513,6 +516,7 @@ async def _handle_seo_crawl(
     location_id: UUID | None,
     input_document: dict[str, Any],
     correlation_id: str,
+    workflow_run_id: UUID,
 ) -> JobOutcome:
     """Execute a bounded SEO crawl using the existing SEOService crawl engine."""
     from uuid import UUID as _UUID
@@ -548,6 +552,86 @@ async def _handle_seo_crawl(
 
 
 # ---------------------------------------------------------------------------
+# Content AI draft revision handler
+# ---------------------------------------------------------------------------
+
+
+async def _handle_content_draft_revision(
+    session: AsyncSession,
+    *,
+    organization_id: UUID,
+    location_id: UUID | None,
+    input_document: dict[str, Any],
+    correlation_id: str,
+    workflow_run_id: UUID,
+) -> JobOutcome:
+    """Generate an AI-assisted content draft as a durable workflow step.
+
+    Resolves the content item and brief, validates governed business facts,
+    calls the AI provider through the shared gateway, persists the
+    AIExecution and ContentRevision, and returns the revision for human
+    editorial review.
+
+    This handler converts what was previously a synchronous HTTP-bound
+    operation into a background workflow so long-running AI generation
+    does not cause browser timeouts or false failures.
+    """
+    from apps.api.app.products.content.service import ContentService
+
+    item_id_raw = input_document.get("item_id")
+    brief_id_raw = input_document.get("brief_id")
+    idempotency_key_raw = input_document.get("idempotency_key")
+    user_id_raw = input_document.get("user_id")
+
+    if not item_id_raw:
+        return JobOutcome(result="permanent_failure", safe_error="MISSING_ITEM_ID")
+    if not brief_id_raw:
+        return JobOutcome(result="permanent_failure", safe_error="MISSING_BRIEF_ID")
+    if not idempotency_key_raw:
+        return JobOutcome(result="permanent_failure", safe_error="MISSING_IDEMPOTENCY_KEY")
+
+    try:
+        item_id = UUID(str(item_id_raw))
+        brief_id = UUID(str(brief_id_raw))
+        user_id = UUID(str(user_id_raw)) if user_id_raw else None
+    except (ValueError, TypeError):
+        return JobOutcome(result="permanent_failure", safe_error="INVALID_UUID")
+
+    content_service = ContentService()
+    try:
+        revision, execution = await content_service.execute_ai_draft_workflow(
+            session,
+            organization_id=organization_id,
+            item_id=item_id,
+            brief_id=brief_id,
+            idempotency_key=str(idempotency_key_raw),
+            workflow_run_id=workflow_run_id,
+            user_id=user_id,
+            correlation_id=correlation_id,
+        )
+    except Exception as exc:
+        logger.warning(
+            "Content AI draft generation failed",
+            extra={
+                "event_name": "content.draft_revision.failed",
+                "organization_id": str(organization_id),
+                "item_id": str(item_id),
+                "brief_id": str(brief_id),
+                "error": str(exc)[:200],
+            },
+        )
+        return JobOutcome(
+            result="retryable_failure",
+            safe_error=f"AI_DRAFT_FAILED:{type(exc).__name__}",
+        )
+
+    return JobOutcome(
+        result="succeeded",
+        result_reference=f"revision:{revision.id}",
+    )
+
+
+# ---------------------------------------------------------------------------
 # Content publish handler
 # ---------------------------------------------------------------------------
 
@@ -559,6 +643,7 @@ async def _handle_content_publish(
     location_id: UUID | None,
     input_document: dict[str, Any],
     correlation_id: str,
+    workflow_run_id: UUID,
 ) -> JobOutcome:
     """Publish governed content to a configured GitHub publishing target.
 
@@ -729,6 +814,7 @@ async def _handle_reviews_publish_response(
     location_id: UUID | None,
     input_document: dict[str, Any],
     correlation_id: str,
+    workflow_run_id: UUID,
 ) -> JobOutcome:
     """Publish an approved review response to Google via updateReply.
 
@@ -907,6 +993,7 @@ async def _handle_gbp_upload_media(
     location_id: UUID | None,
     input_document: dict[str, Any],
     correlation_id: str,
+    workflow_run_id: UUID,
 ) -> JobOutcome:
     """Upload an approved GBP media item via the GBP adapter.
 
@@ -1081,6 +1168,7 @@ async def _handle_leads_send_communication(
     location_id: UUID | None,
     input_document: dict[str, Any],
     correlation_id: str,
+    workflow_run_id: UUID,
 ) -> JobOutcome:
     """Dispatch a planned lead communication through the notification system.
 
@@ -1238,6 +1326,7 @@ async def _handle_gbp_sync(
     location_id: UUID | None,
     input_document: dict[str, Any],
     correlation_id: str,
+    workflow_run_id: UUID,
 ) -> JobOutcome:
     """Scheduled GBP discovery and profile sync.
 
@@ -1345,6 +1434,7 @@ async def _handle_reviews_ingest(
     location_id: UUID | None,
     input_document: dict[str, Any],
     correlation_id: str,
+    workflow_run_id: UUID,
 ) -> JobOutcome:
     """Scheduled reviews ingestion for a location.
 
@@ -1459,6 +1549,7 @@ def _register_all() -> None:
     register_workflow_handler("gbp.upload_media", _handle_gbp_upload_media)
     register_workflow_handler("seo.crawl_or_analysis", _handle_seo_crawl)
     register_workflow_handler("content.publish", _handle_content_publish)
+    register_workflow_handler("content.draft_revision", _handle_content_draft_revision)
     register_workflow_handler("reviews.publish_response", _handle_reviews_publish_response)
     register_workflow_handler("leads.send_communication", _handle_leads_send_communication)
     register_workflow_handler("gbp.sync", _handle_gbp_sync)

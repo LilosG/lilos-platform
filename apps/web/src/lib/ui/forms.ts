@@ -6,6 +6,10 @@ export function formField(
     error?: string;
     full?: boolean;
     id?: string;
+    /** When set, renders a "N / max characters" live counter below the
+     *  field and enforces `input.maxLength = max`.  Applies only to
+     *  `<textarea>` and `<input type="text">` controls. */
+    characterLimit?: number;
   },
 ): HTMLDivElement {
   const field = document.createElement("div");
@@ -28,6 +32,31 @@ export function formField(
     input instanceof HTMLTextAreaElement ? "ui-textarea" : "ui-input",
   );
   field.append(input);
+  if (options?.characterLimit && options.characterLimit > 0) {
+    const limit = options.characterLimit;
+    if (
+      input instanceof HTMLTextAreaElement ||
+      (input instanceof HTMLInputElement &&
+        (input.type === "text" || input.type === "search"))
+    ) {
+      input.maxLength = limit;
+      const counter = document.createElement("span");
+      counter.className = "ui-field__counter";
+      counter.setAttribute("aria-live", "polite");
+      const updateCounter = (): void => {
+        const current = input.value.length;
+        counter.textContent = `${current} / ${limit}`;
+        if (current >= limit) {
+          counter.classList.add("ui-field__counter--limit");
+        } else {
+          counter.classList.remove("ui-field__counter--limit");
+        }
+      };
+      input.addEventListener("input", updateCounter);
+      updateCounter();
+      field.append(counter);
+    }
+  }
   if (options?.error) {
     const errorEl = document.createElement("p");
     errorEl.className = "ui-field__error";

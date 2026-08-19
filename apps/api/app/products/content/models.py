@@ -99,7 +99,7 @@ class ContentBrief(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     revision_number: Mapped[int] = mapped_column(Integer, nullable=False)
     audience: Mapped[str] = mapped_column(String(500), nullable=False)
-    intent: Mapped[str] = mapped_column(String(100), nullable=False)
+    intent: Mapped[str] = mapped_column(String(500), nullable=False)
     target_reference: Mapped[str] = mapped_column(String(500), nullable=False)
     approved_fact_revision_ids: Mapped[list[object]] = mapped_column(JSONB, nullable=False)
     required_claims: Mapped[list[object]] = mapped_column(JSONB, nullable=False)
