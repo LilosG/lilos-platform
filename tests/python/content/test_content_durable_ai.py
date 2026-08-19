@@ -881,7 +881,7 @@ async def test_empty_fact_ids_return_empty_resolution(
 # ---------------------------------------------------------------------------
 
 
-def test_prompt_builder_includes_resolved_facts():
+def test_prompt_builder_includes_resolved_facts() -> None:
     """The content prompt builder includes governed business facts."""
     from apps.api.app.ai.providers import _build_prompt
 
@@ -916,7 +916,7 @@ def test_prompt_builder_includes_resolved_facts():
     assert "Plumbing Services" in prompt
 
 
-def test_prompt_builder_without_facts_still_works():
+def test_prompt_builder_without_facts_still_works() -> None:
     """Prompt builder handles missing governed facts gracefully."""
     from apps.api.app.ai.providers import _build_prompt
 
