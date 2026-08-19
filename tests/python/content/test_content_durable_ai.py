@@ -287,9 +287,7 @@ async def test_resolve_governed_facts_org_wide_fact_feeds_location_item(
         await session.flush()
 
         # Org-wide fact + location item → allowed.
-        facts = await resolve_governed_facts(
-            session, org_id, [fact_id], location_id=location_id
-        )
+        facts = await resolve_governed_facts(session, org_id, [fact_id], location_id=location_id)
         assert len(facts) == 1
         assert facts[0]["value"] == "Org Wide Business"
 
