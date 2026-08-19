@@ -462,6 +462,7 @@ async def create_revision(
     "/{item_id}/revisions/ai-draft",
     status_code=status.HTTP_202_ACCEPTED,
     dependencies=[Depends(no_store)],
+    response_model=None,
 )
 async def ai_draft(
     request: Request,

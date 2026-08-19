@@ -150,11 +150,18 @@ async def resolve_governed_facts(
             raise FactResolutionError(
                 f"fact revision {rev.id} has non-operational status: {rev.status}"
             )
-        if (
-            location_id is not None
-            and rev.location_id is not None
-            and rev.location_id != location_id
-        ):
+        # Canonical fact scope semantics (mirrors AdministrationRepository.
+        # candidates): organization-wide facts may ground organization- or
+        # location-scoped content where otherwise valid; location-scoped facts
+        # may only ground content scoped to that same location. A location-
+        # scoped fact must never silently feed organization-wide content
+        # (location_id=None), and mismatched locations fail closed.
+        if rev.location_id is not None and rev.location_id != location_id:
+            if location_id is None:
+                raise FactResolutionError(
+                    f"fact revision {rev.id} is location-scoped and cannot ground "
+                    "organization-wide content"
+                )
             raise FactResolutionError(f"fact revision {rev.id} is scoped to a different location")
         results.append(
             {

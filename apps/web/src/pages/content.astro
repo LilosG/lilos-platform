@@ -251,7 +251,15 @@ import "../styles/global.css";
         AUDIENCE_MAXLENGTH,
         formatCharacterCount,
         describeContentFailure,
+        storeInFlightAIDraft,
+        recoverInFlightAIDraft,
+        clearInFlightAIDraft,
+        pollAIDraftRun,
+        describeAIDraftStatus,
+        isAIDraftTerminal,
         type ContentItem,
+        type DurableAIDraftStart,
+        type InFlightAIDraft,
       } from "../lib/content";
       import { fetchGitHubRepositories } from "../lib/github-app";
       import { fetchLocations } from "../lib/workspace";
@@ -805,17 +813,87 @@ import "../styles/global.css";
         selectContentTab("pipeline");
       }
 
-      // Track an in-flight AI draft generation so the same idempotency
-      // key is reused across retries until the operation is definitively
-      // completed, failed, or the user navigates away.
-      let activeAiDraftState: {
-        itemId: string;
-        briefId: string;
-        idempotencyKey: string;
-      } | null = null;
+      // Track an in-flight AI draft generation via sessionStorage so a
+      // browser refresh can recover the operation truthfully.  The
+      // idempotency key is reused across retries until the operation is
+      // definitively completed, failed, or the user navigates away.
+      function getActiveAiDraftState(
+        itemId: string,
+        briefId: string,
+      ): InFlightAIDraft | null {
+        return recoverInFlightAIDraft(organizationId, itemId, briefId);
+      }
 
-      function clearAiDraftState(): void {
-        activeAiDraftState = null;
+      function setActiveAiDraftState(state: InFlightAIDraft): void {
+        storeInFlightAIDraft(organizationId, state);
+      }
+
+      function clearAiDraftState(itemId: string, briefId: string): void {
+        clearInFlightAIDraft(organizationId, itemId, briefId);
+      }
+
+      /**
+       * Resume polling a previously-started durable AI draft operation.
+       *
+       * Called on page load when sessionStorage contains an in-flight
+       * operation, and also after a successful start.  Polls every 3
+       * seconds until the run reaches a terminal state, then refreshes
+       * the workspace or shows the failure.
+       */
+      async function resumeAIDraftPolling(
+        item: ContentItem,
+        brief: { id: string },
+        state: InFlightAIDraft,
+        documentArea: HTMLElement,
+      ): Promise<void> {
+        const POLL_INTERVAL_MS = 3_000;
+        const MAX_POLL_ATTEMPTS = 200; // ~10 minutes at 3s intervals
+
+        for (let attempt = 0; attempt < MAX_POLL_ATTEMPTS; attempt++) {
+          const pollResult = await pollAIDraftRun(organizationId, state.runId);
+
+          if (!pollResult) {
+            // Run not found — may have been cleaned up.  Refresh to
+            // check whether a revision was created.
+            clearAiDraftState(item.id, brief.id);
+            await openContentItem(item);
+            return;
+          }
+
+          const { status } = pollResult;
+
+          // Update the UI status text if the button/status elements are
+          // still in the DOM.
+          const aiStatus = documentArea.querySelector<HTMLElement>(
+            "[data-ai-draft-status]",
+          );
+          if (aiStatus) {
+            aiStatus.textContent = describeAIDraftStatus(status);
+          }
+
+          if (isAIDraftTerminal(status)) {
+            clearAiDraftState(item.id, brief.id);
+            if (status === "completed") {
+              await openContentItem(item);
+            }
+            // For failed/cancelled, the status text already shows the
+            // message; the button is re-enabled by the caller.
+            return;
+          }
+
+          // Wait before polling again.
+          await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+        }
+
+        // Exceeded max attempts — treat as failed.
+        clearAiDraftState(item.id, brief.id);
+        const aiStatus = documentArea.querySelector<HTMLElement>(
+          "[data-ai-draft-status]",
+        );
+        if (aiStatus) {
+          aiStatus.textContent =
+            "Draft generation is taking longer than expected.  The platform is still working — refresh the page to check for updates.";
+        }
       }
 
       async function openContentItem(item: ContentItem): Promise<void> {
@@ -833,10 +911,6 @@ import "../styles/global.css";
             textContent: "Loading content workspace…",
           }),
         );
-
-        // Reset idempotency state when navigating into a new (or
-        // refreshed) item — the previous generation key is stale.
-        clearAiDraftState();
 
         const [
           itemResult,
@@ -932,6 +1006,20 @@ import "../styles/global.css";
         }
         secondary.append(renderContentActivity(audit));
         body.append(secondary);
+
+        // ---- Recover in-flight AI draft operation ----
+        const latestBrief = briefs.kind === "ok" ? briefs.data[0] : undefined;
+        if (latestBrief) {
+          const inFlight = getActiveAiDraftState(item.id, latestBrief.id);
+          if (inFlight) {
+            void resumeAIDraftPolling(
+              item,
+              latestBrief,
+              inFlight,
+              documentArea,
+            );
+          }
+        }
       }
 
       /* ----------------------------------------------------------------
@@ -1276,7 +1364,7 @@ import "../styles/global.css";
           const genHint = document.createElement("p");
           genHint.className = "ui-text-secondary";
           genHint.textContent =
-            "AI generation may take 30–60 seconds.  The page will update automatically when complete.";
+            "AI generation runs in the background.  The page will update automatically when complete.";
           genInfo.append(genTitle, genHint);
 
           const aiButton = document.createElement("button");
@@ -1284,27 +1372,49 @@ import "../styles/global.css";
           aiButton.className = "ui-button ui-button--secondary ui-button--md";
           aiButton.textContent = "Generate assisted draft";
           const aiStatus = liveStatus();
+          aiStatus.setAttribute("data-ai-draft-status", "");
           const genActions = document.createElement("div");
           genActions.className = "ui-inline ui-inline--center ui-inline--tight";
           genActions.append(aiButton, aiStatus);
           genRow.append(genInfo, genActions);
 
+          // If an in-flight operation exists for this item+brief, resume
+          // polling and disable the button immediately.
+          const existingState = getActiveAiDraftState(item.id, latestBrief.id);
+          if (existingState) {
+            aiButton.disabled = true;
+            aiStatus.textContent = describeAIDraftStatus("queued");
+            void resumeAIDraftPolling(
+              item,
+              latestBrief,
+              existingState,
+              container,
+            ).then(() => {
+              // Re-enable the button on terminal failure.
+              const currentState = getActiveAiDraftState(
+                item.id,
+                latestBrief.id,
+              );
+              if (!currentState) {
+                aiButton.disabled = false;
+              }
+            });
+          }
+
           aiButton.addEventListener("click", async () => {
             aiButton.disabled = true;
-            aiStatus.textContent = "Generating draft…";
+            aiStatus.textContent = "Starting generation…";
 
             // Reuse the existing idempotency key if this is a retry of
             // the same brief within the same item view.  A new UUID is
             // only minted the first time or after a clear.
-            if (
-              !activeAiDraftState ||
-              activeAiDraftState.itemId !== item.id ||
-              activeAiDraftState.briefId !== latestBrief.id
-            ) {
-              activeAiDraftState = {
+            let state = getActiveAiDraftState(item.id, latestBrief.id);
+            if (!state) {
+              state = {
                 itemId: item.id,
                 briefId: latestBrief.id,
                 idempotencyKey: crypto.randomUUID(),
+                runId: "", // filled after start response
               };
             }
 
@@ -1312,12 +1422,28 @@ import "../styles/global.css";
               organizationId,
               item.id,
               latestBrief.id,
-              activeAiDraftState.idempotencyKey,
+              state.idempotencyKey,
             );
 
             if (result.kind === "ok") {
-              clearAiDraftState();
-              await openContentItem(item);
+              const startData: DurableAIDraftStart = result.data;
+              state.runId = startData.workflow_run_id;
+              setActiveAiDraftState(state);
+              aiStatus.textContent = describeAIDraftStatus("queued");
+              void resumeAIDraftPolling(
+                item,
+                latestBrief,
+                state,
+                container,
+              ).then(() => {
+                const currentState = getActiveAiDraftState(
+                  item.id,
+                  latestBrief.id,
+                );
+                if (!currentState) {
+                  aiButton.disabled = false;
+                }
+              });
             } else {
               aiButton.disabled = false;
               aiStatus.textContent = describeContentFailure(

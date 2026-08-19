@@ -1256,6 +1256,12 @@ class AdministrationService:
             ]
             seo_pages: list[object] = []
             for website in matching_websites:
+                # Deterministic selection: the canonical persisted page set is
+                # ordered by URL (with row id as a stable tiebreak) before the
+                # limit, so database row order can never decide which pages
+                # contribute service-claim candidates. Repeated reconciliation
+                # against unchanged crawl state therefore proposes identical
+                # candidates.
                 seo_pages.extend(
                     await session.scalars(
                         select(SEOPage)
@@ -1264,6 +1270,7 @@ class AdministrationService:
                             SEOPage.website_id == website.id,
                             SEOPage.http_status == 200,
                         )
+                        .order_by(SEOPage.normalized_url.asc(), SEOPage.id.asc())
                         .limit(100)
                     )
                 )

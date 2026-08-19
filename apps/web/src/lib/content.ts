@@ -1,4 +1,5 @@
 import { apiGet, apiRequest, type ApiOutcome } from "./api-client";
+import { getWorkflowRun, type WorkflowRunDetail } from "./workflows";
 
 export type ContentOpportunity = {
   id: string;
@@ -302,28 +303,194 @@ export function createRevision(
   });
 }
 
+/* ------------------------------------------------------------------ */
+/*  Durable AI draft generation                                        */
+/* ------------------------------------------------------------------ */
+
+/** Response shape from the durable (202) AI draft start endpoint. */
+export type DurableAIDraftStart = {
+  workflow_run_id: string;
+  status: string;
+  workflow_key: string;
+  item_id: string;
+};
+
+/**
+ * Start a durable AI-assisted content draft generation.
+ *
+ * The backend returns 202 Accepted with a ``workflow_run_id`` immediately.
+ * The AI generation executes asynchronously via the platform worker.
+ * Poll ``GET /workflows/runs/{run_id}`` for status.
+ *
+ * The same ``idempotencyKey`` + same brief/item produces the same
+ * workflow run — repeated clicks do not create duplicates.
+ */
 export function generateAIDraft(
   organizationId: string,
   itemId: string,
   briefId: string,
   idempotencyKey: string,
-): Promise<
-  ApiOutcome<
-    ContentRevision & {
-      requires_human_review: boolean;
-      provider: string | null;
-    }
-  >
-> {
+): Promise<ApiOutcome<DurableAIDraftStart>> {
   return apiRequest(`${base(organizationId)}/${itemId}/revisions/ai-draft`, {
     method: "POST",
     body: { brief_id: briefId, idempotency_key: idempotencyKey },
-    /** AI generation can legitimately exceed the default 15-second client
-     *  timeout.  60 seconds gives the backend room to complete while still
-     *  being bounded — a stalled connection will resolve to `disconnected`
-     *  after 60 s instead of the default 15 s. */
-    timeoutMs: 60_000,
+    /** The durable start returns promptly — no need for a 60-second
+     *  timeout.  The default 15-second client timeout is sufficient. */
   });
+}
+
+/* ------------------------------------------------------------------ */
+/*  Durable AI draft polling and status mapping                        */
+/* ------------------------------------------------------------------ */
+
+/** Client-appropriate Content status derived from a workflow run. */
+export type ContentAIDraftStatus =
+  "queued" | "running" | "retrying" | "completed" | "failed" | "cancelled";
+
+/**
+ * Map raw workflow-run state into a client/operator-appropriate Content
+ * status.  Internal worker IDs, safe-error codes, and job-level detail
+ * are never exposed to the UX.
+ */
+export function mapWorkflowRunToContentStatus(
+  run: WorkflowRunDetail,
+): ContentAIDraftStatus {
+  const runStatus = run.status;
+  const jobStatus = run.jobs?.[0]?.status;
+
+  if (runStatus === "completed") return "completed";
+  if (runStatus === "cancelled" || runStatus === "expired") return "cancelled";
+
+  // The runtime sets run.status="failed" for both permanent and retryable
+  // failures.  When the job is still retry_scheduled, the operation is
+  // still in progress — surface it truthfully as "retrying".
+  if (runStatus === "failed" && jobStatus === "retry_scheduled") {
+    return "retrying";
+  }
+  if (runStatus === "failed") return "failed";
+
+  if (runStatus === "running") return "running";
+  if (runStatus === "queued" || runStatus === "created") return "queued";
+
+  // Unknown / unexpected states — treat as queued (still in progress).
+  return "queued";
+}
+
+/** Human-readable label for a Content AI draft generation status. */
+export function describeAIDraftStatus(status: ContentAIDraftStatus): string {
+  switch (status) {
+    case "queued":
+      return "Queued — waiting for a worker…";
+    case "running":
+      return "Generating draft…";
+    case "retrying":
+      return "Retrying — a previous attempt did not complete.  The platform will try again automatically.";
+    case "completed":
+      return "Draft complete.";
+    case "failed":
+      return "Draft generation did not complete.  You can try again.";
+    case "cancelled":
+      return "Draft generation was cancelled.";
+  }
+}
+
+/** Whether the status is terminal (no further polling needed). */
+export function isAIDraftTerminal(status: ContentAIDraftStatus): boolean {
+  return (
+    status === "completed" || status === "failed" || status === "cancelled"
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  In-flight operation persistence (sessionStorage)                   */
+/* ------------------------------------------------------------------ */
+
+export type InFlightAIDraft = {
+  itemId: string;
+  briefId: string;
+  idempotencyKey: string;
+  runId: string;
+};
+
+function storageKey(
+  organizationId: string,
+  itemId: string,
+  briefId: string,
+): string {
+  return `lilos.content.ai-draft.${organizationId}.${itemId}.${briefId}`;
+}
+
+/** Persist an in-flight AI draft operation so a browser refresh can recover it. */
+export function storeInFlightAIDraft(
+  organizationId: string,
+  state: InFlightAIDraft,
+): void {
+  try {
+    sessionStorage.setItem(
+      storageKey(organizationId, state.itemId, state.briefId),
+      JSON.stringify(state),
+    );
+  } catch {
+    // sessionStorage unavailable — graceful degradation.
+  }
+}
+
+/** Recover a previously-stored in-flight operation, if any. */
+export function recoverInFlightAIDraft(
+  organizationId: string,
+  itemId: string,
+  briefId: string,
+): InFlightAIDraft | null {
+  try {
+    const raw = sessionStorage.getItem(
+      storageKey(organizationId, itemId, briefId),
+    );
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as InFlightAIDraft;
+    if (
+      parsed.itemId === itemId &&
+      parsed.briefId === briefId &&
+      parsed.idempotencyKey &&
+      parsed.runId
+    ) {
+      return parsed;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/** Clear the stored in-flight operation (terminal state or navigation away). */
+export function clearInFlightAIDraft(
+  organizationId: string,
+  itemId: string,
+  briefId: string,
+): void {
+  try {
+    sessionStorage.removeItem(storageKey(organizationId, itemId, briefId));
+  } catch {
+    // sessionStorage unavailable — graceful degradation.
+  }
+}
+
+/**
+ * Poll a workflow run for the current Content AI draft status.
+ *
+ * Returns the mapped status and the full run detail (for output_reference
+ * resolution on completion).  Returns ``null`` when the run cannot be
+ * fetched (e.g. 404 — the run may have been cleaned up).
+ */
+export async function pollAIDraftRun(
+  organizationId: string,
+  runId: string,
+): Promise<{ status: ContentAIDraftStatus; run: WorkflowRunDetail } | null> {
+  const result = await getWorkflowRun(organizationId, runId);
+  if (result.kind !== "ok") return null;
+  return {
+    status: mapWorkflowRunToContentStatus(result.data),
+    run: result.data,
+  };
 }
 
 export function decideRevision(
@@ -553,7 +720,7 @@ export function describeContentFailure(
     case "not-found":
       return `${prefix}The requested resource could not be found.`;
     case "disconnected":
-      return `${prefix}The request could not reach the platform. If you were generating a draft, the operation may still be processing — check back shortly.`;
+      return `${prefix}Could not confirm the platform received your request.  Try again — your request will not be duplicated.`;
     case "unauthenticated":
       return `${prefix}Your session has expired. Sign in again.`;
     case "not-configured":

@@ -286,6 +286,7 @@ async def _seed_gbp_test_context(
     *,
     brand_name: str = "Test Business",
     address_line_1: str = "123 Main St",
+    primary_services: list[str] | None = None,
 ) -> tuple[UUID, UUID]:
     """Create the org/actor/location/plumbing fixture for a GBP reconciliation test."""
     loc = Location(
@@ -307,6 +308,7 @@ async def _seed_gbp_test_context(
     profile = OrganizationProfile(
         organization_id=org_id,
         brand_name=brand_name,
+        primary_services=primary_services or [],
         version=1,
     )
     session.add_all([loc, profile])
@@ -1105,7 +1107,13 @@ async def _normalize_duplicates(factory: async_sessionmaker[AsyncSession]) -> No
         )
         await session.flush()
         connection_id, account_id = await _seed_gbp_test_context(
-            session, org_id, actor_id, location_id, brand_name="Test Co"
+            session,
+            org_id,
+            actor_id,
+            location_id,
+            brand_name="Test Co",
+            # Profile has a case-variant duplicate of the GBP service.
+            primary_services=["EV Charger Installation", "Ceiling Fan Installation"],
         )
         session.add(
             GBPLocation(
@@ -1134,15 +1142,6 @@ async def _normalize_duplicates(factory: async_sessionmaker[AsyncSession]) -> No
                 content_hash="dup-001",
                 completeness="full",
                 observed_at=datetime(2026, 8, 10, 12, 0, 0, tzinfo=UTC),
-            )
-        )
-        # Profile has a case-variant duplicate of the GBP service.
-        session.add(
-            OrganizationProfile(
-                organization_id=org_id,
-                brand_name="Test Co",
-                primary_services=["EV Charger Installation", "Ceiling Fan Installation"],
-                version=1,
             )
         )
         await session.flush()
@@ -1505,7 +1504,12 @@ async def _conflicts_surfaced(factory: async_sessionmaker[AsyncSession]) -> None
         )
         await session.flush()
         connection_id, account_id = await _seed_gbp_test_context(
-            session, org_id, actor_id, location_id, brand_name="Conflict Co"
+            session,
+            org_id,
+            actor_id,
+            location_id,
+            brand_name="Conflict Co",
+            primary_services=["Residential Electrical Services"],
         )
         session.add(
             GBPLocation(
@@ -1531,14 +1535,6 @@ async def _conflicts_surfaced(factory: async_sessionmaker[AsyncSession]) -> None
                 content_hash="conflict-001",
                 completeness="full",
                 observed_at=datetime(2026, 8, 10, 12, 0, 0, tzinfo=UTC),
-            )
-        )
-        session.add(
-            OrganizationProfile(
-                organization_id=org_id,
-                brand_name="Conflict Co",
-                primary_services=["Residential Electrical Services"],
-                version=1,
             )
         )
         await session.flush()
@@ -1934,3 +1930,153 @@ async def _source_change_next_revision(factory: async_sessionmaker[AsyncSession]
     assert rev2.status == "proposed"
     assert rev2.value == ["Service A", "Service B"]
     assert rev2.supersedes_id == rev1_list[0].id
+
+
+def test_reconcile_seo_page_selection_is_deterministic(
+    administration_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    asyncio.run(_seo_deterministic_selection(administration_session_factory))
+
+
+async def _seo_deterministic_selection(factory: async_sessionmaker[AsyncSession]) -> None:
+    """SEO page LIMIT 100 with ORDER BY produces identical candidates across runs.
+
+    When more than 100 service pages exist, the deterministic ordering
+    (normalized_url ASC, id ASC) ensures the same subset is selected every
+    time. Pages beyond the limit must not contribute claims.
+    """
+    service = AdministrationService()
+    actor_id = uuid4()
+    org_id = uuid4()
+    location_id = uuid4()
+    website_id = uuid4()
+
+    async with factory() as session, session.begin():
+        session.add_all(
+            [
+                UserProfile(
+                    id=actor_id,
+                    auth_user_id=uuid4(),
+                    email="operator@example.invalid",
+                    display_name="Operator",
+                    status=UserStatus.ACTIVE,
+                    version=1,
+                ),
+                Organization(
+                    id=org_id,
+                    name="Deterministic Co",
+                    slug="deterministic-co",
+                    organization_type=OrganizationType.CLIENT,
+                    status=OrganizationStatus.ACTIVE,
+                    timezone="UTC",
+                    default_currency="USD",
+                    version=1,
+                ),
+            ]
+        )
+        await session.flush()
+        session.add_all(
+            [
+                Location(
+                    id=location_id,
+                    organization_id=org_id,
+                    name="Main Location",
+                    slug="main-location",
+                    location_type=LocationType.PHYSICAL,
+                    status=LocationStatus.ACTIVE,
+                    timezone="UTC",
+                    country_code="US",
+                    address_line_1="123 Main St",
+                    city="Springfield",
+                    region="IL",
+                    postal_code="62704",
+                    is_primary=True,
+                    version=1,
+                ),
+                OrganizationProfile(
+                    organization_id=org_id,
+                    brand_name="Deterministic Co",
+                    version=1,
+                ),
+                OrganizationDomain(
+                    organization_id=org_id,
+                    domain="deterministic.example",
+                    is_primary=True,
+                    status="active",
+                    version=1,
+                ),
+            ]
+        )
+        await session.flush()
+        session.add(
+            SEOWebsite(
+                id=website_id,
+                organization_id=org_id,
+                location_id=location_id,
+                key="deterministic-site",
+                name="Deterministic Site",
+                canonical_origin="https://deterministic.example",
+                status="active",
+                ownership_status="verified",
+                version=1,
+            )
+        )
+        await session.flush()
+        # Create 105 service pages.  With LIMIT 100 + ORDER BY normalized_url,
+        # pages svc-000 … svc-099 are selected; svc-100 … svc-104 are excluded.
+        for i in range(105):
+            session.add(
+                _seo_page(
+                    website_id,
+                    org_id,
+                    normalized_url=f"https://deterministic.example/services/svc-{i:03d}",
+                    h1=f"Service {i:03d}",
+                )
+            )
+        await session.flush()
+        await AccessCatalogSeeder().seed(session, correlation_id="reconcile-test")
+        await AdministrationCatalogSeeder().seed(session, correlation_id="reconcile-test")
+
+    # First reconciliation.
+    async with factory() as session, session.begin():
+        result1 = await service.reconcile_business_facts(
+            session, org_id, actor_id=actor_id, correlation_id="reconcile-test"
+        )
+    proposed1 = cast(list[dict[str, object]], result1["proposed"])
+    claims_candidate1 = next(
+        (item for item in proposed1 if item["fact_key"] == "brand.approved_claims"), None
+    )
+    assert claims_candidate1 is not None
+
+    async with factory() as session:
+        revisions1 = await service.facts.list_for_key(session, org_id, "brand.approved_claims")
+    claims1 = cast(list[str], revisions1[0].value)
+
+    # Second reconciliation — identical source state must propose no new
+    # claim candidate (idempotency) and the persisted value must not change.
+    async with factory() as session, session.begin():
+        result2 = await service.reconcile_business_facts(
+            session, org_id, actor_id=actor_id, correlation_id="reconcile-test"
+        )
+    proposed2 = cast(list[dict[str, object]], result2["proposed"])
+    assert not any(item["fact_key"] == "brand.approved_claims" for item in proposed2)
+
+    async with factory() as session:
+        revisions2 = await service.facts.list_for_key(session, org_id, "brand.approved_claims")
+    assert len(revisions2) == 1
+    claims2 = cast(list[str], revisions2[0].value)
+
+    # Identical across runs.
+    assert claims1 == claims2
+
+    # Only the first 100 pages (svc-000 … svc-099) are included.
+    assert len(claims1) == 100
+    for i in range(100):
+        assert f"Service {i:03d}" in claims1
+    # Pages beyond the limit must not appear.
+    for i in range(100, 105):
+        assert f"Service {i:03d}" not in claims1
+
+    # Claims are in deterministic order (normalized_url ASC).
+    expected_order = [f"Service {i:03d}" for i in range(100)]
+    assert claims1 == expected_order

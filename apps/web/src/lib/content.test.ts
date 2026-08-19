@@ -13,6 +13,9 @@ import {
   renderDocumentBody,
   fieldErrorFromDetails,
   describeContentFailure,
+  mapWorkflowRunToContentStatus,
+  describeAIDraftStatus,
+  isAIDraftTerminal,
 } from "./content";
 
 vi.mock("./api-client", () => ({
@@ -452,8 +455,8 @@ describe("describeContentFailure", () => {
   it("describes disconnected with durable-AI-aware language", () => {
     const outcome = { kind: "disconnected" } as const;
     const msg = describeContentFailure(outcome, "Generation");
-    expect(msg).toContain("could not reach the platform");
-    expect(msg).toContain("may still be processing");
+    expect(msg).toContain("Could not confirm");
+    expect(msg).toContain("will not be duplicated");
   });
 
   it("falls back to generic message when error has no details", () => {
@@ -482,5 +485,156 @@ describe("describeContentFailure", () => {
     expect(describeContentFailure({ kind: "not-found" } as const, "Test")).toBe(
       "Test: The requested resource could not be found.",
     );
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/*  Durable AI draft status mapping                                    */
+/* ------------------------------------------------------------------ */
+
+import type { WorkflowRunDetail } from "./workflows";
+
+function makeRun(
+  overrides: Partial<WorkflowRunDetail> = {},
+): WorkflowRunDetail {
+  return {
+    id: "run-1",
+    workflow_key: "content.draft_revision",
+    workflow_name: "Generate AI-assisted content draft",
+    product_key: "content",
+    status: "queued",
+    trigger_type: "api",
+    location_id: null,
+    input_document: {},
+    output_reference: null,
+    failure_code: null,
+    correlation_id: "test",
+    started_at: null,
+    completed_at: null,
+    created_at: null,
+    job_status: null,
+    job_attempt_count: null,
+    job_max_attempts: null,
+    job_last_error_category: null,
+    jobs: [],
+    latest_attempts: [],
+    ...overrides,
+  };
+}
+
+describe("mapWorkflowRunToContentStatus", () => {
+  it('maps "completed" to completed', () => {
+    expect(
+      mapWorkflowRunToContentStatus(makeRun({ status: "completed" })),
+    ).toBe("completed");
+  });
+
+  it('maps "cancelled" to cancelled', () => {
+    expect(
+      mapWorkflowRunToContentStatus(makeRun({ status: "cancelled" })),
+    ).toBe("cancelled");
+  });
+
+  it('maps "expired" to cancelled', () => {
+    expect(mapWorkflowRunToContentStatus(makeRun({ status: "expired" }))).toBe(
+      "cancelled",
+    );
+  });
+
+  it('maps "running" to running', () => {
+    expect(mapWorkflowRunToContentStatus(makeRun({ status: "running" }))).toBe(
+      "running",
+    );
+  });
+
+  it('maps "queued" to queued', () => {
+    expect(mapWorkflowRunToContentStatus(makeRun({ status: "queued" }))).toBe(
+      "queued",
+    );
+  });
+
+  it('maps "created" to queued', () => {
+    expect(mapWorkflowRunToContentStatus(makeRun({ status: "created" }))).toBe(
+      "queued",
+    );
+  });
+
+  it('maps "failed" with retry_scheduled job to retrying', () => {
+    expect(
+      mapWorkflowRunToContentStatus(
+        makeRun({
+          status: "failed",
+          jobs: [
+            {
+              id: "j1",
+              job_type: "workflow.execute",
+              status: "retry_scheduled",
+              attempt_count: 1,
+              max_attempts: 3,
+              last_error_category: null,
+              result_reference: null,
+              priority: 0,
+              lease_owner: null,
+              available_at: null,
+            },
+          ],
+        }),
+      ),
+    ).toBe("retrying");
+  });
+
+  it('maps "failed" with dead_lettered job to failed', () => {
+    expect(
+      mapWorkflowRunToContentStatus(
+        makeRun({
+          status: "failed",
+          jobs: [
+            {
+              id: "j1",
+              job_type: "workflow.execute",
+              status: "dead_lettered",
+              attempt_count: 3,
+              max_attempts: 3,
+              last_error_category: "AI_DRAFT_FAILED",
+              result_reference: null,
+              priority: 0,
+              lease_owner: null,
+              available_at: null,
+            },
+          ],
+        }),
+      ),
+    ).toBe("failed");
+  });
+
+  it('maps "failed" with no jobs to failed', () => {
+    expect(
+      mapWorkflowRunToContentStatus(makeRun({ status: "failed", jobs: [] })),
+    ).toBe("failed");
+  });
+});
+
+describe("describeAIDraftStatus", () => {
+  it("returns human-readable labels for each status", () => {
+    expect(describeAIDraftStatus("queued")).toContain("Queued");
+    expect(describeAIDraftStatus("running")).toContain("Generating");
+    expect(describeAIDraftStatus("retrying")).toContain("Retrying");
+    expect(describeAIDraftStatus("completed")).toContain("complete");
+    expect(describeAIDraftStatus("failed")).toContain("did not complete");
+    expect(describeAIDraftStatus("cancelled")).toContain("cancelled");
+  });
+});
+
+describe("isAIDraftTerminal", () => {
+  it("returns true for completed, failed, cancelled", () => {
+    expect(isAIDraftTerminal("completed")).toBe(true);
+    expect(isAIDraftTerminal("failed")).toBe(true);
+    expect(isAIDraftTerminal("cancelled")).toBe(true);
+  });
+
+  it("returns false for queued, running, retrying", () => {
+    expect(isAIDraftTerminal("queued")).toBe(false);
+    expect(isAIDraftTerminal("running")).toBe(false);
+    expect(isAIDraftTerminal("retrying")).toBe(false);
   });
 });

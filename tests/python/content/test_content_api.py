@@ -364,7 +364,12 @@ def test_ai_draft_generates_grounded_revision_requiring_human_review(
     item = client.post(
         base,
         headers=HEADERS,
-        json={"content_type": "blog_post", "title": "Winter HVAC Tips", "slug": "winter-hvac-tips"},
+        json={
+            "content_type": "blog_post",
+            "title": "Winter HVAC Tips",
+            "slug": "winter-hvac-tips",
+            "location_id": str(ids["location"]),
+        },
     )
     assert item.status_code == 201
     item_id = item.json()["data"]["id"]

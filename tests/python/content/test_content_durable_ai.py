@@ -246,6 +246,57 @@ async def test_resolve_governed_facts_location_scoping(
         with pytest.raises(FactResolutionError, match="scoped to a different location"):
             await resolve_governed_facts(session, org_id, [fact_id], location_id=other_loc)
 
+        # Organization-wide content (location_id=None) must NOT silently use a
+        # location-scoped fact.
+        with pytest.raises(FactResolutionError, match="location-scoped"):
+            await resolve_governed_facts(session, org_id, [fact_id], location_id=None)
+
+
+@pytest.mark.anyio
+async def test_resolve_governed_facts_org_wide_fact_feeds_location_item(
+    content_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """An organization-wide fact may ground location-scoped content."""
+    async with content_session_factory() as session:
+        org_id = uuid4()
+        user_id = uuid4()
+        await _seed_organization(session, org_id)
+        await _seed_user(session, user_id)
+        location_id = uuid4()
+        await _seed_location(session, org_id, location_id)
+        fact_id = uuid4()
+
+        fact = BusinessFactRevision(
+            id=fact_id,
+            organization_id=org_id,
+            location_id=None,  # organization-wide
+            fact_identity=uuid4(),
+            fact_key="business.name",
+            value_type="string",
+            value="Org Wide Business",
+            source="client_input",
+            authority="client_approved",
+            status="approved",
+            revision=1,
+            proposed_by=user_id,
+            approved_by=user_id,
+            approved_at=datetime.now(UTC),
+            change_reason="Initial",
+        )
+        session.add(fact)
+        await session.flush()
+
+        # Org-wide fact + location item → allowed.
+        facts = await resolve_governed_facts(
+            session, org_id, [fact_id], location_id=location_id
+        )
+        assert len(facts) == 1
+        assert facts[0]["value"] == "Org Wide Business"
+
+        # Org-wide fact + org-wide item → allowed.
+        facts = await resolve_governed_facts(session, org_id, [fact_id], location_id=None)
+        assert len(facts) == 1
+
 
 # ---------------------------------------------------------------------------
 # Integration tests — durable AI draft workflow
