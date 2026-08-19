@@ -89,6 +89,7 @@ class CrawledPage:
     title: str | None = None
     meta_description: str | None = None
     h1: str | None = None
+    body_text: str | None = None
     canonical_url: str | None = None
     robots_directives: list[str] = field(default_factory=list)
     internal_links: list[str] = field(default_factory=list)
@@ -336,6 +337,35 @@ def _truncate_content(value: str | None) -> tuple[str | None, bool]:
         return value, False
     keep = MAX_CONTENT_LENGTH - len(CONTENT_TRUNCATION_MARKER)
     return value[:keep] + CONTENT_TRUNCATION_MARKER, True
+
+
+def _extract_body_text(html: str) -> str | None:
+    """Extract normalized visible text from an HTML page body.
+
+    Strips ``<script>``, ``<style>``, ``<noscript>`` blocks, then removes
+    all remaining HTML tags and collapses whitespace.  Returns ``None``
+    when no meaningful text remains.
+    """
+    import re as _re
+
+    # Remove script, style, noscript blocks
+    clean = _re.sub(
+        r"<(script|style|noscript)[^>]*>.*?</\1>",
+        "",
+        html,
+        flags=_re.DOTALL | _re.IGNORECASE,
+    )
+    # Remove HTML comments
+    clean = _re.sub(r"<!--.*?-->", "", clean, flags=_re.DOTALL)
+    # Remove all remaining tags
+    clean = _re.sub(r"<[^>]+>", " ", clean)
+    # Decode common entities
+    clean = clean.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
+    clean = clean.replace("&quot;", '"').replace("&#39;", "'").replace("&nbsp;", " ")
+    # Collapse whitespace
+    clean = _re.sub(r"\s+", " ", clean).strip()
+
+    return clean if clean else None
 
 
 def extract_page_signals(
@@ -665,6 +695,9 @@ class CrawlEngine:
                 title=signals.get("title"),
                 meta_description=signals.get("meta_description"),
                 h1=signals.get("h1"),
+                body_text=(
+                    _extract_body_text(response.text) if is_html and response.text else None
+                ),
                 canonical_url=signals.get("canonical_url"),
                 robots_directives=robots_directives,
                 internal_links=signals.get("internal_links", []),

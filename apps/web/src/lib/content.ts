@@ -59,6 +59,18 @@ export type ContentRevision = {
   status: string;
   validation_document: { valid: boolean; errors: string[] };
   approved_at: string | null;
+  provenance?: ContentRevisionProvenance;
+};
+
+export type ContentRevisionProvenance = {
+  fact_count: number;
+  source_counts: Record<string, number>;
+  source_labels: Array<{
+    type: string;
+    label: string;
+    url: string;
+    title: string;
+  }>;
 };
 
 export type ContentPublication = {

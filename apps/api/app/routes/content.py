@@ -102,7 +102,7 @@ def brief_row(item: ContentBrief) -> dict[str, object]:
 
 
 def revision_row(item: ContentRevision) -> dict[str, object]:
-    return {
+    row: dict[str, object] = {
         "id": str(item.id),
         "revision_number": item.revision_number,
         "body": item.body,
@@ -112,6 +112,83 @@ def revision_row(item: ContentRevision) -> dict[str, object]:
         "validation_document": item.validation_document,
         "approved_at": item.approved_at,
     }
+    return row
+
+
+async def revision_provenance(
+    session: AsyncSession, revision: ContentRevision
+) -> dict[str, object] | None:
+    """Resolve grounding provenance for an AI-generated revision.
+
+    Returns None for human-created revisions.  For AI revisions, returns
+    counts by source type and a compact list of source labels/URLs.
+    """
+    if revision.created_by_type != "ai" or revision.ai_execution_id is None:
+        return None
+
+    from apps.api.app.administration.models import BusinessKnowledgeDocument
+    from apps.api.app.ai.models import AIExecution
+
+    execution = await session.get(AIExecution, revision.ai_execution_id)
+    if execution is None:
+        return None
+
+    fact_count = len(execution.approved_fact_revision_ids or [])
+    input_refs = execution.input_references or []
+
+    # Classify input references: brief ID vs knowledge document IDs
+    knowledge_ids: list[UUID] = []
+    for ref in input_refs:
+        try:
+            kid = UUID(str(ref))
+            knowledge_ids.append(kid)
+        except (ValueError, TypeError):
+            pass  # brief ID or other non-UUID reference
+
+    # Count by source type
+    source_counts: dict[str, int] = {}
+    source_labels: list[dict[str, str]] = []
+
+    if knowledge_ids:
+        from sqlalchemy import select as _sel
+
+        docs = (
+            await session.scalars(
+                _sel(BusinessKnowledgeDocument).where(
+                    BusinessKnowledgeDocument.id.in_(knowledge_ids)
+                )
+            )
+        ).all()
+        for doc in docs:
+            label = _source_label(doc.source_type)
+            source_counts[label] = source_counts.get(label, 0) + 1
+            if len(source_labels) < 8:
+                url = doc.source_url or ""
+                title = str(doc.content.get("title", "")) if doc.content_type == "page_text" else ""
+                source_labels.append(
+                    {
+                        "type": doc.source_type,
+                        "label": label,
+                        "url": url,
+                        "title": title[:80] if title else "",
+                    }
+                )
+
+    return {
+        "fact_count": fact_count,
+        "source_counts": source_counts,
+        "source_labels": source_labels,
+    }
+
+
+def _source_label(source_type: str) -> str:
+    """Human-readable label for a knowledge source type."""
+    return {
+        "gbp_profile_snapshot": "GBP",
+        "seo_page": "Website",
+        "organization_profile": "Identity",
+        "location_profile": "Identity",
+    }.get(source_type, source_type)
 
 
 def publication_row(item: ContentPublication) -> dict[str, object]:
@@ -432,7 +509,14 @@ async def list_revisions(
     _: Annotated[AuthorizationDecision, policy("content.read")],
 ) -> dict[str, object]:
     items = await service.list_revisions(session, organization_id, item_id)
-    return {"data": [revision_row(item) for item in items], "meta": meta(request)}
+    rows: list[dict[str, object]] = []
+    for item in items:
+        row = revision_row(item)
+        prov = await revision_provenance(session, item)
+        if prov is not None:
+            row["provenance"] = prov
+        rows.append(row)
+    return {"data": rows, "meta": meta(request)}
 
 
 @router.post(
