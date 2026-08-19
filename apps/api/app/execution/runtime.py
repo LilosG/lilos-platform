@@ -14,7 +14,13 @@ from types import FrameType
 
 from sqlalchemy import select, text
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.exc import DataError, IntegrityError, ProgrammingError, SQLAlchemyError
+from sqlalchemy.exc import (
+    DataError,
+    IntegrityError,
+    NoReferencedTableError,
+    ProgrammingError,
+    SQLAlchemyError,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.app.config import Settings
@@ -29,7 +35,7 @@ logger = logging.getLogger("lilos")
 
 # Database errors that are deterministic: retrying them yields the identical
 # failure, so they must fail the individual job rather than the process loop.
-DETERMINISTIC_DB_ERRORS = (IntegrityError, DataError, ProgrammingError)
+DETERMINISTIC_DB_ERRORS = (IntegrityError, DataError, ProgrammingError, NoReferencedTableError)
 
 
 def is_deterministic_db_error(exc: BaseException) -> bool:

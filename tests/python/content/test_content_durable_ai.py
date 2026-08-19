@@ -23,7 +23,7 @@ from apps.api.app.locations.enums import LocationStatus, LocationType
 from apps.api.app.locations.models import Location
 from apps.api.app.organizations.enums import OrganizationStatus, OrganizationType
 from apps.api.app.organizations.models import Organization
-from apps.api.app.products.content.models import ContentBrief, ContentItem
+from apps.api.app.products.content.models import ContentBrief, ContentItem, ContentRevision
 from apps.api.app.products.content.service import (
     ContentService,
     FactResolutionError,
@@ -1077,3 +1077,180 @@ async def test_ai_execution_workflow_run_id_matches_workflow_run(
         reloaded_run = await session.get(WorkflowRun, workflow_run_id)
         assert reloaded_run is not None
         assert execution.workflow_run_id == reloaded_run.id
+
+
+# ---------------------------------------------------------------------------
+# Worker ORM bootstrap — NoReferencedTableError regression
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+@pytest.mark.anyio
+async def test_worker_bootstrap_registers_content_model_tables(
+    content_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """The worker bootstrap module registers content-domain tables in
+    Base.metadata so the standalone worker never raises
+    NoReferencedTableError on the first content.draft_revision job.
+
+    This test imports the bootstrap module (simulating worker startup)
+    and then proves a full handler invocation — creating a ContentItem,
+    ContentBrief, BusinessFactRevision, WorkflowRun, and Job, then
+    calling _handle_content_draft_revision directly — succeeds without
+    any metadata errors.
+    """
+    # Simulate worker bootstrap — import all model modules
+    import apps.worker.bootstrap  # noqa: F401
+    from apps.api.app.database.base import Base
+    from apps.api.app.execution.handlers import _handle_content_draft_revision
+    from apps.api.app.execution.models import Job, WorkflowDefinition, WorkflowRun, WorkflowVersion
+
+    # Verify content model tables are registered
+    assert "content_items" in Base.metadata.tables
+    assert "content_briefs" in Base.metadata.tables
+    assert "content_revisions" in Base.metadata.tables
+    assert "business_fact_revisions" in Base.metadata.tables
+    assert "ai_executions" in Base.metadata.tables
+    assert "ai_task_definitions" in Base.metadata.tables
+
+    async with content_session_factory() as session:
+        org_id = uuid4()
+        user_id = uuid4()
+        await _seed_organization(session, org_id)
+        await _seed_user(session, user_id)
+        item_id = uuid4()
+        brief_id = uuid4()
+        fact_id = uuid4()
+        idemp_key = f"worker-bootstrap-{uuid4().hex[:16]}"
+
+        item = ContentItem(
+            id=item_id,
+            organization_id=org_id,
+            content_type="blog_post",
+            title="Worker Bootstrap Test",
+            slug="worker-bootstrap-test",
+            status="brief_ready",
+        )
+        brief = ContentBrief(
+            id=brief_id,
+            organization_id=org_id,
+            content_item_id=item_id,
+            revision_number=1,
+            audience="devs",
+            intent="educate",
+            target_reference="/blog/worker-bootstrap",
+            approved_fact_revision_ids=[str(fact_id)],
+            required_claims=[],
+            prohibited_claims=[],
+            required_local_references=[],
+            source_evidence_references=[],
+            validation_requirements={},
+            status="ready",
+        )
+        fact = BusinessFactRevision(
+            id=fact_id,
+            organization_id=org_id,
+            fact_identity=uuid4(),
+            fact_key="business.name",
+            value_type="string",
+            value="WorkerBootstrapCo",
+            source="client_input",
+            authority="client_approved",
+            status="approved",
+            revision=1,
+            proposed_by=user_id,
+            approved_by=user_id,
+            approved_at=datetime.now(UTC),
+            change_reason="test",
+        )
+        session.add(item)
+        await session.flush()
+        session.add_all([brief, fact])
+        await session.flush()
+
+        # Create WorkflowRun + Job (same path as worker)
+        definition = WorkflowDefinition(
+            key="content.draft_revision",
+            name="Generate AI-assisted content draft",
+            owner="content",
+            status="active",
+        )
+        session.add(definition)
+        await session.flush()
+        version = WorkflowVersion(
+            definition_id=definition.id,
+            version=1,
+            status="approved",
+            input_schema={},
+            output_schema={},
+            step_specification=[],
+            retry_policy={},
+            timeout_seconds=120,
+        )
+        session.add(version)
+        await session.flush()
+        run = WorkflowRun(
+            organization_id=org_id,
+            workflow_version_id=version.id,
+            product_key="content",
+            status="queued",
+            trigger_type="api",
+            idempotency_key=idemp_key,
+            request_hash="b" * 64,
+            input_document={
+                "item_id": str(item_id),
+                "brief_id": str(brief_id),
+                "idempotency_key": idemp_key,
+                "user_id": None,
+            },
+            correlation_id="test-worker-bootstrap",
+        )
+        session.add(run)
+        await session.flush()
+        job = Job(
+            organization_id=org_id,
+            workflow_run_id=run.id,
+            job_type="workflow.execute",
+            status="queued",
+            idempotency_key=f"run:{run.id}",
+            payload={"run_id": str(run.id)},
+        )
+        session.add(job)
+        await session.flush()
+
+        # This is the exact path the worker takes — handler invocation
+        # with all models registered by the bootstrap import above.
+        # If NoReferencedTableError would occur in production, it would
+        # occur here.
+        outcome = await _handle_content_draft_revision(
+            session,
+            organization_id=org_id,
+            location_id=None,
+            input_document=run.input_document,
+            correlation_id="test-worker-bootstrap",
+            workflow_run_id=run.id,
+        )
+
+        assert outcome.result == "succeeded"
+        assert outcome.result_reference is not None
+        assert outcome.result_reference.startswith("revision:")
+
+        # Verify AIExecution was persisted
+        execution = await session.scalar(
+            select(AIExecution).where(
+                AIExecution.organization_id == org_id,
+                AIExecution.idempotency_key == idemp_key,
+            )
+        )
+        assert execution is not None
+        assert execution.status == "completed"
+
+        # Verify ContentRevision exists and is in awaiting_editorial
+        revision = await session.scalar(
+            select(ContentRevision).where(
+                ContentRevision.content_item_id == item_id,
+                ContentRevision.ai_execution_id == execution.id,
+            )
+        )
+        assert revision is not None
+        assert revision.status == "awaiting_editorial"
