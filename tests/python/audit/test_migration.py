@@ -91,6 +91,7 @@ def test_audit_migration_upgrades_downgrades_and_restores_head(
             "analytics_properties",
             "audit_events",
             "business_fact_revisions",
+            "business_knowledge_documents",
             "configuration_definitions",
             "configuration_revisions",
             "content_briefs",
