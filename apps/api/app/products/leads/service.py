@@ -93,6 +93,12 @@ def submission_hash(command: LeadIntake) -> str:
 
 
 _INGESTION_SECRET_BYTES = 32
+_INGESTION_KEY_BYTES = 24
+
+
+def generate_ingestion_key() -> str:
+    """Return a globally-unique, opaque machine-ingestion identifier."""
+    return secrets.token_urlsafe(_INGESTION_KEY_BYTES)
 
 
 def generate_ingestion_secret() -> tuple[str, str]:
@@ -919,6 +925,7 @@ class LeadService:
         )
         if existing:
             raise LeadSourceKeyConflictError
+        ingestion_key = generate_ingestion_key()
         plaintext_secret, secret_hash = generate_ingestion_secret()
         source = LeadSource(
             organization_id=organization_id,
@@ -931,6 +938,7 @@ class LeadService:
             consent_capabilities=command.consent_capabilities,
             verification_reference=command.verification_reference,
             raw_payload_retention_policy=command.raw_payload_retention_policy,
+            ingestion_key=ingestion_key,
             ingestion_secret_hash=secret_hash,
             version=1,
         )
@@ -1041,18 +1049,27 @@ class LeadService:
         command: LeadIntakeBySource,
         correlation_id: str,
     ) -> tuple[Lead, LeadSubmission, bool]:
-        """Machine-to-machine lead intake authenticated by source key + secret.
+        """Machine-to-machine lead intake authenticated by ingestion key + secret.
 
-        Resolves the source by key across all organizations, verifies the
-        secret, then delegates to the standard intake path.  No organization_id
-        appears in the URL — the source key resolves the tenant.
+        Resolves the source by its globally-unique ``ingestion_key``, verifies
+        the secret, then delegates to the standard intake path.  No
+        organization_id appears in the URL — the ingestion key resolves the
+        tenant deterministically.
+
+        The ingestion-key lookup must bypass row-level security because the
+        caller has no tenant context yet — the source *is* the tenant resolver.
+        RLS is re-enabled immediately after the lookup.
         """
-        source = await session.scalar(
-            select(LeadSource).where(
-                LeadSource.key == source_key,
-                LeadSource.status == "active",
+        await session.execute(text("SET LOCAL row_security = off"))
+        try:
+            source = await session.scalar(
+                select(LeadSource).where(
+                    LeadSource.ingestion_key == source_key,
+                    LeadSource.status == "active",
+                )
             )
-        )
+        finally:
+            await session.execute(text("SET LOCAL row_security = on"))
         if not source or not source.ingestion_secret_hash:
             raise LeadSourceNotFoundError
         if not verify_ingestion_secret(

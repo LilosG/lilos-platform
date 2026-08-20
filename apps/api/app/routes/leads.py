@@ -37,6 +37,11 @@ from apps.api.app.products.leads.models import (
     LeadSource,
     LeadTask,
 )
+from apps.api.app.products.leads.rate_limit import (
+    MAX_MACHINE_INTAKE_BODY_BYTES,
+    check_machine_intake_rate,
+    record_machine_intake_success,
+)
 from apps.api.app.products.leads.service import LeadService
 from apps.api.app.schemas import ResponseMeta
 
@@ -158,6 +163,7 @@ def source_row(item: LeadSource) -> dict[str, object]:
     return {
         "id": str(item.id),
         "key": item.key,
+        "ingestion_key": item.ingestion_key,
         "source_type": item.source_type,
         "name": item.name,
         "location_id": str(item.location_id) if item.location_id else None,
@@ -674,18 +680,42 @@ async def machine_intake(
     x_lilos_source_key: str = Header(..., min_length=1, max_length=128),
     x_lilos_source_secret: str = Header(..., min_length=1, max_length=256),
 ) -> dict[str, object]:
-    """Accept a lead from an external system authenticated by source key + secret.
+    """Accept a lead from an external system authenticated by ingestion key + secret.
 
-    The source key resolves the tenant and source.  The secret is verified
-    against the stored hash.  No Supabase JWT or organization_id is required.
+    The ``X-Lilos-Source-Key`` header carries the globally-unique
+    ``ingestion_key`` (not the human-readable org-scoped ``key``).  The
+    ingestion key resolves the tenant deterministically — no organization_id
+    appears in the URL.
+
+    The secret is verified against the stored PBKDF2 hash.  No Supabase JWT
+    is required.  Rate limiting is applied per ingestion key to prevent
+    brute-force attacks against the expensive hash verification.
     """
-    lead, submission, created = await service.intake_by_source(
-        session,
-        source_key=x_lilos_source_key,
-        source_secret=x_lilos_source_secret,
-        command=command,
-        correlation_id=request_correlation_id(request),
-    )
+    # Body size guard
+    body = await request.body()
+    if len(body) > MAX_MACHINE_INTAKE_BODY_BYTES:
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=413, detail="Request body too large")
+
+    # Rate-limit check before expensive PBKDF2
+    check_machine_intake_rate(x_lilos_source_key)
+
+    try:
+        lead, submission, created = await service.intake_by_source(
+            session,
+            source_key=x_lilos_source_key,
+            source_secret=x_lilos_source_secret,
+            command=command,
+            correlation_id=request_correlation_id(request),
+        )
+    except Exception:
+        # Do not clear rate-limit state on failure — the attempt counts
+        raise
+
+    # Successful auth clears the rate-limit window for this key
+    record_machine_intake_success(x_lilos_source_key)
+
     return {
         "data": {
             "lead_id": str(lead.id),

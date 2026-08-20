@@ -847,12 +847,12 @@ def test_speed_to_lead_pipeline_source_to_contacted(
 def test_machine_intake_valid_secret_creates_lead(
     leads_client: tuple[TestClient, dict[str, UUID]],
 ) -> None:
-    """Machine-to-machine intake with valid source key + secret creates a lead."""
+    """Machine-to-machine intake with valid ingestion key + secret creates a lead."""
     client, ids = leads_client
     org = ids["organization"]
     base = f"/api/v1/organizations/{org}/leads"
 
-    # Create a source and capture its secret
+    # Create a source and capture its ingestion key and secret
     source_resp = client.post(
         f"{base}/sources",
         headers=HEADERS,
@@ -867,8 +867,9 @@ def test_machine_intake_valid_secret_creates_lead(
     )
     assert source_resp.status_code == 201, source_resp.text
     source_data = source_resp.json()["data"]
-    source_key = source_data["key"]
+    ingestion_key = source_data["ingestion_key"]
     ingestion_secret = source_data["ingestion_secret"]
+    assert ingestion_key is not None, "Source creation must return an ingestion key"
     assert ingestion_secret is not None, "Source creation must return an ingestion secret"
 
     # Machine intake with valid credentials
@@ -876,7 +877,7 @@ def test_machine_intake_valid_secret_creates_lead(
     machine_resp = client.post(
         "/api/v1/leads/intake",
         headers={
-            "X-Lilos-Source-Key": source_key,
+            "X-Lilos-Source-Key": ingestion_key,
             "X-Lilos-Source-Secret": ingestion_secret,
         },
         json={
@@ -898,7 +899,7 @@ def test_machine_intake_valid_secret_creates_lead(
     dup_resp = client.post(
         "/api/v1/leads/intake",
         headers={
-            "X-Lilos-Source-Key": source_key,
+            "X-Lilos-Source-Key": ingestion_key,
             "X-Lilos-Source-Secret": ingestion_secret,
         },
         json={
@@ -941,13 +942,13 @@ def test_machine_intake_rejects_invalid_secret(
         },
     )
     assert source_resp.status_code == 201
-    source_key = source_resp.json()["data"]["key"]
+    ingestion_key = source_resp.json()["data"]["ingestion_key"]
 
     # Wrong secret
     resp = client.post(
         "/api/v1/leads/intake",
         headers={
-            "X-Lilos-Source-Key": source_key,
+            "X-Lilos-Source-Key": ingestion_key,
             "X-Lilos-Source-Secret": "wrong-secret-value",
         },
         json={
@@ -1010,7 +1011,7 @@ def test_machine_intake_rejects_inactive_source(
     )
     assert source_resp.status_code == 201
     source_data = source_resp.json()["data"]
-    source_key = source_data["key"]
+    ingestion_key = source_data["ingestion_key"]
     source_id = source_data["id"]
     ingestion_secret = source_data["ingestion_secret"]
 
@@ -1026,7 +1027,7 @@ def test_machine_intake_rejects_inactive_source(
     resp = client.post(
         "/api/v1/leads/intake",
         headers={
-            "X-Lilos-Source-Key": source_key,
+            "X-Lilos-Source-Key": ingestion_key,
             "X-Lilos-Source-Secret": ingestion_secret,
         },
         json={
@@ -1063,7 +1064,7 @@ def test_source_secret_rotation(
     )
     assert source_resp.status_code == 201
     source_data = source_resp.json()["data"]
-    source_key = source_data["key"]
+    ingestion_key = source_data["ingestion_key"]
     source_id = source_data["id"]
     old_secret = source_data["ingestion_secret"]
 
@@ -1071,7 +1072,7 @@ def test_source_secret_rotation(
     resp = client.post(
         "/api/v1/leads/intake",
         headers={
-            "X-Lilos-Source-Key": source_key,
+            "X-Lilos-Source-Key": ingestion_key,
             "X-Lilos-Source-Secret": old_secret,
         },
         json={
@@ -1095,7 +1096,7 @@ def test_source_secret_rotation(
     old_resp = client.post(
         "/api/v1/leads/intake",
         headers={
-            "X-Lilos-Source-Key": source_key,
+            "X-Lilos-Source-Key": ingestion_key,
             "X-Lilos-Source-Secret": old_secret,
         },
         json={
@@ -1112,7 +1113,7 @@ def test_source_secret_rotation(
     new_resp = client.post(
         "/api/v1/leads/intake",
         headers={
-            "X-Lilos-Source-Key": source_key,
+            "X-Lilos-Source-Key": ingestion_key,
             "X-Lilos-Source-Secret": new_secret,
         },
         json={
@@ -1123,4 +1124,143 @@ def test_source_secret_rotation(
     )
     assert new_resp.status_code == 201, (
         f"New secret should work after rotation, got {new_resp.status_code}: {new_resp.text}"
+    )
+
+
+@pytest.mark.integration
+def test_cross_tenant_duplicate_human_keys_isolated_by_ingestion_key(
+    postgresql_test_url: str,
+    leads_client: tuple[TestClient, dict[str, UUID]],
+) -> None:
+    """Two orgs with the same human-readable key="website" must have
+    distinct ingestion keys, and each credential ingests into only its own org."""
+    client, ids = leads_client
+    org_a = ids["organization"]
+    org_b = ids["other_organization"]
+    base_a = f"/api/v1/organizations/{org_a}/leads"
+
+    # Create source in Org A with key="website"
+    resp_a = client.post(
+        f"{base_a}/sources",
+        headers=HEADERS,
+        json={
+            "key": "website",
+            "source_type": "web_form",
+            "name": "Org A Website Form",
+            "status": "active",
+            "consent_capabilities": ["transactional_email"],
+            "raw_payload_retention_policy": "leads.raw_payload.default",
+        },
+    )
+    assert resp_a.status_code == 201, resp_a.text
+    data_a = resp_a.json()["data"]
+    assert data_a["key"] == "website"
+    ingestion_key_a = data_a["ingestion_key"]
+    secret_a = data_a["ingestion_secret"]
+
+    # Create source in Org B with the same key="website" via direct DB
+    # (the other org user in the fixture has no manage_sources role)
+    async def create_org_b_source(session: AsyncSession) -> dict[str, str]:
+        from apps.api.app.products.leads.service import (
+            generate_ingestion_key,
+            generate_ingestion_secret,
+        )
+
+        ikey = generate_ingestion_key()
+        plaintext, secret_hash = generate_ingestion_secret()
+        source = LeadSource(
+            organization_id=org_b,
+            key="website",
+            source_type="web_form",
+            name="Org B Website Form",
+            status="active",
+            consent_capabilities=["transactional_email"],
+            raw_payload_retention_policy="leads.raw_payload.default",
+            ingestion_key=ikey,
+            ingestion_secret_hash=secret_hash,
+            version=1,
+        )
+        session.add(source)
+        await session.commit()
+        return {"ingestion_key": ikey, "secret": plaintext}
+
+    org_b_creds = run_db(postgresql_test_url, create_org_b_source)
+    ingestion_key_b = org_b_creds["ingestion_key"]
+    secret_b = org_b_creds["secret"]
+
+    # The two ingestion keys must differ
+    assert ingestion_key_a != ingestion_key_b, (
+        "Ingestion keys must be globally unique even when human keys collide"
+    )
+
+    # Ingest into Org A using Org A's credential
+    received_at = datetime.now(UTC)
+    intake_a = client.post(
+        "/api/v1/leads/intake",
+        headers={
+            "X-Lilos-Source-Key": ingestion_key_a,
+            "X-Lilos-Source-Secret": secret_a,
+        },
+        json={
+            "external_submission_id": "cross-tenant-a-001",
+            "first_name": "OrgA",
+            "last_name": "Lead",
+            "email": "orga@example.invalid",
+            "received_at": received_at.isoformat(),
+        },
+    )
+    assert intake_a.status_code == 201, intake_a.text
+    lead_a_id = intake_a.json()["data"]["lead_id"]
+
+    # Ingest into Org B using Org B's credential
+    intake_b = client.post(
+        "/api/v1/leads/intake",
+        headers={
+            "X-Lilos-Source-Key": ingestion_key_b,
+            "X-Lilos-Source-Secret": secret_b,
+        },
+        json={
+            "external_submission_id": "cross-tenant-b-001",
+            "first_name": "OrgB",
+            "last_name": "Lead",
+            "email": "orgb@example.invalid",
+            "received_at": received_at.isoformat(),
+        },
+    )
+    assert intake_b.status_code == 201, intake_b.text
+    lead_b_id = intake_b.json()["data"]["lead_id"]
+
+    # Org A's lead is visible in Org A
+    detail_a = client.get(f"{base_a}/{lead_a_id}", headers=HEADERS)
+    assert detail_a.status_code == 200
+    assert detail_a.json()["data"]["first_name"] == "OrgA"
+
+    # Org A's lead is NOT visible in Org B
+    base_b = f"/api/v1/organizations/{org_b}/leads"
+    cross_read = client.get(f"{base_b}/{lead_a_id}", headers=HEADERS)
+    assert cross_read.status_code in (403, 404), (
+        f"Org A lead must not be readable from Org B, got {cross_read.status_code}"
+    )
+
+    # Org B's lead is NOT visible in Org A
+    cross_read2 = client.get(f"{base_a}/{lead_b_id}", headers=HEADERS)
+    assert cross_read2.status_code in (403, 404), (
+        f"Org B lead must not be readable from Org A, got {cross_read2.status_code}"
+    )
+
+    # Cross-credential attack: use Org A's key with Org B's secret
+    attack = client.post(
+        "/api/v1/leads/intake",
+        headers={
+            "X-Lilos-Source-Key": ingestion_key_a,
+            "X-Lilos-Source-Secret": secret_b,
+        },
+        json={
+            "external_submission_id": "cross-tenant-attack-001",
+            "first_name": "Attack",
+            "received_at": received_at.isoformat(),
+        },
+    )
+    assert attack.status_code == 404, (
+        f"Cross-credential attack must be rejected, got {attack.status_code}"
     )

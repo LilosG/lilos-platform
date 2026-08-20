@@ -48,6 +48,7 @@ class LeadSource(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     consent_capabilities: Mapped[list[object]] = mapped_column(JSONB, nullable=False)
     verification_reference: Mapped[str | None] = mapped_column(String(500))
     raw_payload_retention_policy: Mapped[str] = mapped_column(String(128), nullable=False)
+    ingestion_key: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)
     ingestion_secret_hash: Mapped[str | None] = mapped_column(String(256))
     version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
 
