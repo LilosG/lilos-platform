@@ -159,11 +159,10 @@ def consent_row(item: LeadConsent) -> dict[str, object]:
     }
 
 
-def source_row(item: LeadSource) -> dict[str, object]:
-    return {
+def source_row(item: LeadSource, *, ingestion_key: str | None = None) -> dict[str, object]:
+    data: dict[str, object] = {
         "id": str(item.id),
         "key": item.key,
-        "ingestion_key": item.ingestion_key,
         "source_type": item.source_type,
         "name": item.name,
         "location_id": str(item.location_id) if item.location_id else None,
@@ -177,6 +176,9 @@ def source_row(item: LeadSource) -> dict[str, object]:
         "version": item.version,
         "created_at": item.created_at,
     }
+    if ingestion_key is not None:
+        data["ingestion_key"] = ingestion_key
+    return data
 
 
 @router.get("", dependencies=[Depends(no_store)])
@@ -268,7 +270,17 @@ async def create_source(
         actor_id=principal.platform_user_id,
         correlation_id=request_correlation_id(request),
     )
-    data = source_row(source)
+    # Fetch the ingestion_key from the credential table
+    from sqlalchemy import select as sa_select
+
+    from apps.api.app.products.leads.models import LeadSourceIngestionCredential
+
+    cred = await session.scalar(
+        sa_select(LeadSourceIngestionCredential).where(
+            LeadSourceIngestionCredential.lead_source_id == source.id,
+        )
+    )
+    data = source_row(source, ingestion_key=cred.ingestion_key if cred else None)
     data["ingestion_secret"] = plaintext_secret
     return {"data": data, "meta": meta(request)}
 
@@ -325,7 +337,16 @@ async def rotate_source_secret(
         actor_id=principal.platform_user_id,
         correlation_id=request_correlation_id(request),
     )
-    data = source_row(source)
+    from sqlalchemy import select as sa_select
+
+    from apps.api.app.products.leads.models import LeadSourceIngestionCredential
+
+    cred = await session.scalar(
+        sa_select(LeadSourceIngestionCredential).where(
+            LeadSourceIngestionCredential.lead_source_id == source.id,
+        )
+    )
+    data = source_row(source, ingestion_key=cred.ingestion_key if cred else None)
     data["ingestion_secret"] = plaintext_secret
     return {"data": data, "meta": meta(request)}
 

@@ -48,8 +48,46 @@ class LeadSource(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     consent_capabilities: Mapped[list[object]] = mapped_column(JSONB, nullable=False)
     verification_reference: Mapped[str | None] = mapped_column(String(500))
     raw_payload_retention_policy: Mapped[str] = mapped_column(String(128), nullable=False)
-    ingestion_key: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)
-    ingestion_secret_hash: Mapped[str | None] = mapped_column(String(256))
+    version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
+
+
+class LeadSourceIngestionCredential(Base):
+    """System-scoped machine-ingestion credential registry.
+
+    This table is deliberately NOT subject to row-level security.  It exists
+    solely to resolve a machine credential (ingestion_key + secret) into an
+    (organization_id, lead_source_id) pair before tenant context is
+    established.  Once the tenant is known, the normal RLS-protected
+    LeadSource row is loaded and the standard intake path executes under
+    full tenant isolation.
+    """
+
+    __tablename__ = "lead_source_ingestion_credentials"
+    __table_args__ = (
+        UniqueConstraint("ingestion_key", name="uq_ingestion_credential_key"),
+        CheckConstraint("status IN ('active','revoked')", name="ck_ingestion_credential_status"),
+    )
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
+    ingestion_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    lead_source_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("lead_sources.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    organization_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    secret_hash: Mapped[str] = mapped_column(String(256), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, server_default="active")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
     version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
 
 

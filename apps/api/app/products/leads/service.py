@@ -7,7 +7,7 @@ import re
 import secrets
 from datetime import UTC, datetime
 from typing import cast
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import Select, func, or_, select, text, update
 from sqlalchemy.exc import IntegrityError
@@ -44,6 +44,7 @@ from apps.api.app.products.leads.models import (
     LeadConsent,
     LeadNote,
     LeadSource,
+    LeadSourceIngestionCredential,
     LeadStatusHistory,
     LeadSubmission,
     LeadSuppression,
@@ -938,8 +939,6 @@ class LeadService:
             consent_capabilities=command.consent_capabilities,
             verification_reference=command.verification_reference,
             raw_payload_retention_policy=command.raw_payload_retention_policy,
-            ingestion_key=ingestion_key,
-            ingestion_secret_hash=secret_hash,
             version=1,
         )
         session.add(source)
@@ -947,6 +946,17 @@ class LeadService:
             await session.flush()
         except IntegrityError:
             raise LeadSourceKeyConflictError from None
+        credential = LeadSourceIngestionCredential(
+            id=uuid4(),
+            ingestion_key=ingestion_key,
+            lead_source_id=source.id,
+            organization_id=organization_id,
+            secret_hash=secret_hash,
+            status="active",
+            version=1,
+        )
+        session.add(credential)
+        await session.flush()
         await self._audit(
             session,
             event="leads.source.created",
@@ -1051,31 +1061,51 @@ class LeadService:
     ) -> tuple[Lead, LeadSubmission, bool]:
         """Machine-to-machine lead intake authenticated by ingestion key + secret.
 
-        Resolves the source by its globally-unique ``ingestion_key``, verifies
-        the secret, then delegates to the standard intake path.  No
-        organization_id appears in the URL — the ingestion key resolves the
-        tenant deterministically.
+        Flow:
+        1. Look up the globally-unique ``ingestion_key`` in the system-scoped
+           ``lead_source_ingestion_credentials`` table (no RLS — this table
+           exists solely for pre-tenant credential resolution).
+        2. Verify the secret against the stored hash.
+        3. Derive ``organization_id`` and ``lead_source_id`` from the
+           credential row.
+        4. Establish tenant context via ``set_tenant()``.
+        5. Load the ``LeadSource`` row under normal RLS and verify it is
+           active.
+        6. Execute the standard intake path under full tenant isolation.
 
-        The ingestion-key lookup must bypass row-level security because the
-        caller has no tenant context yet — the source *is* the tenant resolver.
-        RLS is re-enabled immediately after the lookup.
+        No ``SET LOCAL row_security = off`` is ever used in this path.
         """
-        await session.execute(text("SET LOCAL row_security = off"))
-        try:
-            source = await session.scalar(
-                select(LeadSource).where(
-                    LeadSource.ingestion_key == source_key,
-                    LeadSource.status == "active",
-                )
+        # Step 1–2: System-scoped credential lookup (no tenant context yet).
+        credential = await session.scalar(
+            select(LeadSourceIngestionCredential).where(
+                LeadSourceIngestionCredential.ingestion_key == source_key,
+                LeadSourceIngestionCredential.status == "active",
             )
-        finally:
-            await session.execute(text("SET LOCAL row_security = on"))
-        if not source or not source.ingestion_secret_hash:
+        )
+        if not credential:
             raise LeadSourceNotFoundError
-        if not verify_ingestion_secret(
-            plaintext=source_secret, stored_hash=source.ingestion_secret_hash
-        ):
+        if not verify_ingestion_secret(plaintext=source_secret, stored_hash=credential.secret_hash):
             raise LeadSourceNotFoundError
+
+        # Step 3: Derive tenant and source identity from the credential.
+        organization_id = credential.organization_id
+        lead_source_id = credential.lead_source_id
+
+        # Step 4: Establish tenant context.
+        await set_tenant(session, organization_id)
+
+        # Step 5: Load LeadSource under normal RLS and verify active.
+        source = await session.scalar(
+            select(LeadSource).where(
+                LeadSource.organization_id == organization_id,
+                LeadSource.id == lead_source_id,
+                LeadSource.status == "active",
+            )
+        )
+        if not source:
+            raise LeadSourceNotFoundError
+
+        # Step 6: Standard intake under tenant isolation.
         intake_cmd = LeadIntake(
             source_id=source.id,
             external_submission_id=command.external_submission_id,
@@ -1089,7 +1119,7 @@ class LeadService:
             received_at=command.received_at,
         )
         return await self.intake(
-            session, source.organization_id, intake_cmd, correlation_id=correlation_id
+            session, organization_id, intake_cmd, correlation_id=correlation_id
         )
 
     async def rotate_source_secret(
@@ -1113,8 +1143,15 @@ class LeadService:
         )
         if not source:
             raise LeadSourceNotFoundError
+        credential = await session.scalar(
+            select(LeadSourceIngestionCredential)
+            .where(LeadSourceIngestionCredential.lead_source_id == source_id)
+            .with_for_update()
+        )
+        if not credential:
+            raise LeadSourceNotFoundError
         plaintext_secret, secret_hash = generate_ingestion_secret()
-        source.ingestion_secret_hash = secret_hash
+        credential.secret_hash = secret_hash
         await session.flush()
         await self._audit(
             session,

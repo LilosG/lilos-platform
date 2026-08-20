@@ -1161,6 +1161,9 @@ def test_cross_tenant_duplicate_human_keys_isolated_by_ingestion_key(
     # Create source in Org B with the same key="website" via direct DB
     # (the other org user in the fixture has no manage_sources role)
     async def create_org_b_source(session: AsyncSession) -> dict[str, str]:
+        from uuid import uuid4 as _uuid4
+
+        from apps.api.app.products.leads.models import LeadSourceIngestionCredential
         from apps.api.app.products.leads.service import (
             generate_ingestion_key,
             generate_ingestion_secret,
@@ -1176,11 +1179,20 @@ def test_cross_tenant_duplicate_human_keys_isolated_by_ingestion_key(
             status="active",
             consent_capabilities=["transactional_email"],
             raw_payload_retention_policy="leads.raw_payload.default",
-            ingestion_key=ikey,
-            ingestion_secret_hash=secret_hash,
             version=1,
         )
         session.add(source)
+        await session.flush()
+        credential = LeadSourceIngestionCredential(
+            id=_uuid4(),
+            ingestion_key=ikey,
+            lead_source_id=source.id,
+            organization_id=org_b,
+            secret_hash=secret_hash,
+            status="active",
+            version=1,
+        )
+        session.add(credential)
         await session.commit()
         return {"ingestion_key": ikey, "secret": plaintext}
 
