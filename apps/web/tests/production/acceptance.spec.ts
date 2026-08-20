@@ -827,12 +827,12 @@ test.describe("3. GBP Read / Sync", () => {
     );
     expect(profileR.status).toBeLessThan(500);
 
-    if (profileR.ok && profileR.data?.data?.profile?.title) {
-      console.log(`  GBP profile: "${profileR.data.data.profile.title}"`);
+    if (profileR.ok && profileR.data?.data?.name) {
+      console.log(`  GBP profile: "${profileR.data.data.name}"`);
       recordVerdict(
         "GBP READ/SYNC",
         "PASS",
-        `Profile "${profileR.data.data.profile.title}" retrieved`,
+        `Profile "${profileR.data.data.name}" retrieved`,
       );
     } else {
       recordVerdict(

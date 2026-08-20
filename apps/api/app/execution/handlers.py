@@ -584,9 +584,7 @@ async def _handle_seo_crawl(
                 "error": str(exc)[:200],
             },
         )
-        return JobOutcome(
-            result="retryable_failure", safe_error="CRAWL_FAILED"
-        )
+        return JobOutcome(result="retryable_failure", safe_error="CRAWL_FAILED")
 
     return JobOutcome(result="succeeded", result_reference=f"crawl_run:{crawl_run_id_str}")
 

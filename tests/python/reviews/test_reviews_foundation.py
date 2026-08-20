@@ -58,7 +58,6 @@ async def test_ai_gateway_requires_grounding_and_preserves_review() -> None:
     assert result["requires_human_review"] is True
 
 
-
 def test_reviews_prompt_includes_governed_facts() -> None:
     """Reviews AI prompt must include resolved governed facts when supplied."""
     facts = [
