@@ -1120,6 +1120,22 @@ class AdministrationService:
         claim-safety filtered; explicit profile knowledge is preserved as-is.
         """
         await _organization(session, organization_id, lock=True)
+
+        # Backfill Business Knowledge from existing persisted data so
+        # Content AI grounding has source-backed knowledge immediately.
+        from apps.api.app.administration.knowledge_service import BusinessKnowledgeService
+
+        knowledge_service = BusinessKnowledgeService()
+        await knowledge_service.backfill_from_existing_data(
+            session, organization_id=organization_id
+        )
+
+        # Detect meaningful canonical conflicts and feed them into
+        # pending-confirmation so the operator resolves them.
+        await knowledge_service.detect_conflicts(
+            session, organization_id=organization_id, actor_id=actor_id
+        )
+
         organization = await _organization(session, organization_id)
         profile = await session.scalar(
             select(OrganizationProfile).where(

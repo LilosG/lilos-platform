@@ -554,6 +554,7 @@ class SEOService:
                         "crawl_depth": cp.depth,
                         "redirect_destination": cp.redirect_destination,
                         "quality_status": cp.quality_status,
+                        "body_text": cp.body_text,
                         "observed_at": datetime.now(UTC),
                     }
                     stmt = pg_insert(SEOPage).values(**upsert_values)
@@ -578,6 +579,7 @@ class SEOService:
                             "crawl_depth": cp.depth,
                             "redirect_destination": cp.redirect_destination,
                             "quality_status": cp.quality_status,
+                            "body_text": cp.body_text,
                             "observed_at": datetime.now(UTC),
                         },
                     )
@@ -631,6 +633,27 @@ class SEOService:
                     }
                 )
                 return
+
+            # Ingest page content into Business Knowledge for AI grounding
+            if cp.indexability == "indexable" and cp.http_status == 200:
+                from apps.api.app.administration.knowledge_service import (
+                    BusinessKnowledgeService,
+                )
+
+                knowledge_service = BusinessKnowledgeService()
+                await knowledge_service.ingest_seo_page(
+                    session,
+                    organization_id=organization_id,
+                    location_id=website.location_id,
+                    page_id=page.id,
+                    normalized_url=cp.url,
+                    title=cp.title,
+                    h1=cp.h1,
+                    meta_description=cp.meta_description,
+                    body_text=cp.body_text,
+                    content_hash=cp.content_hash,
+                )
+
             created_opportunities.extend(new_opportunities)
 
         report: CrawlReport = CrawlReport(

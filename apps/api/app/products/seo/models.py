@@ -122,6 +122,7 @@ class SEOPage(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     crawl_depth: Mapped[int | None] = mapped_column(Integer)
     redirect_destination: Mapped[str | None] = mapped_column(Text)
     quality_status: Mapped[str] = mapped_column(String(24), nullable=False)
+    body_text: Mapped[str | None] = mapped_column(Text)
     observed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 

@@ -292,6 +292,7 @@ import "../styles/global.css";
           return;
         }
         domainContent.replaceChildren(renderBusinessForm(result.data));
+        void renderKnowledgeCoverage();
       }
 
       function renderBusinessForm(
@@ -421,6 +422,66 @@ import "../styles/global.css";
           }
         });
         return form;
+      }
+
+      async function renderKnowledgeCoverage(): Promise<void> {
+        const { fetchKnowledgeCoverage } =
+          await import("../lib/administration");
+        const result = await fetchKnowledgeCoverage(organizationId);
+        if (result.kind !== "ok") return;
+
+        const coverage = result.data;
+        const section = document.createElement("div");
+        section.className = "ui-card";
+        const header = document.createElement("div");
+        header.className = "ui-card__header";
+        header.append(
+          Object.assign(document.createElement("h3"), {
+            className: "ui-card__heading",
+            textContent: "Business Knowledge",
+          }),
+          Object.assign(document.createElement("p"), {
+            className: "ui-card__description",
+            textContent:
+              "Source-backed knowledge used for AI content grounding.",
+          }),
+        );
+        section.append(header);
+
+        const body = document.createElement("div");
+        body.className = "ui-card__body ui-stack ui-stack--2";
+
+        const sources: Array<{
+          label: string;
+          key: keyof typeof coverage;
+        }> = [
+          { label: "Identity", key: "identity" },
+          { label: "GBP", key: "gbp" },
+          { label: "Website", key: "website" },
+        ];
+        for (const { label, key } of sources) {
+          const src = coverage[key];
+          const row = document.createElement("div");
+          row.className = "ui-inline ui-inline--center ui-inline--spread";
+          const info = document.createElement("div");
+          info.append(
+            Object.assign(document.createElement("strong"), {
+              textContent: label,
+            }),
+          );
+          const detail = document.createElement("span");
+          detail.className = "ui-text-secondary";
+          const count = src.document_count;
+          const latest = src.latest_observation
+            ? new Date(src.latest_observation).toLocaleDateString()
+            : "never";
+          detail.textContent = `${count} document${count === 1 ? "" : "s"} · last updated ${latest}`;
+          info.append(detail);
+          row.append(info);
+          body.append(row);
+        }
+        section.append(body);
+        domainContent.append(section);
       }
 
       // ---- Locations ----

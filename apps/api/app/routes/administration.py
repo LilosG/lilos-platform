@@ -281,6 +281,20 @@ async def reconcile_business_facts(
     )
 
 
+@router.get("/business-knowledge/coverage", response_model=DataResponse)
+async def business_knowledge_coverage(
+    request: Request,
+    organization_id: UUID,
+    session: DatabaseSession,
+    _: Annotated[AuthorizationDecision | None, policy("business_facts.read")] = None,
+) -> DataResponse:
+    """Return knowledge coverage summary for Business Information display."""
+    from apps.api.app.administration.knowledge_service import BusinessKnowledgeService
+
+    svc = BusinessKnowledgeService()
+    return response(request, await svc.get_coverage(session, organization_id=organization_id))
+
+
 @router.get("/business-facts/candidates", response_model=DataResponse)
 async def list_business_fact_candidates(
     request: Request,

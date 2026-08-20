@@ -1285,6 +1285,65 @@ import "../styles/global.css";
           }
           body.append(statusBar);
 
+          // Grounding provenance — show actual persisted grounding references
+          if (latest.created_by_type === "ai" && latest.provenance) {
+            const prov = latest.provenance;
+            const parts: string[] = [];
+            if (prov.fact_count > 0) {
+              parts.push(
+                `${prov.fact_count} approved fact${prov.fact_count === 1 ? "" : "s"}`,
+              );
+            }
+            const sourceEntries = Object.entries(prov.source_counts);
+            for (const [label, count] of sourceEntries) {
+              parts.push(`${count} ${label} source${count === 1 ? "" : "s"}`);
+            }
+
+            const provenance = document.createElement("div");
+            provenance.className = "stack-bottom-4";
+
+            const summary = document.createElement("p");
+            summary.className = "ui-text-secondary";
+            summary.textContent =
+              parts.length > 0
+                ? `Grounded with ${parts.join(" · ")}`
+                : "AI-assisted draft requires human review.";
+            provenance.append(summary);
+
+            // Expandable source detail
+            if (prov.source_labels.length > 0) {
+              const details = document.createElement("details");
+              details.className = "ui-text-secondary";
+              const dtSummary = document.createElement("summary");
+              dtSummary.textContent = "Source references";
+              dtSummary.style.cursor = "pointer";
+              details.append(dtSummary);
+
+              const list = document.createElement("ul");
+              list.className = "ui-stack ui-stack--1";
+              list.style.marginTop = "0.5rem";
+              for (const src of prov.source_labels) {
+                const li = document.createElement("li");
+                if (src.url) {
+                  const link = document.createElement("a");
+                  link.href = src.url;
+                  link.target = "_blank";
+                  link.rel = "noreferrer";
+                  link.textContent = src.title || src.url;
+                  link.className = "ui-text-secondary";
+                  li.append(`${src.label}: `, link);
+                } else {
+                  li.textContent = `${src.label}: ${src.title || "—"}`;
+                }
+                list.append(li);
+              }
+              details.append(list);
+              provenance.append(details);
+            }
+
+            body.append(provenance);
+          }
+
           // Rendered document body (safe DOM rendering, no innerHTML)
           const docContainer = renderDocumentBody(latest.body);
 

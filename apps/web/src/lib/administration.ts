@@ -293,6 +293,20 @@ export function reconcileBusinessFacts(
   );
 }
 
+export type KnowledgeCoverage = {
+  identity: { document_count: number; latest_observation: string | null };
+  gbp: { document_count: number; latest_observation: string | null };
+  website: { document_count: number; latest_observation: string | null };
+};
+
+export function fetchKnowledgeCoverage(
+  organizationId: string,
+): Promise<ApiOutcome<KnowledgeCoverage>> {
+  return apiGet<KnowledgeCoverage>(
+    `${base(organizationId)}/business-knowledge/coverage`,
+  );
+}
+
 export function fetchBusinessFactCandidates(
   organizationId: string,
 ): Promise<ApiOutcome<BusinessFactRevision[]>> {

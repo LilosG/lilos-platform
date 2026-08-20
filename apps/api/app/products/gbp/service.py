@@ -205,6 +205,22 @@ class GBPService:
         )
         session.add(item)
         await session.flush()
+
+        # Ingest into Business Knowledge for downstream AI grounding
+        from apps.api.app.administration.knowledge_service import BusinessKnowledgeService
+
+        knowledge_service = BusinessKnowledgeService()
+        await knowledge_service.ingest_gbp_snapshot(
+            session,
+            organization_id=location.organization_id,
+            gbp_location_id=location.id,
+            location_id=location.location_id,
+            snapshot_id=item.id,
+            normalized_profile=normalized,
+            content_hash=digest,
+            observed_at=observed_at,
+        )
+
         return item
 
     async def propose(

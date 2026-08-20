@@ -13,6 +13,7 @@ from sqlalchemy import (
     Index,
     Integer,
     String,
+    Text,
     UniqueConstraint,
     text,
 )
@@ -714,3 +715,74 @@ Index(
     unique=True,
     postgresql_where=ServiceAssignment.scope_type == "location",
 )
+
+
+class BusinessKnowledgeDocument(UUIDPrimaryKeyMixin, Base):
+    """Source-backed business knowledge extracted from GBP, website, and identity data.
+
+    Each record represents a single piece of knowledge (structured facts,
+    page text, or identity) with full provenance — source type, reference,
+    content hash, authority level, and observation timestamp.
+
+    Organization-scoped.  Optionally location-scoped for location-specific
+    knowledge such as service-area pages.
+    """
+
+    __tablename__ = "business_knowledge_documents"
+    __table_args__ = (
+        CheckConstraint(
+            "source_type IN ('gbp_profile_snapshot','seo_page','organization_profile',"
+            "'location_profile')",
+            name="ck_knowledge_source_type",
+        ),
+        CheckConstraint(
+            "authority IN ('provider_observed','system_derived','operator_verified',"
+            "'client_approved')",
+            name="ck_knowledge_authority",
+        ),
+        CheckConstraint(
+            "content_type IN ('structured_facts','page_text','identity')",
+            name="ck_knowledge_content_type",
+        ),
+        CheckConstraint(
+            "status IN ('active','superseded','expired')",
+            name="ck_knowledge_status",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "location_id"],
+            ["locations.organization_id", "locations.id"],
+            ondelete="RESTRICT",
+        ),
+        UniqueConstraint(
+            "organization_id",
+            "source_type",
+            "source_reference",
+            "content_hash",
+            name="uq_knowledge_doc_source_hash",
+        ),
+    )
+
+    organization_id: Mapped[UUID] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    location_id: Mapped[UUID | None] = mapped_column(PostgreSQLUUID(as_uuid=True))
+
+    source_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    source_reference: Mapped[str] = mapped_column(String(500), nullable=False)
+    source_url: Mapped[str | None] = mapped_column(Text)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    authority: Mapped[str] = mapped_column(String(32), nullable=False)
+    content: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
+    content_type: Mapped[str] = mapped_column(String(32), nullable=False)
+
+    status: Mapped[str] = mapped_column(
+        String(24), nullable=False, default="active", server_default="active"
+    )
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    supersedes_id: Mapped[UUID | None] = mapped_column(PostgreSQLUUID(as_uuid=True))
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("now()")
+    )

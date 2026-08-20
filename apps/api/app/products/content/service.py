@@ -10,6 +10,7 @@ from uuid import UUID
 from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from apps.api.app.administration.knowledge_service import BusinessKnowledgeService
 from apps.api.app.administration.models import BusinessFactRevision
 from apps.api.app.ai.factory import build_ai_gateway
 from apps.api.app.ai.gateway import AIGatewayRequest
@@ -60,6 +61,15 @@ from apps.api.app.products.content.models import (
 )
 
 SECRET_PATTERN = re.compile(r"(?i)(?:api[_-]?key|secret|token|password)\s*[:=]")
+
+
+def _cast_str_list(value: object) -> list[str]:
+    """Cast a dynamic value to a list of strings for mypy-safe unpacking."""
+    if isinstance(value, list):
+        return [str(v) for v in value]
+    return []
+
+
 AI_TASK_KEY = "content.draft_revision"
 NOTIFICATION_TEMPLATES = {
     "content.revision.awaiting_editorial": ("in_app", "A content revision needs editorial review."),
@@ -688,7 +698,19 @@ class ContentService:
             location_id=item.location_id,
         )
 
-        # --- build AI input with resolved fact values ---
+        # --- retrieve source-backed business knowledge ---
+        knowledge_service = BusinessKnowledgeService()
+        knowledge = await knowledge_service.retrieve_for_content(
+            session,
+            organization_id=organization_id,
+            location_id=item.location_id,
+            content_title=item.title,
+            audience=brief.audience,
+            intent=brief.intent,
+            content_type=item.content_type,
+        )
+
+        # --- build AI input with resolved fact values and knowledge ---
         fallback = (
             f"# {item.title}\n\nContent for {brief.audience} addressing {brief.intent}. "
             "This draft requires human review before publication."
@@ -704,6 +726,7 @@ class ContentService:
                 "content_title": item.title,
                 "content_type": item.content_type,
                 "governed_facts": governed_facts,
+                "knowledge": knowledge,
             },
             input_references=(brief.id,),
             approved_fact_revision_ids=tuple(fact_ids),
@@ -723,7 +746,10 @@ class ContentService:
             status="completed",
             provider_key=str(output.get("provider")),
             model_key=str(output.get("model")),
-            input_references=[str(brief.id)],
+            input_references=[
+                str(brief.id),
+                *_cast_str_list(knowledge.get("source_document_ids", [])),
+            ],
             approved_fact_revision_ids=[str(x) for x in fact_ids],
             output_document=output,
             output_hash=hashlib.sha256(str(output.get("draft", "")).encode()).hexdigest(),
@@ -844,6 +870,18 @@ class ContentService:
                 location_id=item.location_id,
             )
 
+            # --- retrieve source-backed business knowledge ---
+            knowledge_service = BusinessKnowledgeService()
+            knowledge = await knowledge_service.retrieve_for_content(
+                session,
+                organization_id=organization_id,
+                location_id=item.location_id,
+                content_title=item.title,
+                audience=brief.audience,
+                intent=brief.intent,
+                content_type=item.content_type,
+            )
+
             fallback = (
                 f"# {item.title}\n\nContent for {brief.audience} addressing {brief.intent}. "
                 "This draft requires human review before publication."
@@ -859,6 +897,7 @@ class ContentService:
                     "content_title": item.title,
                     "content_type": item.content_type,
                     "governed_facts": governed_facts,
+                    "knowledge": knowledge,
                 },
                 input_references=(brief.id,),
                 approved_fact_revision_ids=tuple(fact_ids),
@@ -875,7 +914,10 @@ class ContentService:
                 status="completed",
                 provider_key=str(output.get("provider")),
                 model_key=str(output.get("model")),
-                input_references=[str(brief.id)],
+                input_references=[
+                    str(brief.id),
+                    *_cast_str_list(knowledge.get("source_document_ids", [])),
+                ],
                 approved_fact_revision_ids=[str(x) for x in fact_ids],
                 output_document=output,
                 output_hash=hashlib.sha256(str(output.get("draft", "")).encode()).hexdigest(),
