@@ -3,7 +3,7 @@
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Request, Response, status
+from fastapi import APIRouter, Depends, Header, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.app.access_control.contracts import AssignableMemberData, AssignableMemberListResponse
@@ -21,8 +21,11 @@ from apps.api.app.products.leads.contracts import (
     LeadAssignment,
     LeadConversion,
     LeadIntake,
+    LeadIntakeBySource,
     LeadLoss,
     LeadNoteCreate,
+    LeadSourceCreate,
+    LeadSourceUpdate,
     LeadStatusTransition,
     LeadTaskCreate,
 )
@@ -31,7 +34,13 @@ from apps.api.app.products.leads.models import (
     LeadCommunication,
     LeadConsent,
     LeadNote,
+    LeadSource,
     LeadTask,
+)
+from apps.api.app.products.leads.rate_limit import (
+    MAX_MACHINE_INTAKE_BODY_BYTES,
+    check_machine_intake_rate,
+    record_machine_intake_success,
 )
 from apps.api.app.products.leads.service import LeadService
 from apps.api.app.schemas import ResponseMeta
@@ -40,6 +49,13 @@ router = APIRouter(
     prefix="/api/v1/organizations/{organization_id}/leads",
     tags=["leads"],
     dependencies=[Depends(get_authenticated_principal)],
+)
+# Machine-to-machine intake: no organization_id in path — the source key
+# resolves the tenant.  Auth is via X-Lilos-Source-Key / X-Lilos-Source-Secret
+# headers rather than a Supabase JWT.
+machine_intake_router = APIRouter(
+    prefix="/api/v1/leads",
+    tags=["leads"],
 )
 service = LeadService()
 access_service = AccessControlService()
@@ -143,6 +159,28 @@ def consent_row(item: LeadConsent) -> dict[str, object]:
     }
 
 
+def source_row(item: LeadSource, *, ingestion_key: str | None = None) -> dict[str, object]:
+    data: dict[str, object] = {
+        "id": str(item.id),
+        "key": item.key,
+        "source_type": item.source_type,
+        "name": item.name,
+        "location_id": str(item.location_id) if item.location_id else None,
+        "integration_connection_id": str(item.integration_connection_id)
+        if item.integration_connection_id
+        else None,
+        "status": item.status,
+        "consent_capabilities": item.consent_capabilities,
+        "verification_reference": item.verification_reference,
+        "raw_payload_retention_policy": item.raw_payload_retention_policy,
+        "version": item.version,
+        "created_at": item.created_at,
+    }
+    if ingestion_key is not None:
+        data["ingestion_key"] = ingestion_key
+    return data
+
+
 @router.get("", dependencies=[Depends(no_store)])
 async def list_leads(
     request: Request,
@@ -203,6 +241,114 @@ async def source_performance(
         "data": await service.source_performance(session, organization_id),
         "meta": meta(request),
     }
+
+
+@router.get("/sources", dependencies=[Depends(no_store)])
+async def list_sources(
+    request: Request,
+    organization_id: UUID,
+    session: Session,
+    _: Annotated[AuthorizationDecision, policy("leads.read")],
+) -> dict[str, object]:
+    items = await service.list_sources(session, organization_id)
+    return {"data": [source_row(item) for item in items], "meta": meta(request)}
+
+
+@router.post("/sources", status_code=status.HTTP_201_CREATED, dependencies=[Depends(no_store)])
+async def create_source(
+    request: Request,
+    organization_id: UUID,
+    command: LeadSourceCreate,
+    session: Session,
+    principal: Authenticated,
+    _: Annotated[AuthorizationDecision, policy("leads.manage_sources", True)],
+) -> dict[str, object]:
+    source, plaintext_secret = await service.create_source(
+        session,
+        organization_id,
+        command,
+        actor_id=principal.platform_user_id,
+        correlation_id=request_correlation_id(request),
+    )
+    # Fetch the ingestion_key from the credential table
+    from sqlalchemy import select as sa_select
+
+    from apps.api.app.products.leads.models import LeadSourceIngestionCredential
+
+    cred = await session.scalar(
+        sa_select(LeadSourceIngestionCredential).where(
+            LeadSourceIngestionCredential.lead_source_id == source.id,
+        )
+    )
+    data = source_row(source, ingestion_key=cred.ingestion_key if cred else None)
+    data["ingestion_secret"] = plaintext_secret
+    return {"data": data, "meta": meta(request)}
+
+
+@router.get("/sources/{source_id}", dependencies=[Depends(no_store)])
+async def get_source(
+    request: Request,
+    organization_id: UUID,
+    source_id: UUID,
+    session: Session,
+    _: Annotated[AuthorizationDecision, policy("leads.read")],
+) -> dict[str, object]:
+    source = await service.get_source(session, organization_id, source_id)
+    return {"data": source_row(source), "meta": meta(request)}
+
+
+@router.patch("/sources/{source_id}", dependencies=[Depends(no_store)])
+async def update_source(
+    request: Request,
+    organization_id: UUID,
+    source_id: UUID,
+    command: LeadSourceUpdate,
+    session: Session,
+    principal: Authenticated,
+    _: Annotated[AuthorizationDecision, policy("leads.manage_sources", True)],
+) -> dict[str, object]:
+    source = await service.update_source(
+        session,
+        organization_id,
+        source_id,
+        command,
+        actor_id=principal.platform_user_id,
+        correlation_id=request_correlation_id(request),
+    )
+    return {"data": source_row(source), "meta": meta(request)}
+
+
+@router.post(
+    "/sources/{source_id}/rotate-secret",
+    dependencies=[Depends(no_store)],
+)
+async def rotate_source_secret(
+    request: Request,
+    organization_id: UUID,
+    source_id: UUID,
+    session: Session,
+    principal: Authenticated,
+    _: Annotated[AuthorizationDecision, policy("leads.manage_sources", True)],
+) -> dict[str, object]:
+    source, plaintext_secret = await service.rotate_source_secret(
+        session,
+        organization_id,
+        source_id,
+        actor_id=principal.platform_user_id,
+        correlation_id=request_correlation_id(request),
+    )
+    from sqlalchemy import select as sa_select
+
+    from apps.api.app.products.leads.models import LeadSourceIngestionCredential
+
+    cred = await session.scalar(
+        sa_select(LeadSourceIngestionCredential).where(
+            LeadSourceIngestionCredential.lead_source_id == source.id,
+        )
+    )
+    data = source_row(source, ingestion_key=cred.ingestion_key if cred else None)
+    data["ingestion_secret"] = plaintext_secret
+    return {"data": data, "meta": meta(request)}
 
 
 @router.get(
@@ -538,3 +684,65 @@ async def complete_task(
         correlation_id=request_correlation_id(request),
     )
     return {"data": task_row(task), "meta": meta(request)}
+
+
+# ---------------------------------------------------------------------------
+# Machine-to-machine intake (source-key + secret auth, no org in path)
+# ---------------------------------------------------------------------------
+
+
+@machine_intake_router.post(
+    "/intake", status_code=status.HTTP_201_CREATED, dependencies=[Depends(no_store)]
+)
+async def machine_intake(
+    request: Request,
+    command: LeadIntakeBySource,
+    session: Session,
+    x_lilos_source_key: str = Header(..., min_length=1, max_length=128),
+    x_lilos_source_secret: str = Header(..., min_length=1, max_length=256),
+) -> dict[str, object]:
+    """Accept a lead from an external system authenticated by ingestion key + secret.
+
+    The ``X-Lilos-Source-Key`` header carries the globally-unique
+    ``ingestion_key`` (not the human-readable org-scoped ``key``).  The
+    ingestion key resolves the tenant deterministically — no organization_id
+    appears in the URL.
+
+    The secret is verified against the stored PBKDF2 hash.  No Supabase JWT
+    is required.  Rate limiting is applied per ingestion key to prevent
+    brute-force attacks against the expensive hash verification.
+    """
+    # Body size guard
+    body = await request.body()
+    if len(body) > MAX_MACHINE_INTAKE_BODY_BYTES:
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=413, detail="Request body too large")
+
+    # Rate-limit check before expensive PBKDF2
+    check_machine_intake_rate(x_lilos_source_key)
+
+    try:
+        lead, submission, created = await service.intake_by_source(
+            session,
+            source_key=x_lilos_source_key,
+            source_secret=x_lilos_source_secret,
+            command=command,
+            correlation_id=request_correlation_id(request),
+        )
+    except Exception:
+        # Do not clear rate-limit state on failure — the attempt counts
+        raise
+
+    # Successful auth clears the rate-limit window for this key
+    record_machine_intake_success(x_lilos_source_key)
+
+    return {
+        "data": {
+            "lead_id": str(lead.id),
+            "submission_id": str(submission.id),
+            "created": created,
+            "status": lead.status,
+        },
+        "meta": meta(request),
+    }

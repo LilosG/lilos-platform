@@ -108,6 +108,50 @@ class LeadNoteCreate(BaseModel):
     body: str = Field(min_length=1, max_length=5000)
 
 
+class LeadSourceCreate(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    key: str = Field(min_length=1, max_length=128)
+    source_type: str = Field(min_length=1, max_length=32)
+    name: str = Field(min_length=1, max_length=120)
+    location_id: UUID | None = None
+    integration_connection_id: UUID | None = None
+    status: Literal["draft", "verified", "active", "paused", "archived"] = "draft"
+    consent_capabilities: list[str] = []
+    verification_reference: str | None = Field(default=None, max_length=500)
+    raw_payload_retention_policy: str = Field(default="leads.raw_payload.default", max_length=128)
+
+
+class LeadSourceUpdate(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    name: str | None = Field(default=None, max_length=120)
+    location_id: UUID | None = None
+    integration_connection_id: UUID | None = None
+    status: Literal["draft", "verified", "active", "paused", "archived"] | None = None
+    consent_capabilities: list[str] | None = None
+    verification_reference: str | None = Field(default=None, max_length=500)
+    raw_payload_retention_policy: str | None = Field(default=None, max_length=128)
+
+
+class LeadIntakeBySource(BaseModel):
+    """Machine-to-machine lead intake authenticated by source key + secret.
+
+    The source key and secret are presented in headers (X-Lilos-Source-Key,
+    X-Lilos-Source-Secret).  The body carries the lead payload.  No
+    organization_id appears in the URL — the source key resolves the tenant.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    external_submission_id: str = Field(min_length=1, max_length=500)
+    location_id: UUID | None = None
+    first_name: str | None = Field(default=None, max_length=100)
+    last_name: str | None = Field(default=None, max_length=100)
+    email: str | None = Field(default=None, max_length=320)
+    phone: str | None = Field(default=None, max_length=32)
+    service_id: UUID | None = None
+    message: str | None = Field(default=None, max_length=10000)
+    received_at: datetime
+
+
 class LeadTaskCreate(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
     title: str = Field(min_length=1, max_length=200)
