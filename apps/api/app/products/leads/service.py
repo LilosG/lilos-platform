@@ -1,13 +1,16 @@
 """Consent-first lead intake, suppression, and durable communication eligibility."""
 
 import hashlib
+import hmac
 import json
 import re
+import secrets
 from datetime import UTC, datetime
 from typing import cast
 from uuid import UUID
 
 from sqlalchemy import Select, func, or_, select, text, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.app.access_control.service import AccessControlService
@@ -18,12 +21,20 @@ from apps.api.app.audit.repository import AuditEventRepository
 from apps.api.app.audit.service import AuditEventService
 from apps.api.app.notifications.models import NotificationTemplate
 from apps.api.app.notifications.service import NotificationService
-from apps.api.app.products.leads.contracts import CommunicationCreate, ConsentRecord, LeadIntake
+from apps.api.app.products.leads.contracts import (
+    CommunicationCreate,
+    ConsentRecord,
+    LeadIntake,
+    LeadIntakeBySource,
+    LeadSourceCreate,
+    LeadSourceUpdate,
+)
 from apps.api.app.products.leads.errors import (
     InvalidLeadQueryError,
     InvalidLeadTransitionError,
     LeadAssigneeNotFoundError,
     LeadNotFoundError,
+    LeadSourceKeyConflictError,
     LeadSourceNotFoundError,
     LeadTaskNotFoundError,
 )
@@ -79,6 +90,32 @@ def submission_hash(command: LeadIntake) -> str:
     return hashlib.sha256(
         json.dumps(document, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
+
+
+_INGESTION_SECRET_BYTES = 32
+
+
+def generate_ingestion_secret() -> tuple[str, str]:
+    """Return (plaintext_secret, hash_for_storage)."""
+    plaintext = secrets.token_urlsafe(_INGESTION_SECRET_BYTES)
+    salt = secrets.token_bytes(16)
+    digest = hashlib.pbkdf2_hmac("sha256", plaintext.encode(), salt, iterations=600_000)
+    stored = f"pbkdf2:sha256:600000:{salt.hex()}:{digest.hex()}"
+    return plaintext, stored
+
+
+def verify_ingestion_secret(*, plaintext: str, stored_hash: str) -> bool:
+    """Constant-time comparison of a plaintext secret against a stored hash."""
+    try:
+        algo, hash_name, iterations_str, salt_hex, digest_hex = stored_hash.split(":")
+    except ValueError:
+        return False
+    if algo != "pbkdf2" or hash_name != "sha256":
+        return False
+    salt = bytes.fromhex(salt_hex)
+    expected = bytes.fromhex(digest_hex)
+    actual = hashlib.pbkdf2_hmac("sha256", plaintext.encode(), salt, iterations=int(iterations_str))
+    return hmac.compare_digest(actual, expected)
 
 
 async def set_tenant(session: AsyncSession, organization_id: UUID) -> None:
@@ -863,6 +900,218 @@ class LeadService:
             }
             for source_id, name, lead_count, converted_count in rows
         ]
+
+    async def create_source(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        command: LeadSourceCreate,
+        *,
+        actor_id: UUID | None,
+        correlation_id: str,
+    ) -> tuple[LeadSource, str | None]:
+        await set_tenant(session, organization_id)
+        existing = await session.scalar(
+            select(LeadSource).where(
+                LeadSource.organization_id == organization_id,
+                LeadSource.key == command.key,
+            )
+        )
+        if existing:
+            raise LeadSourceKeyConflictError
+        plaintext_secret, secret_hash = generate_ingestion_secret()
+        source = LeadSource(
+            organization_id=organization_id,
+            location_id=command.location_id,
+            key=command.key,
+            source_type=command.source_type,
+            name=command.name,
+            integration_connection_id=command.integration_connection_id,
+            status=command.status,
+            consent_capabilities=command.consent_capabilities,
+            verification_reference=command.verification_reference,
+            raw_payload_retention_policy=command.raw_payload_retention_policy,
+            ingestion_secret_hash=secret_hash,
+            version=1,
+        )
+        session.add(source)
+        try:
+            await session.flush()
+        except IntegrityError:
+            raise LeadSourceKeyConflictError from None
+        await self._audit(
+            session,
+            event="leads.source.created",
+            organization_id=organization_id,
+            location_id=source.location_id,
+            actor_id=actor_id,
+            resource_type="lead_source",
+            resource_id=source.id,
+            correlation_id=correlation_id,
+            summary=f"Lead source created: {source.name}.",
+            metadata={
+                "key": source.key,
+                "source_type": source.source_type,
+                "status": source.status,
+            },
+        )
+        return source, plaintext_secret
+
+    async def update_source(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        source_id: UUID,
+        command: LeadSourceUpdate,
+        *,
+        actor_id: UUID | None,
+        correlation_id: str,
+    ) -> LeadSource:
+        await set_tenant(session, organization_id)
+        source = await session.scalar(
+            select(LeadSource)
+            .where(
+                LeadSource.organization_id == organization_id,
+                LeadSource.id == source_id,
+            )
+            .with_for_update()
+        )
+        if not source:
+            raise LeadSourceNotFoundError
+        changed: dict[str, object] = {}
+        for field in (
+            "name",
+            "location_id",
+            "integration_connection_id",
+            "status",
+            "consent_capabilities",
+            "verification_reference",
+            "raw_payload_retention_policy",
+        ):
+            value = getattr(command, field)
+            if value is not None and getattr(source, field) != value:
+                changed[field] = value
+                setattr(source, field, value)
+        if changed:
+            await session.flush()
+            await self._audit(
+                session,
+                event="leads.source.updated",
+                organization_id=organization_id,
+                location_id=source.location_id,
+                actor_id=actor_id,
+                resource_type="lead_source",
+                resource_id=source.id,
+                correlation_id=correlation_id,
+                summary=f"Lead source updated: {source.name}.",
+                metadata=changed,
+            )
+        return source
+
+    async def get_source(
+        self, session: AsyncSession, organization_id: UUID, source_id: UUID
+    ) -> LeadSource:
+        await set_tenant(session, organization_id)
+        source = await session.scalar(
+            select(LeadSource).where(
+                LeadSource.organization_id == organization_id,
+                LeadSource.id == source_id,
+            )
+        )
+        if not source:
+            raise LeadSourceNotFoundError
+        return source
+
+    async def list_sources(self, session: AsyncSession, organization_id: UUID) -> list[LeadSource]:
+        await set_tenant(session, organization_id)
+        return list(
+            await session.scalars(
+                select(LeadSource)
+                .where(LeadSource.organization_id == organization_id)
+                .order_by(LeadSource.created_at.desc())
+            )
+        )
+
+    async def intake_by_source(
+        self,
+        session: AsyncSession,
+        *,
+        source_key: str,
+        source_secret: str,
+        command: LeadIntakeBySource,
+        correlation_id: str,
+    ) -> tuple[Lead, LeadSubmission, bool]:
+        """Machine-to-machine lead intake authenticated by source key + secret.
+
+        Resolves the source by key across all organizations, verifies the
+        secret, then delegates to the standard intake path.  No organization_id
+        appears in the URL — the source key resolves the tenant.
+        """
+        source = await session.scalar(
+            select(LeadSource).where(
+                LeadSource.key == source_key,
+                LeadSource.status == "active",
+            )
+        )
+        if not source or not source.ingestion_secret_hash:
+            raise LeadSourceNotFoundError
+        if not verify_ingestion_secret(
+            plaintext=source_secret, stored_hash=source.ingestion_secret_hash
+        ):
+            raise LeadSourceNotFoundError
+        intake_cmd = LeadIntake(
+            source_id=source.id,
+            external_submission_id=command.external_submission_id,
+            location_id=command.location_id,
+            first_name=command.first_name,
+            last_name=command.last_name,
+            email=command.email,
+            phone=command.phone,
+            service_id=command.service_id,
+            message=command.message,
+            received_at=command.received_at,
+        )
+        return await self.intake(
+            session, source.organization_id, intake_cmd, correlation_id=correlation_id
+        )
+
+    async def rotate_source_secret(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        source_id: UUID,
+        *,
+        actor_id: UUID | None,
+        correlation_id: str,
+    ) -> tuple[LeadSource, str]:
+        """Rotate the ingestion secret for a source. Returns the new plaintext secret."""
+        await set_tenant(session, organization_id)
+        source = await session.scalar(
+            select(LeadSource)
+            .where(
+                LeadSource.organization_id == organization_id,
+                LeadSource.id == source_id,
+            )
+            .with_for_update()
+        )
+        if not source:
+            raise LeadSourceNotFoundError
+        plaintext_secret, secret_hash = generate_ingestion_secret()
+        source.ingestion_secret_hash = secret_hash
+        await session.flush()
+        await self._audit(
+            session,
+            event="leads.source.secret_rotated",
+            organization_id=organization_id,
+            location_id=source.location_id,
+            actor_id=actor_id,
+            resource_type="lead_source",
+            resource_id=source.id,
+            correlation_id=correlation_id,
+            summary=f"Lead source secret rotated: {source.name}.",
+            metadata={"key": source.key},
+        )
+        return source, plaintext_secret
 
     async def resource_history(
         self,
