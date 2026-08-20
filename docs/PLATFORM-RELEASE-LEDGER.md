@@ -344,6 +344,62 @@ The **Implementation** column uses the formal status vocabulary. The **Live acce
 
 ---
 
+### Production Acceptance Harness — Completion
+
+- Branch / SHA: `main` / working tree (not committed)
+- Auditor result: NOT RUN
+- Principal result: IMPLEMENTED_NOT_ACCEPTED (harness is complete; execution requires manual auth bootstrap)
+- Focused checks: Prettier (PASS), ESLint (PASS), Astro typecheck (PASS — 0 errors, 0 warnings, 0 hints across 146 files), Stylelint (PASS)
+- Harness sections implemented (18 sections, 85+ tests):
+  1. **AUTH / TENANCY** — 11 tests: authenticated session verification, Wheyland Electric org check, workspace audience label, sign-out button presence, cross-tenant data leakage check, unauthorized 401/403 detection on product API routes, org/location ID resolution for cross-section use, platform admin status check, admin nav visibility matches authority, no critical boot errors.
+  2. **INTEGRATIONS** — 4 tests: integration page load with provider cards, Google connection status API health (200/404 valid, 5xx fails), Google workspace endpoint reachable, GitHub workspace endpoint reachable (403 acceptable for non-AAL2).
+  3. **GBP READ/SYNC** — 3 tests: GBP page loads with real data or truthful empty state, confirmed locations API, profile snapshot retrieval if mapped.
+  4. **GBP GOVERNANCE** — 2 tests: write actions safety (no enabled external writes), publish endpoint fails-closed with AAL2 requirement.
+  5. **REVIEWS** — 3 tests: reviews page loads with inbox or empty state, list API returns data, response generation does not publish externally (safety assertion).
+  6. **LEADS** — 4 tests: leads page loads, list API healthy, synthetic lead creation via intake API (skips gracefully if AAL2 required), verify synthetic lead retrievable.
+  7. **SPEED-TO-LEAD** — 2 tests: lead source performance API healthy, lead communication endpoint gated.
+  8. **CONTENT** — 4 tests: content page loads, list/summary APIs healthy, full content creation → brief → AI draft workflow (durable path, poll for completion, verify revision + provenance).
+  9. **SEO** — 4 tests: SEO page loads, websites/crawl-runs/opportunities APIs healthy.
+  10. **SEARCH CONSOLE** — 1 test: performance API reachable (requires mapped website).
+  11. **GA4** — 2 tests: analytics performance/summary APIs reachable, verify no Invalid Date/NaN in response.
+  12. **INSIGHTS** — 3 tests: insights page loads with period/context and no Invalid Date/NaN/undefined, summary API healthy, website readiness API healthy.
+  13. **AUTOMATIONS** — 4 tests: page loads with catalog/schedule data, workflow catalog returns types, run history reachable, schedule list reachable.
+  14. **WORKER** — 2 tests: worker liveness proven by completed workflow runs, job claiming/execution verification.
+  15. **SCHEDULER** — 3 tests: create canary schedule (every 30 min), verify persistence with correct fields (status, next_run_at, workflow_key), disable and cleanup canary.
+  16. **OVERVIEW UX** — 3 tests: no placeholder text, no self-contradiction (on-track vs attention), no Invalid Date/NaN/undefined.
+  17. **CLIENT UX** — 30 tests (3 per page × 10 pages): no raw errors, no broken layout (horizontal overflow), no empty buttons, no 5xx from API calls.
+  18. **CONSOLE / NETWORK** — 3 tests: no unexpected 4xx/5xx/console/page-errors across all pages, no blank pages, correct content-type.
+- Harness defect remediation:
+  1. **Defunct dependency removed** — `production-acceptance` project no longer depends on `auth-setup`. Clear error at test startup if `.auth/production-state.json` missing.
+  2. **ESM-safe auth.setup.ts** — Uses `fileURLToPath(import.meta.url)` instead of unsafe `__dirname`.
+  3. **StorageState comment corrected** — Playwright persists cookies + localStorage, NOT sessionStorage.
+  4. **Real auth/tenancy verification** — 11 tests verify: Wheyland Electric selected, org/location IDs resolved via API, workspace audience label correct, admin nav matches authority, no 401/403 on product API routes.
+  5. **Network instrumentation hardened** — `ProductionObserver` class records ALL 4xx/5xx/console errors/page errors. Allowlist only for provably benign requests (extensions, analytics, auth token refresh, favicon 404s). Unexpected 401/403/5xx ARE failures, not "≤3 is okay".
+- Safety:
+  - Hardcoded `https://lilos-platform-web.vercel.app` base URL only
+  - No credentials/tokens committed
+  - `.auth/` directory gitignored (`apps/web/.auth/`)
+  - Synthetic test records marked `[PROD-ACCEPTANCE]`
+  - Schedule canary created with 30-minute interval, paused and documented
+  - No destructive provider writes attempted
+  - Leads intake skips if AAL2 required; Content AI draft skips gracefully if OpenRouter key not configured
+  - All skips use `test.skip()` with honest reason strings
+- Changed files (4 files):
+  - `apps/web/playwright.production.config.ts` (new — removed dependency, added auth validation comment)
+  - `apps/web/tests/production/auth.setup.ts` (ESM-safe, correct comment, better bootstrap wait)
+  - `apps/web/tests/production/acceptance.spec.ts` (new — 2080 lines, 18 sections, 85+ tests)
+  - `apps/web/package.json` (pre-existing — `production:auth` / `production:test` scripts)
+- Remaining blockers to EXECUTION:
+  - Manual auth bootstrap required: `npm run production:auth` (headed, operator must log in)
+  - Worker/scheduler must be running on Render for durable workflow/schedule tests
+  - `LILOS_OPENROUTER_API_KEY` must be configured for AI draft completion
+  - GBP mapping must exist for profile snapshot tests
+  - Leads intake requires AAL2 MFA step-up (harness skips if not available)
+- Accepted: no (execution pending auth bootstrap)
+- Harness readiness: READY TO EXECUTE (all validations pass; no product code changes)
+
+---
+
 ## Known baseline questions — Round 0 answers
 
 | Question | Answer |

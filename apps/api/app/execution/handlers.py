@@ -22,6 +22,7 @@ from apps.api.app.integrations.errors import (
     IntegrationReconnectRequiredError,
 )
 from apps.api.app.integrations.models import IntegrationConnection
+from apps.api.app.integrations.secrets import SecretUnavailableError
 from apps.api.app.products.gbp.adapter import GBPAdapter, GoogleBusinessProfileAdapter
 
 if TYPE_CHECKING:
@@ -219,10 +220,30 @@ async def _handle_gbp_publish_change(
         publication.status = "reconciliation_required"
         publication.safe_error_code = "TOKEN_REFRESH_FAILED"
         return JobOutcome(result="retryable_failure", safe_error="TOKEN_REFRESH_FAILED")
-    except Exception:
+    except SecretUnavailableError as exc:
+        logger.warning(
+            "Secret resolution failed in workflow handler",
+            extra={
+                "event_name": "workflow.secret_resolution_failed",
+                "error_type": type(exc).__name__,
+                "error_detail": str(exc)[:200],
+            },
+        )
         publication.status = "reconciliation_required"
-        publication.safe_error_code = "TOKEN_REFRESH_FAILED"
-        return JobOutcome(result="retryable_failure", safe_error="TOKEN_REFRESH_FAILED")
+        publication.safe_error_code = "SECRET_RESOLUTION_FAILED"
+        return JobOutcome(result="permanent_failure", safe_error="SECRET_RESOLUTION_FAILED")
+    except Exception as exc:
+        logger.warning(
+            "Token resolution failed in workflow handler",
+            extra={
+                "event_name": "workflow.token_resolution_failed",
+                "error_type": type(exc).__name__,
+                "error_detail": str(exc)[:200],
+            },
+        )
+        publication.status = "reconciliation_required"
+        publication.safe_error_code = "TOKEN_RESOLUTION_FAILED"
+        return JobOutcome(result="retryable_failure", safe_error="TOKEN_RESOLUTION_FAILED")
 
     from apps.api.app.products.gbp.models import GBPAccount
     from apps.api.app.products.gbp.resource_names import v1_location_name
@@ -390,9 +411,28 @@ async def _handle_gbp_publish_post(
     except IntegrationReconnectRequiredError:
         publication.status = "reconciliation_required"
         return JobOutcome(result="retryable_failure", safe_error="TOKEN_REFRESH_FAILED")
-    except Exception:
+    except SecretUnavailableError as exc:
+        logger.warning(
+            "Secret resolution failed in workflow handler",
+            extra={
+                "event_name": "workflow.secret_resolution_failed",
+                "error_type": type(exc).__name__,
+                "error_detail": str(exc)[:200],
+            },
+        )
         publication.status = "reconciliation_required"
-        return JobOutcome(result="retryable_failure", safe_error="TOKEN_REFRESH_FAILED")
+        return JobOutcome(result="permanent_failure", safe_error="SECRET_RESOLUTION_FAILED")
+    except Exception as exc:
+        logger.warning(
+            "Token resolution failed in workflow handler",
+            extra={
+                "event_name": "workflow.token_resolution_failed",
+                "error_type": type(exc).__name__,
+                "error_detail": str(exc)[:200],
+            },
+        )
+        publication.status = "reconciliation_required"
+        return JobOutcome(result="retryable_failure", safe_error="TOKEN_RESOLUTION_FAILED")
 
     # Legacy My Business v4 ``accounts.locations.localPosts.create`` requires
     # the account-qualified ``accounts/{accountId}/locations/{locationId}``
@@ -545,7 +585,7 @@ async def _handle_seo_crawl(
             },
         )
         return JobOutcome(
-            result="retryable_failure", safe_error=f"CRAWL_FAILED:{type(exc).__name__}"
+            result="retryable_failure", safe_error="CRAWL_FAILED"
         )
 
     return JobOutcome(result="succeeded", result_reference=f"crawl_run:{crawl_run_id_str}")
@@ -622,7 +662,7 @@ async def _handle_content_draft_revision(
         )
         return JobOutcome(
             result="retryable_failure",
-            safe_error=f"AI_DRAFT_FAILED:{type(exc).__name__}",
+            safe_error="AI_DRAFT_FAILED",
         )
 
     return JobOutcome(
@@ -911,10 +951,30 @@ async def _handle_reviews_publish_response(
         response.status = "reconciliation_required"
         response.safe_error_code = "TOKEN_REFRESH_FAILED"
         return JobOutcome(result="retryable_failure", safe_error="TOKEN_REFRESH_FAILED")
-    except Exception:
+    except SecretUnavailableError as exc:
+        logger.warning(
+            "Secret resolution failed in workflow handler",
+            extra={
+                "event_name": "workflow.secret_resolution_failed",
+                "error_type": type(exc).__name__,
+                "error_detail": str(exc)[:200],
+            },
+        )
         response.status = "reconciliation_required"
-        response.safe_error_code = "TOKEN_REFRESH_FAILED"
-        return JobOutcome(result="retryable_failure", safe_error="TOKEN_REFRESH_FAILED")
+        response.safe_error_code = "SECRET_RESOLUTION_FAILED"
+        return JobOutcome(result="permanent_failure", safe_error="SECRET_RESOLUTION_FAILED")
+    except Exception as exc:
+        logger.warning(
+            "Token resolution failed in workflow handler",
+            extra={
+                "event_name": "workflow.token_resolution_failed",
+                "error_type": type(exc).__name__,
+                "error_detail": str(exc)[:200],
+            },
+        )
+        response.status = "reconciliation_required"
+        response.safe_error_code = "TOKEN_RESOLUTION_FAILED"
+        return JobOutcome(result="retryable_failure", safe_error="TOKEN_RESOLUTION_FAILED")
 
     # Legacy My Business v4 ``accounts.locations.reviews`` requires the
     # account-qualified review resource name, constructed from the same
@@ -1079,10 +1139,38 @@ async def _handle_gbp_upload_media(
 
     try:
         token, _ = await _token_resolver(session, organization_id)
-    except Exception:
+    except IntegrationNotFoundError:
+        media.status = "failed"
+        media.safe_error_code = "INTEGRATION_NOT_FOUND"
+        return JobOutcome(result="permanent_failure", safe_error="GBP_INTEGRATION_NOT_FOUND")
+    except IntegrationReconnectRequiredError:
         media.status = "failed"
         media.safe_error_code = "TOKEN_REFRESH_FAILED"
         return JobOutcome(result="retryable_failure", safe_error="TOKEN_REFRESH_FAILED")
+    except SecretUnavailableError as exc:
+        logger.warning(
+            "Secret resolution failed in workflow handler",
+            extra={
+                "event_name": "workflow.secret_resolution_failed",
+                "error_type": type(exc).__name__,
+                "error_detail": str(exc)[:200],
+            },
+        )
+        media.status = "failed"
+        media.safe_error_code = "SECRET_RESOLUTION_FAILED"
+        return JobOutcome(result="permanent_failure", safe_error="SECRET_RESOLUTION_FAILED")
+    except Exception as exc:
+        logger.warning(
+            "Token resolution failed in workflow handler",
+            extra={
+                "event_name": "workflow.token_resolution_failed",
+                "error_type": type(exc).__name__,
+                "error_detail": str(exc)[:200],
+            },
+        )
+        media.status = "failed"
+        media.safe_error_code = "TOKEN_RESOLUTION_FAILED"
+        return JobOutcome(result="retryable_failure", safe_error="TOKEN_RESOLUTION_FAILED")
 
     adapter = _adapter_factory()
     location_name = v4_location_parent(account.external_account_id, location.external_location_id)
@@ -1393,8 +1481,30 @@ async def _handle_gbp_sync(
 
     try:
         token, _ = await _token_resolver(session, organization_id)
-    except Exception:
+    except IntegrationNotFoundError:
+        return JobOutcome(result="permanent_failure", safe_error="GBP_INTEGRATION_NOT_FOUND")
+    except IntegrationReconnectRequiredError:
         return JobOutcome(result="retryable_failure", safe_error="TOKEN_REFRESH_FAILED")
+    except SecretUnavailableError as exc:
+        logger.warning(
+            "Secret resolution failed in workflow handler",
+            extra={
+                "event_name": "workflow.secret_resolution_failed",
+                "error_type": type(exc).__name__,
+                "error_detail": str(exc)[:200],
+            },
+        )
+        return JobOutcome(result="permanent_failure", safe_error="SECRET_RESOLUTION_FAILED")
+    except Exception as exc:
+        logger.warning(
+            "Token resolution failed in workflow handler",
+            extra={
+                "event_name": "workflow.token_resolution_failed",
+                "error_type": type(exc).__name__,
+                "error_detail": str(exc)[:200],
+            },
+        )
+        return JobOutcome(result="retryable_failure", safe_error="TOKEN_RESOLUTION_FAILED")
 
     discovery_svc = GBPDiscoveryService()
     settings = Settings()
@@ -1505,8 +1615,30 @@ async def _handle_reviews_ingest(
 
     try:
         _, _ = await _token_resolver(session, organization_id)
-    except Exception:
+    except IntegrationNotFoundError:
+        return JobOutcome(result="permanent_failure", safe_error="GBP_INTEGRATION_NOT_FOUND")
+    except IntegrationReconnectRequiredError:
         return JobOutcome(result="retryable_failure", safe_error="TOKEN_REFRESH_FAILED")
+    except SecretUnavailableError as exc:
+        logger.warning(
+            "Secret resolution failed in workflow handler",
+            extra={
+                "event_name": "workflow.secret_resolution_failed",
+                "error_type": type(exc).__name__,
+                "error_detail": str(exc)[:200],
+            },
+        )
+        return JobOutcome(result="permanent_failure", safe_error="SECRET_RESOLUTION_FAILED")
+    except Exception as exc:
+        logger.warning(
+            "Token resolution failed in workflow handler",
+            extra={
+                "event_name": "workflow.token_resolution_failed",
+                "error_type": type(exc).__name__,
+                "error_detail": str(exc)[:200],
+            },
+        )
+        return JobOutcome(result="retryable_failure", safe_error="TOKEN_RESOLUTION_FAILED")
 
     try:
         ingestion_svc = ReviewIngestionService()

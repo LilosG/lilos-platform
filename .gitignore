@@ -7,7 +7,10 @@
 node_modules/
 apps/web/.playwright-output/
 apps/web/.playwright-visual-output/
+apps/web/.playwright-production-output/
 apps/web/playwright-report/
+apps/web/playwright-production-report/
+apps/web/.auth/
 dist/
 .astro/
 coverage/
