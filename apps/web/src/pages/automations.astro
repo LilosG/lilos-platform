@@ -47,7 +47,9 @@ import "../styles/global.css";
 
         <Notice title="Execution scope">
           <div class="ui-field" style="max-width: 28rem">
-            <label class="ui-field__label" for="automation-location-select">Location</label>
+            <label class="ui-field__label" for="automation-location-select"
+              >Location</label
+            >
             <select id="automation-location-select" class="ui-input">
               <option value="">Choose a location</option>
             </select>
@@ -117,10 +119,7 @@ import "../styles/global.css";
         type WorkflowScheduleEntry,
         type WorkflowRunSummary,
       } from "../lib/workflows";
-      import {
-        fetchLocations,
-        type LocationSummary,
-      } from "../lib/workspace";
+      import { fetchLocations, type LocationSummary } from "../lib/workspace";
 
       const regions = {
         notConfigured: document.getElementById("boot-not-configured")!,
@@ -207,7 +206,9 @@ import "../styles/global.css";
       function setActionMessage(message: string, failure = false): void {
         actionStatus.replaceChildren();
         const node = document.createElement("div");
-        node.className = failure ? "ui-alert ui-alert--danger" : "ui-alert ui-alert--success";
+        node.className = failure
+          ? "ui-alert ui-alert--danger"
+          : "ui-alert ui-alert--success";
         node.textContent = message;
         actionStatus.append(node);
       }
@@ -225,10 +226,16 @@ import "../styles/global.css";
         return button;
       }
 
-      async function runNow(workflow: WorkflowTypeEntry, button: HTMLButtonElement): Promise<void> {
+      async function runNow(
+        workflow: WorkflowTypeEntry,
+        button: HTMLButtonElement,
+      ): Promise<void> {
         const locationId = selectedLocationId();
         if (!locationId) {
-          setActionMessage("Choose a location before running this automation.", true);
+          setActionMessage(
+            "Choose a location before running this automation.",
+            true,
+          );
           return;
         }
         button.disabled = true;
@@ -242,7 +249,10 @@ import "../styles/global.css";
           setActionMessage(`${workflow.display_name} queued for execution.`);
           await loadAutomationData();
         } else {
-          setActionMessage(describeFailure(result, workflow.display_name), true);
+          setActionMessage(
+            describeFailure(result, workflow.display_name),
+            true,
+          );
         }
         button.disabled = false;
         button.textContent = "Run now";
@@ -254,7 +264,10 @@ import "../styles/global.css";
       ): Promise<void> {
         const locationId = selectedLocationId();
         if (!locationId) {
-          setActionMessage("Choose a location before creating a schedule.", true);
+          setActionMessage(
+            "Choose a location before creating a schedule.",
+            true,
+          );
           return;
         }
         button.disabled = true;
@@ -322,7 +335,13 @@ import "../styles/global.css";
         if (!RUNNABLE_WORKFLOWS.has(workflow.key)) return "Product-managed";
         const wrapper = document.createElement("div");
         wrapper.className = "ui-inline";
-        wrapper.append(actionButton("Run now", (button) => runNow(workflow, button), "primary"));
+        wrapper.append(
+          actionButton(
+            "Run now",
+            (button) => runNow(workflow, button),
+            "primary",
+          ),
+        );
         const schedule = schedules.find(
           (item) =>
             item.workflow_key === workflow.key &&
@@ -353,20 +372,26 @@ import "../styles/global.css";
           option.selected = value === schedule.cron_expression;
           cadence.append(option);
         }
-        if (!CADENCE_OPTIONS.some(([value]) => value === schedule.cron_expression)) {
+        if (
+          !CADENCE_OPTIONS.some(([value]) => value === schedule.cron_expression)
+        ) {
           const option = document.createElement("option");
           option.value = schedule.cron_expression;
           option.textContent = `Custom · ${schedule.cron_expression}`;
           option.selected = true;
           cadence.prepend(option);
         }
-        cadence.addEventListener("change", () => void changeCadence(schedule, cadence));
+        cadence.addEventListener(
+          "change",
+          () => void changeCadence(schedule, cadence),
+        );
         wrapper.append(cadence);
 
         if (schedule.status !== "cancelled") {
           wrapper.append(
-            actionButton(schedule.status === "active" ? "Pause" : "Resume", (button) =>
-              toggleSchedule(schedule, button),
+            actionButton(
+              schedule.status === "active" ? "Pause" : "Resume",
+              (button) => toggleSchedule(schedule, button),
             ),
           );
         }
@@ -383,12 +408,18 @@ import "../styles/global.css";
         const failed = runs?.filter((run) =>
           ["failed", "dead_lettered", "escalated"].includes(run.status),
         ).length;
-        const active = schedules?.filter((schedule) => schedule.status === "active").length;
+        const active = schedules?.filter(
+          (schedule) => schedule.status === "active",
+        ).length;
         const overdue = schedules?.filter(scheduleIsOverdue).length;
         const running = runs?.filter((run) =>
-          ["queued", "running", "retry_scheduled", "waiting", "waiting_approval"].includes(
-            run.status,
-          ),
+          [
+            "queued",
+            "running",
+            "retry_scheduled",
+            "waiting",
+            "waiting_approval",
+          ].includes(run.status),
         ).length;
         panel.append(
           metricCard(
@@ -454,7 +485,9 @@ import "../styles/global.css";
                 header: "Schedule",
                 render: (workflow: WorkflowTypeEntry) => {
                   const schedule = schedules.find(
-                    (item) => item.workflow_key === workflow.key && item.status !== "cancelled",
+                    (item) =>
+                      item.workflow_key === workflow.key &&
+                      item.status !== "cancelled",
                   );
                   return schedule
                     ? `${scheduleLabel(schedule.cron_expression)} · ${statusLabel(schedule.status)}`
@@ -467,7 +500,9 @@ import "../styles/global.css";
                 key: "lastRun",
                 header: "Last run",
                 render: (workflow: WorkflowTypeEntry) => {
-                  const run = runs.find((item) => item.workflow_key === workflow.key);
+                  const run = runs.find(
+                    (item) => item.workflow_key === workflow.key,
+                  );
                   return run?.created_at
                     ? `${elapsed(run.created_at)} · ${formatTime(run.created_at)}`
                     : "Not run yet";
@@ -477,16 +512,22 @@ import "../styles/global.css";
                 key: "result",
                 header: "Result",
                 render: (workflow: WorkflowTypeEntry) => {
-                  const run = runs.find((item) => item.workflow_key === workflow.key);
+                  const run = runs.find(
+                    (item) => item.workflow_key === workflow.key,
+                  );
                   return run
-                    ? statusBadge(statusTone(run.status), statusLabel(run.status))
+                    ? statusBadge(
+                        statusTone(run.status),
+                        statusLabel(run.status),
+                      )
                     : statusBadge("neutral", "No result");
                 },
               },
               {
                 key: "actions",
                 header: "Actions",
-                render: (workflow: WorkflowTypeEntry) => workflowActions(workflow, schedules),
+                render: (workflow: WorkflowTypeEntry) =>
+                  workflowActions(workflow, schedules),
               },
             ],
             items,
@@ -504,7 +545,8 @@ import "../styles/global.css";
             : end;
         const seconds = Math.max(0, Math.round((end - start) / 1000));
         if (seconds < 60) return `${seconds}s`;
-        if (seconds < 3600) return `${Math.round(seconds / 60)}m ${seconds % 60}s`;
+        if (seconds < 3600)
+          return `${Math.round(seconds / 60)}m ${seconds % 60}s`;
         return `${Math.floor(seconds / 3600)}h ${Math.round((seconds % 3600) / 60)}m`;
       }
 
@@ -527,7 +569,10 @@ import "../styles/global.css";
                 key: "workflow",
                 header: "Automation",
                 render: (run: WorkflowRunSummary) =>
-                  cellMeta(run.workflow_name ?? "Automation", statusLabel(run.trigger_type)),
+                  cellMeta(
+                    run.workflow_name ?? "Automation",
+                    statusLabel(run.trigger_type),
+                  ),
               },
               {
                 key: "status",
@@ -557,7 +602,8 @@ import "../styles/global.css";
                     const maxAttempts = run.job_max_attempts ?? 0;
                     return `${run.failure_code} · attempt ${attempts}/${maxAttempts}`;
                   }
-                  if (run.status === "retry_scheduled") return "Retry scheduled";
+                  if (run.status === "retry_scheduled")
+                    return "Retry scheduled";
                   return "No action required";
                 },
               },
@@ -587,10 +633,13 @@ import "../styles/global.css";
                 header: "Workflow",
                 render: (schedule: WorkflowScheduleEntry) =>
                   cellMeta(
-                    schedule.workflow_name ?? schedule.workflow_key ?? "Automation",
+                    schedule.workflow_name ??
+                      schedule.workflow_key ??
+                      "Automation",
                     schedule.location_id
-                      ? locations.find((location) => location.id === schedule.location_id)?.name ??
-                          "Location scoped"
+                      ? (locations.find(
+                          (location) => location.id === schedule.location_id,
+                        )?.name ?? "Location scoped")
                       : "Organization scoped",
                   ),
               },
@@ -630,7 +679,8 @@ import "../styles/global.css";
               {
                 key: "actions",
                 header: "Actions",
-                render: (schedule: WorkflowScheduleEntry) => scheduleActions(schedule),
+                render: (schedule: WorkflowScheduleEntry) =>
+                  scheduleActions(schedule),
               },
             ],
             items,
@@ -651,7 +701,9 @@ import "../styles/global.css";
           setActionMessage(describeFailure(result, "Locations"), true);
           return;
         }
-        locations = result.data.filter((location) => location.status === "active");
+        locations = result.data.filter(
+          (location) => location.status === "active",
+        );
         for (const location of locations) {
           const option = document.createElement("option");
           option.value = location.id;
@@ -705,7 +757,10 @@ import "../styles/global.css";
         );
       }
 
-      locationSelect.addEventListener("change", () => void loadAutomationData());
+      locationSelect.addEventListener(
+        "change",
+        () => void loadAutomationData(),
+      );
 
       async function loadOrganization(
         organization: import("../lib/workspace").MyOrganization,

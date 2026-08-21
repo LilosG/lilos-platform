@@ -124,7 +124,9 @@ class SEOOrchestrationService:
                     SEOSearchObservation.quality_status == "valid",
                     SEOSearchObservation.query.isnot(None),
                 )
-                .order_by(SEOSearchObservation.date_end.desc(), SEOSearchObservation.impressions.desc())
+                .order_by(
+                    SEOSearchObservation.date_end.desc(), SEOSearchObservation.impressions.desc()
+                )
                 .limit(1500)
             )
         )
@@ -177,7 +179,13 @@ class SEOOrchestrationService:
                 )
                 touched[opportunity.id] = opportunity
 
-            if impressions >= 100 and position is not None and position <= 10 and ctr is not None and ctr < 0.02:
+            if (
+                impressions >= 100
+                and position is not None
+                and position <= 10
+                and ctr is not None
+                and ctr < 0.02
+            ):
                 score, explanation = opportunity_score(
                     search_potential=min(100, 60 + impressions // 100),
                     business_value=75,
