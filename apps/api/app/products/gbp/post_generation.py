@@ -313,9 +313,7 @@ class GBPPostGenerationService:
         return task
 
     @staticmethod
-    def _topic_hint(
-        governed_facts: list[dict[str, object]], profile: dict[str, object]
-    ) -> str:
+    def _topic_hint(governed_facts: list[dict[str, object]], profile: dict[str, object]) -> str:
         preferred_keys = ("primary_services", "services", "service", "service_items")
         for key in preferred_keys:
             for fact in governed_facts:
