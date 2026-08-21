@@ -180,8 +180,8 @@ def validate_blueprint(path: Path = BLUEPRINT) -> tuple[str, ...]:
         for item in production_group.get("envVars", [])
         if isinstance(item, dict)
     }
-    if production_values.get("LILOS_PROVIDER_WRITES_ENABLED") != "false":
-        errors.append("production:provider-writes-enabled")
+    if production_values.get("LILOS_PROVIDER_WRITES_ENABLED") != "true":
+        errors.append("production:provider-writes-disabled")
     return tuple(sorted(errors))
 
 
