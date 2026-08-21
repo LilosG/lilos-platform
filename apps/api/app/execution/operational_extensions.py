@@ -301,9 +301,7 @@ async def _handle_gbp_publish_post_with_media(
             )
             if fresh_url:
                 asset.provider_fetch_url = fresh_url
-                post_body["media"] = [
-                    {"mediaFormat": "PHOTO", "sourceUrl": fresh_url}
-                ]
+                post_body["media"] = [{"mediaFormat": "PHOTO", "sourceUrl": fresh_url}]
 
     publication.status = "dispatched"
     try:
