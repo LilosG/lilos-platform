@@ -57,9 +57,7 @@ async def test_hermes_provider_returns_governed_output(
             {
                 "id": "hermes-response-1",
                 "model": "hermes-agent",
-                "choices": [
-                    {"message": {"content": '```json\n{"draft": "Grounded draft"}\n```'}}
-                ],
+                "choices": [{"message": {"content": '```json\n{"draft": "Grounded draft"}\n```'}}],
                 "usage": {
                     "prompt_tokens": 100,
                     "completion_tokens": 30,
