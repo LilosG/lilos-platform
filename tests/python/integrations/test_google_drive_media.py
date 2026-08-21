@@ -4,6 +4,7 @@ from datetime import timedelta
 from uuid import uuid4
 
 from cryptography.fernet import Fernet
+from pydantic import HttpUrl
 
 from apps.api.app.config import Settings
 from apps.api.app.integrations.google_drive_media import DriveImage, GoogleDriveMediaService
@@ -12,7 +13,7 @@ from apps.api.app.integrations.google_drive_media import DriveImage, GoogleDrive
 def test_drive_proxy_url_round_trips_signed_file_identity() -> None:
     settings = Settings(
         secret_encryption_key=Fernet.generate_key().decode(),
-        github_app_installation_redirect_uri=(
+        github_app_installation_redirect_uri=HttpUrl(
             "https://lilos-api.onrender.com/api/v1/integrations/github/callback"
         ),
     )
