@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from apps.api.app.ai.errors import AIProviderConfigurationError
 from apps.api.app.ai.gateway import AIGateway, AIProvider, DeterministicAIProvider
+from apps.api.app.ai.hermes import HermesAgentProvider
 from apps.api.app.ai.providers import OpenRouterProvider
 from apps.api.app.config import Settings
 
@@ -17,7 +18,8 @@ def resolve_ai_provider(settings: Settings | None = None) -> AIProvider:
     """Return the configured AI provider for the current environment.
 
     - ``deterministic`` → ``DeterministicAIProvider`` (local/test only)
-    - ``openrouter`` → ``OpenRouterProvider`` (requires API key)
+    - ``openrouter`` → ``OpenRouterProvider`` (raw model inference)
+    - ``hermes`` → ``HermesAgentProvider`` (governed agent runtime)
     - In production, ``deterministic`` is rejected (fail-closed).
     """
     if settings is None:
@@ -29,7 +31,7 @@ def resolve_ai_provider(settings: Settings | None = None) -> AIProvider:
         if settings.environment.value == "production":
             raise AIProviderConfigurationError(
                 "Deterministic AI provider is not permitted in production. "
-                "Set LILOS_AI_PROVIDER=openrouter and configure LILOS_OPENROUTER_API_KEY."
+                "Set LILOS_AI_PROVIDER=hermes or openrouter and configure its credentials."
             )
         return DeterministicAIProvider()
 
@@ -48,8 +50,25 @@ def resolve_ai_provider(settings: Settings | None = None) -> AIProvider:
             default_model=settings.ai_default_model,
         )
 
+    if provider_key == "hermes":
+        api_key = settings.ai_hermes_api_key
+        base_url = settings.ai_hermes_base_url
+        if not api_key or not base_url:
+            raise AIProviderConfigurationError(
+                "Hermes runtime URL and API key are required when "
+                "LILOS_AI_PROVIDER=hermes. Configure LILOS_HERMES_BASE_URL "
+                "and LILOS_HERMES_API_KEY."
+            )
+        return HermesAgentProvider(
+            api_key=api_key,
+            base_url=base_url,
+            timeout_seconds=settings.ai_hermes_timeout_seconds,
+            max_output_tokens=settings.ai_max_output_tokens,
+            model=settings.ai_hermes_model,
+        )
+
     raise AIProviderConfigurationError(
-        f"Unknown AI provider '{provider_key}'. Supported values: deterministic, openrouter."
+        f"Unknown AI provider '{provider_key}'. Supported values: deterministic, openrouter, hermes."
     )
 
 
