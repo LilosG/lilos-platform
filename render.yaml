@@ -21,7 +21,7 @@ envVarGroups:
       - key: LILOS_GITHUB_APP_SLUG
         value: lilos-growth-operations
       - key: LILOS_AI_PROVIDER
-        value: openrouter
+        value: hermes
       - key: UV_CACHE_DIR
         value: /tmp/uv-cache
       - key: LILOS_SUPABASE_AUTH_AUDIENCE
@@ -30,6 +30,38 @@ envVarGroups:
         value: ES256,RS256
 
 services:
+  - name: lilos-hermes
+    type: pserv
+    runtime: image
+    region: oregon
+    plan: standard
+    image:
+      url: docker.io/nousresearch/hermes-agent:v2026.7.7.2
+    dockerCommand: gateway run
+    disk:
+      name: hermes-data
+      mountPath: /opt/data
+      sizeGB: 5
+    envVars:
+      - key: API_SERVER_ENABLED
+        value: "true"
+      - key: API_SERVER_HOST
+        value: 0.0.0.0
+      - key: API_SERVER_PORT
+        value: "8642"
+      - key: API_SERVER_KEY
+        generateValue: true
+      - key: API_SERVER_MODEL_NAME
+        value: hermes-agent
+      - key: HERMES_INFERENCE_MODEL
+        value: deepseek/deepseek-v4-flash-0731
+      - key: HERMES_MAX_ITERATIONS
+        value: "60"
+      - key: HERMES_YOLO_MODE
+        value: "0"
+      - key: OPENROUTER_API_KEY
+        sync: false
+
   - name: lilos-api
     type: web
     runtime: docker
@@ -83,6 +115,16 @@ services:
         sync: false
       - key: LILOS_OPENROUTER_API_KEY
         sync: false
+      - key: LILOS_HERMES_BASE_URL
+        fromService:
+          name: lilos-hermes
+          type: pserv
+          property: hostport
+      - key: LILOS_HERMES_API_KEY
+        fromService:
+          name: lilos-hermes
+          type: pserv
+          envVarKey: API_SERVER_KEY
 
   - name: lilos-worker
     type: worker
@@ -131,6 +173,16 @@ services:
         sync: false
       - key: LILOS_OPENROUTER_API_KEY
         sync: false
+      - key: LILOS_HERMES_BASE_URL
+        fromService:
+          name: lilos-hermes
+          type: pserv
+          property: hostport
+      - key: LILOS_HERMES_API_KEY
+        fromService:
+          name: lilos-hermes
+          type: pserv
+          envVarKey: API_SERVER_KEY
 
   - name: lilos-scheduler
     type: worker
