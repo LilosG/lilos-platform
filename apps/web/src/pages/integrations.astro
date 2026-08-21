@@ -58,7 +58,7 @@ import "../styles/global.css";
             eyebrow="Manage"
             title="Integrations"
             titleId="integrations-title"
-            description="Connect external providers here. Product pages consume confirmed connections and mappings."
+            description="Connect supported external providers here. Product pages consume confirmed connections and mappings."
           />
           <CardGrid id="integration-cards" />
         </Region>
@@ -153,8 +153,6 @@ import "../styles/global.css";
         google:
           "Manage Google Business Profile, Search Console, and Analytics.",
         github: "Manage GitHub repository connections for content publishing.",
-        email: "Transactional email delivery via Resend.",
-        sms: "SMS messaging via provider integration.",
       };
 
       function showDirectory(): void {
@@ -228,28 +226,6 @@ import "../styles/global.css";
             "Content publishing via GitHub repositories",
             ghStatus,
             () => void openGitHub(githubResult),
-          ),
-        );
-
-        // Email card
-        cards.append(
-          makeDirectoryCard(
-            "email",
-            "Email",
-            "Transactional email via Resend",
-            "not_configured",
-            () => void renderEmailWorkspace(providerContent),
-          ),
-        );
-
-        // SMS card
-        cards.append(
-          makeDirectoryCard(
-            "sms",
-            "SMS",
-            "SMS messaging via provider integration",
-            "not_configured",
-            () => void renderSmsWorkspace(providerContent),
           ),
         );
       }
@@ -884,40 +860,6 @@ import "../styles/global.css";
             errorAlert(describeFailure(result, "GitHub disconnect")),
           );
         }
-      }
-
-      // -- Email -- truthfully not configured --------------------------------
-
-      function renderEmailWorkspace(content: HTMLElement): void {
-        content.replaceChildren();
-        const card = makeCard("Email Configuration");
-        content.append(card);
-        const body = card.querySelector(".ui-card__body") as HTMLElement;
-        body.append(statusBadge("missing", "Not configured"));
-        body.append(
-          Object.assign(document.createElement("p"), {
-            className: "ui-text-secondary",
-            textContent:
-              "Email delivery is configured through the Resend provider. Contact LILOs to enable transactional email.",
-          }),
-        );
-      }
-
-      // -- SMS -- truthfully not configured ----------------------------------
-
-      function renderSmsWorkspace(content: HTMLElement): void {
-        content.replaceChildren();
-        const card = makeCard("SMS Configuration");
-        content.append(card);
-        const body = card.querySelector(".ui-card__body") as HTMLElement;
-        body.append(statusBadge("missing", "Not configured"));
-        body.append(
-          Object.assign(document.createElement("p"), {
-            className: "ui-text-secondary",
-            textContent:
-              "SMS messaging is not currently configured. SMS integration will be available in a future platform release.",
-          }),
-        );
       }
 
       // -- Helpers ------------------------------------------------------------

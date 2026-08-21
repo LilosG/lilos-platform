@@ -267,7 +267,7 @@ def _build_prompt(task_key: str, input_document: dict[str, Any]) -> str:
             "Return ONLY a JSON object with the key 'draft'."
         )
         return "\n".join(parts)
-    if task_key == "reviews.draft_response":
+    if task_key == "reviews.response_draft":
         rating_text = f"Rating: {rating}/5" if rating is not None else "Rating: not provided"
         facts_section = _format_governed_facts(governed_facts) if governed_facts else ""
         parts = [

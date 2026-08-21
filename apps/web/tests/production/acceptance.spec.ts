@@ -1294,11 +1294,16 @@ test.describe("7. Speed-to-Lead", () => {
   let stlLeadId = "";
   let stlSourceId = "";
   let stlIngestionKey = "";
+  let stlIngestionSecret = "";
 
   test("create dedicated Speed-to-Lead canary source", async ({ page }) => {
     const sourceKey = `prod-acceptance-stl-${Date.now()}`;
     const createR = await apiCall<{
-      data?: { id: string; ingestion_key?: string };
+      data?: {
+        id: string;
+        ingestion_key?: string;
+        ingestion_secret?: string;
+      };
     }>(page, "POST", `/api/v1/organizations/${orgId()}/leads/sources`, {
       key: sourceKey,
       source_type: "web_form",
@@ -1326,14 +1331,18 @@ test.describe("7. Speed-to-Lead", () => {
 
     stlSourceId = createR.data?.data?.id ?? "";
     stlIngestionKey = createR.data?.data?.ingestion_key ?? "";
+    stlIngestionSecret = createR.data?.data?.ingestion_secret ?? "";
     console.log(`  STL source: ${stlSourceId}`);
-    console.log(`  Ingestion key: ${stlIngestionKey}`);
+    console.log(`  Ingestion key received: ${Boolean(stlIngestionKey)}`);
+    console.log(
+      `  One-time ingestion secret received: ${Boolean(stlIngestionSecret)}`,
+    );
 
-    if (!stlIngestionKey) {
+    if (!stlIngestionKey || !stlIngestionSecret) {
       recordVerdict(
         "SPEED-TO-LEAD",
         "BLOCKED",
-        "Ingestion key not returned — machine ingestion unavailable",
+        "Machine ingestion credentials were not returned on source creation",
       );
       return;
     }
@@ -1349,53 +1358,57 @@ test.describe("7. Speed-to-Lead", () => {
       return;
     }
 
-    // Machine ingestion uses header-based auth, not Bearer token.
-    // We call the API directly with the ingestion key + secret headers.
-    // The secret is only available at source creation time from the API response.
-    // Since we can't capture it from the create response (it may not be returned),
-    // we use the management API intake path instead.
+    // Exercise the actual machine-auth endpoint. page.request bypasses
+    // browser CORS but does not add a Supabase Authorization header.
     const marker = syntheticMarker("speed-to-lead-e2e");
     const idempotencyKey = `prod-acceptance-stl-${Date.now()}`;
+    const stlEmail = `stl-acceptance-${Date.now()}@lilos-test.invalid`;
 
-    const intakeR = await apiCall<{
-      data?: {
-        lead_id: string;
-        submission_id: string;
-        created: boolean;
-        status: string;
-      };
-    }>(page, "POST", `/api/v1/organizations/${orgId()}/leads/intake`, {
-      source_id: stlSourceId,
+    const machinePayload = {
       external_submission_id: idempotencyKey,
       first_name: "SpeedToLead",
       last_name: "Acceptance",
-      email: `stl-acceptance-${Date.now()}@lilos-test.invalid`,
-      phone: "+1-555-0200",
+      email: stlEmail,
       message: marker,
       received_at: new Date().toISOString(),
       location_id: locationId() || null,
-    });
+    };
 
-    if (intakeR.status === 403) {
-      recordVerdict(
-        "SPEED-TO-LEAD",
-        "BLOCKED",
-        "AAL2 required for lead intake",
-      );
-      return;
-    }
-    if (!intakeR.ok) {
+    const intakeResponse = await page.request.post(
+      `${PRODUCTION_API_BASE}/api/v1/leads/intake`,
+      {
+        headers: {
+          "Content-Type": "application/json",
+          "X-Lilos-Source-Key": stlIngestionKey,
+          "X-Lilos-Source-Secret": stlIngestionSecret,
+        },
+        data: machinePayload,
+      },
+    );
+
+    const intakeStatus = intakeResponse.status();
+    const intakeBody = (await intakeResponse.json().catch(() => ({}))) as {
+      data?: {
+        lead_id?: string;
+        submission_id?: string;
+        created?: boolean;
+        status?: string;
+      };
+    };
+
+    if (intakeStatus !== 201) {
       recordVerdict(
         "SPEED-TO-LEAD",
         "FAIL",
-        `Lead intake failed: HTTP ${intakeR.status}`,
+        `Machine lead intake failed: HTTP ${intakeStatus}`,
       );
       return;
     }
 
-    stlLeadId = intakeR.data?.data?.lead_id ?? "";
+    expect(intakeBody.data?.created).toBe(true);
+    stlLeadId = intakeBody.data?.lead_id ?? "";
     console.log(
-      `  STL lead: ${stlLeadId} (created=${intakeR.data?.data?.created})`,
+      `  STL machine lead: ${stlLeadId} (created=${intakeBody.data?.created})`,
     );
     expect(stlLeadId).toBeTruthy();
 
@@ -1413,30 +1426,48 @@ test.describe("7. Speed-to-Lead", () => {
       );
     }
 
-    // Verify idempotency — duplicate submission should be suppressed
-    const dupR = await apiCall<{
-      data?: { lead_id: string; created: boolean };
-    }>(page, "POST", `/api/v1/organizations/${orgId()}/leads/intake`, {
-      source_id: stlSourceId,
-      external_submission_id: idempotencyKey,
-      first_name: "Duplicate",
-      last_name: "ShouldBeSuppressed",
-      email: "different@test.invalid",
-      phone: "+1-555-0300",
-      message: "should be suppressed",
-      received_at: new Date().toISOString(),
-    });
+    // Verify machine-endpoint idempotency.
+    const duplicateResponse = await page.request.post(
+      `${PRODUCTION_API_BASE}/api/v1/leads/intake`,
+      {
+        headers: {
+          "Content-Type": "application/json",
+          "X-Lilos-Source-Key": stlIngestionKey,
+          "X-Lilos-Source-Secret": stlIngestionSecret,
+        },
+        data: {
+          ...machinePayload,
+          first_name: "Duplicate",
+          last_name: "ShouldBeSuppressed",
+        },
+      },
+    );
 
-    if (dupR.ok) {
-      const dupData = dupR.data as {
-        data?: { created?: boolean; lead_id?: string };
-      };
-      if (dupData.data?.created === false) {
-        console.log("  Idempotency: duplicate submission suppressed correctly");
-      } else {
-        console.log("  ⚠️ Idempotency: duplicate may not have been suppressed");
-      }
-    }
+    expect(duplicateResponse.status()).toBe(201);
+    const duplicateBody = (await duplicateResponse.json()) as {
+      data?: { lead_id?: string; created?: boolean };
+    };
+    expect(duplicateBody.data?.created).toBe(false);
+    expect(duplicateBody.data?.lead_id).toBe(stlLeadId);
+    console.log("  Machine intake idempotency: duplicate suppressed");
+
+    // Wrong machine secret must fail without revealing whether the key exists.
+    const invalidSecretResponse = await page.request.post(
+      `${PRODUCTION_API_BASE}/api/v1/leads/intake`,
+      {
+        headers: {
+          "Content-Type": "application/json",
+          "X-Lilos-Source-Key": stlIngestionKey,
+          "X-Lilos-Source-Secret": `${stlIngestionSecret}-invalid`,
+        },
+        data: {
+          ...machinePayload,
+          external_submission_id: `${idempotencyKey}-invalid-secret`,
+        },
+      },
+    );
+    expect(invalidSecretResponse.status()).toBe(404);
+    console.log("  Machine auth: invalid secret rejected without enumeration");
 
     // Check for Speed-to-Lead workflow
     await page.waitForTimeout(3000);
@@ -1495,11 +1526,26 @@ test.describe("7. Speed-to-Lead", () => {
           const comms = commsR.data?.data ?? [];
           console.log(`  Communications: ${comms.length}`);
 
-          if (finalStatus === "completed") {
+          const providerConfirmed = comms.some(
+            (communication) =>
+              communication.status === "sent" ||
+              communication.status === "delivered",
+          );
+
+          if (finalStatus === "completed" && providerConfirmed) {
             recordVerdict(
               "SPEED-TO-LEAD",
               "PASS",
-              `Lead→workflow→worker completed; ${comms.length} communication record(s); idempotency verified`,
+              `Machine intake→workflow→worker→provider delivery confirmed; ${comms.length} communication record(s)`,
+            );
+          } else if (finalStatus === "completed") {
+            recordVerdict(
+              "SPEED-TO-LEAD",
+              "BLOCKED",
+              `Workflow completed but no provider-confirmed delivery exists; communication states=${
+                comms.map((communication) => communication.status).join(",") ||
+                "none"
+              }`,
             );
           } else {
             recordVerdict(
@@ -1511,15 +1557,15 @@ test.describe("7. Speed-to-Lead", () => {
         } else {
           recordVerdict(
             "SPEED-TO-LEAD",
-            "PASS",
-            `Lead ${stlLeadId} created, idempotency verified, workflow pending`,
+            "BLOCKED",
+            `Machine lead ${stlLeadId} persisted but the speed-to-lead workflow did not reach a terminal state`,
           );
         }
       } else {
         recordVerdict(
           "SPEED-TO-LEAD",
-          "PASS",
-          `Lead ${stlLeadId} created, idempotency verified (no auto-workflow triggered)`,
+          "BLOCKED",
+          `Machine lead ${stlLeadId} persisted, but no automatic speed-to-lead workflow was triggered`,
         );
       }
     }

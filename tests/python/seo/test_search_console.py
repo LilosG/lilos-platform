@@ -296,6 +296,10 @@ async def test_search_console_discover_recommend_map_and_sync(
             ),
         )
         website = await make_website(session, org.id, "https://wheylandelectric.com/")
+        website.status = "pending_verification"
+        website.ownership_status = "unverified"
+        website.verified_at = None
+        await session.flush()
 
         fake = FakeSearchConsoleAdapter(
             properties=[
@@ -342,6 +346,9 @@ async def test_search_console_discover_recommend_map_and_sync(
         )
         assert mapped.mapping_status == "mapped"
         assert mapped.freshness_status == "never_synced"
+        assert website.status == "active"
+        assert website.ownership_status == "verified"
+        assert website.verified_at is not None
 
         # Re-mapping the same property is idempotent (no duplicate row).
         again = await service.map_property(
