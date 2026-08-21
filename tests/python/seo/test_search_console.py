@@ -599,7 +599,7 @@ async def test_search_console_sync_sends_exact_inclusive_provider_dates(
         )
 
         # Current site-summary windows must each span exactly 7/28/90 inclusive dates.
-        summary_calls = [c for c in fake.query_calls if c[3] == ()]
+        summary_calls = [c for c in fake.query_calls if c[0] != "list" and c[3] == ()]
         assert len(summary_calls) == 6  # 3 current + 3 prior
         spans = sorted(_inclusive_span(s, e) for _, s, e, _ in summary_calls)
         assert spans == [7, 7, 28, 28, 90, 90]
@@ -710,7 +710,20 @@ async def test_search_console_multi_property_authority_resolves_single_source(
         website = await make_website(session, org.id, "https://wheylandelectric.com/")
 
         service = SearchConsoleService(
-            adapter=FakeSearchConsoleAdapter(properties=[]),
+            adapter=FakeSearchConsoleAdapter(
+                properties=[
+                    DiscoveredSearchProperty(
+                        "sc-domain:wheylandelectric.com",
+                        "domain",
+                        "owner",
+                    ),
+                    DiscoveredSearchProperty(
+                        "https://wheylandelectric.com/",
+                        "url_prefix",
+                        "owner",
+                    ),
+                ]
+            ),
         )
         # Map the first property, then a second. The first must be replaced.
         first = await service.map_property(
@@ -770,7 +783,17 @@ async def test_search_console_missing_values_not_converted_to_zero(
             http_handler=token_handler("https://www.googleapis.com/auth/webmasters.readonly"),
         )
         website = await make_website(session, org.id, "https://wheylandelectric.com/")
-        service = SearchConsoleService(adapter=FakeSearchConsoleAdapter(properties=[]))
+        service = SearchConsoleService(
+            adapter=FakeSearchConsoleAdapter(
+                properties=[
+                    DiscoveredSearchProperty(
+                        "sc-domain:wheylandelectric.com",
+                        "domain",
+                        "owner",
+                    )
+                ]
+            )
+        )
         mapped = await service.map_property(
             session,
             settings,
