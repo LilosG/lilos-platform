@@ -1,17 +1,14 @@
 """Cross-source SEO analysis and opportunity orchestration.
 
-This service converts persisted crawl and Search Console evidence plus fresh
-PageSpeed data into durable SEO opportunities, approval-ready recommendations,
-and Content opportunities. It is intentionally deterministic at the evidence
-layer so operators can see exactly why an opportunity exists.
+Converts persisted crawl/Search Console evidence plus fresh PageSpeed data into
+SEO opportunities, approval-ready recommendations, and Content opportunities.
+The evidence layer is deterministic so every recommendation is traceable.
 """
 
 from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass, field
-from decimal import Decimal
-from typing import Any
 from uuid import UUID
 
 from sqlalchemy import or_, select
@@ -62,11 +59,10 @@ class SEOOrchestrationService:
                 "status": "no_active_website",
                 "seo_opportunities": 0,
                 "content_opportunities": 0,
-                "recommendations": 0,
+                "recommendations_created": 0,
             }
 
         touched: dict[UUID, SEOOpportunity] = {}
-
         pages = list(
             await session.scalars(
                 select(SEOPage)
@@ -78,6 +74,8 @@ class SEOOrchestrationService:
                 .limit(500)
             )
         )
+        page_lookup = {page.id: page for page in pages}
+
         for page in pages:
             for raw_issue in page.technical_issues or []:
                 issue = str(raw_issue).strip()
@@ -123,20 +121,27 @@ class SEOOrchestrationService:
                 .where(
                     SEOSearchObservation.organization_id == organization_id,
                     SEOSearchProperty.website_id == website.id,
-                    SEOSearchObservation.quality_status.in_(("complete", "partial")),
+                    SEOSearchObservation.quality_status == "valid",
+                    SEOSearchObservation.query.isnot(None),
                 )
                 .order_by(SEOSearchObservation.date_end.desc(), SEOSearchObservation.impressions.desc())
                 .limit(1500)
             )
         )
-        page_lookup = {page.id: page for page in pages}
         for observation in observations:
             impressions = int(observation.impressions or 0)
             position = float(observation.position) if observation.position is not None else None
             ctr = float(observation.ctr) if observation.ctr is not None else None
             query = (observation.query or "").strip()
             page = page_lookup.get(observation.page_id) if observation.page_id else None
-            target = page.normalized_url if page else website.canonical_origin
+            page_from_dimensions = observation.dimensions.get("page")
+            target = (
+                page.normalized_url
+                if page
+                else str(page_from_dimensions)
+                if page_from_dimensions
+                else website.canonical_origin
+            )
 
             if impressions >= 50 and position is not None and 4 <= position <= 20:
                 score, explanation = opportunity_score(
@@ -204,7 +209,10 @@ class SEOOrchestrationService:
                 )
                 touched[opportunity.id] = opportunity
 
-            if impressions >= 50 and observation.page_id is None and query:
+            # Top-query observations intentionally have no page_id. Only turn
+            # them into a new-page/content-gap opportunity when current ranking
+            # is weak enough that no existing landing page is performing well.
+            if impressions >= 50 and query and (position is None or position > 20):
                 score, explanation = opportunity_score(
                     search_potential=min(100, 55 + impressions // 100),
                     business_value=80,
@@ -241,56 +249,56 @@ class SEOOrchestrationService:
         except Exception as exc:
             pagespeed_result = {"error": type(exc).__name__, "provider": "google_pagespeed"}
 
-        if pagespeed_result and "strategies" in pagespeed_result:
-            strategies = pagespeed_result.get("strategies")
-            if isinstance(strategies, dict):
-                for strategy, raw_summary in strategies.items():
-                    if not isinstance(raw_summary, dict):
+        if pagespeed_result and isinstance(pagespeed_result.get("strategies"), dict):
+            strategies = pagespeed_result["strategies"]
+            assert isinstance(strategies, dict)
+            for strategy, raw_summary in strategies.items():
+                if not isinstance(raw_summary, dict):
+                    continue
+                scores = raw_summary.get("scores")
+                if not isinstance(scores, dict):
+                    continue
+                thresholds = {
+                    "performance": 90,
+                    "accessibility": 90,
+                    "best-practices": 90,
+                    "seo": 95,
+                }
+                for category, threshold in thresholds.items():
+                    raw_score = scores.get(category)
+                    if not isinstance(raw_score, (int, float)) or raw_score >= threshold:
                         continue
-                    scores = raw_summary.get("scores")
-                    if not isinstance(scores, dict):
-                        continue
-                    thresholds = {
-                        "performance": 90,
-                        "accessibility": 90,
-                        "best-practices": 90,
-                        "seo": 95,
-                    }
-                    for category, threshold in thresholds.items():
-                        raw_score = scores.get(category)
-                        if not isinstance(raw_score, (int, float)) or raw_score >= threshold:
-                            continue
-                        opportunity_type = f"pagespeed_{category.replace('-', '_')}_{strategy}"
-                        score, explanation = opportunity_score(
-                            search_potential=55,
-                            business_value=70,
-                            relevance=85,
-                            confidence=95,
-                            urgency=75 if category == "performance" else 55,
-                            effort=45,
-                        )
-                        opportunity = await self._upsert_opportunity(
-                            session,
-                            organization_id,
-                            website,
-                            location_id=website.location_id,
-                            page_id=None,
-                            opportunity_type=opportunity_type,
-                            target_reference=website.canonical_origin,
-                            evidence={
-                                "source": "google_pagespeed",
-                                "url": website.canonical_origin,
-                                "strategy": strategy,
-                                "category": category,
-                                "score": raw_score,
-                                "threshold": threshold,
-                                "summary": raw_summary,
-                            },
-                            source_versions=["pagespeed.v5"],
-                            priority_score=score,
-                            score_explanation=explanation,
-                        )
-                        touched[opportunity.id] = opportunity
+                    opportunity_type = f"pagespeed_{category.replace('-', '_')}_{strategy}"
+                    score, explanation = opportunity_score(
+                        search_potential=55,
+                        business_value=70,
+                        relevance=85,
+                        confidence=95,
+                        urgency=75 if category == "performance" else 55,
+                        effort=45,
+                    )
+                    opportunity = await self._upsert_opportunity(
+                        session,
+                        organization_id,
+                        website,
+                        location_id=website.location_id,
+                        page_id=None,
+                        opportunity_type=opportunity_type,
+                        target_reference=website.canonical_origin,
+                        evidence={
+                            "source": "google_pagespeed",
+                            "url": website.canonical_origin,
+                            "strategy": str(strategy),
+                            "category": category,
+                            "score": raw_score,
+                            "threshold": threshold,
+                            "summary": raw_summary,
+                        },
+                        source_versions=["pagespeed.v5"],
+                        priority_score=score,
+                        score_explanation=explanation,
+                    )
+                    touched[opportunity.id] = opportunity
 
         content_count = 0
         recommendation_count = 0
@@ -334,9 +342,7 @@ class SEOOrchestrationService:
         priority_score: int,
         score_explanation: dict[str, int],
     ) -> SEOOpportunity:
-        digest = hashlib.sha256(
-            f"{opportunity_type}|{target_reference}".encode("utf-8")
-        ).hexdigest()
+        digest = hashlib.sha256(f"{opportunity_type}|{target_reference}".encode()).hexdigest()
         existing = await session.scalar(
             select(SEOOpportunity).where(
                 SEOOpportunity.organization_id == organization_id,
@@ -390,7 +396,6 @@ class SEOOrchestrationService:
         )
         if existing is not None:
             return False
-
         action, hypothesis, effort = self._recommendation_text(opportunity)
         await self.seo.create_recommendation(
             session,
@@ -416,17 +421,14 @@ class SEOOrchestrationService:
         *,
         correlation_id: str,
     ) -> bool:
-        before, _ = await self.content.list_opportunities(
+        source_reference = f"seo-opportunity:{opportunity.id}"
+        existing, _ = await self.content.list_opportunities(
             session,
             organization_id,
             limit=100,
             offset=0,
         )
-        source_reference = f"seo-opportunity:{opportunity.id}"
-        already_exists = any(
-            item.source_reference == source_reference for item in before
-        )
-        if already_exists:
+        if any(item.source_reference == source_reference for item in existing):
             return False
 
         target = str(opportunity.evidence.get("url") or opportunity.evidence.get("query") or "seo")
@@ -457,7 +459,6 @@ class SEOOrchestrationService:
         opportunity_type = opportunity.opportunity_type
         url = str(evidence.get("url") or "the affected page")
         query = str(evidence.get("query") or "the target query")
-
         if opportunity_type == "gsc_striking_distance":
             return (
                 f"Strengthen {url} for '{query}' using intent-aligned copy, relevant internal links, and on-page entity coverage without keyword stuffing.",
