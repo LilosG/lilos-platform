@@ -1,8 +1,8 @@
 """GitHub App installation and repository discovery routes.
 
 Normal production content publishing uses a GitHub App installation (not a
-PAT). These routes drive the install flow, callback, and repository discovery.
-The PAT fallback remains on the content product routes for advanced use.
+PAT). These routes drive the install flow, callback, repository discovery, and
+idempotent publishing-target reconciliation for single-repository clients.
 """
 
 from typing import Annotated
@@ -27,10 +27,13 @@ from apps.api.app.integrations.errors import (
     IntegrationNotFoundError,
     IntegrationStateInvalidError,
 )
+from apps.api.app.products.content.contracts import TargetCreate
 from apps.api.app.products.content.github_app_service import (
+    DiscoveredRepository,
     GitHubAppService,
     installation_id_from_reference,
 )
+from apps.api.app.products.content.service import ContentService
 from apps.api.app.routes.health import settings_from_request
 from apps.api.app.schemas import ResponseMeta
 
@@ -42,6 +45,7 @@ router = APIRouter(
 callback_router = APIRouter(prefix="/api/v1/integrations/github", tags=["integrations"])
 service = GitHubAppService()
 directory_service = IntegrationDirectoryService()
+content_service = ContentService()
 Session = Annotated[AsyncSession, Depends(get_database_session)]
 GitHubManage = Annotated[
     AuthorizationDecision,
@@ -60,6 +64,43 @@ def _frontend_return_url(settings: Settings, *, installed: bool, reason: str | N
     base = origins[0] if origins else ""
     params = {"installed": "1"} if installed else {"installed": "0", "reason": reason or "error"}
     return f"{base}/integrations?{urlencode(params)}"
+
+
+async def _ensure_default_publishing_target(
+    session: AsyncSession,
+    organization_id: UUID,
+    connection_id: UUID,
+    repositories: list[DiscoveredRepository],
+    *,
+    actor_id: UUID | None,
+    correlation_id: str,
+) -> None:
+    """Create the conventional Astro publishing target when selection is unambiguous.
+
+    A GitHub App installation can expose many repositories. LILOs only auto-
+    reconciles a target when exactly one repository is authorized and the
+    organization has no publishing target yet. Multi-repository installations
+    remain explicit so the platform never guesses a client destination.
+    """
+    existing = await content_service.list_targets(session, organization_id)
+    if existing or len(repositories) != 1:
+        return
+    repository = repositories[0]
+    await content_service.create_target(
+        session,
+        organization_id,
+        TargetCreate(
+            key="primary-site",
+            connection_id=connection_id,
+            target_type="github_astro",
+            repository_id=repository.repository_id,
+            base_branch=repository.default_branch or "main",
+            allowed_path_prefix="src/content/blog",
+            deployment_target_reference=None,
+        ),
+        actor_id=actor_id,
+        correlation_id=correlation_id,
+    )
 
 
 @router.post(
@@ -115,8 +156,7 @@ async def list_repositories(
         }
     try:
         repos = await service.list_installation_repositories(settings, installation_id)
-    except Exception as exc:
-        del exc
+    except Exception:
         return {
             "data": [],
             "meta": ResponseMeta(correlation_id=request_correlation_id(request)).model_dump(),
@@ -196,13 +236,22 @@ async def github_callback(
             status_code=status.HTTP_302_FOUND,
         )
     try:
-        await service.complete_install(
+        connection = await service.complete_install(
             session,
             settings,
             organization_id,
             state=state,
             installation_id=installation_id,
             setup_action=setup_action,
+            correlation_id=correlation_id,
+        )
+        repositories = await service.list_installation_repositories(settings, installation_id)
+        await _ensure_default_publishing_target(
+            session,
+            organization_id,
+            connection.id,
+            repositories,
+            actor_id=None,
             correlation_id=correlation_id,
         )
     except (IntegrationStateInvalidError, IntegrationNotFoundError, IntegrationNotConfiguredError):
@@ -216,9 +265,6 @@ async def github_callback(
     )
 
 
-# -- GitHub provider workspace detail route ---------------------------------
-
-
 @router.get(
     "/workspace",
     dependencies=[Depends(no_store)],
@@ -228,19 +274,20 @@ async def github_workspace(
     request: Request,
     organization_id: UUID,
     session: Session,
-    _principal: Authenticated,
+    principal: Authenticated,
     _authz: GitHubManage,
 ) -> dict[str, object]:
-    """GitHub detail: installation state, accessible repositories."""
+    """GitHub detail: installation state, accessible repositories, target reconciliation."""
     settings = settings_from_request(request)
     ws = await directory_service.github_workspace(session, organization_id)
 
     repositories: list[dict[str, object]] = []
+    discovered: list[DiscoveredRepository] = []
     if ws.connection_id is not None and ws.external_account_reference is not None:
         installation_id = installation_id_from_reference(ws.external_account_reference)
         if installation_id is not None:
             try:
-                repos = await service.list_installation_repositories(settings, installation_id)
+                discovered = await service.list_installation_repositories(settings, installation_id)
                 repositories = [
                     {
                         "repository_id": r.repository_id,
@@ -248,17 +295,37 @@ async def github_workspace(
                         "default_branch": r.default_branch,
                         "private": r.private,
                     }
-                    for r in repos
+                    for r in discovered
                 ]
+                await _ensure_default_publishing_target(
+                    session,
+                    organization_id,
+                    UUID(ws.connection_id),
+                    discovered,
+                    actor_id=principal.platform_user_id,
+                    correlation_id=request_correlation_id(request),
+                )
             except Exception:
                 repositories = []
 
+    targets = await content_service.list_targets(session, organization_id)
     return {
         "data": {
             "connection_status": ws.connection_status,
             "connection_id": ws.connection_id,
             "external_account_reference": ws.external_account_reference,
             "repositories": repositories,
+            "publishing_targets": [
+                {
+                    "id": str(target.id),
+                    "key": target.key,
+                    "repository_id": target.repository_id,
+                    "base_branch": target.base_branch,
+                    "allowed_path_prefix": target.allowed_path_prefix,
+                    "status": target.status,
+                }
+                for target in targets
+            ],
         },
         "meta": ResponseMeta(correlation_id=request_correlation_id(request)).model_dump(),
     }
