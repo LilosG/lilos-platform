@@ -39,6 +39,7 @@ from apps.api.app.routes.internal_user_profiles import router as internal_user_p
 from apps.api.app.routes.leads import machine_intake_router
 from apps.api.app.routes.leads import router as leads_router
 from apps.api.app.routes.platform_administration import router as platform_administration_router
+from apps.api.app.routes.provider_media import router as provider_media_router
 from apps.api.app.routes.reviews import router as reviews_router
 from apps.api.app.routes.seo import router as seo_router
 from apps.api.app.routes.workflows import router as workflows_router
@@ -49,7 +50,7 @@ def create_app(
     database_runtime: DatabaseRuntime | None = None,
     authentication_verifier: TokenVerifier | None = None,
 ) -> FastAPI:
-    """Create the API runtime without product routes or eager database connections."""
+    """Create the API runtime without eager database connections."""
     resolved_settings = settings or get_settings()
     configure_logging(resolved_settings)
     resolved_database = database_runtime or create_database_runtime(resolved_settings)
@@ -100,6 +101,7 @@ def create_app(
     application.include_router(integrations_callback_router)
     application.include_router(github_app_router)
     application.include_router(github_app_callback_router)
+    application.include_router(provider_media_router)
     if resolved_settings.internal_admin_routes_enabled:
         application.include_router(internal_industries_router)
         application.include_router(internal_organizations_router)
