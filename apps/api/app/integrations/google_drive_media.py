@@ -258,7 +258,9 @@ class GoogleDriveMediaService:
                 break
             names.append(str(folder.get("name") or ""))
             grandparents = folder.get("parents") or []
-            parent_id = str(grandparents[0]) if isinstance(grandparents, list) and grandparents else ""
+            parent_id = (
+                str(grandparents[0]) if isinstance(grandparents, list) and grandparents else ""
+            )
         return "/".join(reversed([name for name in names if name]))
 
     @staticmethod
