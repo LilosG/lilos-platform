@@ -31,12 +31,14 @@ class PageSpeedService:
         strategies: dict[str, object] = {}
         async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
             for strategy in ("mobile", "desktop"):
-                params: list[tuple[str, str]] = [
-                    ("url", url),
-                    ("key", api_key),
-                    ("strategy", strategy),
-                ]
-                params.extend(("category", category) for category in PAGESPEED_CATEGORIES)
+                params = httpx.QueryParams(
+                    [
+                        ("url", url),
+                        ("key", api_key),
+                        ("strategy", strategy),
+                        *(("category", category) for category in PAGESPEED_CATEGORIES),
+                    ]
+                )
                 response = await client.get(PAGESPEED_ENDPOINT, params=params)
                 response.raise_for_status()
                 payload = response.json()
@@ -91,10 +93,10 @@ class PageSpeedService:
             "INTERACTION_TO_NEXT_PAINT",
             "FIRST_CONTENTFUL_PAINT_MS",
         ):
-            item = metrics.get(key)
-            if isinstance(item, dict):
+            metric = metrics.get(key)
+            if isinstance(metric, dict):
                 result[key] = {
-                    "category": item.get("category"),
-                    "percentile": item.get("percentile"),
+                    "category": metric.get("category"),
+                    "percentile": metric.get("percentile"),
                 }
         return result
