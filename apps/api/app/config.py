@@ -109,6 +109,22 @@ class Settings(BaseSettings):
 
     # ── AI Gateway ──────────────────────────────────────────────────────
     ai_provider: Annotated[str, Field(min_length=1, max_length=64)] = "deterministic"
+    ai_hermes_base_url: Annotated[
+        str | None,
+        Field(min_length=1, max_length=512, validation_alias="LILOS_HERMES_BASE_URL"),
+    ] = None
+    ai_hermes_api_key: Annotated[
+        str | None,
+        Field(min_length=8, max_length=512, validation_alias="LILOS_HERMES_API_KEY"),
+    ] = None
+    ai_hermes_model: Annotated[
+        str,
+        Field(min_length=1, max_length=128, validation_alias="LILOS_HERMES_MODEL"),
+    ] = "hermes-agent"
+    ai_hermes_timeout_seconds: Annotated[
+        float,
+        Field(gt=0, le=600, validation_alias="LILOS_HERMES_TIMEOUT_SECONDS"),
+    ] = 120.0
     ai_openrouter_api_key: Annotated[
         str | None,
         Field(
