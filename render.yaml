@@ -18,6 +18,8 @@ envVarGroups:
         value: "false"
       - key: LILOS_PROVIDER_WRITES_ENABLED
         value: "true"
+      - key: LILOS_GITHUB_APP_SLUG
+        value: lilos-growth-operations
       - key: LILOS_AI_PROVIDER
         value: openrouter
       - key: UV_CACHE_DIR

@@ -81,6 +81,14 @@ class Settings(BaseSettings):
     # from the installation id and never persisted.
     github_app_id: Annotated[str, Field(min_length=1, max_length=64)] | None = None
     github_app_client_id: Annotated[str, Field(min_length=1, max_length=64)] | None = None
+    github_app_slug: Annotated[
+        str,
+        Field(
+            min_length=1,
+            max_length=100,
+            pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$",
+        ),
+    ] = "lilos-growth-operations"
     github_app_private_key: Annotated[str, Field(min_length=1, max_length=20_000)] | None = None
     github_app_installation_redirect_uri: HttpUrl | None = None
     # ── AI Gateway ──────────────────────────────────────────────────────
