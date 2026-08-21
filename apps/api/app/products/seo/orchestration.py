@@ -467,33 +467,73 @@ class SEOOrchestrationService:
         opportunity_type = opportunity.opportunity_type
         url = str(evidence.get("url") or "the affected page")
         query = str(evidence.get("query") or "the target query")
+
         if opportunity_type == "gsc_striking_distance":
             return (
-                f"Strengthen {url} for '{query}' using intent-aligned copy, relevant internal links, and on-page entity coverage without keyword stuffing.",
-                "Improved relevance and internal authority should increase the probability of moving a page-four-through-twenty query into higher-visibility positions.",
+                (
+                    f"Strengthen {url} for '{query}' using intent-aligned copy, "
+                    "relevant internal links, and on-page entity coverage without "
+                    "keyword stuffing."
+                ),
+                (
+                    "Improved relevance and internal authority should increase the "
+                    "probability of moving a page-four-through-twenty query into "
+                    "higher-visibility positions."
+                ),
                 "medium",
             )
+
         if opportunity_type == "gsc_low_ctr":
             return (
-                f"Rewrite the title and meta description for {url} around the demonstrated search intent for '{query}', preserving accurate claims and page relevance.",
-                "A more compelling and intent-aligned search snippet should improve CTR without requiring a ranking change.",
+                (
+                    f"Rewrite the title and meta description for {url} around the "
+                    f"demonstrated search intent for '{query}', preserving accurate "
+                    "claims and page relevance."
+                ),
+                (
+                    "A more compelling and intent-aligned search snippet should improve "
+                    "CTR without requiring a ranking change."
+                ),
                 "low",
             )
+
         if opportunity_type == "gsc_unmapped_demand":
             return (
-                f"Identify the best existing landing page for '{query}' or create a focused service/location page when no suitable page exists; connect it through relevant internal links.",
-                "Giving demonstrated search demand a clear canonical landing page should improve relevance and conversion path quality.",
+                (
+                    f"Identify the best existing landing page for '{query}' or create "
+                    "a focused service/location page when no suitable page exists; "
+                    "connect it through relevant internal links."
+                ),
+                (
+                    "Giving demonstrated search demand a clear canonical landing page "
+                    "should improve relevance and conversion path quality."
+                ),
                 "high",
             )
+
         if opportunity_type.startswith("pagespeed_"):
             category = opportunity_type.removeprefix("pagespeed_").replace("_", " ")
             return (
-                f"Address the failing {category} PageSpeed/Lighthouse findings for {url}, then rerun mobile and desktop PageSpeed verification before closing the recommendation.",
-                "Improving the measured Lighthouse category should reduce technical friction and strengthen page experience/SEO quality signals.",
+                (
+                    f"Address the failing {category} PageSpeed/Lighthouse findings for "
+                    f"{url}, then rerun mobile and desktop PageSpeed verification "
+                    "before closing the recommendation."
+                ),
+                (
+                    "Improving the measured Lighthouse category should reduce technical "
+                    "friction and strengthen page experience/SEO quality signals."
+                ),
                 "medium",
             )
+
         return (
-            f"Resolve the '{opportunity_type}' crawl finding on {url}, preserve canonical/indexability intent, and verify the fix with a fresh crawl.",
-            "Removing the verified technical issue should improve crawlability, indexability, or page quality without changing unrelated page behavior.",
+            (
+                f"Resolve the '{opportunity_type}' crawl finding on {url}, preserve "
+                "canonical/indexability intent, and verify the fix with a fresh crawl."
+            ),
+            (
+                "Removing the verified technical issue should improve crawlability, "
+                "indexability, or page quality without changing unrelated page behavior."
+            ),
             "low",
         )

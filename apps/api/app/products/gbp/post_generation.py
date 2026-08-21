@@ -110,7 +110,10 @@ class GBPPostGenerationService:
             location_id=location_id,
             content_title=f"{topic} Google Business Profile update",
             audience="local prospective customers",
-            intent="highlight a relevant service or useful business update and drive a qualified website visit",
+            intent=(
+                "highlight a relevant service or useful business update and drive a "
+                "qualified website visit"
+            ),
             content_type="gbp_post",
         )
 
@@ -364,8 +367,8 @@ class GBPPostGenerationService:
         del target_url
         return (
             f"Looking for help with {topic}? {organization_name} can help you understand the next "
-            "steps and the options that fit your project. Learn more about this service and what to "
-            "expect before you schedule."
+            "steps and the options that fit your project. Learn more about this "
+            "service and what to expect before you schedule."
         )[:1200]
 
     @staticmethod
