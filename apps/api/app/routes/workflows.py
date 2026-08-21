@@ -65,16 +65,12 @@ def _parse_dt(value: str) -> dt:
     return parsed
 
 
-# ---------------------------------------------------------------------------
-# Request contracts
-# ---------------------------------------------------------------------------
-
-
 class WorkflowRunStart(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
     location_id: UUID | None = None
     idempotency_key: str = Field(min_length=8, max_length=128)
     input_document: dict[str, Any] = Field(default_factory=dict)
+    execute: bool = False
 
 
 class ScheduleCreateRequest(BaseModel):
@@ -95,11 +91,6 @@ class ScheduleUpdateRequest(BaseModel):
     next_run_at: str | None = Field(default=None, min_length=1)
 
 
-# ---------------------------------------------------------------------------
-# Catalog — workflow type listing
-# ---------------------------------------------------------------------------
-
-
 @router.get("", dependencies=[Depends(no_store)])
 async def list_workflow_types(
     request: Request,
@@ -107,19 +98,11 @@ async def list_workflow_types(
     session: Session,
     _: Annotated[AuthorizationDecision, policy("workflows.read")],
 ) -> dict[str, object]:
-    """Return the known workflow catalog with definition/version state."""
     items = await service.list_workflow_types(session)
     return {
         "data": items,
         "meta": {"correlation_id": request_correlation_id(request), "count": len(items)},
     }
-
-
-# ---------------------------------------------------------------------------
-# Run history (MUST be registered before `/{workflow_key}` routes so
-# ``GET /runs`` and ``GET /runs/{run_id}`` are not captured by the
-# ``/{workflow_key}`` path parameter.)
-# ---------------------------------------------------------------------------
 
 
 @router.get("/runs", dependencies=[Depends(no_store)])
@@ -134,7 +117,6 @@ async def list_workflow_runs(
     limit: int = Query(default=50, ge=1, le=100),  # noqa: B008
     offset: int = Query(default=0, ge=0),  # noqa: B008
 ) -> dict[str, object]:
-    """Return paginated workflow runs for the organization."""
     rows, total = await service.list_runs(
         session,
         organization_id,
@@ -163,16 +145,10 @@ async def get_workflow_run(
     session: Session,
     _: Annotated[AuthorizationDecision, policy("workflows.read")],
 ) -> dict[str, object]:
-    """Return a single workflow run with full job/attempt detail."""
     run = await service.get_run(session, organization_id, run_id)
     if not run:
         raise HTTPException(status_code=404, detail="Workflow run not found")
     return {"data": run, "meta": {"correlation_id": request_correlation_id(request)}}
-
-
-# ---------------------------------------------------------------------------
-# Schedules (MUST be registered before `/{workflow_key}` routes)
-# ---------------------------------------------------------------------------
 
 
 @router.get("/schedules", dependencies=[Depends(no_store)])
@@ -182,7 +158,6 @@ async def list_workflow_schedules(
     session: Session,
     _: Annotated[AuthorizationDecision, policy("schedules.read")],
 ) -> dict[str, object]:
-    """Return all schedules for the organization."""
     rows = await service.list_schedules(session, organization_id)
     return {
         "data": rows,
@@ -203,7 +178,6 @@ async def create_workflow_schedule(
     principal: Authenticated,
     _: Annotated[AuthorizationDecision, policy("schedules.manage")],
 ) -> dict[str, object]:
-    """Create a recurring schedule for a known workflow type."""
     schedule_cmd = ScheduleCreate(
         workflow_key=command.workflow_key,
         key=command.key,
@@ -243,7 +217,6 @@ async def update_workflow_schedule(
     principal: Authenticated,
     _: Annotated[AuthorizationDecision, policy("schedules.manage")],
 ) -> dict[str, object]:
-    """Update schedule status, cron expression, or next run time."""
     update_cmd = ScheduleUpdate(
         status=command.status,
         cron_expression=command.cron_expression,
@@ -274,11 +247,6 @@ async def update_workflow_schedule(
     }
 
 
-# ---------------------------------------------------------------------------
-# Workflow-type detail (after concrete paths to avoid route shadowing)
-# ---------------------------------------------------------------------------
-
-
 @router.get("/{workflow_key}", dependencies=[Depends(no_store)])
 async def get_workflow_type(
     request: Request,
@@ -287,17 +255,11 @@ async def get_workflow_type(
     session: Session,
     _: Annotated[AuthorizationDecision, policy("workflows.read")],
 ) -> dict[str, object]:
-    """Return details for a single workflow type."""
     items = await service.list_workflow_types(session)
     item = next((i for i in items if i["key"] == workflow_key), None)
     if not item:
         raise HTTPException(status_code=404, detail="Workflow type not found")
     return {"data": item, "meta": {"correlation_id": request_correlation_id(request)}}
-
-
-# ---------------------------------------------------------------------------
-# Run start (existing) — must be after concrete `/runs` paths
-# ---------------------------------------------------------------------------
 
 
 @router.post(
@@ -312,7 +274,13 @@ async def start_workflow_run(
     principal: Authenticated,
     _: Annotated[AuthorizationDecision, policy("workflows.execute")],
 ) -> dict[str, object]:
-    """Start (or idempotently resolve) a workflow run."""
+    """Reserve a workflow run, or execute it immediately when explicitly requested.
+
+    Product mutation flows continue to reserve a run with ``execute=false`` so
+    their product service can attach the authoritative resource before the
+    worker sees it. Operator-facing automation controls use ``execute=true``
+    for standalone workflows such as GBP sync and reviews ingestion.
+    """
     run = await service.start_named(
         session,
         organization_id,
@@ -322,7 +290,7 @@ async def start_workflow_run(
         input_document=command.input_document,
         correlation_id=request_correlation_id(request),
         actor_id=principal.platform_user_id,
-        enqueue_job=False,
+        enqueue_job=command.execute,
     )
     return {"data": run_row(run), "meta": {"correlation_id": request_correlation_id(request)}}
 
@@ -339,7 +307,6 @@ async def list_workflow_key_runs(
     limit: int = Query(default=50, ge=1, le=100),  # noqa: B008
     offset: int = Query(default=0, ge=0),  # noqa: B008
 ) -> dict[str, object]:
-    """Return paginated workflow runs for a specific workflow type."""
     rows, total = await service.list_runs(
         session,
         organization_id,
