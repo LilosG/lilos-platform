@@ -125,7 +125,9 @@ async def test_github_app_install_callback_persists_installation_id(
         url = await service.begin_install(
             session, settings, org.id, actor_id=None, correlation_id="c1"
         )
-        assert "github.com/login/oauth/authorize" in url
+        assert url.startswith(
+            "https://github.com/apps/lilos-growth-operations/installations/new?state="
+        )
         state = state_from_url(url)
 
         connection = await service.complete_install(

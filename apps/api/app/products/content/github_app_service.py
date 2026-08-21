@@ -131,18 +131,17 @@ class GitHubAppService:
         pending one if needed) and a one-time OAuth intent bound to it, so the
         callback can recover the LILOs organization from ``state`` alone.
         """
-        app_id, client_id, _, redirect_uri = self.require_configured(settings)
+        _, _, _, redirect_uri = self.require_configured(settings)
         provider = await self.get_provider(session)
         connection = await self._get_or_create_pending_connection(
             session, organization_id, provider
         )
         _, state = await self.intents.create(session, organization_id, connection.id, redirect_uri)
-        params = {
-            "client_id": client_id,
-            "state": state,
-            "redirect_uri": redirect_uri,
-        }
-        url = f"{GITHUB_AUTHORIZE_ENDPOINT}?{urlencode(params)}"
+        params = {"state": state}
+        url = (
+            f"https://github.com/apps/{settings.github_app_slug}/installations/new"
+            f"?{urlencode(params)}"
+        )
         await self._audit(
             session,
             event="content.github_app.install_started",
@@ -154,7 +153,6 @@ class GitHubAppService:
             summary="GitHub App installation started.",
             metadata={},
         )
-        del app_id
         return url
 
     async def recover_organization_id(self, session: AsyncSession, state: str) -> UUID:
