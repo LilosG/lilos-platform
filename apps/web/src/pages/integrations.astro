@@ -105,13 +105,10 @@ import "../styles/global.css";
       } from "../lib/gbp-connection";
       import { beginGitHubInstall, disconnectGitHub } from "../lib/github-app";
       import {
-        fetchGitHubConnections,
-        isGitHubAppConnection,
-      } from "../lib/content";
-      import {
         fetchGoogleWorkspace,
         fetchUnmappedResources,
         fetchGitHubWorkspace,
+        type GitHubWorkspace,
         type GoogleWorkspace,
       } from "../lib/integrations";
       import {
@@ -129,7 +126,7 @@ import "../styles/global.css";
         createSelectControl,
         type BootRegions,
       } from "../lib/ui";
-      import { statusLabel, statusTone } from "../lib/status-language";
+      import { statusLabel } from "../lib/status-language";
       import { apiRequest } from "../lib/api-client";
       import { fetchLocations, type LocationSummary } from "../lib/workspace";
 
@@ -155,6 +152,15 @@ import "../styles/global.css";
         github: "Manage GitHub repository connections for content publishing.",
       };
 
+      function isGitHubConnected(
+        workspace: GitHubWorkspace | null | undefined,
+      ): boolean {
+        return (
+          workspace?.connection_status === "connected" ||
+          workspace?.connection_status === "active"
+        );
+      }
+
       function showDirectory(): void {
         directory.hidden = false;
         providerView.hidden = true;
@@ -178,7 +184,10 @@ import "../styles/global.css";
 
       document
         .getElementById("back-to-integrations")!
-        .addEventListener("click", showDirectory);
+        .addEventListener("click", () => {
+          showDirectory();
+          void renderDirectory();
+        });
 
       // -- Directory: assemble from individual provider status endpoints ---
 
@@ -215,8 +224,7 @@ import "../styles/global.css";
 
         // GitHub card
         const ghStatus: "connected" | "not_connected" =
-          githubResult.kind === "ok" &&
-          githubResult.data?.connection_status === "active"
+          githubResult.kind === "ok" && isGitHubConnected(githubResult.data)
             ? "connected"
             : "not_connected";
         cards.append(
@@ -742,20 +750,16 @@ import "../styles/global.css";
           ".ui-card__body",
         ) as HTMLElement;
 
-        const [connectionsResult] = await Promise.all([
-          fetchGitHubConnections(organizationId),
-        ]);
+        if (wsResult.kind !== "ok") {
+          connBody.append(
+            errorAlert(describeFailure(wsResult, "GitHub connection")),
+          );
+          return;
+        }
 
-        const ws = wsResult.kind === "ok" ? wsResult.data : null;
-        const appConnections =
-          connectionsResult.kind === "ok"
-            ? connectionsResult.data.filter(isGitHubAppConnection)
-            : [];
+        const ws = wsResult.data;
 
-        if (
-          (!ws || ws.connection_status === "none") &&
-          appConnections.length === 0
-        ) {
+        if (!isGitHubConnected(ws)) {
           const installBtn = document.createElement("button");
           installBtn.type = "button";
           installBtn.className = "ui-button ui-button--primary ui-button--md";
@@ -772,32 +776,30 @@ import "../styles/global.css";
               connBody.append(errorAlert(describeFailure(result, "GitHub")));
             }
           });
+
           connBody.append(installBtn);
           connBody.append(
             Object.assign(document.createElement("p"), {
               className: "ui-text-secondary",
               textContent:
-                "Install the LILOs GitHub App to enable content publishing to your repositories.",
+                "Install the LILOs GitHub App to enable repository-backed publishing and implementation workflows.",
             }),
           );
           return;
         }
 
-        const conn = appConnections[0] || null;
-        connBody.append(
-          statusBadge(
-            statusTone(conn?.status ?? "connected"),
-            statusLabel(conn?.status ?? "connected"),
-          ),
-        );
-        const accountReference =
-          ws?.external_account_reference ?? conn?.external_account_reference;
+        connBody.append(statusBadge("ready", "Connected"));
+
+        const repositoryCount = ws.repositories.length;
         connBody.append(
           Object.assign(document.createElement("p"), {
             className: "ui-text-secondary",
-            textContent: accountReference
-              ? `Connected account: ${accountReference}`
-              : "The LILOs GitHub App is installed.",
+            textContent:
+              repositoryCount > 0
+                ? `LILOs GitHub App connected · ${repositoryCount} accessible ${
+                    repositoryCount === 1 ? "repository" : "repositories"
+                  }`
+                : "LILOs GitHub App installed and connected.",
           }),
         );
 
@@ -810,7 +812,7 @@ import "../styles/global.css";
           disconnectBtn.disabled = true;
           connBody.append(
             confirmInline(
-              "Disconnect GitHub? New publishing work will stop.",
+              "Disconnect GitHub? New publishing and implementation work will stop.",
               () => void performGitHubDisconnect(),
               () => {
                 disconnectBtn.disabled = false;
@@ -821,22 +823,26 @@ import "../styles/global.css";
         });
         connBody.append(disconnectBtn);
 
-        // Repositories
-        if (ws?.repositories && ws.repositories.length > 0) {
+        if (ws.repositories.length > 0) {
           const reposCard = makeCard("Accessible Repositories");
           content.append(reposCard);
           const reposBody = reposCard.querySelector(
             ".ui-card__body",
           ) as HTMLElement;
+
           const list = document.createElement("ul");
           list.className = "ui-record-list";
+
           for (const repo of ws.repositories) {
             const item = document.createElement("li");
             const info = document.createElement("div");
+
             const name = document.createElement("h3");
             name.textContent = repo.name;
+
             const detail = document.createElement("p");
             detail.textContent = `Default branch: ${repo.default_branch}`;
+
             info.append(name, detail);
             item.append(
               info,
@@ -847,6 +853,7 @@ import "../styles/global.css";
             );
             list.append(item);
           }
+
           reposBody.append(list);
         }
       }
