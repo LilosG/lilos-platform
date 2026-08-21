@@ -4,7 +4,15 @@ import astro from "eslint-plugin-astro";
 import tseslint from "typescript-eslint";
 
 export default defineConfig(
-  globalIgnores([".astro/", "coverage/", "dist/"]),
+  globalIgnores([
+    ".astro/",
+    "coverage/",
+    "dist/",
+    "playwright-report/",
+    "playwright-production-report/",
+    ".playwright-production-output/",
+    "test-results/",
+  ]),
   eslint.configs.recommended,
   tseslint.configs.recommended,
   astro.configs["flat/recommended"],

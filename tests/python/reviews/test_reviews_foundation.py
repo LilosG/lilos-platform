@@ -69,7 +69,7 @@ def test_reviews_prompt_includes_governed_facts() -> None:
         },
     ]
     prompt = _build_prompt(
-        "reviews.draft_response",
+        "reviews.response_draft",
         {
             "rating": 5,
             "manual_fallback": "Thank you for your feedback.",
@@ -85,7 +85,7 @@ def test_reviews_prompt_includes_governed_facts() -> None:
 def test_reviews_prompt_without_facts_still_works() -> None:
     """Reviews AI prompt must work without governed facts (backward compat)."""
     prompt = _build_prompt(
-        "reviews.draft_response",
+        "reviews.response_draft",
         {"rating": 3, "manual_fallback": "We appreciate your feedback."},
     )
     assert "Rating: 3/5" in prompt

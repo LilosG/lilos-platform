@@ -253,7 +253,39 @@ class SearchConsoleService:
         """
         website = await self._get_website(session, organization_id, website_id)
         token, connection = await self._fresh_token(session, settings, organization_id)
-        del token  # mapping itself needs no provider call; scope already gated
+
+        # Verify the operator-selected property against Google's accessible
+        # Search Console properties before treating the website as verified.
+        # A matching string supplied by the client is not sufficient evidence.
+        try:
+            accessible_properties = await self.adapter.list_sites(token)
+        except Exception as exc:
+            raise SEOSearchConsoleDiscoveryFailedError from exc
+
+        selected_property = next(
+            (
+                item
+                for item in accessible_properties
+                if item.external_property_id == external_property_id
+                and item.property_type == property_type
+            ),
+            None,
+        )
+        if selected_property is None:
+            raise SEOSearchPropertyNotFoundError
+
+        if _property_host(selected_property.external_property_id) != _canonical_host(
+            website.canonical_origin
+        ):
+            raise SEOSearchPropertyNotFoundError
+
+        # Search Console has now supplied provider evidence that this Google
+        # account can access the canonical website property.
+        if website.status == "pending_verification":
+            website.status = "active"
+            website.ownership_status = "verified"
+            website.verified_at = website.verified_at or datetime.now(UTC)
+
         # Replace any other authoritative mapping for this website.
         prior_authoritative = list(
             await session.scalars(
