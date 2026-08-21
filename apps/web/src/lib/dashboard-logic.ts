@@ -1,6 +1,17 @@
 import type { ApiOutcome } from "./api-client";
 import type { MyOrganization, ProductReadiness } from "./workspace";
 
+function availableLocalStorage(): Storage | null {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const storage = window.localStorage;
+    return storage && typeof storage.getItem === "function" ? storage : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Prefers an active membership; falls back to the first membership so a paused
  * or invited-only org is still visible rather than silently hidden. */
 export function selectDefaultOrganization(
@@ -8,9 +19,11 @@ export function selectDefaultOrganization(
 ): MyOrganization | null {
   if (!organizations.length) return null;
 
+  const storage = availableLocalStorage();
+
   if (typeof window !== "undefined") {
     const urlOrgId = new URLSearchParams(window.location.search).get("org");
-    const storedOrgId = localStorage.getItem("selected_org_id");
+    const storedOrgId = storage?.getItem("selected_org_id") ?? null;
     const targetId = urlOrgId || storedOrgId;
 
     if (targetId) {
@@ -18,7 +31,7 @@ export function selectDefaultOrganization(
         (item) => item.organization_id === targetId,
       );
       if (matched) {
-        localStorage.setItem("selected_org_id", matched.organization_id);
+        storage?.setItem("selected_org_id", matched.organization_id);
         return matched;
       }
     }
@@ -29,8 +42,8 @@ export function selectDefaultOrganization(
     organizations[0] ??
     null;
 
-  if (defaultOrg && typeof window !== "undefined") {
-    localStorage.setItem("selected_org_id", defaultOrg.organization_id);
+  if (defaultOrg) {
+    storage?.setItem("selected_org_id", defaultOrg.organization_id);
   }
 
   return defaultOrg;
