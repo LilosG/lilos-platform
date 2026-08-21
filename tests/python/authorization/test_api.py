@@ -314,9 +314,14 @@ UNAUTHENTICATED_PRODUCTION_ROUTES = frozenset(
         # `test_google_oauth_callback_is_deliberately_unauthenticated_but_fails_closed`.
         ("get", "/api/v1/integrations/google/callback"),
         ("get", "/api/v1/integrations/github/callback"),
-        # Machine lead intake deliberately authenticates with the opaque
-        # ingestion-key + ingestion-secret credential pair instead of a
-        # Supabase bearer token. Dedicated Leads tests verify that boundary.
+    }
+)
+
+
+MACHINE_AUTH_PRODUCTION_ROUTES = frozenset(
+    {
+        # Lead machine intake authenticates with source-scoped ingestion
+        # credentials instead of the platform bearer-token verifier.
         ("post", "/api/v1/leads/intake"),
     }
 )
@@ -346,7 +351,10 @@ def test_every_production_route_authenticates_before_request_processing() -> Non
             ):
                 target = target.replace("{" + parameter + "}", str(uuid4()))
             for method in operations:
-                if (method, route_path) in UNAUTHENTICATED_PRODUCTION_ROUTES:
+                if (method, route_path) in UNAUTHENTICATED_PRODUCTION_ROUTES or (
+                    method,
+                    route_path,
+                ) in MACHINE_AUTH_PRODUCTION_ROUTES:
                     continue
                 response = client.request(method, target, json={})
                 assert response.status_code == 401, (method, route_path, response.text)
