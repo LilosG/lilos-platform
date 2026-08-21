@@ -296,17 +296,16 @@ class IntegrationDirectoryService:
                 # Location.id, not GBPLocation.id. Resolve the GBP row through
                 # the canonical integration mapping (with location-id fallback
                 # for older rows) and use its actual provider sync timestamp.
+                identity_predicate = GBPLocation.integration_resource_id == mapping.id
+                if mapping.platform_resource_id is not None:
+                    identity_predicate = identity_predicate | (
+                        GBPLocation.location_id == mapping.platform_resource_id
+                    )
                 gbp_loc = await session.scalar(
                     select(GBPLocation)
                     .where(
                         GBPLocation.organization_id == organization_id,
-                        (
-                            (GBPLocation.integration_resource_id == mapping.id)
-                            | (
-                                (mapping.platform_resource_id is not None)
-                                & (GBPLocation.location_id == mapping.platform_resource_id)
-                            )
-                        ),
+                        identity_predicate,
                     )
                     .order_by(GBPLocation.last_discovered_at.desc())
                     .limit(1)
