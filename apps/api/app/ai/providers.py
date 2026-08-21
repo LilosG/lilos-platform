@@ -269,13 +269,26 @@ def _build_prompt(task_key: str, input_document: dict[str, Any]) -> str:
         return "\n".join(parts)
     if task_key == "reviews.draft_response":
         rating_text = f"Rating: {rating}/5" if rating is not None else "Rating: not provided"
-        return (
-            f"Draft a professional review response.\n\n"
-            f"{rating_text}\n"
-            f"Fallback tone: {manual_fallback}\n\n"
-            f"Write a response that is empathetic, professional, and appropriate "
-            f"for the rating level. Return ONLY a JSON object with the key 'draft'."
+        facts_section = _format_governed_facts(governed_facts) if governed_facts else ""
+        parts = [
+            "Draft a professional, grounded review response.",
+            "",
+            rating_text,
+            f"Fallback tone: {manual_fallback}",
+        ]
+        if facts_section:
+            parts.append(
+                "\nAPPROVED BUSINESS FACTS "
+                "(authoritative — do not invent anything not listed here):"
+                f"\n{facts_section}"
+            )
+        parts.append(
+            "\nWrite a response that is empathetic, professional, and appropriate "
+            "for the rating level. Use the approved business facts above to ground "
+            "your response in real business context. "
+            "Return ONLY a JSON object with the key 'draft'."
         )
+        return "\n".join(parts)
     # Generic fallback for any task
     return (
         f"Task: {task_key}\n\n"

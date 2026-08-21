@@ -129,6 +129,7 @@ def test_audit_migration_upgrades_downgrades_and_restores_head(
             "lead_communications",
             "lead_consents",
             "lead_notes",
+            "lead_source_ingestion_credentials",
             "lead_sources",
             "lead_status_history",
             "lead_submissions",

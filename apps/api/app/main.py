@@ -36,6 +36,7 @@ from apps.api.app.routes.internal_locations import router as internal_locations_
 from apps.api.app.routes.internal_organizations import router as internal_organizations_router
 from apps.api.app.routes.internal_profiles import router as internal_profiles_router
 from apps.api.app.routes.internal_user_profiles import router as internal_user_profiles_router
+from apps.api.app.routes.leads import machine_intake_router
 from apps.api.app.routes.leads import router as leads_router
 from apps.api.app.routes.platform_administration import router as platform_administration_router
 from apps.api.app.routes.reviews import router as reviews_router
@@ -89,6 +90,7 @@ def create_app(
     application.include_router(reviews_router)
     application.include_router(workflows_router)
     application.include_router(leads_router)
+    application.include_router(machine_intake_router)
     application.include_router(content_router)
     application.include_router(seo_router)
     application.include_router(insights_router)

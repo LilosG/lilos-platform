@@ -318,6 +318,15 @@ UNAUTHENTICATED_PRODUCTION_ROUTES = frozenset(
 )
 
 
+MACHINE_AUTH_PRODUCTION_ROUTES = frozenset(
+    {
+        # Lead machine intake authenticates with source-scoped ingestion
+        # credentials instead of the platform bearer-token verifier.
+        ("post", "/api/v1/leads/intake"),
+    }
+)
+
+
 def test_every_production_route_authenticates_before_request_processing() -> None:
     verifier = FakeVerifier(claims(uuid4(), AssuranceLevel.AAL1))
     verifier.result = TokenVerificationError()
@@ -342,7 +351,10 @@ def test_every_production_route_authenticates_before_request_processing() -> Non
             ):
                 target = target.replace("{" + parameter + "}", str(uuid4()))
             for method in operations:
-                if (method, route_path) in UNAUTHENTICATED_PRODUCTION_ROUTES:
+                if (method, route_path) in UNAUTHENTICATED_PRODUCTION_ROUTES or (
+                    method,
+                    route_path,
+                ) in MACHINE_AUTH_PRODUCTION_ROUTES:
                     continue
                 response = client.request(method, target, json={})
                 assert response.status_code == 401, (method, route_path, response.text)

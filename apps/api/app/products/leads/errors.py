@@ -43,3 +43,10 @@ class InvalidLeadQueryError(ConflictError):
 
     code = "LEAD_QUERY_INVALID"
     public_message = "The lead query parameters are invalid."
+
+
+class LeadSourceKeyConflictError(ConflictError):
+    """A lead source key already exists for this organization."""
+
+    code = "LEAD_SOURCE_KEY_CONFLICT"
+    public_message = "A lead source with this key already exists for this organization."

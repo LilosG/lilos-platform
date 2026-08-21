@@ -22,6 +22,7 @@ from apps.api.app.audit.service import AuditEventService
 from apps.api.app.execution.service import ExecutionService
 from apps.api.app.notifications.models import NotificationTemplate
 from apps.api.app.notifications.service import NotificationService
+from apps.api.app.products.content.service import resolve_governed_facts
 from apps.api.app.products.reviews.errors import (
     GroundingRequiredError,
     InvalidReviewQueryError,
@@ -840,6 +841,15 @@ class ReviewService:
                 "Thank you for sharing your experience. We take all feedback seriously and "
                 "would like to make this right."
             )
+
+            # Resolve approved business facts for grounded AI input
+            governed_facts = await resolve_governed_facts(
+                session,
+                organization_id,
+                fact_ids,
+                location_id=location_id,
+            )
+
             request = AIGatewayRequest(
                 organization_id=organization_id,
                 location_id=location_id,
@@ -847,6 +857,7 @@ class ReviewService:
                 input_document={
                     "rating": float(revision.rating) if revision.rating is not None else None,
                     "manual_fallback": fallback,
+                    "governed_facts": governed_facts,
                 },
                 input_references=(revision.id,),
                 approved_fact_revision_ids=tuple(fact_ids),

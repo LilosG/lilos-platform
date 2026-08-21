@@ -15,6 +15,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "visual:test": "playwright test --config playwright.visual.config.ts",
+    "production:auth": "playwright test --config playwright.production.config.ts --project=auth-setup --headed",
+    "production:test": "playwright test --config playwright.production.config.ts --project=production-acceptance",
     "typecheck": "astro check"
   },
   "dependencies": {

@@ -366,12 +366,35 @@ def test_manual_and_ai_draft_full_flow_produces_audit_and_notification(
     assert review_audit.status_code == 200
     assert review_audit.json()["data"][0]["event_type"] == "reviews.review.ingested"
 
+    # Create a real approved business fact for AI grounding
+    fact_propose = client.post(
+        f"/api/v1/organizations/{org}/business-facts",
+        headers=HEADERS,
+        json={
+            "fact_key": "business.name",
+            "value": "Test Business",
+            "value_type": "string",
+            "source": "organization_profile",
+            "authority": "system_derived",
+            "change_reason": "Test fact for reviews AI grounding",
+        },
+    )
+    assert fact_propose.status_code == 201
+    fact_revision_id = fact_propose.json()["data"]["id"]
+
+    fact_approve = client.post(
+        f"/api/v1/organizations/{org}/business-facts/{fact_revision_id}/decision",
+        headers=HEADERS,
+        json={"decision": "approve"},
+    )
+    assert fact_approve.status_code == 200
+
     ai = client.post(
         f"{base}/{review_id}/responses/ai-draft",
         headers=HEADERS,
         json={
             "review_revision_id": str(revision_id),
-            "approved_fact_revision_ids": [str(uuid4())],
+            "approved_fact_revision_ids": [str(fact_revision_id)],
             "idempotency_key": "reviews-ai-draft-key-001",
         },
     )
