@@ -34,8 +34,11 @@ def upgrade() -> None:
         sa.Column(
             "ingestion_key",
             sa.String(length=64),
-            unique=True,
             nullable=False,
+        ),
+        sa.UniqueConstraint(
+            "ingestion_key",
+            name="uq_ingestion_credential_key",
         ),
         sa.Column("lead_source_id", sa.Uuid(), nullable=False),
         sa.Column("organization_id", sa.Uuid(), nullable=False),
