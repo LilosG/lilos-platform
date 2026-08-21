@@ -35,9 +35,7 @@ class HermesAgentProvider:
         model: str = "hermes-agent",
     ) -> None:
         if not api_key or not api_key.strip():
-            raise AIProviderConfigurationError(
-                "Hermes API key is required when ai_provider=hermes"
-            )
+            raise AIProviderConfigurationError("Hermes API key is required when ai_provider=hermes")
         normalized_base_url = base_url.strip().rstrip("/")
         if not normalized_base_url:
             raise AIProviderConfigurationError(
@@ -89,17 +87,13 @@ class HermesAgentProvider:
                     },
                 )
         except httpx.TimeoutException:
-            raise AIProviderError(
-                "provider", "Hermes agent request timed out"
-            ) from None
+            raise AIProviderError("provider", "Hermes agent request timed out") from None
         except httpx.ConnectError:
             raise AIProviderError(
                 "provider", "Could not connect to the Hermes agent runtime"
             ) from None
         except httpx.RequestError as exc:
-            raise AIProviderError(
-                "provider", "Hermes agent request failed"
-            ) from exc
+            raise AIProviderError("provider", "Hermes agent request failed") from exc
 
         latency_ms = int((monotonic() - started) * 1000)
         if response.status_code != 200:
