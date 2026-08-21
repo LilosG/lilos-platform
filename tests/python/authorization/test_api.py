@@ -314,6 +314,10 @@ UNAUTHENTICATED_PRODUCTION_ROUTES = frozenset(
         # `test_google_oauth_callback_is_deliberately_unauthenticated_but_fails_closed`.
         ("get", "/api/v1/integrations/google/callback"),
         ("get", "/api/v1/integrations/github/callback"),
+        # Machine lead intake deliberately authenticates with the opaque
+        # ingestion-key + ingestion-secret credential pair instead of a
+        # Supabase bearer token. Dedicated Leads tests verify that boundary.
+        ("post", "/api/v1/leads/intake"),
     }
 )
 
