@@ -75,9 +75,9 @@ class Settings(BaseSettings):
     google_oauth_client_secret: Annotated[str, Field(min_length=1, max_length=255)] | None = None
     google_oauth_redirect_uri: HttpUrl | None = None
     google_pagespeed_api_key: Annotated[str, Field(min_length=1, max_length=512)] | None = None
-    google_drive_service_account_json: Annotated[
-        str, Field(min_length=2, max_length=50_000)
-    ] | None = None
+    google_drive_service_account_json: (
+        Annotated[str, Field(min_length=2, max_length=50_000)] | None
+    ) = None
 
     # Optional external SEO enrichment provider. LILOs remains operational
     # without it; when configured it can enrich deterministic crawl/GSC data.
