@@ -63,6 +63,14 @@ services:
         sync: false
       - key: LILOS_GOOGLE_OAUTH_REDIRECT_URI
         sync: false
+      - key: LILOS_GOOGLE_PAGESPEED_API_KEY
+        sync: false
+      - key: LILOS_GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON
+        sync: false
+      - key: LILOS_DATAFORSEO_LOGIN
+        sync: false
+      - key: LILOS_DATAFORSEO_PASSWORD
+        sync: false
       - key: LILOS_SECRET_ENCRYPTION_KEY
         sync: false
       - key: LILOS_GITHUB_APP_ID
@@ -104,6 +112,14 @@ services:
       - key: LILOS_GOOGLE_OAUTH_CLIENT_SECRET
         sync: false
       - key: LILOS_GOOGLE_OAUTH_REDIRECT_URI
+        sync: false
+      - key: LILOS_GOOGLE_PAGESPEED_API_KEY
+        sync: false
+      - key: LILOS_GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON
+        sync: false
+      - key: LILOS_DATAFORSEO_LOGIN
+        sync: false
+      - key: LILOS_DATAFORSEO_PASSWORD
         sync: false
       - key: LILOS_GITHUB_APP_ID
         sync: false
