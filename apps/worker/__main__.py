@@ -2,8 +2,8 @@
 
 import asyncio
 
-import apps.worker.bootstrap  # noqa: F401 — register ORM models before first query
 import apps.api.app.execution.operational_extensions  # noqa: F401 — register orchestration handlers
+import apps.worker.bootstrap  # noqa: F401 — register ORM models before first query
 from apps.api.app.execution.runtime import process_main, run_worker
 
 
