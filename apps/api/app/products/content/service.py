@@ -339,6 +339,24 @@ class ContentService:
         has_more = len(rows) > limit
         return rows[:limit], has_more
 
+    async def get_opportunity_by_source_reference(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        source_reference: str,
+    ) -> ContentOpportunity | None:
+        """Resolve one canonical source reference without pagination-dependent scanning."""
+        statement: Select[tuple[ContentOpportunity]] = (
+            select(ContentOpportunity)
+            .where(
+                ContentOpportunity.organization_id == organization_id,
+                ContentOpportunity.source_reference == source_reference,
+            )
+            .order_by(ContentOpportunity.created_at.asc(), ContentOpportunity.id.asc())
+            .limit(1)
+        )
+        return cast(ContentOpportunity | None, await session.scalar(statement))
+
     async def decide_opportunity(
         self,
         session: AsyncSession,
@@ -1083,6 +1101,10 @@ class ContentService:
         )
         session.add(publication)
         await session.flush()
+        workflow_run.input_document = {
+            **(workflow_run.input_document or {}),
+            "publication_id": str(publication.id),
+        }
         await self._audit(
             session,
             event="content.publication.reserved",
@@ -1103,6 +1125,7 @@ class ContentService:
             idempotency_key=f"content.publication.reserved.{publication.id}",
             context={"publication_id": str(publication.id)},
         )
+        await self.execution.enqueue_consumed_run(session, workflow_run)
         return publication
 
     async def list_publications(

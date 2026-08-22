@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 
@@ -25,11 +25,14 @@ class FakeProvider:
     async def generate(
         self,
         *,
+        organization_id: UUID,
+        location_id: UUID | None,
         task_key: str,
         input_document: dict[str, Any],
         maximum_tokens: int,
         maximum_latency_ms: int | None = None,
     ) -> dict[str, Any]:
+        del organization_id, location_id
         self.calls.append((task_key, dict(input_document), maximum_tokens, maximum_latency_ms))
         return dict(self.output)
 
@@ -77,6 +80,15 @@ async def test_gateway_rejects_secret_bearing_input() -> None:
     gateway = AIGateway(FakeProvider({"draft": "x"}))
     with pytest.raises(ValueError, match="secret"):
         await gateway.execute(_request(input_document={"audience": "local", "api_key": "sk-123"}))
+
+
+@pytest.mark.anyio
+async def test_gateway_rejects_nested_secret_bearing_input() -> None:
+    gateway = AIGateway(FakeProvider({"draft": "x"}))
+    with pytest.raises(ValueError, match="secret"):
+        await gateway.execute(
+            _request(input_document={"knowledge": [{"authorization_token": "sk-123"}]})
+        )
 
 
 @pytest.mark.anyio
@@ -147,11 +159,15 @@ async def test_gateway_provider_error_propagates() -> None:
         async def generate(
             self,
             *,
+            organization_id: UUID,
+            location_id: UUID | None,
             task_key: str,
             input_document: dict[str, Any],
             maximum_tokens: int,
             maximum_latency_ms: int | None = None,
         ) -> dict[str, Any]:
+            del organization_id, location_id, task_key, input_document, maximum_tokens
+            del maximum_latency_ms
             raise AIProviderError("provider", "simulated outage")
 
     gateway = AIGateway(RaisingProvider())
@@ -168,11 +184,15 @@ async def test_gateway_unexpected_provider_exception_becomes_governed_error() ->
         async def generate(
             self,
             *,
+            organization_id: UUID,
+            location_id: UUID | None,
             task_key: str,
             input_document: dict[str, Any],
             maximum_tokens: int,
             maximum_latency_ms: int | None = None,
         ) -> dict[str, Any]:
+            del organization_id, location_id, task_key, input_document, maximum_tokens
+            del maximum_latency_ms
             raise RuntimeError("raw internals with secrets")
 
     gateway = AIGateway(BrokenProvider())

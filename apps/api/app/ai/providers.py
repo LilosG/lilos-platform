@@ -6,6 +6,7 @@ import json
 import logging
 from time import monotonic
 from typing import Any
+from uuid import UUID
 
 import httpx
 
@@ -73,6 +74,8 @@ class OpenRouterProvider:
     async def generate(
         self,
         *,
+        organization_id: UUID | None = None,
+        location_id: UUID | None = None,
         task_key: str,
         input_document: dict[str, Any],
         maximum_tokens: int,
@@ -85,6 +88,7 @@ class OpenRouterProvider:
         ``cost_microunits`` (estimated from provider-reported cost when
         available, otherwise None).
         """
+        del organization_id, location_id
         model = self._default_model
         prompt = _build_prompt(task_key, input_document)
         max_tokens = min(maximum_tokens, self._max_output_tokens)

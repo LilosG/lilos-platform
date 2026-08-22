@@ -83,9 +83,22 @@ def test_job_outcome_queued_semantics() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_all_ten_workflow_types_registered() -> None:
-    """Verify the WORKFLOW_TYPES registry has exactly 10 entries."""
-    assert len(WORKFLOW_TYPES) == 10
+def test_canonical_workflow_types_registered() -> None:
+    """Verify the fixed registry contains every governed product workflow."""
+    assert set(WORKFLOW_TYPES) == {
+        "content.draft_revision",
+        "content.publish",
+        "gbp.generate_post",
+        "gbp.publish_change",
+        "gbp.publish_post",
+        "gbp.sync",
+        "gbp.upload_media",
+        "leads.send_communication",
+        "reviews.ingest",
+        "reviews.publish_response",
+        "seo.analyze",
+        "seo.crawl_or_analysis",
+    }
 
 
 def test_workflow_keys_follow_naming_convention() -> None:

@@ -27,6 +27,8 @@ class AIProvider(Protocol):
     async def generate(
         self,
         *,
+        organization_id: UUID,
+        location_id: UUID | None,
         task_key: str,
         input_document: dict[str, Any],
         maximum_tokens: int,
@@ -104,12 +106,23 @@ class AIGateway:
             "apikey",
             "credential",
         }
-        for key in request.input_document:
-            normalized = key.lower().replace("-", "_").replace(" ", "_")
-            if normalized in secret_bearers or any(
-                bearer in normalized for bearer in secret_bearers
-            ):
-                raise ValueError("secret-bearing AI input rejected")
+
+        def contains_secret_key(value: object) -> bool:
+            if isinstance(value, dict):
+                for raw_key, child in value.items():
+                    normalized = str(raw_key).lower().replace("-", "_").replace(" ", "_")
+                    if normalized in secret_bearers or any(
+                        bearer in normalized for bearer in secret_bearers
+                    ):
+                        return True
+                    if contains_secret_key(child):
+                        return True
+            elif isinstance(value, (list, tuple)):
+                return any(contains_secret_key(child) for child in value)
+            return False
+
+        if contains_secret_key(request.input_document):
+            raise ValueError("secret-bearing AI input rejected")
 
         # Pre-flight cost bound:
         # - task limit == 0 means "inherit the configured global ceiling"
@@ -129,6 +142,8 @@ class AIGateway:
 
         try:
             output = await self.provider.generate(
+                organization_id=request.organization_id,
+                location_id=request.location_id,
                 task_key=request.task_key,
                 input_document=dict(request.input_document),
                 maximum_tokens=maximum_tokens,
@@ -180,11 +195,14 @@ class DeterministicAIProvider:
     async def generate(
         self,
         *,
+        organization_id: UUID | None = None,
+        location_id: UUID | None = None,
         task_key: str,
         input_document: dict[str, Any],
         maximum_tokens: int,
         maximum_latency_ms: int | None = None,
     ) -> dict[str, Any]:
+        del organization_id, location_id
         return {
             "task_type": task_key,
             "draft": str(input_document.get("manual_fallback", "Thank you for your feedback.")),

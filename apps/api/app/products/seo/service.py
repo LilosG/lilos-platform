@@ -123,8 +123,8 @@ def opportunity_score(
     confidence: int,
     urgency: int,
     effort: int,
-) -> tuple[int, dict[str, int]]:
-    inputs = {
+) -> tuple[int, dict[str, object]]:
+    score_inputs = {
         "search_potential": search_potential,
         "business_value": business_value,
         "relevance": relevance,
@@ -132,20 +132,28 @@ def opportunity_score(
         "urgency": urgency,
         "effort": effort,
     }
-    if any(value < 0 or value > 100 for value in inputs.values()):
+    if any(value < 0 or value > 100 for value in score_inputs.values()):
         raise ValueError("score inputs must be between 0 and 100")
-    score = round(
-        (
-            search_potential * 2
-            + business_value * 3
-            + relevance * 2
-            + confidence * 2
-            + urgency
-            - effort
-        )
-        / 9
+    score = max(
+        0,
+        min(
+            100,
+            round(
+                (
+                    search_potential * 2
+                    + business_value * 3
+                    + relevance * 2
+                    + confidence * 2
+                    + urgency
+                    - effort
+                )
+                / 9
+            ),
+        ),
     )
-    return max(0, min(100, score)), inputs
+    inputs: dict[str, object] = dict(score_inputs)
+    inputs["final_score"] = score
+    return score, inputs
 
 
 def metric_value(value: int | float | None, quality: str) -> dict[str, object]:
@@ -885,14 +893,24 @@ class SEOService:
         )
         if not revision or revision.status != "awaiting_approval":
             raise SEORecommendationNotDecidableError
+        opportunity = await session.scalar(
+            select(SEOOpportunity)
+            .where(
+                SEOOpportunity.organization_id == organization_id,
+                SEOOpportunity.id == revision.opportunity_id,
+            )
+            .with_for_update()
+        )
+        if (
+            opportunity is None
+            or opportunity.active_marker != "active"
+            or opportunity.status != "recommended"
+        ):
+            raise SEORecommendationNotDecidableError
         revision.status = "approved" if command.approve else "rejected"
         if command.approve:
             revision.approved_by_user_id = user_id
-        opportunity = await session.scalar(
-            select(SEOOpportunity).where(SEOOpportunity.id == revision.opportunity_id)
-        )
-        if opportunity:
-            opportunity.status = "approved" if command.approve else "rejected"
+        opportunity.status = "approved" if command.approve else "rejected"
         await session.flush()
         await self._audit(
             session,

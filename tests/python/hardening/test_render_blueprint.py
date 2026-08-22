@@ -12,6 +12,7 @@ def test_render_blueprint_matches_approved_runtime() -> None:
     assert validate_blueprint() == ()
     blueprint = load_blueprint()
     assert [service["name"] for service in blueprint["services"]] == [
+        "lilos-hermes",
         "lilos-api",
         "lilos-worker",
         "lilos-scheduler",
@@ -36,6 +37,32 @@ def test_render_blueprint_requires_provider_writes_enabled(tmp_path: Path) -> No
     )
 
     assert "production:provider-writes-disabled" in validate_blueprint(candidate)
+
+
+def test_render_blueprint_requires_hermes_persistent_storage(tmp_path: Path) -> None:
+    candidate = tmp_path / "render.yaml"
+    source = Path("render.yaml").read_text(encoding="utf-8")
+    candidate.write_text(
+        source.replace("      sizeGB: 5", "      sizeGB: 1"),
+        encoding="utf-8",
+    )
+
+    assert "lilos-hermes:persistent-disk" in validate_blueprint(candidate)
+
+
+def test_render_blueprint_requires_private_hermes_service_binding(tmp_path: Path) -> None:
+    candidate = tmp_path / "render.yaml"
+    source = Path("render.yaml").read_text(encoding="utf-8")
+    candidate.write_text(
+        source.replace(
+            "          property: hostport",
+            "          property: host",
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    assert "lilos-api:hermes-private-url" in validate_blueprint(candidate)
 
 
 def test_staging_blueprint_is_isolated_manual_and_write_disabled() -> None:

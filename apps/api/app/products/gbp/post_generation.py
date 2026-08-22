@@ -18,7 +18,7 @@ from apps.api.app.ai.models import AIExecution, AITaskDefinition
 from apps.api.app.config import Settings
 from apps.api.app.integrations.google_drive_media import GoogleDriveMediaService
 from apps.api.app.organizations.models import Organization
-from apps.api.app.products.content.service import resolve_governed_facts
+from apps.api.app.products.content.service import GovernedFact, resolve_governed_facts
 from apps.api.app.products.gbp.models import GBPLocation, GBPProfileSnapshot
 from apps.api.app.products.gbp.operations_contracts import PostRevisionCreate
 from apps.api.app.products.gbp.operations_models import GBPPostRevision, GBPProviderPost
@@ -63,10 +63,10 @@ class GBPPostGenerationService:
             if revision_id:
                 revision = await session.get(GBPPostRevision, UUID(str(revision_id)))
                 if revision is not None:
-                    asset = await session.scalar(
+                    existing_asset = await session.scalar(
                         select(GBPPostAsset).where(GBPPostAsset.post_revision_id == revision.id)
                     )
-                    return revision, existing_execution, asset
+                    return revision, existing_execution, existing_asset
 
         fact_rows = list(
             await session.scalars(
@@ -316,7 +316,7 @@ class GBPPostGenerationService:
         return task
 
     @staticmethod
-    def _topic_hint(governed_facts: list[dict[str, object]], profile: dict[str, object]) -> str:
+    def _topic_hint(governed_facts: list[GovernedFact], profile: dict[str, object]) -> str:
         preferred_keys = ("primary_services", "services", "service", "service_items")
         for key in preferred_keys:
             for fact in governed_facts:

@@ -108,6 +108,7 @@ from apps.api.app.products.gbp.operations_models import (
     GBPSpecialHours,
     GBPSuspensionCase,
 )
+from apps.api.app.products.gbp.post_generation_models import GBPPostAsset
 from apps.api.app.products.leads.models import (
     CRMLeadMapping,
     Lead,
@@ -247,6 +248,7 @@ for gbp_operation_model in (
     GBPMedia,
     GBPPostRevision,
     GBPPostPublication,
+    GBPPostAsset,
     GBPProviderPost,
     GBPSuspensionCase,
 ):

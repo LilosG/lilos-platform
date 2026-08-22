@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest
+from pydantic import PostgresDsn, TypeAdapter
 from sqlalchemy import delete as sqla_delete
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -15,22 +16,30 @@ from apps.api.app.access_control.catalog import AccessCatalogSeeder
 from apps.api.app.access_control.contracts import MembershipCreate, RoleAssignmentCreate
 from apps.api.app.access_control.enums import MembershipType, ScopeType
 from apps.api.app.access_control.service import AccessControlService
+from apps.api.app.audit.enums import AuditActorType
+from apps.api.app.audit.models import AuditEvent
 from apps.api.app.authentication.contracts import VerifiedProviderClaims
 from apps.api.app.authentication.enums import AssuranceLevel, UserStatus
 from apps.api.app.authentication.models import UserProfile
 from apps.api.app.config import EnvironmentName, Settings
+from apps.api.app.database.runtime import create_database_runtime
+from apps.api.app.execution import handlers as handlers_module
 from apps.api.app.execution.errors import (
     WorkflowRunNotAvailableError,
     WorkflowRunNotFoundError,
     WorkflowRunTypeMismatchError,
 )
-from apps.api.app.execution.models import Job, WorkflowRun
+from apps.api.app.execution.models import Job, JobAttempt, WorkflowRun
+from apps.api.app.execution.runtime import RuntimeOptions, WorkerBackend
 from apps.api.app.execution.service import ExecutionService
+from apps.api.app.integrations.models import IntegrationConnection, Provider
 from apps.api.app.locations.enums import LocationStatus, LocationType
 from apps.api.app.locations.models import Location
 from apps.api.app.main import create_app
 from apps.api.app.organizations.enums import OrganizationStatus, OrganizationType
 from apps.api.app.organizations.models import Organization
+from apps.api.app.products.gbp.discovery_service import GBPDiscoveryService
+from apps.api.app.products.gbp.models import GBPAccount, GBPLocation
 
 
 class FakeVerifier:
@@ -73,6 +82,7 @@ def run_db[T](postgresql_test_url: str, work: Callable[[AsyncSession], Awaitable
 
 
 HEADERS = {"Authorization": "Bearer fabricated.token"}
+POSTGRES_DSN = TypeAdapter(PostgresDsn)
 
 
 class WorkflowClientContext:
@@ -228,6 +238,172 @@ def test_start_workflow_run_creates_persisted_run(workflow_client: WorkflowClien
     assert data["status"] == "queued"
     assert data["product_key"] == "content"
     assert UUID(data["workflow_run_id"])
+
+
+@pytest.mark.integration
+def test_authorized_operator_request_executes_through_worker_history_and_audit(
+    postgresql_test_url: str,
+    workflow_client: WorkflowClientContext,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Prove the real operator API → durable worker → history/audit path."""
+    client, ids = workflow_client.client, workflow_client.ids
+    organization_id, location_id = ids["organization"], ids["location"]
+
+    async def seed_gbp(session: AsyncSession) -> tuple[UUID, UUID]:
+        provider = Provider(
+            key=f"google-operator-{uuid4().hex[:8]}",
+            name="Google Operator Acceptance",
+            status="active",
+            capabilities=["business_profile"],
+            manifest_version=1,
+        )
+        session.add(provider)
+        await session.flush()
+        connection = IntegrationConnection(
+            organization_id=organization_id,
+            provider_id=provider.id,
+            external_account_reference="accounts/operator-acceptance",
+            status="connected",
+            version=1,
+        )
+        session.add(connection)
+        await session.flush()
+        account = GBPAccount(
+            organization_id=organization_id,
+            connection_id=connection.id,
+            external_account_id="accounts/operator-acceptance",
+            display_name="Operator Acceptance",
+            status="selected",
+        )
+        session.add(account)
+        await session.flush()
+        gbp_location = GBPLocation(
+            organization_id=organization_id,
+            location_id=location_id,
+            connection_id=connection.id,
+            account_id=account.id,
+            external_location_id="locations/operator-acceptance",
+            business_name="Operator Acceptance",
+            mapping_status="confirmed",
+            write_enabled=False,
+        )
+        session.add(gbp_location)
+        await session.commit()
+        return connection.id, gbp_location.id
+
+    connection_id, gbp_location_id = run_db(postgresql_test_url, seed_gbp)
+    handler_calls: list[UUID] = []
+
+    async def fake_token_resolver(
+        session: AsyncSession, requested_organization_id: UUID
+    ) -> tuple[str, IntegrationConnection]:
+        connection = await session.get(IntegrationConnection, connection_id)
+        assert connection is not None
+        assert requested_organization_id == organization_id
+        return "operator-acceptance-token", connection
+
+    async def fake_discover_and_sync(
+        self: GBPDiscoveryService,
+        session: AsyncSession,
+        settings: Settings,
+        requested_organization_id: UUID,
+        *,
+        actor_id: UUID | None,
+        correlation_id: str,
+    ) -> None:
+        del self, session, settings, actor_id, correlation_id
+        handler_calls.append(requested_organization_id)
+
+    monkeypatch.setattr(handlers_module, "_token_resolver", fake_token_resolver)
+    monkeypatch.setattr(GBPDiscoveryService, "discover_and_sync", fake_discover_and_sync)
+
+    response = client.post(
+        f"/api/v1/organizations/{organization_id}/workflows/gbp.sync/runs",
+        headers=HEADERS,
+        json={
+            "location_id": str(location_id),
+            "idempotency_key": "operator-execution-acceptance-001",
+            "input_document": {"gbp_location_id": str(gbp_location_id)},
+            "execute": True,
+        },
+    )
+    assert response.status_code == 201, response.text
+    run_id = UUID(response.json()["data"]["workflow_run_id"])
+
+    async def assert_enqueued(session: AsyncSession) -> None:
+        job = await session.scalar(select(Job).where(Job.workflow_run_id == run_id))
+        assert job is not None
+        assert job.status == "queued"
+        started = await session.scalar(
+            select(AuditEvent).where(
+                AuditEvent.organization_id == organization_id,
+                AuditEvent.resource_id == run_id,
+                AuditEvent.event_type == "workflow.run.started",
+            )
+        )
+        assert started is not None
+        assert started.actor_type == AuditActorType.USER
+
+    run_db(postgresql_test_url, assert_enqueued)
+
+    async def execute_worker() -> None:
+        settings = Settings(
+            environment=EnvironmentName.TEST,
+            database_url=POSTGRES_DSN.validate_python(postgresql_test_url),
+            release="pr39-operator-acceptance",
+        )
+        runtime = create_database_runtime(settings)
+        try:
+            worker = WorkerBackend(
+                settings,
+                RuntimeOptions(
+                    minimum_poll_seconds=0.01,
+                    maximum_poll_seconds=0.02,
+                    heartbeat_seconds=1,
+                    lease_seconds=60,
+                    shutdown_seconds=5,
+                ),
+                runtime,
+            )
+            await worker.startup()
+            assert await worker.cycle() is True
+        finally:
+            await runtime.dispose()
+
+    asyncio.run(execute_worker())
+
+    history = client.get(
+        f"/api/v1/organizations/{organization_id}/workflows/runs/{run_id}",
+        headers=HEADERS,
+    )
+    assert history.status_code == 200, history.text
+    assert history.json()["data"]["status"] == "completed"
+
+    async def assert_terminal(session: AsyncSession) -> None:
+        run = await session.get(WorkflowRun, run_id)
+        assert run is not None
+        assert run.status == "completed"
+        assert run.output_reference == f"gbp-sync:{organization_id}"
+        job = await session.scalar(select(Job).where(Job.workflow_run_id == run_id))
+        assert job is not None
+        assert job.status == "completed"
+        attempt = await session.scalar(select(JobAttempt).where(JobAttempt.job_id == job.id))
+        assert attempt is not None
+        assert attempt.status == "succeeded"
+        completed = await session.scalar(
+            select(AuditEvent).where(
+                AuditEvent.organization_id == organization_id,
+                AuditEvent.resource_id == run_id,
+                AuditEvent.event_type == "workflow.run.completed",
+            )
+        )
+        assert completed is not None
+        assert completed.actor_type == AuditActorType.WORKFLOW
+        assert completed.workflow_execution_id == run_id
+
+    run_db(postgresql_test_url, assert_terminal)
+    assert handler_calls == [organization_id]
 
 
 @pytest.mark.integration

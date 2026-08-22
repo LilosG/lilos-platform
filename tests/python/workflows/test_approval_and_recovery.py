@@ -237,7 +237,7 @@ async def test_gbp_handler_rejects_non_reserved_publication(
             location_id=location.id,
             input_document={"publication_id": str(publication.id)},
             correlation_id="p5-approval-boundary",
-            workflow_run_id=uuid4(),
+            workflow_run_id=run.id,
         )
 
         assert outcome.result == "permanent_failure"
@@ -251,15 +251,7 @@ async def test_gbp_handler_idempotency_is_upstream(
     workflows_session_factory: async_sessionmaker[AsyncSession],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Handler idempotency lives upstream — at workflow-run + publication creation.
-
-    The handler itself rejects non-reserved publications (NOT_RESERVABLE).
-    Idempotency is enforced at the ``ExecutionService.submit`` and
-    ``GBPService.reserve_publication`` layers via idempotency_key
-    deduplication. A verified publication means the handler already completed
-    — a second call to the raw handler for it returns NOT_RESERVABLE, which
-    is correct because the workflow run would never be launched again.
-    """
+    """An already verified publication resolves idempotently without provider I/O."""
     from apps.api.app.execution import handlers as handlers_module
 
     async with workflows_session_factory.begin() as session:
@@ -319,16 +311,11 @@ async def test_gbp_handler_idempotency_is_upstream(
             location_id=location.id,
             input_document={"publication_id": str(publication.id)},
             correlation_id="p5-idempotent",
-            workflow_run_id=uuid4(),
+            workflow_run_id=run.id,
         )
 
-        # Already-verified publication rejected by the handler — NOT_RESERVABLE.
-        # This is correct: idempotency is enforced upstream by the workflow
-        # run layer (ExecutionService.submit) and publication layer
-        # (GBPService.reserve_publication), which deduplicate by
-        # idempotency_key. The handler is the terminal gate, never re-entered.
-        assert outcome.result == "permanent_failure"
-        assert outcome.safe_error == "PUBLICATION_NOT_RESERVABLE"
+        assert outcome.result == "succeeded"
+        assert outcome.result_reference == f"publication:{publication.id}"
 
 
 @pytest.mark.integration

@@ -108,6 +108,7 @@ def test_audit_migration_upgrades_downgrades_and_restores_head(
             "gbp_change_sets",
             "gbp_locations",
             "gbp_media",
+            "gbp_post_assets",
             "gbp_post_publications",
             "gbp_post_revisions",
             "gbp_profile_change_revisions",

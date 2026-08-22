@@ -11,8 +11,10 @@ from __future__ import annotations
 
 import json
 import logging
+from hashlib import sha256
 from time import monotonic
 from typing import Any
+from uuid import UUID
 
 import httpx
 
@@ -53,6 +55,8 @@ class HermesAgentProvider:
     async def generate(
         self,
         *,
+        organization_id: UUID,
+        location_id: UUID | None,
         task_key: str,
         input_document: dict[str, Any],
         maximum_tokens: int,
@@ -66,6 +70,9 @@ class HermesAgentProvider:
         else:
             timeout_seconds = self._timeout
 
+        scope_material = f"{organization_id}:{location_id or 'organization'}:{task_key}"
+        session_key = f"lilos:{sha256(scope_material.encode()).hexdigest()[:32]}"
+
         started = monotonic()
         try:
             async with httpx.AsyncClient(timeout=timeout_seconds) as client:
@@ -74,7 +81,7 @@ class HermesAgentProvider:
                     headers={
                         "Authorization": f"Bearer {self._api_key}",
                         "Content-Type": "application/json",
-                        "X-Hermes-Session-Key": f"lilos:{task_key}",
+                        "X-Hermes-Session-Key": session_key,
                     },
                     json={
                         "model": self._model,
@@ -114,11 +121,18 @@ class HermesAgentProvider:
             raise AIProviderError(
                 "provider", "Hermes agent returned an unparseable response"
             ) from None
+        if not isinstance(body, dict):
+            raise AIProviderError("provider", "Hermes agent returned an invalid response object")
+        if self._api_key in json.dumps(body, sort_keys=True):
+            raise AIProviderError("provider", "Hermes agent returned unsafe output")
 
         choices = body.get("choices", [])
-        if not choices:
+        if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
             raise AIProviderError("provider", "Hermes agent returned no completion choices")
-        content_text = str(choices[0].get("message", {}).get("content", "")).strip()
+        message = choices[0].get("message")
+        if not isinstance(message, dict):
+            raise AIProviderError("provider", "Hermes agent returned an invalid completion")
+        content_text = str(message.get("content", "")).strip()
         if not content_text:
             raise AIProviderError("provider", "Hermes agent returned empty content")
 
@@ -133,12 +147,18 @@ class HermesAgentProvider:
             raise AIProviderError(
                 "provider", "Hermes agent returned content that is not valid JSON"
             ) from None
+        if not isinstance(parsed, dict):
+            raise AIProviderError(
+                "provider", "Hermes agent returned content that is not a JSON object"
+            )
 
         draft = str(parsed.get("draft", "")).strip()
         if not draft:
             raise AIProviderError("provider", "Hermes agent returned no draft field")
 
         usage = body.get("usage", {}) or {}
+        if not isinstance(usage, dict):
+            usage = {}
         return {
             "provider": "hermes",
             "model": str(body.get("model", self._model)),

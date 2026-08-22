@@ -185,19 +185,27 @@ def p5_client(
 
 
 @pytest.mark.integration
-def test_list_workflow_types_returns_all_ten(p5_client: P5Context) -> None:
+def test_list_workflow_types_returns_canonical_catalog(p5_client: P5Context) -> None:
     client, org = p5_client.client, p5_client.ids["organization"]
     resp = client.get(f"/api/v1/organizations/{org}/workflows", headers=HEADERS)
     assert resp.status_code == 200, resp.text
     data = resp.json()["data"]
     assert isinstance(data, list)
     keys = {item["key"] for item in data}
-    assert "content.publish" in keys
-    assert "content.draft_revision" in keys
-    assert "gbp.sync" in keys
-    assert "reviews.ingest" in keys
-    assert "leads.send_communication" in keys
-    assert len(data) == 10, f"Expected 10 workflow types, got {len(data)}"
+    assert keys == {
+        "content.draft_revision",
+        "content.publish",
+        "gbp.generate_post",
+        "gbp.publish_change",
+        "gbp.publish_post",
+        "gbp.sync",
+        "gbp.upload_media",
+        "leads.send_communication",
+        "reviews.ingest",
+        "reviews.publish_response",
+        "seo.analyze",
+        "seo.crawl_or_analysis",
+    }
 
 
 @pytest.mark.integration
@@ -1095,7 +1103,20 @@ def test_service_list_workflow_types(
     async def scenario(session: AsyncSession) -> int:
         svc = ExecutionService()
         items = await svc.list_workflow_types(session)
-        assert len(items) == 10
+        assert {item["key"] for item in items} == {
+            "content.draft_revision",
+            "content.publish",
+            "gbp.generate_post",
+            "gbp.publish_change",
+            "gbp.publish_post",
+            "gbp.sync",
+            "gbp.upload_media",
+            "leads.send_communication",
+            "reviews.ingest",
+            "reviews.publish_response",
+            "seo.analyze",
+            "seo.crawl_or_analysis",
+        }
         for item in items:
             assert "key" in item
             assert "display_name" in item
@@ -1103,7 +1124,7 @@ def test_service_list_workflow_types(
         return len(items)
 
     count = run_db(postgresql_test_url, scenario)
-    assert count == 10
+    assert count == 12
 
 
 @pytest.mark.integration
