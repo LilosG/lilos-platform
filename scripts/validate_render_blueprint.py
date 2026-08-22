@@ -16,7 +16,7 @@ SERVICE_POLICY = {
     "lilos-scheduler": ("worker", None, "/app/scripts/render_start_scheduler.sh", 60),
 }
 HERMES_SERVICE = "lilos-hermes"
-HERMES_IMAGE = "docker.io/nousresearch/hermes-agent:v2026.8.3"
+HERMES_DOCKERFILE = "./infrastructure/docker/hermes-render.Dockerfile"
 DOCKERFILE = "./infrastructure/docker/backend.Dockerfile"
 SHARED_GROUP = "lilos-production-runtime"
 WORKER_SCHEDULER_SECRETS = {
@@ -148,15 +148,17 @@ def validate_blueprint(path: Path = BLUEPRINT) -> tuple[str, ...]:
     hermes = by_name.get(HERMES_SERVICE, {})
     if (
         hermes.get("type") != "pserv"
-        or hermes.get("runtime") != "image"
+        or hermes.get("runtime") != "docker"
         or hermes.get("region") != "oregon"
         or hermes.get("plan") != "standard"
     ):
         errors.append("lilos-hermes:runtime-policy")
-    if hermes.get("image") != {"url": HERMES_IMAGE}:
-        errors.append("lilos-hermes:image")
-    if hermes.get("dockerCommand") != "gateway run":
-        errors.append("lilos-hermes:command")
+    if hermes.get("branch") != "main" or hermes.get("autoDeployTrigger") != "checksPass":
+        errors.append("lilos-hermes:deploy-governance")
+    if hermes.get("dockerContext") != "." or hermes.get("dockerfilePath") != HERMES_DOCKERFILE:
+        errors.append("lilos-hermes:docker-paths")
+    if "image" in hermes or "dockerCommand" in hermes:
+        errors.append("lilos-hermes:upstream-entrypoint-bypass")
     if hermes.get("disk") != {
         "name": "hermes-data",
         "mountPath": "/opt/data",
@@ -193,6 +195,33 @@ def validate_blueprint(path: Path = BLUEPRINT) -> tuple[str, ...]:
         "sync": False,
     }:
         errors.append("lilos-hermes:openrouter-secret")
+
+    hermes_dockerfile = ROOT / HERMES_DOCKERFILE.removeprefix("./")
+    hermes_start_script = ROOT / "scripts" / "render_start_hermes.sh"
+    if not hermes_dockerfile.is_file():
+        errors.append("lilos-hermes:dockerfile-missing")
+    else:
+        dockerfile_text = hermes_dockerfile.read_text(encoding="utf-8")
+        for fragment in (
+            "nousresearch/hermes-agent:v2026.8.3",
+            "ENTRYPOINT",
+            "lilos-render-start-hermes",
+            "--no-supervise",
+            "--external-supervisor",
+        ):
+            if fragment not in dockerfile_text:
+                errors.append(f"lilos-hermes:dockerfile:{fragment}")
+    if not hermes_start_script.is_file():
+        errors.append("lilos-hermes:start-script-missing")
+    else:
+        start_text = hermes_start_script.read_text(encoding="utf-8")
+        for fragment in (
+            "/opt/hermes/docker/stage2-hook.sh",
+            "/opt/hermes/docker/main-wrapper.sh",
+            "Bootstrap complete; starting foreground gateway",
+        ):
+            if fragment not in start_text:
+                errors.append(f"lilos-hermes:start-script:{fragment}")
 
     expected_base_url = {
         "key": "LILOS_HERMES_BASE_URL",
@@ -286,7 +315,7 @@ def validate_staging_blueprint(path: Path = STAGING_BLUEPRINT) -> tuple[str, ...
     if not isinstance(projects, list) or len(projects) != 1:
         return ("staging:project-exact-set",)
     project = projects[0]
-    if not isinstance(project, dict) or project.get("name") != STAGING_PROJECT:
+    if not isinstance(projects[0], dict) or project.get("name") != STAGING_PROJECT:
         errors.append("staging:project")
     environments = project.get("environments", []) if isinstance(project, dict) else []
     if not isinstance(environments, list) or len(environments) != 1:
