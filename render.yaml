@@ -32,12 +32,13 @@ envVarGroups:
 services:
   - name: lilos-hermes
     type: pserv
-    runtime: image
+    runtime: docker
     region: oregon
     plan: standard
-    image:
-      url: docker.io/nousresearch/hermes-agent:v2026.8.3
-    dockerCommand: gateway run
+    branch: main
+    autoDeployTrigger: checksPass
+    dockerContext: .
+    dockerfilePath: ./infrastructure/docker/hermes-render.Dockerfile
     disk:
       name: hermes-data
       mountPath: /opt/data
