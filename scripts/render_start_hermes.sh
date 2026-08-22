@@ -5,17 +5,19 @@ export HERMES_HOME="${HERMES_HOME:-/opt/data}"
 export HOME="/opt/data"
 export PATH="/command:/package/admin/s6/command:/opt/hermes/bin:/opt/hermes/.venv/bin:/opt/data/.local/bin:${PATH}"
 
-# LILOs keeps the desired production inference model in the Blueprint's
-# HERMES_INFERENCE_MODEL setting. Hermes v2026.8.3 reads HERMES_MODEL as the
-# process-level model override, so bridge the governed LILOs setting explicitly
-# unless an operator has already supplied the native Hermes override.
-if [ -z "${HERMES_MODEL:-}" ] && [ -n "${HERMES_INFERENCE_MODEL:-}" ]; then
-    export HERMES_MODEL="$HERMES_INFERENCE_MODEL"
+echo "[lilos-hermes] Render bootstrap starting"
+/opt/hermes/docker/stage2-hook.sh
+
+# The OpenAI-compatible gateway reads its default inference route from the
+# persisted Hermes config, not from the one-shot HERMES_INFERENCE_MODEL flag.
+# Enforce the governed LILOs production route on every boot so a stale model
+# selection on the persistent disk cannot silently send work to another model.
+if [ -n "${HERMES_INFERENCE_MODEL:-}" ]; then
+    /command/s6-setuidgid hermes /opt/hermes/.venv/bin/hermes config set model.default "$HERMES_INFERENCE_MODEL"
+    /command/s6-setuidgid hermes /opt/hermes/.venv/bin/hermes config set model.provider openrouter
+    /command/s6-setuidgid hermes /opt/hermes/.venv/bin/hermes config set model.base_url https://openrouter.ai/api/v1
+    echo "[lilos-hermes] Gateway model: $HERMES_INFERENCE_MODEL via openrouter"
 fi
 
-echo "[lilos-hermes] Render bootstrap starting"
-echo "[lilos-hermes] Model override: ${HERMES_MODEL:-<config>}"
-/opt/hermes/docker/stage2-hook.sh
 echo "[lilos-hermes] Bootstrap complete; starting foreground gateway"
-
 exec /opt/hermes/docker/main-wrapper.sh "$@"
