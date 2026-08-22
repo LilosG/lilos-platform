@@ -16,7 +16,7 @@ SERVICE_POLICY = {
     "lilos-scheduler": ("worker", None, "/app/scripts/render_start_scheduler.sh", 60),
 }
 HERMES_SERVICE = "lilos-hermes"
-HERMES_IMAGE = "docker.io/nousresearch/hermes-agent:v2026.7.7.2"
+HERMES_IMAGE = "docker.io/nousresearch/hermes-agent:v2026.8.3"
 DOCKERFILE = "./infrastructure/docker/backend.Dockerfile"
 SHARED_GROUP = "lilos-production-runtime"
 WORKER_SCHEDULER_SECRETS = {
@@ -169,6 +169,7 @@ def validate_blueprint(path: Path = BLUEPRINT) -> tuple[str, ...]:
         if isinstance(item, dict) and isinstance(item.get("key"), str)
     }
     hermes_values = {
+        "PORT": "8642",
         "API_SERVER_ENABLED": "true",
         "API_SERVER_HOST": "0.0.0.0",
         "API_SERVER_PORT": "8642",
@@ -236,7 +237,7 @@ def validate_blueprint(path: Path = BLUEPRINT) -> tuple[str, ...]:
     predeploy_policy_text = predeploy
 
     if predeploy == "sh /app/scripts/render_predeploy.sh":
-        predeploy_script = ROOT / "scripts" / "render_predeploy.sh"
+        predeploy_script = ROOT / "scripts/render_predeploy.sh"
         if not predeploy_script.is_file():
             errors.append("lilos-api:predeploy-script-missing")
         else:
