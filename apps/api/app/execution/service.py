@@ -85,6 +85,54 @@ class ExecutionService:
             ),
         )
 
+    async def record_run_outcome(
+        self,
+        session: AsyncSession,
+        run: WorkflowRun,
+        workflow_key: str,
+        outcome: JobOutcome,
+    ) -> None:
+        """Append the system audit event for a durable execution outcome."""
+        if outcome.result == "succeeded":
+            event = "workflow.run.completed"
+            result = AuditResult.SUCCEEDED
+            summary = f"Workflow run completed: {workflow_key}."
+        elif outcome.result == "retryable_failure":
+            event = "workflow.run.retry_scheduled"
+            result = AuditResult.FAILED
+            summary = f"Workflow run requires retry: {workflow_key}."
+        elif outcome.result == "ambiguous":
+            event = "workflow.run.reconciliation_required"
+            result = AuditResult.PARTIALLY_SUCCEEDED
+            summary = f"Workflow run requires reconciliation: {workflow_key}."
+        else:
+            event = "workflow.run.failed"
+            result = AuditResult.FAILED
+            summary = f"Workflow run failed: {workflow_key}."
+        await self.audit.record(
+            session,
+            AuditEventCreate(
+                event_type=event,
+                action=event,
+                result=result,
+                actor_type=AuditActorType.WORKFLOW,
+                organization_id=run.organization_id,
+                location_id=run.location_id,
+                product_key="workflows",
+                resource_type="workflow_run",
+                resource_id=run.id,
+                correlation_id=run.correlation_id,
+                workflow_execution_id=run.id,
+                summary=summary,
+                metadata={
+                    "workflow_key": workflow_key,
+                    "status": run.status,
+                    "outcome": outcome.result,
+                    "safe_error": outcome.safe_error,
+                },
+            ),
+        )
+
     @staticmethod
     def request_hash(command: WorkflowSubmit) -> str:
         payload = command.model_dump(mode="json", exclude={"idempotency_key"})
@@ -342,6 +390,42 @@ class ExecutionService:
             run.started_at = run.started_at or datetime.now(UTC)
             await session.flush()
         return run
+
+    async def enqueue_consumed_run(
+        self,
+        session: AsyncSession,
+        run: WorkflowRun,
+    ) -> Job:
+        """Queue a reserved run after its authoritative resource is attached.
+
+        Product mutation endpoints first consume/lock a reservation, persist
+        the publication or implementation resource, and attach that resource
+        identifier to ``input_document``. Only then may this method make the
+        run visible to workers. The unique job idempotency key closes races.
+        """
+        existing = await session.scalar(
+            select(Job).where(
+                Job.organization_id == run.organization_id,
+                Job.workflow_run_id == run.id,
+                Job.job_type == "workflow.execute",
+            )
+        )
+        if existing is not None:
+            return existing
+        if run.status != "running":
+            raise WorkflowRunNotAvailableError
+        job = Job(
+            organization_id=run.organization_id,
+            workflow_run_id=run.id,
+            job_type="workflow.execute",
+            status="queued",
+            idempotency_key=f"run:{run.id}",
+            payload={"run_id": str(run.id)},
+        )
+        session.add(job)
+        run.status = "queued"
+        await session.flush()
+        return job
 
     async def claim(
         self, session: AsyncSession, worker_id: str, lease_seconds: int = 60

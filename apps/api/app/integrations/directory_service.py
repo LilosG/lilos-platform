@@ -7,7 +7,7 @@ caller to assemble partial provider detail from product routes.
 """
 
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -24,7 +24,6 @@ from apps.api.app.integrations.models import (
     ProviderResourceMapping,
 )
 from apps.api.app.products.gbp.models import GBPLocation
-from apps.api.app.synchronization.models import SyncCheckpoint
 
 
 @dataclass(frozen=True, slots=True)
@@ -108,15 +107,12 @@ class IntegrationDirectoryService:
     ) -> list[ProviderDirectoryEntry]:
         entries: list[ProviderDirectoryEntry] = []
 
-        # Google
         google_state = await self._google_directory_state(session, organization_id)
         entries.append(google_state)
 
-        # GitHub
         github_state = await self._github_directory_state(session, organization_id)
         entries.append(github_state)
 
-        # Email (Resend)
         entries.append(
             ProviderDirectoryEntry(
                 provider_key="resend",
@@ -128,7 +124,6 @@ class IntegrationDirectoryService:
             )
         )
 
-        # SMS
         entries.append(
             ProviderDirectoryEntry(
                 provider_key="sms",
@@ -289,34 +284,39 @@ class IntegrationDirectoryService:
         )
 
         result: list[dict[str, object]] = []
+        stale_cutoff = datetime.now(UTC) - timedelta(hours=24)
+
         for mapping in mappings:
             display_name = None
             last_synced_at: str | None = None
             sync_freshness = "never"
 
-            if mapping.resource_type == "location" and mapping.platform_resource_id:
-                gbp_loc = await session.scalar(
-                    select(GBPLocation).where(
-                        GBPLocation.id == mapping.platform_resource_id,
-                        GBPLocation.organization_id == organization_id,
+            if mapping.resource_type == "location":
+                # ProviderResourceMapping.platform_resource_id is the platform
+                # Location.id, not GBPLocation.id. Resolve the GBP row through
+                # the canonical integration mapping (with location-id fallback
+                # for older rows) and use its actual provider sync timestamp.
+                identity_predicate = GBPLocation.integration_resource_id == mapping.id
+                if mapping.platform_resource_id is not None:
+                    identity_predicate = identity_predicate | (
+                        GBPLocation.location_id == mapping.platform_resource_id
                     )
+                gbp_loc = await session.scalar(
+                    select(GBPLocation)
+                    .where(
+                        GBPLocation.organization_id == organization_id,
+                        identity_predicate,
+                    )
+                    .order_by(GBPLocation.last_discovered_at.desc())
+                    .limit(1)
                 )
                 if gbp_loc is not None:
                     display_name = gbp_loc.business_name
-
-            checkpoint = await session.scalar(
-                select(SyncCheckpoint).where(
-                    SyncCheckpoint.organization_id == organization_id,
-                )
-            )
-            if checkpoint is not None and checkpoint.observed_through is not None:
-                last_synced_at = checkpoint.observed_through.isoformat()
-                now = datetime.now(UTC)
-                stale_after = checkpoint.stale_after
-                if stale_after is not None and stale_after < now:
-                    sync_freshness = "stale"
-                else:
-                    sync_freshness = "fresh"
+                    if gbp_loc.last_synced_at is not None:
+                        last_synced_at = gbp_loc.last_synced_at.isoformat()
+                        sync_freshness = (
+                            "stale" if gbp_loc.last_synced_at < stale_cutoff else "fresh"
+                        )
 
             result.append(
                 {

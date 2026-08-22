@@ -598,6 +598,7 @@ class GBPOperationsService:
             summary="GBP media publication reserved.",
             metadata={"media_type": media.media_type},
         )
+        await self.execution.enqueue_consumed_run(session, workflow_run)
         return media
 
     async def create_post_revision(
@@ -741,6 +742,7 @@ class GBPOperationsService:
             summary="GBP post publication reserved.",
             metadata={"publication_id": str(publication.id)},
         )
+        await self.execution.enqueue_consumed_run(session, workflow_run)
         return publication
 
     async def list_post_revisions(

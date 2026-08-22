@@ -14,7 +14,7 @@ from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, Protocol
 from unittest.mock import AsyncMock
 from uuid import UUID, uuid4
 
@@ -58,8 +58,15 @@ from apps.api.app.products.gbp.operations_models import (
     GBPPostPublication,
     GBPPostRevision,
 )
+from apps.api.app.products.gbp.post_generation_models import GBPPostAsset
 
 ROOT = Path(__file__).resolve().parents[3]
+
+
+class StatefulPostAdapterFactory(Protocol):
+    create_calls: int
+
+    def __call__(self) -> Any: ...
 
 
 @pytest.fixture(autouse=True)
@@ -108,6 +115,7 @@ async def clean_session_factory(
 
 def test_all_catalog_workflow_keys_have_registered_handlers() -> None:
     """Every catalog workflow key must have a registered handler."""
+    import apps.api.app.execution.operational_extensions  # noqa: F401
     from apps.api.app.execution.workflow_catalog import WORKFLOW_TYPES
 
     registered = set(registered_workflow_keys())
@@ -118,6 +126,16 @@ def test_all_catalog_workflow_keys_have_registered_handlers() -> None:
 
 def test_unknown_workflow_key_has_no_handler() -> None:
     assert get_workflow_handler("nonexistent.workflow") is None
+
+
+def test_duplicate_workflow_handler_registration_fails_closed() -> None:
+    original = get_workflow_handler("gbp.publish_post")
+    assert original is not None
+
+    with pytest.raises(ValueError, match="already registered"):
+        register_workflow_handler("gbp.publish_post", original)
+
+    assert get_workflow_handler("gbp.publish_post") is original
 
 
 # ---------------------------------------------------------------------------
@@ -158,7 +176,7 @@ async def test_runtime_invokes_registered_handler_for_catalog_key(
 
     WORKFLOW_TYPES[test_key] = ("Test", "test")
     try:
-        async with clean_session_factory.begin() as session:
+        async with clean_session_factory() as session:
             org = Organization(
                 name="Handler Invocation Test",
                 slug=f"handler-invocation-test-{uuid4().hex[:8]}",
@@ -212,8 +230,9 @@ async def test_runtime_invokes_registered_handler_for_catalog_key(
             session.add(job)
             await session.flush()
             run_id = run.id
-
+            await session.commit()
             outcome = await _execute_workflow_job(session, job)
+            await session.commit()
 
         assert invoked.get("called") is True
         assert invoked.get("input") == {"hello": "world"}
@@ -240,7 +259,7 @@ async def test_runtime_fails_closed_for_catalog_key_with_no_handler(
     test_key = f"test.no_handler.{uuid4().hex[:8]}"
     WORKFLOW_TYPES[test_key] = ("No Handler", "test")
     try:
-        async with clean_session_factory.begin() as session:
+        async with clean_session_factory() as session:
             org = Organization(
                 name="No Handler Test",
                 slug=f"no-handler-test-{uuid4().hex[:8]}",
@@ -294,8 +313,9 @@ async def test_runtime_fails_closed_for_catalog_key_with_no_handler(
             session.add(job)
             await session.flush()
             run_id = run.id
-
+            await session.commit()
             outcome = await _execute_workflow_job(session, job)
+            await session.commit()
 
         assert outcome.result == "permanent_failure"
         assert outcome.safe_error == "WORKFLOW_HANDLER_NOT_REGISTERED"
@@ -353,7 +373,7 @@ async def test_handler_integrity_error_fails_job_and_keeps_transaction_usable(
 
     WORKFLOW_TYPES[test_key] = ("Integrity Error", "test")
     try:
-        async with clean_session_factory.begin() as session:
+        async with clean_session_factory() as session:
             org = Organization(
                 name="Integrity Error Test",
                 slug=f"integrity-error-test-{uuid4().hex[:8]}",
@@ -407,8 +427,9 @@ async def test_handler_integrity_error_fails_job_and_keeps_transaction_usable(
             session.add(job)
             await session.flush()
             run_id = run.id
-
+            await session.commit()
             outcome = await _execute_workflow_job(session, job)
+            await session.commit()
 
         assert outcome.result == "permanent_failure"
         assert outcome.safe_error == "DATABASE_DETERMINISTIC_ERROR"
@@ -436,6 +457,7 @@ async def test_gbp_publish_change_resolves_provider_location_from_revision(
     from apps.api.app.execution import handlers as handler_mod
 
     patched: dict[str, object] = {}
+    provider_transactions: list[bool] = []
 
     class FakeProfileAdapter:
         async def patch_location(
@@ -446,6 +468,7 @@ async def test_gbp_publish_change_resolves_provider_location_from_revision(
             update_mask: list[str],
             idempotency_key: str,
         ) -> dict[str, Any]:
+            provider_transactions.append(session.in_transaction())
             patched.update(
                 {
                     "access_token": access_token,
@@ -458,6 +481,7 @@ async def test_gbp_publish_change_resolves_provider_location_from_revision(
             return {"name": location_name, "profile": {"description": "Updated"}}
 
         async def get_location(self, access_token: str, location_name: str) -> dict[str, Any]:
+            provider_transactions.append(session.in_transaction())
             return {"name": location_name, "profile": {"description": "Updated"}}
 
     original = handler_mod._adapter_factory
@@ -465,7 +489,7 @@ async def test_gbp_publish_change_resolves_provider_location_from_revision(
     handler_mod._adapter_factory = FakeProfileAdapter  # type: ignore[assignment]
     handler_mod._token_resolver = _fake_token_resolver
     try:
-        async with clean_session_factory.begin() as session:
+        async with clean_session_factory() as session:
             org = Organization(
                 name="GBP Profile Handler Test",
                 slug=f"gbp-profile-handler-{uuid4().hex[:8]}",
@@ -597,18 +621,21 @@ async def test_gbp_publish_change_resolves_provider_location_from_revision(
             await session.flush()
             publication_id = publication.id
             organization_id = org.id
+            workflow_run_id = run.id
 
             assert location.id != gbp_location.id
+            await session.commit()
             outcome = await _handle_gbp_publish_change(
                 session,
                 organization_id=organization_id,
                 location_id=location.id,
                 input_document={"publication_id": str(publication_id)},
                 correlation_id="gbp-profile-handler",
-                workflow_run_id=uuid4(),
+                workflow_run_id=workflow_run_id,
             )
 
         assert outcome.result == "succeeded"
+        assert provider_transactions == [False, False]
         assert patched["location_name"] == "locations/456"
         assert patched["fields"] == {"profile.description": "Updated"}
         async with clean_session_factory() as session:
@@ -630,11 +657,14 @@ async def test_gbp_publish_change_resolves_provider_location_from_revision(
 @pytest.mark.anyio
 async def test_gbp_publish_post_creates_local_post_and_verifies(
     clean_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The GBP post handler creates a Local Post via the adapter and verifies."""
     from apps.api.app.execution import handlers as handler_mod
 
     post_resource_name = "accounts/123/locations/456/localPosts/abc123"
+    provider_transactions: list[bool] = []
+    published_body: dict[str, Any] = {}
 
     class FakePostAdapter:
         async def list_accounts(self, access_token: str) -> list[dict[str, Any]]:
@@ -663,9 +693,12 @@ async def test_gbp_publish_post_creates_local_post_and_verifies(
         async def create_local_post(
             self, access_token: str, location_name: str, post_body: dict[str, Any]
         ) -> dict[str, Any]:
+            provider_transactions.append(session.in_transaction())
+            published_body.update(post_body)
             return {"name": post_resource_name, "state": "LIVE", "postType": "STANDARD"}
 
         async def get_local_post(self, access_token: str, post_name: str) -> dict[str, Any]:
+            provider_transactions.append(session.in_transaction())
             return {"name": post_name, "state": "LIVE", "postType": "STANDARD"}
 
         async def list_local_posts(
@@ -688,8 +721,12 @@ async def test_gbp_publish_post_creates_local_post_and_verifies(
     original_resolver = handler_mod._token_resolver
     handler_mod._adapter_factory = FakePostAdapter
     handler_mod._token_resolver = _fake_token_resolver
+    monkeypatch.setattr(
+        "apps.api.app.integrations.google_drive_media.GoogleDriveMediaService.public_proxy_url",
+        lambda *args, **kwargs: "https://api.example.invalid/provider-media/image-token",
+    )
     try:
-        async with clean_session_factory.begin() as session:
+        async with clean_session_factory() as session:
             org = Organization(
                 name="GBP Post Handler Test",
                 slug=f"gbp-post-handler-test-{uuid4().hex[:8]}",
@@ -772,6 +809,23 @@ async def test_gbp_publish_post_creates_local_post_and_verifies(
             )
             session.add(post_revision)
             await session.flush()
+            session.add(
+                GBPPostAsset(
+                    organization_id=org.id,
+                    post_revision_id=post_revision.id,
+                    source_type="google_drive",
+                    source_reference="drive-image-1",
+                    provider_fetch_url="https://expired.example.invalid/image",
+                    metadata_document={
+                        "file_id": "drive-image-1",
+                        "name": "Approved image",
+                        "mime_type": "image/jpeg",
+                        "path": "Client/GBP/Approved image.jpg",
+                    },
+                    status="selected",
+                )
+            )
+            await session.flush()
 
             workflow_definition = WorkflowDefinition(
                 key="gbp.publish_post", name="Publish GBP post", owner="gbp", status="active"
@@ -815,18 +869,26 @@ async def test_gbp_publish_post_creates_local_post_and_verifies(
             session.add(post_pub)
             await session.flush()
             post_pub_id = post_pub.id
-
+            workflow_run_id = workflow_run.id
+            await session.commit()
             outcome = await _handle_gbp_publish_post(
                 session,
                 organization_id=org.id,
                 location_id=location.id,
                 input_document={"publication_id": str(post_pub_id)},
                 correlation_id="test",
-                workflow_run_id=uuid4(),
+                workflow_run_id=workflow_run_id,
             )
 
         assert outcome.result == "succeeded"
         assert outcome.result_reference == f"publication:{post_pub_id}"
+        assert provider_transactions == [False, False]
+        assert published_body["media"] == [
+            {
+                "mediaFormat": "PHOTO",
+                "sourceUrl": "https://api.example.invalid/provider-media/image-token",
+            }
+        ]
 
         async with clean_session_factory() as session:
             refreshed = await session.get(GBPPostPublication, post_pub_id)
@@ -1367,10 +1429,10 @@ async def _seed_gbp_post_publication(
     *,
     provider_post_id: str | None = None,
     publication_status: str = "reserved",
-) -> tuple[UUID, str]:
+) -> tuple[UUID, str, UUID]:
     """Seed the minimum rows for a GBP post handler invocation.
 
-    Returns (post_publication_id, post_resource_name).
+    Returns (post_publication_id, post_resource_name, workflow_run_id).
     """
     org = Organization(
         name=f"GBP Post {uuid4().hex[:8]}",
@@ -1498,7 +1560,7 @@ async def _seed_gbp_post_publication(
     )
     session.add(post_pub)
     await session.flush()
-    return post_pub.id, post_resource_name
+    return post_pub.id, post_resource_name, workflow_run.id
 
 
 def _make_stateful_post_adapter(
@@ -1506,10 +1568,12 @@ def _make_stateful_post_adapter(
     create_state: str = "PROCESSING",
     get_state: str = "PROCESSING",
     post_resource_name: str = "accounts/123/locations/456/localPosts/abc123",
-) -> type:
+) -> StatefulPostAdapterFactory:
     """Build a fake adapter whose create/get return the given states."""
 
     class _StatefulPostAdapter:
+        create_calls = 0
+
         async def list_accounts(self, access_token: str) -> list[dict[str, Any]]:
             raise NotImplementedError
 
@@ -1536,6 +1600,7 @@ def _make_stateful_post_adapter(
         async def create_local_post(
             self, access_token: str, location_name: str, post_body: dict[str, Any]
         ) -> dict[str, Any]:
+            type(self).create_calls += 1
             return {"name": post_resource_name, "state": create_state, "postType": "STANDARD"}
 
         async def get_local_post(self, access_token: str, post_name: str) -> dict[str, Any]:
@@ -1573,18 +1638,19 @@ async def test_gbp_publish_post_processing_state_does_not_become_verified(
     handler_mod._adapter_factory = fake_adapter_cls
     handler_mod._token_resolver = _fake_token_resolver
     try:
-        async with clean_session_factory.begin() as session:
-            post_pub_id, _name = await _seed_gbp_post_publication(session)
+        async with clean_session_factory() as session:
+            post_pub_id, _name, workflow_run_id = await _seed_gbp_post_publication(session)
 
             publication = await session.get(GBPPostPublication, post_pub_id)
             assert publication is not None
+            await session.commit()
             outcome = await _handle_gbp_publish_post(
                 session,
                 organization_id=publication.organization_id,
                 location_id=None,
                 input_document={"publication_id": str(post_pub_id)},
                 correlation_id="test",
-                workflow_run_id=uuid4(),
+                workflow_run_id=workflow_run_id,
             )
 
         assert outcome.result == "retryable_failure"
@@ -1621,8 +1687,8 @@ async def test_gbp_publish_post_processing_reread_does_not_become_verified(
     handler_mod._adapter_factory = fake_adapter_cls
     handler_mod._token_resolver = _fake_token_resolver
     try:
-        async with clean_session_factory.begin() as session:
-            post_pub_id, _name = await _seed_gbp_post_publication(
+        async with clean_session_factory() as session:
+            post_pub_id, _name, workflow_run_id = await _seed_gbp_post_publication(
                 session,
                 provider_post_id=post_resource_name,
                 publication_status="reconciliation_required",
@@ -1630,13 +1696,14 @@ async def test_gbp_publish_post_processing_reread_does_not_become_verified(
 
             publication = await session.get(GBPPostPublication, post_pub_id)
             assert publication is not None
+            await session.commit()
             outcome = await _handle_gbp_publish_post(
                 session,
                 organization_id=publication.organization_id,
                 location_id=None,
                 input_document={"publication_id": str(post_pub_id)},
                 correlation_id="test",
-                workflow_run_id=uuid4(),
+                workflow_run_id=workflow_run_id,
             )
 
         assert outcome.result == "retryable_failure"
@@ -1671,8 +1738,8 @@ async def test_gbp_publish_post_processing_then_live_becomes_verified_on_retry(
     handler_mod._adapter_factory = fake_adapter_cls
     handler_mod._token_resolver = _fake_token_resolver
     try:
-        async with clean_session_factory.begin() as session:
-            post_pub_id, _name = await _seed_gbp_post_publication(
+        async with clean_session_factory() as session:
+            post_pub_id, _name, workflow_run_id = await _seed_gbp_post_publication(
                 session,
                 provider_post_id=post_resource_name,
                 publication_status="reconciliation_required",
@@ -1680,17 +1747,19 @@ async def test_gbp_publish_post_processing_then_live_becomes_verified_on_retry(
 
             publication = await session.get(GBPPostPublication, post_pub_id)
             assert publication is not None
+            await session.commit()
             outcome = await _handle_gbp_publish_post(
                 session,
                 organization_id=publication.organization_id,
                 location_id=None,
                 input_document={"publication_id": str(post_pub_id)},
                 correlation_id="test",
-                workflow_run_id=uuid4(),
+                workflow_run_id=workflow_run_id,
             )
 
         assert outcome.result == "succeeded"
         assert outcome.result_reference == f"publication:{post_pub_id}"
+        assert fake_adapter_cls.create_calls == 0
 
         async with clean_session_factory() as session:
             refreshed = await session.get(GBPPostPublication, post_pub_id)
@@ -1720,8 +1789,8 @@ async def test_gbp_publish_post_rejected_remains_failed(
     handler_mod._adapter_factory = fake_adapter_cls
     handler_mod._token_resolver = _fake_token_resolver
     try:
-        async with clean_session_factory.begin() as session:
-            post_pub_id, _name = await _seed_gbp_post_publication(
+        async with clean_session_factory() as session:
+            post_pub_id, _name, workflow_run_id = await _seed_gbp_post_publication(
                 session,
                 provider_post_id=post_resource_name,
                 publication_status="reconciliation_required",
@@ -1729,13 +1798,14 @@ async def test_gbp_publish_post_rejected_remains_failed(
 
             publication = await session.get(GBPPostPublication, post_pub_id)
             assert publication is not None
+            await session.commit()
             outcome = await _handle_gbp_publish_post(
                 session,
                 organization_id=publication.organization_id,
                 location_id=None,
                 input_document={"publication_id": str(post_pub_id)},
                 correlation_id="test",
-                workflow_run_id=uuid4(),
+                workflow_run_id=workflow_run_id,
             )
 
         assert outcome.result == "permanent_failure"

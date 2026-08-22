@@ -52,7 +52,9 @@ async def test_long_running_job_renews_lease_and_completes(
     successfully and reach ``completed`` — not ``LEASE_EXPIRED``."""
     key = "seo.crawl_or_analysis"
     previous = handlers._REGISTRY.get(key)
-    handlers.register_workflow_handler(key, _sleeping_handler)
+    # This test deliberately substitutes a slow handler. Production registration
+    # remains fail-closed when a second handler claims an existing key.
+    handlers._REGISTRY[key] = _sleeping_handler
     svc = ExecutionService()
     try:
         async with workflows_session_factory.begin() as session:

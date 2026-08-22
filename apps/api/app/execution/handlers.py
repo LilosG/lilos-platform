@@ -121,7 +121,17 @@ _REGISTRY: dict[str, WorkflowStepHandler] = {}
 
 
 def register_workflow_handler(key: str, handler: WorkflowStepHandler) -> None:
-    """Register a step handler for a workflow definition key."""
+    """Register exactly one handler for a workflow definition key.
+
+    Import order must never change production behavior. A second registration
+    is therefore a startup/configuration error instead of a silent overwrite.
+    """
+    existing = _REGISTRY.get(key)
+    if existing is not None:
+        existing_name = getattr(existing, "__name__", type(existing).__name__)
+        raise ValueError(
+            f"workflow handler already registered for {key}: {existing.__module__}.{existing_name}"
+        )
     _REGISTRY[key] = handler
 
 
@@ -147,37 +157,49 @@ async def _handle_gbp_publish_change(
     correlation_id: str,
     workflow_run_id: UUID,
 ) -> JobOutcome:
-    """Publish an approved GBP profile change via the GBP adapter.
+    """Publish and verify one profile change through recoverable phases."""
+    from datetime import UTC, datetime
 
-    Resolves the publication reservation, reads a fresh access token,
-    calls the adapter's patch_location, verifies the write by re-reading,
-    and updates the publication status.
-    """
     from sqlalchemy import select
 
     from apps.api.app.products.gbp.models import (
+        GBPAccount,
         GBPLocation,
         GBPProfileChangeRevision,
         GBPPublication,
     )
+    from apps.api.app.products.gbp.resource_names import v1_location_name
+    from apps.api.app.products.gbp.service import GBPService
 
-    publication_id = input_document.get("publication_id")
-    if not publication_id:
+    publication_id_raw = input_document.get("publication_id")
+    if not publication_id_raw:
         return JobOutcome(result="permanent_failure", safe_error="MISSING_PUBLICATION_ID")
+    try:
+        publication_id = UUID(str(publication_id_raw))
+    except (TypeError, ValueError):
+        return JobOutcome(result="permanent_failure", safe_error="INVALID_PUBLICATION_ID")
 
     publication = await session.scalar(
-        select(GBPPublication).where(
+        select(GBPPublication)
+        .where(
             GBPPublication.organization_id == organization_id,
-            GBPPublication.id == UUID(str(publication_id)),
+            GBPPublication.id == publication_id,
         )
+        .with_for_update()
     )
     if publication is None:
         return JobOutcome(result="permanent_failure", safe_error="PUBLICATION_NOT_FOUND")
-    if publication.status != "reserved":
+    if publication.workflow_run_id != workflow_run_id:
+        return JobOutcome(result="permanent_failure", safe_error="WORKFLOW_SCOPE_MISMATCH")
+    if publication.status == "verified":
+        return JobOutcome(result="succeeded", result_reference=f"publication:{publication.id}")
+    if publication.status not in {"reserved", "dispatched", "reconciliation_required"}:
         return JobOutcome(result="permanent_failure", safe_error="PUBLICATION_NOT_RESERVABLE")
-    if not _provider_writes_enabled():
+    initial_dispatch = publication.status == "reserved"
+    if initial_dispatch and not _provider_writes_enabled():
         publication.status = "failed"
         publication.safe_error_code = "PROVIDER_WRITES_DISABLED"
+        await session.commit()
         return JobOutcome(result="permanent_failure", safe_error="PROVIDER_WRITES_DISABLED")
 
     revision = await session.scalar(
@@ -190,7 +212,13 @@ async def _handle_gbp_publish_change(
     if revision is None:
         publication.status = "failed"
         publication.safe_error_code = "CHANGE_REVISION_NOT_FOUND"
+        await session.commit()
         return JobOutcome(result="permanent_failure", safe_error="CHANGE_REVISION_NOT_FOUND")
+    if revision.status != "approved":
+        publication.status = "failed"
+        publication.safe_error_code = "CHANGE_REVISION_NOT_APPROVED"
+        await session.commit()
+        return JobOutcome(result="permanent_failure", safe_error="CHANGE_REVISION_NOT_APPROVED")
 
     gbp_location = await session.scalar(
         select(GBPLocation).where(
@@ -202,23 +230,55 @@ async def _handle_gbp_publish_change(
     if gbp_location is None:
         publication.status = "failed"
         publication.safe_error_code = "GBP_LOCATION_NOT_FOUND"
+        await session.commit()
         return JobOutcome(result="permanent_failure", safe_error="GBP_LOCATION_NOT_FOUND")
-    if not gbp_location.write_enabled:
+    if location_id is not None and location_id != publication.location_id:
+        publication.status = "failed"
+        publication.safe_error_code = "GBP_LOCATION_SCOPE_MISMATCH"
+        await session.commit()
+        return JobOutcome(result="permanent_failure", safe_error="GBP_LOCATION_SCOPE_MISMATCH")
+    if not gbp_location.write_enabled or gbp_location.mapping_status != "confirmed":
         publication.status = "failed"
         publication.safe_error_code = "WRITE_NOT_ENABLED"
+        await session.commit()
         return JobOutcome(result="permanent_failure", safe_error="WRITE_NOT_ENABLED")
 
-    adapter = _adapter_factory()
+    account = await session.get(GBPAccount, gbp_location.account_id)
+    if account is None or account.organization_id != organization_id:
+        publication.status = "failed"
+        publication.safe_error_code = "ACCOUNT_NOT_FOUND"
+        await session.commit()
+        return JobOutcome(result="permanent_failure", safe_error="ACCOUNT_NOT_FOUND")
+
+    update_fields = dict(revision.desired_fields)
+    if not update_fields:
+        publication.status = "failed"
+        publication.safe_error_code = "NO_FIELDS_TO_UPDATE"
+        await session.commit()
+        return JobOutcome(result="permanent_failure", safe_error="NO_FIELDS_TO_UPDATE")
+    location_name = v1_location_name(gbp_location.external_location_id)
+    update_mask = [str(field) for field in publication.update_mask]
+    idempotency_key = str(publication.idempotency_key)
+    gbp_location_id = gbp_location.id
+
+    # Make validation durable and release all locks before OAuth/provider I/O.
+    await session.commit()
 
     try:
         token, _connection = await _token_resolver(session, organization_id)
     except IntegrationNotFoundError:
-        publication.status = "failed"
-        publication.safe_error_code = "NO_CONNECTED_INTEGRATION"
+        publication = await session.get(GBPPublication, publication_id)
+        if publication is not None:
+            publication.status = "failed"
+            publication.safe_error_code = "NO_CONNECTED_INTEGRATION"
+        await session.commit()
         return JobOutcome(result="permanent_failure", safe_error="NO_CONNECTED_INTEGRATION")
     except IntegrationReconnectRequiredError:
-        publication.status = "reconciliation_required"
-        publication.safe_error_code = "TOKEN_REFRESH_FAILED"
+        publication = await session.get(GBPPublication, publication_id)
+        if publication is not None:
+            publication.status = "reconciliation_required"
+            publication.safe_error_code = "TOKEN_REFRESH_FAILED"
+        await session.commit()
         return JobOutcome(result="retryable_failure", safe_error="TOKEN_REFRESH_FAILED")
     except SecretUnavailableError as exc:
         logger.warning(
@@ -229,8 +289,11 @@ async def _handle_gbp_publish_change(
                 "error_detail": str(exc)[:200],
             },
         )
-        publication.status = "reconciliation_required"
-        publication.safe_error_code = "SECRET_RESOLUTION_FAILED"
+        publication = await session.get(GBPPublication, publication_id)
+        if publication is not None:
+            publication.status = "reconciliation_required"
+            publication.safe_error_code = "SECRET_RESOLUTION_FAILED"
+        await session.commit()
         return JobOutcome(result="permanent_failure", safe_error="SECRET_RESOLUTION_FAILED")
     except Exception as exc:
         logger.warning(
@@ -241,80 +304,117 @@ async def _handle_gbp_publish_change(
                 "error_detail": str(exc)[:200],
             },
         )
-        publication.status = "reconciliation_required"
-        publication.safe_error_code = "TOKEN_RESOLUTION_FAILED"
+        publication = await session.get(GBPPublication, publication_id)
+        if publication is not None:
+            publication.status = "reconciliation_required"
+            publication.safe_error_code = "TOKEN_RESOLUTION_FAILED"
+        await session.commit()
         return JobOutcome(result="retryable_failure", safe_error="TOKEN_RESOLUTION_FAILED")
+    # Token refresh may have written connection state. End that transaction
+    # before touching Google.
+    await session.commit()
+    adapter = _adapter_factory()
 
-    from apps.api.app.products.gbp.models import GBPAccount
-    from apps.api.app.products.gbp.resource_names import v1_location_name
-
-    acct = await session.get(GBPAccount, gbp_location.account_id)
-    if not acct:
-        publication.status = "failed"
-        publication.safe_error_code = "ACCOUNT_NOT_FOUND"
-        return JobOutcome(result="permanent_failure", safe_error="ACCOUNT_NOT_FOUND")
-
-    # Business Information v1 ``locations.patch`` uses the canonical
-    # ``locations/{locationId}`` resource name — NOT account-qualified.
-    location_name = v1_location_name(gbp_location.external_location_id)
-    update_fields: dict[str, Any] = {}
-
-    for key, value in revision.desired_fields.items():
-        update_fields[key] = value
-
-    if not update_fields:
-        publication.status = "failed"
-        publication.safe_error_code = "NO_FIELDS_TO_UPDATE"
-        return JobOutcome(result="permanent_failure", safe_error="NO_FIELDS_TO_UPDATE")
-
-    publication.status = "dispatched"
-    from datetime import UTC, datetime
-
-    publication.dispatched_at = datetime.now(UTC)
-
-    try:
-        await adapter.patch_location(
-            token,
-            location_name,
-            update_fields,
-            [str(f) for f in publication.update_mask],
-            str(publication.idempotency_key),
+    if initial_dispatch:
+        publication = await session.scalar(
+            select(GBPPublication)
+            .where(
+                GBPPublication.organization_id == organization_id,
+                GBPPublication.id == publication_id,
+                GBPPublication.status == "reserved",
+            )
+            .with_for_update()
         )
-    except Exception as exc:
-        publication.status = "failed"
-        publication.safe_error_code = "PROVIDER_WRITE_FAILED"
-        logger.warning(
-            "GBP publish failed",
-            extra={
-                "event_name": "gbp.publish.failed",
-                "publication_id": str(publication.id),
-                "error": str(exc)[:200],
-            },
-        )
-        return JobOutcome(result="retryable_failure", safe_error="PROVIDER_WRITE_FAILED")
+        if publication is None:
+            await session.rollback()
+            return JobOutcome(result="ambiguous", safe_error="PUBLICATION_DISPATCH_CONFLICT")
+        publication.status = "dispatched"
+        publication.dispatched_at = datetime.now(UTC)
+        publication.safe_error_code = None
+        await session.commit()
 
-    from apps.api.app.products.gbp.service import GBPService
+        try:
+            await adapter.patch_location(
+                token,
+                location_name,
+                update_fields,
+                update_mask,
+                idempotency_key,
+            )
+        except Exception as exc:
+            publication = await session.get(GBPPublication, publication_id)
+            if publication is not None:
+                publication.status = "reconciliation_required"
+                publication.safe_error_code = "PROVIDER_WRITE_AMBIGUOUS"
+            await session.commit()
+            logger.warning(
+                "GBP publish result is ambiguous",
+                extra={
+                    "event_name": "gbp.publish.failed",
+                    "publication_id": str(publication_id),
+                    "error": str(exc)[:200],
+                },
+            )
+            return JobOutcome(result="ambiguous", safe_error="PROVIDER_WRITE_AMBIGUOUS")
 
-    gbp_svc = GBPService()
     try:
         raw = await adapter.get_location(token, location_name)
-        await gbp_svc.store_snapshot(session, gbp_location, raw, partial=False)
     except Exception as exc:
-        publication.status = "reconciliation_required"
-        publication.safe_error_code = "VERIFICATION_REREAD_FAILED"
+        publication = await session.get(GBPPublication, publication_id)
+        if publication is not None:
+            publication.status = "reconciliation_required"
+            publication.safe_error_code = "VERIFICATION_REREAD_FAILED"
+        await session.commit()
         logger.warning(
             "GBP publish verification re-read failed",
             extra={
                 "event_name": "gbp.publish.verification_failed",
-                "publication_id": str(publication.id),
+                "publication_id": str(publication_id),
                 "error": str(exc)[:200],
             },
         )
         return JobOutcome(result="retryable_failure", safe_error="VERIFICATION_REREAD_FAILED")
 
+    def provider_value(field: str) -> object:
+        current: object = raw
+        for part in field.split("."):
+            if not isinstance(current, dict) or part not in current:
+                return None
+            current = current[part]
+        return current
+
+    verified = all(provider_value(field) == value for field, value in update_fields.items())
+    gbp_location = await session.scalar(
+        select(GBPLocation).where(
+            GBPLocation.organization_id == organization_id,
+            GBPLocation.id == gbp_location_id,
+        )
+    )
+    if gbp_location is None:
+        await session.rollback()
+        return JobOutcome(result="ambiguous", safe_error="GBP_LOCATION_LOST_AFTER_DISPATCH")
+    await GBPService().store_snapshot(session, gbp_location, raw, partial=False)
+    publication = await session.scalar(
+        select(GBPPublication)
+        .where(
+            GBPPublication.organization_id == organization_id,
+            GBPPublication.id == publication_id,
+        )
+        .with_for_update()
+    )
+    if publication is None:
+        await session.rollback()
+        return JobOutcome(result="ambiguous", safe_error="PUBLICATION_LOST_AFTER_DISPATCH")
+    if not verified:
+        publication.status = "reconciliation_required"
+        publication.safe_error_code = "VERIFICATION_CONTENT_MISMATCH"
+        await session.commit()
+        return JobOutcome(result="retryable_failure", safe_error="VERIFICATION_CONTENT_MISMATCH")
     publication.status = "verified"
     publication.verified_at = datetime.now(UTC)
     publication.provider_operation_reference = location_name
+    publication.safe_error_code = None
+    await session.commit()
 
     return JobOutcome(
         result="succeeded",
@@ -336,51 +436,70 @@ async def _handle_gbp_publish_post(
     correlation_id: str,
     workflow_run_id: UUID,
 ) -> JobOutcome:
-    """Publish an approved GBP Local Post via ``accounts.locations.localPosts.create``.
+    """Publish one approved GBP post through committed, recoverable phases.
 
-    Resolves the publication -> revision -> GBP location -> GBP account chain
-    (never accepts a provider path from the client), validates that only
-    supported post fields are present, calls ``create_local_post`` on the
-    adapter, then re-reads the post via ``get_local_post`` to verify the
-    provider resource exists.  Idempotent: if the publication already has a
-    ``provider_post_id`` (from a prior partial attempt), it re-reads that
-    resource instead of creating a duplicate.
+    The publication reservation and immutable provider payload are validated
+    before dispatch. The ``dispatched`` marker is committed before Google I/O,
+    provider identity is committed before verification, and every later retry
+    re-reads the same provider resource. An interrupted dispatch with no
+    provider identity is treated as ambiguous and requires reconciliation;
+    it is never blindly repeated.
     """
     from datetime import UTC, datetime
 
     from sqlalchemy import select
 
+    from apps.api.app.config import Settings
+    from apps.api.app.integrations.google_drive_media import DriveImage, GoogleDriveMediaService
     from apps.api.app.products.gbp.models import GBPAccount, GBPLocation
     from apps.api.app.products.gbp.operations_models import (
         GBPPostPublication,
         GBPPostRevision,
     )
+    from apps.api.app.products.gbp.post_generation_models import GBPPostAsset
     from apps.api.app.products.gbp.resource_names import v4_localposts_parent
 
-    publication_id = input_document.get("publication_id")
-    if not publication_id:
+    publication_id_raw = input_document.get("publication_id")
+    if not publication_id_raw:
         return JobOutcome(result="permanent_failure", safe_error="MISSING_PUBLICATION_ID")
+    try:
+        publication_id = UUID(str(publication_id_raw))
+    except (TypeError, ValueError):
+        return JobOutcome(result="permanent_failure", safe_error="INVALID_PUBLICATION_ID")
 
     publication = await session.scalar(
         select(GBPPostPublication)
         .where(
             GBPPostPublication.organization_id == organization_id,
-            GBPPostPublication.id == UUID(str(publication_id)),
+            GBPPostPublication.id == publication_id,
         )
         .with_for_update()
     )
     if publication is None:
         return JobOutcome(result="permanent_failure", safe_error="PUBLICATION_NOT_FOUND")
 
+    if publication.workflow_run_id != workflow_run_id:
+        return JobOutcome(result="permanent_failure", safe_error="WORKFLOW_SCOPE_MISMATCH")
     if publication.status == "verified":
         return JobOutcome(result="succeeded", result_reference=f"publication:{publication.id}")
     if publication.status not in ("reserved", "dispatched", "reconciliation_required"):
         return JobOutcome(result="permanent_failure", safe_error="PUBLICATION_NOT_RESERVABLE")
 
+    initial_dispatch = publication.status == "reserved"
+    if not initial_dispatch and not publication.provider_post_id:
+        publication.status = "reconciliation_required"
+        await session.commit()
+        return JobOutcome(result="ambiguous", safe_error="AMBIGUOUS_PROVIDER_RESULT")
+
     revision = await session.get(GBPPostRevision, publication.post_revision_id)
-    if revision is None:
+    if revision is None or revision.organization_id != organization_id:
         publication.status = "failed"
+        await session.commit()
         return JobOutcome(result="permanent_failure", safe_error="POST_REVISION_NOT_FOUND")
+    if revision.status != "approved":
+        publication.status = "failed"
+        await session.commit()
+        return JobOutcome(result="permanent_failure", safe_error="POST_REVISION_NOT_APPROVED")
 
     gbp_location = await session.scalar(
         select(GBPLocation).where(
@@ -390,26 +509,101 @@ async def _handle_gbp_publish_post(
     )
     if gbp_location is None:
         publication.status = "failed"
+        await session.commit()
         return JobOutcome(result="permanent_failure", safe_error="GBP_LOCATION_NOT_FOUND")
+
+    if location_id is not None and gbp_location.location_id != location_id:
+        publication.status = "failed"
+        await session.commit()
+        return JobOutcome(result="permanent_failure", safe_error="GBP_LOCATION_SCOPE_MISMATCH")
 
     if not gbp_location.write_enabled or gbp_location.mapping_status != "confirmed":
         publication.status = "failed"
+        await session.commit()
         return JobOutcome(result="permanent_failure", safe_error="WRITE_NOT_ENABLED")
 
     gbp_account = await session.get(GBPAccount, gbp_location.account_id)
-    if gbp_account is None:
+    if gbp_account is None or gbp_account.organization_id != organization_id:
         publication.status = "failed"
+        await session.commit()
         return JobOutcome(result="permanent_failure", safe_error="GBP_ACCOUNT_NOT_FOUND")
 
-    adapter = _adapter_factory()
+    if initial_dispatch and not _provider_writes_enabled():
+        publication.status = "failed"
+        await session.commit()
+        return JobOutcome(result="permanent_failure", safe_error="PROVIDER_WRITES_DISABLED")
+
+    post_type = revision.post_type.upper()
+    if post_type not in {"STANDARD", "EVENT", "OFFER"}:
+        publication.status = "failed"
+        await session.commit()
+        return JobOutcome(result="permanent_failure", safe_error="POST_TYPE_UNSUPPORTED")
+
+    post_body: dict[str, Any] = {
+        "languageCode": "en-US",
+        "postType": post_type,
+        "text": revision.content,
+    }
+    if revision.call_to_action:
+        action_type = str(revision.call_to_action.get("actionType", "")).upper()
+        if action_type not in {"BOOK", "ORDER", "SHOP", "LEARN_MORE", "SIGN_UP", "CALL", "MENU"}:
+            publication.status = "failed"
+            await session.commit()
+            return JobOutcome(result="permanent_failure", safe_error="POST_CTA_UNSUPPORTED")
+        post_body["callToAction"] = {**revision.call_to_action, "actionType": action_type}
+    if revision.event_or_offer:
+        if post_type == "EVENT":
+            post_body["event"] = revision.event_or_offer
+        elif post_type == "OFFER":
+            post_body["offer"] = revision.event_or_offer
+
+    selected_asset = await session.scalar(
+        select(GBPPostAsset).where(
+            GBPPostAsset.organization_id == organization_id,
+            GBPPostAsset.post_revision_id == revision.id,
+            GBPPostAsset.status == "selected",
+        )
+    )
+    if selected_asset is not None and selected_asset.source_type == "google_drive":
+        metadata = selected_asset.metadata_document or {}
+        file_id = str(metadata.get("file_id") or "")
+        if file_id:
+            image = DriveImage(
+                file_id=file_id,
+                name=str(metadata.get("name") or "GBP image"),
+                mime_type=str(metadata.get("mime_type") or "image/jpeg"),
+                path=str(metadata.get("path") or ""),
+                modified_time=str(metadata.get("modified_time") or "") or None,
+            )
+            fresh_url = GoogleDriveMediaService().public_proxy_url(
+                Settings(), organization_id=organization_id, image=image
+            )
+            if fresh_url:
+                selected_asset.provider_fetch_url = fresh_url
+                post_body["media"] = [{"mediaFormat": "PHOTO", "sourceUrl": fresh_url}]
+
+    location_name = v4_localposts_parent(
+        gbp_account.external_account_id, gbp_location.external_location_id
+    )
+    provider_post_id = publication.provider_post_id
+
+    # Release all validation locks before OAuth/provider work. The runtime also
+    # commits its workflow transition before invoking the handler.
+    await session.commit()
 
     try:
         token, _connection = await _token_resolver(session, organization_id)
     except IntegrationNotFoundError:
-        publication.status = "failed"
+        publication = await session.get(GBPPostPublication, publication_id)
+        if publication is not None:
+            publication.status = "failed"
+        await session.commit()
         return JobOutcome(result="permanent_failure", safe_error="NO_CONNECTED_INTEGRATION")
     except IntegrationReconnectRequiredError:
-        publication.status = "reconciliation_required"
+        publication = await session.get(GBPPostPublication, publication_id)
+        if publication is not None:
+            publication.status = "reconciliation_required"
+        await session.commit()
         return JobOutcome(result="retryable_failure", safe_error="TOKEN_REFRESH_FAILED")
     except SecretUnavailableError as exc:
         logger.warning(
@@ -420,7 +614,10 @@ async def _handle_gbp_publish_post(
                 "error_detail": str(exc)[:200],
             },
         )
-        publication.status = "reconciliation_required"
+        publication = await session.get(GBPPostPublication, publication_id)
+        if publication is not None:
+            publication.status = "reconciliation_required"
+        await session.commit()
         return JobOutcome(result="permanent_failure", safe_error="SECRET_RESOLUTION_FAILED")
     except Exception as exc:
         logger.warning(
@@ -431,38 +628,54 @@ async def _handle_gbp_publish_post(
                 "error_detail": str(exc)[:200],
             },
         )
-        publication.status = "reconciliation_required"
+        publication = await session.get(GBPPostPublication, publication_id)
+        if publication is not None:
+            publication.status = "reconciliation_required"
+        await session.commit()
         return JobOutcome(result="retryable_failure", safe_error="TOKEN_RESOLUTION_FAILED")
 
-    # Legacy My Business v4 ``accounts.locations.localPosts.create`` requires
-    # the account-qualified ``accounts/{accountId}/locations/{locationId}``
-    # parent — constructed from the same canonical location identity.
-    location_name = v4_localposts_parent(
-        gbp_account.external_account_id, gbp_location.external_location_id
-    )
+    # Token refresh may have persisted connection/audit state. Commit it before
+    # the Local Post provider call so no database transaction spans that I/O.
+    await session.commit()
+    adapter = _adapter_factory()
 
-    if publication.provider_post_id:
-        post_name = publication.provider_post_id
+    if provider_post_id:
         try:
-            re_read = await adapter.get_local_post(token, post_name)
+            re_read = await adapter.get_local_post(token, provider_post_id)
         except Exception as exc:
-            publication.status = "reconciliation_required"
+            publication = await session.get(GBPPostPublication, publication_id)
+            if publication is not None:
+                publication.status = "reconciliation_required"
+            await session.commit()
             logger.warning(
                 "GBP post verification re-read failed",
                 extra={
                     "event_name": "gbp.publish_post.verification_failed",
-                    "publication_id": str(publication.id),
+                    "publication_id": str(publication_id),
                     "error": str(exc)[:200],
                 },
             )
             return JobOutcome(result="retryable_failure", safe_error="VERIFICATION_REREAD_FAILED")
         provider_state = str(re_read.get("state", "")).upper()
+        publication = await session.scalar(
+            select(GBPPostPublication)
+            .where(
+                GBPPostPublication.organization_id == organization_id,
+                GBPPostPublication.id == publication_id,
+            )
+            .with_for_update()
+        )
+        if publication is None:
+            await session.rollback()
+            return JobOutcome(result="ambiguous", safe_error="PUBLICATION_LOST_AFTER_DISPATCH")
         if provider_state == "REJECTED":
             publication.status = "failed"
+            await session.commit()
             return JobOutcome(result="permanent_failure", safe_error="POST_REJECTED_BY_PROVIDER")
         if provider_state == "LIVE":
             publication.status = "verified"
             publication.verified_at = datetime.now(UTC)
+            await session.commit()
             return JobOutcome(result="succeeded", result_reference=f"publication:{publication.id}")
         # PROCESSING and any other non-LIVE, non-REJECTED state means the
         # post is still under provider moderation or in a transitional
@@ -470,77 +683,112 @@ async def _handle_gbp_publish_post(
         # same provider resource (provider_post_id is already persisted)
         # without creating a duplicate post.
         publication.status = "reconciliation_required"
+        await session.commit()
         return JobOutcome(result="retryable_failure", safe_error="POST_NOT_YET_LIVE")
 
-    if not _provider_writes_enabled():
-        publication.status = "failed"
-        return JobOutcome(result="permanent_failure", safe_error="PROVIDER_WRITES_DISABLED")
-
-    post_body: dict[str, Any] = {
-        "languageCode": "en-US",
-        "postType": revision.post_type,
-        "text": revision.content,
-    }
-    if revision.call_to_action:
-        post_body["callToAction"] = revision.call_to_action
-    if revision.event_or_offer:
-        if revision.post_type == "EVENT":
-            post_body["event"] = revision.event_or_offer
-        elif revision.post_type == "OFFER":
-            post_body["offer"] = revision.event_or_offer
-
+    publication = await session.scalar(
+        select(GBPPostPublication)
+        .where(
+            GBPPostPublication.organization_id == organization_id,
+            GBPPostPublication.id == publication_id,
+            GBPPostPublication.status == "reserved",
+            GBPPostPublication.provider_post_id.is_(None),
+        )
+        .with_for_update()
+    )
+    if publication is None:
+        await session.rollback()
+        return JobOutcome(result="ambiguous", safe_error="PUBLICATION_DISPATCH_CONFLICT")
     publication.status = "dispatched"
+    await session.commit()
 
     try:
         created = await adapter.create_local_post(token, location_name, post_body)
     except Exception as exc:
-        publication.status = "failed"
+        publication = await session.get(GBPPostPublication, publication_id)
+        if publication is not None:
+            publication.status = "reconciliation_required"
+        await session.commit()
         logger.warning(
             "GBP post creation failed",
             extra={
                 "event_name": "gbp.publish_post.failed",
-                "publication_id": str(publication.id),
+                "publication_id": str(publication_id),
                 "error": str(exc)[:200],
             },
         )
-        return JobOutcome(result="retryable_failure", safe_error="PROVIDER_WRITE_FAILED")
+        return JobOutcome(result="ambiguous", safe_error="PROVIDER_WRITE_AMBIGUOUS")
 
     provider_post_name = str(created.get("name", ""))
     if not provider_post_name:
-        publication.status = "reconciliation_required"
-        return JobOutcome(
-            result="permanent_failure", safe_error="PROVIDER_RETURNED_NO_RESOURCE_NAME"
-        )
+        publication = await session.get(GBPPostPublication, publication_id)
+        if publication is not None:
+            publication.status = "reconciliation_required"
+        await session.commit()
+        return JobOutcome(result="ambiguous", safe_error="PROVIDER_RETURNED_NO_RESOURCE_NAME")
 
+    publication = await session.scalar(
+        select(GBPPostPublication)
+        .where(
+            GBPPostPublication.organization_id == organization_id,
+            GBPPostPublication.id == publication_id,
+        )
+        .with_for_update()
+    )
+    if publication is None:
+        await session.rollback()
+        return JobOutcome(result="ambiguous", safe_error="PUBLICATION_LOST_AFTER_DISPATCH")
+    if publication.provider_post_id not in (None, provider_post_name):
+        publication.status = "reconciliation_required"
+        await session.commit()
+        return JobOutcome(result="ambiguous", safe_error="PROVIDER_IDENTITY_CONFLICT")
     publication.provider_post_id = provider_post_name
+    await session.commit()
 
     try:
         re_read = await adapter.get_local_post(token, provider_post_name)
     except Exception as exc:
-        publication.status = "reconciliation_required"
+        publication = await session.get(GBPPostPublication, publication_id)
+        if publication is not None:
+            publication.status = "reconciliation_required"
+        await session.commit()
         logger.warning(
             "GBP post verification re-read failed",
             extra={
                 "event_name": "gbp.publish_post.verification_failed",
-                "publication_id": str(publication.id),
+                "publication_id": str(publication_id),
                 "error": str(exc)[:200],
             },
         )
         return JobOutcome(result="retryable_failure", safe_error="VERIFICATION_REREAD_FAILED")
 
     provider_state = str(re_read.get("state", "")).upper()
+    publication = await session.scalar(
+        select(GBPPostPublication)
+        .where(
+            GBPPostPublication.organization_id == organization_id,
+            GBPPostPublication.id == publication_id,
+        )
+        .with_for_update()
+    )
+    if publication is None:
+        await session.rollback()
+        return JobOutcome(result="ambiguous", safe_error="PUBLICATION_LOST_AFTER_DISPATCH")
     if provider_state == "REJECTED":
         publication.status = "failed"
+        await session.commit()
         return JobOutcome(result="permanent_failure", safe_error="POST_REJECTED_BY_PROVIDER")
     if provider_state == "LIVE":
         publication.status = "verified"
         publication.verified_at = datetime.now(UTC)
+        await session.commit()
         return JobOutcome(result="succeeded", result_reference=f"publication:{publication.id}")
     # PROCESSING and any other non-LIVE, non-REJECTED state means the
     # post is still under provider moderation or in a transitional state.
     # provider_post_id is already persisted, so a later retry re-reads the
     # same provider resource without creating a duplicate post.
     publication.status = "reconciliation_required"
+    await session.commit()
     return JobOutcome(result="retryable_failure", safe_error="POST_NOT_YET_LIVE")
 
 
@@ -1677,7 +1925,6 @@ def _register_all() -> None:
     register_workflow_handler("gbp.publish_change", _handle_gbp_publish_change)
     register_workflow_handler("gbp.publish_post", _handle_gbp_publish_post)
     register_workflow_handler("gbp.upload_media", _handle_gbp_upload_media)
-    register_workflow_handler("seo.crawl_or_analysis", _handle_seo_crawl)
     register_workflow_handler("content.publish", _handle_content_publish)
     register_workflow_handler("content.draft_revision", _handle_content_draft_revision)
     register_workflow_handler("reviews.publish_response", _handle_reviews_publish_response)

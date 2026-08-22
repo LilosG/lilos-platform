@@ -70,11 +70,26 @@ class Settings(BaseSettings):
     supabase_auth_jwks_stale_seconds: Annotated[int, Field(ge=60, le=86_400)] = 3_600
     supabase_auth_clock_skew_seconds: Annotated[int, Field(ge=0, le=300)] = 60
     supabase_auth_max_token_bytes: Annotated[int, Field(ge=1_024, le=65_536)] = 16_384
+
     google_oauth_client_id: Annotated[str, Field(min_length=1, max_length=255)] | None = None
     google_oauth_client_secret: Annotated[str, Field(min_length=1, max_length=255)] | None = None
     google_oauth_redirect_uri: HttpUrl | None = None
+    google_pagespeed_api_key: Annotated[str, Field(min_length=1, max_length=512)] | None = None
+    google_drive_service_account_json: (
+        Annotated[str, Field(min_length=2, max_length=50_000)] | None
+    ) = None
+
+    # Optional external SEO enrichment provider. LILOs remains operational
+    # without it; when configured it can enrich deterministic crawl/GSC data.
+    dataforseo_login: Annotated[str, Field(min_length=1, max_length=512)] | None = None
+    dataforseo_password: Annotated[str, Field(min_length=1, max_length=512)] | None = None
+    dataforseo_base_url: Annotated[str, Field(min_length=1, max_length=512)] = (
+        "https://api.dataforseo.com/v3"
+    )
+
     secret_encryption_key: Annotated[str, Field(min_length=1, max_length=255)] | None = None
     secret_encryption_key_version: Annotated[int, Field(ge=1)] = 1
+
     # GitHub App (normal production publishing). The private key is the PEM
     # string configured in the secret manager; it is never committed and never
     # returned by any API. Installation access tokens are minted server-side
@@ -91,8 +106,25 @@ class Settings(BaseSettings):
     ] = "lilos-growth-operations"
     github_app_private_key: Annotated[str, Field(min_length=1, max_length=20_000)] | None = None
     github_app_installation_redirect_uri: HttpUrl | None = None
+
     # ── AI Gateway ──────────────────────────────────────────────────────
     ai_provider: Annotated[str, Field(min_length=1, max_length=64)] = "deterministic"
+    ai_hermes_base_url: Annotated[
+        str | None,
+        Field(min_length=1, max_length=512, validation_alias="LILOS_HERMES_BASE_URL"),
+    ] = None
+    ai_hermes_api_key: Annotated[
+        str | None,
+        Field(min_length=8, max_length=512, validation_alias="LILOS_HERMES_API_KEY"),
+    ] = None
+    ai_hermes_model: Annotated[
+        str,
+        Field(min_length=1, max_length=128, validation_alias="LILOS_HERMES_MODEL"),
+    ] = "hermes-agent"
+    ai_hermes_timeout_seconds: Annotated[
+        float,
+        Field(gt=0, le=600, validation_alias="LILOS_HERMES_TIMEOUT_SECONDS"),
+    ] = 120.0
     ai_openrouter_api_key: Annotated[
         str | None,
         Field(

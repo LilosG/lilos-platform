@@ -263,17 +263,24 @@ class WorkerBackend(DurableProcessBackend):
             raise
 
     async def _execute(self, job: Job) -> JobOutcome:
-        async with self.sessions() as session, session.begin():
-            if job.job_type == "workflow.execute":
-                outcome = await _execute_workflow_job(session, job)
-            else:
-                outcome = JobOutcome(result="permanent_failure", safe_error="JOB_TYPE_UNSUPPORTED")
-            await self.execution.finish(session, job.organization_id, job.id, outcome)
-            return outcome
+        async with self.sessions() as session:
+            try:
+                if job.job_type == "workflow.execute":
+                    outcome = await _execute_workflow_job(session, job)
+                else:
+                    outcome = JobOutcome(
+                        result="permanent_failure", safe_error="JOB_TYPE_UNSUPPORTED"
+                    )
+                await self.execution.finish(session, job.organization_id, job.id, outcome)
+                await session.commit()
+                return outcome
+            except BaseException:
+                await session.rollback()
+                raise
 
 
 async def _execute_workflow_job(session: AsyncSession, job: Job) -> JobOutcome:
-    """Execute a workflow job using registered step handlers or the deterministic envelope."""
+    """Execute a handler without holding the workflow row lock across external I/O."""
     run = await session.scalar(
         select(WorkflowRun)
         .where(
@@ -306,53 +313,75 @@ async def _execute_workflow_job(session: AsyncSession, job: Job) -> JobOutcome:
             run.started_at = run.started_at or now
             await session.flush()
 
+            run_id = run.id
+            run_organization_id = run.organization_id
+            run_location_id = run.location_id
+            run_input_document = dict(run.input_document)
+            # The durable transition is visible and the workflow row lock is
+            # released before any handler reaches OAuth, AI, or provider I/O.
+            await session.commit()
+
             try:
-                async with session.begin_nested():
-                    outcome = await handler(
-                        session,
-                        organization_id=run.organization_id,
-                        location_id=run.location_id,
-                        input_document=run.input_document,
-                        correlation_id=f"workflow-{run.id}",
-                        workflow_run_id=run.id,
-                    )
+                outcome = await handler(
+                    session,
+                    organization_id=run_organization_id,
+                    location_id=run_location_id,
+                    input_document=run_input_document,
+                    correlation_id=f"workflow-{run_id}",
+                    workflow_run_id=run_id,
+                )
             except DETERMINISTIC_DB_ERRORS as exc:
-                run.status = "failed"
-                run.failure_code = "DATABASE_DETERMINISTIC_ERROR"
+                await session.rollback()
+                outcome = JobOutcome(
+                    result="permanent_failure", safe_error="DATABASE_DETERMINISTIC_ERROR"
+                )
                 logger.error(
                     "Workflow handler raised a deterministic database error",
                     extra={
                         "event_name": "workflow.handler.database_error",
                         "workflow_key": workflow_key,
-                        "workflow_run_id": str(run.id),
+                        "workflow_run_id": str(run_id),
                         "exception_type": type(exc).__name__,
                         **postgres_error_context(exc),
                     },
                 )
-                return JobOutcome(
-                    result="permanent_failure", safe_error="DATABASE_DETERMINISTIC_ERROR"
-                )
             except Exception as exc:
-                run.status = "failed"
-                run.failure_code = "HANDLER_EXCEPTION"
+                await session.rollback()
+                outcome = JobOutcome(result="permanent_failure", safe_error="HANDLER_EXCEPTION")
                 logger.exception(
                     "Workflow handler raised an exception",
                     extra={
                         "event_name": "workflow.handler.exception",
                         "workflow_key": workflow_key,
-                        "workflow_run_id": str(run.id),
+                        "workflow_run_id": str(run_id),
                         "error": str(exc)[:200],
                     },
                 )
-                return JobOutcome(result="permanent_failure", safe_error="HANDLER_EXCEPTION")
-
+            run = await session.scalar(
+                select(WorkflowRun)
+                .where(
+                    WorkflowRun.organization_id == run_organization_id,
+                    WorkflowRun.id == run_id,
+                )
+                .with_for_update()
+            )
+            if run is None:
+                return JobOutcome(result="ambiguous", safe_error="WORKFLOW_RUN_LOST")
             if outcome.result == "succeeded":
                 run.status = "completed"
                 run.completed_at = datetime.now(UTC)
                 run.output_reference = outcome.result_reference
-            elif outcome.result in ("permanent_failure", "retryable_failure"):
+                run.failure_code = None
+            elif outcome.result == "retryable_failure":
+                run.status = "retry_scheduled"
+                run.failure_code = outcome.safe_error
+            elif outcome.result == "ambiguous":
+                run.status = "escalated"
+                run.failure_code = outcome.safe_error
+            else:
                 run.status = "failed"
                 run.failure_code = outcome.safe_error
+            await ExecutionService().record_run_outcome(session, run, workflow_key, outcome)
             await session.flush()
             return outcome
 

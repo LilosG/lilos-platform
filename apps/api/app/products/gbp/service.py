@@ -379,6 +379,7 @@ class GBPService:
             summary="GBP publication reserved for dispatch.",
             metadata={"status": item.status, "change_revision_id": str(revision.id)},
         )
+        await self.execution.enqueue_consumed_run(session, workflow_run)
         return item
 
     async def list_accounts(self, session: AsyncSession, organization_id: UUID) -> list[GBPAccount]:

@@ -15,6 +15,8 @@ SERVICE_POLICY = {
     "lilos-worker": ("worker", None, "/app/scripts/render_start_worker.sh", 300),
     "lilos-scheduler": ("worker", None, "/app/scripts/render_start_scheduler.sh", 60),
 }
+HERMES_SERVICE = "lilos-hermes"
+HERMES_IMAGE = "docker.io/nousresearch/hermes-agent:v2026.7.7.2"
 DOCKERFILE = "./infrastructure/docker/backend.Dockerfile"
 SHARED_GROUP = "lilos-production-runtime"
 WORKER_SCHEDULER_SECRETS = {
@@ -32,6 +34,12 @@ WORKER_SCHEDULER_SECRETS = {
     "LILOS_GITHUB_APP_INSTALLATION_REDIRECT_URI",
     "LILOS_OPENROUTER_API_KEY",
 }
+WORKER_SECRETS = WORKER_SCHEDULER_SECRETS | {
+    "LILOS_GOOGLE_PAGESPEED_API_KEY",
+    "LILOS_GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON",
+    "LILOS_DATAFORSEO_LOGIN",
+    "LILOS_DATAFORSEO_PASSWORD",
+}
 
 SECRET_POLICY = {
     "lilos-api": {
@@ -44,6 +52,10 @@ SECRET_POLICY = {
         "LILOS_GOOGLE_OAUTH_CLIENT_ID",
         "LILOS_GOOGLE_OAUTH_CLIENT_SECRET",
         "LILOS_GOOGLE_OAUTH_REDIRECT_URI",
+        "LILOS_GOOGLE_PAGESPEED_API_KEY",
+        "LILOS_GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON",
+        "LILOS_DATAFORSEO_LOGIN",
+        "LILOS_DATAFORSEO_PASSWORD",
         "LILOS_SECRET_ENCRYPTION_KEY",
         "LILOS_GITHUB_APP_ID",
         "LILOS_GITHUB_APP_CLIENT_ID",
@@ -51,7 +63,7 @@ SECRET_POLICY = {
         "LILOS_GITHUB_APP_INSTALLATION_REDIRECT_URI",
         "LILOS_OPENROUTER_API_KEY",
     },
-    "lilos-worker": WORKER_SCHEDULER_SECRETS,
+    "lilos-worker": WORKER_SECRETS,
     "lilos-scheduler": WORKER_SCHEDULER_SECRETS,
 }
 PROHIBITED_ROOT_KEYS = {"databases", "projects"}
@@ -92,7 +104,7 @@ def validate_blueprint(path: Path = BLUEPRINT) -> tuple[str, ...]:
         for service in services
         if isinstance(service, dict) and isinstance(service.get("name"), str)
     }
-    if set(by_name) != set(SERVICE_POLICY):
+    if set(by_name) != {*SERVICE_POLICY, HERMES_SERVICE}:
         errors.append("services:exact-set")
 
     for name, (
@@ -132,6 +144,81 @@ def validate_blueprint(path: Path = BLUEPRINT) -> tuple[str, ...]:
 
         if name != "lilos-api" and "preDeployCommand" in service:
             errors.append(f"{name}:predeploy")
+
+    hermes = by_name.get(HERMES_SERVICE, {})
+    if (
+        hermes.get("type") != "pserv"
+        or hermes.get("runtime") != "image"
+        or hermes.get("region") != "oregon"
+        or hermes.get("plan") != "standard"
+    ):
+        errors.append("lilos-hermes:runtime-policy")
+    if hermes.get("image") != {"url": HERMES_IMAGE}:
+        errors.append("lilos-hermes:image")
+    if hermes.get("dockerCommand") != "gateway run":
+        errors.append("lilos-hermes:command")
+    if hermes.get("disk") != {
+        "name": "hermes-data",
+        "mountPath": "/opt/data",
+        "sizeGB": 5,
+    }:
+        errors.append("lilos-hermes:persistent-disk")
+    hermes_env = {
+        item.get("key"): item
+        for item in hermes.get("envVars", [])
+        if isinstance(item, dict) and isinstance(item.get("key"), str)
+    }
+    hermes_values = {
+        "API_SERVER_ENABLED": "true",
+        "API_SERVER_HOST": "0.0.0.0",
+        "API_SERVER_PORT": "8642",
+        "API_SERVER_MODEL_NAME": "hermes-agent",
+        "HERMES_INFERENCE_MODEL": "deepseek/deepseek-v4-flash-0731",
+        "HERMES_MAX_ITERATIONS": "60",
+        "HERMES_YOLO_MODE": "0",
+    }
+    if set(hermes_env) != {*hermes_values, "API_SERVER_KEY", "OPENROUTER_API_KEY"}:
+        errors.append("lilos-hermes:env-exact-set")
+    for key, value in hermes_values.items():
+        if hermes_env.get(key) != {"key": key, "value": value}:
+            errors.append(f"lilos-hermes:env:{key}")
+    if hermes_env.get("API_SERVER_KEY") != {
+        "key": "API_SERVER_KEY",
+        "generateValue": True,
+    }:
+        errors.append("lilos-hermes:generated-api-key")
+    if hermes_env.get("OPENROUTER_API_KEY") != {
+        "key": "OPENROUTER_API_KEY",
+        "sync": False,
+    }:
+        errors.append("lilos-hermes:openrouter-secret")
+
+    expected_base_url = {
+        "key": "LILOS_HERMES_BASE_URL",
+        "fromService": {
+            "name": HERMES_SERVICE,
+            "type": "pserv",
+            "property": "hostport",
+        },
+    }
+    expected_api_key = {
+        "key": "LILOS_HERMES_API_KEY",
+        "fromService": {
+            "name": HERMES_SERVICE,
+            "type": "pserv",
+            "envVarKey": "API_SERVER_KEY",
+        },
+    }
+    for consumer in ("lilos-api", "lilos-worker"):
+        consumer_env = {
+            item.get("key"): item
+            for item in by_name.get(consumer, {}).get("envVars", [])
+            if isinstance(item, dict) and isinstance(item.get("key"), str)
+        }
+        if consumer_env.get("LILOS_HERMES_BASE_URL") != expected_base_url:
+            errors.append(f"{consumer}:hermes-private-url")
+        if consumer_env.get("LILOS_HERMES_API_KEY") != expected_api_key:
+            errors.append(f"{consumer}:hermes-api-key")
 
     api = by_name.get("lilos-api", {})
     api_start_script = ROOT / "scripts" / "render_start_api.sh"
@@ -182,6 +269,8 @@ def validate_blueprint(path: Path = BLUEPRINT) -> tuple[str, ...]:
     }
     if production_values.get("LILOS_PROVIDER_WRITES_ENABLED") != "true":
         errors.append("production:provider-writes-disabled")
+    if production_values.get("LILOS_AI_PROVIDER") != "hermes":
+        errors.append("production:hermes-not-primary")
     return tuple(sorted(errors))
 
 

@@ -9,6 +9,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     ForeignKeyConstraint,
+    Index,
     Integer,
     String,
     UniqueConstraint,
@@ -31,6 +32,13 @@ class ContentOpportunity(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ),
         UniqueConstraint(
             "organization_id", "evidence_hash", name="uq_content_opportunity_evidence"
+        ),
+        Index(
+            "ix_content_opportunities_org_source_reference",
+            "organization_id",
+            "source_reference",
+            "created_at",
+            "id",
         ),
         CheckConstraint(
             "status IN ('identified','validated','accepted','rejected','converted','archived')",

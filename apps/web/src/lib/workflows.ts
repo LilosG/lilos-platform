@@ -1,9 +1,5 @@
 import { apiRequest, type ApiOutcome } from "./api-client";
 
-// ---------------------------------------------------------------------------
-// Workflow catalog types
-// ---------------------------------------------------------------------------
-
 export interface WorkflowTypeEntry {
   key: string;
   display_name: string;
@@ -77,10 +73,6 @@ export type WorkflowRunStart = {
   product_key: string | null;
 };
 
-// ---------------------------------------------------------------------------
-// API methods
-// ---------------------------------------------------------------------------
-
 export function listWorkflowTypes(
   organizationId: string,
 ): Promise<ApiOutcome<WorkflowTypeEntry[]>> {
@@ -140,6 +132,7 @@ export function startWorkflowRun(
     locationId?: string;
     idempotencyKey: string;
     inputDocument?: Record<string, unknown>;
+    execute?: boolean;
   },
 ): Promise<ApiOutcome<WorkflowRunStart>> {
   return apiRequest(
@@ -150,6 +143,7 @@ export function startWorkflowRun(
         location_id: options.locationId ?? null,
         idempotency_key: options.idempotencyKey,
         input_document: options.inputDocument ?? {},
+        execute: options.execute ?? false,
       },
     },
   );
