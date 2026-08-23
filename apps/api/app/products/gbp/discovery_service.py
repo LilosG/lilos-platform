@@ -24,6 +24,7 @@ from apps.api.app.config import Settings
 from apps.api.app.integrations.connection_service import GBPConnectionService
 from apps.api.app.integrations.contracts import MappingCreate
 from apps.api.app.products.gbp.adapter import GBPAdapter, GoogleBusinessProfileAdapter
+from apps.api.app.products.gbp.freshness import profile_sync_is_stale
 from apps.api.app.products.gbp.models import GBPAccount, GBPLocation, GBPProfileSnapshot
 from apps.api.app.products.gbp.operations_models import GBPProviderPost
 from apps.api.app.products.gbp.resource_names import (
@@ -614,8 +615,7 @@ class GBPDiscoveryService:
         actor_id: UUID | None,
         correlation_id: str,
     ) -> dict[str, Any]:
-        """Full discovery pass: accounts, locations, then initial profile sync
-        for every newly-discovered location.
+        """Full discovery pass: accounts, locations, then eligible profile syncs.
 
         Returns a summary dict suitable for an API response.
         """
@@ -635,8 +635,9 @@ class GBPDiscoveryService:
         )
 
         synced = 0
+        freshness_observed_at = datetime.now(UTC)
         for loc in locations:
-            if loc.last_synced_at is None:
+            if profile_sync_is_stale(loc.last_synced_at, now=freshness_observed_at):
                 try:
                     await self.sync_profile(
                         session,

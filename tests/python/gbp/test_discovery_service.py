@@ -10,7 +10,7 @@ marking, and truthful error/empty-state handling.
 
 import asyncio
 from collections.abc import Iterator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -32,6 +32,7 @@ from apps.api.app.locations.models import Location
 from apps.api.app.organizations.enums import OrganizationStatus, OrganizationType
 from apps.api.app.organizations.models import Organization
 from apps.api.app.products.gbp.discovery_service import GBPDiscoveryService
+from apps.api.app.products.gbp.freshness import PROFILE_SYNC_FRESHNESS
 from apps.api.app.products.gbp.models import GBPAccount, GBPLocation, GBPProfileSnapshot
 from apps.api.app.products.gbp.operations_models import GBPProviderPost
 
@@ -57,6 +58,7 @@ class FakeGBPAdapter:
         self._account_error = account_error
         self._location_error = location_error
         self._location_detail_error = location_detail_error
+        self.location_detail_calls: list[str] = []
 
     async def list_accounts(self, access_token: str) -> list[dict[str, Any]]:
         del access_token
@@ -72,6 +74,7 @@ class FakeGBPAdapter:
 
     async def get_location(self, access_token: str, location_name: str) -> dict[str, Any]:
         del access_token
+        self.location_detail_calls.append(location_name)
         if location_name in self._location_details:
             return dict(self._location_details[location_name])
         if self._location_detail_error:
@@ -205,6 +208,42 @@ async def _setup_org_with_connection(
         session.add(connection)
         await session.flush()
         return org.id, connection.id
+
+
+async def _seed_discovery_locations(
+    factory: async_sessionmaker[AsyncSession],
+    organization_id: UUID,
+    connection_id: UUID,
+    last_synced_by_external_id: dict[str, datetime | None],
+) -> dict[str, UUID]:
+    """Seed existing GBP rows that a discovery pass will rediscover."""
+    async with factory.begin() as session:
+        account = GBPAccount(
+            organization_id=organization_id,
+            connection_id=connection_id,
+            external_account_id="111",
+            display_name="Discovery Refresh Account",
+            status="discovered",
+        )
+        session.add(account)
+        await session.flush()
+
+        location_ids: dict[str, UUID] = {}
+        for external_location_id, last_synced_at in last_synced_by_external_id.items():
+            location = GBPLocation(
+                organization_id=organization_id,
+                connection_id=connection_id,
+                account_id=account.id,
+                external_location_id=external_location_id,
+                business_name=external_location_id,
+                mapping_status="unmapped",
+                last_synced_at=last_synced_at,
+            )
+            session.add(location)
+            await session.flush()
+            location_ids[external_location_id] = location.id
+
+        return location_ids
 
 
 SetupTuple = tuple[async_sessionmaker[AsyncSession], str, UUID, UUID]
@@ -936,6 +975,190 @@ class TestGBPProfileSync:
 @pytest.mark.integration
 class TestDiscoverAndSync:
     """Combined discover_and_sync: full flow with individual sync failure tolerance."""
+
+    def test_never_synced_location_executes_profile_sync(
+        self, discovery_session_factory: async_sessionmaker[AsyncSession], postgresql_test_url: str
+    ) -> None:
+        org_id, connection_id = asyncio.run(
+            _setup_org_with_connection(discovery_session_factory, slug="never-synced-refresh-org")
+        )
+        asyncio.run(
+            _seed_discovery_locations(
+                discovery_session_factory,
+                org_id,
+                connection_id,
+                {"locations/loc-a": None},
+            )
+        )
+        adapter = FakeGBPAdapter(
+            accounts=[{"name": "accounts/111", "accountName": "Account"}],
+            locations_by_account={"accounts/111": [{"name": "locations/loc-a", "title": "Loc A"}]},
+            location_details={"locations/loc-a": {"name": "locations/loc-a", "title": "Loc A"}},
+        )
+        service = GBPDiscoveryService(adapter=adapter, connection=FakeConnectionService())
+
+        async def run() -> dict[str, Any]:
+            async with discovery_session_factory() as session, session.begin():
+                return await service.discover_and_sync(
+                    session,
+                    _settings(postgresql_test_url),
+                    org_id,
+                    actor_id=None,
+                    correlation_id="test-never-synced-refresh",
+                )
+
+        summary = asyncio.run(run())
+        assert summary["profiles_synced"] == 1
+        assert adapter.location_detail_calls == ["locations/loc-a"]
+
+    def test_stale_location_executes_profile_sync_and_advances_timestamp(
+        self, discovery_session_factory: async_sessionmaker[AsyncSession], postgresql_test_url: str
+    ) -> None:
+        org_id, connection_id = asyncio.run(
+            _setup_org_with_connection(discovery_session_factory, slug="stale-refresh-org")
+        )
+        stale_synced_at = datetime.now(UTC) - PROFILE_SYNC_FRESHNESS - timedelta(hours=1)
+        location_ids = asyncio.run(
+            _seed_discovery_locations(
+                discovery_session_factory,
+                org_id,
+                connection_id,
+                {"locations/loc-a": stale_synced_at},
+            )
+        )
+        adapter = FakeGBPAdapter(
+            accounts=[{"name": "accounts/111", "accountName": "Account"}],
+            locations_by_account={"accounts/111": [{"name": "locations/loc-a", "title": "Loc A"}]},
+            location_details={
+                "locations/loc-a": {"name": "locations/loc-a", "title": "Loc A refreshed"}
+            },
+        )
+        service = GBPDiscoveryService(adapter=adapter, connection=FakeConnectionService())
+
+        async def run() -> dict[str, Any]:
+            async with discovery_session_factory() as session, session.begin():
+                return await service.discover_and_sync(
+                    session,
+                    _settings(postgresql_test_url),
+                    org_id,
+                    actor_id=None,
+                    correlation_id="test-stale-refresh",
+                )
+
+        summary = asyncio.run(run())
+
+        async def read_last_synced_at() -> datetime | None:
+            async with discovery_session_factory() as session:
+                location = await session.get(GBPLocation, location_ids["locations/loc-a"])
+                assert location is not None
+                return location.last_synced_at
+
+        refreshed_at = asyncio.run(read_last_synced_at())
+        assert summary["profiles_synced"] == 1
+        assert adapter.location_detail_calls == ["locations/loc-a"]
+        assert refreshed_at is not None
+        assert refreshed_at > stale_synced_at
+
+    def test_fresh_location_skips_provider_profile_read(
+        self, discovery_session_factory: async_sessionmaker[AsyncSession], postgresql_test_url: str
+    ) -> None:
+        org_id, connection_id = asyncio.run(
+            _setup_org_with_connection(discovery_session_factory, slug="fresh-skip-org")
+        )
+        fresh_synced_at = datetime.now(UTC) - PROFILE_SYNC_FRESHNESS + timedelta(hours=1)
+        asyncio.run(
+            _seed_discovery_locations(
+                discovery_session_factory,
+                org_id,
+                connection_id,
+                {"locations/loc-a": fresh_synced_at},
+            )
+        )
+        adapter = FakeGBPAdapter(
+            accounts=[{"name": "accounts/111", "accountName": "Account"}],
+            locations_by_account={"accounts/111": [{"name": "locations/loc-a", "title": "Loc A"}]},
+            location_details={
+                "locations/loc-a": {"name": "locations/loc-a", "title": "Must not be read"}
+            },
+        )
+        service = GBPDiscoveryService(adapter=adapter, connection=FakeConnectionService())
+
+        async def run() -> dict[str, Any]:
+            async with discovery_session_factory() as session, session.begin():
+                return await service.discover_and_sync(
+                    session,
+                    _settings(postgresql_test_url),
+                    org_id,
+                    actor_id=None,
+                    correlation_id="test-fresh-skip",
+                )
+
+        summary = asyncio.run(run())
+        assert summary["profiles_synced"] == 0
+        assert adapter.location_detail_calls == []
+
+    def test_stale_profile_failure_does_not_block_another_eligible_location(
+        self, discovery_session_factory: async_sessionmaker[AsyncSession], postgresql_test_url: str
+    ) -> None:
+        org_id, connection_id = asyncio.run(
+            _setup_org_with_connection(discovery_session_factory, slug="stale-isolation-org")
+        )
+        stale_synced_at = datetime.now(UTC) - PROFILE_SYNC_FRESHNESS - timedelta(hours=1)
+        location_ids = asyncio.run(
+            _seed_discovery_locations(
+                discovery_session_factory,
+                org_id,
+                connection_id,
+                {
+                    "locations/loc-a": stale_synced_at,
+                    "locations/loc-b": stale_synced_at,
+                },
+            )
+        )
+        adapter = FakeGBPAdapter(
+            accounts=[{"name": "accounts/111", "accountName": "Account"}],
+            locations_by_account={
+                "accounts/111": [
+                    {"name": "locations/loc-a", "title": "Loc A"},
+                    {"name": "locations/loc-b", "title": "Loc B"},
+                ]
+            },
+            location_details={"locations/loc-a": {"name": "locations/loc-a", "title": "Loc A"}},
+            location_detail_error=RuntimeError("loc-b fetch failed"),
+        )
+        service = GBPDiscoveryService(adapter=adapter, connection=FakeConnectionService())
+
+        async def run() -> dict[str, Any]:
+            async with discovery_session_factory() as session, session.begin():
+                return await service.discover_and_sync(
+                    session,
+                    _settings(postgresql_test_url),
+                    org_id,
+                    actor_id=None,
+                    correlation_id="test-stale-failure-isolation",
+                )
+
+        summary = asyncio.run(run())
+
+        async def read_last_synced_at() -> dict[str, datetime | None]:
+            async with discovery_session_factory() as session:
+                locations = list(
+                    await session.scalars(
+                        select(GBPLocation).where(
+                            GBPLocation.id.in_(location_ids.values()),
+                        )
+                    )
+                )
+                return {
+                    location.external_location_id: location.last_synced_at for location in locations
+                }
+
+        synced_at = asyncio.run(read_last_synced_at())
+        assert summary["profiles_synced"] == 1
+        assert set(adapter.location_detail_calls) == {"locations/loc-a", "locations/loc-b"}
+        assert synced_at["locations/loc-a"] is not None
+        assert synced_at["locations/loc-a"] > stale_synced_at
+        assert synced_at["locations/loc-b"] == stale_synced_at
 
     def test_discover_and_sync_chains_all_three_phases(
         self, discovery_session_factory: async_sessionmaker[AsyncSession], postgresql_test_url: str

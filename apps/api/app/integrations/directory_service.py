@@ -7,7 +7,7 @@ caller to assemble partial provider detail from product routes.
 """
 
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -23,6 +23,7 @@ from apps.api.app.integrations.models import (
     Provider,
     ProviderResourceMapping,
 )
+from apps.api.app.products.gbp.freshness import profile_sync_is_stale
 from apps.api.app.products.gbp.models import GBPLocation
 
 
@@ -284,7 +285,7 @@ class IntegrationDirectoryService:
         )
 
         result: list[dict[str, object]] = []
-        stale_cutoff = datetime.now(UTC) - timedelta(hours=24)
+        freshness_observed_at = datetime.now(UTC)
 
         for mapping in mappings:
             display_name = None
@@ -315,7 +316,11 @@ class IntegrationDirectoryService:
                     if gbp_loc.last_synced_at is not None:
                         last_synced_at = gbp_loc.last_synced_at.isoformat()
                         sync_freshness = (
-                            "stale" if gbp_loc.last_synced_at < stale_cutoff else "fresh"
+                            "stale"
+                            if profile_sync_is_stale(
+                                gbp_loc.last_synced_at, now=freshness_observed_at
+                            )
+                            else "fresh"
                         )
 
             result.append(
