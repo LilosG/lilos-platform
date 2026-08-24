@@ -203,7 +203,8 @@ async def test_scheduled_execution_end_to_end(
     monkeypatch.setattr(GBPDiscoveryService, "discover_and_sync", fake_discover_and_sync)
 
     # ── Create an active schedule that is ALREADY DUE ─────────────────
-    due_at = datetime.now(UTC) - timedelta(minutes=1)
+    now = datetime.now(UTC)
+    due_at = now.replace(minute=0, second=0, microsecond=0)
     service = ExecutionService()
     async with workflows_session_factory.begin() as session:
         schedule_cmd = ScheduleCreate(
@@ -235,7 +236,8 @@ async def test_scheduled_execution_end_to_end(
             assert schedule.last_run_at is not None
             assert abs((schedule.last_run_at - due_at).total_seconds()) < 5
             assert schedule.next_run_at is not None
-            assert schedule.next_run_at > schedule.last_run_at
+            assert schedule.next_run_at == due_at + timedelta(hours=1)
+            assert schedule.next_run_at > now
 
             # Durable run + job created by dispatch
             run = await session.scalar(
