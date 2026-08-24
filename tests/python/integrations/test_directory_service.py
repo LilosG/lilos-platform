@@ -136,11 +136,83 @@ class TestGoogleWorkspace:
         session.scalar.return_value = location
 
         result = asyncio.run(
-            IntegrationDirectoryService()._confirmed_mappings(session, organization_id)
+            IntegrationDirectoryService()._confirmed_mappings(
+                session, organization_id, connection_id
+            )
         )
 
         assert profile_sync_is_stale(last_synced_at)
         assert result[0]["sync_freshness"] == "stale"
+        assert result[0]["gbp_location_id"] == str(location.id)
+        assert result[0]["mapping_status"] == "confirmed"
+        assert result[0]["write_enabled"] is False
+
+    def test_confirmed_mapping_reports_write_enabled_backend_truth(self) -> None:
+        organization_id = uuid4()
+        connection_id = uuid4()
+        mapping = ProviderResourceMapping(
+            id=uuid4(),
+            organization_id=organization_id,
+            connection_id=connection_id,
+            resource_type="location",
+            external_resource_id="locations/write-enabled",
+            platform_resource_id=uuid4(),
+            status="active",
+        )
+        location = GBPLocation(
+            id=uuid4(),
+            organization_id=organization_id,
+            connection_id=connection_id,
+            account_id=uuid4(),
+            integration_resource_id=mapping.id,
+            external_location_id=mapping.external_resource_id,
+            business_name="Write-enabled location",
+            mapping_status="confirmed",
+            write_enabled=True,
+        )
+        execute_result = MagicMock()
+        execute_result.scalars.return_value.all.return_value = [mapping]
+        session = AsyncMock(spec=AsyncSession)
+        session.execute.return_value = execute_result
+        session.scalar.return_value = location
+
+        result = asyncio.run(
+            IntegrationDirectoryService()._confirmed_mappings(
+                session, organization_id, connection_id
+            )
+        )
+
+        assert result[0]["gbp_location_id"] == str(location.id)
+        assert result[0]["mapping_status"] == "confirmed"
+        assert result[0]["write_enabled"] is True
+
+    def test_unresolved_provider_mapping_returns_null_governance_state(self) -> None:
+        organization_id = uuid4()
+        connection_id = uuid4()
+        mapping = ProviderResourceMapping(
+            id=uuid4(),
+            organization_id=organization_id,
+            connection_id=connection_id,
+            resource_type="location",
+            external_resource_id="locations/unresolved",
+            platform_resource_id=uuid4(),
+            status="active",
+        )
+        execute_result = MagicMock()
+        execute_result.scalars.return_value.all.return_value = [mapping]
+        session = AsyncMock(spec=AsyncSession)
+        session.execute.return_value = execute_result
+        session.scalar.return_value = None
+
+        result = asyncio.run(
+            IntegrationDirectoryService()._confirmed_mappings(
+                session, organization_id, connection_id
+            )
+        )
+
+        assert result[0]["gbp_location_id"] is None
+        assert result[0]["mapping_status"] is None
+        assert result[0]["write_enabled"] is None
 
 
 class TestRouteExistence:

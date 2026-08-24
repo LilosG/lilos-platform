@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.app.integrations.connection_service import (
@@ -56,6 +56,9 @@ class MappedResource:
     display_name: str | None
     last_synced_at: str | None
     sync_freshness: str  # "fresh" | "stale" | "never"
+    gbp_location_id: str | None
+    mapping_status: str | None
+    write_enabled: bool | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -251,7 +254,7 @@ class IntegrationDirectoryService:
             {"key": "analytics", "label": "Analytics", "enabled": services["analytics"]},
         ]
 
-        mapped = await self._confirmed_mappings(session, organization_id)
+        mapped = await self._confirmed_mappings(session, organization_id, connection.id)
         unmapped_count = await self._unmapped_count(session, organization_id, connection.id)
 
         return GoogleWorkspace(
@@ -269,13 +272,14 @@ class IntegrationDirectoryService:
         )
 
     async def _confirmed_mappings(
-        self, session: AsyncSession, organization_id: UUID
+        self, session: AsyncSession, organization_id: UUID, connection_id: UUID
     ) -> list[dict[str, object]]:
         mappings = (
             (
                 await session.execute(
                     select(ProviderResourceMapping).where(
                         ProviderResourceMapping.organization_id == organization_id,
+                        ProviderResourceMapping.connection_id == connection_id,
                         ProviderResourceMapping.status == "active",
                     )
                 )
@@ -291,6 +295,9 @@ class IntegrationDirectoryService:
             display_name = None
             last_synced_at: str | None = None
             sync_freshness = "never"
+            gbp_location_id: str | None = None
+            mapping_status: str | None = None
+            write_enabled: bool | None = None
 
             if mapping.resource_type == "location":
                 # ProviderResourceMapping.platform_resource_id is the platform
@@ -300,12 +307,15 @@ class IntegrationDirectoryService:
                 identity_predicate = GBPLocation.integration_resource_id == mapping.id
                 if mapping.platform_resource_id is not None:
                     identity_predicate = identity_predicate | (
-                        GBPLocation.location_id == mapping.platform_resource_id
+                        (GBPLocation.integration_resource_id.is_(None))
+                        & (GBPLocation.location_id == mapping.platform_resource_id)
+                        & (GBPLocation.external_location_id == mapping.external_resource_id)
                     )
                 gbp_loc = await session.scalar(
                     select(GBPLocation)
                     .where(
                         GBPLocation.organization_id == organization_id,
+                        GBPLocation.connection_id == connection_id,
                         identity_predicate,
                     )
                     .order_by(GBPLocation.last_discovered_at.desc())
@@ -313,6 +323,9 @@ class IntegrationDirectoryService:
                 )
                 if gbp_loc is not None:
                     display_name = gbp_loc.business_name
+                    gbp_location_id = str(gbp_loc.id)
+                    mapping_status = gbp_loc.mapping_status
+                    write_enabled = gbp_loc.write_enabled
                     if gbp_loc.last_synced_at is not None:
                         last_synced_at = gbp_loc.last_synced_at.isoformat()
                         sync_freshness = (
@@ -335,6 +348,9 @@ class IntegrationDirectoryService:
                     "display_name": display_name,
                     "last_synced_at": last_synced_at,
                     "sync_freshness": sync_freshness,
+                    "gbp_location_id": gbp_location_id,
+                    "mapping_status": mapping_status,
+                    "write_enabled": write_enabled,
                 }
             )
 
@@ -344,37 +360,54 @@ class IntegrationDirectoryService:
         self, session: AsyncSession, organization_id: UUID, connection_id: UUID
     ) -> int:
         """Count GBP locations that exist without a confirmed active mapping."""
-        mapped_ids: set[UUID] = set()
+        mapping_ids, platform_location_ids = await self.active_location_mapping_identities(
+            session, organization_id, connection_id
+        )
         rows = (
-            (
-                await session.execute(
-                    select(ProviderResourceMapping.platform_resource_id).where(
-                        ProviderResourceMapping.organization_id == organization_id,
-                        ProviderResourceMapping.connection_id == connection_id,
-                        ProviderResourceMapping.resource_type == "location",
-                        ProviderResourceMapping.status == "active",
-                        ProviderResourceMapping.platform_resource_id.isnot(None),
-                    )
+            await session.execute(
+                select(
+                    GBPLocation.integration_resource_id,
+                    GBPLocation.location_id,
+                ).where(
+                    GBPLocation.organization_id == organization_id,
+                    GBPLocation.connection_id == connection_id,
                 )
             )
-            .scalars()
-            .all()
+        ).all()
+        return sum(
+            1
+            for integration_resource_id, location_id in rows
+            if integration_resource_id not in mapping_ids
+            and location_id not in platform_location_ids
         )
-        for row in rows:
-            if row is not None:
-                mapped_ids.add(row)
 
-        total_locations = await session.scalar(
-            select(func.count())
-            .select_from(GBPLocation)
-            .where(
-                GBPLocation.organization_id == organization_id,
+    async def active_location_mapping_identities(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        connection_id: UUID,
+    ) -> tuple[set[UUID], set[UUID]]:
+        """Return canonical mapping-row and platform-location identities for one connection."""
+        rows = (
+            await session.execute(
+                select(
+                    ProviderResourceMapping.id,
+                    ProviderResourceMapping.platform_resource_id,
+                ).where(
+                    ProviderResourceMapping.organization_id == organization_id,
+                    ProviderResourceMapping.connection_id == connection_id,
+                    ProviderResourceMapping.resource_type == "location",
+                    ProviderResourceMapping.status == "active",
+                )
             )
-        )
-        if total_locations is None:
-            total_locations = 0
-        unmapped = total_locations - len(mapped_ids)
-        return max(0, unmapped)
+        ).all()
+        mapping_ids = {mapping_id for mapping_id, _platform_location_id in rows}
+        platform_location_ids = {
+            platform_location_id
+            for _mapping_id, platform_location_id in rows
+            if platform_location_id is not None
+        }
+        return mapping_ids, platform_location_ids
 
     # -- GitHub workspace ------------------------------------------------------
 

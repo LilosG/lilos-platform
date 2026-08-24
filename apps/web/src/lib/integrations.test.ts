@@ -11,6 +11,7 @@ import {
   fetchGoogleWorkspace,
   fetchUnmappedResources,
   fetchGitHubWorkspace,
+  type MappedResource,
   type ProviderDirectoryEntry,
 } from "./integrations";
 
@@ -25,6 +26,28 @@ describe("integrations client — Google workspace", () => {
     expect(apiGet).toHaveBeenCalledWith(
       "/api/v1/organizations/org-1/integrations/google/workspace",
     );
+  });
+
+  it("carries canonical GBP identity and governance state on mapped resources", () => {
+    const resource: MappedResource = {
+      id: "provider-mapping-id",
+      external_resource_id: "locations/google-id",
+      platform_resource_id: "platform-location-id",
+      resource_type: "location",
+      status: "active",
+      display_name: "Example location",
+      last_synced_at: null,
+      sync_freshness: "never",
+      gbp_location_id: "gbp-location-id",
+      mapping_status: "confirmed",
+      write_enabled: false,
+    };
+
+    expect(resource).toMatchObject({
+      gbp_location_id: "gbp-location-id",
+      mapping_status: "confirmed",
+      write_enabled: false,
+    });
   });
 });
 

@@ -99,10 +99,14 @@ import "../styles/global.css";
         connectGoogle,
         disconnectConnection,
         fetchConnectionStatus,
-        discoverResources,
         describeGbpConnectFailure,
         googleAuthorizationAction,
       } from "../lib/gbp-connection";
+      import {
+        confirmGbpMappingAndReconcile,
+        discoverGoogleResourcesAndReconcile,
+        gbpWriteGovernanceFor,
+      } from "../lib/google-workspace-governance";
       import { beginGitHubInstall, disconnectGitHub } from "../lib/github-app";
       import {
         fetchGoogleWorkspace,
@@ -127,7 +131,6 @@ import "../styles/global.css";
         type BootRegions,
       } from "../lib/ui";
       import { statusLabel } from "../lib/status-language";
-      import { apiRequest } from "../lib/api-client";
       import { fetchLocations, type LocationSummary } from "../lib/workspace";
 
       let organizationId = "";
@@ -218,7 +221,7 @@ import "../styles/global.css";
                     googleResult.code === "INTEGRATION_NOT_CONFIGURED"
                   ? "not_configured"
                   : "not_connected",
-            () => void openGoogle(googleResult),
+            () => void openGoogle(),
           ),
         );
 
@@ -291,11 +294,24 @@ import "../styles/global.css";
 
       // -- Google workspace --------------------------------------------------
 
-      async function openGoogle(
-        connectionResult: Awaited<ReturnType<typeof fetchConnectionStatus>>,
-      ): Promise<void> {
+      async function openGoogle(): Promise<void> {
         showProvider("google", "Google");
+        await loadGoogleWorkspace();
+      }
+
+      async function reloadGoogleWorkspace(): Promise<void> {
+        await loadGoogleWorkspace();
+      }
+
+      async function loadGoogleWorkspace(): Promise<void> {
         const content = providerContent;
+        content.replaceChildren(createLoading());
+
+        const [currentConnectionResult, wsResult] = await Promise.all([
+          fetchConnectionStatus(organizationId),
+          fetchGoogleWorkspace(organizationId),
+        ]);
+
         content.replaceChildren();
 
         const connCard = makeCard("Connection");
@@ -303,37 +319,34 @@ import "../styles/global.css";
         const connBody = connCard.querySelector(
           ".ui-card__body",
         ) as HTMLElement;
+        renderGoogleConnection(connBody, currentConnectionResult);
 
-        const [wsResult] = await Promise.all([
-          fetchGoogleWorkspace(organizationId),
-          new Promise((r) => {
-            renderGoogleConnection(connBody, connectionResult);
-            r(true);
-          }),
-        ]);
+        if (wsResult.kind !== "ok") {
+          content.append(
+            errorAlert(describeFailure(wsResult, "Google workspace")),
+          );
+          return;
+        }
 
-        if (wsResult.kind === "ok") {
-          const ws = wsResult.data;
+        const ws = wsResult.data;
+        const capsCard = makeCard("Connected Services");
+        content.append(capsCard);
+        const capsBody = capsCard.querySelector(
+          ".ui-card__body",
+        ) as HTMLElement;
+        renderCapabilities(capsBody, ws);
 
-          const capsCard = makeCard("Connected Services");
-          content.append(capsCard);
-          const capsBody = capsCard.querySelector(
-            ".ui-card__body",
-          ) as HTMLElement;
-          renderCapabilities(capsBody, ws);
+        if (ws.mapped_resources.length > 0) {
+          const mappedCard = makeCard("Mapped Resources");
+          content.append(mappedCard);
+          renderMappedResources(
+            mappedCard.querySelector(".ui-card__body") as HTMLElement,
+            ws,
+          );
+        }
 
-          if (ws.mapped_resources.length > 0) {
-            const mappedCard = makeCard("Mapped Resources");
-            content.append(mappedCard);
-            renderMappedResources(
-              mappedCard.querySelector(".ui-card__body") as HTMLElement,
-              ws,
-            );
-          }
-
-          if (canUsePlatformAdministration()) {
-            await renderUnmappedQueue(content, wsResult);
-          }
+        if (canUsePlatformAdministration()) {
+          await renderUnmappedQueue(content, wsResult);
         }
       }
 
@@ -485,10 +498,11 @@ import "../styles/global.css";
           discoverBtn.addEventListener("click", async () => {
             discoverBtn.disabled = true;
             discoverBtn.textContent = "Discovering…";
-            const result = await discoverResources(organizationId);
-            if (result.kind === "ok") {
-              discoverBtn.textContent = `Discovered ${result.data.accounts_discovered} account(s), ${result.data.locations_discovered} location(s)`;
-            } else {
+            const result = await discoverGoogleResourcesAndReconcile(
+              organizationId,
+              reloadGoogleWorkspace,
+            );
+            if (result.kind !== "ok") {
               discoverBtn.textContent = "Discover accounts and locations";
               discoverBtn.disabled = false;
               panel.append(errorAlert(describeFailure(result, "Discovery")));
@@ -525,7 +539,7 @@ import "../styles/global.css";
       async function performGoogleDisconnect(): Promise<void> {
         const result = await disconnectConnection(organizationId);
         if (result.kind === "ok") {
-          await openGoogle(await fetchConnectionStatus(organizationId));
+          await reloadGoogleWorkspace();
         } else {
           providerContent.append(
             errorAlert(describeFailure(result, "Disconnect")),
@@ -579,9 +593,13 @@ import "../styles/global.css";
           if (res.last_synced_at) {
             detail.textContent += ` · ${formatTimestamp(res.last_synced_at)}`;
           }
-          info.append(name, detail);
-          item.append(
-            info,
+          const feedback = document.createElement("div");
+          feedback.className = "ui-stack ui-stack--2";
+          info.append(name, detail, feedback);
+
+          const states = document.createElement("div");
+          states.className = "ui-inline ui-inline--center ui-inline--tight";
+          states.append(
             statusBadge(
               res.sync_freshness === "fresh"
                 ? "ready"
@@ -595,6 +613,67 @@ import "../styles/global.css";
                   : "Pending",
             ),
           );
+
+          const governance = gbpWriteGovernanceFor(
+            res,
+            canUsePlatformAdministration(),
+          );
+          if (governance !== null) {
+            states.append(
+              statusBadge(governance.stateKind, governance.stateLabel),
+            );
+            const actionLabel = governance.actionLabel;
+            const confirmationMessage = governance.confirmationMessage;
+            const desiredWriteEnabled = governance.desiredWriteEnabled;
+            const platformLocationId = res.platform_resource_id;
+            const gbpLocationId = res.gbp_location_id;
+            if (
+              actionLabel !== null &&
+              confirmationMessage !== null &&
+              desiredWriteEnabled !== null &&
+              platformLocationId !== null &&
+              gbpLocationId !== null
+            ) {
+              const action = document.createElement("button");
+              action.type = "button";
+              action.className = "ui-button ui-button--secondary ui-button--sm";
+              action.textContent = actionLabel;
+              action.addEventListener("click", () => {
+                action.disabled = true;
+                feedback.replaceChildren(
+                  confirmInline(
+                    confirmationMessage,
+                    () => {
+                      void (async () => {
+                        const result = await confirmGbpMappingAndReconcile(
+                          organizationId,
+                          platformLocationId,
+                          gbpLocationId,
+                          desiredWriteEnabled,
+                          reloadGoogleWorkspace,
+                        );
+                        if (result.kind !== "ok") {
+                          action.disabled = false;
+                          feedback.replaceChildren(
+                            errorAlert(
+                              describeFailure(result, "provider-write access"),
+                            ),
+                          );
+                        }
+                      })();
+                    },
+                    () => {
+                      action.disabled = false;
+                    },
+                    actionLabel,
+                  ),
+                );
+              });
+              states.append(action);
+            }
+          }
+
+          item.append(info, states);
           list.append(item);
         }
         panel.append(list);
@@ -698,15 +777,14 @@ import "../styles/global.css";
               }
               mapBtn.disabled = true;
               mapBtn.textContent = "Mapping…";
-              // Call canonical AAL2 GBP confirm endpoint
-              const confirmPath = `/api/v1/organizations/${organizationId}/locations/${selectedLocationId}/gbp/locations/${resource.id}/confirm`;
-              const mapResult = await apiRequest(confirmPath, {
-                method: "POST",
-                body: { location_id: selectedLocationId },
-              });
-              if (mapResult.kind === "ok") {
-                item.remove();
-              } else {
+              const mapResult = await confirmGbpMappingAndReconcile(
+                organizationId,
+                selectedLocationId,
+                resource.id,
+                false,
+                reloadGoogleWorkspace,
+              );
+              if (mapResult.kind !== "ok") {
                 mapBtn.textContent = "Map";
                 mapBtn.disabled = false;
                 item.append(
