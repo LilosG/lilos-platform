@@ -1,6 +1,10 @@
 from datetime import UTC, datetime, timedelta
 
 from apps.api.app.products.gbp.adapter import BUSINESS_MANAGE_SCOPE, SUPPORTED_WRITE_FIELDS
+from apps.api.app.products.gbp.freshness import (
+    PROFILE_SYNC_FRESHNESS,
+    profile_sync_is_stale,
+)
 from apps.api.app.products.gbp.service import canonical_hash, normalize_profile, profile_health
 
 
@@ -34,3 +38,13 @@ def test_profile_health_is_evidence_based() -> None:
 
 def test_unsupported_provider_write_field_is_rejected() -> None:
     assert "categories" not in SUPPORTED_WRITE_FIELDS
+
+
+def test_profile_sync_freshness_contract() -> None:
+    now = datetime(2026, 8, 23, 12, tzinfo=UTC)
+
+    assert timedelta(hours=24) == PROFILE_SYNC_FRESHNESS
+    assert profile_sync_is_stale(None, now=now)
+    assert profile_sync_is_stale(now - PROFILE_SYNC_FRESHNESS - timedelta(seconds=1), now=now)
+    assert not profile_sync_is_stale(now - PROFILE_SYNC_FRESHNESS, now=now)
+    assert not profile_sync_is_stale(now - PROFILE_SYNC_FRESHNESS + timedelta(seconds=1), now=now)

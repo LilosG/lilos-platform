@@ -9,12 +9,22 @@ No real Google/GitHub/PostgreSQL calls. Verifies:
 """
 
 import ast
+import asyncio
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
+from uuid import uuid4
+
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.app.integrations.connection_service import GBPConnectionService
 from apps.api.app.integrations.directory_service import IntegrationDirectoryService
-from apps.api.app.integrations.models import IntegrationConnection
+from apps.api.app.integrations.models import IntegrationConnection, ProviderResourceMapping
+from apps.api.app.products.gbp.freshness import (
+    PROFILE_SYNC_FRESHNESS,
+    profile_sync_is_stale,
+)
+from apps.api.app.products.gbp.models import GBPLocation
 
 
 def make_service(
@@ -93,6 +103,44 @@ class TestGoogleWorkspace:
             "https://www.googleapis.com/auth/business.manage",
             "https://www.googleapis.com/auth/webmasters.readonly",
         ]
+
+    def test_confirmed_mapping_uses_canonical_gbp_profile_freshness(self) -> None:
+        organization_id = uuid4()
+        connection_id = uuid4()
+        mapping = ProviderResourceMapping(
+            id=uuid4(),
+            organization_id=organization_id,
+            connection_id=connection_id,
+            resource_type="location",
+            external_resource_id="locations/loc-a",
+            platform_resource_id=uuid4(),
+            status="active",
+        )
+        last_synced_at = datetime.now(UTC) - PROFILE_SYNC_FRESHNESS - timedelta(minutes=1)
+        location = GBPLocation(
+            id=uuid4(),
+            organization_id=organization_id,
+            connection_id=connection_id,
+            account_id=uuid4(),
+            integration_resource_id=mapping.id,
+            external_location_id="locations/loc-a",
+            business_name="Loc A",
+            mapping_status="confirmed",
+            write_enabled=False,
+            last_synced_at=last_synced_at,
+        )
+        execute_result = MagicMock()
+        execute_result.scalars.return_value.all.return_value = [mapping]
+        session = AsyncMock(spec=AsyncSession)
+        session.execute.return_value = execute_result
+        session.scalar.return_value = location
+
+        result = asyncio.run(
+            IntegrationDirectoryService()._confirmed_mappings(session, organization_id)
+        )
+
+        assert profile_sync_is_stale(last_synced_at)
+        assert result[0]["sync_freshness"] == "stale"
 
 
 class TestRouteExistence:
