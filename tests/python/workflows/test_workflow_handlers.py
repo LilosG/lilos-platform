@@ -14,7 +14,7 @@ from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Protocol
+from typing import Any
 from unittest.mock import AsyncMock
 from uuid import UUID, uuid4
 
@@ -61,12 +61,6 @@ from apps.api.app.products.gbp.operations_models import (
 from apps.api.app.products.gbp.post_generation_models import GBPPostAsset
 
 ROOT = Path(__file__).resolve().parents[3]
-
-
-class StatefulPostAdapterFactory(Protocol):
-    create_calls: int
-
-    def __call__(self) -> Any: ...
 
 
 @pytest.fixture(autouse=True)
@@ -1429,6 +1423,7 @@ async def _seed_gbp_post_publication(
     *,
     provider_post_id: str | None = None,
     publication_status: str = "reserved",
+    dispatched_at: datetime | None = None,
 ) -> tuple[UUID, str, UUID]:
     """Seed the minimum rows for a GBP post handler invocation.
 
@@ -1556,6 +1551,7 @@ async def _seed_gbp_post_publication(
         workflow_run_id=workflow_run.id,
         idempotency_key=f"gbp-post-test-pub-{uuid4().hex[:8]}",
         status=publication_status,
+        dispatched_at=dispatched_at,
         provider_post_id=provider_post_id,
     )
     session.add(post_pub)
@@ -1568,11 +1564,12 @@ def _make_stateful_post_adapter(
     create_state: str = "PROCESSING",
     get_state: str = "PROCESSING",
     post_resource_name: str = "accounts/123/locations/456/localPosts/abc123",
-) -> StatefulPostAdapterFactory:
+) -> type[Any]:
     """Build a fake adapter whose create/get return the given states."""
 
     class _StatefulPostAdapter:
         create_calls = 0
+        get_calls: list[str] = []
 
         async def list_accounts(self, access_token: str) -> list[dict[str, Any]]:
             raise NotImplementedError
@@ -1604,6 +1601,7 @@ def _make_stateful_post_adapter(
             return {"name": post_resource_name, "state": create_state, "postType": "STANDARD"}
 
         async def get_local_post(self, access_token: str, post_name: str) -> dict[str, Any]:
+            type(self).get_calls.append(post_name)
             return {"name": post_name, "state": get_state, "postType": "STANDARD"}
 
         async def list_local_posts(
@@ -1612,6 +1610,128 @@ def _make_stateful_post_adapter(
             raise NotImplementedError
 
     return _StatefulPostAdapter
+
+
+@pytest.mark.integration
+@pytest.mark.anyio
+async def test_gbp_publish_post_pre_dispatch_token_failure_retries_with_one_create(
+    clean_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """A token failure leaves durable proof that no provider create occurred."""
+    from apps.api.app.execution import handlers as handler_mod
+
+    fake_adapter_cls = _make_stateful_post_adapter(create_state="LIVE", get_state="LIVE")
+
+    async def failing_token_resolver(
+        session: AsyncSession, organization_id: UUID
+    ) -> tuple[str, object]:
+        del session, organization_id
+        raise RuntimeError("synthetic token failure")
+
+    original = handler_mod._adapter_factory
+    original_resolver = handler_mod._token_resolver
+    handler_mod._adapter_factory = fake_adapter_cls
+    handler_mod._token_resolver = failing_token_resolver
+    try:
+        async with clean_session_factory() as session:
+            post_pub_id, _name, workflow_run_id = await _seed_gbp_post_publication(session)
+            publication = await session.get(GBPPostPublication, post_pub_id)
+            assert publication is not None
+            organization_id = publication.organization_id
+            await session.commit()
+
+            first = await _handle_gbp_publish_post(
+                session,
+                organization_id=organization_id,
+                location_id=None,
+                input_document={"publication_id": str(post_pub_id)},
+                correlation_id="pre-dispatch-token-failure",
+                workflow_run_id=workflow_run_id,
+            )
+
+        assert first.result == "retryable_failure"
+        assert first.safe_error == "TOKEN_RESOLUTION_FAILED"
+        assert fake_adapter_cls.create_calls == 0
+        async with clean_session_factory() as session:
+            failed = await session.get(GBPPostPublication, post_pub_id)
+            assert failed is not None
+            assert failed.status == "reserved"
+            assert failed.dispatched_at is None
+            assert failed.provider_post_id is None
+            assert failed.safe_error_code == "TOKEN_RESOLUTION_FAILED"
+
+        handler_mod._token_resolver = _fake_token_resolver
+        async with clean_session_factory() as session:
+            second = await _handle_gbp_publish_post(
+                session,
+                organization_id=organization_id,
+                location_id=None,
+                input_document={"publication_id": str(post_pub_id)},
+                correlation_id="pre-dispatch-token-retry",
+                workflow_run_id=workflow_run_id,
+            )
+
+        assert second.result == "succeeded"
+        assert fake_adapter_cls.create_calls == 1
+        async with clean_session_factory() as session:
+            recovered = await session.get(GBPPostPublication, post_pub_id)
+            assert recovered is not None
+            assert recovered.status == "verified"
+            assert recovered.dispatched_at is not None
+            assert recovered.provider_post_id is not None
+    finally:
+        handler_mod._adapter_factory = original
+        handler_mod._token_resolver = original_resolver
+
+
+@pytest.mark.integration
+@pytest.mark.anyio
+async def test_gbp_publish_post_post_dispatch_ambiguity_never_creates_again(
+    clean_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """No provider identity after the durable dispatch boundary fails closed."""
+    from apps.api.app.execution import handlers as handler_mod
+
+    fake_adapter_cls = _make_stateful_post_adapter(create_state="LIVE", get_state="LIVE")
+
+    async def unexpected_token_resolver(
+        session: AsyncSession, organization_id: UUID
+    ) -> tuple[str, object]:
+        del session, organization_id
+        raise AssertionError("post-dispatch ambiguity must stop before token resolution")
+
+    original = handler_mod._adapter_factory
+    original_resolver = handler_mod._token_resolver
+    handler_mod._adapter_factory = fake_adapter_cls
+    handler_mod._token_resolver = unexpected_token_resolver
+    try:
+        async with clean_session_factory() as session:
+            post_pub_id, _name, workflow_run_id = await _seed_gbp_post_publication(
+                session,
+                publication_status="reconciliation_required",
+                dispatched_at=datetime.now(UTC),
+            )
+            publication = await session.get(GBPPostPublication, post_pub_id)
+            assert publication is not None
+            organization_id = publication.organization_id
+            await session.commit()
+
+            outcome = await _handle_gbp_publish_post(
+                session,
+                organization_id=organization_id,
+                location_id=None,
+                input_document={"publication_id": str(post_pub_id)},
+                correlation_id="post-dispatch-ambiguous",
+                workflow_run_id=workflow_run_id,
+            )
+
+        assert outcome.result == "ambiguous"
+        assert outcome.safe_error == "AMBIGUOUS_PROVIDER_RESULT"
+        assert fake_adapter_cls.create_calls == 0
+        assert fake_adapter_cls.get_calls == []
+    finally:
+        handler_mod._adapter_factory = original
+        handler_mod._token_resolver = original_resolver
 
 
 @pytest.mark.integration
@@ -1760,6 +1880,7 @@ async def test_gbp_publish_post_processing_then_live_becomes_verified_on_retry(
         assert outcome.result == "succeeded"
         assert outcome.result_reference == f"publication:{post_pub_id}"
         assert fake_adapter_cls.create_calls == 0
+        assert fake_adapter_cls.get_calls == [post_resource_name]
 
         async with clean_session_factory() as session:
             refreshed = await session.get(GBPPostPublication, post_pub_id)

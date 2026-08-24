@@ -2,7 +2,8 @@
 
 import hashlib
 import json
-from datetime import UTC, date, datetime, time
+from dataclasses import dataclass
+from datetime import UTC, date, datetime, time, timedelta
 from typing import cast
 from uuid import UUID, uuid4
 
@@ -14,6 +15,8 @@ from apps.api.app.audit.enums import AuditActorType, AuditResult
 from apps.api.app.audit.metadata import JsonValue
 from apps.api.app.audit.repository import AuditEventRepository
 from apps.api.app.audit.service import AuditEventService
+from apps.api.app.config import Settings
+from apps.api.app.execution.models import Job, JobAttempt
 from apps.api.app.execution.service import ExecutionService
 from apps.api.app.notifications.models import NotificationTemplate
 from apps.api.app.notifications.service import NotificationService
@@ -43,6 +46,7 @@ from apps.api.app.products.gbp.operations_errors import (
     GBPMediaNotFoundError,
     GBPMediaNotPublishEligibleError,
     GBPPostNotPublishEligibleError,
+    GBPPostPublicationExistsError,
     GBPPostRevisionNotFoundError,
     GBPSpecialHoursNotFoundError,
 )
@@ -52,6 +56,7 @@ from apps.api.app.products.gbp.operations_models import (
     GBPMedia,
     GBPPostPublication,
     GBPPostRevision,
+    GBPProviderPost,
     GBPSpecialHours,
     GBPSuspensionCase,
 )
@@ -60,6 +65,32 @@ NOTIFICATION_TEMPLATES = {
     "gbp.suspension_case.reported": ("in_app", "A Business Profile suspension case was reported."),
     "gbp.change_set.awaiting_approval": ("in_app", "A Business Profile change set needs approval."),
 }
+
+PRE_DISPATCH_SAFE_ERRORS = frozenset(
+    {
+        "NO_CONNECTED_INTEGRATION",
+        "TOKEN_REFRESH_FAILED",
+        "SECRET_RESOLUTION_FAILED",
+        "TOKEN_RESOLUTION_FAILED",
+    }
+)
+LEGACY_PRE_DISPATCH_FOLLOWUP_ERRORS = PRE_DISPATCH_SAFE_ERRORS | {"AMBIGUOUS_PROVIDER_RESULT"}
+ACTIVE_JOB_STATUSES = ("queued", "claimed", "running", "retry_scheduled")
+
+
+@dataclass(frozen=True, slots=True)
+class GBPPostRevisionReadModel:
+    revision: GBPPostRevision
+    publication: GBPPostPublication | None
+    recovery_allowed: bool
+
+
+@dataclass(frozen=True, slots=True)
+class GBPPostRecoveryResult:
+    accepted: bool
+    publication: GBPPostPublication
+    recovery_mode: str | None = None
+    denial_code: str | None = None
 
 
 def _canonical_hash(value: dict[str, object]) -> str:
@@ -102,13 +133,14 @@ class GBPOperationsService:
         correlation_id: str,
         summary: str,
         metadata: dict[str, object],
+        result: AuditResult = AuditResult.SUCCEEDED,
     ) -> None:
         await self.audit.record(
             session,
             AuditEventCreate(
                 event_type=event,
                 action=event,
-                result=AuditResult.SUCCEEDED,
+                result=result,
                 actor_type=AuditActorType.USER if actor_id else AuditActorType.SYSTEM,
                 actor_id=actor_id,
                 organization_id=organization_id,
@@ -694,23 +726,27 @@ class GBPOperationsService:
         actor_id: UUID | None,
         correlation_id: str,
     ) -> GBPPostPublication:
-        existing = await session.scalar(
-            select(GBPPostPublication).where(
-                GBPPostPublication.organization_id == organization_id,
-                GBPPostPublication.idempotency_key == idempotency_key,
-            )
-        )
-        if existing:
-            return existing
         revision = await session.scalar(
-            select(GBPPostRevision).where(
+            select(GBPPostRevision)
+            .where(
                 GBPPostRevision.organization_id == organization_id,
                 GBPPostRevision.id == revision_id,
                 GBPPostRevision.status == "approved",
             )
+            .with_for_update()
         )
         if not revision:
             raise GBPPostNotPublishEligibleError
+        existing = await session.scalar(
+            select(GBPPostPublication).where(
+                GBPPostPublication.organization_id == organization_id,
+                GBPPostPublication.post_revision_id == revision_id,
+            )
+        )
+        if existing:
+            if existing.idempotency_key == idempotency_key:
+                return existing
+            raise GBPPostPublicationExistsError
         location = await self._get_gbp_location(session, organization_id, revision.gbp_location_id)
         if not location.write_enabled or location.mapping_status != "confirmed":
             raise GBPLocationNotWriteEnabledError
@@ -745,10 +781,78 @@ class GBPOperationsService:
         await self.execution.enqueue_consumed_run(session, workflow_run)
         return publication
 
-    async def list_post_revisions(
+    async def _has_active_publication_job(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        workflow_run_id: UUID,
+    ) -> bool:
+        return (
+            await session.scalar(
+                select(Job.id)
+                .where(
+                    Job.organization_id == organization_id,
+                    Job.workflow_run_id == workflow_run_id,
+                    Job.status.in_(ACTIVE_JOB_STATUSES),
+                )
+                .limit(1)
+            )
+        ) is not None
+
+    async def _legacy_pre_dispatch_failure_is_proven(
+        self,
+        session: AsyncSession,
+        publication: GBPPostPublication,
+    ) -> bool:
+        attempts = list(
+            await session.scalars(
+                select(JobAttempt)
+                .join(
+                    Job,
+                    (Job.organization_id == JobAttempt.organization_id)
+                    & (Job.id == JobAttempt.job_id),
+                )
+                .where(
+                    Job.organization_id == publication.organization_id,
+                    Job.workflow_run_id == publication.workflow_run_id,
+                )
+                .order_by(JobAttempt.started_at, JobAttempt.attempt_number)
+            )
+        )
+        if not attempts or attempts[0].safe_error not in PRE_DISPATCH_SAFE_ERRORS:
+            return False
+        return all(
+            attempt.completed_at is not None
+            and attempt.safe_error in LEGACY_PRE_DISPATCH_FOLLOWUP_ERRORS
+            for attempt in attempts
+        )
+
+    async def _publication_recovery_allowed(
+        self,
+        session: AsyncSession,
+        publication: GBPPostPublication,
+    ) -> bool:
+        if publication.status not in {"reserved", "failed", "reconciliation_required"}:
+            return False
+        if await self._has_active_publication_job(
+            session, publication.organization_id, publication.workflow_run_id
+        ):
+            return False
+        if publication.provider_post_id:
+            return publication.status == "reconciliation_required"
+        if publication.dispatched_at is not None:
+            return False
+        if (
+            publication.status == "reserved"
+            and publication.safe_error_code in PRE_DISPATCH_SAFE_ERRORS
+        ):
+            return True
+        return await self._legacy_pre_dispatch_failure_is_proven(session, publication)
+
+    async def list_post_revision_read_models(
         self, session: AsyncSession, organization_id: UUID, gbp_location_id: UUID
-    ) -> list[GBPPostRevision]:
-        return list(
+    ) -> list[GBPPostRevisionReadModel]:
+        revisions = list(
             await session.scalars(
                 select(GBPPostRevision)
                 .where(
@@ -757,6 +861,224 @@ class GBPOperationsService:
                 )
                 .order_by(GBPPostRevision.created_at.desc())
             )
+        )
+        if not revisions:
+            return []
+        publications = list(
+            await session.scalars(
+                select(GBPPostPublication)
+                .where(
+                    GBPPostPublication.organization_id == organization_id,
+                    GBPPostPublication.post_revision_id.in_(
+                        [revision.id for revision in revisions]
+                    ),
+                )
+                .order_by(GBPPostPublication.created_at.desc())
+            )
+        )
+        publication_by_revision: dict[UUID, GBPPostPublication] = {}
+        for candidate in publications:
+            publication_by_revision.setdefault(candidate.post_revision_id, candidate)
+        read_models: list[GBPPostRevisionReadModel] = []
+        for revision in revisions:
+            publication = publication_by_revision.get(revision.id)
+            read_models.append(
+                GBPPostRevisionReadModel(
+                    revision=revision,
+                    publication=publication,
+                    recovery_allowed=(
+                        await self._publication_recovery_allowed(session, publication)
+                        if publication is not None
+                        else False
+                    ),
+                )
+            )
+        return read_models
+
+    async def _scoped_post_publication(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        location_id: UUID,
+        publication_id: UUID,
+        *,
+        for_update: bool = False,
+    ) -> tuple[GBPPostPublication, GBPPostRevision] | None:
+        statement = (
+            select(GBPPostPublication, GBPPostRevision)
+            .join(
+                GBPPostRevision,
+                (GBPPostRevision.organization_id == GBPPostPublication.organization_id)
+                & (GBPPostRevision.id == GBPPostPublication.post_revision_id),
+            )
+            .join(
+                GBPLocation,
+                (GBPLocation.organization_id == GBPPostRevision.organization_id)
+                & (GBPLocation.id == GBPPostRevision.gbp_location_id),
+            )
+            .where(
+                GBPPostPublication.organization_id == organization_id,
+                GBPPostPublication.id == publication_id,
+                GBPLocation.location_id == location_id,
+            )
+        )
+        if for_update:
+            statement = statement.with_for_update(of=GBPPostPublication)
+        row = (await session.execute(statement)).one_or_none()
+        if row is None:
+            return None
+        return row[0], row[1]
+
+    @staticmethod
+    def _provider_post_matches_publication(
+        provider_post: GBPProviderPost,
+        revision: GBPPostRevision,
+        publication: GBPPostPublication,
+    ) -> bool:
+        if publication.dispatched_at is None:
+            return False
+        raw_created_at = provider_post.provider_payload.get("createTime")
+        if not isinstance(raw_created_at, str):
+            return False
+        try:
+            created_at = datetime.fromisoformat(raw_created_at.replace("Z", "+00:00"))
+        except ValueError:
+            return False
+        if created_at.tzinfo is None:
+            return False
+        dispatch_delta = created_at.astimezone(UTC) - publication.dispatched_at.astimezone(UTC)
+        return (
+            -timedelta(seconds=30) <= dispatch_delta <= timedelta(minutes=10)
+            and provider_post.status == "present"
+            and (provider_post.summary or "").strip() == revision.content.strip()
+            and (provider_post.post_type or "").upper() == revision.post_type.upper()
+        )
+
+    async def recover_post_publication(
+        self,
+        session: AsyncSession,
+        settings: Settings,
+        organization_id: UUID,
+        location_id: UUID,
+        publication_id: UUID,
+        *,
+        actor_id: UUID,
+        correlation_id: str,
+    ) -> GBPPostRecoveryResult:
+        """Reconcile first, then resume only from durable duplicate-safe evidence."""
+        scoped = await self._scoped_post_publication(
+            session, organization_id, location_id, publication_id
+        )
+        if scoped is None:
+            raise GBPPostRevisionNotFoundError
+        publication, revision = scoped
+
+        # Provider reconciliation remains the canonical read path and precedes
+        # every recovery decision, including a provably pre-dispatch retry.
+        from apps.api.app.products.gbp.discovery_service import GBPDiscoveryService
+
+        await GBPDiscoveryService().reconcile_local_posts(
+            session,
+            settings,
+            organization_id,
+            revision.gbp_location_id,
+            actor_id=actor_id,
+            correlation_id=correlation_id,
+        )
+
+        scoped = await self._scoped_post_publication(
+            session,
+            organization_id,
+            location_id,
+            publication_id,
+            for_update=True,
+        )
+        if scoped is None:
+            raise GBPPostRevisionNotFoundError
+        publication, revision = scoped
+
+        recovery_mode: str | None = None
+        denial_code: str | None = None
+        if publication.provider_post_id:
+            if publication.status == "reconciliation_required":
+                recovery_mode = "provider_identity"
+            else:
+                denial_code = "PUBLICATION_NOT_RECOVERABLE"
+        elif await self._publication_recovery_allowed(session, publication):
+            publication.status = "reserved"
+            publication.safe_error_code = None
+            recovery_mode = "pre_dispatch"
+        else:
+            provider_posts = list(
+                await session.scalars(
+                    select(GBPProviderPost).where(
+                        GBPProviderPost.organization_id == organization_id,
+                        GBPProviderPost.gbp_location_id == revision.gbp_location_id,
+                    )
+                )
+            )
+            matching_posts = [
+                post
+                for post in provider_posts
+                if self._provider_post_matches_publication(post, revision, publication)
+            ]
+            if len(matching_posts) == 1:
+                publication.provider_post_id = matching_posts[0].provider_post_name
+                publication.status = "reconciliation_required"
+                publication.safe_error_code = "POST_RECOVERY_PROVIDER_MATCHED"
+                recovery_mode = "provider_match"
+            elif len(matching_posts) > 1:
+                denial_code = "AMBIGUOUS_PROVIDER_MATCH"
+            else:
+                denial_code = "AMBIGUOUS_PROVIDER_RESULT"
+
+        if recovery_mode is None:
+            if publication.status in {"reserved", "dispatched", "reconciliation_required"}:
+                publication.status = "reconciliation_required"
+                publication.safe_error_code = denial_code
+            await self._audit(
+                session,
+                event="gbp.post.publication_recovery_denied",
+                organization_id=organization_id,
+                location_id=location_id,
+                actor_id=actor_id,
+                resource_type="gbp_post_publication",
+                resource_id=publication.id,
+                correlation_id=correlation_id,
+                summary="GBP post publication recovery remained in operator attention.",
+                metadata={"reason": denial_code or "PUBLICATION_NOT_RECOVERABLE"},
+                result=AuditResult.FAILED,
+            )
+            return GBPPostRecoveryResult(
+                accepted=False,
+                publication=publication,
+                denial_code=denial_code or "PUBLICATION_NOT_RECOVERABLE",
+            )
+
+        await self.execution.enqueue_recovery_run(
+            session,
+            organization_id,
+            publication.workflow_run_id,
+            recovery_reference=f"gbp-post-publication:{publication.id}",
+            actor_id=actor_id,
+            correlation_id=correlation_id,
+        )
+        await self._audit(
+            session,
+            event="gbp.post.publication_recovery_enqueued",
+            organization_id=organization_id,
+            location_id=location_id,
+            actor_id=actor_id,
+            resource_type="gbp_post_publication",
+            resource_id=publication.id,
+            correlation_id=correlation_id,
+            summary="GBP post publication recovery enqueued.",
+            metadata={"recovery_mode": recovery_mode},
+        )
+        return GBPPostRecoveryResult(
+            accepted=True,
+            publication=publication,
+            recovery_mode=recovery_mode,
         )
 
     async def report_suspension_case(

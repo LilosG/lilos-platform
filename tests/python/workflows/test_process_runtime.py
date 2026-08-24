@@ -7,6 +7,7 @@ from uuid import uuid4
 import pytest
 from alembic import command
 from alembic.config import Config
+from cryptography.fernet import Fernet
 from pydantic import PostgresDsn, TypeAdapter
 from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
@@ -24,6 +25,7 @@ from apps.api.app.execution.runtime import (
     postgres_error_context,
     process_main,
     run_process,
+    validate_process_runtime,
 )
 from apps.api.app.observability.models import ServiceHeartbeat
 
@@ -179,6 +181,81 @@ async def test_process_main_fails_closed_on_invalid_configuration(
 
     monkeypatch.setattr(runtime_module, "Settings", invalid_settings)
     assert await process_main("lilos-worker", unused_runner) == 1
+
+
+def _worker_settings(**overrides: object) -> Settings:
+    values: dict[str, object] = {
+        "environment": EnvironmentName.TEST,
+        "database_url": "postgresql://worker:worker@localhost/worker",
+        "provider_writes_enabled": True,
+        "secret_encryption_key": Fernet.generate_key().decode(),
+        "google_oauth_client_id": "worker-client-id",
+        "google_oauth_client_secret": "worker-client-secret",
+        "google_oauth_redirect_uri": "https://worker.example.invalid/oauth/callback",
+    }
+    values.update(overrides)
+    return Settings.model_validate(values)
+
+
+def test_worker_preflight_fails_closed_when_google_write_configuration_is_missing() -> None:
+    settings = _worker_settings(google_oauth_client_secret=None)
+
+    with pytest.raises(
+        runtime_module.RuntimeConfigurationError,
+        match="LILOS_GOOGLE_OAUTH_CLIENT_SECRET",
+    ):
+        validate_process_runtime(settings, "lilos-worker")
+
+
+def test_worker_preflight_passes_with_complete_google_write_configuration() -> None:
+    validate_process_runtime(_worker_settings(), "lilos-worker")
+
+
+def test_worker_preflight_does_not_require_google_configuration_when_writes_are_disabled() -> None:
+    settings = Settings.model_validate(
+        {
+            "environment": EnvironmentName.TEST,
+            "database_url": "postgresql://worker:worker@localhost/worker",
+            "provider_writes_enabled": False,
+        }
+    )
+
+    validate_process_runtime(settings, "lilos-worker")
+
+
+@pytest.mark.anyio
+async def test_worker_preflight_log_names_only_missing_keys(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client_id = "client-id-must-not-be-logged"
+    client_secret = "client-secret-must-not-be-logged"
+    encryption_key = Fernet.generate_key().decode()
+    settings = _worker_settings(
+        google_oauth_client_id=client_id,
+        google_oauth_client_secret=client_secret,
+        google_oauth_redirect_uri=None,
+        secret_encryption_key=encryption_key,
+    )
+
+    async def unused_runner(_settings: Settings, _stop: asyncio.Event) -> None:
+        raise AssertionError("runner must not start")
+
+    captured: dict[str, object] = {}
+
+    def capture_error(message: str, *, extra: dict[str, object]) -> None:
+        captured["message"] = message
+        captured["extra"] = extra
+
+    monkeypatch.setattr(runtime_module, "Settings", lambda: settings)
+    monkeypatch.setattr("apps.api.app.logging_config.configure_logging", lambda *_args: None)
+    monkeypatch.setattr(runtime_module.logger, "error", capture_error)
+    assert await process_main("lilos-worker", unused_runner) == 1
+
+    record_text = repr(captured)
+    assert "LILOS_GOOGLE_OAUTH_REDIRECT_URI" in record_text
+    assert client_id not in record_text
+    assert client_secret not in record_text
+    assert encryption_key not in record_text
 
 
 @pytest.mark.integration

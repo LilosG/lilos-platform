@@ -37,6 +37,34 @@ logger = logging.getLogger("lilos")
 # failure, so they must fail the individual job rather than the process loop.
 DETERMINISTIC_DB_ERRORS = (IntegrityError, DataError, ProgrammingError, NoReferencedTableError)
 
+WORKER_GOOGLE_WRITE_REQUIREMENTS = (
+    ("LILOS_DATABASE_URL", "database_url"),
+    ("LILOS_SECRET_ENCRYPTION_KEY", "secret_encryption_key"),
+    ("LILOS_GOOGLE_OAUTH_CLIENT_ID", "google_oauth_client_id"),
+    ("LILOS_GOOGLE_OAUTH_CLIENT_SECRET", "google_oauth_client_secret"),
+    ("LILOS_GOOGLE_OAUTH_REDIRECT_URI", "google_oauth_redirect_uri"),
+)
+
+
+class RuntimeConfigurationError(ValueError):
+    """Bounded, non-secret startup failure naming only missing configuration keys."""
+
+
+def validate_process_runtime(settings: Settings, service_name: str) -> None:
+    """Fail before process health when an enabled capability cannot execute.
+
+    Google write configuration is worker-specific and capability-aware: read-only
+    workers and the scheduler do not acquire unrelated provider requirements.
+    """
+    required = [("LILOS_DATABASE_URL", "database_url")]
+    if service_name == "lilos-worker" and settings.provider_writes_enabled:
+        required = list(WORKER_GOOGLE_WRITE_REQUIREMENTS)
+    missing = [key for key, attribute in required if getattr(settings, attribute) is None]
+    if missing:
+        raise RuntimeConfigurationError(
+            f"Missing required runtime configuration: {', '.join(sorted(missing))}"
+        )
+
 
 def is_deterministic_db_error(exc: BaseException) -> bool:
     """Return whether an exception is a deterministic (non-transient) DB error."""
@@ -587,12 +615,12 @@ async def process_main(
     try:
         settings = Settings()
         configure_logging(settings, service_name)
-        if settings.application_database_url() is None:
-            raise ValueError("database configuration is required")
+        validate_process_runtime(settings, service_name)
         stop = asyncio.Event()
         install_signal_handlers(stop)
         await runner(settings, stop)
     except Exception as exc:
+        safe_configuration_error = str(exc) if isinstance(exc, RuntimeConfigurationError) else None
         logger.error(
             "Durable process terminated",
             extra={
@@ -601,6 +629,7 @@ async def process_main(
                 "outcome": "failure",
                 "normalized_error_code": "PROCESS_CONFIGURATION_OR_DATABASE_FAILURE",
                 "exception_type": type(exc).__name__,
+                "safe_configuration_error": safe_configuration_error,
             },
         )
         return 1

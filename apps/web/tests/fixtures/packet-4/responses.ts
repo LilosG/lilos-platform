@@ -481,6 +481,15 @@ export const gbpPosts = [
     post_type: "standard",
     content: "Now booking fall electrical inspections.",
     status: "approved",
+    publication: {
+      id: "publication-1",
+      status: "verified",
+      scheduled_for: null,
+      dispatched_at: observedAt,
+      provider_post_id: "locations/1001/localPosts/2001",
+      verified_at: observedAt,
+      recovery_allowed: false,
+    },
   },
 ] satisfies GBPPostRevisionItem[];
 

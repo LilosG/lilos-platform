@@ -438,12 +438,12 @@ async def _handle_gbp_publish_post(
 ) -> JobOutcome:
     """Publish one approved GBP post through committed, recoverable phases.
 
-    The publication reservation and immutable provider payload are validated
-    before dispatch. The ``dispatched`` marker is committed before Google I/O,
-    provider identity is committed before verification, and every later retry
-    re-reads the same provider resource. An interrupted dispatch with no
-    provider identity is treated as ambiguous and requires reconciliation;
-    it is never blindly repeated.
+    The publication reservation, immutable provider payload, and OAuth token
+    are validated before dispatch. The durable ``dispatched_at`` boundary is
+    committed immediately before Google I/O, provider identity is committed
+    before verification, and every later retry re-reads the same provider
+    resource. An interrupted dispatch with no provider identity is treated as
+    ambiguous and requires reconciliation; it is never blindly repeated.
     """
     from datetime import UTC, datetime
 
@@ -485,19 +485,22 @@ async def _handle_gbp_publish_post(
     if publication.status not in ("reserved", "dispatched", "reconciliation_required"):
         return JobOutcome(result="permanent_failure", safe_error="PUBLICATION_NOT_RESERVABLE")
 
-    initial_dispatch = publication.status == "reserved"
+    initial_dispatch = publication.status == "reserved" and publication.dispatched_at is None
     if not initial_dispatch and not publication.provider_post_id:
         publication.status = "reconciliation_required"
+        publication.safe_error_code = "AMBIGUOUS_PROVIDER_RESULT"
         await session.commit()
         return JobOutcome(result="ambiguous", safe_error="AMBIGUOUS_PROVIDER_RESULT")
 
     revision = await session.get(GBPPostRevision, publication.post_revision_id)
     if revision is None or revision.organization_id != organization_id:
         publication.status = "failed"
+        publication.safe_error_code = "POST_REVISION_NOT_FOUND"
         await session.commit()
         return JobOutcome(result="permanent_failure", safe_error="POST_REVISION_NOT_FOUND")
     if revision.status != "approved":
         publication.status = "failed"
+        publication.safe_error_code = "POST_REVISION_NOT_APPROVED"
         await session.commit()
         return JobOutcome(result="permanent_failure", safe_error="POST_REVISION_NOT_APPROVED")
 
@@ -509,33 +512,39 @@ async def _handle_gbp_publish_post(
     )
     if gbp_location is None:
         publication.status = "failed"
+        publication.safe_error_code = "GBP_LOCATION_NOT_FOUND"
         await session.commit()
         return JobOutcome(result="permanent_failure", safe_error="GBP_LOCATION_NOT_FOUND")
 
     if location_id is not None and gbp_location.location_id != location_id:
         publication.status = "failed"
+        publication.safe_error_code = "GBP_LOCATION_SCOPE_MISMATCH"
         await session.commit()
         return JobOutcome(result="permanent_failure", safe_error="GBP_LOCATION_SCOPE_MISMATCH")
 
     if not gbp_location.write_enabled or gbp_location.mapping_status != "confirmed":
         publication.status = "failed"
+        publication.safe_error_code = "WRITE_NOT_ENABLED"
         await session.commit()
         return JobOutcome(result="permanent_failure", safe_error="WRITE_NOT_ENABLED")
 
     gbp_account = await session.get(GBPAccount, gbp_location.account_id)
     if gbp_account is None or gbp_account.organization_id != organization_id:
         publication.status = "failed"
+        publication.safe_error_code = "GBP_ACCOUNT_NOT_FOUND"
         await session.commit()
         return JobOutcome(result="permanent_failure", safe_error="GBP_ACCOUNT_NOT_FOUND")
 
     if initial_dispatch and not _provider_writes_enabled():
         publication.status = "failed"
+        publication.safe_error_code = "PROVIDER_WRITES_DISABLED"
         await session.commit()
         return JobOutcome(result="permanent_failure", safe_error="PROVIDER_WRITES_DISABLED")
 
     post_type = revision.post_type.upper()
     if post_type not in {"STANDARD", "EVENT", "OFFER"}:
         publication.status = "failed"
+        publication.safe_error_code = "POST_TYPE_UNSUPPORTED"
         await session.commit()
         return JobOutcome(result="permanent_failure", safe_error="POST_TYPE_UNSUPPORTED")
 
@@ -548,6 +557,7 @@ async def _handle_gbp_publish_post(
         action_type = str(revision.call_to_action.get("actionType", "")).upper()
         if action_type not in {"BOOK", "ORDER", "SHOP", "LEARN_MORE", "SIGN_UP", "CALL", "MENU"}:
             publication.status = "failed"
+            publication.safe_error_code = "POST_CTA_UNSUPPORTED"
             await session.commit()
             return JobOutcome(result="permanent_failure", safe_error="POST_CTA_UNSUPPORTED")
         post_body["callToAction"] = {**revision.call_to_action, "actionType": action_type}
@@ -596,13 +606,15 @@ async def _handle_gbp_publish_post(
     except IntegrationNotFoundError:
         publication = await session.get(GBPPostPublication, publication_id)
         if publication is not None:
-            publication.status = "failed"
+            publication.status = "reserved"
+            publication.safe_error_code = "NO_CONNECTED_INTEGRATION"
         await session.commit()
         return JobOutcome(result="permanent_failure", safe_error="NO_CONNECTED_INTEGRATION")
     except IntegrationReconnectRequiredError:
         publication = await session.get(GBPPostPublication, publication_id)
         if publication is not None:
-            publication.status = "reconciliation_required"
+            publication.status = "reserved"
+            publication.safe_error_code = "TOKEN_REFRESH_FAILED"
         await session.commit()
         return JobOutcome(result="retryable_failure", safe_error="TOKEN_REFRESH_FAILED")
     except SecretUnavailableError as exc:
@@ -616,7 +628,8 @@ async def _handle_gbp_publish_post(
         )
         publication = await session.get(GBPPostPublication, publication_id)
         if publication is not None:
-            publication.status = "reconciliation_required"
+            publication.status = "reserved"
+            publication.safe_error_code = "SECRET_RESOLUTION_FAILED"
         await session.commit()
         return JobOutcome(result="permanent_failure", safe_error="SECRET_RESOLUTION_FAILED")
     except Exception as exc:
@@ -630,7 +643,8 @@ async def _handle_gbp_publish_post(
         )
         publication = await session.get(GBPPostPublication, publication_id)
         if publication is not None:
-            publication.status = "reconciliation_required"
+            publication.status = "reserved"
+            publication.safe_error_code = "TOKEN_RESOLUTION_FAILED"
         await session.commit()
         return JobOutcome(result="retryable_failure", safe_error="TOKEN_RESOLUTION_FAILED")
 
@@ -646,6 +660,7 @@ async def _handle_gbp_publish_post(
             publication = await session.get(GBPPostPublication, publication_id)
             if publication is not None:
                 publication.status = "reconciliation_required"
+                publication.safe_error_code = "VERIFICATION_REREAD_FAILED"
             await session.commit()
             logger.warning(
                 "GBP post verification re-read failed",
@@ -670,11 +685,13 @@ async def _handle_gbp_publish_post(
             return JobOutcome(result="ambiguous", safe_error="PUBLICATION_LOST_AFTER_DISPATCH")
         if provider_state == "REJECTED":
             publication.status = "failed"
+            publication.safe_error_code = "POST_REJECTED_BY_PROVIDER"
             await session.commit()
             return JobOutcome(result="permanent_failure", safe_error="POST_REJECTED_BY_PROVIDER")
         if provider_state == "LIVE":
             publication.status = "verified"
             publication.verified_at = datetime.now(UTC)
+            publication.safe_error_code = None
             await session.commit()
             return JobOutcome(result="succeeded", result_reference=f"publication:{publication.id}")
         # PROCESSING and any other non-LIVE, non-REJECTED state means the
@@ -683,6 +700,7 @@ async def _handle_gbp_publish_post(
         # same provider resource (provider_post_id is already persisted)
         # without creating a duplicate post.
         publication.status = "reconciliation_required"
+        publication.safe_error_code = "POST_NOT_YET_LIVE"
         await session.commit()
         return JobOutcome(result="retryable_failure", safe_error="POST_NOT_YET_LIVE")
 
@@ -692,6 +710,7 @@ async def _handle_gbp_publish_post(
             GBPPostPublication.organization_id == organization_id,
             GBPPostPublication.id == publication_id,
             GBPPostPublication.status == "reserved",
+            GBPPostPublication.dispatched_at.is_(None),
             GBPPostPublication.provider_post_id.is_(None),
         )
         .with_for_update()
@@ -700,6 +719,8 @@ async def _handle_gbp_publish_post(
         await session.rollback()
         return JobOutcome(result="ambiguous", safe_error="PUBLICATION_DISPATCH_CONFLICT")
     publication.status = "dispatched"
+    publication.dispatched_at = datetime.now(UTC)
+    publication.safe_error_code = None
     await session.commit()
 
     try:
@@ -708,6 +729,7 @@ async def _handle_gbp_publish_post(
         publication = await session.get(GBPPostPublication, publication_id)
         if publication is not None:
             publication.status = "reconciliation_required"
+            publication.safe_error_code = "PROVIDER_WRITE_AMBIGUOUS"
         await session.commit()
         logger.warning(
             "GBP post creation failed",
@@ -724,6 +746,7 @@ async def _handle_gbp_publish_post(
         publication = await session.get(GBPPostPublication, publication_id)
         if publication is not None:
             publication.status = "reconciliation_required"
+            publication.safe_error_code = "PROVIDER_RETURNED_NO_RESOURCE_NAME"
         await session.commit()
         return JobOutcome(result="ambiguous", safe_error="PROVIDER_RETURNED_NO_RESOURCE_NAME")
 
@@ -740,9 +763,11 @@ async def _handle_gbp_publish_post(
         return JobOutcome(result="ambiguous", safe_error="PUBLICATION_LOST_AFTER_DISPATCH")
     if publication.provider_post_id not in (None, provider_post_name):
         publication.status = "reconciliation_required"
+        publication.safe_error_code = "PROVIDER_IDENTITY_CONFLICT"
         await session.commit()
         return JobOutcome(result="ambiguous", safe_error="PROVIDER_IDENTITY_CONFLICT")
     publication.provider_post_id = provider_post_name
+    publication.safe_error_code = None
     await session.commit()
 
     try:
@@ -751,6 +776,7 @@ async def _handle_gbp_publish_post(
         publication = await session.get(GBPPostPublication, publication_id)
         if publication is not None:
             publication.status = "reconciliation_required"
+            publication.safe_error_code = "VERIFICATION_REREAD_FAILED"
         await session.commit()
         logger.warning(
             "GBP post verification re-read failed",
@@ -776,11 +802,13 @@ async def _handle_gbp_publish_post(
         return JobOutcome(result="ambiguous", safe_error="PUBLICATION_LOST_AFTER_DISPATCH")
     if provider_state == "REJECTED":
         publication.status = "failed"
+        publication.safe_error_code = "POST_REJECTED_BY_PROVIDER"
         await session.commit()
         return JobOutcome(result="permanent_failure", safe_error="POST_REJECTED_BY_PROVIDER")
     if provider_state == "LIVE":
         publication.status = "verified"
         publication.verified_at = datetime.now(UTC)
+        publication.safe_error_code = None
         await session.commit()
         return JobOutcome(result="succeeded", result_reference=f"publication:{publication.id}")
     # PROCESSING and any other non-LIVE, non-REJECTED state means the
@@ -788,6 +816,7 @@ async def _handle_gbp_publish_post(
     # provider_post_id is already persisted, so a later retry re-reads the
     # same provider resource without creating a duplicate post.
     publication.status = "reconciliation_required"
+    publication.safe_error_code = "POST_NOT_YET_LIVE"
     await session.commit()
     return JobOutcome(result="retryable_failure", safe_error="POST_NOT_YET_LIVE")
 

@@ -927,11 +927,13 @@ class TestGBPProfileSync:
                     "name": "accounts/111/locations/loc-a/localPosts/1",
                     "topicType": "STANDARD",
                     "summary": "One",
+                    "state": "LIVE",
                 },
                 {
                     "name": "accounts/111/locations/loc-a/localPosts/2",
                     "topicType": "EVENT",
                     "summary": "Two",
+                    "state": "PROCESSING",
                 },
             ]
         )
@@ -951,6 +953,9 @@ class TestGBPProfileSync:
         first = asyncio.run(run())
         second = asyncio.run(run())
         assert first["provider_count"] == 2
+        assert first["live_count"] == 1
+        assert first["processing_count"] == 1
+        assert first["rejected_count"] == 0
         assert first["inserted_count"] == 2
         assert second["inserted_count"] == 0
         assert second["updated_count"] == 0
@@ -970,6 +975,7 @@ class TestGBPProfileSync:
         rows = asyncio.run(read_rows())
         assert len(rows) == 2
         assert {row.status for row in rows} == {"present"}
+        assert {row.state for row in rows} == {"LIVE", "PROCESSING"}
 
 
 @pytest.mark.integration

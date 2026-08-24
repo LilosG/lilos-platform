@@ -1177,6 +1177,28 @@
   display: flex;
   justify-content: flex-end;
 }
+.ui-confirm-inline {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+}
+.ui-confirm-inline__message {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.ui-confirm-inline__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+@media (max-width: 30rem) {
+  .ui-confirm-inline {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .ui-confirm-inline__actions {
+    justify-content: flex-start;
+  }
+}
 
 .ui-stage-strip {
   display: flex;

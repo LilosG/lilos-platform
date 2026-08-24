@@ -50,14 +50,17 @@ export type GBPPostRevisionItem = {
   post_type: string;
   content: string;
   status: string;
+  publication: GBPPostPublicationItem | null;
 };
 
 export type GBPPostPublicationItem = {
   id: string;
   status: string;
   scheduled_for: string | null;
+  dispatched_at: string | null;
   provider_post_id: string | null;
   verified_at: string | null;
+  recovery_allowed: boolean;
 };
 
 export type GBPProviderPostItem = {
@@ -77,11 +80,102 @@ export type GBPProviderPostReconciliation = {
   provider_count: number;
   persisted_count: number;
   present_count: number;
+  live_count: number;
+  processing_count: number;
+  rejected_count: number;
   inserted_count: number;
   updated_count: number;
   missing_count: number;
   observed_at: string;
 };
+
+export type GBPProviderPostCounts = {
+  live: number;
+  processing: number;
+  rejected: number;
+  observed: number;
+};
+
+export type GBPPostPresentation = {
+  label: string;
+  tone: string;
+  canPublish: boolean;
+  canRecover: boolean;
+};
+
+export function providerPostCounts(
+  posts: GBPProviderPostItem[],
+): GBPProviderPostCounts {
+  const present = posts.filter((post) => post.status === "present");
+  return {
+    live: present.filter((post) => post.state?.toUpperCase() === "LIVE").length,
+    processing: present.filter(
+      (post) => !["LIVE", "REJECTED"].includes(post.state?.toUpperCase() ?? ""),
+    ).length,
+    rejected: present.filter((post) => post.state?.toUpperCase() === "REJECTED")
+      .length,
+    observed: posts.length,
+  };
+}
+
+export function postPresentation(
+  post: GBPPostRevisionItem,
+): GBPPostPresentation {
+  const publication = post.publication;
+  if (!publication) {
+    if (post.status === "awaiting_approval") {
+      return {
+        label: "Awaiting approval",
+        tone: "setup",
+        canPublish: false,
+        canRecover: false,
+      };
+    }
+    if (post.status === "approved") {
+      return {
+        label: "Approved / never submitted",
+        tone: "ready",
+        canPublish: true,
+        canRecover: false,
+      };
+    }
+    return {
+      label: post.status,
+      tone: "neutral",
+      canPublish: false,
+      canRecover: false,
+    };
+  }
+
+  const presentations: Record<string, { label: string; tone: string }> = {
+    reserved: { label: "Reserved / queued", tone: "setup" },
+    scheduled: { label: "Reserved / queued", tone: "setup" },
+    dispatched: { label: "Dispatched / publishing", tone: "setup" },
+    reconciliation_required: {
+      label: publication.provider_post_id
+        ? "Provider processing / reconciliation required"
+        : "Provider result uncertain / operator attention",
+      tone: "blocked",
+    },
+    verified: { label: "Published / verified", tone: "ready" },
+    failed: { label: "Failed / rejected", tone: "blocked" },
+    cancelled: { label: "Cancelled", tone: "neutral" },
+    expired: { label: "Expired", tone: "neutral" },
+  };
+  const presentation = presentations[publication.status] ?? {
+    label: publication.status,
+    tone: "neutral",
+  };
+  return {
+    ...presentation,
+    canPublish: false,
+    canRecover: publication.recovery_allowed,
+  };
+}
+
+export function postPublicationIdempotencyKey(revisionId: string): string {
+  return `web-post-publish-${revisionId}`;
+}
 
 export type SuspensionCase = {
   id: string;
@@ -328,6 +422,7 @@ export function publishPost(
   locationId: string,
   revisionId: string,
   workflowRunId: string,
+  idempotencyKey: string,
 ): Promise<ApiOutcome<GBPPostPublicationItem>> {
   return apiRequest(
     `${base(organizationId, locationId)}/posts/${revisionId}/publish`,
@@ -335,9 +430,20 @@ export function publishPost(
       method: "POST",
       body: {
         workflow_run_id: workflowRunId,
-        idempotency_key: `web-post-publish-${revisionId}-${Date.now()}`,
+        idempotency_key: idempotencyKey,
       },
     },
+  );
+}
+
+export function recoverPostPublication(
+  organizationId: string,
+  locationId: string,
+  publicationId: string,
+): Promise<ApiOutcome<GBPPostPublicationItem>> {
+  return apiRequest(
+    `${base(organizationId, locationId)}/posts/publications/${publicationId}/recover`,
+    { method: "POST" },
   );
 }
 

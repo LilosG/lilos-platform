@@ -534,6 +534,18 @@ class GBPDiscoveryService:
 
         await session.flush()
         present_count = sum(item.status == "present" for item in by_name.values())
+        live_count = sum(
+            item.status == "present" and (item.state or "").upper() == "LIVE"
+            for item in by_name.values()
+        )
+        rejected_count = sum(
+            item.status == "present" and (item.state or "").upper() == "REJECTED"
+            for item in by_name.values()
+        )
+        processing_count = sum(
+            item.status == "present" and (item.state or "").upper() not in {"LIVE", "REJECTED"}
+            for item in by_name.values()
+        )
         missing_count = sum(item.status == "not_seen" for item in by_name.values())
         await self._audit(
             session,
@@ -543,10 +555,13 @@ class GBPDiscoveryService:
             resource_type="gbp_location",
             resource_id=location.id,
             correlation_id=correlation_id,
-            summary=f"Reconciled {present_count} GBP Local Posts.",
+            summary=f"Reconciled {live_count} live GBP Local Posts.",
             metadata={
                 "provider_count": len(raw_posts),
                 "persisted_count": len(by_name),
+                "live_count": live_count,
+                "processing_count": processing_count,
+                "rejected_count": rejected_count,
                 "inserted_count": inserted,
                 "updated_count": updated,
                 "missing_count": missing_count,
@@ -556,6 +571,9 @@ class GBPDiscoveryService:
             "provider_count": len(raw_posts),
             "persisted_count": len(by_name),
             "present_count": present_count,
+            "live_count": live_count,
+            "processing_count": processing_count,
+            "rejected_count": rejected_count,
             "inserted_count": inserted,
             "updated_count": updated,
             "missing_count": missing_count,
