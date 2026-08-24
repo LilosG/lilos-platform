@@ -141,6 +141,14 @@ class GBPService:
         )
         if not item:
             raise LookupError("GBP location not found")
+        prior_location_id = item.location_id
+        prior_mapping_status = item.mapping_status
+        prior_write_enabled = item.write_enabled
+        write_access_changed = (
+            prior_mapping_status == "confirmed"
+            and prior_location_id == command.location_id
+            and prior_write_enabled != command.write_enabled
+        )
         item.location_id = command.location_id
         item.mapping_status = "confirmed"
         item.write_enabled = command.write_enabled
@@ -159,17 +167,33 @@ class GBPService:
         item.confirmed_by_user_id = user_id
         item.confirmed_at = datetime.now(UTC)
         await session.flush()
+        audit_event = (
+            "gbp.location.write_access_changed"
+            if write_access_changed
+            else "gbp.location.mapping_confirmed"
+        )
         await self._audit(
             session,
-            event="gbp.location.mapping_confirmed",
+            event=audit_event,
             organization_id=organization_id,
             location_id=command.location_id,
             actor_id=user_id,
             resource_type="gbp_location",
             resource_id=item.id,
             correlation_id=correlation_id,
-            summary="GBP location mapping confirmed.",
-            metadata={"write_enabled": item.write_enabled},
+            summary=(
+                "GBP location provider-write access changed."
+                if write_access_changed
+                else "GBP location mapping confirmed."
+            ),
+            metadata={
+                "previous_location_id": str(prior_location_id) if prior_location_id else None,
+                "new_location_id": str(item.location_id) if item.location_id else None,
+                "previous_mapping_status": prior_mapping_status,
+                "new_mapping_status": item.mapping_status,
+                "previous_write_enabled": prior_write_enabled,
+                "new_write_enabled": item.write_enabled,
+            },
         )
         return item
 

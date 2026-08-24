@@ -14,6 +14,7 @@ from apps.api.app.access_control.catalog import AccessCatalogSeeder
 from apps.api.app.access_control.contracts import MembershipCreate, RoleAssignmentCreate
 from apps.api.app.access_control.enums import MembershipType, ScopeType
 from apps.api.app.access_control.service import AccessControlService
+from apps.api.app.audit.models import AuditEvent
 from apps.api.app.authentication.contracts import VerifiedProviderClaims
 from apps.api.app.authentication.enums import AssuranceLevel, UserStatus
 from apps.api.app.authentication.models import UserProfile
@@ -62,7 +63,7 @@ def claims(
 def gbp_client(
     postgresql_test_url: str,
     gbp_session_factory: async_sessionmaker[AsyncSession],
-) -> Generator[tuple[TestClient, dict[str, UUID]], None, None]:
+) -> Generator[tuple[TestClient, dict[str, UUID], FakeVerifier], None, None]:
     async def populate() -> tuple[VerifiedProviderClaims, dict[str, UUID]]:
         access, seeder = AccessControlService(), AccessCatalogSeeder()
         async with gbp_session_factory.begin() as session:
@@ -234,7 +235,7 @@ def gbp_client(
     with TestClient(
         create_app(settings, authentication_verifier=verifier), raise_server_exceptions=False
     ) as client:
-        yield client, identifiers
+        yield client, identifiers, verifier
 
 
 HEADERS = {"Authorization": "Bearer fabricated.token"}
@@ -242,9 +243,9 @@ HEADERS = {"Authorization": "Bearer fabricated.token"}
 
 @pytest.mark.integration
 def test_organization_scoped_discovery_lists_are_real_and_tenant_isolated(
-    gbp_client: tuple[TestClient, dict[str, UUID]],
+    gbp_client: tuple[TestClient, dict[str, UUID], FakeVerifier],
 ) -> None:
-    client, ids = gbp_client
+    client, ids, _verifier = gbp_client
     org = ids["organization"]
 
     accounts = client.get(f"/api/v1/organizations/{org}/gbp/accounts", headers=HEADERS)
@@ -267,10 +268,10 @@ def test_organization_scoped_discovery_lists_are_real_and_tenant_isolated(
 
 @pytest.mark.integration
 def test_full_vertical_slice_flow_produces_readable_audit_history(
-    gbp_client: tuple[TestClient, dict[str, UUID]],
+    gbp_client: tuple[TestClient, dict[str, UUID], FakeVerifier],
     gbp_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    client, ids = gbp_client
+    client, ids, _verifier = gbp_client
     org, location, gbp_location = ids["organization"], ids["location"], ids["gbp_location"]
     base = f"/api/v1/organizations/{org}/locations/{location}/gbp"
 
@@ -357,9 +358,9 @@ def test_full_vertical_slice_flow_produces_readable_audit_history(
 
 @pytest.mark.integration
 def test_cross_tenant_change_and_publication_audit_are_not_found(
-    gbp_client: tuple[TestClient, dict[str, UUID]],
+    gbp_client: tuple[TestClient, dict[str, UUID], FakeVerifier],
 ) -> None:
-    client, ids = gbp_client
+    client, ids, _verifier = gbp_client
     org, other_location = ids["organization"], ids["other_location"]
     base = f"/api/v1/organizations/{org}/locations/{other_location}/gbp"
 
@@ -372,7 +373,7 @@ def test_cross_tenant_change_and_publication_audit_are_not_found(
 
 @pytest.mark.integration
 def test_gbp_read_product_path_returns_only_confirmed_mapped_locations(
-    gbp_client: tuple[TestClient, dict[str, UUID]],
+    gbp_client: tuple[TestClient, dict[str, UUID], FakeVerifier],
     gbp_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     """gbp.read must not leak unmapped provider-discovered resources.
@@ -383,7 +384,7 @@ def test_gbp_read_product_path_returns_only_confirmed_mapped_locations(
     discovery remains available through the privileged integration discovery
     path (POST /integrations/google/discover with gbp.connect).
     """
-    client, ids = gbp_client
+    client, ids, _verifier = gbp_client
     org = ids["organization"]
     location = ids["location"]
     gbp_location = ids["gbp_location"]
@@ -417,3 +418,137 @@ def test_gbp_read_product_path_returns_only_confirmed_mapped_locations(
     other_org = ids["other_organization"]
     cross_tenant = client.get(f"/api/v1/organizations/{other_org}/gbp/locations", headers=HEADERS)
     assert cross_tenant.status_code == 403
+
+
+@pytest.mark.integration
+def test_confirm_mapping_preserves_aal2_route_requirement(
+    gbp_client: tuple[TestClient, dict[str, UUID], FakeVerifier],
+) -> None:
+    client, ids, verifier = gbp_client
+    verifier.result = claims(ids["assigned_subject"], assurance=AssuranceLevel.AAL1)
+
+    response = client.post(
+        (
+            f"/api/v1/organizations/{ids['organization']}"
+            f"/locations/{ids['location']}/gbp/locations/{ids['gbp_location']}/confirm"
+        ),
+        headers=HEADERS,
+        json={"location_id": str(ids["location"]), "write_enabled": True},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "AUTHORIZATION_DENIED"
+
+
+@pytest.mark.integration
+def test_write_access_transitions_are_persisted_and_audited_truthfully(
+    gbp_client: tuple[TestClient, dict[str, UUID], FakeVerifier],
+    gbp_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    client, ids, _verifier = gbp_client
+    base = (
+        f"/api/v1/organizations/{ids['organization']}"
+        f"/locations/{ids['location']}/gbp/locations/{ids['gbp_location']}/confirm"
+    )
+
+    initial = client.post(
+        base,
+        headers=HEADERS,
+        json={"location_id": str(ids["location"])},
+    )
+    assert initial.status_code == 200
+    assert initial.json()["data"]["write_enabled"] is False
+
+    enabled = client.post(
+        base,
+        headers=HEADERS,
+        json={"location_id": str(ids["location"]), "write_enabled": True},
+    )
+    assert enabled.status_code == 200
+    assert enabled.json()["data"]["write_enabled"] is True
+
+    disabled = client.post(
+        base,
+        headers=HEADERS,
+        json={"location_id": str(ids["location"]), "write_enabled": False},
+    )
+    assert disabled.status_code == 200
+    assert disabled.json()["data"]["write_enabled"] is False
+
+    idempotent = client.post(
+        base,
+        headers=HEADERS,
+        json={"location_id": str(ids["location"]), "write_enabled": False},
+    )
+    assert idempotent.status_code == 200
+
+    async def assert_persistence_and_audit() -> None:
+        async with gbp_session_factory() as session:
+            location = await session.get(GBPLocation, ids["gbp_location"])
+            assert location is not None
+            assert location.write_enabled is False
+
+            events = list(
+                await session.scalars(
+                    select(AuditEvent).where(
+                        AuditEvent.organization_id == ids["organization"],
+                        AuditEvent.resource_type == "gbp_location",
+                        AuditEvent.resource_id == ids["gbp_location"],
+                    )
+                )
+            )
+            write_access_events = [
+                event for event in events if event.event_type == "gbp.location.write_access_changed"
+            ]
+            assert len(write_access_events) == 2
+            transitions = {
+                (
+                    event.event_metadata["previous_write_enabled"],
+                    event.event_metadata["new_write_enabled"],
+                )
+                for event in write_access_events
+            }
+            assert transitions == {(False, True), (True, False)}
+            for event in write_access_events:
+                assert event.event_metadata["previous_location_id"] == str(ids["location"])
+                assert event.event_metadata["new_location_id"] == str(ids["location"])
+                assert event.event_metadata["previous_mapping_status"] == "confirmed"
+                assert event.event_metadata["new_mapping_status"] == "confirmed"
+
+    asyncio.run(assert_persistence_and_audit())
+
+
+@pytest.mark.integration
+def test_google_unmapped_uses_platform_location_identity_and_reconciles_workspace(
+    gbp_client: tuple[TestClient, dict[str, UUID], FakeVerifier],
+) -> None:
+    client, ids, _verifier = gbp_client
+    integrations_base = f"/api/v1/organizations/{ids['organization']}/integrations/google"
+
+    before = client.get(f"{integrations_base}/unmapped", headers=HEADERS)
+    assert before.status_code == 200
+    assert [item["id"] for item in before.json()["data"]] == [str(ids["gbp_location"])]
+
+    confirm = client.post(
+        (
+            f"/api/v1/organizations/{ids['organization']}"
+            f"/locations/{ids['location']}/gbp/locations/{ids['gbp_location']}/confirm"
+        ),
+        headers=HEADERS,
+        json={"location_id": str(ids["location"])},
+    )
+    assert confirm.status_code == 200
+    assert confirm.json()["data"]["write_enabled"] is False
+
+    after = client.get(f"{integrations_base}/unmapped", headers=HEADERS)
+    assert after.status_code == 200
+    assert after.json()["data"] == []
+
+    workspace = client.get(f"{integrations_base}/workspace", headers=HEADERS)
+    assert workspace.status_code == 200
+    mapped = workspace.json()["data"]["mapped_resources"]
+    assert len(mapped) == 1
+    assert mapped[0]["platform_resource_id"] == str(ids["location"])
+    assert mapped[0]["gbp_location_id"] == str(ids["gbp_location"])
+    assert mapped[0]["mapping_status"] == "confirmed"
+    assert mapped[0]["write_enabled"] is False

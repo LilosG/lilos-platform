@@ -26,6 +26,9 @@ export type MappedResource = {
   display_name: string | null;
   last_synced_at: string | null;
   sync_freshness: "fresh" | "stale" | "never";
+  gbp_location_id: string | null;
+  mapping_status: string | null;
+  write_enabled: boolean | null;
 };
 
 export type GoogleWorkspace = {

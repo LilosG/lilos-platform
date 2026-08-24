@@ -47,7 +47,6 @@ from apps.api.app.integrations.errors import (
     IntegrationStateInvalidError,
     IntegrationTokenExchangeFailedError,
 )
-from apps.api.app.integrations.models import ProviderResourceMapping
 from apps.api.app.products.gbp.discovery_service import GBPDiscoveryService
 from apps.api.app.products.gbp.models import GBPLocation
 from apps.api.app.routes.health import settings_from_request
@@ -396,29 +395,17 @@ async def google_unmapped(
             "meta": ResponseMeta(correlation_id=request_correlation_id(request)).model_dump(),
         }
 
-    mapped_ids: set[UUID] = set()
-    rows = (
-        (
-            await session.execute(
-                select(ProviderResourceMapping.platform_resource_id).where(
-                    ProviderResourceMapping.organization_id == organization_id,
-                    ProviderResourceMapping.resource_type == "location",
-                    ProviderResourceMapping.status == "active",
-                    ProviderResourceMapping.platform_resource_id.isnot(None),
-                )
-            )
-        )
-        .scalars()
-        .all()
+    mapping_ids, platform_location_ids = await directory_service.active_location_mapping_identities(
+        session, organization_id, connection.id
     )
-    for row in rows:
-        if row is not None:
-            mapped_ids.add(row)
 
     gbp_locations = (
         (
             await session.execute(
-                select(GBPLocation).where(GBPLocation.organization_id == organization_id)
+                select(GBPLocation).where(
+                    GBPLocation.organization_id == organization_id,
+                    GBPLocation.connection_id == connection.id,
+                )
             )
         )
         .scalars()
@@ -427,7 +414,7 @@ async def google_unmapped(
 
     unmapped: list[dict[str, object]] = []
     for loc in gbp_locations:
-        if loc.id in mapped_ids:
+        if loc.integration_resource_id in mapping_ids or loc.location_id in platform_location_ids:
             continue
         name = loc.business_name or "Unnamed location"
         if search and search.lower() not in name.lower():
