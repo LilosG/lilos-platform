@@ -181,7 +181,8 @@ class GBPPostProposalEnrichmentService:
         except Exception as exc:
             raise GBPProposalEnrichmentError(
                 "GBP_DRIVE_MEDIA_UNAVAILABLE",
-                "Google Drive media could not be read for this client. Verify the configured Drive credential and folder access.",
+                "Google Drive media could not be read for this client. "
+                "Verify the configured Drive credential and folder access.",
             ) from exc
         if not images:
             raise GBPProposalEnrichmentError(
