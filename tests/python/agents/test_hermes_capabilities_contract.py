@@ -1,6 +1,7 @@
 """Regression coverage for Hermes v2026.8.19 capability metadata."""
 
 import asyncio
+from collections.abc import Callable
 from typing import Any, cast
 
 import httpx
@@ -44,7 +45,7 @@ def _pinned_capabilities() -> dict[str, object]:
     }
 
 
-def _handler(payload: dict[str, object]):
+def _handler(payload: dict[str, object]) -> Callable[[httpx.Request], httpx.Response]:
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/health/detailed":
             return httpx.Response(200, json={"status": "ready", "version": "0.20.5"})
