@@ -205,7 +205,8 @@
   font-weight: 700;
   line-height: var(--type-body-sm-line);
   list-style: none;
-  transition: background var(--motion-duration-fast) var(--motion-easing-standard);
+  transition:
+    background var(--motion-duration-fast) var(--motion-easing-standard);
 }
 
 .agent-run__disclosure > summary::-webkit-details-marker {
@@ -224,7 +225,8 @@
   color: var(--color-text-secondary);
   font-size: 1rem;
   line-height: 1;
-  transition: transform var(--motion-duration-fast) var(--motion-easing-standard);
+  transition:
+    transform var(--motion-duration-fast) var(--motion-easing-standard);
 }
 
 .agent-run__disclosure > summary:hover {
