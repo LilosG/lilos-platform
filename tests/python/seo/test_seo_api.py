@@ -7,6 +7,7 @@ from uuid import UUID, uuid4
 
 import httpx
 import pytest
+from authorization.fixtures import add_effective_product_entitlement
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from starlette.testclient import TestClient
@@ -125,6 +126,12 @@ def seo_client(
             profile = UserProfile(auth_user_id=uuid4(), status=UserStatus.ACTIVE, version=1)
             session.add_all([organization, other_organization, profile])
             await session.flush()
+            await add_effective_product_entitlement(
+                session,
+                organization.id,
+                "seo",
+                correlation_id="seo-api-entitlement",
+            )
 
             location = Location(
                 organization_id=organization.id,

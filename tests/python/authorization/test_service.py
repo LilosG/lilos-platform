@@ -19,6 +19,10 @@ from apps.api.app.access_control.contracts import (
 from apps.api.app.access_control.enums import MembershipStatus, MembershipType, ScopeType
 from apps.api.app.access_control.models import OrganizationMembership
 from apps.api.app.access_control.service import AccessControlService
+from apps.api.app.administration.catalog import AdministrationCatalogSeeder
+from apps.api.app.administration.enums import EntitlementStatus
+from apps.api.app.administration.models import ProductEntitlement, ProductEntitlementLocation
+from apps.api.app.administration.repository import AdministrationCatalogRepository
 from apps.api.app.authentication.contracts import AuthenticatedPrincipal
 from apps.api.app.authentication.enums import AssuranceLevel, UserStatus
 from apps.api.app.authentication.models import UserProfile
@@ -29,6 +33,8 @@ from apps.api.app.locations.enums import LocationStatus, LocationType
 from apps.api.app.locations.models import Location
 from apps.api.app.organizations.enums import OrganizationStatus, OrganizationType
 from apps.api.app.organizations.models import Organization
+from apps.api.app.platform_admin.dependencies import require_platform_administrator
+from apps.api.app.platform_admin.models import PlatformAdministrator
 
 
 def make_organization(
@@ -104,6 +110,46 @@ def request(
         location_id=location.id if location else None,
         minimum_assurance_level=minimum,
     )
+
+
+async def add_entitlement(
+    session: AsyncSession,
+    organization_id: UUID,
+    product_key: str,
+    *,
+    status: EntitlementStatus,
+    effective_from: datetime | None = None,
+    effective_until: datetime | None = None,
+    location_rows: tuple[tuple[UUID, str], ...] = (),
+) -> ProductEntitlement:
+    product = await AdministrationCatalogRepository().get_product_by_key(session, product_key)
+    assert product is not None
+    item = ProductEntitlement(
+        organization_id=organization_id,
+        product_id=product.id,
+        status=status.value,
+        source="authorization_test",
+        reason="Authorization entitlement fixture.",
+        effective_from=effective_from or datetime.now(UTC),
+        effective_until=effective_until,
+        version=1,
+    )
+    session.add(item)
+    await session.flush()
+    session.add_all(
+        [
+            ProductEntitlementLocation(
+                organization_id=organization_id,
+                entitlement_id=item.id,
+                location_id=location_id,
+                status=location_status,
+                version=1,
+            )
+            for location_id, location_status in location_rows
+        ]
+    )
+    await session.flush()
+    return item
 
 
 @pytest.mark.integration
@@ -532,6 +578,260 @@ def test_user_organization_membership_mfa_isolation_and_catalog_fail_closed(
                 correlation_id="catalog-missing",
             )
             assert inconsistent.reason_code is AuthorizationReason.CATALOG_INCONSISTENCY
+
+    asyncio.run(exercise())
+
+
+@pytest.mark.integration
+def test_product_entitlement_is_conjunctive_scoped_and_platform_admin_semantics_remain_separate(
+    authorization_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async def exercise() -> None:
+        access, evaluator = AccessControlService(), AuthorizationService()
+        async with authorization_session_factory.begin() as session:
+            await AccessCatalogSeeder().seed(session, correlation_id="entitlement-access-catalog")
+            await AdministrationCatalogSeeder().seed(
+                session, correlation_id="entitlement-product-catalog"
+            )
+            organization = make_organization("entitlement-org")
+            other_organization = make_organization("entitlement-other-org")
+            operator, no_role_user, platform_admin = make_user(), make_user(), make_user()
+            session.add_all(
+                [organization, other_organization, operator, no_role_user, platform_admin]
+            )
+            await session.flush()
+            selected_location = make_location(organization.id, "entitled-location")
+            removed_location = make_location(organization.id, "removed-location")
+            cross_tenant_location = make_location(other_organization.id, "cross-tenant-location")
+            session.add_all([selected_location, removed_location, cross_tenant_location])
+            await session.flush()
+
+            operator_membership = await access.create_membership(
+                session,
+                organization.id,
+                MembershipCreate(
+                    user_profile_id=operator.id, membership_type=MembershipType.CLIENT
+                ),
+                correlation_id="entitlement-operator-membership",
+            )
+            no_role_membership = await access.create_membership(
+                session,
+                organization.id,
+                MembershipCreate(
+                    user_profile_id=no_role_user.id, membership_type=MembershipType.CLIENT
+                ),
+                correlation_id="entitlement-no-role-membership",
+            )
+            owner = await access.catalog.get_role_by_key(session, "organization_owner")
+            reviews_publish = await access.catalog.get_permission_by_key(
+                session, "reviews.publish_response"
+            )
+            assert owner is not None and reviews_publish is not None
+            await access.add_assignment(
+                session,
+                organization.id,
+                operator_membership.id,
+                RoleAssignmentCreate(role_id=owner.id, scope_type=ScopeType.ORGANIZATION),
+                correlation_id="entitlement-owner-assignment",
+            )
+            review_deny = await access.add_deny(
+                session,
+                organization.id,
+                operator_membership.id,
+                PermissionDenyCreate(
+                    permission_id=reviews_publish.id,
+                    scope_type=ScopeType.LOCATION,
+                    location_id=selected_location.id,
+                ),
+                correlation_id="entitlement-explicit-deny",
+            )
+
+            now = datetime.now(UTC)
+            await add_entitlement(
+                session,
+                organization.id,
+                "seo",
+                status=EntitlementStatus.SUSPENDED,
+            )
+            await add_entitlement(
+                session,
+                organization.id,
+                "content",
+                status=EntitlementStatus.ARCHIVED,
+            )
+            await add_entitlement(
+                session,
+                organization.id,
+                "reviews",
+                status=EntitlementStatus.ACTIVE,
+                location_rows=(
+                    (selected_location.id, "active"),
+                    (removed_location.id, "removed"),
+                ),
+            )
+            await add_entitlement(
+                session,
+                organization.id,
+                "leads",
+                status=EntitlementStatus.SETUP_REQUIRED,
+            )
+            await add_entitlement(
+                session,
+                organization.id,
+                "insights",
+                status=EntitlementStatus.ACTIVE,
+                effective_from=now - timedelta(days=2),
+                effective_until=now - timedelta(days=1),
+            )
+            platform_grant = PlatformAdministrator(user_profile_id=platform_admin.id)
+            session.add(platform_grant)
+
+        async with authorization_session_factory() as session:
+            no_gbp_entitlement = await evaluator.evaluate(
+                session,
+                principal(operator),
+                request(operator, organization, "gbp.read"),
+                correlation_id="entitlement-gbp-missing",
+            )
+            assert (
+                no_gbp_entitlement.reason_code
+                is AuthorizationReason.PRODUCT_ENTITLEMENT_NOT_EFFECTIVE
+            )
+
+            suspended = await evaluator.evaluate(
+                session,
+                principal(operator),
+                request(operator, organization, "seo.read"),
+                correlation_id="entitlement-seo-suspended",
+            )
+            assert suspended.reason_code is AuthorizationReason.PRODUCT_ENTITLEMENT_NOT_EFFECTIVE
+
+            archived = await evaluator.evaluate(
+                session,
+                principal(operator),
+                request(operator, organization, "content.read"),
+                correlation_id="entitlement-content-archived",
+            )
+            assert archived.reason_code is AuthorizationReason.PRODUCT_ENTITLEMENT_NOT_EFFECTIVE
+
+            expired = await evaluator.evaluate(
+                session,
+                principal(operator),
+                request(operator, organization, "insights.read"),
+                correlation_id="entitlement-insights-expired",
+            )
+            assert expired.reason_code is AuthorizationReason.PRODUCT_ENTITLEMENT_NOT_EFFECTIVE
+
+            entitled_and_permitted = await evaluator.evaluate(
+                session,
+                principal(operator),
+                request(operator, organization, "leads.read"),
+                correlation_id="entitlement-leads-allowed",
+            )
+            assert entitled_and_permitted.reason_code is AuthorizationReason.ALLOWED
+
+            entitlement_does_not_grant_role_permission = await evaluator.evaluate(
+                session,
+                principal(no_role_user),
+                request(no_role_user, organization, "leads.read"),
+                correlation_id="entitlement-no-role",
+            )
+            assert (
+                entitlement_does_not_grant_role_permission.reason_code
+                is AuthorizationReason.PERMISSION_NOT_GRANTED
+            )
+            assert entitlement_does_not_grant_role_permission.membership_id == no_role_membership.id
+
+            explicit_deny = await evaluator.evaluate(
+                session,
+                principal(operator),
+                request(
+                    operator,
+                    organization,
+                    "reviews.publish_response",
+                    location=selected_location,
+                ),
+                correlation_id="entitlement-explicit-deny-wins",
+            )
+            assert explicit_deny.reason_code is AuthorizationReason.EXPLICIT_DENY
+            assert explicit_deny.applicable_deny_ids == (review_deny.id,)
+
+            entitled_location = await evaluator.evaluate(
+                session,
+                principal(operator),
+                request(
+                    operator,
+                    organization,
+                    "reviews.read",
+                    location=selected_location,
+                ),
+                correlation_id="entitlement-selected-location-allowed",
+            )
+            assert entitled_location.reason_code is AuthorizationReason.ALLOWED
+
+            wrong_entitled_location = await evaluator.evaluate(
+                session,
+                principal(operator),
+                request(
+                    operator,
+                    organization,
+                    "reviews.read",
+                    location=removed_location,
+                ),
+                correlation_id="entitlement-wrong-location",
+            )
+            assert (
+                wrong_entitled_location.reason_code
+                is AuthorizationReason.PRODUCT_ENTITLEMENT_NOT_EFFECTIVE
+            )
+
+            cross_tenant_location_result = await evaluator.evaluate(
+                session,
+                principal(operator),
+                request(
+                    operator,
+                    organization,
+                    "reviews.read",
+                    location=cross_tenant_location,
+                ),
+                correlation_id="entitlement-cross-tenant-location",
+            )
+            assert (
+                cross_tenant_location_result.reason_code is AuthorizationReason.LOCATION_NOT_FOUND
+            )
+
+            wrong_organization = await evaluator.evaluate(
+                session,
+                principal(operator),
+                request(operator, other_organization, "leads.read"),
+                correlation_id="entitlement-wrong-organization",
+            )
+            assert wrong_organization.reason_code is AuthorizationReason.MEMBERSHIP_MISSING
+
+            non_product = await evaluator.evaluate(
+                session,
+                principal(operator),
+                request(operator, organization, "organization.read"),
+                correlation_id="entitlement-non-product-unchanged",
+            )
+            assert non_product.reason_code is AuthorizationReason.ALLOWED
+
+            # Platform administration is a separate, narrow cross-organization
+            # grant. It remains valid for its own routes and does not become a
+            # product-role or entitlement bypass.
+            grant = await require_platform_administrator()(
+                principal(platform_admin, AssuranceLevel.AAL2), session
+            )
+            assert grant.id == platform_grant.id
+            platform_admin_product_access = await evaluator.evaluate(
+                session,
+                principal(platform_admin, AssuranceLevel.AAL2),
+                request(platform_admin, organization, "leads.read"),
+                correlation_id="entitlement-platform-admin-separate",
+            )
+            assert (
+                platform_admin_product_access.reason_code is AuthorizationReason.MEMBERSHIP_MISSING
+            )
 
     asyncio.run(exercise())
 

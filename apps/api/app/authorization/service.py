@@ -21,7 +21,12 @@ from apps.api.app.access_control.repository import (
 from apps.api.app.authentication.contracts import AuthenticatedPrincipal
 from apps.api.app.authentication.enums import AssuranceLevel, UserStatus
 from apps.api.app.authorization.contracts import AuthorizationDecision, AuthorizationRequest
+from apps.api.app.authorization.entitlements import (
+    ProductEntitlementAuthorizationRepository,
+    product_key_for_permission,
+)
 from apps.api.app.authorization.enums import AuthorizationReason
+from apps.api.app.database.base import utc_now
 from apps.api.app.locations.repository import LocationRepository
 from apps.api.app.organizations.enums import OrganizationStatus
 from apps.api.app.organizations.repository import OrganizationRepository
@@ -60,6 +65,9 @@ class AuthorizationService:
     assignment_repository: AssignmentRepository = field(default_factory=AssignmentRepository)
     deny_repository: DenyRepository = field(default_factory=DenyRepository)
     catalog_repository: CatalogRepository = field(default_factory=CatalogRepository)
+    entitlement_repository: ProductEntitlementAuthorizationRepository = field(
+        default_factory=ProductEntitlementAuthorizationRepository
+    )
 
     async def evaluate(
         self,
@@ -243,7 +251,23 @@ class AuthorizationService:
         elif not allowing_assignment_ids:
             reason = AuthorizationReason.PERMISSION_NOT_GRANTED
         else:
-            reason = AuthorizationReason.ALLOWED
+            product_key = product_key_for_permission(request.permission_key)
+            if product_key is None:
+                reason = AuthorizationReason.ALLOWED
+            else:
+                entitlement = await self.entitlement_repository.resolve(
+                    session, request.organization_id, product_key
+                )
+                if entitlement is None or not entitlement.catalog_consistent:
+                    reason = AuthorizationReason.CATALOG_INCONSISTENCY
+                elif not entitlement.authorizes(
+                    request.resource_scope,
+                    request.location_id,
+                    now=utc_now(),
+                ):
+                    reason = AuthorizationReason.PRODUCT_ENTITLEMENT_NOT_EFFECTIVE
+                else:
+                    reason = AuthorizationReason.ALLOWED
         return self._decision(
             principal,
             request,
