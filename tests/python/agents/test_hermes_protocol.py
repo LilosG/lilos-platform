@@ -29,6 +29,65 @@ def _capabilities() -> dict[str, object]:
     }
 
 
+@pytest.mark.parametrize(
+    ("base_url", "expected"),
+    [
+        ("lilos-hermes:8642", "http://lilos-hermes:8642"),
+        ("http://lilos-hermes:8642", "http://lilos-hermes:8642"),
+        ("https://hermes.example.com/", "https://hermes.example.com"),
+    ],
+)
+def test_render_private_hostport_base_url_normalization(base_url: str, expected: str) -> None:
+    client = HermesRunsClient(base_url, "test-hermes-key", timeout_seconds=5)
+    assert client._base_url == expected
+
+
+def test_render_private_hostport_capability_request_uses_http_scheme() -> None:
+    observed: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        observed.append(str(request.url))
+        assert request.url.scheme == "http"
+        assert request.url.host == "lilos-hermes"
+        assert request.url.port == 8642
+        if request.url.path == "/health/detailed":
+            return httpx.Response(200, json={"status": "ready", "version": "0.20.5"})
+        if request.url.path == "/v1/capabilities":
+            return httpx.Response(200, json=_capabilities())
+        if request.url.path == "/v1/toolsets":
+            return httpx.Response(
+                200,
+                json={
+                    "data": [
+                        {
+                            "name": "lilos",
+                            "enabled": True,
+                            "tools": sorted(REQUIRED_LILOS_TOOLS),
+                        }
+                    ]
+                },
+            )
+        raise AssertionError(request.url.path)
+
+    async def scenario() -> None:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+            client = HermesRunsClient(
+                "lilos-hermes:8642",
+                "test-hermes-key",
+                timeout_seconds=5,
+                client=http,
+            )
+            capabilities = await client.capabilities()
+            assert capabilities.missing_required == ()
+
+    asyncio.run(scenario())
+    assert observed == [
+        "http://lilos-hermes:8642/health/detailed",
+        "http://lilos-hermes:8642/v1/capabilities",
+        "http://lilos-hermes:8642/v1/toolsets",
+    ]
+
+
 def test_native_runs_capabilities_and_real_steer_transport() -> None:
     observed: list[tuple[str, str, object]] = []
 
