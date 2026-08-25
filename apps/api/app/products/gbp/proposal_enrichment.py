@@ -212,7 +212,9 @@ class GBPPostProposalEnrichmentService:
         seasonal = bool(content_terms & _SEASONAL_TERMS)
         preferred_folder = "seasonal" if seasonal else "work"
 
-        preferred = [image for image in images if cls._folder_bucket(image.path) == preferred_folder]
+        preferred = [
+            image for image in images if cls._folder_bucket(image.path) == preferred_folder
+        ]
         if not preferred and preferred_folder != "general":
             preferred = [image for image in images if cls._folder_bucket(image.path) == "general"]
         pool = preferred or images
@@ -271,18 +273,9 @@ class GBPPostProposalEnrichmentService:
     def _safe_call_to_action(
         cls, requested: object, target_url: str | None
     ) -> dict[str, str] | None:
+        del cls, requested
         if target_url is None:
             return None
-        target_host = urlsplit(target_url).netloc.casefold()
-        if isinstance(requested, dict):
-            requested_url = str(requested.get("url") or "").strip()
-            requested_type = str(requested.get("actionType") or "LEARN_MORE").upper()
-            if (
-                requested_type == "LEARN_MORE"
-                and cls._valid_http_url(requested_url)
-                and urlsplit(requested_url).netloc.casefold() == target_host
-            ):
-                return {"actionType": "LEARN_MORE", "url": requested_url}
         return {"actionType": "LEARN_MORE", "url": target_url}
 
     @staticmethod
