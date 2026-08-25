@@ -61,7 +61,7 @@ def test_select_image_falls_back_to_general_when_work_folder_missing() -> None:
 
 
 def test_target_url_prefers_relevant_service_page() -> None:
-    profile = {"websiteUri": "https://wheylandelectric.com/"}
+    profile: dict[str, object] = {"websiteUri": "https://wheylandelectric.com/"}
     knowledge = {
         "website_knowledge": [
             {
