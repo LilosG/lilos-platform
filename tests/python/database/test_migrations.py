@@ -30,6 +30,22 @@ async def database_state(database_url: str) -> tuple[list[str], list[str]]:
         await engine.dispose()
 
 
+async def gbp_post_publication_schema(
+    database_url: str,
+) -> set[str]:
+    engine = create_async_engine(database_url)
+    try:
+        async with engine.connect() as connection:
+            return await connection.run_sync(
+                lambda sync_connection: {
+                    column["name"]
+                    for column in inspect(sync_connection).get_columns("gbp_post_publications")
+                }
+            )
+    finally:
+        await engine.dispose()
+
+
 @pytest.mark.integration
 def test_baseline_migration_upgrades_downgrades_and_upgrades_again(
     postgresql_test_url: str,
@@ -298,6 +314,25 @@ def test_baseline_migration_upgrades_downgrades_and_upgrades_again(
         "workflow_versions",
     ]
     assert revisions_at_final_head == [alembic_head]
+
+
+@pytest.mark.integration
+def test_gbp_publication_dispatch_evidence_migration_is_reversible(
+    postgresql_test_url: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("LILOS_MIGRATION_DATABASE_URL", postgresql_test_url)
+    config = alembic_config()
+
+    command.upgrade(config, "head")
+    command.downgrade(config, "20260821_0002")
+    columns_before = asyncio.run(gbp_post_publication_schema(postgresql_test_url))
+    assert "dispatched_at" not in columns_before
+    assert "safe_error_code" not in columns_before
+
+    command.upgrade(config, "head")
+    columns_after = asyncio.run(gbp_post_publication_schema(postgresql_test_url))
+    assert {"dispatched_at", "safe_error_code"} <= columns_after
 
 
 @pytest.mark.integration

@@ -3,9 +3,11 @@
 import asyncio
 from collections.abc import Awaitable, Callable, Generator
 from datetime import UTC, datetime, timedelta
+from typing import cast
 from uuid import UUID, uuid4
 
 import pytest
+from fastapi import FastAPI
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from starlette.testclient import TestClient
@@ -14,11 +16,18 @@ from apps.api.app.access_control.catalog import AccessCatalogSeeder
 from apps.api.app.access_control.contracts import MembershipCreate, RoleAssignmentCreate
 from apps.api.app.access_control.enums import MembershipType, ScopeType
 from apps.api.app.access_control.service import AccessControlService
+from apps.api.app.audit.models import AuditEvent
 from apps.api.app.authentication.contracts import VerifiedProviderClaims
 from apps.api.app.authentication.enums import AssuranceLevel, UserStatus
 from apps.api.app.authentication.models import UserProfile
 from apps.api.app.config import EnvironmentName, Settings
-from apps.api.app.execution.models import WorkflowDefinition, WorkflowRun, WorkflowVersion
+from apps.api.app.execution.models import (
+    Job,
+    JobAttempt,
+    WorkflowDefinition,
+    WorkflowRun,
+    WorkflowVersion,
+)
 from apps.api.app.integrations.models import IntegrationConnection, Provider
 from apps.api.app.locations.enums import LocationStatus, LocationType
 from apps.api.app.locations.models import Location
@@ -26,7 +35,9 @@ from apps.api.app.main import create_app
 from apps.api.app.notifications.models import NotificationEvent
 from apps.api.app.organizations.enums import OrganizationStatus, OrganizationType
 from apps.api.app.organizations.models import Organization
+from apps.api.app.products.gbp.discovery_service import GBPDiscoveryService
 from apps.api.app.products.gbp.models import GBPAccount, GBPLocation
+from apps.api.app.products.gbp.operations_models import GBPPostPublication, GBPProviderPost
 
 
 class FakeVerifier:
@@ -256,9 +267,9 @@ def gbp_operations_client(
     settings = Settings.model_validate(
         {"environment": EnvironmentName.TEST, "database_url": postgresql_test_url}
     )
-    with TestClient(
-        create_app(settings, authentication_verifier=verifier), raise_server_exceptions=False
-    ) as client:
+    app = create_app(settings, authentication_verifier=verifier)
+    app.state.gbp_operations_test_verifier = verifier
+    with TestClient(app, raise_server_exceptions=False) as client:
         yield client, identifiers
 
 
@@ -448,10 +459,271 @@ def test_media_proposal_and_post_publish_flow(
     )
     assert publish.status_code == 202, publish.text
     assert publish.json()["data"]["status"] == "reserved"
+    publication_id = publish.json()["data"]["id"]
+
+    idempotent_publish = client.post(
+        f"{base}/posts/{revision_id}/publish",
+        headers=HEADERS,
+        json={"workflow_run_id": str(workflow_run), "idempotency_key": "gbp-post-publish-key-001"},
+    )
+    assert idempotent_publish.status_code == 202, idempotent_publish.text
+    assert idempotent_publish.json()["data"]["id"] == publication_id
+
+    duplicate_publish = client.post(
+        f"{base}/posts/{revision_id}/publish",
+        headers=HEADERS,
+        json={"workflow_run_id": str(workflow_run), "idempotency_key": "gbp-post-publish-key-002"},
+    )
+    assert duplicate_publish.status_code == 409
 
     posts_listing = client.get(f"{base}/locations/{gbp_location}/posts", headers=HEADERS)
     assert posts_listing.status_code == 200
     assert len(posts_listing.json()["data"]) == 1
+    assert posts_listing.json()["data"][0]["publication"] == publish.json()["data"]
+
+
+@pytest.mark.integration
+def test_post_publication_recovery_is_aal2_tenant_safe_audited_and_fail_closed(
+    postgresql_test_url: str,
+    gbp_operations_client: tuple[TestClient, dict[str, UUID]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, ids = gbp_operations_client
+    org, location, gbp_location, workflow_run = (
+        ids["organization"],
+        ids["location"],
+        ids["gbp_location"],
+        ids["workflow_run"],
+    )
+    base = f"/api/v1/organizations/{org}/locations/{location}/gbp/operations"
+    post = client.post(
+        f"{base}/locations/{gbp_location}/posts",
+        headers=HEADERS,
+        json={"post_type": "standard", "content": "Legacy pre-dispatch recovery proof"},
+    )
+    assert post.status_code == 201, post.text
+    revision_id = post.json()["data"]["id"]
+    decision = client.post(
+        f"{base}/posts/{revision_id}/decision", headers=HEADERS, json={"approve": True}
+    )
+    assert decision.status_code == 200, decision.text
+    publish = client.post(
+        f"{base}/posts/{revision_id}/publish",
+        headers=HEADERS,
+        json={
+            "workflow_run_id": str(workflow_run),
+            "idempotency_key": "gbp-post-legacy-recovery-001",
+        },
+    )
+    assert publish.status_code == 202, publish.text
+    publication_id = UUID(publish.json()["data"]["id"])
+
+    verifier = cast(FastAPI, client.app).state.gbp_operations_test_verifier
+    assert isinstance(verifier, FakeVerifier)
+    verifier.result = claims(ids["assigned_subject"], AssuranceLevel.AAL1)
+    aal1 = client.post(f"{base}/posts/publications/{publication_id}/recover", headers=HEADERS)
+    assert aal1.status_code == 403
+    verifier.result = claims(ids["assigned_subject"], AssuranceLevel.AAL2)
+
+    sibling_base = f"/api/v1/organizations/{org}/locations/{ids['sibling_location']}/gbp/operations"
+    wrong_location = client.post(
+        f"{sibling_base}/posts/publications/{publication_id}/recover", headers=HEADERS
+    )
+    assert wrong_location.status_code == 404
+
+    now = datetime.now(UTC)
+
+    async def seed_legacy_evidence(session: AsyncSession) -> None:
+        publication = await session.get(GBPPostPublication, publication_id)
+        run = await session.get(WorkflowRun, workflow_run)
+        job = await session.scalar(
+            select(Job).where(
+                Job.organization_id == org,
+                Job.workflow_run_id == workflow_run,
+            )
+        )
+        assert publication is not None and run is not None and job is not None
+        publication.status = "reconciliation_required"
+        publication.dispatched_at = None
+        publication.provider_post_id = None
+        publication.safe_error_code = None
+        run.status = "escalated"
+        run.failure_code = "AMBIGUOUS_PROVIDER_RESULT"
+        job.status = "dead_lettered"
+        job.attempt_count = 2
+        session.add_all(
+            [
+                JobAttempt(
+                    organization_id=org,
+                    job_id=job.id,
+                    attempt_number=1,
+                    status="retryable_failure",
+                    worker_id="legacy-worker",
+                    started_at=now,
+                    completed_at=now,
+                    safe_error="TOKEN_RESOLUTION_FAILED",
+                ),
+                JobAttempt(
+                    organization_id=org,
+                    job_id=job.id,
+                    attempt_number=2,
+                    status="ambiguous",
+                    worker_id="legacy-worker",
+                    started_at=now + timedelta(seconds=1),
+                    completed_at=now + timedelta(seconds=1),
+                    safe_error="AMBIGUOUS_PROVIDER_RESULT",
+                ),
+                GBPProviderPost(
+                    organization_id=org,
+                    gbp_location_id=gbp_location,
+                    provider_post_name="accounts/123/locations/456/localPosts/historical",
+                    post_type="STANDARD",
+                    state="LIVE",
+                    summary="Legacy pre-dispatch recovery proof",
+                    provider_payload={"createTime": (now - timedelta(days=30)).isoformat()},
+                    content_hash="d" * 64,
+                    status="present",
+                    first_seen_at=now - timedelta(days=30),
+                    last_seen_at=now,
+                    observed_at=now,
+                ),
+            ]
+        )
+        await session.commit()
+
+    run_db(postgresql_test_url, seed_legacy_evidence)
+    reconciliation_calls: list[UUID] = []
+
+    async def reconcile_without_provider_match(
+        _service: GBPDiscoveryService,
+        _session: AsyncSession,
+        _settings: Settings,
+        organization_id: UUID,
+        gbp_location_id: UUID,
+        **_kwargs: object,
+    ) -> dict[str, int | str]:
+        assert organization_id == org
+        reconciliation_calls.append(gbp_location_id)
+        return {
+            "provider_count": 0,
+            "persisted_count": 0,
+            "present_count": 0,
+            "live_count": 0,
+            "processing_count": 0,
+            "rejected_count": 0,
+            "inserted_count": 0,
+            "updated_count": 0,
+            "missing_count": 0,
+            "observed_at": now.isoformat(),
+        }
+
+    monkeypatch.setattr(
+        GBPDiscoveryService, "reconcile_local_posts", reconcile_without_provider_match
+    )
+    recoverable_listing = client.get(f"{base}/locations/{gbp_location}/posts", headers=HEADERS)
+    assert recoverable_listing.status_code == 200, recoverable_listing.text
+    assert recoverable_listing.json()["data"][0]["publication"]["recovery_allowed"] is True
+    recovered = client.post(f"{base}/posts/publications/{publication_id}/recover", headers=HEADERS)
+    assert recovered.status_code == 202, recovered.text
+    assert recovered.json()["data"]["status"] == "reserved"
+    assert recovered.json()["meta"]["recovery_mode"] == "pre_dispatch"
+
+    async def read_recovery_evidence(session: AsyncSession) -> tuple[int, set[str]]:
+        jobs = list(
+            await session.scalars(
+                select(Job).where(
+                    Job.organization_id == org,
+                    Job.workflow_run_id == workflow_run,
+                )
+            )
+        )
+        events = set(
+            await session.scalars(
+                select(AuditEvent.event_type).where(
+                    AuditEvent.organization_id == org,
+                    AuditEvent.resource_id.in_([publication_id, workflow_run]),
+                )
+            )
+        )
+        return len(jobs), events
+
+    job_count, event_types = run_db(postgresql_test_url, read_recovery_evidence)
+    assert job_count == 2
+    assert {
+        "workflow.run.recovery_enqueued",
+        "gbp.post.publication_recovery_enqueued",
+    } <= event_types
+
+    dispatch_time = datetime.now(UTC)
+
+    async def make_dispatch_ambiguous(session: AsyncSession) -> None:
+        publication = await session.get(GBPPostPublication, publication_id)
+        run = await session.get(WorkflowRun, workflow_run)
+        jobs = list(
+            await session.scalars(
+                select(Job).where(
+                    Job.organization_id == org,
+                    Job.workflow_run_id == workflow_run,
+                )
+            )
+        )
+        assert publication is not None and run is not None
+        publication.status = "reconciliation_required"
+        publication.dispatched_at = dispatch_time
+        publication.provider_post_id = None
+        publication.safe_error_code = "PROVIDER_WRITE_AMBIGUOUS"
+        run.status = "escalated"
+        for job in jobs:
+            job.status = "dead_lettered"
+        await session.commit()
+
+    run_db(postgresql_test_url, make_dispatch_ambiguous)
+    denied = client.post(f"{base}/posts/publications/{publication_id}/recover", headers=HEADERS)
+    assert denied.status_code == 409, denied.text
+    assert denied.json()["error"]["code"] == "AMBIGUOUS_PROVIDER_RESULT"
+    assert reconciliation_calls == [gbp_location, gbp_location]
+
+    async def read_denial(session: AsyncSession) -> tuple[str, bool]:
+        publication = await session.get(GBPPostPublication, publication_id)
+        event = await session.scalar(
+            select(AuditEvent.id).where(
+                AuditEvent.organization_id == org,
+                AuditEvent.resource_id == publication_id,
+                AuditEvent.event_type == "gbp.post.publication_recovery_denied",
+            )
+        )
+        assert publication is not None
+        return publication.status, event is not None
+
+    denied_status, denial_audited = run_db(postgresql_test_url, read_denial)
+    assert denied_status == "reconciliation_required"
+    assert denial_audited is True
+
+    async def seed_exact_provider_match(session: AsyncSession) -> None:
+        session.add(
+            GBPProviderPost(
+                organization_id=org,
+                gbp_location_id=gbp_location,
+                provider_post_name="accounts/123/locations/456/localPosts/recovered",
+                post_type="STANDARD",
+                state="PROCESSING",
+                summary="Legacy pre-dispatch recovery proof",
+                provider_payload={"createTime": dispatch_time.isoformat()},
+                content_hash="e" * 64,
+                status="present",
+                first_seen_at=dispatch_time,
+                last_seen_at=dispatch_time,
+                observed_at=dispatch_time,
+            )
+        )
+        await session.commit()
+
+    run_db(postgresql_test_url, seed_exact_provider_match)
+    matched = client.post(f"{base}/posts/publications/{publication_id}/recover", headers=HEADERS)
+    assert matched.status_code == 202, matched.text
+    assert matched.json()["meta"]["recovery_mode"] == "provider_match"
+    assert matched.json()["data"]["provider_post_id"].endswith("/recovered")
+    assert reconciliation_calls == [gbp_location, gbp_location, gbp_location]
 
 
 @pytest.mark.integration

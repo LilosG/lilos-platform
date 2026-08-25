@@ -427,6 +427,83 @@ class ExecutionService:
         await session.flush()
         return job
 
+    async def enqueue_recovery_run(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        workflow_run_id: UUID,
+        *,
+        recovery_reference: str,
+        actor_id: UUID,
+        correlation_id: str,
+    ) -> Job:
+        """Resume a terminal run through the canonical durable job queue.
+
+        The workflow row lock serializes recovery requests. An already-active
+        job is returned idempotently; otherwise a new bounded job is attached
+        to the same workflow run instead of creating another orchestration path.
+        """
+        run = await session.scalar(
+            select(WorkflowRun)
+            .where(
+                WorkflowRun.organization_id == organization_id,
+                WorkflowRun.id == workflow_run_id,
+            )
+            .with_for_update()
+        )
+        if run is None:
+            raise WorkflowRunNotFoundError
+
+        active = await session.scalar(
+            select(Job)
+            .where(
+                Job.organization_id == organization_id,
+                Job.workflow_run_id == workflow_run_id,
+                Job.status.in_(("queued", "claimed", "running", "retry_scheduled")),
+            )
+            .order_by(Job.created_at.desc())
+            .limit(1)
+        )
+        if active is not None:
+            return active
+
+        prior_jobs = (
+            await session.scalar(
+                select(func.count())
+                .select_from(Job)
+                .where(
+                    Job.organization_id == organization_id,
+                    Job.workflow_run_id == workflow_run_id,
+                )
+            )
+        ) or 0
+        job = Job(
+            organization_id=organization_id,
+            workflow_run_id=workflow_run_id,
+            job_type="workflow.execute",
+            status="queued",
+            idempotency_key=f"run:{workflow_run_id}:recovery:{prior_jobs + 1}",
+            payload={"run_id": str(workflow_run_id)},
+        )
+        session.add(job)
+        run.status = "queued"
+        run.failure_code = None
+        run.completed_at = None
+        await session.flush()
+        await self._audit(
+            session,
+            event="workflow.run.recovery_enqueued",
+            organization_id=organization_id,
+            location_id=run.location_id,
+            actor_id=actor_id,
+            resource_type="workflow_run",
+            resource_id=run.id,
+            correlation_id=correlation_id,
+            summary="Workflow run recovery enqueued.",
+            metadata={"recovery_reference": recovery_reference, "job_id": str(job.id)},
+        )
+        return job
+
     async def claim(
         self, session: AsyncSession, worker_id: str, lease_seconds: int = 60
     ) -> Job | None:

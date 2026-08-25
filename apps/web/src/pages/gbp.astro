@@ -114,11 +114,15 @@ import "../styles/global.css";
         fetchProviderPosts,
         fetchSpecialHours,
         fetchSuspensionCases,
+        postPresentation,
+        postPublicationIdempotencyKey,
         proposeChangeSet,
         proposeMedia,
         proposeSpecialHours,
+        providerPostCounts,
         publishPost,
         reconcileProviderPosts,
+        recoverPostPublication,
       } from "../lib/gbp-operations";
       import {
         bootWorkspace,
@@ -142,6 +146,7 @@ import "../styles/global.css";
       let selectedPlatformLocationId: string | null = null;
       let selectedGbpLocationId: string | null = null;
       let googleConnectionReady = false;
+      let postsStatusMessage = "";
 
       type LocationOperationalRow = {
         location: GBPLocationSummary;
@@ -416,9 +421,13 @@ import "../styles/global.css";
       function operationalRecordFact(
         row: LocationOperationalRow,
       ): HTMLDivElement {
+        const providerCounts =
+          row.providerPosts?.kind === "ok"
+            ? providerPostCounts(row.providerPosts.data)
+            : null;
         const posts =
-          row.managedPosts?.kind === "ok" && row.providerPosts?.kind === "ok"
-            ? `${row.managedPosts.data.length} managed post${row.managedPosts.data.length === 1 ? "" : "s"} · ${row.providerPosts.data.length} on Google`
+          row.managedPosts?.kind === "ok" && providerCounts
+            ? `${row.managedPosts.data.length} managed post${row.managedPosts.data.length === 1 ? "" : "s"} · ${providerCounts.live} live on Google`
             : "Posts unavailable";
         const media =
           row.media?.kind === "ok"
@@ -980,6 +989,8 @@ import "../styles/global.css";
         reconcileBtn.className = "ui-button ui-button--primary ui-button--md";
         reconcileBtn.textContent = "Refresh from Google";
         const providerStatus = document.createElement("p");
+        providerStatus.setAttribute("role", "status");
+        providerStatus.setAttribute("aria-live", "polite");
         providerStatus.className = "ui-text-secondary";
         reconcileBtn.addEventListener("click", async () => {
           reconcileBtn.disabled = true;
@@ -990,7 +1001,7 @@ import "../styles/global.css";
             selectedGbpLocationId!,
           );
           if (result.kind === "ok") {
-            providerStatus.textContent = `${result.data.provider_count} post(s) found on Google; ${result.data.present_count} are currently visible.`;
+            postsStatusMessage = `${result.data.live_count} live on Google · ${result.data.processing_count} processing · ${result.data.persisted_count} observed over time.`;
             await renderPosts();
           } else {
             reconcileBtn.disabled = false;
@@ -1003,16 +1014,21 @@ import "../styles/global.css";
         });
         providerBody.append(reconcileBtn, providerStatus);
         if (providerPostsResult.kind === "ok") {
-          const current = providerPostsResult.data.filter(
-            (post) => post.status === "present",
-          ).length;
+          const counts = providerPostCounts(providerPostsResult.data);
           const observed = document.createElement("p");
           observed.className = "ui-text-secondary";
-          observed.textContent = `${current} post(s) currently visible on Google · ${providerPostsResult.data.length} observed over time.`;
+          observed.textContent = `${counts.live} live on Google · ${counts.processing} processing · ${counts.rejected} rejected · ${counts.observed} observed over time.`;
           providerBody.append(observed);
         }
         providerCard.append(providerBody);
         panel.append(providerCard);
+
+        const actionStatus = document.createElement("p");
+        actionStatus.setAttribute("role", "status");
+        actionStatus.setAttribute("aria-live", "polite");
+        actionStatus.className = "ui-text-secondary";
+        actionStatus.textContent = postsStatusMessage;
+        panel.append(actionStatus);
 
         // Draft post form
         const formCard = document.createElement("div");
@@ -1057,7 +1073,10 @@ import "../styles/global.css";
             result.kind === "ok"
               ? "Post drafted."
               : describeFailure(result, "Draft");
-          if (result.kind === "ok") await renderPosts();
+          if (result.kind === "ok") {
+            postsStatusMessage = "Post drafted.";
+            await renderPosts();
+          }
         });
         const actions = document.createElement("div");
         actions.className = "ui-inline ui-inline--center";
@@ -1084,6 +1103,7 @@ import "../styles/global.css";
           const list = document.createElement("ul");
           list.className = "ui-record-list";
           for (const post of postsResult.data) {
+            const presentation = postPresentation(post);
             const item = document.createElement("li");
             const info = document.createElement("div");
             const name = document.createElement("h3");
@@ -1092,11 +1112,11 @@ import "../styles/global.css";
                 ? post.content.slice(0, 80) + "…"
                 : post.content;
             const detail = document.createElement("p");
-            detail.textContent = `Status: ${statusLabel(post.status)}`;
+            detail.textContent = `Status: ${presentation.label}`;
             info.append(name, detail);
             item.append(
               info,
-              statusBadge(statusTone(post.status), statusLabel(post.status)),
+              statusBadge(presentation.tone, presentation.label),
             );
             if (post.status === "awaiting_approval") {
               const approveBtn = document.createElement("button");
@@ -1115,27 +1135,32 @@ import "../styles/global.css";
               });
               item.append(approveBtn);
             }
-            if (post.status === "approved") {
+            if (presentation.canPublish) {
               const publishBtn = document.createElement("button");
               publishBtn.type = "button";
               publishBtn.className =
                 "ui-button ui-button--primary ui-button--sm";
               publishBtn.textContent = "Publish";
               publishBtn.addEventListener("click", async () => {
-                status.textContent = "Starting publication…";
+                publishBtn.disabled = true;
+                publishBtn.textContent = "Starting…";
+                actionStatus.textContent = "Starting publication…";
+                const idempotencyKey = postPublicationIdempotencyKey(post.id);
                 const workflowStart = await startWorkflowRun(
                   organizationId,
                   "gbp.publish_post",
                   {
                     locationId: selectedPlatformLocationId!,
-                    idempotencyKey: `web-post-publish-${post.id}-${Date.now()}`,
+                    idempotencyKey,
                   },
                 );
                 if (workflowStart.kind !== "ok") {
-                  status.textContent = describeFailure(
+                  actionStatus.textContent = describeFailure(
                     workflowStart,
                     "Publish",
                   );
+                  publishBtn.disabled = false;
+                  publishBtn.textContent = "Publish";
                   return;
                 }
                 const result = await publishPost(
@@ -1143,14 +1168,51 @@ import "../styles/global.css";
                   selectedPlatformLocationId!,
                   post.id,
                   workflowStart.data.workflow_run_id,
+                  idempotencyKey,
                 );
-                status.textContent =
+                postsStatusMessage =
                   result.kind === "ok"
                     ? "Post publication reserved."
                     : describeFailure(result, "Publish");
-                if (result.kind === "ok") await renderPosts();
+                if (result.kind === "ok") {
+                  await renderPosts();
+                } else {
+                  actionStatus.textContent = postsStatusMessage;
+                  publishBtn.disabled = false;
+                  publishBtn.textContent = "Publish";
+                }
               });
               item.append(publishBtn);
+            }
+            if (presentation.canRecover && post.publication) {
+              const recoverBtn = document.createElement("button");
+              recoverBtn.type = "button";
+              recoverBtn.className =
+                "ui-button ui-button--secondary ui-button--sm";
+              recoverBtn.textContent = "Recover safely";
+              recoverBtn.addEventListener("click", async () => {
+                recoverBtn.disabled = true;
+                recoverBtn.textContent = "Checking…";
+                actionStatus.textContent =
+                  "Checking Google before recovering publication…";
+                const result = await recoverPostPublication(
+                  organizationId,
+                  selectedPlatformLocationId!,
+                  post.publication!.id,
+                );
+                postsStatusMessage =
+                  result.kind === "ok"
+                    ? "Publication recovery queued after provider reconciliation."
+                    : describeFailure(result, "Recover publication");
+                if (result.kind === "ok") {
+                  await renderPosts();
+                } else {
+                  actionStatus.textContent = postsStatusMessage;
+                  recoverBtn.disabled = false;
+                  recoverBtn.textContent = "Recover safely";
+                }
+              });
+              item.append(recoverBtn);
             }
             list.append(item);
           }

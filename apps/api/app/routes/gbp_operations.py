@@ -18,7 +18,7 @@ from apps.api.app.authentication.enums import AssuranceLevel
 from apps.api.app.authorization.contracts import AuthorizationDecision
 from apps.api.app.authorization.dependencies import require_authorization
 from apps.api.app.database.session import get_database_session
-from apps.api.app.errors import request_correlation_id
+from apps.api.app.errors import error_response, request_correlation_id
 from apps.api.app.products.gbp.discovery_service import GBPDiscoveryService
 from apps.api.app.products.gbp.models import GBPLocation
 from apps.api.app.products.gbp.operations_contracts import (
@@ -46,6 +46,7 @@ from apps.api.app.products.gbp.operations_models import (
 )
 from apps.api.app.products.gbp.operations_service import GBPOperationsService
 from apps.api.app.routes.health import settings_from_request
+from apps.api.app.schemas import ErrorCategory
 
 router = APIRouter(
     prefix="/api/v1/organizations/{organization_id}/locations/{location_id}/gbp/operations",
@@ -149,8 +150,13 @@ def media_row(item: GBPMedia) -> dict[str, object]:
     }
 
 
-def post_revision_row(item: GBPPostRevision) -> dict[str, object]:
-    return {
+def post_revision_row(
+    item: GBPPostRevision,
+    publication: GBPPostPublication | None = None,
+    *,
+    recovery_allowed: bool = False,
+) -> dict[str, object]:
+    row: dict[str, object] = {
         "id": str(item.id),
         "post_key": str(item.post_key),
         "revision": item.revision,
@@ -160,15 +166,25 @@ def post_revision_row(item: GBPPostRevision) -> dict[str, object]:
         "event_or_offer": item.event_or_offer,
         "status": item.status,
     }
+    row["publication"] = (
+        post_publication_row(publication, recovery_allowed=recovery_allowed)
+        if publication is not None
+        else None
+    )
+    return row
 
 
-def post_publication_row(item: GBPPostPublication) -> dict[str, object]:
+def post_publication_row(
+    item: GBPPostPublication, *, recovery_allowed: bool = False
+) -> dict[str, object]:
     return {
         "id": str(item.id),
         "status": item.status,
         "scheduled_for": item.scheduled_for,
+        "dispatched_at": item.dispatched_at,
         "provider_post_id": item.provider_post_id,
         "verified_at": item.verified_at,
+        "recovery_allowed": recovery_allowed,
     }
 
 
@@ -498,8 +514,18 @@ async def list_post_revisions(
     _: Annotated[AuthorizationDecision, policy("gbp.read")],
 ) -> dict[str, object]:
     await require_gbp_location_scope(session, organization_id, location_id, gbp_location_id)
-    items = await service.list_post_revisions(session, organization_id, gbp_location_id)
-    return {"data": [post_revision_row(item) for item in items], "meta": meta(request)}
+    items = await service.list_post_revision_read_models(session, organization_id, gbp_location_id)
+    return {
+        "data": [
+            post_revision_row(
+                item.revision,
+                item.publication,
+                recovery_allowed=item.recovery_allowed,
+            )
+            for item in items
+        ],
+        "meta": meta(request),
+    }
 
 
 @router.get(
@@ -636,6 +662,46 @@ async def publish_post(
         correlation_id=request_correlation_id(request),
     )
     return {"data": post_publication_row(item), "meta": meta(request)}
+
+
+@router.post(
+    "/posts/publications/{publication_id}/recover",
+    status_code=status.HTTP_202_ACCEPTED,
+    dependencies=[Depends(no_store)],
+)
+async def recover_post_publication(
+    request: Request,
+    organization_id: UUID,
+    location_id: UUID,
+    publication_id: UUID,
+    session: Session,
+    principal: Authenticated,
+    _: Annotated[AuthorizationDecision, policy("gbp.publish", True)],
+) -> Any:
+    result = await service.recover_post_publication(
+        session,
+        settings_from_request(request),
+        organization_id,
+        location_id,
+        publication_id,
+        actor_id=principal.platform_user_id,
+        correlation_id=request_correlation_id(request),
+    )
+    if not result.accepted:
+        return error_response(
+            request,
+            status_code=status.HTTP_409_CONFLICT,
+            code=result.denial_code or "GBP_POST_PUBLICATION_RECOVERY_DENIED",
+            message=(
+                "This publication cannot be retried safely. It remains available for "
+                "operator reconciliation."
+            ),
+            category=ErrorCategory.CONFLICT,
+        )
+    return {
+        "data": post_publication_row(result.publication),
+        "meta": {**meta(request), "recovery_mode": result.recovery_mode},
+    }
 
 
 @router.get(

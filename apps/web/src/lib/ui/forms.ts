@@ -144,8 +144,11 @@ export function confirmInline(
   cancelLabel = "Cancel",
 ): HTMLDivElement {
   const prompt = document.createElement("div");
-  prompt.className = "ui-notice ui-notice--warning";
+  prompt.className = "ui-notice ui-notice--warning ui-confirm-inline";
+  prompt.setAttribute("role", "group");
+  prompt.setAttribute("aria-label", "Confirm action");
   const msg = document.createElement("p");
+  msg.className = "ui-confirm-inline__message";
   msg.textContent = message;
   const confirmBtn = document.createElement("button");
   confirmBtn.type = "button";
@@ -163,6 +166,9 @@ export function confirmInline(
     onCancel();
     prompt.remove();
   });
-  prompt.append(msg, confirmBtn, cancelBtn);
+  const actions = document.createElement("div");
+  actions.className = "ui-confirm-inline__actions";
+  actions.append(confirmBtn, cancelBtn);
+  prompt.append(msg, actions);
   return prompt;
 }

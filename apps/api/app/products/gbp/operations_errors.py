@@ -53,6 +53,11 @@ class GBPPostNotPublishEligibleError(ConflictError):
     public_message = "An approved post revision on a write-enabled location is required."
 
 
+class GBPPostPublicationExistsError(ConflictError):
+    code = "GBP_POST_PUBLICATION_EXISTS"
+    public_message = "This approved post revision already has a publication record."
+
+
 class GBPSuspensionCaseNotFoundError(NotFoundError):
     code = "GBP_SUSPENSION_CASE_NOT_FOUND"
     public_message = "The requested suspension case was not found."
