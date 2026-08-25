@@ -29,6 +29,76 @@ def _capabilities() -> dict[str, object]:
     }
 
 
+@pytest.mark.parametrize(
+    ("base_url", "expected"),
+    [
+        ("lilos-hermes:8642", "http://lilos-hermes:8642"),
+        ("http://lilos-hermes:8642", "http://lilos-hermes:8642"),
+        ("https://hermes.example.com", "https://hermes.example.com"),
+        ("  lilos-hermes:8642/  ", "http://lilos-hermes:8642"),
+    ],
+)
+def test_hermes_runs_client_normalizes_private_hostport(base_url: str, expected: str) -> None:
+    observed_urls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        observed_urls.append(str(request.url))
+        return httpx.Response(200, json={"run_id": "run_test"})
+
+    async def scenario() -> None:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+            client = HermesRunsClient(
+                base_url,
+                "test-hermes-key",
+                timeout_seconds=5,
+                client=http,
+            )
+            await client.get_run("run_test")
+
+    asyncio.run(scenario())
+
+    assert observed_urls == [f"{expected}/v1/runs/run_test"]
+
+
+def test_capabilities_use_normalized_private_hostport_url() -> None:
+    observed_urls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        observed_urls.append(str(request.url))
+        if request.url.path == "/health/detailed":
+            return httpx.Response(200, json={"status": "ready", "version": "0.20.5"})
+        if request.url.path == "/v1/capabilities":
+            return httpx.Response(200, json=_capabilities())
+        if request.url.path == "/v1/toolsets":
+            return httpx.Response(
+                200,
+                json={
+                    "data": [
+                        {
+                            "name": "lilos",
+                            "enabled": True,
+                            "tools": sorted(REQUIRED_LILOS_TOOLS),
+                        }
+                    ]
+                },
+            )
+        raise AssertionError(request.url.path)
+
+    async def scenario() -> None:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+            client = HermesRunsClient(
+                "lilos-hermes:8642",
+                "test-hermes-key",
+                timeout_seconds=5,
+                client=http,
+            )
+            await client.capabilities()
+
+    asyncio.run(scenario())
+
+    assert "http://lilos-hermes:8642/v1/capabilities" in observed_urls
+
+
 def test_native_runs_capabilities_and_real_steer_transport() -> None:
     observed: list[tuple[str, str, object]] = []
 
