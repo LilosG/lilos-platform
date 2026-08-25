@@ -66,7 +66,7 @@ _SEASONAL_TERMS = {
 
 @dataclass(frozen=True, slots=True)
 class GBPProposalEnrichment:
-    call_to_action: dict[str, str] | None
+    call_to_action: dict[str, object] | None
     target_url: str | None
     asset: GBPPostAsset | None
 
@@ -272,7 +272,7 @@ class GBPPostProposalEnrichmentService:
     @classmethod
     def _safe_call_to_action(
         cls, requested: object, target_url: str | None
-    ) -> dict[str, str] | None:
+    ) -> dict[str, object] | None:
         del cls, requested
         if target_url is None:
             return None
