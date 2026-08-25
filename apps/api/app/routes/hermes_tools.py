@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from apps.api.app.agents.tools import AgentToolDeniedError, AgentToolService
 from apps.api.app.config import Settings
 from apps.api.app.database.session import get_database_session
+from apps.api.app.products.gbp.proposal_enrichment import GBPProposalEnrichmentError
 
 router = APIRouter(prefix="/api/internal/hermes", tags=["hermes-internal"])
 Session = Annotated[AsyncSession, Depends(get_database_session)]
@@ -52,9 +53,14 @@ async def invoke_tool(
             status_code=403,
             content={"error": {"code": "HERMES_TOOL_DENIED", "message": str(exc)}},
         )
+    except GBPProposalEnrichmentError as exc:
+        return JSONResponse(
+            status_code=502,
+            content={"error": {"code": exc.safe_code, "message": str(exc)}},
+        )
     except Exception:
         # AgentToolService records a safe failed audit event before raising.
-        # Keep the transaction committable and never return exception details.
+        # Keep provider/runtime internals out of the response.
         return JSONResponse(
             status_code=502,
             content={
