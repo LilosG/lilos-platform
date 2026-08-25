@@ -160,6 +160,24 @@ def _available() -> bool:
     return bool(os.getenv("LILOS_TOOL_BASE_URL") and os.getenv("LILOS_TOOL_API_KEY"))
 
 
+def _safe_http_error(exc: HTTPError) -> str:
+    code = f"HTTP_{exc.code}"
+    message = "LILOs rejected the tool request"
+    try:
+        payload = json.loads(exc.read(8_192))
+        error = payload.get("error") if isinstance(payload, dict) else None
+        if isinstance(error, dict):
+            raw_code = error.get("code")
+            raw_message = error.get("message")
+            if isinstance(raw_code, str) and raw_code:
+                code = raw_code[:96]
+            if isinstance(raw_message, str) and raw_message:
+                message = raw_message[:500]
+    except (ValueError, OSError):
+        pass
+    return f"LILOs tool error [{code}]: {message}"
+
+
 def _invoke(tool_name: str, args: dict) -> str:
     session_id = get_session_env("HERMES_SESSION_CHAT_ID", "").strip()
     if not session_id:
@@ -183,7 +201,7 @@ def _invoke(tool_name: str, args: dict) -> str:
             payload = json.loads(response.read(65_536))
         return tool_result(payload.get("data", {}))
     except HTTPError as exc:
-        return tool_error(f"LILOs tool request denied ({exc.code})")
+        return tool_error(_safe_http_error(exc))
     except (URLError, TimeoutError, ValueError):
         return tool_error("LILOs tool plane is unavailable")
 
