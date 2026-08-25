@@ -27,7 +27,7 @@ from urllib.parse import urlsplit
 from uuid import UUID
 
 import httpx
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.app.audit.contracts import AuditEventCreate
@@ -704,6 +704,7 @@ class AnalyticsService:
         organization_id: UUID,
         *,
         days: int = DEFAULT_SYNC_WINDOW_DAYS,
+        location_id: UUID | None = None,
     ) -> dict[str, object]:
         """Return a reporting-safe GA4 performance contract.
 
@@ -711,15 +712,18 @@ class AnalyticsService:
         and queries cached metric definitions (no write side effects).
         Freshness uses a fixed SLA threshold independent of report range.
         """
-        properties = list(
-            await session.scalars(
-                select(AnalyticsProperty).where(
-                    AnalyticsProperty.organization_id == organization_id,
-                    AnalyticsProperty.provider == ANALYTICS_PROVIDER_KEY,
-                    AnalyticsProperty.mapping_status == "mapped",
-                )
-            )
+        statement = select(AnalyticsProperty).where(
+            AnalyticsProperty.organization_id == organization_id,
+            AnalyticsProperty.provider == ANALYTICS_PROVIDER_KEY,
+            AnalyticsProperty.mapping_status == "mapped",
         )
+        if location_id is not None:
+            statement = statement.join(
+                SEOWebsite,
+                (SEOWebsite.organization_id == AnalyticsProperty.organization_id)
+                & (SEOWebsite.id == AnalyticsProperty.website_id),
+            ).where(or_(SEOWebsite.location_id == location_id, SEOWebsite.location_id.is_(None)))
+        properties = list(await session.scalars(statement))
         if not properties:
             return {
                 "connected": False,
@@ -1017,22 +1021,31 @@ class AnalyticsService:
             by_date[date_label] = by_date.get(date_label, 0) + value
         return sorted(by_date.items())
 
-    async def summary(self, session: AsyncSession, organization_id: UUID) -> dict[str, object]:
+    async def summary(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        *,
+        location_id: UUID | None = None,
+    ) -> dict[str, object]:
         """Aggregate synced GA4 metrics for the Insights summary.
 
         Returns a truthful disconnected state (empty metrics) when no GA4
         property is mapped, so Insights stays usable without GA4 and never
         fabricates values.
         """
-        properties = list(
-            await session.scalars(
-                select(AnalyticsProperty).where(
-                    AnalyticsProperty.organization_id == organization_id,
-                    AnalyticsProperty.provider == ANALYTICS_PROVIDER_KEY,
-                    AnalyticsProperty.mapping_status == "mapped",
-                )
-            )
+        statement = select(AnalyticsProperty).where(
+            AnalyticsProperty.organization_id == organization_id,
+            AnalyticsProperty.provider == ANALYTICS_PROVIDER_KEY,
+            AnalyticsProperty.mapping_status == "mapped",
         )
+        if location_id is not None:
+            statement = statement.join(
+                SEOWebsite,
+                (SEOWebsite.organization_id == AnalyticsProperty.organization_id)
+                & (SEOWebsite.id == AnalyticsProperty.website_id),
+            ).where(or_(SEOWebsite.location_id == location_id, SEOWebsite.location_id.is_(None)))
+        properties = list(await session.scalars(statement))
         if not properties:
             return {"connected": False, "properties": [], "metrics": {}}
         metric_keys = [f"ga4.{m}" for m in GA4_METRICS]

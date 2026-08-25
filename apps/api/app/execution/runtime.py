@@ -400,6 +400,10 @@ async def _execute_workflow_job(session: AsyncSession, job: Job) -> JobOutcome:
                 run.completed_at = datetime.now(UTC)
                 run.output_reference = outcome.result_reference
                 run.failure_code = None
+            elif outcome.safe_error == "HERMES_RUN_CANCELLED":
+                run.status = "cancelled"
+                run.cancelled_at = datetime.now(UTC)
+                run.failure_code = outcome.safe_error
             elif outcome.result == "retryable_failure":
                 run.status = "retry_scheduled"
                 run.failure_code = outcome.safe_error

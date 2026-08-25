@@ -32,6 +32,7 @@ from apps.api.app.administration.models import (
     ServiceAssignment,
     ServiceDefinition,
 )
+from apps.api.app.agents.models import AgentRun, AgentRunEvent, AgentSession
 from apps.api.app.ai.models import AIExecution, AITaskDefinition
 from apps.api.app.audit.models import AuditEvent
 from apps.api.app.authentication.models import UserProfile
@@ -150,9 +151,12 @@ from apps.api.app.synchronization.models import (
 config = context.config
 
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 target_metadata = Organization.metadata
+assert AgentSession.metadata is target_metadata
+assert AgentRun.metadata is target_metadata
+assert AgentRunEvent.metadata is target_metadata
 assert AuditEvent.metadata is target_metadata
 assert Location.metadata is target_metadata
 assert Industry.metadata is target_metadata

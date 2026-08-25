@@ -86,6 +86,11 @@ def test_job_outcome_queued_semantics() -> None:
 def test_canonical_workflow_types_registered() -> None:
     """Verify the fixed registry contains every governed product workflow."""
     assert set(WORKFLOW_TYPES) == {
+        "agent.content",
+        "agent.gbp",
+        "agent.insights",
+        "agent.reviews",
+        "agent.seo",
         "content.draft_revision",
         "content.publish",
         "gbp.generate_post",

@@ -85,6 +85,9 @@ def test_audit_migration_upgrades_downgrades_and_restores_head(
 
     assert schema["tables"] == sorted(
         {
+            "agent_run_events",
+            "agent_runs",
+            "agent_sessions",
             "ai_executions",
             "ai_task_definitions",
             "alembic_version",

@@ -20,6 +20,44 @@ from apps.api.app.products.seo.orchestration import SEOOrchestrationService
 logger = logging.getLogger(__name__)
 
 
+async def _handle_agent_workflow(
+    session: AsyncSession,
+    *,
+    organization_id: UUID,
+    location_id: UUID | None,
+    input_document: dict[str, Any],
+    correlation_id: str,
+    workflow_run_id: UUID,
+) -> JobOutcome:
+    """Execute one native Hermes run inside the existing durable worker lease."""
+    from sqlalchemy import select
+
+    from apps.api.app.agents.service import AgentRuntimeService
+    from apps.api.app.execution.models import WorkflowDefinition, WorkflowRun, WorkflowVersion
+
+    workflow_key = await session.scalar(
+        select(WorkflowDefinition.key)
+        .join(WorkflowVersion, WorkflowVersion.definition_id == WorkflowDefinition.id)
+        .join(WorkflowRun, WorkflowRun.workflow_version_id == WorkflowVersion.id)
+        .where(
+            WorkflowRun.organization_id == organization_id,
+            WorkflowRun.id == workflow_run_id,
+        )
+    )
+    if not workflow_key or not str(workflow_key).startswith("agent."):
+        return JobOutcome(result="permanent_failure", safe_error="AGENT_WORKFLOW_BINDING_INVALID")
+    return await AgentRuntimeService().execute_workflow(
+        session,
+        Settings(),
+        organization_id=organization_id,
+        location_id=location_id,
+        workflow_run_id=workflow_run_id,
+        workflow_key=str(workflow_key),
+        input_document=input_document,
+        correlation_id=correlation_id,
+    )
+
+
 async def _handle_seo_analysis(
     session: AsyncSession,
     *,
@@ -160,3 +198,11 @@ async def _handle_gbp_generate_post(
 register_workflow_handler("seo.crawl_or_analysis", _handle_seo_crawl_and_analysis)
 register_workflow_handler("seo.analyze", _handle_seo_analysis)
 register_workflow_handler("gbp.generate_post", _handle_gbp_generate_post)
+for _agent_workflow_key in (
+    "agent.gbp",
+    "agent.seo",
+    "agent.content",
+    "agent.reviews",
+    "agent.insights",
+):
+    register_workflow_handler(_agent_workflow_key, _handle_agent_workflow)

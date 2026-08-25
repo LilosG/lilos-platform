@@ -19,6 +19,11 @@ WORKFLOW_TYPES: dict[str, tuple[str, str]] = {
     "leads.send_communication": ("Send a planned lead communication", "leads"),
     "gbp.sync": ("Scheduled GBP profile discovery and sync", "gbp"),
     "reviews.ingest": ("Scheduled reviews ingestion", "reviews"),
+    "agent.gbp": ("Hermes GBP governed agent", "gbp"),
+    "agent.seo": ("Hermes SEO evidence agent", "seo"),
+    "agent.content": ("Hermes grounded Content agent", "content"),
+    "agent.reviews": ("Hermes governed Reviews agent", "reviews"),
+    "agent.insights": ("Hermes cross-product Insights agent", "insights"),
 }
 
 

@@ -176,11 +176,19 @@ def validate_blueprint(path: Path = BLUEPRINT) -> tuple[str, ...]:
         "API_SERVER_HOST": "0.0.0.0",
         "API_SERVER_PORT": "8642",
         "API_SERVER_MODEL_NAME": "hermes-agent",
+        "HERMES_RUNTIME_VERSION": "v2026.8.19",
+        "HERMES_INFERENCE_PROVIDER": "openrouter",
         "HERMES_INFERENCE_MODEL": "deepseek/deepseek-v4-flash-0731",
         "HERMES_MAX_ITERATIONS": "60",
         "HERMES_YOLO_MODE": "0",
     }
-    if set(hermes_env) != {*hermes_values, "API_SERVER_KEY", "OPENROUTER_API_KEY"}:
+    if set(hermes_env) != {
+        *hermes_values,
+        "API_SERVER_KEY",
+        "OPENROUTER_API_KEY",
+        "LILOS_TOOL_BASE_URL",
+        "LILOS_TOOL_API_KEY",
+    }:
         errors.append("lilos-hermes:env-exact-set")
     for key, value in hermes_values.items():
         if hermes_env.get(key) != {"key": key, "value": value}:
@@ -195,6 +203,20 @@ def validate_blueprint(path: Path = BLUEPRINT) -> tuple[str, ...]:
         "sync": False,
     }:
         errors.append("lilos-hermes:openrouter-secret")
+    if hermes_env.get("LILOS_TOOL_BASE_URL") != {
+        "key": "LILOS_TOOL_BASE_URL",
+        "fromService": {
+            "name": "lilos-api",
+            "type": "web",
+            "property": "hostport",
+        },
+    }:
+        errors.append("lilos-hermes:tool-private-url")
+    if hermes_env.get("LILOS_TOOL_API_KEY") != {
+        "key": "LILOS_TOOL_API_KEY",
+        "generateValue": True,
+    }:
+        errors.append("lilos-hermes:generated-tool-key")
 
     hermes_dockerfile = ROOT / HERMES_DOCKERFILE.removeprefix("./")
     hermes_start_script = ROOT / "scripts" / "render_start_hermes.sh"
@@ -203,7 +225,8 @@ def validate_blueprint(path: Path = BLUEPRINT) -> tuple[str, ...]:
     else:
         dockerfile_text = hermes_dockerfile.read_text(encoding="utf-8")
         for fragment in (
-            "nousresearch/hermes-agent:v2026.8.3",
+            "nousresearch/hermes-agent:v2026.8.19@sha256:3811ed13da874fba2ac99b6d492db9a203d34cb6dccf90d886948c00d0ccec09",
+            "infrastructure/hermes/plugins/lilos",
             "ENTRYPOINT",
             "lilos-render-start-hermes",
             "--no-supervise",
@@ -218,6 +241,11 @@ def validate_blueprint(path: Path = BLUEPRINT) -> tuple[str, ...]:
         for fragment in (
             "/opt/hermes/docker/stage2-hook.sh",
             "/opt/hermes/docker/main-wrapper.sh",
+            "platform_toolsets.api_server",
+            "agent.disabled_toolsets",
+            "sessions.auto_prune",
+            "sessions.retention_days 30",
+            "LILOS_TOOL_API_KEY",
             "Bootstrap complete; starting foreground gateway",
         ):
             if fragment not in start_text:
@@ -239,6 +267,22 @@ def validate_blueprint(path: Path = BLUEPRINT) -> tuple[str, ...]:
             "envVarKey": "API_SERVER_KEY",
         },
     }
+    expected_tool_key = {
+        "key": "LILOS_HERMES_TOOL_API_KEY",
+        "fromService": {
+            "name": HERMES_SERVICE,
+            "type": "pserv",
+            "envVarKey": "LILOS_TOOL_API_KEY",
+        },
+    }
+    expected_runtime_release = {
+        "key": "LILOS_HERMES_RUNTIME_RELEASE",
+        "fromService": {
+            "name": HERMES_SERVICE,
+            "type": "pserv",
+            "envVarKey": "HERMES_RUNTIME_VERSION",
+        },
+    }
     for consumer in ("lilos-api", "lilos-worker"):
         consumer_env = {
             item.get("key"): item
@@ -249,6 +293,25 @@ def validate_blueprint(path: Path = BLUEPRINT) -> tuple[str, ...]:
             errors.append(f"{consumer}:hermes-private-url")
         if consumer_env.get("LILOS_HERMES_API_KEY") != expected_api_key:
             errors.append(f"{consumer}:hermes-api-key")
+        if consumer_env.get("LILOS_HERMES_RUNTIME_RELEASE") != expected_runtime_release:
+            errors.append(f"{consumer}:hermes-runtime-release")
+        if consumer == "lilos-api":
+            if consumer_env.get("LILOS_HERMES_TOOL_API_KEY") != expected_tool_key:
+                errors.append("lilos-api:hermes-tool-key")
+        elif "LILOS_HERMES_TOOL_API_KEY" in consumer_env:
+            errors.append("lilos-worker:hermes-tool-key-least-privilege")
+
+    scheduler_env = {
+        item.get("key")
+        for item in by_name.get("lilos-scheduler", {}).get("envVars", [])
+        if isinstance(item, dict) and isinstance(item.get("key"), str)
+    }
+    if scheduler_env & {
+        "LILOS_HERMES_BASE_URL",
+        "LILOS_HERMES_API_KEY",
+        "LILOS_HERMES_TOOL_API_KEY",
+    }:
+        errors.append("lilos-scheduler:hermes-least-privilege")
 
     api = by_name.get("lilos-api", {})
     api_start_script = ROOT / "scripts" / "render_start_api.sh"

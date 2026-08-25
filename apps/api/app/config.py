@@ -125,6 +125,17 @@ class Settings(BaseSettings):
         float,
         Field(gt=0, le=600, validation_alias="LILOS_HERMES_TIMEOUT_SECONDS"),
     ] = 120.0
+    hermes_tool_api_key: Annotated[
+        str | None,
+        Field(min_length=32, max_length=512, validation_alias="LILOS_HERMES_TOOL_API_KEY"),
+    ] = None
+    hermes_runtime_release: Annotated[
+        str | None,
+        Field(min_length=1, max_length=128, validation_alias="LILOS_HERMES_RUNTIME_RELEASE"),
+    ] = None
+    hermes_agent_event_limit: Annotated[int, Field(ge=25, le=2_000)] = 500
+    hermes_agent_event_retention_days: Annotated[int, Field(ge=1, le=365)] = 30
+    hermes_agent_session_retention_days: Annotated[int, Field(ge=1, le=365)] = 30
     ai_openrouter_api_key: Annotated[
         str | None,
         Field(
