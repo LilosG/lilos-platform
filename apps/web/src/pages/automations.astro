@@ -9,6 +9,7 @@ import PageShell from "../lib/ui/PageShell.astro";
 import Region from "../lib/ui/Region.astro";
 import Skeleton from "../lib/ui/Skeleton.astro";
 import "../styles/global.css";
+import "../styles/automations.css";
 ---
 
 <!doctype html>
@@ -150,6 +151,13 @@ import "../styles/global.css";
         type AgentRunDetail,
         type AgentRunSummary,
       } from "../lib/agents";
+      import {
+        actionableWorkflowFailureCount,
+        agentRunIsActive,
+        presentAgentEvent,
+        selectPendingAgentRun,
+        type PendingAgentSelection,
+      } from "../lib/automation-agent-ui";
 
       const regions = {
         notConfigured: document.getElementById("boot-not-configured")!,
@@ -203,8 +211,17 @@ import "../styles/global.css";
       let locations: LocationSummary[] = [];
       let hermesCapabilities: AgentCapabilities | null = null;
       let selectedAgentRunId: string | null = null;
+      let pendingAgentSelection: PendingAgentSelection | null = null;
       let agentHasActiveRuns = false;
       let agentRefreshInFlight = false;
+      let liveRefreshInFlight = false;
+      let catalogCache: WorkflowTypeEntry[] | null = null;
+      let schedulesCache: WorkflowScheduleEntry[] | null = null;
+      const agentSteerDrafts = new Map<string, string>();
+      const agentDisclosureState = new Map<
+        string,
+        { details: boolean; logs: boolean }
+      >();
       const requestedAgentWorkflow = new URLSearchParams(
         window.location.search,
       ).get("agent");
@@ -276,6 +293,13 @@ import "../styles/global.css";
         return button;
       }
 
+      function agentWorkflowLabel(workflowKey: string): string {
+        return (
+          AGENT_WORKFLOWS.find(([key]) => key === workflowKey)?.[1] ??
+          workflowKey
+        );
+      }
+
       function proposalHref(reference: string): string {
         const [kind, id] = reference.split(":", 2);
         const routes: Record<string, string> = {
@@ -290,6 +314,20 @@ import "../styles/global.css";
         };
         const route = routes[kind] ?? "/automations";
         return `${route}?reference=${encodeURIComponent(reference)}${id ? `&id=${encodeURIComponent(id)}` : ""}`;
+      }
+
+      function renderPendingAgentRun(workflowKey: string): void {
+        const region = document.getElementById("agent-run-detail")!;
+        const card = document.createElement("article");
+        card.className = "ui-card ui-stack";
+        const heading = document.createElement("h3");
+        heading.textContent = `${agentWorkflowLabel(workflowKey)} · Starting`;
+        const copy = document.createElement("p");
+        copy.className = "agent-run__pending";
+        copy.textContent =
+          "Waiting for the worker to bind the new governed Hermes run. The page will open that exact run automatically.";
+        card.append(heading, copy);
+        region.replaceChildren(card);
       }
 
       async function startAgent(
@@ -308,18 +346,32 @@ import "../styles/global.css";
           setActionMessage("Hermes agent runtime is unavailable.", true);
           return;
         }
+        const requestedAtMs = Date.now();
+        const originalLabel = button.textContent ?? "Run agent";
         button.disabled = true;
+        button.textContent = "Starting…";
         const result = await startAgentRun(activeOrgId, workflowKey, {
           locationId,
-          idempotencyKey: `operator-${workflowKey}-${Date.now()}`,
+          idempotencyKey: `operator-${workflowKey}-${requestedAtMs}`,
         });
         if (result.kind === "ok") {
+          pendingAgentSelection = {
+            skillKey: result.data.skill_key,
+            locationId,
+            requestedAtMs,
+          };
+          selectedAgentRunId = null;
+          agentHasActiveRuns = true;
+          renderPendingAgentRun(workflowKey);
           setActionMessage(
-            `${workflowKey} queued in the governed workflow runtime.`,
+            `${agentWorkflowLabel(workflowKey)} queued in the governed workflow runtime.`,
           );
-          await loadAgentData();
-        } else setActionMessage(describeFailure(result, "Agent run"), true);
+          await refreshLiveAgentSurfaces();
+        } else {
+          setActionMessage(describeFailure(result, "Agent run"), true);
+        }
         button.disabled = false;
+        button.textContent = originalLabel;
       }
 
       function renderAgentRuntime(capabilities: AgentCapabilities): void {
@@ -365,35 +417,80 @@ import "../styles/global.css";
                   detail.id,
                   action === "approve" ? "once" : "deny",
                 );
-        if (result.kind !== "ok")
+        if (result.kind !== "ok") {
           setActionMessage(describeFailure(result, `Agent ${action}`), true);
-        await loadAgentData();
+        } else if (action === "steer") {
+          agentSteerDrafts.delete(detail.id);
+          setActionMessage("Steer instruction sent to the active Hermes run.");
+        } else if (action === "stop") {
+          setActionMessage("Stop requested for the active Hermes run.");
+        } else if (action === "approve") {
+          setActionMessage("One-time approval sent to the active Hermes run.");
+        } else {
+          setActionMessage("Agent approval request denied.");
+        }
+        await refreshLiveAgentSurfaces();
       }
 
       function renderAgentDetail(detail: AgentRunDetail): void {
         const region = document.getElementById("agent-run-detail")!;
+        const previousInput = region.querySelector<HTMLInputElement>(
+          `input[data-steer-run-id="${detail.id}"]`,
+        );
+        const steerWasFocused = previousInput === document.activeElement;
+        const selectionStart = previousInput?.selectionStart ?? null;
+        const selectionEnd = previousInput?.selectionEnd ?? null;
+        if (previousInput) agentSteerDrafts.set(detail.id, previousInput.value);
+
+        const previousDetails = region.querySelector<HTMLDetailsElement>(
+          `details[data-agent-disclosure="details"][data-agent-run-id="${detail.id}"]`,
+        );
+        const previousLogs = region.querySelector<HTMLDetailsElement>(
+          `details[data-agent-disclosure="logs"][data-agent-run-id="${detail.id}"]`,
+        );
+        const previousLogList = region.querySelector<HTMLOListElement>(
+          `ol[data-agent-log-list="${detail.id}"]`,
+        );
+        const priorDisclosure = agentDisclosureState.get(detail.id) ?? {
+          details: false,
+          logs: false,
+        };
+        const disclosureState = {
+          details: previousDetails?.open ?? priorDisclosure.details,
+          logs: previousLogs?.open ?? priorDisclosure.logs,
+        };
+        const priorLogScrollTop = previousLogList?.scrollTop ?? 0;
+        agentDisclosureState.set(detail.id, disclosureState);
+
         region.replaceChildren();
         const card = document.createElement("article");
         card.className = "ui-card ui-stack";
+
+        const summary = document.createElement("div");
+        summary.className = "agent-run__summary";
         const heading = document.createElement("h3");
-        heading.textContent = `${detail.skill_key} · ${statusLabel(detail.status)}`;
-        const identity = document.createElement("p");
-        identity.className = "ui-muted";
-        identity.textContent = `Workflow ${detail.workflow_run_id} · Hermes ${detail.hermes_run_id ?? "starting"} · session ${detail.hermes_session_id} · audit ${detail.audit_correlation_id}`;
-        const telemetry = document.createElement("p");
-        telemetry.className = "ui-muted";
-        telemetry.textContent = `Location ${detail.location_id ?? "organization-wide"} · ${detail.provider}/${detail.model ?? "model unavailable"} · ${detail.usage.input_tokens ?? "—"} input / ${detail.usage.output_tokens ?? "—"} output tokens · ${detail.usage.latency_ms ?? "—"} ms${detail.safe_error_code ? ` · ${detail.safe_error_code}` : ""}`;
-        card.append(heading, identity, telemetry);
+        heading.textContent = detail.skill_key;
+        summary.append(
+          heading,
+          statusBadge(statusTone(detail.status), statusLabel(detail.status)),
+        );
+        card.append(summary);
+
+        const summaryMeta = document.createElement("p");
+        summaryMeta.className = "agent-run__summary-meta";
+        summaryMeta.textContent = `${formatTime(detail.started_at ?? detail.created_at)} · ${detail.provider}/${detail.model ?? "model unavailable"}${detail.safe_error_code ? ` · ${detail.safe_error_code}` : ""}`;
+        card.append(summaryMeta);
 
         const controls = document.createElement("div");
         controls.className = "ui-inline";
         if (
           ["running", "waiting_approval"].includes(detail.status) &&
           canControlAgent(hermesCapabilities ?? detail.capabilities, "run_stop")
-        )
+        ) {
           controls.append(
             actionButton("Stop", () => controlAgent(detail, "stop")),
           );
+        }
         if (
           detail.status === "running" &&
           canControlAgent(
@@ -405,13 +502,24 @@ import "../styles/global.css";
           input.className = "ui-input";
           input.placeholder = "Steer this active run";
           input.maxLength = 4000;
+          input.dataset.steerRunId = detail.id;
+          input.value = agentSteerDrafts.get(detail.id) ?? "";
+          input.addEventListener("input", () => {
+            agentSteerDrafts.set(detail.id, input.value);
+          });
           controls.append(
             input,
             actionButton("Steer", async () => {
-              if (input.value.trim())
-                await controlAgent(detail, "steer", input.value.trim());
+              const value = input.value.trim();
+              if (!value) {
+                setActionMessage("Enter a steer instruction first.", true);
+                return;
+              }
+              await controlAgent(detail, "steer", value);
             }),
           );
+        } else {
+          agentSteerDrafts.delete(detail.id);
         }
         if (
           detail.current_approval &&
@@ -419,7 +527,7 @@ import "../styles/global.css";
             hermesCapabilities ?? detail.capabilities,
             "run_approval_response",
           )
-        )
+        ) {
           controls.append(
             actionButton(
               "Approve once",
@@ -428,12 +536,13 @@ import "../styles/global.css";
             ),
             actionButton("Deny", () => controlAgent(detail, "deny")),
           );
+        }
         if (
           detail.location_id &&
           !["queued", "running", "waiting_approval", "stopping"].includes(
             detail.status,
           )
-        )
+        ) {
           controls.append(
             actionButton("Reset scoped session", async () => {
               const result = await resetAgentSession(
@@ -449,7 +558,8 @@ import "../styles/global.css";
               );
             }),
           );
-        card.append(controls);
+        }
+        if (controls.childNodes.length) card.append(controls);
 
         if (detail.output_references.length) {
           const outputs = document.createElement("div");
@@ -463,33 +573,108 @@ import "../styles/global.css";
           }
           card.append(outputs);
         }
-        if (detail.source_references.length) {
-          const evidence = document.createElement("p");
-          evidence.className = "ui-muted";
-          const shown = detail.source_references.slice(0, 20).join(" · ");
-          const remaining = Math.max(detail.source_references.length - 20, 0);
-          evidence.textContent = `Observed evidence · ${shown}${remaining ? ` · +${remaining} more` : ""}`;
-          card.append(evidence);
-        }
+
         if (detail.final_output?.text) {
-          const outputHeading = document.createElement("h4");
-          outputHeading.textContent = "Final governed result";
+          const resultDisclosure = document.createElement("details");
+          resultDisclosure.className = "agent-run__disclosure";
+          const resultSummary = document.createElement("summary");
+          resultSummary.textContent = "View governed result";
           const output = document.createElement("pre");
           output.textContent = detail.final_output.text;
-          card.append(outputHeading, output);
+          resultDisclosure.append(resultSummary, output);
+          card.append(resultDisclosure);
         }
-        const events = document.createElement("ol");
-        for (const event of detail.events) {
-          const item = document.createElement("li");
-          item.textContent = `${event.sequence}. ${event.event_type} · ${JSON.stringify(event.event_document)}`;
-          events.append(item);
+
+        const diagnostics = document.createElement("details");
+        diagnostics.className = "agent-run__disclosure";
+        diagnostics.dataset.agentDisclosure = "details";
+        diagnostics.dataset.agentRunId = detail.id;
+        diagnostics.open = disclosureState.details;
+        const diagnosticsSummary = document.createElement("summary");
+        diagnosticsSummary.textContent = "Run details";
+        const diagnosticsBody = document.createElement("div");
+        diagnosticsBody.className = "agent-run__diagnostics";
+        const identity = document.createElement("p");
+        identity.textContent = `Workflow ${detail.workflow_run_id} · Hermes ${detail.hermes_run_id ?? "starting"} · session ${detail.hermes_session_id} · audit ${detail.audit_correlation_id}`;
+        const telemetry = document.createElement("p");
+        telemetry.textContent = `Location ${detail.location_id ?? "organization-wide"} · ${detail.usage.input_tokens ?? "—"} input / ${detail.usage.output_tokens ?? "—"} output tokens · ${detail.usage.latency_ms ?? "—"} ms`;
+        diagnosticsBody.append(identity, telemetry);
+        if (detail.source_references.length) {
+          const evidence = document.createElement("p");
+          evidence.textContent = `Observed evidence · ${detail.source_references.join(" · ")}`;
+          diagnosticsBody.append(evidence);
         }
+        diagnostics.append(diagnosticsSummary, diagnosticsBody);
+        diagnostics.addEventListener("toggle", () => {
+          const current = agentDisclosureState.get(detail.id) ?? {
+            details: false,
+            logs: false,
+          };
+          agentDisclosureState.set(detail.id, {
+            ...current,
+            details: diagnostics.open,
+          });
+        });
+        card.append(diagnostics);
+
+        const logsDisclosure = document.createElement("details");
+        logsDisclosure.className = "agent-run__disclosure";
+        logsDisclosure.dataset.agentDisclosure = "logs";
+        logsDisclosure.dataset.agentRunId = detail.id;
+        logsDisclosure.open = disclosureState.logs;
+        const logsSummary = document.createElement("summary");
+        logsSummary.textContent = `View logs (${detail.events.length})`;
         if (!detail.events.length) {
           const empty = document.createElement("p");
+          empty.className = "ui-muted";
           empty.textContent = "No structured activity has arrived yet.";
-          card.append(empty);
-        } else card.append(events);
+          logsDisclosure.append(logsSummary, empty);
+        } else {
+          const events = document.createElement("ol");
+          events.className = "agent-run__logs";
+          events.dataset.agentLogList = detail.id;
+          for (const event of detail.events) {
+            const item = document.createElement("li");
+            const presentation = presentAgentEvent(event);
+            const label = document.createElement("span");
+            label.className = `agent-run__event-label agent-run__event-label--${presentation.outcome}`;
+            label.textContent = `${event.sequence}. ${presentation.label}`;
+            const raw = document.createElement("code");
+            raw.className = "agent-run__event-raw";
+            raw.textContent = JSON.stringify(event.event_document);
+            item.append(label, raw);
+            events.append(item);
+          }
+          logsDisclosure.append(logsSummary, events);
+        }
+        logsDisclosure.addEventListener("toggle", () => {
+          const current = agentDisclosureState.get(detail.id) ?? {
+            details: false,
+            logs: false,
+          };
+          agentDisclosureState.set(detail.id, {
+            ...current,
+            logs: logsDisclosure.open,
+          });
+        });
+        card.append(logsDisclosure);
         region.append(card);
+
+        if (steerWasFocused) {
+          const restored = region.querySelector<HTMLInputElement>(
+            `input[data-steer-run-id="${detail.id}"]`,
+          );
+          if (restored) {
+            restored.focus();
+            if (selectionStart !== null && selectionEnd !== null) {
+              restored.setSelectionRange(selectionStart, selectionEnd);
+            }
+          }
+        }
+        const restoredLogList = region.querySelector<HTMLOListElement>(
+          `ol[data-agent-log-list="${detail.id}"]`,
+        );
+        if (restoredLogList) restoredLogList.scrollTop = priorLogScrollTop;
       }
 
       function renderAgentRuns(items: AgentRunSummary[]): void {
@@ -531,14 +716,16 @@ import "../styles/global.css";
                 header: "Inspect",
                 render: (run: AgentRunSummary) =>
                   actionButton("Open run", async () => {
+                    pendingAgentSelection = null;
                     selectedAgentRunId = run.id;
                     const result = await getAgentRun(activeOrgId, run.id);
                     if (result.kind === "ok") renderAgentDetail(result.data);
-                    else
+                    else {
                       setActionMessage(
                         describeFailure(result, "Agent run"),
                         true,
                       );
+                    }
                   }),
               },
             ],
@@ -574,14 +761,30 @@ import "../styles/global.css";
             });
           }
           if (runs.kind === "ok") {
-            agentHasActiveRuns = runs.data.some((run) =>
-              ["queued", "running", "waiting_approval", "stopping"].includes(
-                run.status,
-              ),
-            );
+            if (pendingAgentSelection) {
+              if (Date.now() - pendingAgentSelection.requestedAtMs > 60_000) {
+                pendingAgentSelection = null;
+                setActionMessage(
+                  "The queued agent did not expose a run identity within 60 seconds. Inspect Recent runs before retrying.",
+                  true,
+                );
+              } else {
+                const candidate = selectPendingAgentRun(
+                  runs.data,
+                  pendingAgentSelection,
+                );
+                if (candidate) {
+                  selectedAgentRunId = candidate.id;
+                  pendingAgentSelection = null;
+                }
+              }
+            }
+            agentHasActiveRuns =
+              Boolean(pendingAgentSelection) ||
+              runs.data.some(agentRunIsActive);
             renderAgentRuns(runs.data);
           } else {
-            agentHasActiveRuns = false;
+            agentHasActiveRuns = Boolean(pendingAgentSelection);
             document
               .getElementById("agent-run-history")!
               .replaceChildren(errorAlert(describeFailure(runs, "Agent runs")));
@@ -774,9 +977,7 @@ import "../styles/global.css";
       ): void {
         const panel = document.getElementById("automation-metrics")!;
         panel.replaceChildren();
-        const failed = runs?.filter((run) =>
-          ["failed", "dead_lettered", "escalated"].includes(run.status),
-        ).length;
+        const failed = runs ? actionableWorkflowFailureCount(runs) : undefined;
         const active = schedules?.filter(
           (schedule) => schedule.status === "active",
         ).length;
@@ -814,7 +1015,9 @@ import "../styles/global.css";
           metricCard(
             "Needs attention",
             runs ? String(failed ?? 0) : "No data",
-            runs ? "Failed or escalated runs" : "Run history unavailable",
+            runs
+              ? "Latest unresolved workflow failures"
+              : "Run history unavailable",
           ),
         );
       }
@@ -856,6 +1059,7 @@ import "../styles/global.css";
                   const schedule = schedules.find(
                     (item) =>
                       item.workflow_key === workflow.key &&
+                      item.location_id === selectedLocationId() &&
                       item.status !== "cancelled",
                   );
                   return schedule
@@ -870,7 +1074,9 @@ import "../styles/global.css";
                 header: "Last run",
                 render: (workflow: WorkflowTypeEntry) => {
                   const run = runs.find(
-                    (item) => item.workflow_key === workflow.key,
+                    (item) =>
+                      item.workflow_key === workflow.key &&
+                      item.location_id === selectedLocationId(),
                   );
                   return run?.created_at
                     ? `${elapsed(run.created_at)} · ${formatTime(run.created_at)}`
@@ -882,7 +1088,9 @@ import "../styles/global.css";
                 header: "Result",
                 render: (workflow: WorkflowTypeEntry) => {
                   const run = runs.find(
-                    (item) => item.workflow_key === workflow.key,
+                    (item) =>
+                      item.workflow_key === workflow.key &&
+                      item.location_id === selectedLocationId(),
                   );
                   return run
                     ? statusBadge(
@@ -1085,6 +1293,28 @@ import "../styles/global.css";
         if (preferred) locationSelect.value = preferred.id;
       }
 
+      async function refreshWorkflowRunSurfaces(): Promise<void> {
+        if (!activeOrgId) return;
+        const runs = await listWorkflowRuns(activeOrgId, { limit: 40 });
+        if (runs.kind !== "ok") return;
+        renderRuns(runs.data);
+        if (catalogCache) {
+          renderCatalog(catalogCache, schedulesCache ?? [], runs.data);
+        }
+        renderMetrics(catalogCache, schedulesCache, runs.data);
+      }
+
+      async function refreshLiveAgentSurfaces(): Promise<void> {
+        if (liveRefreshInFlight) return;
+        liveRefreshInFlight = true;
+        try {
+          await loadAgentData();
+          await refreshWorkflowRunSurfaces();
+        } finally {
+          liveRefreshInFlight = false;
+        }
+      }
+
       async function loadAutomationData(): Promise<void> {
         if (!activeOrgId) return;
         const [cat, sched, runs] = await Promise.all([
@@ -1092,6 +1322,9 @@ import "../styles/global.css";
           listSchedules(activeOrgId),
           listWorkflowRuns(activeOrgId, { limit: 40 }),
         ]);
+
+        catalogCache = cat.kind === "ok" ? cat.data : null;
+        schedulesCache = sched.kind === "ok" ? sched.data : null;
 
         if (cat.kind === "ok") {
           renderCatalog(
@@ -1127,17 +1360,29 @@ import "../styles/global.css";
         await loadAgentData();
       }
 
-      locationSelect.addEventListener(
-        "change",
-        () => void loadAutomationData(),
-      );
+      locationSelect.addEventListener("change", () => {
+        selectedAgentRunId = null;
+        pendingAgentSelection = null;
+        agentSteerDrafts.clear();
+        agentDisclosureState.clear();
+        document.getElementById("agent-run-detail")!.replaceChildren();
+        void loadAutomationData();
+      });
 
       async function loadOrganization(
         organization: import("../lib/workspace").MyOrganization,
       ): Promise<void> {
         setActiveOrganization(organization);
         activeOrgId = organization.organization_id;
+        selectedAgentRunId = null;
+        pendingAgentSelection = null;
+        agentHasActiveRuns = false;
+        catalogCache = null;
+        schedulesCache = null;
+        agentSteerDrafts.clear();
+        agentDisclosureState.clear();
         actionStatus.replaceChildren();
+        document.getElementById("agent-run-detail")!.replaceChildren();
         await loadLocations();
         await loadAutomationData();
       }
@@ -1164,7 +1409,9 @@ import "../styles/global.css";
 
       void boot();
       window.setInterval(() => {
-        if (!document.hidden && agentHasActiveRuns) void loadAgentData();
+        if (!document.hidden && agentHasActiveRuns) {
+          void refreshLiveAgentSurfaces();
+        }
       }, 5_000);
     </script>
   </body>

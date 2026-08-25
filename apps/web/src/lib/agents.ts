@@ -61,6 +61,22 @@ export const AGENT_WORKFLOWS = [
   ["agent.insights", "Cross-product Insights agent"],
 ] as const;
 
+export const AGENT_SKILL_BY_WORKFLOW = {
+  "agent.gbp": "gbp.operator",
+  "agent.seo": "seo.operator",
+  "agent.content": "content.operator",
+  "agent.reviews": "reviews.operator",
+  "agent.insights": "insights.cross_product",
+} as const;
+
+export function agentSkillForWorkflow(workflowKey: string): string | null {
+  return (
+    AGENT_SKILL_BY_WORKFLOW[
+      workflowKey as keyof typeof AGENT_SKILL_BY_WORKFLOW
+    ] ?? null
+  );
+}
+
 export function canControlAgent(
   capabilities: AgentCapabilities,
   feature: "run_stop" | "run_steer" | "run_approval_response",
