@@ -26,6 +26,7 @@ from apps.api.app.audit.contracts import AuditEventCreate
 from apps.api.app.audit.enums import AuditActorType, AuditResult
 from apps.api.app.audit.metadata import JsonValue
 from apps.api.app.audit.service import AuditEventService
+from apps.api.app.config import Settings
 from apps.api.app.execution.service import ExecutionService
 from apps.api.app.insights.aggregation_service import InsightsService
 from apps.api.app.products.analytics.service import AnalyticsService
@@ -34,8 +35,10 @@ from apps.api.app.products.content.models import ContentBrief, ContentOpportunit
 from apps.api.app.products.content.service import ContentService
 from apps.api.app.products.gbp.models import GBPLocation, GBPProfileSnapshot
 from apps.api.app.products.gbp.operations_contracts import ChangeSetPropose, PostRevisionCreate
-from apps.api.app.products.gbp.operations_models import GBPProviderPost
+from apps.api.app.products.gbp.operations_models import GBPPostRevision, GBPProviderPost
 from apps.api.app.products.gbp.operations_service import GBPOperationsService
+from apps.api.app.products.gbp.post_generation_models import GBPPostAsset
+from apps.api.app.products.gbp.proposal_enrichment import GBPPostProposalEnrichmentService
 from apps.api.app.products.gbp.service import GBPService
 from apps.api.app.products.reviews.service import ReviewService
 from apps.api.app.products.seo.contracts import RecommendationCreate
@@ -140,6 +143,7 @@ class AgentToolService:
         self.knowledge = BusinessKnowledgeService()
         self.gbp = GBPService()
         self.gbp_operations = GBPOperationsService()
+        self.gbp_post_enrichment = GBPPostProposalEnrichmentService()
         self.search_console = SearchConsoleService()
         self.analytics = AnalyticsService()
         self.reviews = ReviewService()
@@ -166,8 +170,6 @@ class AgentToolService:
             raise AgentToolDeniedError("tool is not sanctioned")
         extras = set(arguments) - spec.allowed_arguments
         if extras:
-            # This is the hard model-supplied scope guard: organization_id and
-            # location_id are not valid arguments for any sanctioned tool.
             raise AgentToolDeniedError(
                 "unsupported tool arguments: " + ", ".join(sorted(str(item) for item in extras))
             )
@@ -890,27 +892,65 @@ class AgentToolService:
     async def _tool_generate_gbp_post_proposal(
         self, session: AsyncSession, run: AgentRun, arguments: dict[str, Any]
     ) -> dict[str, object]:
+        if run.location_id is None:
+            raise AgentToolDeniedError("GBP post proposals require a location-scoped run")
         location = await self._gbp_location(session, run)
         refs = self._observed_source_references(
             run, arguments.get("source_evidence_references"), label="GBP post evidence"
         )
+        content = str(arguments.get("content") or "")[:1_500]
         revision = await self.gbp_operations.create_post_revision(
             session,
             run.organization_id,
             location.id,
             PostRevisionCreate(
                 post_type=cast(Any, str(arguments.get("post_type") or "standard")),
-                content=str(arguments.get("content") or "")[:1_500],
-                call_to_action=arguments.get("call_to_action")
-                if isinstance(arguments.get("call_to_action"), dict)
-                else None,
+                content=content,
+                call_to_action=None,
             ),
             actor_id=None,
             correlation_id=run.correlation_id,
         )
+        settings = Settings()
+        try:
+            enrichment = await self.gbp_post_enrichment.enrich(
+                session,
+                settings,
+                organization_id=run.organization_id,
+                location_id=run.location_id,
+                gbp_location=location,
+                post_revision_id=revision.id,
+                content=content,
+                requested_call_to_action=arguments.get("call_to_action"),
+            )
+        except Exception:
+            await session.delete(revision)
+            await session.flush()
+            raise
+
+        revision.call_to_action = enrichment.call_to_action
+        await session.flush()
+        if enrichment.target_url is None:
+            await session.delete(revision)
+            await session.flush()
+            raise AgentToolDeniedError(
+                "GBP post proposal requires a client-owned website CTA before approval"
+            )
+        if settings.google_drive_service_account_json and enrichment.asset is None:
+            await session.delete(revision)
+            await session.flush()
+            raise AgentToolDeniedError(
+                "GBP post proposal requires a client-scoped Drive image before approval"
+            )
+
         ref = f"gbp-post-revision:{revision.id}"
         return {
-            "data": {"status": revision.status},
+            "data": {
+                "status": revision.status,
+                "target_url": enrichment.target_url,
+                "image_selected": enrichment.asset is not None,
+                "image_reference": enrichment.asset.source_reference if enrichment.asset else None,
+            },
             "source_references": refs,
             "proposal_references": [ref],
         }
@@ -1005,6 +1045,30 @@ class AgentToolService:
         ref = str(arguments.get("proposal_reference") or "")[:200]
         if ref not in {str(item) for item in run.output_references}:
             raise AgentToolDeniedError("proposal was not created by this bound agent run")
+        if ref.startswith("gbp-post-revision:"):
+            revision_id = _uuid(ref.removeprefix("gbp-post-revision:"), "GBP post revision")
+            revision = await session.scalar(
+                select(GBPPostRevision).where(
+                    GBPPostRevision.organization_id == run.organization_id,
+                    GBPPostRevision.id == revision_id,
+                )
+            )
+            if revision is None:
+                raise AgentToolDeniedError("GBP post proposal is outside the bound organization")
+            if not revision.call_to_action or not revision.call_to_action.get("url"):
+                raise AgentToolDeniedError("GBP post proposal is missing its client-owned CTA")
+            if Settings().google_drive_service_account_json:
+                asset = await session.scalar(
+                    select(GBPPostAsset).where(
+                        GBPPostAsset.organization_id == run.organization_id,
+                        GBPPostAsset.post_revision_id == revision.id,
+                        GBPPostAsset.status == "selected",
+                    )
+                )
+                if asset is None:
+                    raise AgentToolDeniedError(
+                        "GBP post proposal is missing its client-scoped Drive image"
+                    )
         await self.audit.record(
             session,
             AuditEventCreate(

@@ -36,7 +36,7 @@ requires_attention, recommended_actions, and proposal_references.
 SKILLS: dict[str, AgentSkill] = {
     "gbp.operator": AgentSkill(
         key="gbp.operator",
-        version=1,
+        version=2,
         product_key="gbp",
         title="GBP governed operator",
         instructions=COMMON_POLICY
@@ -44,8 +44,12 @@ SKILLS: dict[str, AgentSkill] = {
 
 Inspect approved facts, website knowledge, current GBP state, provider posts,
 and LILOs post drafts. Avoid repeating recent topics. You may create an
-approval-ready post revision or an optimization change-set proposal. You may
-submit those proposals for LILOs approval. Never publish or edit Google.
+approval-ready post revision or an optimization change-set proposal. Automated
+post proposals must be complete before submission: LILOs must resolve a
+client-owned Learn More destination and a client-scoped Google Drive image.
+Do not treat a text-only post as approval-ready when Drive media is configured.
+You may submit complete proposals for LILOs approval. Never publish or edit
+Google directly.
 """,
         required_tools=(
             "read_client_business_facts",
