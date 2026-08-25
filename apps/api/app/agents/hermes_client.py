@@ -9,6 +9,8 @@ from typing import Any
 
 import httpx
 
+from apps.api.app.ai.hermes_endpoint import normalize_hermes_base_url
+
 REQUIRED_FEATURES = frozenset(
     {
         "run_submission",
@@ -88,10 +90,12 @@ class HermesRunsClient:
         timeout_seconds: float,
         client: httpx.AsyncClient | None = None,
     ) -> None:
-        normalized_base_url = base_url.strip().rstrip("/")
-        if not normalized_base_url.startswith(("http://", "https://")):
-            normalized_base_url = f"http://{normalized_base_url}"
-        self._base_url = normalized_base_url
+        try:
+            self._base_url = normalize_hermes_base_url(base_url)
+        except ValueError as exc:
+            raise HermesRuntimeError(
+                "HERMES_CONFIGURATION_INVALID", "Hermes base URL is invalid"
+            ) from exc
         self._api_key = api_key
         self._timeout = timeout_seconds
         self._client = client
