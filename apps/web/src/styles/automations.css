@@ -5,8 +5,6 @@
 #automation-action-status .ui-alert {
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-raised);
-  font-size: var(--type-body-sm-size);
-  line-height: var(--type-body-sm-line);
 }
 
 #agent-runtime-status {
@@ -19,7 +17,6 @@
 }
 
 #agent-runtime-status .ui-alert--success {
-  display: block;
   padding: var(--space-4) var(--space-5);
   border-color: var(--color-success-border);
   background: var(--color-success-background);
@@ -27,24 +24,22 @@
   font-size: 0;
 }
 
-#agent-runtime-status .ui-alert--success::before,
-#agent-runtime-status .ui-alert--success::after {
+#agent-runtime-status .ui-alert--success::before {
+  content: "Hermes runtime ready";
   display: block;
-  color: var(--color-text-primary);
+  margin-bottom: var(--space-1);
+  color: var(--color-success-foreground);
   font-size: var(--type-body-sm-size);
+  font-weight: 700;
   line-height: var(--type-body-sm-line);
 }
 
-#agent-runtime-status .ui-alert--success::before {
-  content: "●  Hermes runtime ready";
-  margin-bottom: var(--space-1);
-  color: var(--color-success-foreground);
-  font-weight: 700;
-}
-
 #agent-runtime-status .ui-alert--success::after {
-  content: "Connected securely. Governed agent tools and live controls are available.";
+  content: "Secure connection · governed tools and controls available";
+  display: block;
   color: var(--color-text-secondary);
+  font-size: var(--type-body-sm-size);
+  line-height: var(--type-body-sm-line);
 }
 
 #agent-start-actions {
@@ -77,21 +72,14 @@
   justify-content: center;
   gap: var(--space-1);
   padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--color-border-strong);
+  border-color: var(--color-border-strong);
   border-radius: var(--radius-md);
   background: var(--color-surface-raised);
   box-shadow: var(--shadow-raised);
   color: var(--color-text-primary);
-  font-size: var(--type-body-sm-size);
   font-weight: 700;
-  line-height: var(--type-body-sm-line);
   text-align: left;
   white-space: normal;
-  transition:
-    border-color var(--motion-duration-fast) var(--motion-easing-standard),
-    box-shadow var(--motion-duration-fast) var(--motion-easing-standard),
-    transform var(--motion-duration-fast) var(--motion-easing-standard),
-    background var(--motion-duration-fast) var(--motion-easing-standard);
 }
 
 #agent-start-actions .ui-button::after {
@@ -118,24 +106,18 @@
 }
 
 #agent-start-actions .ui-button:nth-child(5)::after {
-  content: "Cross-channel performance analysis";
+  content: "Cross-channel performance";
 }
 
 #agent-start-actions .ui-button:hover:not(:disabled) {
   border-color: var(--color-action-primary);
   background: var(--palette-forest-50);
   box-shadow: var(--shadow-sticky);
-  transform: translateY(-1px);
 }
 
 #agent-start-actions .ui-button:focus-visible {
-  outline: 2px solid var(--color-focus-ring);
-  outline-offset: 2px;
-}
-
-#agent-start-actions .ui-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.55;
+  outline: var(--border-width-strong) solid var(--color-focus-ring);
+  outline-offset: var(--border-width-strong);
 }
 
 #agent-run-history {
@@ -147,7 +129,7 @@
 }
 
 #agent-run-detail > .ui-card {
-  border: 1px solid var(--color-border-subtle);
+  border: var(--border-width) solid var(--color-border-subtle);
   border-radius: var(--radius-lg);
   background: var(--color-surface-raised);
   box-shadow: var(--shadow-raised);
@@ -163,9 +145,6 @@
 
 .agent-run__summary h3 {
   margin: 0;
-  color: var(--color-text-primary);
-  font-size: var(--type-h3-size);
-  line-height: var(--type-h3-line);
 }
 
 .agent-run__summary-meta {
@@ -187,7 +166,7 @@
 
 .agent-run__disclosure {
   overflow: hidden;
-  border: 1px solid var(--color-border-subtle);
+  border: var(--border-width) solid var(--color-border-subtle);
   border-radius: var(--radius-md);
   background: var(--color-surface-raised);
 }
@@ -205,8 +184,6 @@
   font-weight: 700;
   line-height: var(--type-body-sm-line);
   list-style: none;
-  transition:
-    background var(--motion-duration-fast) var(--motion-easing-standard);
 }
 
 .agent-run__disclosure > summary::-webkit-details-marker {
@@ -225,8 +202,6 @@
   color: var(--color-text-secondary);
   font-size: 1rem;
   line-height: 1;
-  transition:
-    transform var(--motion-duration-fast) var(--motion-easing-standard);
 }
 
 .agent-run__disclosure > summary:hover {
@@ -234,7 +209,7 @@
 }
 
 .agent-run__disclosure[open] > summary {
-  border-bottom: 1px solid var(--color-border-subtle);
+  border-bottom: var(--border-width) solid var(--color-border-subtle);
   background: var(--color-surface);
 }
 
@@ -279,10 +254,8 @@
 }
 
 .agent-run__logs li {
-  display: grid;
-  gap: var(--space-1);
   padding: var(--space-3) 0;
-  border-bottom: 1px solid var(--color-border-subtle);
+  border-bottom: var(--border-width) solid var(--color-border-subtle);
   overflow-wrap: anywhere;
 }
 
@@ -292,7 +265,7 @@
 
 .agent-run__event-label {
   display: block;
-  font-weight: 650;
+  font-weight: 600;
   color: var(--color-text-primary);
 }
 
@@ -310,6 +283,7 @@
 
 .agent-run__event-raw {
   display: block;
+  margin-top: var(--space-1);
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-sm);
   background: var(--color-surface-sunken);
