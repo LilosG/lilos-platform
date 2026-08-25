@@ -273,7 +273,7 @@ class ExecutionService:
                 output_schema={},
                 step_specification=[],
                 retry_policy={},
-                timeout_seconds=300,
+                timeout_seconds=900 if workflow_key.startswith("agent.") else 300,
             )
             session.add(version)
             await session.flush()

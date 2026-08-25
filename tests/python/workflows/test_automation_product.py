@@ -193,6 +193,11 @@ def test_list_workflow_types_returns_canonical_catalog(p5_client: P5Context) -> 
     assert isinstance(data, list)
     keys = {item["key"] for item in data}
     assert keys == {
+        "agent.content",
+        "agent.gbp",
+        "agent.insights",
+        "agent.reviews",
+        "agent.seo",
         "content.draft_revision",
         "content.publish",
         "gbp.generate_post",
@@ -1104,6 +1109,11 @@ def test_service_list_workflow_types(
         svc = ExecutionService()
         items = await svc.list_workflow_types(session)
         assert {item["key"] for item in items} == {
+            "agent.content",
+            "agent.gbp",
+            "agent.insights",
+            "agent.reviews",
+            "agent.seo",
             "content.draft_revision",
             "content.publish",
             "gbp.generate_post",
@@ -1124,7 +1134,7 @@ def test_service_list_workflow_types(
         return len(items)
 
     count = run_db(postgresql_test_url, scenario)
-    assert count == 12
+    assert count == 17
 
 
 @pytest.mark.integration

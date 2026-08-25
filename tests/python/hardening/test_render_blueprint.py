@@ -53,10 +53,15 @@ def test_render_blueprint_requires_hermes_persistent_storage(tmp_path: Path) -> 
 def test_render_blueprint_requires_private_hermes_service_binding(tmp_path: Path) -> None:
     candidate = tmp_path / "render.yaml"
     source = Path("render.yaml").read_text(encoding="utf-8")
+    private_binding = """      - key: LILOS_HERMES_BASE_URL
+        fromService:
+          name: lilos-hermes
+          type: pserv
+          property: hostport"""
     candidate.write_text(
         source.replace(
-            "          property: hostport",
-            "          property: host",
+            private_binding,
+            private_binding.replace("property: hostport", "property: host"),
             1,
         ),
         encoding="utf-8",

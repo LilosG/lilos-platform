@@ -2,7 +2,7 @@
 
 ## Status
 
-PLANNED — implementation and live production acceptance required. This packet is not complete until Hermes is operating as a real governed agent runtime across the LILOs products listed below, with tool-backed reasoning, lifecycle controls, observable run history, and production acceptance.
+IMPLEMENTED_NOT_ACCEPTED — repository implementation, exact pinned-runtime probing, and repository acceptance are complete. Live production acceptance remains a release gate; this packet must not be marked live accepted until every production scenario below passes.
 
 ## Base
 
@@ -19,6 +19,7 @@ There must be no future-tense placeholder after this packet. The production plat
 LILOs remains the control plane and source of authority.
 
 LILOs owns:
+
 - organization/location tenant scope;
 - approved business facts and source truth;
 - entitlements and permissions;
@@ -30,6 +31,7 @@ LILOs owns:
 - deterministic SEO/risk/compliance detectors.
 
 Hermes owns:
+
 - agent reasoning/execution;
 - tool sequencing;
 - skills;
@@ -58,6 +60,7 @@ Do not create a second workflow/orchestration framework. Hermes runs must bind t
 Replace agent-grade uses of one-shot completion calls with the Hermes Runs API / supported programmatic lifecycle.
 
 Required capabilities:
+
 - create Hermes run and persist the Hermes run ID against the owning LILOs workflow run / AI execution;
 - poll/reconcile run status;
 - ingest structured run events/tool events into a bounded LILOs read model;
@@ -74,6 +77,7 @@ Capability probing must fail closed. LILOs UI must only expose controls actually
 Hermes must receive a sanctioned toolset backed by canonical LILOs services. Tools must not directly access the database, raw provider credentials, or arbitrary provider APIs.
 
 Minimum tool capabilities:
+
 - `read_client_business_facts`
 - `read_website_knowledge`
 - `read_gbp_state`
@@ -94,6 +98,7 @@ Minimum tool capabilities:
 Tool naming may change to fit existing conventions, but these capabilities must exist.
 
 Tool contract requirements:
+
 - tenant and location scope derive from the bound LILOs agent/workflow run, not model-supplied organization IDs;
 - Hermes service authentication is required;
 - model-visible arguments cannot grant broader tenant scope;
@@ -109,7 +114,9 @@ Use the safest canonical Hermes extension mechanism available in the pinned vers
 Create versioned, testable LILOs agent skills/instructions for the product domains below. Skills must use canonical tools and approved facts/evidence.
 
 #### GBP
+
 Hermes must be able to:
+
 - inspect current profile/business facts/website knowledge;
 - inspect recent provider posts and LILOs drafts;
 - identify a non-repetitive useful post topic;
@@ -120,7 +127,9 @@ Hermes must be able to:
 Hermes may not publish or edit Google directly.
 
 #### SEO
+
 Hermes must be able to:
+
 - consume deterministic crawl/GSC/PageSpeed opportunities;
 - explain why the opportunity matters;
 - correlate evidence across crawl, GSC, GA4, and existing content;
@@ -130,7 +139,9 @@ Hermes must be able to:
 Hermes must not replace deterministic detectors or manufacture search evidence.
 
 #### Content
+
 Hermes must be able to:
+
 - inspect existing content and approved business facts;
 - consume an accepted SEO/content opportunity;
 - create a grounded brief;
@@ -142,7 +153,9 @@ Hermes must be able to:
 Publication remains LILOs/GitHub workflow-controlled.
 
 #### Reviews
+
 Hermes must be able to:
+
 - draft grounded review responses;
 - use deterministic risk classification as a hard guardrail;
 - summarize review themes/trends for operator insight;
@@ -150,7 +163,9 @@ Hermes must be able to:
 - submit response drafts into existing approval workflow.
 
 #### Insights / cross-product analysis
+
 Hermes must be able to execute a governed cross-source analysis for a client/location using current GSC, GA4, GBP, Reviews, Content, and crawl/SEO evidence and produce:
+
 - what changed;
 - likely evidence-backed drivers;
 - what requires attention;
@@ -164,6 +179,7 @@ This must become an inspectable agent run, not an ungrounded narrative widget.
 Bind Hermes runs to existing LILOs workflow runs and AI executions. Add only the minimal persistence needed for the Hermes binding/event projection; do not duplicate workflow state.
 
 Operator-visible run detail must include:
+
 - owning organization/location;
 - workflow/task/skill;
 - Hermes run/session ID (safe display/reference);
@@ -185,6 +201,7 @@ Events must be bounded/retained by policy. Do not persist chain-of-thought/priva
 Hermes session continuity may be used to improve multi-step work, but Hermes memory is not authoritative business truth.
 
 Requirements:
+
 - session namespace must be organization + location + task/skill scoped;
 - cross-client memory leakage must be impossible by contract/test;
 - approved LILOs business facts override Hermes memory;
@@ -197,6 +214,7 @@ Requirements:
 Any action that can change a client-facing/provider-facing asset must remain a LILOs proposal followed by an existing LILOs approval/write workflow.
 
 Examples:
+
 - GBP post: Hermes proposal -> LILOs revision -> approval -> canonical publish workflow -> provider verification.
 - Content: Hermes draft -> editorial/client approval -> canonical GitHub publication workflow.
 - Review response: Hermes draft -> deterministic risk gate -> approval -> canonical provider publication workflow.
@@ -207,6 +225,7 @@ Examples:
 Extend the existing Automations/appropriate product surfaces rather than creating a disconnected agent console.
 
 Required UX:
+
 - start supported agent work from the relevant product/context;
 - see live/refreshing run status and structured activity;
 - inspect tool activity without exposing secrets or chain-of-thought;
@@ -224,6 +243,7 @@ No control may appear functional if the deployed Hermes capability is absent.
 Use the existing LILOs scheduler/workflow catalog. Do not use Hermes `/api/jobs` as a second scheduler for LILOs product work.
 
 At minimum, make these existing recurring patterns agent-capable where appropriate:
+
 - GBP post proposal generation;
 - recurring cross-source client insight brief;
 - accepted SEO opportunity -> content proposal processing;
@@ -234,6 +254,7 @@ All schedules remain LILOs-owned and tenant-scoped.
 ### 9. Runtime/deployment contract
 
 Hermes deployment must:
+
 - expose authenticated private endpoints needed for runs/events/approval/stop and steer transport;
 - publish a detailed health/capability probe consumable by LILOs;
 - pin/configure the governed model route on boot;
@@ -247,6 +268,7 @@ If the Hermes version must be upgraded for a required supported capability, pin 
 ### 10. Tests / acceptance scenarios
 
 Required repository tests include at least:
+
 1. Cross-tenant tool invocation is denied even if model supplies another org/location identifier.
 2. Agent run binds to the correct LILOs workflow and Hermes run/session.
 3. Structured event ingestion does not persist chain-of-thought or secrets.
@@ -269,6 +291,7 @@ Required repository tests include at least:
 ### 11. Required live production acceptance
 
 Repository green is not enough. After deploy, use a real acceptance client/location and prove:
+
 - LILOs -> private Hermes run creation works;
 - events/tool activity are visible in LILOs;
 - Hermes reads approved business facts plus at least GBP + GSC/GA4 or crawl evidence through sanctioned tools;
@@ -300,6 +323,7 @@ Update the Hermes/AI, Automation & Agents, GBP, SEO, Content, Reviews, Insights,
 ## Completion report
 
 Return:
+
 - confirmed current-state gaps;
 - architecture chosen for Hermes runs and sanctioned tools;
 - exact Hermes protocol/capabilities used (including steer transport);

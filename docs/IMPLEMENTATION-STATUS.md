@@ -1,5 +1,40 @@
 # LILOs implementation status
 
+## PR47 — Hermes agent operationalization (2026-08-24)
+
+- State: `IMPLEMENTED_NOT_ACCEPTED`; live production acceptance is not claimed.
+- Hermes: upgraded from v2026.8.3 to exact-pinned v2026.8.19 (digest
+  `sha256:3811ed13da874fba2ac99b6d492db9a203d34cb6dccf90d886948c00d0ccec09`,
+  internal runtime 0.20.5) because the prior HTTP Runs surface had no safe run-scoped steer.
+- Native lifecycle: authenticated Runs create/status/SSE/approval/HTTP steer/stop, durable binding
+  to the existing LILOs workflow and AI execution, retry reconciliation by native run ID, bounded
+  structured events, operator history and controls, and capability/toolset fail-closed behavior.
+- Governed agent plane: five versioned GBP/SEO/Content/Reviews/Insights skills and 20 exact
+  sanctioned plugin tools backed by canonical LILOs services. No direct provider mutation,
+  arbitrary MCP, terminal, Google, or GitHub tool is exposed.
+- Security: scope is derived only from the bound run; API/DB/service tenant constraints and product
+  entitlements remain authoritative; model-supplied scope is denied; tool/result audits are
+  value-redacted and source-linked; chain-of-thought and secrets are not persisted.
+- Continuity: one opaque organization/location/skill Hermes transcript and memory key, one active
+  run per scoped session, deterministic scoped reset/expiry, and fail-closed rotation after an
+  ambiguous native create.
+- Scheduling: all recurring execution remains in the existing LILOs workflow catalog, durable
+  worker, and scheduler. Hermes jobs/cron are not used.
+- Focused evidence before the final integrated gate: 44 protocol/safety/provider/Render-policy
+  tests plus 63 database/product/workflow tests (including 10 database-backed
+  lifecycle/tenancy/migration tests); targeted Ruff and strict mypy clean; Alembic drift clean;
+  2 targeted web unit tests, Astro diagnostics across 153 files, and all 220 browser tests pass.
+  The final exact image reports runtime 0.20.5, every required native Runs capability, and only the
+  exact 20-tool `lilos` toolset enabled. Proposal evidence must have been returned by a sanctioned
+  tool in the same bound run.
+- Repository acceptance: PASS by diagnosed continuation. Formatting, lint, typecheck (Astro 153
+  files; mypy 503 files), 280 web tests, production build (14 pages), and secret scan pass. The
+  full Python run reached 967/972 passes; its five PR47-owned stale/order assertions were corrected
+  and pass 6/6 focused (including Alembic-before-logger order). The full Python command was not run
+  a third time, per the packet's repeated-validation rule.
+- Live gate: pending deployment and the explicit PR47 production acceptance sequence. Repository
+  tests do not establish production or provider acceptance.
+
 ## Operational Release Matrix (2026-08-06, production-operationalization pass)
 
 The matrix below distinguishes five orthogonal states for each capability:
@@ -11,35 +46,35 @@ The matrix below distinguishes five orthogonal states for each capability:
 - **External blocker**: pending an external operator action before further
   states can advance.
 
-| Capability | Implemented | Test-verified | Deployed | Real-provider verified | External blocker |
-|---|---|---|---|---|---|
-| Authentication (Supabase email/password) | Yes | Yes | Yes (pilot sign-in) | Yes | None |
-| MFA / AAL2 step-up | Yes | Yes (`session.test.ts`) | Yes | Yes (pilot TOTP) | None |
-| Platform administration | Yes | Yes | Partial | Partial | None |
-| Client onboarding (incl. product entitlements via API) | Yes | Yes | Partial | Partial | None |
-| Organization/location management | Yes | Yes | Yes | Yes | None |
-| Product entitlements (via platform-admin API) | Yes | Yes (`test_api.py`) | Yes | Yes | None |
-| Integration provider catalog seeding (deployment bootstrap) | Yes | Yes (`provider_seed.py`) | Yes | Yes | None |
-| Google OAuth connection | Yes | Yes (`test_connection_service.py`) | Yes (env vars configured) | No | Real-provider verification pending operator OAuth authorization |
-| GBP account/location discovery | Yes | Yes (`test_discovery_service.py`) | Yes | No | Real-provider verification pending operator OAuth authorization |
-| GBP profile sync | Yes | Yes (`test_discovery_service.py`) | Yes | No | Real-provider verification pending operator OAuth authorization |
-| GBP location mapping | Yes | Yes (`test_gbp_api.py`) | Yes | No | Real-provider verification pending operator OAuth authorization |
-| GBP operations (hours, media, posts) | Yes | Yes (`test_gbp_operations_api.py`) | Yes | No | Real-provider verification pending operator OAuth authorization |
-| GBP workflow execution (`gbp.publish_change`) | Yes | Yes (handler test) | Yes | No | Real-provider verification pending operator OAuth authorization |
-| GBP workflow execution (`gbp.publish_post`) | Yes | Yes (handler test) | Yes | No | Real-provider verification pending operator OAuth authorization |
-| Reviews ingestion + response | Yes | Yes (`test_reviews_api.py`) | Yes | No | Real-provider verification pending operator OAuth authorization |
-| Reviews workflow execution (`reviews.publish_response`) | Yes | Yes (handler test) | Yes | No | Real-provider verification pending operator OAuth authorization |
-| Leads management | Yes | Yes (`test_leads_api.py`) | No | No | **Email/SMS provider credentials** for speed-to-lead |
-| Content pipeline | Yes | Yes (`test_content_api.py`) | No | No | **GitHub publishing target** for real publication |
-| Content workflow execution (`content.publish`) | Yes (fails closed) | Yes (handler test) | No | No | **Publishing connector** not yet implemented |
-| SEO crawl + analysis | Yes | Yes (`test_seo_api.py`) | No | No | None (crawl is self-contained) |
-| SEO workflow execution (`seo.crawl_or_analysis`) | Yes | Yes (handler test) | No | No | None |
-| SEO Search Console sync | Yes | Yes | No | No | **Google OAuth credentials** (Search Console scope) |
-| Insights and reporting | Yes | Yes | No | No | Activity data requires product history |
-| Background workflows | Yes | Yes (`test_process_runtime.py`) | Yes | Yes | None |
-| Notifications | Yes | Yes | No | No | None |
-| Audit logging | Yes | Yes | Yes | Yes | None |
-| Tenant isolation | Yes | Yes | Yes | Yes | None |
+| Capability                                                  | Implemented        | Test-verified                      | Deployed                  | Real-provider verified | External blocker                                                |
+| ----------------------------------------------------------- | ------------------ | ---------------------------------- | ------------------------- | ---------------------- | --------------------------------------------------------------- |
+| Authentication (Supabase email/password)                    | Yes                | Yes                                | Yes (pilot sign-in)       | Yes                    | None                                                            |
+| MFA / AAL2 step-up                                          | Yes                | Yes (`session.test.ts`)            | Yes                       | Yes (pilot TOTP)       | None                                                            |
+| Platform administration                                     | Yes                | Yes                                | Partial                   | Partial                | None                                                            |
+| Client onboarding (incl. product entitlements via API)      | Yes                | Yes                                | Partial                   | Partial                | None                                                            |
+| Organization/location management                            | Yes                | Yes                                | Yes                       | Yes                    | None                                                            |
+| Product entitlements (via platform-admin API)               | Yes                | Yes (`test_api.py`)                | Yes                       | Yes                    | None                                                            |
+| Integration provider catalog seeding (deployment bootstrap) | Yes                | Yes (`provider_seed.py`)           | Yes                       | Yes                    | None                                                            |
+| Google OAuth connection                                     | Yes                | Yes (`test_connection_service.py`) | Yes (env vars configured) | No                     | Real-provider verification pending operator OAuth authorization |
+| GBP account/location discovery                              | Yes                | Yes (`test_discovery_service.py`)  | Yes                       | No                     | Real-provider verification pending operator OAuth authorization |
+| GBP profile sync                                            | Yes                | Yes (`test_discovery_service.py`)  | Yes                       | No                     | Real-provider verification pending operator OAuth authorization |
+| GBP location mapping                                        | Yes                | Yes (`test_gbp_api.py`)            | Yes                       | No                     | Real-provider verification pending operator OAuth authorization |
+| GBP operations (hours, media, posts)                        | Yes                | Yes (`test_gbp_operations_api.py`) | Yes                       | No                     | Real-provider verification pending operator OAuth authorization |
+| GBP workflow execution (`gbp.publish_change`)               | Yes                | Yes (handler test)                 | Yes                       | No                     | Real-provider verification pending operator OAuth authorization |
+| GBP workflow execution (`gbp.publish_post`)                 | Yes                | Yes (handler test)                 | Yes                       | No                     | Real-provider verification pending operator OAuth authorization |
+| Reviews ingestion + response                                | Yes                | Yes (`test_reviews_api.py`)        | Yes                       | No                     | Real-provider verification pending operator OAuth authorization |
+| Reviews workflow execution (`reviews.publish_response`)     | Yes                | Yes (handler test)                 | Yes                       | No                     | Real-provider verification pending operator OAuth authorization |
+| Leads management                                            | Yes                | Yes (`test_leads_api.py`)          | No                        | No                     | **Email/SMS provider credentials** for speed-to-lead            |
+| Content pipeline                                            | Yes                | Yes (`test_content_api.py`)        | No                        | No                     | **GitHub publishing target** for real publication               |
+| Content workflow execution (`content.publish`)              | Yes (fails closed) | Yes (handler test)                 | No                        | No                     | **Publishing connector** not yet implemented                    |
+| SEO crawl + analysis                                        | Yes                | Yes (`test_seo_api.py`)            | No                        | No                     | None (crawl is self-contained)                                  |
+| SEO workflow execution (`seo.crawl_or_analysis`)            | Yes                | Yes (handler test)                 | No                        | No                     | None                                                            |
+| SEO Search Console sync                                     | Yes                | Yes                                | No                        | No                     | **Google OAuth credentials** (Search Console scope)             |
+| Insights and reporting                                      | Yes                | Yes                                | No                        | No                     | Activity data requires product history                          |
+| Background workflows                                        | Yes                | Yes (`test_process_runtime.py`)    | Yes                       | Yes                    | None                                                            |
+| Notifications                                               | Yes                | Yes                                | No                        | No                     | None                                                            |
+| Audit logging                                               | Yes                | Yes                                | Yes                       | Yes                    | None                                                            |
+| Tenant isolation                                            | Yes                | Yes                                | Yes                       | Yes                    | None                                                            |
 
 ### Notes on the matrix
 
@@ -714,7 +749,7 @@ authorization outcomes in the frontend.
 - Frontend: `npx prettier --check .`, `npx eslint .`, `npx astro check` (0
   errors/warnings/hints), `npx vitest run` (18 passed, including new
   `config.test.ts`, `api-client.test.ts`, `dashboard-logic.test.ts`), `npx astro
-  build` (2 static pages), and `npx playwright test` (10 passed across desktop
+build` (2 static pages), and `npx playwright test` (10 passed across desktop
   and mobile viewports) all passed. The Playwright suite and a manual
   `astro preview` fetch confirmed the unconfigured build renders the truthful
   "This deployment is not configured" state rather than any fabricated content.
@@ -1120,23 +1155,24 @@ Authorization enforcement across existing routes remains deliberately deferred t
 ## Next eligible task
 
 - Phase 5 only when separately authorized. Phase 4 is complete locally pending recorded CI evidence.
+
 # Phase 5 completion
+
 # Phase 13 completion
+
 # Phase 14 completion
+
 # Phase 15 completion
+
 # Phase 16 completion
 
 Phase 16 replaces the Phase 0 placeholder with the responsive accessible operational shell, authorization-aware navigation policy, readiness/degradation states, validated metric presentation, and reusable workspace components. Browser and component validation are documented; server authorization remains authoritative.
 
-
 Phase 15 establishes definition-driven observations, goals, annotations, immutable report snapshots, tracked delivery, and evidence-bearing insights at migration `20260803_0012`. Missing data and partial periods remain explicit.
-
 
 Phase 14 completes the capability-governed GBP model at migration `20260803_0011`, including categories, special hours, grouped changes, media rights, posts, scheduling state, and suspension cases. Unsupported provider surfaces remain unavailable.
 
-
 Phase 13 adds the evidence-driven SEO persistence and policy foundation at migration `20260803_0010`: confirmed website/property scope, deterministic URLs, bounded crawl intent, quality-labelled observations, deduplicated opportunities, immutable recommendations, implementation verification, and measurement outcomes. Live Search Console validation is deferred to approved credentials.
-
 
 Phase 12 is complete at migration `20260803_0009`: evidence-backed content planning, structured briefs, shared-AI/manual immutable revisions, grounding and claim validation, editorial/client approval, allowlisted GitHub/Astro publication intent, build/deployment verification states, reconciliation, and rollback lineage are established. Phases 9–12 milestone is complete; Phase 13 has not begun.
 
@@ -1153,9 +1189,11 @@ Phase 7 is complete at migration `20260803_0004`: provider registry, organizatio
 Phase 6 is complete at migration `20260803_0003`: governed templates, notification events, recipient deliveries, preferences, attempts, deduplication, and Phase 5 job integration are established without a production provider.
 
 Phase 5 is complete at migration `20260803_0002`: shared workflow definitions and versions, durable runs/steps/jobs/attempts, scheduling, leases, retry, cancellation, dead-letter handling, and organization-scoped idempotency are established. Provider actions remain deferred.
+
 # Phase 17 — Observability and Operational Hardening
 
 Implemented at migration `20260803_0013`: bounded/redacted telemetry, safe metric labels, trace propagation, deterministic alerts, incident/SLO/heartbeat persistence, dashboards, alert catalog, diagnostics policy, and production incident runbooks. External telemetry activation is a Phase 19 dependency.
+
 # Phase 18 — Testing, Security, and Reliability Hardening
 
 Implemented release-blocking dependency, browser/accessibility, synthetic restore, migration, secret, acceptance-package, redaction, and regression gates. Production load/soak, live monitoring, manual accessibility, provider sandbox, and geographic recovery evidence remain external launch dependencies.

@@ -59,6 +59,9 @@ def test_baseline_migration_upgrades_downgrades_and_upgrades_again(
     command.upgrade(config, "head")
     tables_at_head, revisions_at_head = asyncio.run(database_state(postgresql_test_url))
     assert tables_at_head == [
+        "agent_run_events",
+        "agent_runs",
+        "agent_sessions",
         "ai_executions",
         "ai_task_definitions",
         "alembic_version",
@@ -191,6 +194,9 @@ def test_baseline_migration_upgrades_downgrades_and_upgrades_again(
     command.upgrade(config, "head")
     tables_at_final_head, revisions_at_final_head = asyncio.run(database_state(postgresql_test_url))
     assert tables_at_final_head == [
+        "agent_run_events",
+        "agent_runs",
+        "agent_sessions",
         "ai_executions",
         "ai_task_definitions",
         "alembic_version",

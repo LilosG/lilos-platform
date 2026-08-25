@@ -1,0 +1,26 @@
+name: lilos
+version: 1.0.0
+description: "Governed LILOs tools scoped by the bound run; no credentials or provider mutations."
+author: LILOs
+kind: backend
+provides_tools:
+  - read_client_business_facts
+  - read_website_knowledge
+  - read_gbp_state
+  - read_gbp_recent_posts
+  - read_gsc_evidence
+  - read_ga4_evidence
+  - read_reviews_state
+  - read_content_inventory
+  - read_cross_product_summary
+  - run_site_crawl
+  - analyze_seo_opportunities
+  - create_seo_recommendation_proposal
+  - create_content_proposal
+  - create_content_brief
+  - generate_content_draft_proposal
+  - generate_gbp_post_proposal
+  - create_gbp_optimization_proposal
+  - draft_review_response_proposal
+  - inspect_workflow
+  - submit_for_approval

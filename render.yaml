@@ -56,6 +56,10 @@ services:
         generateValue: true
       - key: API_SERVER_MODEL_NAME
         value: hermes-agent
+      - key: HERMES_RUNTIME_VERSION
+        value: v2026.8.19
+      - key: HERMES_INFERENCE_PROVIDER
+        value: openrouter
       - key: HERMES_INFERENCE_MODEL
         value: deepseek/deepseek-v4-flash-0731
       - key: HERMES_MAX_ITERATIONS
@@ -64,6 +68,13 @@ services:
         value: "0"
       - key: OPENROUTER_API_KEY
         sync: false
+      - key: LILOS_TOOL_BASE_URL
+        fromService:
+          name: lilos-api
+          type: web
+          property: hostport
+      - key: LILOS_TOOL_API_KEY
+        generateValue: true
 
   - name: lilos-api
     type: web
@@ -128,6 +139,16 @@ services:
           name: lilos-hermes
           type: pserv
           envVarKey: API_SERVER_KEY
+      - key: LILOS_HERMES_TOOL_API_KEY
+        fromService:
+          name: lilos-hermes
+          type: pserv
+          envVarKey: LILOS_TOOL_API_KEY
+      - key: LILOS_HERMES_RUNTIME_RELEASE
+        fromService:
+          name: lilos-hermes
+          type: pserv
+          envVarKey: HERMES_RUNTIME_VERSION
 
   - name: lilos-worker
     type: worker
@@ -186,6 +207,11 @@ services:
           name: lilos-hermes
           type: pserv
           envVarKey: API_SERVER_KEY
+      - key: LILOS_HERMES_RUNTIME_RELEASE
+        fromService:
+          name: lilos-hermes
+          type: pserv
+          envVarKey: HERMES_RUNTIME_VERSION
 
   - name: lilos-scheduler
     type: worker
