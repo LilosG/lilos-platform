@@ -23,7 +23,7 @@ def normalize_hermes_base_url(base_url: str) -> str:
     if parsed.path not in {"", "/"} or parsed.query or parsed.fragment:
         raise ValueError("Hermes base URL must not contain a path, query, or fragment")
     try:
-        parsed.port
+        _ = parsed.port
     except ValueError as exc:
         raise ValueError("Hermes base URL contains an invalid port") from exc
 
