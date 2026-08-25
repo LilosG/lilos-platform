@@ -8,9 +8,7 @@ import {
 } from "./automation-agent-ui";
 import type { WorkflowRunSummary } from "./workflows";
 
-function agentRun(
-  overrides: Partial<AgentRunSummary> = {},
-): AgentRunSummary {
+function agentRun(overrides: Partial<AgentRunSummary> = {}): AgentRunSummary {
   return {
     id: "run-1",
     location_id: "location-1",
