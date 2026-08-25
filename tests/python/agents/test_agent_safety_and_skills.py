@@ -61,14 +61,14 @@ def test_complete_product_skill_and_sanctioned_tool_plane() -> None:
         "agent.insights",
     }
     expected_versions = {
-        "gbp.operator": 2,
+        "gbp.operator": 3,
         "seo.operator": 1,
         "content.operator": 1,
         "reviews.operator": 1,
         "insights.cross_product": 1,
     }
-    assert {key: skill.version for key, skill in SKILLS.items()} == expected_versions
     for skill in SKILLS.values():
+        assert skill.version == expected_versions[skill.key]
         assert set(skill.required_tools) <= set(TOOL_SPECS)
         assert "Never" in skill.instructions or "never" in skill.instructions
     assert not any("publish" in name and "proposal" not in name for name in TOOL_SPECS)

@@ -64,6 +64,14 @@ _SEASONAL_TERMS = {
 }
 
 
+class GBPProposalEnrichmentError(RuntimeError):
+    """Safe, operator-actionable enrichment failure without secret details."""
+
+    def __init__(self, safe_code: str, message: str) -> None:
+        self.safe_code = safe_code
+        super().__init__(message)
+
+
 @dataclass(frozen=True, slots=True)
 class GBPProposalEnrichment:
     call_to_action: dict[str, object] | None
@@ -92,7 +100,10 @@ class GBPPostProposalEnrichmentService:
     ) -> GBPProposalEnrichment:
         organization = await session.get(Organization, organization_id)
         if organization is None:
-            raise LookupError("organization not found")
+            raise GBPProposalEnrichmentError(
+                "GBP_ORGANIZATION_UNAVAILABLE",
+                "The bound client organization is unavailable for GBP proposal enrichment.",
+            )
 
         snapshot = await session.scalar(
             select(GBPProfileSnapshot)
@@ -104,17 +115,29 @@ class GBPPostProposalEnrichmentService:
             .limit(1)
         )
         profile = snapshot.normalized_profile if snapshot else {}
-        knowledge = await self.knowledge.retrieve_for_content(
-            session,
-            organization_id=organization_id,
-            location_id=location_id,
-            content_title=content[:300] or "Google Business Profile update",
-            audience="local prospective customers",
-            intent="select the most relevant client-owned landing page for this GBP post",
-            content_type="gbp_post",
-            limit=10,
-        )
+        try:
+            knowledge = await self.knowledge.retrieve_for_content(
+                session,
+                organization_id=organization_id,
+                location_id=location_id,
+                content_title=content[:300] or "Google Business Profile update",
+                audience="local prospective customers",
+                intent="select the most relevant client-owned landing page for this GBP post",
+                content_type="gbp_post",
+                limit=10,
+            )
+        except Exception as exc:
+            raise GBPProposalEnrichmentError(
+                "GBP_WEBSITE_KNOWLEDGE_UNAVAILABLE",
+                "Website knowledge could not be read for the GBP proposal.",
+            ) from exc
+
         target_url = self._select_target_url(profile, knowledge, content)
+        if target_url is None:
+            raise GBPProposalEnrichmentError(
+                "GBP_WEBSITE_TARGET_UNAVAILABLE",
+                "No client-owned website destination could be resolved for the GBP post.",
+            )
         call_to_action = self._safe_call_to_action(requested_call_to_action, target_url)
 
         asset = await self._attach_best_drive_image(
@@ -150,9 +173,22 @@ class GBPPostProposalEnrichmentService:
         if existing is not None:
             return existing
 
-        images = await self.drive.discover_images(settings, organization_name, limit=100)
-        if not images:
+        if not settings.google_drive_service_account_json:
             return None
+
+        try:
+            images = await self.drive.discover_images(settings, organization_name, limit=100)
+        except Exception as exc:
+            raise GBPProposalEnrichmentError(
+                "GBP_DRIVE_MEDIA_UNAVAILABLE",
+                "Google Drive media could not be read for this client. "
+                "Verify the configured Drive credential and folder access.",
+            ) from exc
+        if not images:
+            raise GBPProposalEnrichmentError(
+                "GBP_DRIVE_NO_ELIGIBLE_IMAGE",
+                "No eligible image was found in the client-scoped Google Drive folder tree.",
+            )
 
         recent_assets = list(
             await session.scalars(
@@ -172,7 +208,10 @@ class GBPPostProposalEnrichmentService:
         pool = unused or images
         selected = self._select_image(pool, content)
         if selected is None:
-            return None
+            raise GBPProposalEnrichmentError(
+                "GBP_DRIVE_NO_ELIGIBLE_IMAGE",
+                "No eligible image was found in the client-scoped Google Drive folder tree.",
+            )
 
         proxy_url = self.drive.public_proxy_url(
             settings,
@@ -180,7 +219,10 @@ class GBPPostProposalEnrichmentService:
             image=selected,
         )
         if not proxy_url:
-            return None
+            raise GBPProposalEnrichmentError(
+                "GBP_DRIVE_MEDIA_PROXY_UNAVAILABLE",
+                "The secure provider-media URL could not be created for the selected Drive image.",
+            )
 
         folder = self._folder_bucket(selected.path)
         asset = GBPPostAsset(
