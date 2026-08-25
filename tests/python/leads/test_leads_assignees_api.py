@@ -13,6 +13,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest
+from authorization.fixtures import add_effective_product_entitlement
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from starlette.testclient import TestClient
 
@@ -90,6 +91,12 @@ def assignees_client(
             )
             session.add_all([organization, other_organization])
             await session.flush()
+            await add_effective_product_entitlement(
+                session,
+                organization.id,
+                "leads",
+                correlation_id="leads-assignees-entitlement",
+            )
 
             viewer = UserProfile(
                 auth_user_id=uuid4(),

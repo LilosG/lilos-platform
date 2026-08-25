@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest
+from authorization.fixtures import add_effective_product_entitlement
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from starlette.testclient import TestClient
@@ -113,6 +114,12 @@ def reviews_client(
             profile = UserProfile(auth_user_id=uuid4(), status=UserStatus.ACTIVE, version=1)
             session.add_all([organization, other_organization, profile])
             await session.flush()
+            await add_effective_product_entitlement(
+                session,
+                organization.id,
+                "reviews",
+                correlation_id="reviews-api-entitlement",
+            )
 
             location = Location(
                 organization_id=organization.id,

@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest
+from authorization.fixtures import add_effective_product_entitlement
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from starlette.testclient import TestClient
@@ -109,6 +110,12 @@ def leads_client(
             other_profile = UserProfile(auth_user_id=uuid4(), status=UserStatus.ACTIVE, version=1)
             session.add_all([organization, other_organization, profile, other_profile])
             await session.flush()
+            await add_effective_product_entitlement(
+                session,
+                organization.id,
+                "leads",
+                correlation_id="leads-api-entitlement",
+            )
 
             location = Location(
                 organization_id=organization.id,
