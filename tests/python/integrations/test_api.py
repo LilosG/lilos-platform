@@ -212,12 +212,10 @@ def test_connect_without_effective_entitlement_is_blocked(
     response = client.post(
         f"/api/v1/organizations/{organization_id}/integrations/google/connect", headers=HEADERS
     )
-    assert response.status_code == 409, response.text
-    # Regression A: the connect route fails closed with the specific
-    # PRODUCT_NOT_READY code (not a generic 409) when no GBP entitlement
-    # exists. The frontend /gbp page keys its actionable message off this
-    # exact code.
-    assert response.json()["error"]["code"] == "PRODUCT_NOT_READY"
+    assert response.status_code == 403, response.text
+    # RR-1 intentionally denies the product-scoped permission at the shared
+    # authorization boundary when no effective entitlement exists.
+    assert response.json()["error"]["code"] == "AUTHORIZATION_DENIED"
 
 
 @pytest.mark.integration

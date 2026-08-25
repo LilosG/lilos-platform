@@ -12,5 +12,6 @@ class AuthorizationReason(StrEnum):
     LOCATION_NOT_FOUND = "location_not_found"
     PERMISSION_NOT_GRANTED = "permission_not_granted"
     EXPLICIT_DENY = "explicit_deny"
+    PRODUCT_ENTITLEMENT_NOT_EFFECTIVE = "product_entitlement_not_effective"
     INSUFFICIENT_ASSURANCE = "insufficient_assurance"
     CATALOG_INCONSISTENCY = "catalog_inconsistency"

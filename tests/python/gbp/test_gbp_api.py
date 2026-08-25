@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest
+from authorization.fixtures import add_effective_product_entitlement
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from starlette.testclient import TestClient
@@ -89,6 +90,12 @@ def gbp_client(
             profile = UserProfile(auth_user_id=uuid4(), status=UserStatus.ACTIVE, version=1)
             session.add_all([organization, other_organization, profile])
             await session.flush()
+            await add_effective_product_entitlement(
+                session,
+                organization.id,
+                "gbp",
+                correlation_id="gbp-api-entitlement",
+            )
 
             location = Location(
                 organization_id=organization.id,
