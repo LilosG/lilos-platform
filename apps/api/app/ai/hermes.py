@@ -19,6 +19,7 @@ from uuid import UUID
 import httpx
 
 from apps.api.app.ai.errors import AIProviderConfigurationError, AIProviderError
+from apps.api.app.ai.hermes_endpoint import normalize_hermes_base_url
 from apps.api.app.ai.providers import _SYSTEM_PROMPT, _build_prompt, _classify_http_error
 
 logger = logging.getLogger(__name__)
@@ -38,13 +39,12 @@ class HermesAgentProvider:
     ) -> None:
         if not api_key or not api_key.strip():
             raise AIProviderConfigurationError("Hermes API key is required when ai_provider=hermes")
-        normalized_base_url = base_url.strip().rstrip("/")
-        if not normalized_base_url:
+        try:
+            normalized_base_url = normalize_hermes_base_url(base_url)
+        except ValueError as exc:
             raise AIProviderConfigurationError(
-                "Hermes base URL is required when ai_provider=hermes"
-            )
-        if not normalized_base_url.startswith(("http://", "https://")):
-            normalized_base_url = f"http://{normalized_base_url}"
+                "Hermes base URL is invalid when ai_provider=hermes"
+            ) from exc
 
         self._api_key = api_key.strip()
         self._base_url = normalized_base_url
