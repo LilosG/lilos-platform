@@ -157,9 +157,17 @@ class HermesRunsClient:
             raise HermesRuntimeError(
                 "HERMES_CAPABILITIES_INVALID", "Hermes capabilities are invalid"
             )
-        if any(not isinstance(value, bool) for value in features.values()):
+        invalid_required_features = tuple(
+            sorted(
+                name
+                for name in REQUIRED_FEATURES
+                if not isinstance(features.get(name), bool)
+            )
+        )
+        if invalid_required_features:
             raise HermesRuntimeError(
-                "HERMES_CAPABILITIES_INVALID", "Hermes feature values must be boolean"
+                "HERMES_CAPABILITIES_INVALID",
+                "Hermes required feature values must be boolean",
             )
         for endpoint_name, (required_method, required_path) in REQUIRED_ENDPOINTS.items():
             endpoint = endpoints.get(endpoint_name)
@@ -193,7 +201,9 @@ class HermesRunsClient:
             raise HermesRuntimeError(
                 "HERMES_TOOLSET_MISMATCH", "Hermes sanctioned tool contract does not match LILOs"
             )
-        normalized = {str(key): value for key, value in features.items()}
+        normalized = {
+            str(key): value for key, value in features.items() if isinstance(value, bool)
+        }
         capabilities = HermesCapabilities(
             runtime_version=str(health.get("version") or "unknown"),
             model=str(payload.get("model") or "unknown"),
