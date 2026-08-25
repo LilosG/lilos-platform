@@ -244,23 +244,46 @@ class GoogleBusinessProfileAdapter:
 
         raise ValueError("provider review pagination exceeded safety limit")
 
-    async def create_local_post(
-        self, access_token: str, location_name: str, post_body: dict[str, Any]
-    ) -> dict[str, Any]:
-        """POST {location_name}/localPosts — create a Local Post."""
-        post_type = post_body.get("postType")
+    @staticmethod
+    def _local_post_provider_body(post_body: dict[str, Any]) -> dict[str, Any]:
+        """Translate the LILOs Local Post contract to Google's v4 wire schema."""
+        raw_post_type = post_body.get("topicType", post_body.get("postType"))
+        post_type = str(raw_post_type or "").upper()
         if post_type not in SUPPORTED_POST_TYPES:
-            raise ValueError(f"unsupported GBP post type: {post_type}")
-        cta = post_body.get("callToAction")
+            raise ValueError(f"unsupported GBP post type: {raw_post_type}")
+
+        raw_summary = post_body.get("summary", post_body.get("text"))
+        if not isinstance(raw_summary, str) or not raw_summary.strip():
+            raise ValueError("GBP Local Post summary is required")
+
+        provider_body = {
+            key: value
+            for key, value in post_body.items()
+            if key not in {"postType", "text", "topicType", "summary"}
+        }
+        provider_body["topicType"] = post_type
+        provider_body["summary"] = raw_summary
+
+        cta = provider_body.get("callToAction")
         if cta is not None:
+            if not isinstance(cta, dict):
+                raise ValueError("invalid GBP CTA payload")
             cta_type = cta.get("actionType")
             if cta_type not in SUPPORTED_CTA_TYPES:
                 raise ValueError(f"unsupported GBP CTA action type: {cta_type}")
+
+        return provider_body
+
+    async def create_local_post(
+        self, access_token: str, location_name: str, post_body: dict[str, Any]
+    ) -> dict[str, Any]:
+        """POST {location_name}/localPosts using Google's canonical LocalPost fields."""
+        provider_body = self._local_post_provider_body(post_body)
         return await self._request(
             "POST",
             f"{MYBUSINESS_BASE}/{location_name}/localPosts",
             access_token,
-            json=post_body,
+            json=provider_body,
         )
 
     async def get_local_post(self, access_token: str, post_name: str) -> dict[str, Any]:
