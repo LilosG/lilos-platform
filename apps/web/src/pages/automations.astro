@@ -780,7 +780,8 @@ import "../styles/automations.css";
               }
             }
             agentHasActiveRuns =
-              Boolean(pendingAgentSelection) || runs.data.some(agentRunIsActive);
+              Boolean(pendingAgentSelection) ||
+              runs.data.some(agentRunIsActive);
             renderAgentRuns(runs.data);
           } else {
             agentHasActiveRuns = Boolean(pendingAgentSelection);
@@ -1014,7 +1015,9 @@ import "../styles/automations.css";
           metricCard(
             "Needs attention",
             runs ? String(failed ?? 0) : "No data",
-            runs ? "Latest unresolved workflow failures" : "Run history unavailable",
+            runs
+              ? "Latest unresolved workflow failures"
+              : "Run history unavailable",
           ),
         );
       }
