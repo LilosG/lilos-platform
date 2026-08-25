@@ -1,4 +1,4 @@
-"""Unit coverage for Google Business Profile adapter pagination."""
+"""Unit coverage for Google Business Profile adapter contracts."""
 
 from typing import Any
 
@@ -235,3 +235,67 @@ async def test_list_reviews_rejects_provider_total_mismatch_as_incomplete() -> N
         await adapter.list_reviews("token", "accounts/1/locations/2")
 
     assert len(adapter.calls) == 1
+
+
+@pytest.mark.anyio
+async def test_create_local_post_translates_internal_fields_to_google_v4_contract() -> None:
+    adapter = StubGoogleBusinessProfileAdapter(
+        [{"name": "accounts/1/locations/2/localPosts/3", "state": "PROCESSING"}]
+    )
+
+    result = await adapter.create_local_post(
+        "token",
+        "accounts/1/locations/2",
+        {
+            "languageCode": "en-US",
+            "postType": "STANDARD",
+            "text": "A grounded post for a local electrician.",
+        },
+    )
+
+    assert result["name"] == "accounts/1/locations/2/localPosts/3"
+    assert adapter.calls[0]["url"] == f"{MYBUSINESS_BASE}/accounts/1/locations/2/localPosts"
+    assert adapter.calls[0]["json"] == {
+        "languageCode": "en-US",
+        "topicType": "STANDARD",
+        "summary": "A grounded post for a local electrician.",
+    }
+    assert "postType" not in adapter.calls[0]["json"]
+    assert "text" not in adapter.calls[0]["json"]
+
+
+@pytest.mark.anyio
+async def test_create_local_post_preserves_canonical_google_fields() -> None:
+    adapter = StubGoogleBusinessProfileAdapter(
+        [{"name": "accounts/1/locations/2/localPosts/4", "state": "LIVE"}]
+    )
+
+    await adapter.create_local_post(
+        "token",
+        "accounts/1/locations/2",
+        {
+            "topicType": "STANDARD",
+            "summary": "Canonical provider body.",
+            "callToAction": {"actionType": "LEARN_MORE", "url": "https://example.com"},
+        },
+    )
+
+    assert adapter.calls[0]["json"] == {
+        "topicType": "STANDARD",
+        "summary": "Canonical provider body.",
+        "callToAction": {"actionType": "LEARN_MORE", "url": "https://example.com"},
+    }
+
+
+@pytest.mark.anyio
+async def test_create_local_post_rejects_missing_summary_before_provider_call() -> None:
+    adapter = StubGoogleBusinessProfileAdapter([])
+
+    with pytest.raises(ValueError, match="summary is required"):
+        await adapter.create_local_post(
+            "token",
+            "accounts/1/locations/2",
+            {"postType": "STANDARD", "text": "   "},
+        )
+
+    assert adapter.calls == []
