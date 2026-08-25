@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { canControlAgent, type AgentCapabilities } from "./agents";
+import {
+  agentSkillForWorkflow,
+  canControlAgent,
+  type AgentCapabilities,
+} from "./agents";
 
 const available: AgentCapabilities = {
   available: true,
@@ -30,5 +34,16 @@ describe("Hermes capability-gated controls", () => {
         "run_stop",
       ),
     ).toBe(false);
+  });
+});
+
+describe("governed workflow skill mapping", () => {
+  it("keeps SEO and Content on distinct governed skills", () => {
+    expect(agentSkillForWorkflow("agent.seo")).toBe("seo.operator");
+    expect(agentSkillForWorkflow("agent.content")).toBe("content.operator");
+  });
+
+  it("fails closed for unknown agent workflows", () => {
+    expect(agentSkillForWorkflow("agent.unknown")).toBeNull();
   });
 });
