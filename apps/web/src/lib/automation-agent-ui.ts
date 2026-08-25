@@ -59,10 +59,7 @@ export function actionableWorkflowFailureCount(
     const workflowIdentity = run.workflow_key ?? run.workflow_name ?? run.id;
     const key = `${workflowIdentity}:${run.location_id ?? "organization"}`;
     const current = latestByScope.get(key);
-    if (
-      !current ||
-      timestamp(run.created_at) > timestamp(current.created_at)
-    ) {
+    if (!current || timestamp(run.created_at) > timestamp(current.created_at)) {
       latestByScope.set(key, run);
     }
   }
@@ -89,7 +86,10 @@ export function presentAgentEvent(
   }
   if (event.event_type === "tool.completed") {
     if (event.event_document.error === true) {
-      return { label: `${toolName(event)} returned an error`, outcome: "danger" };
+      return {
+        label: `${toolName(event)} returned an error`,
+        outcome: "danger",
+      };
     }
     return { label: `Completed ${toolName(event)}`, outcome: "success" };
   }
