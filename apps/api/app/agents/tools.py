@@ -35,7 +35,7 @@ from apps.api.app.products.content.models import ContentBrief, ContentOpportunit
 from apps.api.app.products.content.service import ContentService
 from apps.api.app.products.gbp.models import GBPLocation, GBPProfileSnapshot
 from apps.api.app.products.gbp.operations_contracts import ChangeSetPropose, PostRevisionCreate
-from apps.api.app.products.gbp.operations_models import GBPProviderPost
+from apps.api.app.products.gbp.operations_models import GBPPostRevision, GBPProviderPost
 from apps.api.app.products.gbp.operations_service import GBPOperationsService
 from apps.api.app.products.gbp.post_generation_models import GBPPostAsset
 from apps.api.app.products.gbp.proposal_enrichment import GBPPostProposalEnrichmentService
@@ -315,7 +315,7 @@ class AgentToolService:
             if item.location_id == run.location_id
         ]
         if len(matches) != 1:
-            raise AgentToolDeniedError("exactly one confirmed GBP location mapping is required")
+            raise AgentToolDeniedError("exactly one confirmed GBP mapping is required")
         return matches[0]
 
     async def _tool_read_client_business_facts(
@@ -911,10 +911,11 @@ class AgentToolService:
             actor_id=None,
             correlation_id=run.correlation_id,
         )
+        settings = Settings()
         try:
             enrichment = await self.gbp_post_enrichment.enrich(
                 session,
-                Settings(),
+                settings,
                 organization_id=run.organization_id,
                 location_id=run.location_id,
                 gbp_location=location,
@@ -935,7 +936,7 @@ class AgentToolService:
             raise AgentToolDeniedError(
                 "GBP post proposal requires a client-owned website CTA before approval"
             )
-        if Settings().google_drive_service_account_json and enrichment.asset is None:
+        if settings.google_drive_service_account_json and enrichment.asset is None:
             await session.delete(revision)
             await session.flush()
             raise AgentToolDeniedError(
@@ -1046,9 +1047,14 @@ class AgentToolService:
             raise AgentToolDeniedError("proposal was not created by this bound agent run")
         if ref.startswith("gbp-post-revision:"):
             revision_id = _uuid(ref.removeprefix("gbp-post-revision:"), "GBP post revision")
-            revision = await self.gbp_operations.get_post_revision(
-                session, run.organization_id, revision_id
+            revision = await session.scalar(
+                select(GBPPostRevision).where(
+                    GBPPostRevision.organization_id == run.organization_id,
+                    GBPPostRevision.id == revision_id,
+                )
             )
+            if revision is None:
+                raise AgentToolDeniedError("GBP post proposal is outside the bound organization")
             if not revision.call_to_action or not revision.call_to_action.get("url"):
                 raise AgentToolDeniedError("GBP post proposal is missing its client-owned CTA")
             if Settings().google_drive_service_account_json:
