@@ -247,9 +247,7 @@ async def test_governed_post_missing_media_never_dispatches_to_google(
     handler_mod._token_resolver = _fake_token_resolver
     try:
         async with clean_session_factory() as session:
-            org_id, location_id, publication_id = await _seed_publication(
-                session, with_asset=False
-            )
+            org_id, location_id, publication_id = await _seed_publication(session, with_asset=False)
             publication = await session.get(GBPPostPublication, publication_id)
             assert publication is not None
             outcome = await _handle_gbp_publish_post(
@@ -315,9 +313,7 @@ async def test_governed_post_verifies_exact_media_and_cta_delivery(
     )
     try:
         async with clean_session_factory() as session:
-            org_id, location_id, publication_id = await _seed_publication(
-                session, with_asset=True
-            )
+            org_id, location_id, publication_id = await _seed_publication(session, with_asset=True)
             publication = await session.get(GBPPostPublication, publication_id)
             assert publication is not None
             outcome = await _handle_gbp_publish_post(
@@ -393,9 +389,7 @@ async def test_live_post_missing_media_reconciles_without_duplicate_create(
     )
     try:
         async with clean_session_factory() as session:
-            org_id, location_id, publication_id = await _seed_publication(
-                session, with_asset=True
-            )
+            org_id, location_id, publication_id = await _seed_publication(session, with_asset=True)
             publication = await session.get(GBPPostPublication, publication_id)
             assert publication is not None
             workflow_run_id = publication.workflow_run_id
