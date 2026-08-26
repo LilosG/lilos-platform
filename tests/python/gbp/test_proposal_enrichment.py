@@ -1,7 +1,16 @@
 """Focused tests for deterministic GBP proposal enrichment."""
 
+from unittest.mock import AsyncMock
+from uuid import uuid4
+
+import pytest
+
+from apps.api.app.config import Settings
 from apps.api.app.integrations.google_drive_media import DriveImage
-from apps.api.app.products.gbp.proposal_enrichment import GBPPostProposalEnrichmentService
+from apps.api.app.products.gbp.proposal_enrichment import (
+    GBPPostProposalEnrichmentService,
+    GBPProposalEnrichmentError,
+)
 
 
 def _image(name: str, path: str, modified: str = "2026-08-25T12:00:00Z") -> DriveImage:
@@ -97,3 +106,23 @@ def test_cta_rejects_external_model_url_and_uses_client_target() -> None:
     )
 
     assert cta == {"actionType": "LEARN_MORE", "url": target}
+
+
+@pytest.mark.anyio
+async def test_drive_media_is_required_for_automated_proposals() -> None:
+    service = GBPPostProposalEnrichmentService()
+    session = AsyncMock()
+    session.scalar.return_value = None
+    settings = Settings(google_drive_service_account_json=None)
+
+    with pytest.raises(GBPProposalEnrichmentError) as exc_info:
+        await service._attach_best_drive_image(
+            session,
+            settings,
+            organization_id=uuid4(),
+            organization_name="Wheyland Electric",
+            post_revision_id=uuid4(),
+            content="Electrical panel upgrade in Carlsbad.",
+        )
+
+    assert exc_info.value.safe_code == "GBP_DRIVE_MEDIA_NOT_CONFIGURED"

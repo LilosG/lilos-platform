@@ -174,7 +174,11 @@ class GBPPostProposalEnrichmentService:
             return existing
 
         if not settings.google_drive_service_account_json:
-            return None
+            raise GBPProposalEnrichmentError(
+                "GBP_DRIVE_MEDIA_NOT_CONFIGURED",
+                "Google Drive media is required for automated GBP posts but the production "
+                "Drive credential is not configured.",
+            )
 
         try:
             images = await self.drive.discover_images(settings, organization_name, limit=100)
