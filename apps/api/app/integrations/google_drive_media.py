@@ -22,6 +22,27 @@ from apps.api.app.config import Settings
 
 DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.readonly"
 DRIVE_FILES_ENDPOINT = "https://www.googleapis.com/drive/v3/files"
+GBP_PHOTO_MIME_TYPES = frozenset({"image/jpeg", "image/png"})
+GBP_PHOTO_MIN_BYTES = 10 * 1024
+GBP_PHOTO_MAX_BYTES = 5 * 1024 * 1024
+GBP_PHOTO_MIN_DIMENSION = 250
+
+
+class ProviderMediaPreflightError(RuntimeError):
+    """Safe provider-media failure detected before any Google post write."""
+
+    def __init__(self, safe_code: str, message: str, *, retryable: bool) -> None:
+        self.safe_code = safe_code
+        self.retryable = retryable
+        super().__init__(message)
+
+
+@dataclass(frozen=True, slots=True)
+class ProviderMediaPreflight:
+    mime_type: str
+    size_bytes: int
+    width_pixels: int
+    height_pixels: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -119,6 +140,101 @@ class GoogleDriveMediaService:
             )
         response.raise_for_status()
         return response.content, response.headers.get("content-type", mime_type)
+
+    async def preflight_public_url(
+        self,
+        url: str,
+        *,
+        client: httpx.AsyncClient | None = None,
+    ) -> ProviderMediaPreflight:
+        """Prove the exact Local Post source URL is anonymously fetchable and eligible.
+
+        Google Local Posts ingest media from ``sourceUrl`` server-to-server. The
+        worker therefore validates both HEAD and GET semantics over the public
+        HTTPS URL immediately before dispatch, then enforces Google's documented
+        JPG/PNG, size, and minimum-dimension requirements on the returned bytes.
+        """
+        parsed = urlsplit(url)
+        if parsed.scheme != "https" or not parsed.netloc:
+            raise ProviderMediaPreflightError(
+                "POST_MEDIA_URL_NOT_HTTPS",
+                "The provider-media source URL is not a public HTTPS URL.",
+                retryable=False,
+            )
+
+        owns_client = client is None
+        http_client = client or httpx.AsyncClient(
+            timeout=self.timeout_seconds,
+            follow_redirects=False,
+        )
+        try:
+            try:
+                head = await http_client.head(
+                    url,
+                    headers={"Accept": "image/jpeg,image/png"},
+                )
+                if head.status_code != 200:
+                    raise ProviderMediaPreflightError(
+                        "POST_MEDIA_PROXY_UNREACHABLE",
+                        "The provider-media source URL did not accept an anonymous HEAD request.",
+                        retryable=True,
+                    )
+                response = await http_client.get(
+                    url,
+                    headers={"Accept": "image/jpeg,image/png"},
+                )
+            except ProviderMediaPreflightError:
+                raise
+            except httpx.HTTPError as exc:
+                raise ProviderMediaPreflightError(
+                    "POST_MEDIA_PROXY_UNREACHABLE",
+                    "The provider-media source URL could not be fetched anonymously.",
+                    retryable=True,
+                ) from exc
+
+            if response.status_code != 200:
+                raise ProviderMediaPreflightError(
+                    "POST_MEDIA_PROXY_UNREACHABLE",
+                    "The provider-media source URL did not return HTTP 200.",
+                    retryable=True,
+                )
+            mime_type = response.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+            if mime_type not in GBP_PHOTO_MIME_TYPES:
+                raise ProviderMediaPreflightError(
+                    "POST_MEDIA_FORMAT_UNSUPPORTED",
+                    "The selected GBP post image is not a JPG or PNG image.",
+                    retryable=False,
+                )
+            size_bytes = len(response.content)
+            if not GBP_PHOTO_MIN_BYTES <= size_bytes <= GBP_PHOTO_MAX_BYTES:
+                raise ProviderMediaPreflightError(
+                    "POST_MEDIA_SIZE_INVALID",
+                    "The selected GBP post image is outside Google's supported file-size range.",
+                    retryable=False,
+                )
+            dimensions = self._image_dimensions(response.content, mime_type)
+            if dimensions is None:
+                raise ProviderMediaPreflightError(
+                    "POST_MEDIA_DIMENSIONS_UNREADABLE",
+                    "The selected GBP post image dimensions could not be validated.",
+                    retryable=False,
+                )
+            width_pixels, height_pixels = dimensions
+            if width_pixels < GBP_PHOTO_MIN_DIMENSION or height_pixels < GBP_PHOTO_MIN_DIMENSION:
+                raise ProviderMediaPreflightError(
+                    "POST_MEDIA_DIMENSIONS_INVALID",
+                    "The selected GBP post image is below Google's minimum resolution.",
+                    retryable=False,
+                )
+            return ProviderMediaPreflight(
+                mime_type=mime_type,
+                size_bytes=size_bytes,
+                width_pixels=width_pixels,
+                height_pixels=height_pixels,
+            )
+        finally:
+            if owns_client:
+                await http_client.aclose()
 
     def public_proxy_url(
         self,
@@ -252,6 +368,60 @@ class GoogleDriveMediaService:
             if not page_token:
                 return results
         raise RuntimeError("Google Drive file discovery exceeded pagination limit")
+
+    @staticmethod
+    def _image_dimensions(content: bytes, mime_type: str) -> tuple[int, int] | None:
+        if mime_type == "image/png":
+            if len(content) < 24 or content[:8] != b"\x89PNG\r\n\x1a\n":
+                return None
+            width = int.from_bytes(content[16:20], "big")
+            height = int.from_bytes(content[20:24], "big")
+            return (width, height) if width > 0 and height > 0 else None
+
+        if mime_type != "image/jpeg" or len(content) < 4 or content[:2] != b"\xff\xd8":
+            return None
+        sof_markers = {
+            0xC0,
+            0xC1,
+            0xC2,
+            0xC3,
+            0xC5,
+            0xC6,
+            0xC7,
+            0xC9,
+            0xCA,
+            0xCB,
+            0xCD,
+            0xCE,
+            0xCF,
+        }
+        standalone_markers = {0x01, 0xD8, 0xD9, *range(0xD0, 0xD8)}
+        index = 2
+        while index + 3 < len(content):
+            if content[index] != 0xFF:
+                index += 1
+                continue
+            while index < len(content) and content[index] == 0xFF:
+                index += 1
+            if index >= len(content):
+                return None
+            marker = content[index]
+            index += 1
+            if marker in standalone_markers:
+                continue
+            if index + 2 > len(content):
+                return None
+            segment_length = int.from_bytes(content[index : index + 2], "big")
+            if segment_length < 2 or index + segment_length > len(content):
+                return None
+            if marker in sof_markers:
+                if segment_length < 7:
+                    return None
+                height = int.from_bytes(content[index + 3 : index + 5], "big")
+                width = int.from_bytes(content[index + 5 : index + 7], "big")
+                return (width, height) if width > 0 and height > 0 else None
+            index += segment_length
+        return None
 
     @classmethod
     def _path_for(cls, item: dict[str, Any], folders: dict[str, dict[str, Any]]) -> str:
