@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from datetime import UTC, datetime
-from typing import Any, Awaitable
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import select
@@ -18,7 +18,6 @@ from apps.api.app.integrations.errors import (
     IntegrationReconnectRequiredError,
 )
 from apps.api.app.integrations.google_drive_media import DriveImage, GoogleDriveMediaService
-from apps.api.app.integrations.models import IntegrationConnection
 from apps.api.app.integrations.secrets import SecretUnavailableError
 from apps.api.app.products.gbp.adapter import GBPAdapter
 from apps.api.app.products.gbp.models import GBPAccount, GBPLocation
@@ -35,9 +34,7 @@ from apps.api.app.products.gbp.resource_names import v4_localposts_parent
 logger = logging.getLogger(__name__)
 
 AdapterFactory = Callable[[], GBPAdapter]
-TokenResolver = Callable[
-    [AsyncSession, UUID], Awaitable[tuple[str, IntegrationConnection]]
-]
+TokenResolver = Callable[[AsyncSession, UUID], Any]
 ProviderWriteGate = Callable[[], bool]
 
 
@@ -287,6 +284,7 @@ async def handle_gbp_publish_post(
             return JobOutcome(result="retryable_failure", safe_error="VERIFICATION_REREAD_FAILED")
         return await _apply_provider_verification(
             session,
+            organization_id=organization_id,
             publication_id=publication_id,
             provider_post=re_read,
             revision=revision,
@@ -379,6 +377,7 @@ async def handle_gbp_publish_post(
 
     return await _apply_provider_verification(
         session,
+        organization_id=organization_id,
         publication_id=publication_id,
         provider_post=re_read,
         revision=revision,
@@ -389,6 +388,7 @@ async def handle_gbp_publish_post(
 async def _apply_provider_verification(
     session: AsyncSession,
     *,
+    organization_id: UUID,
     publication_id: UUID,
     provider_post: dict[str, Any],
     revision: GBPPostRevision,
@@ -397,7 +397,10 @@ async def _apply_provider_verification(
     provider_state = str(provider_post.get("state", "")).upper()
     publication = await session.scalar(
         select(GBPPostPublication)
-        .where(GBPPostPublication.id == publication_id)
+        .where(
+            GBPPostPublication.organization_id == organization_id,
+            GBPPostPublication.id == publication_id,
+        )
         .with_for_update()
     )
     if publication is None:
