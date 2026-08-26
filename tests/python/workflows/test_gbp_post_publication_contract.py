@@ -18,6 +18,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from apps.api.app.authentication.models import UserProfile
 from apps.api.app.execution.handlers import _handle_gbp_publish_post
 from apps.api.app.execution.models import WorkflowDefinition, WorkflowRun, WorkflowVersion
+from apps.api.app.integrations.google_drive_media import (
+    ProviderMediaPreflight,
+    ProviderMediaPreflightError,
+)
 from apps.api.app.integrations.models import IntegrationConnection, Provider
 from apps.api.app.locations.enums import LocationStatus, LocationType
 from apps.api.app.locations.models import Location
@@ -31,6 +35,7 @@ ROOT = Path(__file__).resolve().parents[3]
 TARGET_URL = "https://example.com/electrical-panel-upgrades/"
 POST_CONTENT = "Electrical panel upgrade planning for Carlsbad homeowners."
 POST_RESOURCE = "accounts/123/locations/456/localPosts/contract-proof"
+PROVIDER_MEDIA_URL = "https://api.example.invalid/provider-media/image-token"
 
 
 @pytest.fixture
@@ -60,6 +65,17 @@ async def _fake_token_resolver(
     )
     assert connection is not None
     return "fake-access-token", connection
+
+
+async def _successful_media_preflight(
+    *args: object, **kwargs: object
+) -> ProviderMediaPreflight:
+    return ProviderMediaPreflight(
+        mime_type="image/jpeg",
+        size_bytes=100_000,
+        width_pixels=1200,
+        height_pixels=900,
+    )
 
 
 async def _seed_publication(
@@ -247,7 +263,9 @@ async def test_governed_post_missing_media_never_dispatches_to_google(
     handler_mod._token_resolver = _fake_token_resolver
     try:
         async with clean_session_factory() as session:
-            org_id, location_id, publication_id = await _seed_publication(session, with_asset=False)
+            org_id, location_id, publication_id = await _seed_publication(
+                session, with_asset=False
+            )
             publication = await session.get(GBPPostPublication, publication_id)
             assert publication is not None
             outcome = await _handle_gbp_publish_post(
@@ -266,6 +284,74 @@ async def test_governed_post_missing_media_never_dispatches_to_google(
             refreshed = await session.get(GBPPostPublication, publication_id)
             assert refreshed is not None
             assert refreshed.status == "failed"
+            assert refreshed.dispatched_at is None
+            assert refreshed.provider_post_id is None
+    finally:
+        handler_mod._adapter_factory = original_factory
+        handler_mod._token_resolver = original_resolver
+
+
+@pytest.mark.integration
+@pytest.mark.anyio
+async def test_unreachable_provider_media_never_dispatches_to_google(
+    clean_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from apps.api.app.execution import handlers as handler_mod
+
+    create_calls = 0
+
+    class NoWriteAdapter:
+        async def create_local_post(
+            self, access_token: str, location_name: str, post_body: dict[str, Any]
+        ) -> dict[str, Any]:
+            nonlocal create_calls
+            create_calls += 1
+            raise AssertionError("Google write must not occur when media preflight fails")
+
+    async def fail_preflight(*args: object, **kwargs: object) -> ProviderMediaPreflight:
+        raise ProviderMediaPreflightError(
+            "POST_MEDIA_PROXY_UNREACHABLE",
+            "provider media is unavailable",
+            retryable=True,
+        )
+
+    original_factory = handler_mod._adapter_factory
+    original_resolver = handler_mod._token_resolver
+    handler_mod._adapter_factory = NoWriteAdapter  # type: ignore[assignment]
+    handler_mod._token_resolver = _fake_token_resolver
+    monkeypatch.setattr(
+        "apps.api.app.products.gbp.post_publish_handler.GoogleDriveMediaService.public_proxy_url",
+        lambda *args, **kwargs: PROVIDER_MEDIA_URL,
+    )
+    monkeypatch.setattr(
+        "apps.api.app.products.gbp.post_publish_handler.GoogleDriveMediaService.preflight_public_url",
+        fail_preflight,
+    )
+    try:
+        async with clean_session_factory() as session:
+            org_id, location_id, publication_id = await _seed_publication(
+                session, with_asset=True
+            )
+            publication = await session.get(GBPPostPublication, publication_id)
+            assert publication is not None
+            outcome = await _handle_gbp_publish_post(
+                session,
+                organization_id=org_id,
+                location_id=location_id,
+                input_document={"publication_id": str(publication_id)},
+                correlation_id="unreachable-provider-media",
+                workflow_run_id=publication.workflow_run_id,
+            )
+
+        assert outcome.result == "retryable_failure"
+        assert outcome.safe_error == "POST_MEDIA_PROXY_UNREACHABLE"
+        assert create_calls == 0
+        async with clean_session_factory() as session:
+            refreshed = await session.get(GBPPostPublication, publication_id)
+            assert refreshed is not None
+            assert refreshed.status == "reserved"
+            assert refreshed.safe_error_code == "POST_MEDIA_PROXY_UNREACHABLE"
             assert refreshed.dispatched_at is None
             assert refreshed.provider_post_id is None
     finally:
@@ -309,11 +395,17 @@ async def test_governed_post_verifies_exact_media_and_cta_delivery(
     handler_mod._token_resolver = _fake_token_resolver
     monkeypatch.setattr(
         "apps.api.app.products.gbp.post_publish_handler.GoogleDriveMediaService.public_proxy_url",
-        lambda *args, **kwargs: "https://api.example.invalid/provider-media/image-token",
+        lambda *args, **kwargs: PROVIDER_MEDIA_URL,
+    )
+    monkeypatch.setattr(
+        "apps.api.app.products.gbp.post_publish_handler.GoogleDriveMediaService.preflight_public_url",
+        _successful_media_preflight,
     )
     try:
         async with clean_session_factory() as session:
-            org_id, location_id, publication_id = await _seed_publication(session, with_asset=True)
+            org_id, location_id, publication_id = await _seed_publication(
+                session, with_asset=True
+            )
             publication = await session.get(GBPPostPublication, publication_id)
             assert publication is not None
             outcome = await _handle_gbp_publish_post(
@@ -334,7 +426,7 @@ async def test_governed_post_verifies_exact_media_and_cta_delivery(
         assert published_body["media"] == [
             {
                 "mediaFormat": "PHOTO",
-                "sourceUrl": "https://api.example.invalid/provider-media/image-token",
+                "sourceUrl": PROVIDER_MEDIA_URL,
             }
         ]
         async with clean_session_factory() as session:
@@ -358,6 +450,8 @@ async def test_live_post_missing_media_reconciles_without_duplicate_create(
 
     create_calls = 0
     read_calls = 0
+    proxy_calls = 0
+    preflight_calls = 0
 
     class MissingMediaAdapter:
         async def create_local_post(
@@ -379,17 +473,37 @@ async def test_live_post_missing_media_reconciles_without_duplicate_create(
                 "media": [],
             }
 
+    def proxy_url(*args: object, **kwargs: object) -> str:
+        nonlocal proxy_calls
+        proxy_calls += 1
+        if proxy_calls > 1:
+            raise AssertionError("reconciliation must not regenerate provider media")
+        return PROVIDER_MEDIA_URL
+
+    async def preflight(*args: object, **kwargs: object) -> ProviderMediaPreflight:
+        nonlocal preflight_calls
+        preflight_calls += 1
+        if preflight_calls > 1:
+            raise AssertionError("reconciliation must not preflight provider media")
+        return await _successful_media_preflight()
+
     original_factory = handler_mod._adapter_factory
     original_resolver = handler_mod._token_resolver
     handler_mod._adapter_factory = MissingMediaAdapter  # type: ignore[assignment]
     handler_mod._token_resolver = _fake_token_resolver
     monkeypatch.setattr(
         "apps.api.app.products.gbp.post_publish_handler.GoogleDriveMediaService.public_proxy_url",
-        lambda *args, **kwargs: "https://api.example.invalid/provider-media/image-token",
+        proxy_url,
+    )
+    monkeypatch.setattr(
+        "apps.api.app.products.gbp.post_publish_handler.GoogleDriveMediaService.preflight_public_url",
+        preflight,
     )
     try:
         async with clean_session_factory() as session:
-            org_id, location_id, publication_id = await _seed_publication(session, with_asset=True)
+            org_id, location_id, publication_id = await _seed_publication(
+                session, with_asset=True
+            )
             publication = await session.get(GBPPostPublication, publication_id)
             assert publication is not None
             workflow_run_id = publication.workflow_run_id
@@ -416,6 +530,8 @@ async def test_live_post_missing_media_reconciles_without_duplicate_create(
         assert second.safe_error == "POST_MEDIA_MISSING"
         assert create_calls == 1
         assert read_calls == 2
+        assert proxy_calls == 1
+        assert preflight_calls == 1
         async with clean_session_factory() as session:
             refreshed = await session.get(GBPPostPublication, publication_id)
             assert refreshed is not None
