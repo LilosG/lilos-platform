@@ -157,11 +157,13 @@ async def test_provider_media_route_supports_anonymous_head(
     application.state.settings = settings
     application.include_router(provider_media.router)
 
-    async def fake_fetch_image(settings: Settings, token: str) -> tuple[bytes, str]:
+    async def fake_fetch_image(
+        _self: GoogleDriveMediaService, settings: Settings, token: str
+    ) -> tuple[bytes, str]:
         assert token == "signed-token"
         return content, "image/png"
 
-    monkeypatch.setattr(provider_media.service, "fetch_image", fake_fetch_image)
+    monkeypatch.setattr(GoogleDriveMediaService, "fetch_image", fake_fetch_image)
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=application),
         base_url="https://lilos-api.onrender.com",
