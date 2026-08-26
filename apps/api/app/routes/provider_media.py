@@ -33,6 +33,7 @@ async def google_drive_media(
         ) from exc
     headers = {
         "Cache-Control": "public, max-age=3600, immutable",
+        "Content-Disposition": "inline",
         "X-Content-Type-Options": "nosniff",
         "Content-Length": str(len(content)),
     }
