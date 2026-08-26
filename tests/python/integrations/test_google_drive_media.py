@@ -30,10 +30,7 @@ def _image() -> DriveImage:
 
 def _valid_png(*, width: int = 720, height: int = 720, size: int = 12 * 1024) -> bytes:
     header = (
-        b"\x89PNG\r\n\x1a\n"
-        + b"\x00" * 8
-        + width.to_bytes(4, "big")
-        + height.to_bytes(4, "big")
+        b"\x89PNG\r\n\x1a\n" + b"\x00" * 8 + width.to_bytes(4, "big") + height.to_bytes(4, "big")
     )
     return header + b"\x00" * (max(size, len(header)) - len(header))
 
