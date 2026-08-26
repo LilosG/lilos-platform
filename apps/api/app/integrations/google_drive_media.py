@@ -220,10 +220,7 @@ class GoogleDriveMediaService:
                     retryable=False,
                 )
             width_pixels, height_pixels = dimensions
-            if (
-                width_pixels < GBP_PHOTO_MIN_DIMENSION
-                or height_pixels < GBP_PHOTO_MIN_DIMENSION
-            ):
+            if width_pixels < GBP_PHOTO_MIN_DIMENSION or height_pixels < GBP_PHOTO_MIN_DIMENSION:
                 raise ProviderMediaPreflightError(
                     "POST_MEDIA_DIMENSIONS_INVALID",
                     "The selected GBP post image is below Google's minimum resolution.",
