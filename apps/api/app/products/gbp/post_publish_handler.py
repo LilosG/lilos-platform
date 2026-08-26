@@ -334,9 +334,7 @@ async def handle_gbp_publish_post(
                     "error": str(exc)[:200],
                 },
             )
-            return JobOutcome(
-                result="retryable_failure", safe_error="VERIFICATION_REREAD_FAILED"
-            )
+            return JobOutcome(result="retryable_failure", safe_error="VERIFICATION_REREAD_FAILED")
         return await _apply_provider_verification(
             session,
             organization_id=organization_id,
@@ -398,9 +396,7 @@ async def handle_gbp_publish_post(
             publication.status = "reconciliation_required"
             publication.safe_error_code = "PROVIDER_RETURNED_NO_RESOURCE_NAME"
         await session.commit()
-        return JobOutcome(
-            result="ambiguous", safe_error="PROVIDER_RETURNED_NO_RESOURCE_NAME"
-        )
+        return JobOutcome(result="ambiguous", safe_error="PROVIDER_RETURNED_NO_RESOURCE_NAME")
 
     publication = await session.scalar(
         select(GBPPostPublication)
