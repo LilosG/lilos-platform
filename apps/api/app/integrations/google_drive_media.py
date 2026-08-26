@@ -157,9 +157,17 @@ class GoogleDriveMediaService:
 
     @staticmethod
     def _api_origin(settings: Settings) -> str | None:
+        """Return the public API origin that actually mounts provider-media.
+
+        The provider-media route lives on the API service. Google OAuth's
+        redirect URI is therefore the canonical production source for that
+        origin. A GitHub installation redirect is retained only as a legacy
+        fallback; preferring it could point media URLs at a frontend host and
+        make Google silently drop an otherwise valid Local Post image.
+        """
         for candidate in (
-            settings.github_app_installation_redirect_uri,
             settings.google_oauth_redirect_uri,
+            settings.github_app_installation_redirect_uri,
         ):
             if candidate is None:
                 continue
