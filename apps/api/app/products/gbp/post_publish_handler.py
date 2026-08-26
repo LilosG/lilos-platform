@@ -104,9 +104,7 @@ async def handle_gbp_publish_post(
         return JobOutcome(result="permanent_failure", safe_error="POST_REVISION_NOT_APPROVED")
 
     try:
-        requirements = GBPPostDeliveryRequirements.from_document(
-            revision.publication_requirements
-        )
+        requirements = GBPPostDeliveryRequirements.from_document(revision.publication_requirements)
     except GBPPostPublicationContractError as exc:
         publication.status = "failed"
         publication.safe_error_code = exc.safe_code
@@ -166,7 +164,9 @@ async def handle_gbp_publish_post(
             publication.status = "failed"
             publication.safe_error_code = "POST_MEDIA_SOURCE_UNSUPPORTED"
             await session.commit()
-            return JobOutcome(result="permanent_failure", safe_error="POST_MEDIA_SOURCE_UNSUPPORTED")
+            return JobOutcome(
+                result="permanent_failure", safe_error="POST_MEDIA_SOURCE_UNSUPPORTED"
+            )
         metadata = selected_asset.metadata_document or {}
         file_id = str(metadata.get("file_id") or "").strip()
         if not file_id:
