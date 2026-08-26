@@ -8,7 +8,7 @@ file identity and purpose.
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 
 from apps.api.app.config import Settings
 from apps.api.app.integrations.google_drive_media import GoogleDriveMediaService
@@ -18,8 +18,9 @@ router = APIRouter(prefix="/api/v1/provider-media", tags=["provider-media"])
 service = GoogleDriveMediaService()
 
 
-@router.get("/google-drive/{token}", include_in_schema=False)
+@router.api_route("/google-drive/{token}", methods=["GET", "HEAD"], include_in_schema=False)
 async def google_drive_media(
+    request: Request,
     token: str,
     settings: Annotated[Settings, Depends(settings_from_request)],
 ) -> Response:
@@ -30,11 +31,13 @@ async def google_drive_media(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Provider media is unavailable",
         ) from exc
+    headers = {
+        "Cache-Control": "public, max-age=3600, immutable",
+        "X-Content-Type-Options": "nosniff",
+        "Content-Length": str(len(content)),
+    }
     return Response(
-        content=content,
+        content=b"" if request.method == "HEAD" else content,
         media_type=mime_type,
-        headers={
-            "Cache-Control": "public, max-age=3600, immutable",
-            "X-Content-Type-Options": "nosniff",
-        },
+        headers=headers,
     )
