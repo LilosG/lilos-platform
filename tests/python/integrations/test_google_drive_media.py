@@ -63,6 +63,4 @@ def test_drive_proxy_prefers_api_origin_when_multiple_redirect_hosts_exist() -> 
     )
 
     assert url is not None
-    assert url.startswith(
-        "https://lilos-api.onrender.com/api/v1/provider-media/google-drive/"
-    )
+    assert url.startswith("https://lilos-api.onrender.com/api/v1/provider-media/google-drive/")
