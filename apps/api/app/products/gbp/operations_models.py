@@ -157,6 +157,9 @@ class GBPPostRevision(UUIDPrimaryKeyMixin, Base):
     content: Mapped[str] = mapped_column(String(1500), nullable=False)
     call_to_action: Mapped[dict[str, object] | None] = mapped_column(JSONB)
     event_or_offer: Mapped[dict[str, object] | None] = mapped_column(JSONB)
+    publication_requirements: Mapped[dict[str, object]] = mapped_column(
+        JSONB, nullable=False, default=dict
+    )
     status: Mapped[str] = mapped_column(String(32), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
