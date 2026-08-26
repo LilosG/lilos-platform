@@ -16,10 +16,10 @@ class _StubAdapter(GoogleBusinessProfileAdapter):
         self,
         method: str,
         url: str,
-        access_token: str,
+        token: str,
         **kwargs: Any,
     ) -> dict[str, Any]:
-        del method, url, access_token
+        del method, url, token
         self.request_json = kwargs.get("json")
         return {
             "name": "accounts/1/locations/2/localPosts/3",
