@@ -17,7 +17,11 @@ from apps.api.app.integrations.errors import (
     IntegrationNotFoundError,
     IntegrationReconnectRequiredError,
 )
-from apps.api.app.integrations.google_drive_media import DriveImage, GoogleDriveMediaService
+from apps.api.app.integrations.google_drive_media import (
+    DriveImage,
+    GoogleDriveMediaService,
+    ProviderMediaPreflightError,
+)
 from apps.api.app.integrations.secrets import SecretUnavailableError
 from apps.api.app.products.gbp.adapter import GBPAdapter
 from apps.api.app.products.gbp.models import GBPAccount, GBPLocation
@@ -54,10 +58,9 @@ async def handle_gbp_publish_post(
 
     New automated revisions carry a versioned publication contract requiring
     both the selected client-scoped image and the deterministic client-owned
-    CTA. The worker fails before dispatch when those requirements cannot be
-    satisfied, and a Google ``LIVE`` state is accepted only after the returned
-    LocalPost matches the governed contract. Historical revisions without a
-    versioned contract retain their legacy LIVE-only verification semantics.
+    CTA. Initial dispatch proves the exact public media URL is Google-eligible
+    before any provider write. Reconciliation of an already-created provider
+    resource never regenerates or re-fetches media before reading provider truth.
     """
     publication_id_raw = input_document.get("publication_id")
     if not publication_id_raw:
@@ -85,7 +88,8 @@ async def handle_gbp_publish_post(
         return JobOutcome(result="permanent_failure", safe_error="PUBLICATION_NOT_RESERVABLE")
 
     initial_dispatch = publication.status == "reserved" and publication.dispatched_at is None
-    if not initial_dispatch and not publication.provider_post_id:
+    provider_post_id = publication.provider_post_id
+    if not initial_dispatch and not provider_post_id:
         publication.status = "reconciliation_required"
         publication.safe_error_code = "AMBIGUOUS_PROVIDER_RESULT"
         await session.commit()
@@ -145,74 +149,123 @@ async def handle_gbp_publish_post(
         await session.commit()
         return JobOutcome(result="permanent_failure", safe_error="PROVIDER_WRITES_DISABLED")
 
-    selected_asset = await session.scalar(
-        select(GBPPostAsset).where(
-            GBPPostAsset.organization_id == organization_id,
-            GBPPostAsset.post_revision_id == revision.id,
-            GBPPostAsset.status == "selected",
-        )
-    )
-    if requirements.media_required and selected_asset is None:
-        publication.status = "failed"
-        publication.safe_error_code = "POST_MEDIA_REQUIRED_MISSING"
-        await session.commit()
-        return JobOutcome(result="permanent_failure", safe_error="POST_MEDIA_REQUIRED_MISSING")
-
-    media_url: str | None = None
-    if selected_asset is not None:
-        if selected_asset.source_type != "google_drive":
-            publication.status = "failed"
-            publication.safe_error_code = "POST_MEDIA_SOURCE_UNSUPPORTED"
-            await session.commit()
-            return JobOutcome(
-                result="permanent_failure", safe_error="POST_MEDIA_SOURCE_UNSUPPORTED"
-            )
-        metadata = selected_asset.metadata_document or {}
-        file_id = str(metadata.get("file_id") or "").strip()
-        if not file_id:
-            publication.status = "failed"
-            publication.safe_error_code = "POST_MEDIA_FILE_ID_MISSING"
-            await session.commit()
-            return JobOutcome(result="permanent_failure", safe_error="POST_MEDIA_FILE_ID_MISSING")
-        image = DriveImage(
-            file_id=file_id,
-            name=str(metadata.get("name") or "GBP image"),
-            mime_type=str(metadata.get("mime_type") or "image/jpeg"),
-            path=str(metadata.get("path") or ""),
-            modified_time=str(metadata.get("modified_time") or "") or None,
-        )
-        media_url = GoogleDriveMediaService().public_proxy_url(
-            Settings(), organization_id=organization_id, image=image
-        )
-        if not media_url:
-            publication.status = "reserved"
-            publication.safe_error_code = "POST_MEDIA_URL_UNAVAILABLE"
-            await session.commit()
-            return JobOutcome(result="retryable_failure", safe_error="POST_MEDIA_URL_UNAVAILABLE")
-        selected_asset.provider_fetch_url = media_url
-
-    try:
-        post_body = build_provider_post_body(
-            post_type=revision.post_type,
-            content=revision.content,
-            call_to_action=revision.call_to_action,
-            event_or_offer=revision.event_or_offer,
-            requirements=requirements,
-            media_url=media_url,
-        )
-    except GBPPostPublicationContractError as exc:
-        publication.status = "failed"
-        publication.safe_error_code = exc.safe_code
-        await session.commit()
-        return JobOutcome(result="permanent_failure", safe_error=exc.safe_code)
-
     location_name = v4_localposts_parent(
         gbp_account.external_account_id, gbp_location.external_location_id
     )
-    provider_post_id = publication.provider_post_id
+    post_body: dict[str, Any] | None = None
+    media_url: str | None = None
+    media_service = GoogleDriveMediaService()
 
-    # No database transaction may span OAuth or provider network I/O.
+    # Provider identity is durable. Once it exists, reconciliation must read the
+    # same provider resource first and must not depend on regenerating Drive media.
+    if provider_post_id is None:
+        selected_asset = await session.scalar(
+            select(GBPPostAsset).where(
+                GBPPostAsset.organization_id == organization_id,
+                GBPPostAsset.post_revision_id == revision.id,
+                GBPPostAsset.status == "selected",
+            )
+        )
+        if requirements.media_required and selected_asset is None:
+            publication.status = "failed"
+            publication.safe_error_code = "POST_MEDIA_REQUIRED_MISSING"
+            await session.commit()
+            return JobOutcome(result="permanent_failure", safe_error="POST_MEDIA_REQUIRED_MISSING")
+
+        if selected_asset is not None:
+            if selected_asset.source_type != "google_drive":
+                publication.status = "failed"
+                publication.safe_error_code = "POST_MEDIA_SOURCE_UNSUPPORTED"
+                await session.commit()
+                return JobOutcome(
+                    result="permanent_failure", safe_error="POST_MEDIA_SOURCE_UNSUPPORTED"
+                )
+            metadata = selected_asset.metadata_document or {}
+            file_id = str(metadata.get("file_id") or "").strip()
+            if not file_id:
+                publication.status = "failed"
+                publication.safe_error_code = "POST_MEDIA_FILE_ID_MISSING"
+                await session.commit()
+                return JobOutcome(
+                    result="permanent_failure", safe_error="POST_MEDIA_FILE_ID_MISSING"
+                )
+            image = DriveImage(
+                file_id=file_id,
+                name=str(metadata.get("name") or "GBP image"),
+                mime_type=str(metadata.get("mime_type") or "image/jpeg"),
+                path=str(metadata.get("path") or ""),
+                modified_time=str(metadata.get("modified_time") or "") or None,
+            )
+            media_url = media_service.public_proxy_url(
+                Settings(), organization_id=organization_id, image=image
+            )
+            if not media_url:
+                publication.status = "reserved"
+                publication.safe_error_code = "POST_MEDIA_URL_UNAVAILABLE"
+                await session.commit()
+                return JobOutcome(
+                    result="retryable_failure", safe_error="POST_MEDIA_URL_UNAVAILABLE"
+                )
+            selected_asset.provider_fetch_url = media_url
+
+        try:
+            post_body = build_provider_post_body(
+                post_type=revision.post_type,
+                content=revision.content,
+                call_to_action=revision.call_to_action,
+                event_or_offer=revision.event_or_offer,
+                requirements=requirements,
+                media_url=media_url,
+            )
+        except GBPPostPublicationContractError as exc:
+            publication.status = "failed"
+            publication.safe_error_code = exc.safe_code
+            await session.commit()
+            return JobOutcome(result="permanent_failure", safe_error=exc.safe_code)
+
+    # No database transaction may span media, OAuth, or provider network I/O.
     await session.commit()
+
+    if media_url is not None:
+        try:
+            preflight = await media_service.preflight_public_url(media_url)
+        except ProviderMediaPreflightError as exc:
+            publication = await session.scalar(
+                select(GBPPostPublication)
+                .where(
+                    GBPPostPublication.organization_id == organization_id,
+                    GBPPostPublication.id == publication_id,
+                )
+                .with_for_update()
+            )
+            if publication is not None:
+                publication.status = "reserved" if exc.retryable else "failed"
+                publication.safe_error_code = exc.safe_code
+            await session.commit()
+            logger.warning(
+                "GBP provider-media preflight failed",
+                extra={
+                    "event_name": "gbp.publish_post.media_preflight_failed",
+                    "publication_id": str(publication_id),
+                    "safe_error_code": exc.safe_code,
+                    "retryable": exc.retryable,
+                },
+            )
+            return JobOutcome(
+                result="retryable_failure" if exc.retryable else "permanent_failure",
+                safe_error=exc.safe_code,
+            )
+        logger.info(
+            "GBP provider-media preflight succeeded",
+            extra={
+                "event_name": "gbp.publish_post.media_preflight_succeeded",
+                "publication_id": str(publication_id),
+                "media_mime_type": preflight.mime_type,
+                "media_size_bytes": preflight.size_bytes,
+                "media_width_pixels": preflight.width_pixels,
+                "media_height_pixels": preflight.height_pixels,
+            },
+        )
 
     try:
         token, _connection = await token_resolver(session, organization_id)
@@ -281,7 +334,9 @@ async def handle_gbp_publish_post(
                     "error": str(exc)[:200],
                 },
             )
-            return JobOutcome(result="retryable_failure", safe_error="VERIFICATION_REREAD_FAILED")
+            return JobOutcome(
+                result="retryable_failure", safe_error="VERIFICATION_REREAD_FAILED"
+            )
         return await _apply_provider_verification(
             session,
             organization_id=organization_id,
@@ -290,6 +345,14 @@ async def handle_gbp_publish_post(
             revision=revision,
             requirements=requirements,
         )
+
+    if post_body is None:
+        publication = await session.get(GBPPostPublication, publication_id)
+        if publication is not None:
+            publication.status = "failed"
+            publication.safe_error_code = "POST_BODY_UNAVAILABLE"
+        await session.commit()
+        return JobOutcome(result="permanent_failure", safe_error="POST_BODY_UNAVAILABLE")
 
     publication = await session.scalar(
         select(GBPPostPublication)
@@ -335,7 +398,9 @@ async def handle_gbp_publish_post(
             publication.status = "reconciliation_required"
             publication.safe_error_code = "PROVIDER_RETURNED_NO_RESOURCE_NAME"
         await session.commit()
-        return JobOutcome(result="ambiguous", safe_error="PROVIDER_RETURNED_NO_RESOURCE_NAME")
+        return JobOutcome(
+            result="ambiguous", safe_error="PROVIDER_RETURNED_NO_RESOURCE_NAME"
+        )
 
     publication = await session.scalar(
         select(GBPPostPublication)
