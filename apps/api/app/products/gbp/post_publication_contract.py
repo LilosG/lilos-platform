@@ -141,9 +141,7 @@ def verify_provider_post(
     if provider_type != post_type.upper():
         return "POST_TYPE_MISMATCH"
 
-    provider_summary = str(
-        provider_post.get("summary") or provider_post.get("text") or ""
-    ).strip()
+    provider_summary = str(provider_post.get("summary") or provider_post.get("text") or "").strip()
     if provider_summary != content.strip():
         return "POST_CONTENT_MISMATCH"
 
@@ -156,9 +154,9 @@ def verify_provider_post(
         actual_type = str(actual.get("actionType") or "").upper()
         if expected_type != actual_type:
             return "POST_CTA_MISMATCH"
-        if expected_type != "CALL" and _normalized_url(str(expected.get("url") or "")) != _normalized_url(
-            str(actual.get("url") or "")
-        ):
+        if expected_type != "CALL" and _normalized_url(
+            str(expected.get("url") or "")
+        ) != _normalized_url(str(actual.get("url") or "")):
             return "POST_CTA_MISMATCH"
 
     if requirements.media_required:
