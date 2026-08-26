@@ -226,7 +226,7 @@ async def handle_gbp_publish_post(
     # No database transaction may span media, OAuth, or provider network I/O.
     await session.commit()
 
-    if media_url is not None:
+    if media_url is not None and requirements.governed:
         try:
             preflight = await media_service.preflight_public_url(media_url)
         except ProviderMediaPreflightError as exc:
