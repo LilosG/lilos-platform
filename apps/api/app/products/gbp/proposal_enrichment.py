@@ -160,6 +160,7 @@ class GBPPostProposalEnrichmentService:
                 "GBP_POST_REVISION_UNAVAILABLE",
                 "The governed GBP post revision is unavailable for delivery binding.",
             )
+        revision.call_to_action = call_to_action
         revision.publication_requirements = {
             "version": 1,
             "cta_required": True,
