@@ -22,6 +22,7 @@ from apps.api.app.config import Settings
 from apps.api.app.integrations.google_drive_media import DriveImage, GoogleDriveMediaService
 from apps.api.app.organizations.models import Organization
 from apps.api.app.products.gbp.models import GBPLocation, GBPProfileSnapshot
+from apps.api.app.products.gbp.operations_models import GBPPostRevision
 from apps.api.app.products.gbp.post_generation_models import GBPPostAsset
 
 _STOP_TERMS = {
@@ -148,6 +149,23 @@ class GBPPostProposalEnrichmentService:
             post_revision_id=post_revision_id,
             content=content,
         )
+        revision = await session.scalar(
+            select(GBPPostRevision).where(
+                GBPPostRevision.organization_id == organization_id,
+                GBPPostRevision.id == post_revision_id,
+            )
+        )
+        if revision is None:
+            raise GBPProposalEnrichmentError(
+                "GBP_POST_REVISION_UNAVAILABLE",
+                "The governed GBP post revision is unavailable for delivery binding.",
+            )
+        revision.publication_requirements = {
+            "version": 1,
+            "cta_required": True,
+            "media_required": True,
+        }
+        await session.flush()
         return GBPProposalEnrichment(
             call_to_action=call_to_action,
             target_url=target_url,
