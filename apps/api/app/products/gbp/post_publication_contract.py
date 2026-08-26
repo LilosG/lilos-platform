@@ -39,7 +39,7 @@ class GBPPostDeliveryRequirements:
         return self.version == CONTRACT_VERSION
 
     @classmethod
-    def from_document(cls, document: object) -> "GBPPostDeliveryRequirements":
+    def from_document(cls, document: object) -> GBPPostDeliveryRequirements:
         if not isinstance(document, dict) or not document:
             return cls(version=None, media_required=False, cta_required=False)
         raw_version = document.get("version")
