@@ -240,7 +240,7 @@ async def _handle_gbp_generate_post(
         )
     return JobOutcome(
         result="succeeded",
-        result_reference=f"gbp-post-revision:{revision.id}:review:{source_review_id or 'auto'}:image",
+        result_reference=f"gbp-post-revision:{revision.id}:image",
     )
 
 
