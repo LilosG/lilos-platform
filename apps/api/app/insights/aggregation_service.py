@@ -58,6 +58,7 @@ class InsightsService:
         )
         scoped_gbp_locations = select(GBPLocation.id).where(
             GBPLocation.organization_id == organization_id,
+            GBPLocation.mapping_status == "confirmed",
             GBPLocation.location_id == location_id if location_id is not None else true(),
         )
         gbp_snapshots = await self._count(

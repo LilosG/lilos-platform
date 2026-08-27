@@ -151,9 +151,17 @@ async def _handle_gbp_generate_post(
     correlation_id: str,
     workflow_run_id: UUID,
 ) -> JobOutcome:
-    del input_document
     if location_id is None:
         return JobOutcome(result="permanent_failure", safe_error="LOCATION_ID_MISSING")
+
+    source_review_id: UUID | None = None
+    source_review_raw = input_document.get("review_id")
+    if source_review_raw is not None:
+        try:
+            source_review_id = UUID(str(source_review_raw))
+        except (TypeError, ValueError):
+            return JobOutcome(result="permanent_failure", safe_error="GBP_REVIEW_SOURCE_INVALID")
+
     try:
         revision, _execution, asset = await GBPPostGenerationService().generate(
             session,
@@ -162,11 +170,12 @@ async def _handle_gbp_generate_post(
             location_id,
             workflow_run_id=workflow_run_id,
             correlation_id=correlation_id,
+            source_review_id=source_review_id,
         )
     except GBPProposalEnrichmentError as exc:
         # The runtime commits returned JobOutcomes. Roll back every mutation made
         # by this handler before translating the enrichment exception into a
-        # workflow outcome so no partial text-only revision can survive failure.
+        # workflow outcome so no partial review, CTA, or image binding can survive.
         await session.rollback()
         logger.warning(
             "GBP AI post delivery enrichment failed",
@@ -174,6 +183,7 @@ async def _handle_gbp_generate_post(
                 "event_name": "gbp.generate_post.delivery_enrichment_failed",
                 "organization_id": str(organization_id),
                 "location_id": str(location_id),
+                "source_review_id": str(source_review_id) if source_review_id else None,
                 "safe_error_code": exc.safe_code,
             },
         )

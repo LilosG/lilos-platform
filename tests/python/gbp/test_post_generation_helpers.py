@@ -18,10 +18,30 @@ def test_target_url_prefers_relevant_service_page() -> None:
     target = GBPPostGenerationService._select_target_url(
         {"websiteUri": "https://example.com/"},
         knowledge,
-        "EV charger installation",
+        "Customer review praised the EV charger installation",
     )
 
     assert target == "https://example.com/ev-charger-installation/"
+
+
+def test_target_url_requires_positive_review_relevance() -> None:
+    knowledge = {
+        "website_knowledge": [
+            {
+                "url": "https://example.com/panel-upgrades/",
+                "title": "Electrical Panel Upgrades",
+                "h1": "Panel Upgrades",
+            }
+        ]
+    }
+
+    target = GBPPostGenerationService._select_target_url(
+        {"websiteUri": "https://example.com/"},
+        knowledge,
+        "Customer review praised recessed kitchen lighting installation",
+    )
+
+    assert target is None
 
 
 def test_clean_draft_is_bounded_and_uses_fallback() -> None:
