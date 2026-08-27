@@ -33,7 +33,19 @@ def test_every_recorded_contract_parses(repository_id: str) -> None:
     assert "description" in contract.required
 
 
-@pytest.mark.parametrize("repository_id", sorted(CONTRACTS))
+# Collections that require a hero image, which generation does not produce. These
+# are genuinely unpublishable today: a fabricated path would either 404 on the page
+# or ship a broken image, so the publication fails fast with
+# CONTENT_FRONTMATTER_INCOMPLETE instead. Remove a client from here once image
+# selection exists -- the test below will insist on it.
+BLOCKED_ON_IMAGE_SELECTION = {
+    "LilosG/coco-maya": {"image", "imageAlt"},
+    "LilosG/miss-bs-coconut-club": {"image", "imageAlt"},
+    "LilosG/lobby-tiki-bar": {"image"},
+}
+
+
+@pytest.mark.parametrize("repository_id", sorted(set(CONTRACTS) - set(BLOCKED_ON_IMAGE_SELECTION)))
 def test_generated_content_satisfies_every_recorded_contract(repository_id: str) -> None:
     """A page LILOs generates must build against each client's real schema."""
     contract = FrontmatterContract.from_document(CONTRACTS[repository_id])
@@ -43,6 +55,24 @@ def test_generated_content_satisfies_every_recorded_contract(repository_id: str)
     assert contract.missing_required(rendered) == (), (
         f"{repository_id} would reject generated content: "
         f"missing {contract.missing_required(rendered)}"
+    )
+
+
+@pytest.mark.parametrize("repository_id", sorted(BLOCKED_ON_IMAGE_SELECTION))
+def test_image_required_clients_are_blocked_only_on_images(repository_id: str) -> None:
+    """Document the gap precisely: images alone, nothing else.
+
+    If a client here starts failing for a different field, the contract or
+    generation drifted. If it stops failing, image selection landed and the entry
+    should be removed.
+    """
+    contract = FrontmatterContract.from_document(CONTRACTS[repository_id])
+
+    missing = set(contract.missing_required(contract.render(GENERATED)))
+
+    assert missing == BLOCKED_ON_IMAGE_SELECTION[repository_id], (
+        f"{repository_id} is blocked on {sorted(missing)}, expected "
+        f"{sorted(BLOCKED_ON_IMAGE_SELECTION[repository_id])}"
     )
 
 
@@ -75,3 +105,45 @@ def test_contracts_never_use_canonical_names_as_target_keys_by_accident() -> Non
     for repository_id, document in CONTRACTS.items():
         for canonical, target in (document.get("field_names") or {}).items():
             assert canonical != target, f"{repository_id}: {canonical} maps to itself"
+
+
+@pytest.mark.parametrize("repository_id", sorted(CONTRACTS))
+def test_mdx_only_collections_reject_a_markdown_path(repository_id: str) -> None:
+    """A loader glob of **/*.mdx silently ignores .md -- no error, no page."""
+    contract = FrontmatterContract.from_document(CONTRACTS[repository_id])
+
+    if contract.file_extensions == (".mdx",):
+        assert contract.rejects_path("src/content/blog/post.md") is not None
+        assert contract.rejects_path("src/content/blog/post.mdx") is None
+    else:
+        assert contract.rejects_path("src/content/blog/post.md") is None
+        assert contract.rejects_path("src/content/blog/post.mdx") is None
+
+
+def test_mdx_only_clients_are_recorded_as_such() -> None:
+    """Read from each repository's loader pattern, not assumed."""
+    mdx_only = {
+        repository_id
+        for repository_id, document in CONTRACTS.items()
+        if FrontmatterContract.from_document(document).file_extensions == (".mdx",)
+    }
+
+    assert mdx_only == {
+        "LilosG/louisiana-purchase",
+        "LilosG/miss-bs-coconut-club",
+        "LilosG/coco-maya",
+        "LilosG/lobby-tiki-bar",
+    }
+
+
+def test_seo_title_is_emitted_only_where_the_schema_declares_it() -> None:
+    """An unmapped seo_title would be an unknown field in most collections."""
+    coco = FrontmatterContract.from_document(CONTRACTS["LilosG/coco-maya"])
+    missbs = FrontmatterContract.from_document(CONTRACTS["LilosG/miss-bs-coconut-club"])
+    wheyland = FrontmatterContract.from_document(CONTRACTS["LilosG/wheylandelectric-final-2.0"])
+
+    assert "seoTitle" in coco.render(GENERATED)
+    assert "metaTitle" in missbs.render(GENERATED)
+    rendered = wheyland.render(GENERATED)
+    assert "seo_title" not in rendered
+    assert "seoTitle" not in rendered

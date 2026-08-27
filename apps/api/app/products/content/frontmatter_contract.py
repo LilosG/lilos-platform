@@ -37,6 +37,7 @@ CANONICAL_TAGS = "tags"
 CANONICAL_SERVICES = "related_services"
 CANONICAL_SERVICE_AREAS = "service_areas"
 CANONICAL_CATEGORY = "category"
+CANONICAL_SEO_TITLE = "seo_title"
 CANONICAL_IMAGE = "image"
 CANONICAL_IMAGE_ALT = "image_alt"
 
@@ -65,6 +66,11 @@ class FrontmatterContract:
     # rather than published, because z.enum rejects it at build time.
     enums: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
     defaults: Mapping[str, Any] = field(default_factory=dict)
+    # Extensions the collection's loader glob will actually pick up. An Astro
+    # `glob({ pattern: "**/*.mdx" })` loader silently ignores a .md file: the entry
+    # never joins the collection, so no page is built and nothing errors. Legacy
+    # `type: "content"` collections accept both.
+    file_extensions: tuple[str, ...] = (".md", ".mdx")
 
     @classmethod
     def from_document(cls, document: object) -> FrontmatterContract:
@@ -93,6 +99,18 @@ class FrontmatterContract:
                 "CONTENT_CONTRACT_INVALID",
                 "date_format must be 'date' or 'string'",
             )
+        raw_extensions = document.get("file_extensions")
+        file_extensions = (
+            tuple(str(item).lower() for item in raw_extensions)
+            if isinstance(raw_extensions, Sequence) and not isinstance(raw_extensions, str)
+            else (".md", ".mdx")
+        )
+        for extension in file_extensions:
+            if not extension.startswith("."):
+                raise FrontmatterContractError(
+                    "CONTENT_CONTRACT_INVALID",
+                    "file_extensions entries must start with '.'",
+                )
         raw_defaults = document.get("defaults")
         return cls(
             field_names=field_names,
@@ -101,6 +119,7 @@ class FrontmatterContract:
             faq_question_key=str(document.get("faq_question_key") or "question"),
             faq_answer_key=str(document.get("faq_answer_key") or "answer"),
             enums=enums,
+            file_extensions=file_extensions,
             defaults=dict(raw_defaults) if isinstance(raw_defaults, Mapping) else {},
         )
 
@@ -143,6 +162,10 @@ class FrontmatterContract:
 
         put(CANONICAL_TITLE, canonical.get(CANONICAL_TITLE))
         put(CANONICAL_DESCRIPTION, canonical.get(CANONICAL_DESCRIPTION))
+        # Only emitted when the target maps it: an unmapped `seo_title` key is not
+        # declared by any collection schema and would be an unknown field.
+        if CANONICAL_SEO_TITLE in self.field_names:
+            put(CANONICAL_SEO_TITLE, canonical.get(CANONICAL_SEO_TITLE))
 
         publish_date = canonical.get(CANONICAL_PUBLISH_DATE)
         if publish_date is not None:
@@ -200,3 +223,18 @@ class FrontmatterContract:
             ):
                 missing.append(key)
         return tuple(missing)
+
+    def rejects_path(self, target_path: str) -> str | None:
+        """Explain why this collection would not pick up ``target_path``, if so.
+
+        Returns None when the path is acceptable. An unpickupable extension is
+        worse than a build error: the file merges, nothing fails, and the page
+        simply never exists.
+        """
+        lowered = target_path.lower()
+        if any(lowered.endswith(extension) for extension in self.file_extensions):
+            return None
+        return (
+            f"this collection loads {', '.join(self.file_extensions)} only; "
+            f"{target_path} would be ignored and no page would be built"
+        )

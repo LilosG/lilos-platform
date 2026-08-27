@@ -190,6 +190,7 @@ CONTENT_AI_LATENCY_MS = 120_000  # 2 minutes, realistic for content generation
 META_DESCRIPTION_MAXIMUM = 155
 
 
+SEO_TITLE_MAXIMUM = 60
 MAXIMUM_FAQS = 6
 FAQ_QUESTION_MAXIMUM = 200
 FAQ_ANSWER_MAXIMUM = 600
@@ -277,6 +278,12 @@ def build_publishable_frontmatter(
 
     frontmatter: dict[str, object] = {"title": title, "description": description}
     frontmatter["publish_date"] = (publish_date or datetime.now(UTC).date()).isoformat()
+
+    # Several collections require a separate SEO/meta title (coco-maya `seoTitle`,
+    # miss-bs-coconut-club `metaTitle`). Prefer the model's, fall back to the page
+    # title, and keep it inside the length search results actually display.
+    seo_title = " ".join(str(output.get("seo_title") or "").split())[:SEO_TITLE_MAXIMUM]
+    frontmatter["seo_title"] = seo_title or title[:SEO_TITLE_MAXIMUM]
 
     faqs = _clean_faqs(output.get("faqs"))
     if faqs:
@@ -781,6 +788,7 @@ class ContentService:
                 output_schema={
                     "draft": "string",
                     "meta_description": "string",
+                    "seo_title": "string",
                     "faqs": "array",
                     "related_services": "array",
                     "service_areas": "array",
@@ -863,7 +871,8 @@ class ContentService:
                 "required_output": (
                     "Return: `draft`, the page body in markdown with a single H1 and "
                     "descriptive H2 sections, no frontmatter block; `meta_description`, "
-                    "one sentence under 155 characters for search results; `faqs`, three "
+                    "one sentence under 155 characters for search results; `seo_title`, "
+                    "under 60 characters for the search-result headline; `faqs`, three "
                     "to six {question, answer} pairs a real local customer would ask, "
                     "each answer two or three sentences; `related_services` and "
                     "`service_areas`, slugs drawn only from the approved facts and "
@@ -996,6 +1005,7 @@ class ContentService:
                 output_schema={
                     "draft": "string",
                     "meta_description": "string",
+                    "seo_title": "string",
                     "faqs": "array",
                     "related_services": "array",
                     "service_areas": "array",

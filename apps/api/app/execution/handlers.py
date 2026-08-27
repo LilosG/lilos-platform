@@ -732,6 +732,26 @@ async def _handle_content_publish(
         # A revision stores CANONICAL field names; the target's keys are only known
         # here, where the publishing target is resolved. Mapping at publish time
         # means one revision can satisfy different client schemas.
+        # An extension the collection's loader does not match is worse than a
+        # build failure: the merge succeeds, nothing errors, and the page silently
+        # never exists. Four client collections load **/*.mdx only.
+        path_rejection = contract.rejects_path(publication.target_path)
+        if path_rejection is not None:
+            publication.status = "failed"
+            publication.safe_error_code = "CONTENT_TARGET_PATH_UNSUPPORTED"
+            logger.warning(
+                "Content publication rejected for an unloadable target path",
+                extra={
+                    "event_name": "content.publish.target_path_unsupported",
+                    "publication_id": str(publication.id),
+                    "target_path": publication.target_path,
+                    "reason": path_rejection,
+                },
+            )
+            await session.commit()
+            return JobOutcome(
+                result="permanent_failure", safe_error="CONTENT_TARGET_PATH_UNSUPPORTED"
+            )
         target_frontmatter = contract.render(revision.frontmatter or {})
         absent = contract.missing_required(target_frontmatter)
         if absent:
