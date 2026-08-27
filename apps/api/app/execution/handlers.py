@@ -624,7 +624,10 @@ async def _handle_content_publish(
     from apps.api.app.products.content.file_format import (
         ContentFileFormatError,
         build_content_file,
-        missing_required_frontmatter,
+    )
+    from apps.api.app.products.content.frontmatter_contract import (
+        FrontmatterContract,
+        FrontmatterContractError,
     )
     from apps.api.app.products.content.models import (
         ContentPublication,
@@ -715,11 +718,18 @@ async def _handle_content_publish(
         # Commit frontmatter + body, not the body alone. An Astro content
         # collection validates the frontmatter against its Zod schema, so a file
         # without it fails astro build and breaks the client's deployment.
-        # Reject a revision the client's collection schema cannot accept, before a
-        # pull request exists. Only the universal floor is checked here; per-client
-        # requirements (date field name, category enums, FAQ key names) need a
-        # contract stored against PublishingTarget, which does not exist yet.
-        absent = missing_required_frontmatter(revision.frontmatter or {})
+        # Validate against this client's recorded collection contract before a
+        # branch or pull request exists. A target with no contract falls back to
+        # the universal floor (title + description), the only assumption safe for
+        # every client repository.
+        try:
+            contract = FrontmatterContract.from_document(target.frontmatter_contract)
+        except FrontmatterContractError as exc:
+            publication.status = "failed"
+            publication.safe_error_code = exc.safe_code
+            await session.commit()
+            return JobOutcome(result="permanent_failure", safe_error=exc.safe_code)
+        absent = contract.missing_required(revision.frontmatter or {})
         if absent:
             publication.status = "failed"
             publication.safe_error_code = "CONTENT_FRONTMATTER_INCOMPLETE"

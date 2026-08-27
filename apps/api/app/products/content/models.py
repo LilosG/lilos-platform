@@ -14,6 +14,7 @@ from sqlalchemy import (
     String,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
@@ -184,6 +185,11 @@ class PublishingTarget(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     repository_id: Mapped[str] = mapped_column(String(255), nullable=False)
     base_branch: Mapped[str] = mapped_column(String(255), nullable=False)
     allowed_path_prefix: Mapped[str] = mapped_column(String(500), nullable=False)
+    # This client's Astro collection schema: field names, required fields, enum
+    # members, FAQ key names. Empty means "assume only the universal floor".
+    frontmatter_contract: Mapped[dict[str, object]] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
+    )
     deployment_target_reference: Mapped[str | None] = mapped_column(String(500))
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
