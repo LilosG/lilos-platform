@@ -68,7 +68,9 @@ def test_complete_product_skill_and_sanctioned_tool_plane() -> None:
         "agent.insights",
     }
     expected_versions = {
-        "gbp.operator": 3,
+        # v4: the agent no longer writes post copy; generate_gbp_post_proposal
+        # routes through the single governed generator.
+        "gbp.operator": 4,
         "seo.operator": 1,
         "content.operator": 1,
         "reviews.operator": 1,
@@ -378,3 +380,44 @@ def test_review_and_post_excerpt_budgets_fit_the_bounded_policy() -> None:
     # Reviews carry one excerpt each; posts carry a provider summary and a draft body.
     assert max_page * REVIEW_BODY_EXCERPT_CHARACTERS <= headroom
     assert max_page * 2 * POST_TEXT_EXCERPT_CHARACTERS <= headroom
+
+
+def test_gbp_post_tool_does_not_accept_agent_written_copy() -> None:
+    """There is one GBP post generator, and the agent is not it.
+
+    The tool used to accept `content`, `post_type` and `call_to_action` from the
+    model, which bypassed review grounding, service-topic rotation, the governed
+    AI task and its cost ceiling -- so the agent produced posts under different
+    rules than the scheduled workflow. It now takes evidence only.
+    """
+    spec = TOOL_SPECS["generate_gbp_post_proposal"]
+
+    assert spec.mutating is True
+    assert spec.allowed_arguments == frozenset({"source_evidence_references", "review_id"})
+    for rejected in ("content", "post_type", "call_to_action"):
+        assert rejected not in spec.allowed_arguments
+
+
+def test_gbp_post_tool_rejects_content_argument() -> None:
+    """Argument validation refuses copy outright rather than ignoring it."""
+    with pytest.raises(AgentToolDeniedError):
+        AgentToolService._validate_arguments(
+            "generate_gbp_post_proposal",
+            {"source_evidence_references": ["review:1"], "content": "model written copy"},
+        )
+
+
+def test_skill_instructions_preload_the_tool_surface() -> None:
+    """Regression: runs opened with repeated tool_describe calls inside a large context."""
+    for skill in SKILLS.values():
+        assert "sanctioned tool list is given below in full" in skill.instructions
+        assert "Do not probe or" in skill.instructions
+
+
+def test_gbp_skill_does_not_promise_a_text_only_fallback() -> None:
+    """The code raises when Drive media is unavailable; the prompt must agree."""
+    instructions = SKILLS["gbp.operator"].instructions
+
+    assert "there is no text-only" in instructions
+    assert "when Drive media is configured" not in instructions
+    assert "You do not write post copy" in instructions

@@ -58,10 +58,15 @@ class GBPPostGenerationService:
         if organization is None:
             raise LookupError("organization not found")
 
+        # Match on the key this method writes, not on workflow_run_id alone. A run
+        # can carry more than one execution -- an agent run records its own before
+        # calling in here -- and matching the wrong one makes this treat a foreign
+        # execution as a previous attempt at this post.
+        generation_idempotency_key = f"gbp-post-{workflow_run_id}"
         existing_execution = await session.scalar(
             select(AIExecution).where(
                 AIExecution.organization_id == organization_id,
-                AIExecution.workflow_run_id == workflow_run_id,
+                AIExecution.idempotency_key == generation_idempotency_key,
             )
         )
         if existing_execution is not None:
@@ -425,7 +430,7 @@ class GBPPostGenerationService:
             location_id=location_id,
             task_definition_id=task.id,
             workflow_run_id=workflow_run_id,
-            idempotency_key=f"gbp-post-{workflow_run_id}",
+            idempotency_key=generation_idempotency_key,
             status="completed",
             provider_key=str(output.get("provider") or "unknown"),
             model_key=str(output.get("model") or "unknown"),

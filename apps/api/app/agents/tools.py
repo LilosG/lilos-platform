@@ -35,11 +35,11 @@ from apps.api.app.products.content.contracts import BriefCreate, ItemCreate, Rev
 from apps.api.app.products.content.models import ContentBrief, ContentOpportunity
 from apps.api.app.products.content.service import ContentService
 from apps.api.app.products.gbp.models import GBPLocation, GBPProfileSnapshot
-from apps.api.app.products.gbp.operations_contracts import ChangeSetPropose, PostRevisionCreate
+from apps.api.app.products.gbp.operations_contracts import ChangeSetPropose
 from apps.api.app.products.gbp.operations_models import GBPPostRevision, GBPProviderPost
 from apps.api.app.products.gbp.operations_service import GBPOperationsService
+from apps.api.app.products.gbp.post_generation import GBPPostGenerationService
 from apps.api.app.products.gbp.post_generation_models import GBPPostAsset
-from apps.api.app.products.gbp.proposal_enrichment import GBPPostProposalEnrichmentService
 from apps.api.app.products.gbp.service import GBPService
 from apps.api.app.products.reviews.service import ReviewService
 from apps.api.app.products.seo.contracts import CrawlRequest, RecommendationCreate
@@ -115,7 +115,7 @@ TOOL_SPECS: dict[str, ToolSpec] = {
         mutating=True,
     ),
     "generate_gbp_post_proposal": ToolSpec(
-        frozenset({"post_type", "content", "call_to_action", "source_evidence_references"}),
+        frozenset({"source_evidence_references", "review_id"}),
         mutating=True,
     ),
     "create_gbp_optimization_proposal": ToolSpec(
@@ -167,7 +167,7 @@ class AgentToolService:
         self.knowledge = BusinessKnowledgeService()
         self.gbp = GBPService()
         self.gbp_operations = GBPOperationsService()
-        self.gbp_post_enrichment = GBPPostProposalEnrichmentService()
+        self.gbp_post_generation = GBPPostGenerationService()
         self.search_console = SearchConsoleService()
         self.analytics = AnalyticsService()
         self.reviews = ReviewService()
@@ -978,64 +978,55 @@ class AgentToolService:
     async def _tool_generate_gbp_post_proposal(
         self, session: AsyncSession, run: AgentRun, arguments: dict[str, Any]
     ) -> dict[str, object]:
+        """Ask LILOs to generate the post. The agent supplies evidence, not copy.
+
+        There is one GBP post generator: GBPPostGenerationService. It grounds the
+        post in a specific customer review (or approved service knowledge when no
+        unused review remains), routes drafting through the AI Gateway against a
+        versioned task with a cost ceiling, rotates service topics to avoid
+        repetition, and binds the required CTA and client-scoped Drive image inside
+        one transaction. Previously this tool accepted `content` written by the
+        agent's own model, which bypassed all of that and produced posts under
+        different rules than the scheduled workflow used.
+
+        The agent still proves it inspected state: source_evidence_references must
+        be references this bound run actually observed.
+        """
         if run.location_id is None:
             raise AgentToolDeniedError("GBP post proposals require a location-scoped run")
-        location = await self._gbp_location(session, run)
+        # Validates that the agent read state before proposing, and records the
+        # evidence on the run.
         refs = self._observed_source_references(
             run, arguments.get("source_evidence_references"), label="GBP post evidence"
         )
-        content = str(arguments.get("content") or "")[:1_500]
-        revision = await self.gbp_operations.create_post_revision(
+        review_id = arguments.get("review_id")
+        source_review_id = _uuid(review_id, "review_id") if review_id is not None else None
+
+        revision, execution, asset = await self.gbp_post_generation.generate(
             session,
+            Settings(),
             run.organization_id,
-            location.id,
-            PostRevisionCreate(
-                post_type=cast(Any, str(arguments.get("post_type") or "standard")),
-                content=content,
-                call_to_action=None,
-            ),
-            actor_id=None,
+            run.location_id,
+            workflow_run_id=run.workflow_run_id,
             correlation_id=run.correlation_id,
+            source_review_id=source_review_id,
         )
-        settings = Settings()
-        try:
-            enrichment = await self.gbp_post_enrichment.enrich(
-                session,
-                settings,
-                organization_id=run.organization_id,
-                location_id=run.location_id,
-                gbp_location=location,
-                post_revision_id=revision.id,
-                content=content,
-                requested_call_to_action=arguments.get("call_to_action"),
-            )
-        except Exception:
-            await session.delete(revision)
-            await session.flush()
-            raise
 
-        revision.call_to_action = enrichment.call_to_action
-        await session.flush()
-        if enrichment.target_url is None:
-            await session.delete(revision)
-            await session.flush()
-            raise AgentToolDeniedError(
-                "GBP post proposal requires a client-owned website CTA before approval"
-            )
-        if settings.google_drive_service_account_json and enrichment.asset is None:
-            await session.delete(revision)
-            await session.flush()
-            raise AgentToolDeniedError(
-                "GBP post proposal requires a client-scoped Drive image before approval"
-            )
-
+        output = execution.output_document or {}
         ref = f"gbp-post-revision:{revision.id}"
         return {
             "data": {
                 "status": revision.status,
-                "target_url": enrichment.target_url,
-                "image_selected": enrichment.asset is not None,
-                "image_reference": enrichment.asset.source_reference if enrichment.asset else None,
+                "source_type": output.get("source_type"),
+                "source_review_reference": (
+                    f"review:{output['source_review_id']}"
+                    if output.get("source_review_id")
+                    else None
+                ),
+                "service_topic": output.get("source_service_topic"),
+                "grounding_sources": output.get("grounding_sources"),
+                "target_url": output.get("target_url"),
+                "image_reference": asset.source_reference,
             },
             "source_references": refs,
             "proposal_references": [ref],

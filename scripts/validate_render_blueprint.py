@@ -179,7 +179,9 @@ def validate_blueprint(path: Path = BLUEPRINT) -> tuple[str, ...]:
         "HERMES_RUNTIME_VERSION": "v2026.8.19",
         "HERMES_INFERENCE_PROVIDER": "openrouter",
         "HERMES_INFERENCE_MODEL": "deepseek/deepseek-v4-flash-0731",
-        "HERMES_MAX_ITERATIONS": "60",
+        # Spend bound: Hermes loops outside the AI Gateway and accepts no token
+        # budget, so iteration count is the only enforceable cap on a runaway run.
+        "HERMES_MAX_ITERATIONS": "25",
         "HERMES_YOLO_MODE": "0",
     }
     if set(hermes_env) != {

@@ -62,8 +62,14 @@ services:
         value: openrouter
       - key: HERMES_INFERENCE_MODEL
         value: deepseek/deepseek-v4-flash-0731
+      # Spend control. Hermes runs its own inference loop outside the AI Gateway
+      # and its API accepts no token budget, so iteration count is the only
+      # enforceable bound on a runaway run -- each iteration resends a context
+      # that has already reached ~126k tokens on a real GBP run. Observed healthy
+      # runs use roughly 15 tool calls, so 25 leaves headroom while capping the
+      # worst case at well under half of what 60 allowed.
       - key: HERMES_MAX_ITERATIONS
-        value: "60"
+        value: "25"
       - key: HERMES_YOLO_MODE
         value: "0"
       - key: OPENROUTER_API_KEY
