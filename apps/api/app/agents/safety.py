@@ -19,6 +19,78 @@ _SECRET_ASSIGNMENT = re.compile(
 )
 
 
+def encoded_size(value: object) -> int:
+    """Byte size of a tool result as it will be serialized for the bounded check."""
+    return len(json.dumps(value, default=str, separators=(",", ":")).encode())
+
+
+def bound_read_result(
+    result: dict[str, object], *, maximum_bytes: int = MAX_TOOL_RESULT_BYTES
+) -> dict[str, object]:
+    """Shrink an oversized read-tool result until it fits the bounded-result policy.
+
+    A read tool whose payload scales with client data — website pages, profile
+    snapshots, post history — will exceed the cap for some real client and, before
+    this, was denied outright. A denied read also never records its
+    ``source_references`` on the run, so a later governed proposal could not cite the
+    evidence and failed too. Degrading the payload keeps the evidence identity intact
+    and the run usable.
+
+    ``source_references`` and ``proposal_references`` are never trimmed: they are the
+    evidence identity the governed proposal tools validate against. Only ``data`` is
+    reduced, and the result records what was withheld so the agent can tell the
+    difference between "absent" and "too large to return".
+    """
+    if encoded_size(result) <= maximum_bytes:
+        return result
+
+    preserved = {
+        key: value
+        for key, value in result.items()
+        if key in ("source_references", "proposal_references")
+    }
+    data = result.get("data")
+    if not isinstance(data, dict):
+        # Nothing structured to reduce; return references plus an explicit notice.
+        return {**preserved, "data": {}, "truncated": True, "truncated_fields": ["data"]}
+
+    working = {key: value for key, value in data.items()}
+    truncated_fields: list[str] = []
+    # Longest collections first: they dominate the payload.
+    for key in sorted(
+        working,
+        key=lambda name: encoded_size(working[name]),
+        reverse=True,
+    ):
+        if encoded_size({**preserved, "data": working, "truncated": True}) <= maximum_bytes:
+            break
+        value = working[key]
+        if isinstance(value, list) and value:
+            # Halve repeatedly rather than dropping the field outright.
+            while (
+                len(value) > 1
+                and encoded_size({**preserved, "data": working, "truncated": True}) > maximum_bytes
+            ):
+                value = value[: max(1, len(value) // 2)]
+                working[key] = value
+            if key not in truncated_fields:
+                truncated_fields.append(key)
+        if encoded_size({**preserved, "data": working, "truncated": True}) > maximum_bytes:
+            working[key] = [] if isinstance(value, list) else None
+            if key not in truncated_fields:
+                truncated_fields.append(key)
+
+    bounded: dict[str, object] = {
+        **preserved,
+        "data": working,
+        "truncated": True,
+        "truncated_fields": truncated_fields,
+    }
+    if encoded_size(bounded) > maximum_bytes:
+        bounded = {**preserved, "data": {}, "truncated": True, "truncated_fields": ["data"]}
+    return bounded
+
+
 def has_secret_key(value: object) -> bool:
     if isinstance(value, dict):
         for key, child in value.items():

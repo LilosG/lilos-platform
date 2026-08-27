@@ -17,6 +17,7 @@ from apps.api.app.administration.service import AdministrationService
 from apps.api.app.agents.models import AgentRun
 from apps.api.app.agents.safety import (
     MAX_TOOL_RESULT_BYTES,
+    bound_read_result,
     has_secret_key,
     safe_argument_metadata,
 )
@@ -202,6 +203,11 @@ class AgentToolService:
             result = await handler(session, run, arguments)
             if has_secret_key(result):
                 raise AgentToolDeniedError("secret-bearing tool result rejected")
+            if not spec.mutating:
+                # A read whose payload scales with client data must degrade, not fail.
+                # Denying it also loses its source_references, which then blocks any
+                # governed proposal that needs to cite that evidence.
+                result = bound_read_result(result)
             encoded = json.dumps(result, default=str, separators=(",", ":")).encode()
             result_hash = sha256(encoded).hexdigest()
             result_bytes = len(encoded)
@@ -358,16 +364,36 @@ class AgentToolService:
             content_type="agent_analysis",
             limit=10,
         )
+        # Website page documents carry full body text, which for a real client site can
+        # exceed the bounded-result policy on its own. Project each page down to what
+        # the agent needs to choose a destination, keeping an excerpt not the whole body.
         return {
             "data": {
                 "identity": result["identity"],
                 "gbp_knowledge": result["gbp_knowledge"],
-                "website_knowledge": result["website_knowledge"],
+                "website_knowledge": [
+                    self._compact_website_page(page) for page in result["website_knowledge"]
+                ],
             },
             "source_references": [
                 f"business-knowledge:{item}" for item in result["source_document_ids"]
             ],
         }
+
+    @staticmethod
+    def _compact_website_page(page: object) -> dict[str, object]:
+        """Reduce a website knowledge document to destination-selection essentials."""
+        if not isinstance(page, dict):
+            return {}
+        compact: dict[str, object] = {}
+        for key in ("url", "title", "h1", "page_type", "primary_topic"):
+            value = page.get(key)
+            if value is not None and str(value).strip():
+                compact[key] = str(value)[:300]
+        body = str(page.get("body_text") or "").strip()
+        if body:
+            compact["body_excerpt"] = " ".join(body.split())[:600]
+        return compact
 
     async def _tool_read_gbp_state(
         self, session: AsyncSession, run: AgentRun, arguments: dict[str, Any]

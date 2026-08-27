@@ -7,7 +7,14 @@ import pytest
 
 from apps.api.app.agents.hermes_client import REQUIRED_LILOS_TOOLS, HermesRunsClient
 from apps.api.app.agents.models import AgentRun
-from apps.api.app.agents.safety import redact_text, safe_argument_metadata, safe_event_document
+from apps.api.app.agents.safety import (
+    MAX_TOOL_RESULT_BYTES,
+    bound_read_result,
+    encoded_size,
+    redact_text,
+    safe_argument_metadata,
+    safe_event_document,
+)
 from apps.api.app.agents.skills import SKILLS, WORKFLOW_SKILLS
 from apps.api.app.agents.tools import TOOL_SPECS, AgentToolDeniedError, AgentToolService
 from apps.api.app.execution.workflow_catalog import WORKFLOW_TYPES
@@ -157,3 +164,81 @@ def test_review_agent_cannot_bypass_deterministic_restricted_risk() -> None:
             )
 
     asyncio.run(scenario())
+
+
+def test_bound_read_result_returns_small_results_unchanged() -> None:
+    result: dict[str, object] = {"data": {"website_knowledge": [{"url": "https://example.com/"}]}}
+
+    assert bound_read_result(result) is result
+
+
+def test_bound_read_result_degrades_instead_of_denying() -> None:
+    """A read whose payload scales with client data must shrink, not fail.
+
+    Regression: read_website_knowledge returned full page bodies, exceeded
+    MAX_TOOL_RESULT_BYTES for a real client site, and was denied outright. The denial
+    also discarded its source_references, which then blocked generate_gbp_post_proposal
+    because the evidence it needed to cite had never been recorded as observed.
+    """
+    pages = [{"url": f"https://example.com/{i}", "body_excerpt": "x" * 2_000} for i in range(60)]
+    result: dict[str, object] = {
+        "data": {"website_knowledge": pages, "identity": [{"name": "Wheyland Electric"}]},
+        "source_references": [f"business-knowledge:{i}" for i in range(30)],
+    }
+    assert encoded_size(result) > MAX_TOOL_RESULT_BYTES
+
+    bounded = bound_read_result(result)
+
+    assert encoded_size(bounded) <= MAX_TOOL_RESULT_BYTES
+    assert bounded["truncated"] is True
+    truncated_fields = bounded["truncated_fields"]
+    assert isinstance(truncated_fields, list)
+    assert "website_knowledge" in truncated_fields
+
+
+def test_bound_read_result_never_trims_evidence_references() -> None:
+    """source_references are the evidence identity governed proposals validate against."""
+    references = [f"business-knowledge:{i}" for i in range(40)]
+    result: dict[str, object] = {
+        "data": {"website_knowledge": [{"body_excerpt": "y" * 3_000} for _ in range(50)]},
+        "source_references": list(references),
+    }
+
+    bounded = bound_read_result(result)
+
+    assert bounded["source_references"] == references
+    assert encoded_size(bounded) <= MAX_TOOL_RESULT_BYTES
+
+
+def test_bound_read_result_handles_unstructured_payload() -> None:
+    result: dict[str, object] = {
+        "data": "z" * (MAX_TOOL_RESULT_BYTES + 10),
+        "source_references": ["a:1"],
+    }
+
+    bounded = bound_read_result(result)
+
+    assert bounded["data"] == {}
+    assert bounded["source_references"] == ["a:1"]
+    assert encoded_size(bounded) <= MAX_TOOL_RESULT_BYTES
+
+
+def test_compact_website_page_drops_full_body() -> None:
+    page: dict[str, object] = {
+        "url": "https://example.com/panel-upgrades/",
+        "h1": "Panel Upgrades",
+        "body_text": "word " * 5_000,
+        "irrelevant": "drop me",
+    }
+
+    compact = AgentToolService._compact_website_page(page)
+
+    assert compact["url"] == "https://example.com/panel-upgrades/"
+    assert compact["h1"] == "Panel Upgrades"
+    assert "irrelevant" not in compact
+    assert "body_text" not in compact
+    assert len(str(compact["body_excerpt"])) <= 600
+
+
+def test_compact_website_page_tolerates_non_dict() -> None:
+    assert AgentToolService._compact_website_page("nope") == {}
