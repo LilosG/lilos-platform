@@ -228,6 +228,7 @@ describe("applyBootResult", () => {
         organizationName: "Wheyland Electric",
         organizationStatus: "active",
         membershipType: "owner",
+        entitledProductKeys: ["insights"],
       },
       organizations: [],
     };

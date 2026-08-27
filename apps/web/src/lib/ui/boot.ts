@@ -22,6 +22,19 @@ export type BootContext = {
   organizationName: string;
   organizationStatus: string;
   membershipType: string;
+  /**
+   * Product keys this organization is entitled to.
+   *
+   * Boot already resolves these to hide navigation items, but pages could not see
+   * them, so a page rendered every product's section regardless of entitlement. A
+   * client entitled to Insights but not SEO was shown an Organic search panel for
+   * a product they do not have. Exposing the set here lets a page omit sections it
+   * has no business showing.
+   *
+   * Presentation only. The API must enforce entitlement independently — hiding a
+   * panel is not access control.
+   */
+  entitledProductKeys: readonly string[];
 };
 
 export type BootResult =
@@ -319,12 +332,12 @@ export async function bootWorkspace(
   // Fetch entitled products for the initial organization.
   const { fetchEntitledProducts } = await import("../workspace");
   const products = await fetchEntitledProducts(initial.organization_id);
+  let entitledProductKeys: readonly string[] = [];
   if (products.kind === "ok") {
-    setProductNavigationVisibility(
-      new Set(
-        products.data.filter((p) => p.entitled).map((p) => p.product_key),
-      ),
-    );
+    entitledProductKeys = products.data
+      .filter((p) => p.entitled)
+      .map((p) => p.product_key);
+    setProductNavigationVisibility(new Set(entitledProductKeys));
   }
 
   return {
@@ -334,6 +347,7 @@ export async function bootWorkspace(
       organizationName: initial.organization_name,
       organizationStatus: initial.organization_status,
       membershipType: initial.membership_type,
+      entitledProductKeys,
     },
     organizations: organizations.data,
   };

@@ -58,16 +58,23 @@ import "../styles/global.css";
           >
           <Region slot="meta" id="insights-reporting-controls" />
         </PageHeader>
-        <PageSection eyebrow="Analytics" title="Website performance">
-          <Region slot="actions" id="analytics-provenance" />
-          <Region id="website-performance-panel"
-            ><Skeleton lines={4} label="Loading website performance" /></Region
-          >
-        </PageSection>
-        <PageSection eyebrow="Search Console" title="Organic search">
-          <Region slot="actions" id="search-console-provenance" />
-          <Region id="organic-search-panel" />
-        </PageSection>
+        <div id="analytics-section" hidden>
+          <PageSection eyebrow="Analytics" title="Website performance">
+            <Region slot="actions" id="analytics-provenance" />
+            <Region id="website-performance-panel"
+              ><Skeleton
+                lines={4}
+                label="Loading website performance"
+              /></Region
+            >
+          </PageSection>
+        </div>
+        <div id="search-console-section" hidden>
+          <PageSection eyebrow="Search Console" title="Organic search">
+            <Region slot="actions" id="search-console-provenance" />
+            <Region id="organic-search-panel" />
+          </PageSection>
+        </div>
         <PageSection eyebrow="Operational data" title="Cross-product digest"
           ><Region id="digest-panel" /></PageSection
         >
@@ -568,9 +575,33 @@ import "../styles/global.css";
         }
       }
 
+      /**
+       * Show only the sections this organization is entitled to.
+       *
+       * This page is client-facing: an operator sees every product, while a client
+       * sees the products they were set up with. Rendering an Organic search panel
+       * to a content-only client shows them a product they do not have, and an
+       * empty one at that.
+       *
+       * Presentation only — the API enforces entitlement separately. Hiding a
+       * panel is not access control.
+       */
+      function applyProductEntitlement(entitled: readonly string[]): void {
+        const permitted = new Set(entitled);
+        const sections: [string, string][] = [
+          ["analytics-section", "insights"],
+          ["search-console-section", "seo"],
+        ];
+        for (const [elementId, productKey] of sections) {
+          const node = document.getElementById(elementId);
+          if (node) node.hidden = !permitted.has(productKey);
+        }
+      }
+
       async function boot(): Promise<void> {
         const result = await bootWorkspace("Insights");
         if (!applyBootResult(regions, result)) return;
+        applyProductEntitlement(result.context.entitledProductKeys);
         populateSwitcher(result.organizations, (o) => void loadOrganization(o));
         const org =
           result.organizations.find(
