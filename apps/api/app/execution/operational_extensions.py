@@ -164,6 +164,10 @@ async def _handle_gbp_generate_post(
             correlation_id=correlation_id,
         )
     except GBPProposalEnrichmentError as exc:
+        # The runtime commits returned JobOutcomes. Roll back every mutation made
+        # by this handler before translating the enrichment exception into a
+        # workflow outcome so no partial text-only revision can survive failure.
+        await session.rollback()
         logger.warning(
             "GBP AI post delivery enrichment failed",
             extra={
@@ -182,6 +186,7 @@ async def _handle_gbp_generate_post(
             safe_error=exc.safe_code,
         )
     except ValueError as exc:
+        await session.rollback()
         logger.warning(
             "GBP AI post generation rejected",
             extra={
@@ -193,6 +198,7 @@ async def _handle_gbp_generate_post(
         )
         return JobOutcome(result="permanent_failure", safe_error="GBP_POST_GROUNDING_REQUIRED")
     except LookupError as exc:
+        await session.rollback()
         logger.warning(
             "GBP AI post generation scope missing",
             extra={
@@ -204,6 +210,7 @@ async def _handle_gbp_generate_post(
         )
         return JobOutcome(result="permanent_failure", safe_error="GBP_LOCATION_NOT_FOUND")
     except Exception as exc:
+        await session.rollback()
         logger.exception(
             "GBP AI post generation failed",
             extra={
@@ -216,6 +223,7 @@ async def _handle_gbp_generate_post(
         return JobOutcome(result="retryable_failure", safe_error="GBP_POST_GENERATION_FAILED")
 
     if asset is None:
+        await session.rollback()
         return JobOutcome(
             result="permanent_failure",
             safe_error="GBP_POST_DELIVERY_BINDING_MISSING",
