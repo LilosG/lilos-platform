@@ -282,6 +282,31 @@ import "../styles/automations.css";
         actionStatus.append(node);
       }
 
+      /**
+       * Show a failure beside the control that produced it.
+       *
+       * setActionMessage writes to a region near the top of the page. The
+       * schedules table sits far below it, so a failed Pause/Resume/Cancel
+       * reported only there is invisible: the row simply appears not to have
+       * changed. Row actions therefore report in place as well.
+       */
+      function setRowFailure(row: HTMLElement, message: string): void {
+        row
+          .querySelectorAll(".js-row-failure")
+          .forEach((node) => node.remove());
+        const node = document.createElement("p");
+        node.className = "ui-alert ui-alert--danger js-row-failure";
+        node.setAttribute("role", "alert");
+        node.textContent = message;
+        row.append(node);
+      }
+
+      function clearRowFailure(row: HTMLElement): void {
+        row
+          .querySelectorAll(".js-row-failure")
+          .forEach((node) => node.remove());
+      }
+
       function actionButton(
         label: string,
         handler: (button: HTMLButtonElement) => Promise<void>,
@@ -870,6 +895,8 @@ import "../styles/automations.css";
         button: HTMLButtonElement,
       ): Promise<void> {
         const nextStatus = schedule.status === "active" ? "paused" : "active";
+        const row = button.parentElement;
+        if (row) clearRowFailure(row);
         button.disabled = true;
         const result = await updateSchedule(activeOrgId, schedule.id, {
           status: nextStatus,
@@ -878,9 +905,11 @@ import "../styles/automations.css";
         if (result.kind === "ok") {
           setActionMessage(`Schedule ${nextStatus}.`);
           await loadAutomationData();
-        } else {
-          setActionMessage(describeFailure(result, "Schedule"), true);
+          return;
         }
+        const failure = describeFailure(result, "Schedule");
+        setActionMessage(failure, true);
+        if (row) setRowFailure(row, failure);
         button.disabled = false;
       }
 
@@ -895,10 +924,13 @@ import "../styles/automations.css";
         if (result.kind === "ok") {
           setActionMessage("Schedule cancelled. It will not run again.");
           await loadAutomationData();
-        } else {
-          setActionMessage(describeFailure(result, "Schedule"), true);
-          button.disabled = false;
+          return;
         }
+        const failure = describeFailure(result, "Schedule");
+        setActionMessage(failure, true);
+        const row = button.parentElement;
+        if (row) setRowFailure(row, failure);
+        button.disabled = false;
       }
 
       async function changeCadence(
@@ -913,9 +945,12 @@ import "../styles/automations.css";
         if (result.kind === "ok") {
           setActionMessage("Schedule cadence updated.");
           await loadAutomationData();
-        } else {
-          setActionMessage(describeFailure(result, "Schedule"), true);
+          return;
         }
+        const failure = describeFailure(result, "Schedule");
+        setActionMessage(failure, true);
+        const row = select.parentElement;
+        if (row) setRowFailure(row, failure);
         select.disabled = false;
       }
 
