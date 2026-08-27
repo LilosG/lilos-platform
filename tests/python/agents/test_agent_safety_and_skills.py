@@ -242,3 +242,102 @@ def test_compact_website_page_drops_full_body() -> None:
 
 def test_compact_website_page_tolerates_non_dict() -> None:
     assert AgentToolService._compact_website_page("nope") == {}
+
+
+def test_run_site_crawl_binds_a_crawl_run_to_the_workflow() -> None:
+    """Regression: the agent crawl tool started the workflow with an empty document.
+
+    The seo.crawl_or_analysis handler requires input_document["crawl_run_id"], so every
+    agent-initiated crawl failed permanently with MISSING_CRAWL_RUN_ID. SEOService
+    .enqueue_crawl is the supported path: it creates the crawl run, writes the input
+    document, and enqueues the job, so the workflow must not be pre-enqueued.
+    """
+
+    async def scenario() -> None:
+        organization_id = uuid4()
+        location_id = uuid4()
+        website_id = uuid4()
+        crawl_run_id = uuid4()
+        workflow_id = uuid4()
+        recorded: dict[str, Any] = {}
+
+        class FakeSEO:
+            async def list_websites(self, *_args: object) -> list[object]:
+                return [SimpleNamespace(id=website_id)]
+
+            async def enqueue_crawl(
+                self,
+                _session: object,
+                org: object,
+                site: object,
+                command: Any,
+                *,
+                actor_id: object,
+                correlation_id: object,
+            ) -> object:
+                recorded["website_id"] = site
+                recorded["workflow_run_id"] = command.workflow_run_id
+                recorded["idempotency_key"] = command.idempotency_key
+                del org, actor_id, correlation_id
+                return SimpleNamespace(id=crawl_run_id, status="queued")
+
+        class FakeExecution:
+            async def start_named(self, *_args: object, **kwargs: object) -> object:
+                recorded["enqueue_job"] = kwargs.get("enqueue_job")
+                return SimpleNamespace(id=workflow_id, status="queued")
+
+        service = AgentToolService()
+        service.seo = cast(Any, FakeSEO())
+        service.execution = cast(Any, FakeExecution())
+
+        result = await service._tool_run_site_crawl(
+            cast(Any, None),
+            cast(
+                Any,
+                SimpleNamespace(
+                    id=uuid4(),
+                    organization_id=organization_id,
+                    location_id=location_id,
+                    correlation_id="corr",
+                ),
+            ),
+            {},
+        )
+
+        # The job must be enqueued by enqueue_crawl, not by start_named.
+        assert recorded["enqueue_job"] is False
+        assert recorded["workflow_run_id"] == workflow_id
+        assert recorded["website_id"] == website_id
+        assert len(str(recorded["idempotency_key"])) >= 8
+        data = cast(dict[str, object], result["data"])
+        assert data["crawl_run_reference"] == f"seo-crawl-run:{crawl_run_id}"
+        assert f"seo-crawl-run:{crawl_run_id}" in cast(list[str], result["source_references"])
+
+    asyncio.run(scenario())
+
+
+def test_run_site_crawl_denies_when_no_website_is_registered() -> None:
+    async def scenario() -> None:
+        class FakeSEO:
+            async def list_websites(self, *_args: object) -> list[object]:
+                return []
+
+        service = AgentToolService()
+        service.seo = cast(Any, FakeSEO())
+
+        with pytest.raises(AgentToolDeniedError):
+            await service._tool_run_site_crawl(
+                cast(Any, None),
+                cast(
+                    Any,
+                    SimpleNamespace(
+                        id=uuid4(),
+                        organization_id=uuid4(),
+                        location_id=uuid4(),
+                        correlation_id="corr",
+                    ),
+                ),
+                {},
+            )
+
+    asyncio.run(scenario())

@@ -42,7 +42,7 @@ from apps.api.app.products.gbp.post_generation_models import GBPPostAsset
 from apps.api.app.products.gbp.proposal_enrichment import GBPPostProposalEnrichmentService
 from apps.api.app.products.gbp.service import GBPService
 from apps.api.app.products.reviews.service import ReviewService
-from apps.api.app.products.seo.contracts import RecommendationCreate
+from apps.api.app.products.seo.contracts import CrawlRequest, RecommendationCreate
 from apps.api.app.products.seo.search_console_service import SearchConsoleService
 from apps.api.app.products.seo.service import SEOService
 
@@ -660,6 +660,17 @@ class AgentToolService:
         self, session: AsyncSession, run: AgentRun, arguments: dict[str, Any]
     ) -> dict[str, object]:
         del arguments
+        # The crawl handler requires input_document["crawl_run_id"]. Starting the
+        # workflow with an empty document made every agent-initiated crawl fail
+        # permanently with MISSING_CRAWL_RUN_ID. SEOService.enqueue_crawl is the
+        # supported path: it creates the crawl run, writes the full input document,
+        # and enqueues the job itself, so the workflow must NOT be pre-enqueued.
+        websites = await self.seo.list_websites(session, run.organization_id)
+        if not websites:
+            raise AgentToolDeniedError(
+                "a confirmed website must be registered before a crawl can be requested"
+            )
+        website = websites[0]
         workflow = await self.execution.start_named(
             session,
             run.organization_id,
@@ -669,12 +680,27 @@ class AgentToolService:
             input_document={},
             correlation_id=run.correlation_id,
             actor_id=None,
-            enqueue_job=True,
+            enqueue_job=False,
+        )
+        crawl_run = await self.seo.enqueue_crawl(
+            session,
+            run.organization_id,
+            website.id,
+            CrawlRequest(
+                workflow_run_id=workflow.id,
+                idempotency_key=f"agent-crawl-{run.id}",
+            ),
+            actor_id=None,
+            correlation_id=run.correlation_id,
         )
         ref = f"workflow-run:{workflow.id}"
         return {
-            "data": {"status": workflow.status},
-            "source_references": [ref],
+            "data": {
+                "status": crawl_run.status,
+                "crawl_run_reference": f"seo-crawl-run:{crawl_run.id}",
+                "website_reference": f"seo-website:{website.id}",
+            },
+            "source_references": [ref, f"seo-crawl-run:{crawl_run.id}"],
             "proposal_references": [ref],
         }
 
