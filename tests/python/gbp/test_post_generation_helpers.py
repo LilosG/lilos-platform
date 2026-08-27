@@ -170,3 +170,74 @@ def test_service_fallback_copy_handles_missing_topic() -> None:
     copy = GBPPostGenerationService._service_fallback_copy("Amp Electric", "   ")
 
     assert "our services" in copy
+
+
+def test_service_topics_fall_back_to_website_pages() -> None:
+    """A new client with only a scraped site and GBP still has topics to post about."""
+    knowledge = {
+        "website_knowledge": [
+            {"url": "https://example.com/", "title": "Wheyland Electric", "h1": "Home"},
+            {"url": "https://example.com/panel-upgrades/", "h1": "Panel Upgrades"},
+            {"url": "https://example.com/ev-chargers/", "title": "EV Charger Install"},
+        ]
+    }
+
+    topics = GBPPostGenerationService._service_topics([], {}, knowledge)
+
+    assert "Panel Upgrades" in topics
+    assert "EV Charger Install" in topics
+    # The homepage names the business, not a service, so it must not become a topic.
+    assert "Wheyland Electric" not in topics
+    assert "Home" not in topics
+
+
+def test_service_topics_prefer_facts_then_profile_then_website() -> None:
+    governed_facts: list[GovernedFact] = [
+        {
+            "fact_key": "primary_services",
+            "value": ["Panel Upgrades"],
+            "authority": "client_approved",
+            "revision_id": "r1",
+        }
+    ]
+    profile: dict[str, object] = {"serviceItems": [{"name": "Generator Installation"}]}
+    knowledge = {"website_knowledge": [{"url": "https://example.com/ev/", "h1": "EV Chargers"}]}
+
+    topics = GBPPostGenerationService._service_topics(governed_facts, profile, knowledge)
+
+    assert topics.index("Panel Upgrades") < topics.index("Generator Installation")
+    assert topics.index("Generator Installation") < topics.index("EV Chargers")
+
+
+def test_rotate_service_topics_puts_unused_first_and_keeps_all() -> None:
+    """Repetition is avoided within the window but never removes a candidate."""
+    candidates = ["Panel Upgrades", "EV Chargers", "Lighting"]
+
+    rotated = GBPPostGenerationService._rotate_service_topics(
+        candidates, ["Panel Upgrades", "Lighting"]
+    )
+
+    assert rotated[0] == "EV Chargers"
+    assert sorted(rotated) == sorted(candidates), "no candidate may be dropped"
+    # Least recently used of the already-used topics comes before the most recent.
+    assert rotated.index("Lighting") < rotated.index("Panel Upgrades")
+
+
+def test_rotate_service_topics_reuses_when_every_topic_is_recent() -> None:
+    """An exhausted rotation reuses the oldest topic rather than failing."""
+    candidates = ["Panel Upgrades", "EV Chargers"]
+
+    rotated = GBPPostGenerationService._rotate_service_topics(
+        candidates, ["EV Chargers", "Panel Upgrades"]
+    )
+
+    assert sorted(rotated) == sorted(candidates)
+    assert rotated[0] == "Panel Upgrades", "oldest recent topic is reused first"
+
+
+def test_rotate_service_topics_is_case_insensitive() -> None:
+    rotated = GBPPostGenerationService._rotate_service_topics(
+        ["Panel Upgrades", "EV Chargers"], ["panel upgrades"]
+    )
+
+    assert rotated[0] == "EV Chargers"

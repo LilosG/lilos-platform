@@ -150,13 +150,20 @@ class GBPPostGenerationService:
             )
         )
         fact_ids = [row.id for row in fact_rows]
-        if not fact_ids:
-            raise ValueError("approved business facts required for GBP AI generation")
-        governed_facts = await resolve_governed_facts(
-            session,
-            organization_id,
-            fact_ids,
-            location_id=location_id,
+        # Approved business facts are the strongest grounding source but not the only
+        # one. A newly onboarded client has an authoritative GBP profile and website
+        # before anyone curates facts by hand, so absence of facts must not block
+        # posting. The grounding requirement is enforced after knowledge retrieval
+        # against the union of available client-owned sources.
+        governed_facts = (
+            await resolve_governed_facts(
+                session,
+                organization_id,
+                fact_ids,
+                location_id=location_id,
+            )
+            if fact_ids
+            else []
         )
 
         snapshot = await session.scalar(
@@ -179,8 +186,9 @@ class GBPPostGenerationService:
         else:
             knowledge_title = f"Service update: {topic}"
             knowledge_intent = (
-                "write a useful Google Business Profile post about this service using approved "
-                "business facts and link to the client-owned page most relevant to it"
+                "write a useful Google Business Profile post about this service using the "
+                "client's approved facts, Google Business Profile, and website, and link to "
+                "the client-owned page most relevant to it"
             )
         knowledge = await self.knowledge.retrieve_for_content(
             session,
@@ -191,6 +199,25 @@ class GBPPostGenerationService:
             intent=knowledge_intent,
             content_type="gbp_post",
         )
+        # Fail closed only when there is genuinely nothing client-owned to ground on.
+        # GBP profile and website knowledge are ingested automatically from the
+        # client's own profile and site, so a new client is groundable on day one.
+        grounding_sources = [
+            name
+            for name, present in (
+                ("business_facts", bool(governed_facts)),
+                ("gbp_profile", bool(profile)),
+                ("gbp_knowledge", bool(knowledge.get("gbp"))),
+                ("website", bool(knowledge.get("website_knowledge"))),
+                ("identity", bool(knowledge.get("identity"))),
+            )
+            if present
+        ]
+        if not grounding_sources:
+            raise ValueError(
+                "no approved business facts, GBP profile, or website knowledge available "
+                "for GBP AI generation"
+            )
 
         recent_provider = list(
             await session.scalars(
@@ -225,11 +252,15 @@ class GBPPostGenerationService:
             relevance_text = f"{review_text} {topic}".strip()
             target_url = self._select_target_url(profile, knowledge, relevance_text)
         else:
-            # Without a review the topic is ours to choose, so try each approved service
-            # rather than failing because the single highest-priority one has no page.
+            # Without a review the topic is ours to choose. Try candidates in
+            # least-recently-used order so consecutive service posts vary, and try
+            # every candidate rather than failing because the first has no page.
             relevance_text = topic
             target_url = None
-            for candidate in self._service_topics(governed_facts, profile):
+            recent_topics = await self._recent_service_topics(session, organization_id, location_id)
+            for candidate in self._rotate_service_topics(
+                self._service_topics(governed_facts, profile, knowledge), recent_topics
+            ):
                 candidate_url = self._select_target_url(profile, knowledge, candidate)
                 if candidate_url is not None:
                     topic = candidate
@@ -268,8 +299,9 @@ class GBPPostGenerationService:
             intent = "create one Google Business Profile update about the selected service"
             source_block = {"service_topic": topic}
             instructions = (
-                "Write about the selected service using only the approved business facts and "
-                "client website knowledge provided. Invent nothing: no offers, discounts, "
+                "Write about the selected service using only the client-owned sources "
+                "provided: approved business facts, the Google Business Profile, and website "
+                "knowledge. Invent nothing: no offers, discounts, "
                 "guarantees, pricing, credentials, awards, service areas, or availability that "
                 "is not present in the approved facts. Do not imply a customer said anything. "
                 "Do not repeat any of the recent posts listed. Keep the post useful and natural, "
@@ -366,6 +398,7 @@ class GBPPostGenerationService:
                 "draft": draft,
                 "post_revision_id": str(revision.id),
                 "source_type": source_type,
+                "grounding_sources": grounding_sources,
                 "target_url": target_url,
                 "selected_image": selected_image_metadata,
                 "publication_requirements": dict(revision.publication_requirements or {}),
@@ -552,12 +585,17 @@ class GBPPostGenerationService:
 
     @staticmethod
     def _service_topics(
-        governed_facts: list[GovernedFact], profile: dict[str, object]
+        governed_facts: list[GovernedFact],
+        profile: dict[str, object],
+        knowledge: dict[str, Any] | None = None,
     ) -> list[str]:
-        """Approved service topics, most authoritative first, deduplicated.
+        """Service topics in authority order, deduplicated.
 
-        Ordered candidates rather than a single hint so a location whose highest
-        priority service has no matching website page can still post about another.
+        Approved facts first, then the GBP profile's own service items, then the
+        client's website page titles. All three are client-owned sources, which is
+        what makes a newly onboarded client postable before anyone curates facts by
+        hand. Ordered candidates rather than a single hint so a location whose
+        highest-priority service has no matching page can still post about another.
         """
         topics: list[str] = []
 
@@ -584,7 +622,69 @@ class GBPPostGenerationService:
                     add(item.get("structuredName") or item.get("name"))
                 else:
                     add(item)
+        # Website page titles: the client's own site, already ingested by the crawler.
+        # Homepage-style pages are skipped because they name the business, not a service.
+        pages = (knowledge or {}).get("website_knowledge")
+        if isinstance(pages, list):
+            for raw in pages:
+                if not isinstance(raw, dict):
+                    continue
+                if str(raw.get("url") or "").rstrip("/").count("/") <= 2:
+                    continue
+                add(raw.get("h1") or raw.get("title"))
         return topics[:12]
+
+    @staticmethod
+    async def _recent_service_topics(
+        session: AsyncSession,
+        organization_id: UUID,
+        location_id: UUID,
+        *,
+        window: int = 10,
+    ) -> list[str]:
+        """Service topics used by the most recent generated posts, newest first.
+
+        A short window, not the full history: repeating a topic eventually is normal
+        and must never be an error. Only the recent run of posts should steer away
+        from a topic.
+        """
+        rows = list(
+            await session.scalars(
+                select(AIExecution.output_document)
+                .join(AITaskDefinition, AITaskDefinition.id == AIExecution.task_definition_id)
+                .where(
+                    AIExecution.organization_id == organization_id,
+                    AIExecution.location_id == location_id,
+                    AIExecution.status == "completed",
+                    AITaskDefinition.key == TASK_KEY,
+                )
+                .order_by(AIExecution.created_at.desc())
+                .limit(window)
+            )
+        )
+        topics: list[str] = []
+        for document in rows:
+            topic = str((document or {}).get("source_service_topic") or "").strip()
+            if topic:
+                topics.append(topic)
+        return topics
+
+    @staticmethod
+    def _rotate_service_topics(candidates: list[str], recent_topics: list[str]) -> list[str]:
+        """Order candidates least-recently-used first, keeping every candidate.
+
+        Mirrors the Drive image rule: prefer something unused in the recent window,
+        but never drop a candidate, so an exhausted rotation reuses the oldest topic
+        instead of failing.
+        """
+        recent_rank: dict[str, int] = {}
+        for position, topic in enumerate(recent_topics):
+            recent_rank.setdefault(topic.casefold(), position)
+        unused = [c for c in candidates if c.casefold() not in recent_rank]
+        used = [c for c in candidates if c.casefold() in recent_rank]
+        # recent_topics is newest-first, so a larger rank means longer unused.
+        used.sort(key=lambda c: recent_rank[c.casefold()], reverse=True)
+        return unused + used
 
     @staticmethod
     def _service_fallback_copy(organization_name: str, topic: str) -> str:
