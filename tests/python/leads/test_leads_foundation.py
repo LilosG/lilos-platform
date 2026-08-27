@@ -87,7 +87,6 @@ def test_communication_consent_type_must_match_channel() -> None:
                 "channel": "email",
                 "consent_type": "marketing_sms",
                 "message_reference": "draft:123",
-                "workflow_run_id": uuid4(),
                 "idempotency_key": "communication-123",
             }
         )

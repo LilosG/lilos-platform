@@ -19,6 +19,7 @@ from apps.api.app.audit.enums import AuditActorType, AuditResult
 from apps.api.app.audit.metadata import JsonValue
 from apps.api.app.audit.repository import AuditEventRepository
 from apps.api.app.audit.service import AuditEventService
+from apps.api.app.execution.service import ExecutionService
 from apps.api.app.notifications.models import NotificationTemplate
 from apps.api.app.notifications.service import NotificationService
 from apps.api.app.products.leads.contracts import (
@@ -139,6 +140,7 @@ class LeadService:
         self.audit = AuditEventService()
         self.audit_repository = AuditEventRepository()
         self.notifications = NotificationService()
+        self.execution = ExecutionService()
 
     async def _audit(
         self,
@@ -426,6 +428,22 @@ class LeadService:
         eligible = (
             not suppressed and latest is not None and latest.status in {"granted", "not_required"}
         )
+        # Own the workflow run here rather than accepting one from the caller.
+        # A caller-supplied run has already been enqueued, so its job could execute
+        # before this row exists and fail permanently with COMMUNICATION_NOT_FOUND.
+        # Creating it after the eligibility decision, un-enqueued, removes that race
+        # and matches reviews.publish_response and SEOService.enqueue_crawl.
+        workflow_run = await self.execution.start_named(
+            session,
+            organization_id,
+            "leads.send_communication",
+            command.idempotency_key,
+            location_id=lead.location_id,
+            input_document={},
+            correlation_id=correlation_id,
+            actor_id=None,
+            enqueue_job=False,
+        )
         item = LeadCommunication(
             organization_id=organization_id,
             location_id=lead.location_id,
@@ -434,11 +452,21 @@ class LeadService:
             channel=command.channel,
             status="planned" if eligible else "suppressed",
             message_reference=command.message_reference,
-            workflow_run_id=command.workflow_run_id,
+            workflow_run_id=workflow_run.id,
             idempotency_key=command.idempotency_key,
         )
         session.add(item)
         await session.flush()
+        # Only an eligible communication is dispatched. A suppressed one keeps its
+        # run for audit and is never sent -- consent and suppression decide here,
+        # not in the worker.
+        if item.status == "planned":
+            workflow_run.input_document = {
+                **dict(workflow_run.input_document or {}),
+                "communication_id": str(item.id),
+            }
+            await session.flush()
+            await self.execution.enqueue_run_job(session, workflow_run)
         await self._audit(
             session,
             event="leads.communication.planned",

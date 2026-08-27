@@ -196,6 +196,37 @@ class ExecutionService:
             await session.flush()
         return run, True
 
+    async def enqueue_run_job(self, session: AsyncSession, run: WorkflowRun) -> None:
+        """Queue the durable worker job for a run that was started un-enqueued.
+
+        Products that must bind a domain row to a run before it executes start the
+        run with ``enqueue_job=False``, write the row, then call this. Enqueuing at
+        start time instead would let the worker claim the job before the row exists
+        and fail permanently on a missing record.
+
+        The job idempotency key is derived from the run, so a repeated call cannot
+        queue the same run twice.
+        """
+        existing = await session.scalar(
+            select(Job).where(
+                Job.organization_id == run.organization_id,
+                Job.idempotency_key == f"run:{run.id}",
+            )
+        )
+        if existing is not None:
+            return
+        session.add(
+            Job(
+                organization_id=run.organization_id,
+                workflow_run_id=run.id,
+                job_type="workflow.execute",
+                status="queued",
+                idempotency_key=f"run:{run.id}",
+                payload={"run_id": str(run.id)},
+            )
+        )
+        await session.flush()
+
     async def dispatch_due_schedule(
         self, session: AsyncSession, correlation_id: str
     ) -> WorkflowRun | None:

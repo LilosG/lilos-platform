@@ -451,7 +451,6 @@ def test_consent_withdrawal_suppresses_communication(
             "channel": "sms",
             "consent_type": "transactional_sms",
             "message_reference": "template-1",
-            "workflow_run_id": str(ids["workflow_run"]),
             "idempotency_key": "comm-key-1",
         },
     )
@@ -484,7 +483,6 @@ def test_consent_withdrawal_suppresses_communication(
             "channel": "sms",
             "consent_type": "transactional_sms",
             "message_reference": "template-2",
-            "workflow_run_id": str(ids["workflow_run"]),
             "idempotency_key": "comm-key-2",
         },
     )
@@ -699,7 +697,8 @@ def test_speed_to_lead_pipeline_source_to_contacted(
     )
     assert consent_resp.status_code == 201, consent_resp.text
 
-    # 5. Start a workflow run for sending communication
+    # 5. An unrelated run, kept only to drive the direct handler call in step 8.
+    #    The send run is created and owned by plan_communication itself.
     wf_resp = client.post(
         f"/api/v1/organizations/{org}/workflows/leads.send_communication/runs",
         headers=HEADERS,
@@ -713,7 +712,8 @@ def test_speed_to_lead_pipeline_source_to_contacted(
     wf_data = wf_resp.json()["data"]
     wf_run_id = wf_data["workflow_run_id"]
 
-    # 6. Plan a communication linked to the workflow run
+    # 6. Plan a communication. This now also creates its send run and queues the
+    #    worker job; see test_lead_communication_dispatch for that wiring.
     comm_resp = client.post(
         f"{base}/{lead_id}/communications",
         headers=HEADERS,
@@ -721,7 +721,6 @@ def test_speed_to_lead_pipeline_source_to_contacted(
             "channel": "email",
             "consent_type": "transactional_email",
             "message_reference": "speed-to-lead-template-1",
-            "workflow_run_id": wf_run_id,
             "idempotency_key": "speed-to-lead-comm-001",
         },
     )
@@ -834,7 +833,6 @@ def test_speed_to_lead_pipeline_source_to_contacted(
             "channel": "email",
             "consent_type": "transactional_email",
             "message_reference": "speed-to-lead-template-1",
-            "workflow_run_id": wf_run_id,
             "idempotency_key": "speed-to-lead-comm-001",
         },
     )

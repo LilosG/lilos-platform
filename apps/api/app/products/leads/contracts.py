@@ -56,7 +56,9 @@ class CommunicationCreate(BaseModel):
         "transactional_email", "transactional_sms", "marketing_email", "marketing_sms"
     ]
     message_reference: str = Field(min_length=1, max_length=500)
-    workflow_run_id: UUID
+    # No workflow_run_id: the service creates and owns the send run so the
+    # communication row exists before the worker can claim it. A caller-supplied
+    # run has already been enqueued and races the row it is meant to deliver.
     idempotency_key: str = Field(min_length=8, max_length=128)
 
     @model_validator(mode="after")
