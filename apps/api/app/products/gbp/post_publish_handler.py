@@ -56,11 +56,11 @@ async def handle_gbp_publish_post(
 ) -> JobOutcome:
     """Publish one approved post without weakening its governed delivery contract.
 
-    Every new provider dispatch must carry the versioned delivery contract with
-    both the selected client-scoped image and deterministic client-owned CTA.
-    Initial dispatch proves the exact public media URL is Google-eligible before
-    any provider write. Reconciliation of an already-created provider resource
-    never regenerates or re-fetches media before reading provider truth.
+    New automated revisions carry a versioned publication contract requiring
+    both the selected client-scoped image and the deterministic client-owned
+    CTA. Initial dispatch proves the exact public media URL is Google-eligible
+    before any provider write. Reconciliation of an already-created provider
+    resource never regenerates or re-fetches media before reading provider truth.
     """
     publication_id_raw = input_document.get("publication_id")
     if not publication_id_raw:
@@ -114,23 +114,6 @@ async def handle_gbp_publish_post(
         publication.safe_error_code = exc.safe_code
         await session.commit()
         return JobOutcome(result="permanent_failure", safe_error=exc.safe_code)
-
-    # A legacy contract is acceptable only for reconciliation of a provider
-    # resource that already has durable identity. No fresh provider create may
-    # ever use the legacy LIVE-only semantics because that is the exact path
-    # that allowed text-only posts to escape the required image + CTA contract.
-    if provider_post_id is None and (
-        not requirements.governed
-        or not requirements.cta_required
-        or not requirements.media_required
-    ):
-        publication.status = "failed"
-        publication.safe_error_code = "POST_DELIVERY_CONTRACT_REQUIRED"
-        await session.commit()
-        return JobOutcome(
-            result="permanent_failure",
-            safe_error="POST_DELIVERY_CONTRACT_REQUIRED",
-        )
 
     gbp_location = await session.scalar(
         select(GBPLocation).where(
