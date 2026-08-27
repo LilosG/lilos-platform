@@ -1,13 +1,14 @@
-"""AI-first GBP post generation grounded in provider and website knowledge."""
+"""AI-first GBP post generation grounded in customer reviews and client knowledge."""
 
 from __future__ import annotations
 
 import hashlib
+import os
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import or_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.app.administration.knowledge_service import BusinessKnowledgeService
@@ -27,6 +28,7 @@ from apps.api.app.products.gbp.proposal_enrichment import (
     GBPPostProposalEnrichmentService,
     GBPProposalEnrichmentError,
 )
+from apps.api.app.products.reviews.models import Review, ReviewRevision
 
 TASK_KEY = "gbp.generate_post"
 MAXIMUM_LATENCY_MS = 120_000
@@ -48,8 +50,9 @@ class GBPPostGenerationService:
         *,
         workflow_run_id: UUID,
         correlation_id: str,
+        source_review_id: UUID | None = None,
     ) -> tuple[GBPPostRevision, AIExecution, GBPPostAsset]:
-        """Create an approval-ready local post with required CTA and Drive image."""
+        """Create an approval-ready review-driven post with a relevant CTA and Drive image."""
         gbp_location = await self._resolve_location(session, organization_id, location_id)
         organization = await session.get(Organization, organization_id)
         if organization is None:
@@ -62,7 +65,14 @@ class GBPPostGenerationService:
             )
         )
         if existing_execution is not None:
-            revision_id = (existing_execution.output_document or {}).get("post_revision_id")
+            output_document = existing_execution.output_document or {}
+            existing_source_review_id = str(output_document.get("source_review_id") or "").strip()
+            if source_review_id is not None and existing_source_review_id != str(source_review_id):
+                raise GBPProposalEnrichmentError(
+                    "GBP_REVIEW_SOURCE_MISMATCH",
+                    "The existing generated post is bound to a different customer review.",
+                )
+            revision_id = output_document.get("post_revision_id")
             if revision_id:
                 revision = await session.get(GBPPostRevision, UUID(str(revision_id)))
                 if revision is not None and revision.organization_id == organization_id:
@@ -79,6 +89,8 @@ class GBPPostGenerationService:
                         requirements.get("version") == 1
                         and requirements.get("cta_required") is True
                         and requirements.get("media_required") is True
+                        and requirements.get("source_type") == "google_review"
+                        and bool(str(requirements.get("source_review_id") or "").strip())
                         and isinstance(revision.call_to_action, dict)
                         and existing_asset is not None
                         and existing_asset.source_type == "google_drive"
@@ -87,8 +99,16 @@ class GBPPostGenerationService:
                         return revision, existing_execution, existing_asset
                     raise GBPProposalEnrichmentError(
                         "GBP_POST_DELIVERY_BINDING_MISSING",
-                        "The existing generated post is missing its required CTA or image binding.",
+                        "The existing generated post is missing its required review, CTA, or image binding.",
                     )
+
+        source_review, source_revision = await self._resolve_source_review(
+            session,
+            organization_id,
+            location_id,
+            source_review_id=source_review_id,
+        )
+        review_text = self._review_text(source_revision)
 
         fact_rows = list(
             await session.scalars(
@@ -126,15 +146,16 @@ class GBPPostGenerationService:
         )
         profile = snapshot.normalized_profile if snapshot else {}
         topic = self._topic_hint(governed_facts, profile)
+        relevance_text = f"{review_text} {topic}".strip()
         knowledge = await self.knowledge.retrieve_for_content(
             session,
             organization_id=organization_id,
             location_id=location_id,
-            content_title=f"{topic} Google Business Profile update",
+            content_title=f"Customer review: {review_text[:220]}",
             audience="local prospective customers",
             intent=(
-                "highlight a relevant service or useful business update and drive a "
-                "qualified website visit"
+                "turn this customer review into a useful Google Business Profile post and link "
+                "to the client-owned page most relevant to the experience described"
             ),
             content_type="gbp_post",
         )
@@ -168,8 +189,13 @@ class GBPPostGenerationService:
             if item.summary and str(item.summary).strip()
         ] + [item.content.strip() for item in recent_drafts if item.content.strip()]
 
-        target_url = self._select_target_url(profile, knowledge, topic)
-        fallback = self._fallback_copy(organization.name, topic, target_url)
+        target_url = self._select_target_url(profile, knowledge, relevance_text)
+        if target_url is None:
+            raise GBPProposalEnrichmentError(
+                "GBP_WEBSITE_TARGET_UNAVAILABLE",
+                "No website page with positive relevance to the selected review could be resolved.",
+            )
+        fallback = self._fallback_copy(organization.name, review_text, target_url)
         task = await self._task_definition(session)
         request = AIGatewayRequest(
             organization_id=organization_id,
@@ -177,24 +203,36 @@ class GBPPostGenerationService:
             task_key=TASK_KEY,
             input_document={
                 "audience": "local prospective customers",
-                "intent": "create one useful, specific Google Business Profile update",
+                "intent": "create one Google Business Profile update based on the selected review",
                 "manual_fallback": fallback,
-                "content_title": topic,
+                "content_title": f"Customer review about {topic}",
                 "content_type": "gbp_post",
+                "source_review": {
+                    "review_id": str(source_review.id),
+                    "review_revision_id": str(source_revision.id),
+                    "rating": float(source_revision.rating)
+                    if source_revision.rating is not None
+                    else None,
+                    "title": source_revision.title,
+                    "body": source_revision.body,
+                },
                 "governed_facts": governed_facts,
                 "knowledge": knowledge,
                 "current_gbp_profile": profile,
                 "recent_posts_to_avoid_repeating": recent_text[:20],
                 "selected_target_url": target_url,
                 "instructions": (
-                    "Write one concise Google Business Profile update. Pick a specific service or "
-                    "customer-useful topic supported by the facts/knowledge. Do not repeat recent "
-                    "posts. Do not invent offers, guarantees, pricing, credentials, or service "
-                    "areas. Keep the post under 1,200 characters and do not paste the URL into the "
-                    "body because LILOs attaches it as the CTA."
+                    "Use the selected customer review as the primary source for the post. "
+                    "Faithfully paraphrase the experience without inventing details, offers, "
+                    "guarantees, pricing, credentials, or service areas. Do not identify the "
+                    "reviewer. Keep the post useful and natural, under 1,200 characters, and do "
+                    "not paste the URL into the body because LILOs attaches it as the CTA."
                 ),
             },
-            input_references=tuple(),
+            input_references=(
+                f"review:{source_review.id}",
+                f"review-revision:{source_revision.id}",
+            ),
             approved_fact_revision_ids=tuple(fact_ids),
             maximum_cost_microunits=task.maximum_cost_microunits,
             maximum_latency_ms=task.maximum_latency_ms,
@@ -202,10 +240,9 @@ class GBPPostGenerationService:
         output = await self.ai_gateway.execute(request)
         draft = self._clean_draft(str(output.get("draft") or ""), fallback)
 
-        # The draft row, selected asset, CTA, and versioned delivery contract are
-        # one approval unit. If deterministic enrichment cannot complete, the
-        # savepoint rolls the partial draft/audit rows back instead of leaving a
-        # text-only revision that could later be approved manually.
+        # Review provenance, draft, destination, selected asset, and the delivery
+        # contract are one approval unit. Failed enrichment must not leave a
+        # text-only revision behind.
         async with session.begin_nested():
             revision = await self.operations.create_post_revision(
                 session,
@@ -214,9 +251,7 @@ class GBPPostGenerationService:
                 PostRevisionCreate(
                     post_type="standard",
                     content=draft,
-                    call_to_action=(
-                        {"actionType": "LEARN_MORE", "url": target_url} if target_url else None
-                    ),
+                    call_to_action={"actionType": "LEARN_MORE", "url": target_url},
                     event_or_offer=None,
                 ),
                 actor_id=None,
@@ -232,6 +267,12 @@ class GBPPostGenerationService:
                 post_revision_id=revision.id,
                 content=draft,
                 requested_call_to_action=revision.call_to_action,
+                relevance_text=f"{review_text}\n{draft}",
+                source_requirements={
+                    "source_type": "google_review",
+                    "source_review_id": str(source_review.id),
+                    "source_review_revision_id": str(source_revision.id),
+                },
             )
             asset = enrichment.asset
             if (
@@ -244,7 +285,7 @@ class GBPPostGenerationService:
             ):
                 raise GBPProposalEnrichmentError(
                     "GBP_POST_DELIVERY_BINDING_MISSING",
-                    "The generated post could not bind its required CTA and client image.",
+                    "The generated review post could not bind its required CTA and client image.",
                 )
             target_url = enrichment.target_url
             selected_image_metadata = dict(asset.metadata_document or {})
@@ -255,9 +296,16 @@ class GBPPostGenerationService:
             {
                 "draft": draft,
                 "post_revision_id": str(revision.id),
+                "source_review_id": str(source_review.id),
+                "source_review_revision_id": str(source_revision.id),
+                "source_review_external_id": source_review.external_review_id,
+                "source_review_rating": float(source_revision.rating)
+                if source_revision.rating is not None
+                else None,
                 "target_url": target_url,
                 "selected_image": selected_image_metadata,
                 "publication_requirements": dict(revision.publication_requirements or {}),
+                "worker_release": os.getenv("LILOS_RELEASE"),
             }
         )
         execution = AIExecution(
@@ -270,6 +318,8 @@ class GBPPostGenerationService:
             provider_key=str(output.get("provider") or "unknown"),
             model_key=str(output.get("model") or "unknown"),
             input_references=[
+                f"review:{source_review.id}",
+                f"review-revision:{source_revision.id}",
                 *(str(value) for value in knowledge.get("source_document_ids", [])),
                 *(str(item.provider_post_name) for item in recent_provider[:10]),
             ],
@@ -286,6 +336,76 @@ class GBPPostGenerationService:
         session.add(execution)
         await session.flush()
         return revision, execution, asset
+
+    async def _resolve_source_review(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        location_id: UUID,
+        *,
+        source_review_id: UUID | None,
+    ) -> tuple[Review, ReviewRevision]:
+        current_revision_join = and_(
+            ReviewRevision.organization_id == Review.organization_id,
+            ReviewRevision.review_id == Review.id,
+            ReviewRevision.revision_number == Review.current_revision_number,
+        )
+        base = (
+            select(Review, ReviewRevision)
+            .join(ReviewRevision, current_revision_join)
+            .where(
+                Review.organization_id == organization_id,
+                Review.location_id == location_id,
+                Review.status != "removed",
+            )
+        )
+
+        if source_review_id is not None:
+            row = (await session.execute(base.where(Review.id == source_review_id))).first()
+            if row is None:
+                raise GBPProposalEnrichmentError(
+                    "GBP_REVIEW_SOURCE_UNAVAILABLE",
+                    "The selected customer review is unavailable in this organization and location.",
+                )
+            review, revision = row
+            if not self._review_text(revision):
+                raise GBPProposalEnrichmentError(
+                    "GBP_REVIEW_SOURCE_EMPTY",
+                    "The selected customer review has no usable text for post generation.",
+                )
+            return review, revision
+
+        prior_executions = list(
+            await session.scalars(
+                select(AIExecution)
+                .where(
+                    AIExecution.organization_id == organization_id,
+                    AIExecution.location_id == location_id,
+                    AIExecution.status == "completed",
+                )
+                .order_by(AIExecution.created_at.desc())
+                .limit(250)
+            )
+        )
+        used_review_ids = {
+            str((execution.output_document or {}).get("source_review_id") or "")
+            for execution in prior_executions
+            if (execution.output_document or {}).get("source_review_id")
+        }
+        candidates = (
+            await session.execute(
+                base.where(Review.rating >= 4).order_by(Review.review_created_at.desc()).limit(100)
+            )
+        ).all()
+        for review, revision in candidates:
+            if str(review.id) in used_review_ids:
+                continue
+            if self._review_text(revision):
+                return review, revision
+        raise GBPProposalEnrichmentError(
+            "GBP_REVIEW_SOURCE_UNAVAILABLE",
+            "No unused eligible four- or five-star customer review is available for GBP post generation.",
+        )
 
     async def _resolve_location(
         self, session: AsyncSession, organization_id: UUID, location_id: UUID
@@ -320,8 +440,8 @@ class GBPPostGenerationService:
             key=TASK_KEY,
             version=1,
             owning_product="gbp",
-            purpose="Generate grounded, non-repetitive Google Business Profile posts for approval.",
-            input_schema={"governed_facts": "array", "knowledge": "object"},
+            purpose="Generate review-grounded Google Business Profile posts for approval.",
+            input_schema={"source_review": "object", "governed_facts": "array", "knowledge": "object"},
             output_schema={"draft": "string"},
             risk_level="medium",
             maximum_cost_microunits=0,
@@ -333,6 +453,12 @@ class GBPPostGenerationService:
         session.add(task)
         await session.flush()
         return task
+
+    @staticmethod
+    def _review_text(revision: ReviewRevision) -> str:
+        return " ".join(
+            part.strip() for part in (revision.title or "", revision.body or "") if part.strip()
+        )[:5000]
 
     @staticmethod
     def _topic_hint(governed_facts: list[GovernedFact], profile: dict[str, object]) -> str:
@@ -352,14 +478,19 @@ class GBPPostGenerationService:
             if isinstance(first, dict):
                 return str(first.get("structuredName") or first.get("name") or "service")[:120]
             return str(first)[:120]
-        return "business update"
+        return "customer experience"
 
     @staticmethod
     def _select_target_url(
-        profile: dict[str, object], knowledge: dict[str, Any], topic: str
+        profile: dict[str, object], knowledge: dict[str, Any], relevance_text: str
     ) -> str | None:
+        del profile
         pages = knowledge.get("website_knowledge")
-        topic_terms = {part for part in topic.casefold().replace("-", " ").split() if len(part) > 3}
+        terms = {
+            part
+            for part in relevance_text.casefold().replace("-", " ").split()
+            if len(part) > 3
+        }
         ranked: list[tuple[int, str]] = []
         if isinstance(pages, list):
             for raw in pages:
@@ -371,23 +502,25 @@ class GBPPostGenerationService:
                 haystack = " ".join(
                     str(raw.get(key) or "") for key in ("url", "title", "h1", "body_text")
                 ).casefold()
-                score = sum(1 for term in topic_terms if term in haystack)
+                overlap = sum(1 for term in terms if term in haystack)
+                if overlap <= 0:
+                    continue
+                score = overlap * 10
                 if url.rstrip("/").count("/") > 2:
                     score += 1
                 ranked.append((score, url))
-        if ranked:
-            ranked.sort(key=lambda item: item[0], reverse=True)
-            return ranked[0][1]
-        website = profile.get("websiteUri")
-        return str(website).strip() if isinstance(website, str) and website.strip() else None
+        if not ranked:
+            return None
+        ranked.sort(key=lambda item: item[0], reverse=True)
+        return ranked[0][1]
 
     @staticmethod
-    def _fallback_copy(organization_name: str, topic: str, target_url: str | None) -> str:
+    def _fallback_copy(organization_name: str, review_text: str, target_url: str | None) -> str:
         del target_url
+        excerpt = " ".join(review_text.split())[:260].rstrip(" ,.;:-")
         return (
-            f"Looking for help with {topic}? {organization_name} can help you understand the next "
-            "steps and the options that fit your project. Learn more about this "
-            "service and what to expect before you schedule."
+            f'A recent customer shared: "{excerpt}." {organization_name} appreciates the feedback '
+            "and the opportunity to help. Learn more about the service behind their experience."
         )[:1200]
 
     @staticmethod
