@@ -155,6 +155,25 @@ def _date_str(dt: datetime) -> str:
     return dt.strftime("%Y-%m-%d")
 
 
+def normalize_observation_date(value: object) -> str:
+    """Return a GA4 date dimension as ISO `YYYY-MM-DD`.
+
+    The Analytics Data API returns its `date` dimension in basic format,
+    `YYYYMMDD`. Python's date.fromisoformat accepts that, so ingestion never
+    complained, and the raw value was stored and served straight through to the
+    reporting series. `new Date("20260813T00:00:00Z")` is invalid in JavaScript, so
+    every GA4 chart axis label rendered "Invalid Date" while Search Console -- which
+    returns extended format -- rendered correctly.
+
+    Anything already ISO, or unrecognised, is returned unchanged so a bad value
+    surfaces as itself rather than as a wrong date.
+    """
+    text = str(value or "").strip()
+    if len(text) == 8 and text.isdigit():
+        return f"{text[0:4]}-{text[4:6]}-{text[6:8]}"
+    return text
+
+
 def _dimension_hash(dimensions: dict[str, object]) -> str:
     return hashlib.sha256(
         json.dumps(dimensions, sort_keys=True, separators=(",", ":")).encode()
@@ -493,7 +512,9 @@ class AnalyticsService:
                 from datetime import date as date_type
 
                 for row in daily_rows:
-                    observation_date = row.dimension_values.get("date", "")
+                    observation_date = normalize_observation_date(
+                        row.dimension_values.get("date", "")
+                    )
                     if not observation_date:
                         continue
                     day_dims: dict[str, object] = {
@@ -1014,7 +1035,7 @@ class AnalyticsService:
                             obs.period_start.strftime("%Y-%m-%d"),
                         )
                     )
-                    results.append((date_label, int(obs.value)))
+                    results.append((normalize_observation_date(date_label), int(obs.value)))
         # Aggregate across properties by date
         by_date: dict[str, int] = {}
         for date_label, value in results:

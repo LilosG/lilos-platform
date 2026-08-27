@@ -199,3 +199,28 @@ describe("shared reporting trend", () => {
     );
   });
 });
+
+describe("chart date labels", () => {
+  it("never renders Invalid Date for a GA4 basic-format date", async () => {
+    // GA4 returns YYYYMMDD; `new Date("20260813T00:00:00Z")` is invalid, which put
+    // "Invalid Date" across the live Insights axis. The API normalises this now,
+    // but the axis must be safe regardless of what it receives.
+    const { reportingTrendChart } = await import("./reporting-chart");
+    const node = reportingTrendChart(
+      [
+        {
+          key: "sessions",
+          label: "Sessions",
+          points: [
+            { date: "20260813", value: 10 },
+            { date: "2026-08-14", value: 12 },
+            { date: "not-a-date", value: 14 },
+          ],
+        },
+      ],
+      "sessions",
+    );
+
+    expect(node.textContent).not.toContain("Invalid Date");
+  });
+});

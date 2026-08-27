@@ -61,7 +61,17 @@ export function trendSummary(metric: TrendMetric): string {
 }
 
 function formatDateLabel(date: string, includeYear = false): string {
-  return new Date(`${date}T00:00:00Z`).toLocaleDateString("en-US", {
+  // GA4 returns its date dimension in basic format (YYYYMMDD), which `new Date`
+  // cannot parse -- every axis label read "Invalid Date". The API now normalises
+  // this, but an axis must never render "Invalid Date" whatever it receives, so
+  // basic format is accepted here too and an unparseable value falls back to
+  // itself rather than to a lie.
+  const normalized = /^\d{8}$/.test(date)
+    ? `${date.slice(0, 4)}-${date.slice(4, 6)}-${date.slice(6, 8)}`
+    : date;
+  const parsed = new Date(`${normalized}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) return date;
+  return parsed.toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
     year: includeYear ? "numeric" : undefined,
