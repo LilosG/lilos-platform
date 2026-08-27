@@ -79,7 +79,12 @@ def create_app(
             CORSMiddleware,
             allow_origins=list(origins),
             allow_credentials=False,
-            allow_methods=["GET", "POST", "PUT", "DELETE"],
+            # Must cover every method the router actually serves. PATCH was
+            # missing, so the browser preflight for PATCH /workflows/schedules
+            # /{id} failed and schedule pause, resume, cadence and cancel all
+            # silently did nothing: the request never left the browser.
+            # tests/python/test_cors_methods.py keeps this in step with the routes.
+            allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
             allow_headers=["Authorization", "Content-Type"],
         )
     application.add_middleware(CorrelationIdMiddleware)
