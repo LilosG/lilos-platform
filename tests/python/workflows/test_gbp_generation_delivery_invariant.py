@@ -1,6 +1,7 @@
 """Regression tests for automated GBP post delivery readiness."""
 
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
@@ -14,6 +15,8 @@ from apps.api.app.products.gbp.proposal_enrichment import GBPProposalEnrichmentE
 async def test_gbp_generate_post_never_succeeds_without_required_image(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    session = AsyncMock()
+
     async def fail_generation(*args: object, **kwargs: object) -> object:
         raise GBPProposalEnrichmentError(
             "GBP_DRIVE_NO_ELIGIBLE_IMAGE",
@@ -22,7 +25,7 @@ async def test_gbp_generate_post_never_succeeds_without_required_image(
 
     monkeypatch.setattr(GBPPostGenerationService, "generate", fail_generation)
     outcome = await _handle_gbp_generate_post(
-        None,  # type: ignore[arg-type]
+        session,
         organization_id=uuid4(),
         location_id=uuid4(),
         input_document={},
@@ -33,12 +36,15 @@ async def test_gbp_generate_post_never_succeeds_without_required_image(
     assert outcome.result == "permanent_failure"
     assert outcome.safe_error == "GBP_DRIVE_NO_ELIGIBLE_IMAGE"
     assert outcome.result_reference is None
+    session.rollback.assert_awaited_once()
 
 
 @pytest.mark.anyio
 async def test_gbp_generate_post_retries_transient_drive_enrichment_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    session = AsyncMock()
+
     async def fail_generation(*args: object, **kwargs: object) -> object:
         raise GBPProposalEnrichmentError(
             "GBP_DRIVE_MEDIA_UNAVAILABLE",
@@ -47,7 +53,7 @@ async def test_gbp_generate_post_retries_transient_drive_enrichment_failure(
 
     monkeypatch.setattr(GBPPostGenerationService, "generate", fail_generation)
     outcome = await _handle_gbp_generate_post(
-        None,  # type: ignore[arg-type]
+        session,
         organization_id=uuid4(),
         location_id=uuid4(),
         input_document={},
@@ -58,12 +64,14 @@ async def test_gbp_generate_post_retries_transient_drive_enrichment_failure(
     assert outcome.result == "retryable_failure"
     assert outcome.safe_error == "GBP_DRIVE_MEDIA_UNAVAILABLE"
     assert outcome.result_reference is None
+    session.rollback.assert_awaited_once()
 
 
 @pytest.mark.anyio
 async def test_gbp_generate_post_success_is_always_image_bound(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    session = AsyncMock()
     revision_id = uuid4()
 
     async def successful_generation(
@@ -77,7 +85,7 @@ async def test_gbp_generate_post_success_is_always_image_bound(
 
     monkeypatch.setattr(GBPPostGenerationService, "generate", successful_generation)
     outcome = await _handle_gbp_generate_post(
-        None,  # type: ignore[arg-type]
+        session,
         organization_id=uuid4(),
         location_id=uuid4(),
         input_document={},
@@ -89,18 +97,21 @@ async def test_gbp_generate_post_success_is_always_image_bound(
     assert outcome.safe_error is None
     assert outcome.result_reference == f"gbp-post-revision:{revision_id}:image"
     assert ":text" not in outcome.result_reference
+    session.rollback.assert_not_awaited()
 
 
 @pytest.mark.anyio
 async def test_gbp_generate_post_defensively_rejects_null_asset(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    session = AsyncMock()
+
     async def invalid_generation(*args: object, **kwargs: object) -> tuple[object, object, None]:
         return SimpleNamespace(id=uuid4()), SimpleNamespace(id=uuid4()), None
 
     monkeypatch.setattr(GBPPostGenerationService, "generate", invalid_generation)
     outcome = await _handle_gbp_generate_post(
-        None,  # type: ignore[arg-type]
+        session,
         organization_id=uuid4(),
         location_id=uuid4(),
         input_document={},
@@ -111,3 +122,4 @@ async def test_gbp_generate_post_defensively_rejects_null_asset(
     assert outcome.result == "permanent_failure"
     assert outcome.safe_error == "GBP_POST_DELIVERY_BINDING_MISSING"
     assert outcome.result_reference is None
+    session.rollback.assert_awaited_once()
