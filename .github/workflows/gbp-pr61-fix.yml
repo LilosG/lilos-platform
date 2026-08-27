@@ -25,7 +25,7 @@ jobs:
           version: "0.9.28"
           enable-cache: true
       - run: uv sync --locked
-      - name: Fix the four PR 61 lint violations
+      - name: Fix PR 61 validation defects
         run: |
           python - <<'PY'
           from pathlib import Path
@@ -39,6 +39,8 @@ jobs:
               '                    (\n                        "The selected customer review is unavailable in this organization "\n                        "and location."\n                    ),',
               '            "No unused eligible four- or five-star customer review is available for GBP post generation.",':
               '            (\n                "No unused eligible four- or five-star customer review is available for "\n                "GBP post generation."\n            ),',
+              '            input_references=(\n                f"review:{source_review.id}",\n                f"review-revision:{source_revision.id}",\n            ),':
+              '            input_references=(source_review.id, source_revision.id),',
           }
           for old, new in replacements.items():
               if old not in text:
