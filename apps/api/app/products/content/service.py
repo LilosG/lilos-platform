@@ -187,6 +187,41 @@ async def resolve_governed_facts(
 CONTENT_AI_LATENCY_MS = 120_000  # 2 minutes, realistic for content generation
 
 
+META_DESCRIPTION_MAXIMUM = 155
+
+
+def build_publishable_frontmatter(
+    *, title: str, ai_output: dict[str, object] | None, body: str
+) -> dict[str, object]:
+    """Frontmatter that satisfies the fields every client collection requires.
+
+    `title` and `description` are non-optional `z.string()` in every client Astro
+    blog schema, so a revision missing either cannot build. The model is asked for
+    a meta description; when it does not supply one this derives a bounded fallback
+    from the body rather than letting the publication fail later, because a missing
+    description is recoverable here and a broken client deployment is not.
+    """
+    supplied = str((ai_output or {}).get("meta_description") or "").strip()
+    description = " ".join(supplied.split())
+    if not description:
+        # First prose sentence(s) of the body, ignoring markdown headings.
+        prose = " ".join(
+            line.strip()
+            for line in body.splitlines()
+            if line.strip() and not line.lstrip().startswith(("#", ">", "-", "*", "|", "`"))
+        )
+        description = " ".join(prose.split())
+    if not description:
+        description = title
+    if len(description) > META_DESCRIPTION_MAXIMUM:
+        clipped = description[:META_DESCRIPTION_MAXIMUM]
+        # Prefer a word boundary so the description does not end mid-word.
+        if " " in clipped:
+            clipped = clipped[: clipped.rfind(" ")]
+        description = clipped.rstrip(" ,;:-") + "…"
+    return {"title": title, "description": description}
+
+
 class ContentService:
     def __init__(self) -> None:
         self.audit = AuditEventService()
@@ -669,7 +704,7 @@ class ContentService:
                 owning_product="content",
                 purpose="Draft grounded, policy-compliant content for editorial and client review.",
                 input_schema={"audience": "string", "intent": "string"},
-                output_schema={"draft": "string"},
+                output_schema={"draft": "string", "meta_description": "string"},
                 risk_level="medium",
                 maximum_cost_microunits=0,
                 maximum_latency_ms=CONTENT_AI_LATENCY_MS,
@@ -743,6 +778,12 @@ class ContentService:
                 "manual_fallback": fallback,
                 "content_title": item.title,
                 "content_type": item.content_type,
+                "required_output": (
+                    "Return `draft` (the page body in markdown, no frontmatter block) "
+                    "and `meta_description`: a single sentence under 155 characters "
+                    "describing the page for search results, written from the approved "
+                    "facts and containing no claim absent from them."
+                ),
                 "governed_facts": governed_facts,
                 "knowledge": knowledge,
             },
@@ -806,7 +847,11 @@ class ContentService:
             item.id,
             RevisionCreate(
                 body=draft_text,
-                frontmatter={"title": item.title},
+                frontmatter=build_publishable_frontmatter(
+                    title=item.title,
+                    ai_output=execution.output_document,
+                    body=draft_text,
+                ),
                 created_by_type="ai",
                 approved_fact_revision_ids=fact_ids,
                 ai_execution_id=execution.id,
@@ -861,7 +906,7 @@ class ContentService:
                 owning_product="content",
                 purpose="Draft grounded, policy-compliant content for editorial and client review.",
                 input_schema={"audience": "string", "intent": "string"},
-                output_schema={"draft": "string"},
+                output_schema={"draft": "string", "meta_description": "string"},
                 risk_level="medium",
                 maximum_cost_microunits=0,
                 maximum_latency_ms=CONTENT_AI_LATENCY_MS,
@@ -959,7 +1004,11 @@ class ContentService:
             item_id,
             RevisionCreate(
                 body=draft_text,
-                frontmatter={"title": item.title},
+                frontmatter=build_publishable_frontmatter(
+                    title=item.title,
+                    ai_output=execution.output_document,
+                    body=draft_text,
+                ),
                 created_by_type="ai",
                 approved_fact_revision_ids=fact_ids,
                 ai_execution_id=execution.id,

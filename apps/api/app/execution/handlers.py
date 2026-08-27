@@ -624,6 +624,7 @@ async def _handle_content_publish(
     from apps.api.app.products.content.file_format import (
         ContentFileFormatError,
         build_content_file,
+        missing_required_frontmatter,
     )
     from apps.api.app.products.content.models import (
         ContentPublication,
@@ -714,6 +715,26 @@ async def _handle_content_publish(
         # Commit frontmatter + body, not the body alone. An Astro content
         # collection validates the frontmatter against its Zod schema, so a file
         # without it fails astro build and breaks the client's deployment.
+        # Reject a revision the client's collection schema cannot accept, before a
+        # pull request exists. Only the universal floor is checked here; per-client
+        # requirements (date field name, category enums, FAQ key names) need a
+        # contract stored against PublishingTarget, which does not exist yet.
+        absent = missing_required_frontmatter(revision.frontmatter or {})
+        if absent:
+            publication.status = "failed"
+            publication.safe_error_code = "CONTENT_FRONTMATTER_INCOMPLETE"
+            logger.warning(
+                "Content publication rejected for incomplete frontmatter",
+                extra={
+                    "event_name": "content.publish.frontmatter_incomplete",
+                    "publication_id": str(publication.id),
+                    "missing_fields": list(absent),
+                },
+            )
+            await session.commit()
+            return JobOutcome(
+                result="permanent_failure", safe_error="CONTENT_FRONTMATTER_INCOMPLETE"
+            )
         try:
             file_contents = build_content_file(revision.body, revision.frontmatter or {})
         except ContentFileFormatError as exc:

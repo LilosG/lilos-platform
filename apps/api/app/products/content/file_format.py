@@ -150,3 +150,28 @@ def build_content_file(body: str, frontmatter: Mapping[str, Any]) -> str:
         f"{FRONTMATTER_DELIMITER}\n\n"
         f"{normalized_body}{trailing}"
     )
+
+
+# Fields required by every client Astro blog collection inspected (Wheyland,
+# Carlsbad Fixit, Tamarack, Kelari): `title` and `description` are non-optional
+# `z.string()` in all of them. Publishing without one fails `astro build`, so the
+# publication is rejected here instead of opening a pull request that breaks the
+# client's deployment on merge.
+#
+# This is a floor, not the full contract. Real schemas diverge in ways this cannot
+# see: the date field is `date`, `pubDate` or a required `publishDate` depending on
+# the client; Tamarack and Kelari require a `category` enum; Carlsbad Fixit
+# constrains `serviceAreas` to an enum; Sage Therapy names FAQ keys `q`/`a` rather
+# than `question`/`answer`. Validating those needs a per-target contract stored
+# against PublishingTarget -- see the note in the publish handler.
+UNIVERSAL_REQUIRED_FRONTMATTER = ("title", "description")
+
+
+def missing_required_frontmatter(frontmatter: Mapping[str, Any]) -> tuple[str, ...]:
+    """Return the universally required keys that are absent or blank."""
+    missing: list[str] = []
+    for key in UNIVERSAL_REQUIRED_FRONTMATTER:
+        value = frontmatter.get(key)
+        if value is None or (isinstance(value, str) and not value.strip()):
+            missing.append(key)
+    return tuple(missing)

@@ -147,3 +147,26 @@ def test_crlf_bodies_are_normalized() -> None:
 
     assert "\r" not in output
     assert output.endswith("Line two.\n")
+
+
+def test_universal_required_fields_match_every_client_schema() -> None:
+    """title and description are non-optional z.string() in all client collections.
+
+    Verified against the live repositories on 2026-08-27: wheylandelectric-final-2.0,
+    carlsbadfixit-final, tamarackrestoration-final-2.0 and kelari-party-rentals-final
+    all declare both without .optional().
+    """
+    from apps.api.app.products.content.file_format import UNIVERSAL_REQUIRED_FRONTMATTER
+
+    assert UNIVERSAL_REQUIRED_FRONTMATTER == ("title", "description")
+
+
+def test_missing_required_frontmatter_reports_absent_and_blank_fields() -> None:
+    from apps.api.app.products.content.file_format import missing_required_frontmatter
+
+    assert missing_required_frontmatter({"title": "T", "description": "D"}) == ()
+    assert missing_required_frontmatter({"title": "T"}) == ("description",)
+    assert missing_required_frontmatter({}) == ("title", "description")
+    # Blank is as fatal as absent: z.string() accepts "" but the page is unusable,
+    # and a whitespace-only value is a generation failure worth catching.
+    assert missing_required_frontmatter({"title": "T", "description": "   "}) == ("description",)
