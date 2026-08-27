@@ -5,6 +5,7 @@ from uuid import uuid4
 from sqlalchemy import and_, select
 from sqlalchemy.dialects import postgresql
 
+from apps.api.app.products.content.service import GovernedFact
 from apps.api.app.products.gbp.post_generation import TASK_KEY, GBPPostGenerationService
 from apps.api.app.products.reviews.models import Review, ReviewRevision
 
@@ -116,3 +117,56 @@ def test_unused_review_exclusion_is_not_a_bounded_window() -> None:
     assert "ORDER BY reviews.review_created_at DESC" in sql
     # Empty-text revisions are filtered in SQL so LIMIT 1 cannot land on an unusable row.
     assert "btrim" in sql
+
+
+def test_service_topics_are_ordered_deduplicated_and_bounded() -> None:
+    """Ordered candidates let a location post when its top service has no page."""
+    governed_facts: list[GovernedFact] = [
+        {
+            "fact_key": "primary_services",
+            "value": ["Panel Upgrades", "EV Chargers"],
+            "authority": "client",
+            "revision_id": "r1",
+        },
+        {
+            "fact_key": "services",
+            "value": ["panel upgrades", "Lighting"],
+            "authority": "client",
+            "revision_id": "r2",
+        },
+    ]
+    profile: dict[str, object] = {
+        "serviceItems": [{"structuredName": "Generator Installation"}, "Lighting"]
+    }
+
+    topics = GBPPostGenerationService._service_topics(governed_facts, profile)
+
+    assert topics[0] == "Panel Upgrades"
+    assert "EV Chargers" in topics
+    assert "Generator Installation" in topics
+    # "panel upgrades" and the repeated "Lighting" must not appear twice.
+    assert len(topics) == len({topic.casefold() for topic in topics})
+    assert len(topics) <= 12
+
+
+def test_service_topics_empty_when_no_approved_services() -> None:
+    """No invented topic when nothing is approved -- the caller must fail closed."""
+    assert GBPPostGenerationService._service_topics([], {}) == []
+
+
+def test_service_fallback_copy_claims_nothing_beyond_the_service() -> None:
+    """The manual path must not imply a customer spoke, or invent an offer."""
+    copy = GBPPostGenerationService._service_fallback_copy("Amp Electric", "Panel Upgrades")
+
+    assert "Amp Electric" in copy
+    assert "Panel Upgrades" in copy
+    assert len(copy) <= 1200
+    lowered = copy.casefold()
+    for invented in ("review", "customer said", "%", "free", "discount", "guarantee", "$"):
+        assert invented not in lowered
+
+
+def test_service_fallback_copy_handles_missing_topic() -> None:
+    copy = GBPPostGenerationService._service_fallback_copy("Amp Electric", "   ")
+
+    assert "our services" in copy
