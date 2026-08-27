@@ -1079,6 +1079,13 @@
 .ui-metric-card {
   min-width: min(100%, var(--layout-card-min-sm));
 }
+/* Hairline rule between a figure and the rows beneath it, as the client
+   dashboard does, instead of boxing every value. */
+.ui-metric-card__value + .ui-metric-card__meta {
+  border-top: 1px solid var(--color-border-subtle);
+  padding-top: var(--space-2);
+  margin-top: var(--space-1);
+}
 .ui-metric-card .ui-card__body {
   display: grid;
   gap: var(--space-1);
@@ -1091,12 +1098,21 @@
   line-height: var(--type-overline-line);
   text-transform: uppercase;
 }
+/* Display figure, not a heading. Every KPI across the platform renders through
+   this component, so the serif is applied here once rather than page by page.
+   Tabular lining figures keep columns aligned as values change. */
 .ui-metric-card__value {
   color: var(--color-text-primary);
-  font-size: var(--type-h1-size);
-  font-weight: var(--type-h1-weight);
-  line-height: var(--type-h1-line);
+  font-family: var(--type-figure-family);
+  font-size: var(--type-figure-sm-size);
+  font-weight: var(--type-figure-weight);
+  letter-spacing: var(--type-figure-tracking);
+  line-height: var(--type-figure-line);
   font-variant-numeric: var(--type-numeric-variant);
+}
+/* Larger variant for the one or two figures a page leads with. */
+.ui-metric-card--lead .ui-metric-card__value {
+  font-size: var(--type-figure-size);
 }
 .ui-metric-card__value--missing {
   color: var(--color-text-tertiary);
