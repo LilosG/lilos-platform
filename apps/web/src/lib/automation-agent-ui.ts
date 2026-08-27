@@ -110,3 +110,31 @@ export function presentAgentEvent(
   }
   return { label: event.event_type, outcome: "neutral" };
 }
+
+export interface ScheduleRowActions {
+  canToggle: boolean;
+  toggleLabel: "Pause" | "Resume" | null;
+  canCancel: boolean;
+}
+
+/**
+ * Which controls a schedule row offers for a given status.
+ *
+ * A cancelled schedule is terminal: the scheduler only claims rows whose status
+ * is `active`, and the API exposes no transition back out of `cancelled`, so it
+ * offers no controls. Everything else can be paused/resumed and cancelled —
+ * before cancel existed there was no way to retire a duplicate schedule at all,
+ * because pausing only parks it and it stays in the list indefinitely.
+ */
+export function scheduleRowActions(
+  status: "active" | "paused" | "cancelled",
+): ScheduleRowActions {
+  if (status === "cancelled") {
+    return { canToggle: false, toggleLabel: null, canCancel: false };
+  }
+  return {
+    canToggle: true,
+    toggleLabel: status === "active" ? "Pause" : "Resume",
+    canCancel: true,
+  };
+}

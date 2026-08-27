@@ -5,6 +5,7 @@ import {
   actionableWorkflowFailureCount,
   presentAgentEvent,
   selectPendingAgentRun,
+  scheduleRowActions,
 } from "./automation-agent-ui";
 import type { WorkflowRunSummary } from "./workflows";
 
@@ -107,6 +108,36 @@ describe("automation agent UI state", () => {
     expect(presentAgentEvent(event)).toEqual({
       label: "inspect_workflow returned an error",
       outcome: "danger",
+    });
+  });
+});
+
+describe("scheduleRowActions", () => {
+  it("offers pause and cancel for an active schedule", () => {
+    expect(scheduleRowActions("active")).toEqual({
+      canToggle: true,
+      toggleLabel: "Pause",
+      canCancel: true,
+    });
+  });
+
+  it("offers resume and cancel for a paused schedule", () => {
+    // Pausing alone could never retire a duplicate schedule, so a paused row
+    // must still offer cancel.
+    expect(scheduleRowActions("paused")).toEqual({
+      canToggle: true,
+      toggleLabel: "Resume",
+      canCancel: true,
+    });
+  });
+
+  it("offers nothing for a cancelled schedule", () => {
+    // Terminal: the scheduler only claims active rows and the API exposes no
+    // transition out of cancelled.
+    expect(scheduleRowActions("cancelled")).toEqual({
+      canToggle: false,
+      toggleLabel: null,
+      canCancel: false,
     });
   });
 });

@@ -122,6 +122,7 @@ import "../styles/automations.css";
         emptyState,
         errorAlert,
         describeFailure,
+        confirmInline,
       } from "../lib/ui";
       import { statusLabel, statusTone } from "../lib/status-language";
       import {
@@ -156,6 +157,7 @@ import "../styles/automations.css";
         agentRunIsActive,
         presentAgentEvent,
         selectPendingAgentRun,
+        scheduleRowActions,
         type PendingAgentSelection,
       } from "../lib/automation-agent-ui";
 
@@ -882,6 +884,23 @@ import "../styles/automations.css";
         button.disabled = false;
       }
 
+      async function cancelSchedule(
+        schedule: WorkflowScheduleEntry,
+        button: HTMLButtonElement,
+      ): Promise<void> {
+        button.disabled = true;
+        const result = await updateSchedule(activeOrgId, schedule.id, {
+          status: "cancelled",
+        });
+        if (result.kind === "ok") {
+          setActionMessage("Schedule cancelled. It will not run again.");
+          await loadAutomationData();
+        } else {
+          setActionMessage(describeFailure(result, "Schedule"), true);
+          button.disabled = false;
+        }
+      }
+
       async function changeCadence(
         schedule: WorkflowScheduleEntry,
         select: HTMLSelectElement,
@@ -959,13 +978,37 @@ import "../styles/automations.css";
         );
         wrapper.append(cadence);
 
-        if (schedule.status !== "cancelled") {
+        const rowActions = scheduleRowActions(schedule.status);
+        if (rowActions.canToggle && rowActions.toggleLabel) {
           wrapper.append(
-            actionButton(
-              schedule.status === "active" ? "Pause" : "Resume",
-              (button) => toggleSchedule(schedule, button),
+            actionButton(rowActions.toggleLabel, (button) =>
+              toggleSchedule(schedule, button),
             ),
           );
+        }
+        if (rowActions.canCancel) {
+          // Cancelling is not reversible from this screen, so it asks first.
+          // Without it there was no way to retire a duplicate schedule at all:
+          // pausing only parks it and it stays in the list forever.
+          const cancelBtn = actionButton("Cancel", async (button) => {
+            button.disabled = true;
+            wrapper.append(
+              confirmInline(
+                "Cancel this schedule? It will stop recurring and cannot be resumed.",
+                () => void cancelSchedule(schedule, button),
+                () => {
+                  button.disabled = false;
+                },
+                "Cancel schedule",
+                "Keep schedule",
+              ),
+            );
+          });
+          cancelBtn.setAttribute(
+            "aria-label",
+            `Cancel schedule ${schedule.key}`,
+          );
+          wrapper.append(cancelBtn);
         }
         return wrapper;
       }
