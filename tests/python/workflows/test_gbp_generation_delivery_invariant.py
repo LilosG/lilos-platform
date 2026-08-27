@@ -66,7 +66,9 @@ async def test_gbp_generate_post_success_is_always_image_bound(
 ) -> None:
     revision_id = uuid4()
 
-    async def successful_generation(*args: object, **kwargs: object) -> tuple[object, object, object]:
+    async def successful_generation(
+        *args: object, **kwargs: object
+    ) -> tuple[object, object, object]:
         return (
             SimpleNamespace(id=revision_id),
             SimpleNamespace(id=uuid4()),
