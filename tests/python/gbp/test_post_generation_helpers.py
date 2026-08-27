@@ -5,6 +5,7 @@ from uuid import uuid4
 from sqlalchemy import and_, select
 from sqlalchemy.dialects import postgresql
 
+from apps.api.app.products.content.service import GovernedFact
 from apps.api.app.products.gbp.post_generation import TASK_KEY, GBPPostGenerationService
 from apps.api.app.products.reviews.models import Review, ReviewRevision
 
@@ -116,3 +117,127 @@ def test_unused_review_exclusion_is_not_a_bounded_window() -> None:
     assert "ORDER BY reviews.review_created_at DESC" in sql
     # Empty-text revisions are filtered in SQL so LIMIT 1 cannot land on an unusable row.
     assert "btrim" in sql
+
+
+def test_service_topics_are_ordered_deduplicated_and_bounded() -> None:
+    """Ordered candidates let a location post when its top service has no page."""
+    governed_facts: list[GovernedFact] = [
+        {
+            "fact_key": "primary_services",
+            "value": ["Panel Upgrades", "EV Chargers"],
+            "authority": "client",
+            "revision_id": "r1",
+        },
+        {
+            "fact_key": "services",
+            "value": ["panel upgrades", "Lighting"],
+            "authority": "client",
+            "revision_id": "r2",
+        },
+    ]
+    profile: dict[str, object] = {
+        "serviceItems": [{"structuredName": "Generator Installation"}, "Lighting"]
+    }
+
+    topics = GBPPostGenerationService._service_topics(governed_facts, profile)
+
+    assert topics[0] == "Panel Upgrades"
+    assert "EV Chargers" in topics
+    assert "Generator Installation" in topics
+    # "panel upgrades" and the repeated "Lighting" must not appear twice.
+    assert len(topics) == len({topic.casefold() for topic in topics})
+    assert len(topics) <= 12
+
+
+def test_service_topics_empty_when_no_approved_services() -> None:
+    """No invented topic when nothing is approved -- the caller must fail closed."""
+    assert GBPPostGenerationService._service_topics([], {}) == []
+
+
+def test_service_fallback_copy_claims_nothing_beyond_the_service() -> None:
+    """The manual path must not imply a customer spoke, or invent an offer."""
+    copy = GBPPostGenerationService._service_fallback_copy("Amp Electric", "Panel Upgrades")
+
+    assert "Amp Electric" in copy
+    assert "Panel Upgrades" in copy
+    assert len(copy) <= 1200
+    lowered = copy.casefold()
+    for invented in ("review", "customer said", "%", "free", "discount", "guarantee", "$"):
+        assert invented not in lowered
+
+
+def test_service_fallback_copy_handles_missing_topic() -> None:
+    copy = GBPPostGenerationService._service_fallback_copy("Amp Electric", "   ")
+
+    assert "our services" in copy
+
+
+def test_service_topics_fall_back_to_website_pages() -> None:
+    """A new client with only a scraped site and GBP still has topics to post about."""
+    knowledge = {
+        "website_knowledge": [
+            {"url": "https://example.com/", "title": "Wheyland Electric", "h1": "Home"},
+            {"url": "https://example.com/panel-upgrades/", "h1": "Panel Upgrades"},
+            {"url": "https://example.com/ev-chargers/", "title": "EV Charger Install"},
+        ]
+    }
+
+    topics = GBPPostGenerationService._service_topics([], {}, knowledge)
+
+    assert "Panel Upgrades" in topics
+    assert "EV Charger Install" in topics
+    # The homepage names the business, not a service, so it must not become a topic.
+    assert "Wheyland Electric" not in topics
+    assert "Home" not in topics
+
+
+def test_service_topics_prefer_facts_then_profile_then_website() -> None:
+    governed_facts: list[GovernedFact] = [
+        {
+            "fact_key": "primary_services",
+            "value": ["Panel Upgrades"],
+            "authority": "client_approved",
+            "revision_id": "r1",
+        }
+    ]
+    profile: dict[str, object] = {"serviceItems": [{"name": "Generator Installation"}]}
+    knowledge = {"website_knowledge": [{"url": "https://example.com/ev/", "h1": "EV Chargers"}]}
+
+    topics = GBPPostGenerationService._service_topics(governed_facts, profile, knowledge)
+
+    assert topics.index("Panel Upgrades") < topics.index("Generator Installation")
+    assert topics.index("Generator Installation") < topics.index("EV Chargers")
+
+
+def test_rotate_service_topics_puts_unused_first_and_keeps_all() -> None:
+    """Repetition is avoided within the window but never removes a candidate."""
+    candidates = ["Panel Upgrades", "EV Chargers", "Lighting"]
+
+    rotated = GBPPostGenerationService._rotate_service_topics(
+        candidates, ["Panel Upgrades", "Lighting"]
+    )
+
+    assert rotated[0] == "EV Chargers"
+    assert sorted(rotated) == sorted(candidates), "no candidate may be dropped"
+    # Least recently used of the already-used topics comes before the most recent.
+    assert rotated.index("Lighting") < rotated.index("Panel Upgrades")
+
+
+def test_rotate_service_topics_reuses_when_every_topic_is_recent() -> None:
+    """An exhausted rotation reuses the oldest topic rather than failing."""
+    candidates = ["Panel Upgrades", "EV Chargers"]
+
+    rotated = GBPPostGenerationService._rotate_service_topics(
+        candidates, ["EV Chargers", "Panel Upgrades"]
+    )
+
+    assert sorted(rotated) == sorted(candidates)
+    assert rotated[0] == "Panel Upgrades", "oldest recent topic is reused first"
+
+
+def test_rotate_service_topics_is_case_insensitive() -> None:
+    rotated = GBPPostGenerationService._rotate_service_topics(
+        ["Panel Upgrades", "EV Chargers"], ["panel upgrades"]
+    )
+
+    assert rotated[0] == "EV Chargers"

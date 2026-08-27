@@ -85,12 +85,20 @@ class GBPPostGenerationService:
                     )
                     requirements = revision.publication_requirements or {}
                     metadata = existing_asset.metadata_document if existing_asset else {}
+                    existing_source_type = str(requirements.get("source_type") or "")
+                    if existing_source_type == "google_review":
+                        source_bound = bool(str(requirements.get("source_review_id") or "").strip())
+                    elif existing_source_type == "service_knowledge":
+                        source_bound = bool(
+                            str(requirements.get("source_service_topic") or "").strip()
+                        )
+                    else:
+                        source_bound = False
                     if (
                         requirements.get("version") == 1
                         and requirements.get("cta_required") is True
                         and requirements.get("media_required") is True
-                        and requirements.get("source_type") == "google_review"
-                        and bool(str(requirements.get("source_review_id") or "").strip())
+                        and source_bound
                         and isinstance(revision.call_to_action, dict)
                         and existing_asset is not None
                         and existing_asset.source_type == "google_drive"
@@ -100,18 +108,31 @@ class GBPPostGenerationService:
                     raise GBPProposalEnrichmentError(
                         "GBP_POST_DELIVERY_BINDING_MISSING",
                         (
-                            "The existing generated post is missing its required review, CTA, "
+                            "The existing generated post is missing its required source, CTA, "
                             "or image binding."
                         ),
                     )
 
-        source_review, source_revision = await self._resolve_source_review(
-            session,
-            organization_id,
-            location_id,
-            source_review_id=source_review_id,
-        )
-        review_text = self._review_text(source_revision)
+        # An explicit review_id must resolve or fail closed. Automated runs prefer an
+        # unused review and fall back to approved service knowledge when none remains,
+        # so post cadence is not capped by a location's review count.
+        source_review: Review | None = None
+        source_revision: ReviewRevision | None = None
+        if source_review_id is not None:
+            source_review, source_revision = await self._resolve_source_review(
+                session,
+                organization_id,
+                location_id,
+                source_review_id=source_review_id,
+            )
+        else:
+            resolved = await self._resolve_optional_source_review(
+                session, organization_id, location_id
+            )
+            if resolved is not None:
+                source_review, source_revision = resolved
+        review_text = self._review_text(source_revision) if source_revision is not None else ""
+        source_type = "google_review" if source_review is not None else "service_knowledge"
 
         fact_rows = list(
             await session.scalars(
@@ -129,13 +150,20 @@ class GBPPostGenerationService:
             )
         )
         fact_ids = [row.id for row in fact_rows]
-        if not fact_ids:
-            raise ValueError("approved business facts required for GBP AI generation")
-        governed_facts = await resolve_governed_facts(
-            session,
-            organization_id,
-            fact_ids,
-            location_id=location_id,
+        # Approved business facts are the strongest grounding source but not the only
+        # one. A newly onboarded client has an authoritative GBP profile and website
+        # before anyone curates facts by hand, so absence of facts must not block
+        # posting. The grounding requirement is enforced after knowledge retrieval
+        # against the union of available client-owned sources.
+        governed_facts = (
+            await resolve_governed_facts(
+                session,
+                organization_id,
+                fact_ids,
+                location_id=location_id,
+            )
+            if fact_ids
+            else []
         )
 
         snapshot = await session.scalar(
@@ -149,19 +177,47 @@ class GBPPostGenerationService:
         )
         profile = snapshot.normalized_profile if snapshot else {}
         topic = self._topic_hint(governed_facts, profile)
-        relevance_text = f"{review_text} {topic}".strip()
+        if source_review is not None:
+            knowledge_title = f"Customer review: {review_text[:220]}"
+            knowledge_intent = (
+                "turn this customer review into a useful Google Business Profile post and link "
+                "to the client-owned page most relevant to the experience described"
+            )
+        else:
+            knowledge_title = f"Service update: {topic}"
+            knowledge_intent = (
+                "write a useful Google Business Profile post about this service using the "
+                "client's approved facts, Google Business Profile, and website, and link to "
+                "the client-owned page most relevant to it"
+            )
         knowledge = await self.knowledge.retrieve_for_content(
             session,
             organization_id=organization_id,
             location_id=location_id,
-            content_title=f"Customer review: {review_text[:220]}",
+            content_title=knowledge_title,
             audience="local prospective customers",
-            intent=(
-                "turn this customer review into a useful Google Business Profile post and link "
-                "to the client-owned page most relevant to the experience described"
-            ),
+            intent=knowledge_intent,
             content_type="gbp_post",
         )
+        # Fail closed only when there is genuinely nothing client-owned to ground on.
+        # GBP profile and website knowledge are ingested automatically from the
+        # client's own profile and site, so a new client is groundable on day one.
+        grounding_sources = [
+            name
+            for name, present in (
+                ("business_facts", bool(governed_facts)),
+                ("gbp_profile", bool(profile)),
+                ("gbp_knowledge", bool(knowledge.get("gbp"))),
+                ("website", bool(knowledge.get("website_knowledge"))),
+                ("identity", bool(knowledge.get("identity"))),
+            )
+            if present
+        ]
+        if not grounding_sources:
+            raise ValueError(
+                "no approved business facts, GBP profile, or website knowledge available "
+                "for GBP AI generation"
+            )
 
         recent_provider = list(
             await session.scalars(
@@ -192,13 +248,67 @@ class GBPPostGenerationService:
             if item.summary and str(item.summary).strip()
         ] + [item.content.strip() for item in recent_drafts if item.content.strip()]
 
-        target_url = self._select_target_url(profile, knowledge, relevance_text)
+        if source_review is not None:
+            relevance_text = f"{review_text} {topic}".strip()
+            target_url = self._select_target_url(profile, knowledge, relevance_text)
+        else:
+            # Without a review the topic is ours to choose. Try candidates in
+            # least-recently-used order so consecutive service posts vary, and try
+            # every candidate rather than failing because the first has no page.
+            relevance_text = topic
+            target_url = None
+            recent_topics = await self._recent_service_topics(session, organization_id, location_id)
+            for candidate in self._rotate_service_topics(
+                self._service_topics(governed_facts, profile, knowledge), recent_topics
+            ):
+                candidate_url = self._select_target_url(profile, knowledge, candidate)
+                if candidate_url is not None:
+                    topic = candidate
+                    relevance_text = candidate
+                    target_url = candidate_url
+                    break
         if target_url is None:
             raise GBPProposalEnrichmentError(
                 "GBP_WEBSITE_TARGET_UNAVAILABLE",
-                "No website page with positive relevance to the selected review could be resolved.",
+                "No website page with positive relevance to the selected source could be resolved.",
             )
-        fallback = self._fallback_copy(organization.name, review_text, target_url)
+        if source_review is not None and source_revision is not None:
+            fallback = self._fallback_copy(organization.name, review_text, target_url)
+            content_title = f"Customer review about {topic}"
+            intent = "create one Google Business Profile update based on the selected review"
+            source_block: dict[str, Any] = {
+                "review_id": str(source_review.id),
+                "review_revision_id": str(source_revision.id),
+                "rating": float(source_revision.rating)
+                if source_revision.rating is not None
+                else None,
+                "title": source_revision.title,
+                "body": source_revision.body,
+            }
+            instructions = (
+                "Use the selected customer review as the primary source for the post. "
+                "Faithfully paraphrase the experience without inventing details, offers, "
+                "guarantees, pricing, credentials, or service areas. Do not identify the "
+                "reviewer. Keep the post useful and natural, under 1,200 characters, and do "
+                "not paste the URL into the body because LILOs attaches it as the CTA."
+            )
+            input_references: tuple[UUID, ...] = (source_review.id, source_revision.id)
+        else:
+            fallback = self._service_fallback_copy(organization.name, topic)
+            content_title = f"Service update about {topic}"
+            intent = "create one Google Business Profile update about the selected service"
+            source_block = {"service_topic": topic}
+            instructions = (
+                "Write about the selected service using only the client-owned sources "
+                "provided: approved business facts, the Google Business Profile, and website "
+                "knowledge. Invent nothing: no offers, discounts, "
+                "guarantees, pricing, credentials, awards, service areas, or availability that "
+                "is not present in the approved facts. Do not imply a customer said anything. "
+                "Do not repeat any of the recent posts listed. Keep the post useful and natural, "
+                "under 1,200 characters, and do not paste the URL into the body because LILOs "
+                "attaches it as the CTA."
+            )
+            input_references = ()
         task = await self._task_definition(session)
         request = AIGatewayRequest(
             organization_id=organization_id,
@@ -206,33 +316,20 @@ class GBPPostGenerationService:
             task_key=TASK_KEY,
             input_document={
                 "audience": "local prospective customers",
-                "intent": "create one Google Business Profile update based on the selected review",
+                "intent": intent,
                 "manual_fallback": fallback,
-                "content_title": f"Customer review about {topic}",
+                "content_title": content_title,
                 "content_type": "gbp_post",
-                "source_review": {
-                    "review_id": str(source_review.id),
-                    "review_revision_id": str(source_revision.id),
-                    "rating": float(source_revision.rating)
-                    if source_revision.rating is not None
-                    else None,
-                    "title": source_revision.title,
-                    "body": source_revision.body,
-                },
+                "source_type": source_type,
+                "source_review" if source_review is not None else "source_service": source_block,
                 "governed_facts": governed_facts,
                 "knowledge": knowledge,
                 "current_gbp_profile": profile,
                 "recent_posts_to_avoid_repeating": recent_text[:20],
                 "selected_target_url": target_url,
-                "instructions": (
-                    "Use the selected customer review as the primary source for the post. "
-                    "Faithfully paraphrase the experience without inventing details, offers, "
-                    "guarantees, pricing, credentials, or service areas. Do not identify the "
-                    "reviewer. Keep the post useful and natural, under 1,200 characters, and do "
-                    "not paste the URL into the body because LILOs attaches it as the CTA."
-                ),
+                "instructions": instructions,
             },
-            input_references=(source_review.id, source_revision.id),
+            input_references=input_references,
             approved_fact_revision_ids=tuple(fact_ids),
             maximum_cost_microunits=task.maximum_cost_microunits,
             maximum_latency_ms=task.maximum_latency_ms,
@@ -267,12 +364,16 @@ class GBPPostGenerationService:
                 post_revision_id=revision.id,
                 content=draft,
                 requested_call_to_action=revision.call_to_action,
-                relevance_text=f"{review_text}\n{draft}",
-                source_requirements={
-                    "source_type": "google_review",
-                    "source_review_id": str(source_review.id),
-                    "source_review_revision_id": str(source_revision.id),
-                },
+                relevance_text=f"{relevance_text}\n{draft}",
+                source_requirements=(
+                    {
+                        "source_type": "google_review",
+                        "source_review_id": str(source_review.id),
+                        "source_review_revision_id": str(source_revision.id),
+                    }
+                    if source_review is not None and source_revision is not None
+                    else {"source_type": "service_knowledge", "source_service_topic": topic}
+                ),
             )
             asset = enrichment.asset
             if (
@@ -285,7 +386,7 @@ class GBPPostGenerationService:
             ):
                 raise GBPProposalEnrichmentError(
                     "GBP_POST_DELIVERY_BINDING_MISSING",
-                    "The generated review post could not bind its required CTA and client image.",
+                    "The generated post could not bind its required CTA and client image.",
                 )
             target_url = enrichment.target_url
             selected_image_metadata = dict(asset.metadata_document or {})
@@ -296,18 +397,29 @@ class GBPPostGenerationService:
             {
                 "draft": draft,
                 "post_revision_id": str(revision.id),
-                "source_review_id": str(source_review.id),
-                "source_review_revision_id": str(source_revision.id),
-                "source_review_external_id": source_review.external_review_id,
-                "source_review_rating": float(source_revision.rating)
-                if source_revision.rating is not None
-                else None,
+                "source_type": source_type,
+                "grounding_sources": grounding_sources,
                 "target_url": target_url,
                 "selected_image": selected_image_metadata,
                 "publication_requirements": dict(revision.publication_requirements or {}),
                 "worker_release": os.getenv("LILOS_RELEASE"),
             }
         )
+        if source_review is not None and source_revision is not None:
+            # source_review_id is the marker that retires a review from future
+            # selection. It must be absent (not null) for service-grounded posts.
+            execution_output.update(
+                {
+                    "source_review_id": str(source_review.id),
+                    "source_review_revision_id": str(source_revision.id),
+                    "source_review_external_id": source_review.external_review_id,
+                    "source_review_rating": float(source_revision.rating)
+                    if source_revision.rating is not None
+                    else None,
+                }
+            )
+        else:
+            execution_output["source_service_topic"] = topic
         execution = AIExecution(
             organization_id=organization_id,
             location_id=location_id,
@@ -318,8 +430,11 @@ class GBPPostGenerationService:
             provider_key=str(output.get("provider") or "unknown"),
             model_key=str(output.get("model") or "unknown"),
             input_references=[
-                f"review:{source_review.id}",
-                f"review-revision:{source_revision.id}",
+                *(
+                    [f"review:{source_review.id}", f"review-revision:{source_revision.id}"]
+                    if source_review is not None and source_revision is not None
+                    else [f"service-topic:{topic}"]
+                ),
                 *(str(value) for value in knowledge.get("source_document_ids", [])),
                 *(str(item.provider_post_name) for item in recent_provider[:10]),
             ],
@@ -445,6 +560,140 @@ class GBPPostGenerationService:
         session.add(task)
         await session.flush()
         return task
+
+    async def _resolve_optional_source_review(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        location_id: UUID,
+    ) -> tuple[Review, ReviewRevision] | None:
+        """Return the newest unused eligible review, or None when none remains.
+
+        Automated runs prefer a review because a real customer experience makes the
+        strongest post, but a location's review count must not cap how often it can
+        post. Returning None hands the caller the service-knowledge path instead of
+        failing the run.
+        """
+        try:
+            return await self._resolve_source_review(
+                session, organization_id, location_id, source_review_id=None
+            )
+        except GBPProposalEnrichmentError as exc:
+            if exc.safe_code == "GBP_REVIEW_SOURCE_UNAVAILABLE":
+                return None
+            raise
+
+    @staticmethod
+    def _service_topics(
+        governed_facts: list[GovernedFact],
+        profile: dict[str, object],
+        knowledge: dict[str, Any] | None = None,
+    ) -> list[str]:
+        """Service topics in authority order, deduplicated.
+
+        Approved facts first, then the GBP profile's own service items, then the
+        client's website page titles. All three are client-owned sources, which is
+        what makes a newly onboarded client postable before anyone curates facts by
+        hand. Ordered candidates rather than a single hint so a location whose
+        highest-priority service has no matching page can still post about another.
+        """
+        topics: list[str] = []
+
+        def add(value: object) -> None:
+            text = str(value or "").strip()[:120]
+            if text and text.casefold() not in {item.casefold() for item in topics}:
+                topics.append(text)
+
+        preferred_keys = ("primary_services", "services", "service", "service_items")
+        for key in preferred_keys:
+            for fact in governed_facts:
+                if key not in str(fact.get("fact_key", "")):
+                    continue
+                value = fact.get("value")
+                if isinstance(value, list):
+                    for entry in value:
+                        add(entry)
+                else:
+                    add(value)
+        items = profile.get("serviceItems")
+        if isinstance(items, list):
+            for item in items:
+                if isinstance(item, dict):
+                    add(item.get("structuredName") or item.get("name"))
+                else:
+                    add(item)
+        # Website page titles: the client's own site, already ingested by the crawler.
+        # Homepage-style pages are skipped because they name the business, not a service.
+        pages = (knowledge or {}).get("website_knowledge")
+        if isinstance(pages, list):
+            for raw in pages:
+                if not isinstance(raw, dict):
+                    continue
+                if str(raw.get("url") or "").rstrip("/").count("/") <= 2:
+                    continue
+                add(raw.get("h1") or raw.get("title"))
+        return topics[:12]
+
+    @staticmethod
+    async def _recent_service_topics(
+        session: AsyncSession,
+        organization_id: UUID,
+        location_id: UUID,
+        *,
+        window: int = 10,
+    ) -> list[str]:
+        """Service topics used by the most recent generated posts, newest first.
+
+        A short window, not the full history: repeating a topic eventually is normal
+        and must never be an error. Only the recent run of posts should steer away
+        from a topic.
+        """
+        rows = list(
+            await session.scalars(
+                select(AIExecution.output_document)
+                .join(AITaskDefinition, AITaskDefinition.id == AIExecution.task_definition_id)
+                .where(
+                    AIExecution.organization_id == organization_id,
+                    AIExecution.location_id == location_id,
+                    AIExecution.status == "completed",
+                    AITaskDefinition.key == TASK_KEY,
+                )
+                .order_by(AIExecution.created_at.desc())
+                .limit(window)
+            )
+        )
+        topics: list[str] = []
+        for document in rows:
+            topic = str((document or {}).get("source_service_topic") or "").strip()
+            if topic:
+                topics.append(topic)
+        return topics
+
+    @staticmethod
+    def _rotate_service_topics(candidates: list[str], recent_topics: list[str]) -> list[str]:
+        """Order candidates least-recently-used first, keeping every candidate.
+
+        Mirrors the Drive image rule: prefer something unused in the recent window,
+        but never drop a candidate, so an exhausted rotation reuses the oldest topic
+        instead of failing.
+        """
+        recent_rank: dict[str, int] = {}
+        for position, topic in enumerate(recent_topics):
+            recent_rank.setdefault(topic.casefold(), position)
+        unused = [c for c in candidates if c.casefold() not in recent_rank]
+        used = [c for c in candidates if c.casefold() in recent_rank]
+        # recent_topics is newest-first, so a larger rank means longer unused.
+        used.sort(key=lambda c: recent_rank[c.casefold()], reverse=True)
+        return unused + used
+
+    @staticmethod
+    def _service_fallback_copy(organization_name: str, topic: str) -> str:
+        """Manual-path copy for a service post. Claims nothing beyond the service name."""
+        service = " ".join(str(topic).split())[:120].rstrip(" ,.;:-") or "our services"
+        return (
+            f"{organization_name} helps local customers with {service}. "
+            "Learn more about what the work involves and how to get started."
+        )[:1200]
 
     @staticmethod
     def _unused_eligible_review_statement(
