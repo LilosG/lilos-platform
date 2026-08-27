@@ -621,6 +621,10 @@ async def _handle_content_publish(
     from sqlalchemy import select
 
     from apps.api.app.products.content.adapter import RepositoryPublisher
+    from apps.api.app.products.content.file_format import (
+        ContentFileFormatError,
+        build_content_file,
+    )
     from apps.api.app.products.content.models import (
         ContentPublication,
         ContentRevision,
@@ -707,7 +711,17 @@ async def _handle_content_publish(
         await publisher.create_branch(repo, target.base_branch, base_commit, branch_name)
         publication.branch_name = branch_name
         publication.status = "branch_created"
-        await publisher.put_file(repo, branch_name, publication.target_path, revision.body, None)
+        # Commit frontmatter + body, not the body alone. An Astro content
+        # collection validates the frontmatter against its Zod schema, so a file
+        # without it fails astro build and breaks the client's deployment.
+        try:
+            file_contents = build_content_file(revision.body, revision.frontmatter or {})
+        except ContentFileFormatError as exc:
+            publication.status = "failed"
+            publication.safe_error_code = exc.safe_code
+            await session.commit()
+            return JobOutcome(result="permanent_failure", safe_error=exc.safe_code)
+        await publisher.put_file(repo, branch_name, publication.target_path, file_contents, None)
         pr_number = await publisher.create_pull_request(
             repo,
             branch_name,
