@@ -12,6 +12,57 @@ from apps.api.app.products.gbp.proposal_enrichment import GBPProposalEnrichmentE
 
 
 @pytest.mark.anyio
+async def test_gbp_generate_post_rejects_invalid_review_source() -> None:
+    session = AsyncMock()
+
+    outcome = await _handle_gbp_generate_post(
+        session,
+        organization_id=uuid4(),
+        location_id=uuid4(),
+        input_document={"review_id": "not-a-uuid"},
+        correlation_id="invalid-review",
+        workflow_run_id=uuid4(),
+    )
+
+    assert outcome.result == "permanent_failure"
+    assert outcome.safe_error == "GBP_REVIEW_SOURCE_INVALID"
+    session.rollback.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_gbp_generate_post_passes_explicit_review_source(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = AsyncMock()
+    revision_id = uuid4()
+    review_id = uuid4()
+    captured: dict[str, object] = {}
+
+    async def successful_generation(
+        *args: object, **kwargs: object
+    ) -> tuple[object, object, object]:
+        captured.update(kwargs)
+        return (
+            SimpleNamespace(id=revision_id),
+            SimpleNamespace(id=uuid4()),
+            SimpleNamespace(id=uuid4()),
+        )
+
+    monkeypatch.setattr(GBPPostGenerationService, "generate", successful_generation)
+    outcome = await _handle_gbp_generate_post(
+        session,
+        organization_id=uuid4(),
+        location_id=uuid4(),
+        input_document={"review_id": str(review_id)},
+        correlation_id="explicit-review",
+        workflow_run_id=uuid4(),
+    )
+
+    assert outcome.result == "succeeded"
+    assert captured["source_review_id"] == review_id
+
+
+@pytest.mark.anyio
 async def test_gbp_generate_post_never_succeeds_without_required_image(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
