@@ -16,7 +16,6 @@ from apps.api.app.ai.factory import build_ai_gateway
 from apps.api.app.ai.gateway import AIGatewayRequest
 from apps.api.app.ai.models import AIExecution, AITaskDefinition
 from apps.api.app.config import Settings
-from apps.api.app.integrations.google_drive_media import GoogleDriveMediaService
 from apps.api.app.organizations.models import Organization
 from apps.api.app.products.content.service import GovernedFact, resolve_governed_facts
 from apps.api.app.products.gbp.models import GBPLocation, GBPProfileSnapshot
@@ -24,6 +23,10 @@ from apps.api.app.products.gbp.operations_contracts import PostRevisionCreate
 from apps.api.app.products.gbp.operations_models import GBPPostRevision, GBPProviderPost
 from apps.api.app.products.gbp.operations_service import GBPOperationsService
 from apps.api.app.products.gbp.post_generation_models import GBPPostAsset
+from apps.api.app.products.gbp.proposal_enrichment import (
+    GBPPostProposalEnrichmentService,
+    GBPProposalEnrichmentError,
+)
 
 TASK_KEY = "gbp.generate_post"
 MAXIMUM_LATENCY_MS = 120_000
@@ -34,7 +37,7 @@ class GBPPostGenerationService:
         self.ai_gateway = build_ai_gateway()
         self.knowledge = BusinessKnowledgeService()
         self.operations = GBPOperationsService()
-        self.drive = GoogleDriveMediaService()
+        self.enrichment = GBPPostProposalEnrichmentService()
 
     async def generate(
         self,
@@ -45,8 +48,8 @@ class GBPPostGenerationService:
         *,
         workflow_run_id: UUID,
         correlation_id: str,
-    ) -> tuple[GBPPostRevision, AIExecution, GBPPostAsset | None]:
-        """Create an approval-ready local post with CTA and an optional Drive image."""
+    ) -> tuple[GBPPostRevision, AIExecution, GBPPostAsset]:
+        """Create an approval-ready local post with required CTA and Drive image."""
         gbp_location = await self._resolve_location(session, organization_id, location_id)
         organization = await session.get(Organization, organization_id)
         if organization is None:
@@ -62,11 +65,30 @@ class GBPPostGenerationService:
             revision_id = (existing_execution.output_document or {}).get("post_revision_id")
             if revision_id:
                 revision = await session.get(GBPPostRevision, UUID(str(revision_id)))
-                if revision is not None:
+                if revision is not None and revision.organization_id == organization_id:
                     existing_asset = await session.scalar(
-                        select(GBPPostAsset).where(GBPPostAsset.post_revision_id == revision.id)
+                        select(GBPPostAsset).where(
+                            GBPPostAsset.organization_id == organization_id,
+                            GBPPostAsset.post_revision_id == revision.id,
+                            GBPPostAsset.status == "selected",
+                        )
                     )
-                    return revision, existing_execution, existing_asset
+                    requirements = revision.publication_requirements or {}
+                    metadata = existing_asset.metadata_document if existing_asset else {}
+                    if (
+                        requirements.get("version") == 1
+                        and requirements.get("cta_required") is True
+                        and requirements.get("media_required") is True
+                        and isinstance(revision.call_to_action, dict)
+                        and existing_asset is not None
+                        and existing_asset.source_type == "google_drive"
+                        and bool(str((metadata or {}).get("file_id") or "").strip())
+                    ):
+                        return revision, existing_execution, existing_asset
+                    raise GBPProposalEnrichmentError(
+                        "GBP_POST_DELIVERY_BINDING_MISSING",
+                        "The existing generated post is missing its required CTA or image binding.",
+                    )
 
         fact_rows = list(
             await session.scalars(
@@ -180,56 +202,52 @@ class GBPPostGenerationService:
         output = await self.ai_gateway.execute(request)
         draft = self._clean_draft(str(output.get("draft") or ""), fallback)
 
-        revision = await self.operations.create_post_revision(
-            session,
-            organization_id,
-            gbp_location.id,
-            PostRevisionCreate(
-                post_type="standard",
-                content=draft,
-                call_to_action=(
-                    {"actionType": "LEARN_MORE", "url": target_url} if target_url else None
+        # The draft row, selected asset, CTA, and versioned delivery contract are
+        # one approval unit. If deterministic enrichment cannot complete, the
+        # savepoint rolls the partial draft/audit rows back instead of leaving a
+        # text-only revision that could later be approved manually.
+        async with session.begin_nested():
+            revision = await self.operations.create_post_revision(
+                session,
+                organization_id,
+                gbp_location.id,
+                PostRevisionCreate(
+                    post_type="standard",
+                    content=draft,
+                    call_to_action=(
+                        {"actionType": "LEARN_MORE", "url": target_url} if target_url else None
+                    ),
+                    event_or_offer=None,
                 ),
-                event_or_offer=None,
-            ),
-            actor_id=None,
-            correlation_id=correlation_id,
-        )
+                actor_id=None,
+                correlation_id=correlation_id,
+            )
 
-        asset: GBPPostAsset | None = None
-        selected_image_metadata: dict[str, object] | None = None
-        try:
-            images = await self.drive.discover_images(settings, organization.name, limit=25)
-            if images:
-                image = images[0]
-                proxy_url = self.drive.public_proxy_url(
-                    settings,
-                    organization_id=organization_id,
-                    image=image,
+            enrichment = await self.enrichment.enrich(
+                session,
+                settings,
+                organization_id=organization_id,
+                location_id=location_id,
+                gbp_location=gbp_location,
+                post_revision_id=revision.id,
+                content=draft,
+                requested_call_to_action=revision.call_to_action,
+            )
+            asset = enrichment.asset
+            if (
+                enrichment.call_to_action is None
+                or enrichment.target_url is None
+                or asset is None
+                or asset.status != "selected"
+                or asset.source_type != "google_drive"
+                or not str((asset.metadata_document or {}).get("file_id") or "").strip()
+            ):
+                raise GBPProposalEnrichmentError(
+                    "GBP_POST_DELIVERY_BINDING_MISSING",
+                    "The generated post could not bind its required CTA and client image.",
                 )
-                if proxy_url:
-                    selected_image_metadata = {
-                        "file_id": image.file_id,
-                        "name": image.name,
-                        "mime_type": image.mime_type,
-                        "path": image.path,
-                        "modified_time": image.modified_time or "",
-                    }
-                    asset = GBPPostAsset(
-                        organization_id=organization_id,
-                        post_revision_id=revision.id,
-                        source_type="google_drive",
-                        source_reference=f"drive:{image.file_id}",
-                        provider_fetch_url=proxy_url,
-                        metadata_document=selected_image_metadata,
-                        status="selected",
-                    )
-                    session.add(asset)
-                    await session.flush()
-        except Exception:
-            # Image enrichment is additive. A grounded text+CTA draft remains
-            # useful and approval-ready even if Drive is temporarily unavailable.
-            asset = None
+            target_url = enrichment.target_url
+            selected_image_metadata = dict(asset.metadata_document or {})
 
         usage = output.get("usage") if isinstance(output.get("usage"), dict) else {}
         execution_output: dict[str, Any] = dict(output)
@@ -239,6 +257,7 @@ class GBPPostGenerationService:
                 "post_revision_id": str(revision.id),
                 "target_url": target_url,
                 "selected_image": selected_image_metadata,
+                "publication_requirements": dict(revision.publication_requirements or {}),
             }
         )
         execution = AIExecution(
