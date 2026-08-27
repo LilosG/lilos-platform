@@ -140,7 +140,10 @@ class GBPPostProposalEnrichmentService:
         if target_url is None:
             raise GBPProposalEnrichmentError(
                 "GBP_WEBSITE_TARGET_UNAVAILABLE",
-                "No client-owned website page with positive relevance could be resolved for the GBP post.",
+                (
+                    "No client-owned website page with positive relevance could be resolved "
+                    "for the GBP post."
+                ),
             )
         call_to_action = self._safe_call_to_action(requested_call_to_action, target_url)
 

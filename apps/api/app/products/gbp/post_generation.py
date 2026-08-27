@@ -99,7 +99,10 @@ class GBPPostGenerationService:
                         return revision, existing_execution, existing_asset
                     raise GBPProposalEnrichmentError(
                         "GBP_POST_DELIVERY_BINDING_MISSING",
-                        "The existing generated post is missing its required review, CTA, or image binding.",
+                        (
+                            "The existing generated post is missing its required review, CTA, "
+                            "or image binding."
+                        ),
                     )
 
         source_review, source_revision = await self._resolve_source_review(
@@ -229,10 +232,7 @@ class GBPPostGenerationService:
                     "not paste the URL into the body because LILOs attaches it as the CTA."
                 ),
             },
-            input_references=(
-                f"review:{source_review.id}",
-                f"review-revision:{source_revision.id}",
-            ),
+            input_references=(source_review.id, source_revision.id),
             approved_fact_revision_ids=tuple(fact_ids),
             maximum_cost_microunits=task.maximum_cost_microunits,
             maximum_latency_ms=task.maximum_latency_ms,
@@ -365,7 +365,10 @@ class GBPPostGenerationService:
             if row is None:
                 raise GBPProposalEnrichmentError(
                     "GBP_REVIEW_SOURCE_UNAVAILABLE",
-                    "The selected customer review is unavailable in this organization and location.",
+                    (
+                        "The selected customer review is unavailable in this organization "
+                        "and location."
+                    ),
                 )
             review, revision = row
             if not self._review_text(revision):
@@ -404,7 +407,10 @@ class GBPPostGenerationService:
                 return review, revision
         raise GBPProposalEnrichmentError(
             "GBP_REVIEW_SOURCE_UNAVAILABLE",
-            "No unused eligible four- or five-star customer review is available for GBP post generation.",
+            (
+                "No unused eligible four- or five-star customer review is available for "
+                "GBP post generation."
+            ),
         )
 
     async def _resolve_location(
