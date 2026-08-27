@@ -81,7 +81,7 @@ class GBPProposalEnrichment:
 
 
 class GBPPostProposalEnrichmentService:
-    """Resolve a safe website CTA and client-scoped Drive image for a proposal."""
+    """Resolve a relevant website CTA and client-scoped Drive image for a proposal."""
 
     def __init__(self) -> None:
         self.knowledge = BusinessKnowledgeService()
@@ -98,6 +98,8 @@ class GBPPostProposalEnrichmentService:
         post_revision_id: UUID,
         content: str,
         requested_call_to_action: object,
+        relevance_text: str | None = None,
+        source_requirements: dict[str, object] | None = None,
     ) -> GBPProposalEnrichment:
         organization = await session.get(Organization, organization_id)
         if organization is None:
@@ -106,6 +108,7 @@ class GBPPostProposalEnrichmentService:
                 "The bound client organization is unavailable for GBP proposal enrichment.",
             )
 
+        selection_text = (relevance_text or content).strip() or content
         snapshot = await session.scalar(
             select(GBPProfileSnapshot)
             .where(
@@ -121,7 +124,7 @@ class GBPPostProposalEnrichmentService:
                 session,
                 organization_id=organization_id,
                 location_id=location_id,
-                content_title=content[:300] or "Google Business Profile update",
+                content_title=selection_text[:300] or "Google Business Profile update",
                 audience="local prospective customers",
                 intent="select the most relevant client-owned landing page for this GBP post",
                 content_type="gbp_post",
@@ -133,11 +136,11 @@ class GBPPostProposalEnrichmentService:
                 "Website knowledge could not be read for the GBP proposal.",
             ) from exc
 
-        target_url = self._select_target_url(profile, knowledge, content)
+        target_url = self._select_target_url(profile, knowledge, selection_text)
         if target_url is None:
             raise GBPProposalEnrichmentError(
                 "GBP_WEBSITE_TARGET_UNAVAILABLE",
-                "No client-owned website destination could be resolved for the GBP post.",
+                "No client-owned website page with positive relevance could be resolved for the GBP post.",
             )
         call_to_action = self._safe_call_to_action(requested_call_to_action, target_url)
 
@@ -147,7 +150,7 @@ class GBPPostProposalEnrichmentService:
             organization_id=organization_id,
             organization_name=organization.name,
             post_revision_id=post_revision_id,
-            content=content,
+            content=selection_text,
         )
         revision = await session.scalar(
             select(GBPPostRevision).where(
@@ -161,11 +164,14 @@ class GBPPostProposalEnrichmentService:
                 "The governed GBP post revision is unavailable for delivery binding.",
             )
         revision.call_to_action = call_to_action
-        revision.publication_requirements = {
+        requirements: dict[str, object] = {
             "version": 1,
             "cta_required": True,
             "media_required": True,
         }
+        if source_requirements:
+            requirements.update(source_requirements)
+        revision.publication_requirements = requirements
         await session.flush()
         return GBPProposalEnrichment(
             call_to_action=call_to_action,
@@ -261,7 +267,7 @@ class GBPPostProposalEnrichmentService:
                 "path": selected.path,
                 "modified_time": selected.modified_time or "",
                 "folder": folder,
-                "selection": "topic_aware_non_repeating",
+                "selection": "review_topic_aware_non_repeating",
             },
             status="selected",
         )
@@ -303,6 +309,7 @@ class GBPPostProposalEnrichmentService:
         knowledge: dict[str, Any],
         content: str,
     ) -> str | None:
+        del profile
         content_terms = cls._terms(content)
         ranked: list[tuple[int, str]] = []
         pages = knowledge.get("website_knowledge")
@@ -317,22 +324,20 @@ class GBPPostProposalEnrichmentService:
                     str(raw.get(key) or "") for key in ("url", "title", "h1", "body_text")
                 )
                 page_terms = cls._terms(haystack)
-                score = len(content_terms & page_terms) * 10
+                overlap = len(content_terms & page_terms)
+                if overlap <= 0:
+                    continue
+                score = overlap * 10
                 path = urlsplit(url).path.strip("/")
                 if path:
                     score += 2
                 if any(part in path.casefold() for part in ("service", "services")):
                     score += 2
                 ranked.append((score, url))
-        if ranked:
-            ranked.sort(key=lambda item: (item[0], len(urlsplit(item[1]).path)), reverse=True)
-            if ranked[0][0] > 0:
-                return ranked[0][1]
-
-        website = profile.get("websiteUri")
-        if isinstance(website, str) and cls._valid_http_url(website.strip()):
-            return website.strip()
-        return ranked[0][1] if ranked else None
+        if not ranked:
+            return None
+        ranked.sort(key=lambda item: (item[0], len(urlsplit(item[1]).path)), reverse=True)
+        return ranked[0][1]
 
     @classmethod
     def _safe_call_to_action(
