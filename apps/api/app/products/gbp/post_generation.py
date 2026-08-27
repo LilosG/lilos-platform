@@ -202,47 +202,52 @@ class GBPPostGenerationService:
         output = await self.ai_gateway.execute(request)
         draft = self._clean_draft(str(output.get("draft") or ""), fallback)
 
-        revision = await self.operations.create_post_revision(
-            session,
-            organization_id,
-            gbp_location.id,
-            PostRevisionCreate(
-                post_type="standard",
-                content=draft,
-                call_to_action=(
-                    {"actionType": "LEARN_MORE", "url": target_url} if target_url else None
+        # The draft row, selected asset, CTA, and versioned delivery contract are
+        # one approval unit. If deterministic enrichment cannot complete, the
+        # savepoint rolls the partial draft/audit rows back instead of leaving a
+        # text-only revision that could later be approved manually.
+        async with session.begin_nested():
+            revision = await self.operations.create_post_revision(
+                session,
+                organization_id,
+                gbp_location.id,
+                PostRevisionCreate(
+                    post_type="standard",
+                    content=draft,
+                    call_to_action=(
+                        {"actionType": "LEARN_MORE", "url": target_url} if target_url else None
+                    ),
+                    event_or_offer=None,
                 ),
-                event_or_offer=None,
-            ),
-            actor_id=None,
-            correlation_id=correlation_id,
-        )
-
-        enrichment = await self.enrichment.enrich(
-            session,
-            settings,
-            organization_id=organization_id,
-            location_id=location_id,
-            gbp_location=gbp_location,
-            post_revision_id=revision.id,
-            content=draft,
-            requested_call_to_action=revision.call_to_action,
-        )
-        asset = enrichment.asset
-        if (
-            enrichment.call_to_action is None
-            or enrichment.target_url is None
-            or asset is None
-            or asset.status != "selected"
-            or asset.source_type != "google_drive"
-            or not str((asset.metadata_document or {}).get("file_id") or "").strip()
-        ):
-            raise GBPProposalEnrichmentError(
-                "GBP_POST_DELIVERY_BINDING_MISSING",
-                "The generated post could not bind its required CTA and client image.",
+                actor_id=None,
+                correlation_id=correlation_id,
             )
-        target_url = enrichment.target_url
-        selected_image_metadata = dict(asset.metadata_document or {})
+
+            enrichment = await self.enrichment.enrich(
+                session,
+                settings,
+                organization_id=organization_id,
+                location_id=location_id,
+                gbp_location=gbp_location,
+                post_revision_id=revision.id,
+                content=draft,
+                requested_call_to_action=revision.call_to_action,
+            )
+            asset = enrichment.asset
+            if (
+                enrichment.call_to_action is None
+                or enrichment.target_url is None
+                or asset is None
+                or asset.status != "selected"
+                or asset.source_type != "google_drive"
+                or not str((asset.metadata_document or {}).get("file_id") or "").strip()
+            ):
+                raise GBPProposalEnrichmentError(
+                    "GBP_POST_DELIVERY_BINDING_MISSING",
+                    "The generated post could not bind its required CTA and client image.",
+                )
+            target_url = enrichment.target_url
+            selected_image_metadata = dict(asset.metadata_document or {})
 
         usage = output.get("usage") if isinstance(output.get("usage"), dict) else {}
         execution_output: dict[str, Any] = dict(output)
