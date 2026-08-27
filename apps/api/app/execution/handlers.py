@@ -729,7 +729,11 @@ async def _handle_content_publish(
             publication.safe_error_code = exc.safe_code
             await session.commit()
             return JobOutcome(result="permanent_failure", safe_error=exc.safe_code)
-        absent = contract.missing_required(revision.frontmatter or {})
+        # A revision stores CANONICAL field names; the target's keys are only known
+        # here, where the publishing target is resolved. Mapping at publish time
+        # means one revision can satisfy different client schemas.
+        target_frontmatter = contract.render(revision.frontmatter or {})
+        absent = contract.missing_required(target_frontmatter)
         if absent:
             publication.status = "failed"
             publication.safe_error_code = "CONTENT_FRONTMATTER_INCOMPLETE"
@@ -746,7 +750,7 @@ async def _handle_content_publish(
                 result="permanent_failure", safe_error="CONTENT_FRONTMATTER_INCOMPLETE"
             )
         try:
-            file_contents = build_content_file(revision.body, revision.frontmatter or {})
+            file_contents = build_content_file(revision.body, target_frontmatter)
         except ContentFileFormatError as exc:
             publication.status = "failed"
             publication.safe_error_code = exc.safe_code

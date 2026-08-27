@@ -3,7 +3,7 @@
 import hashlib
 import json
 import re
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import TypedDict, cast
 from uuid import UUID
 
@@ -190,18 +190,73 @@ CONTENT_AI_LATENCY_MS = 120_000  # 2 minutes, realistic for content generation
 META_DESCRIPTION_MAXIMUM = 155
 
 
-def build_publishable_frontmatter(
-    *, title: str, ai_output: dict[str, object] | None, body: str
-) -> dict[str, object]:
-    """Frontmatter that satisfies the fields every client collection requires.
+MAXIMUM_FAQS = 6
+FAQ_QUESTION_MAXIMUM = 200
+FAQ_ANSWER_MAXIMUM = 600
 
-    `title` and `description` are non-optional `z.string()` in every client Astro
-    blog schema, so a revision missing either cannot build. The model is asked for
-    a meta description; when it does not supply one this derives a bounded fallback
-    from the body rather than letting the publication fail later, because a missing
-    description is recoverable here and a broken client deployment is not.
+
+def _clean_faqs(raw: object) -> list[dict[str, str]]:
+    """Bounded question/answer pairs in canonical key names.
+
+    Stored canonically as `question`/`answer`; the publishing target's contract
+    renames them (sage-therapy-center uses `q`/`a`). Entries missing either half
+    are dropped rather than published half-formed, since an FAQ block feeds both
+    the page and its FAQPage schema.
     """
-    supplied = str((ai_output or {}).get("meta_description") or "").strip()
+    if not isinstance(raw, list):
+        return []
+    entries: list[dict[str, str]] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        question = " ".join(str(item.get("question") or "").split())[:FAQ_QUESTION_MAXIMUM]
+        answer = " ".join(str(item.get("answer") or "").split())[:FAQ_ANSWER_MAXIMUM]
+        if question and answer:
+            entries.append({"question": question, "answer": answer})
+        if len(entries) >= MAXIMUM_FAQS:
+            break
+    return entries
+
+
+def _clean_terms(raw: object, *, limit: int = 12) -> list[str]:
+    """Bounded list of slug-ish strings, de-duplicated, order preserved."""
+    if not isinstance(raw, list):
+        return []
+    seen: set[str] = set()
+    kept: list[str] = []
+    for item in raw:
+        if not isinstance(item, str):
+            continue
+        value = " ".join(item.split())[:120]
+        if value and value.casefold() not in seen:
+            seen.add(value.casefold())
+            kept.append(value)
+        if len(kept) >= limit:
+            break
+    return kept
+
+
+def build_publishable_frontmatter(
+    *,
+    title: str,
+    ai_output: dict[str, object] | None,
+    body: str,
+    publish_date: date | None = None,
+) -> dict[str, object]:
+    """Canonical frontmatter for a revision, before any target mapping.
+
+    Field names here are LILOs' own. The publishing target's contract renames them
+    at publish time, because the same revision may target collections that spell
+    the date field `date`, `pubDate` or `publishDate` and name FAQ keys differently.
+
+    `title` and `description` are non-optional `z.string()` in every client schema,
+    so a revision missing either cannot build. The model is asked for a meta
+    description; when it omits one a bounded fallback is derived from the body,
+    because a missing description is recoverable here and a broken client
+    deployment is not.
+    """
+    output = ai_output or {}
+    supplied = str(output.get("meta_description") or "").strip()
     description = " ".join(supplied.split())
     if not description:
         # First prose sentence(s) of the body, ignoring markdown headings.
@@ -219,7 +274,26 @@ def build_publishable_frontmatter(
         if " " in clipped:
             clipped = clipped[: clipped.rfind(" ")]
         description = clipped.rstrip(" ,;:-") + "…"
-    return {"title": title, "description": description}
+
+    frontmatter: dict[str, object] = {"title": title, "description": description}
+    frontmatter["publish_date"] = (publish_date or datetime.now(UTC).date()).isoformat()
+
+    faqs = _clean_faqs(output.get("faqs"))
+    if faqs:
+        frontmatter["faqs"] = faqs
+    related_services = _clean_terms(output.get("related_services"))
+    if related_services:
+        frontmatter["related_services"] = related_services
+    service_areas = _clean_terms(output.get("service_areas"))
+    if service_areas:
+        frontmatter["service_areas"] = service_areas
+    tags = _clean_terms(output.get("tags"))
+    if tags:
+        frontmatter["tags"] = tags
+    category = " ".join(str(output.get("category") or "").split())[:120]
+    if category:
+        frontmatter["category"] = category
+    return frontmatter
 
 
 class ContentService:
@@ -704,7 +778,15 @@ class ContentService:
                 owning_product="content",
                 purpose="Draft grounded, policy-compliant content for editorial and client review.",
                 input_schema={"audience": "string", "intent": "string"},
-                output_schema={"draft": "string", "meta_description": "string"},
+                output_schema={
+                    "draft": "string",
+                    "meta_description": "string",
+                    "faqs": "array",
+                    "related_services": "array",
+                    "service_areas": "array",
+                    "tags": "array",
+                    "category": "string",
+                },
                 risk_level="medium",
                 maximum_cost_microunits=0,
                 maximum_latency_ms=CONTENT_AI_LATENCY_MS,
@@ -779,10 +861,15 @@ class ContentService:
                 "content_title": item.title,
                 "content_type": item.content_type,
                 "required_output": (
-                    "Return `draft` (the page body in markdown, no frontmatter block) "
-                    "and `meta_description`: a single sentence under 155 characters "
-                    "describing the page for search results, written from the approved "
-                    "facts and containing no claim absent from them."
+                    "Return: `draft`, the page body in markdown with a single H1 and "
+                    "descriptive H2 sections, no frontmatter block; `meta_description`, "
+                    "one sentence under 155 characters for search results; `faqs`, three "
+                    "to six {question, answer} pairs a real local customer would ask, "
+                    "each answer two or three sentences; `related_services` and "
+                    "`service_areas`, slugs drawn only from the approved facts and "
+                    "website knowledge provided; `tags`; and `category`. Every claim must "
+                    "trace to an approved fact -- invent no pricing, guarantee, "
+                    "credential, response time or service area."
                 ),
                 "governed_facts": governed_facts,
                 "knowledge": knowledge,
@@ -906,7 +993,15 @@ class ContentService:
                 owning_product="content",
                 purpose="Draft grounded, policy-compliant content for editorial and client review.",
                 input_schema={"audience": "string", "intent": "string"},
-                output_schema={"draft": "string", "meta_description": "string"},
+                output_schema={
+                    "draft": "string",
+                    "meta_description": "string",
+                    "faqs": "array",
+                    "related_services": "array",
+                    "service_areas": "array",
+                    "tags": "array",
+                    "category": "string",
+                },
                 risk_level="medium",
                 maximum_cost_microunits=0,
                 maximum_latency_ms=CONTENT_AI_LATENCY_MS,
