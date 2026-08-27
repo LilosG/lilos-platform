@@ -15,9 +15,18 @@ from apps.api.app.execution.handlers import (
     register_workflow_handler,
 )
 from apps.api.app.products.gbp.post_generation import GBPPostGenerationService
+from apps.api.app.products.gbp.proposal_enrichment import GBPProposalEnrichmentError
 from apps.api.app.products.seo.orchestration import SEOOrchestrationService
 
 logger = logging.getLogger(__name__)
+
+_RETRYABLE_GBP_ENRICHMENT_ERRORS = frozenset(
+    {
+        "GBP_WEBSITE_KNOWLEDGE_UNAVAILABLE",
+        "GBP_DRIVE_MEDIA_UNAVAILABLE",
+        "GBP_DRIVE_MEDIA_PROXY_UNAVAILABLE",
+    }
+)
 
 
 async def _handle_agent_workflow(
@@ -154,6 +163,24 @@ async def _handle_gbp_generate_post(
             workflow_run_id=workflow_run_id,
             correlation_id=correlation_id,
         )
+    except GBPProposalEnrichmentError as exc:
+        logger.warning(
+            "GBP AI post delivery enrichment failed",
+            extra={
+                "event_name": "gbp.generate_post.delivery_enrichment_failed",
+                "organization_id": str(organization_id),
+                "location_id": str(location_id),
+                "safe_error_code": exc.safe_code,
+            },
+        )
+        return JobOutcome(
+            result=(
+                "retryable_failure"
+                if exc.safe_code in _RETRYABLE_GBP_ENRICHMENT_ERRORS
+                else "permanent_failure"
+            ),
+            safe_error=exc.safe_code,
+        )
     except ValueError as exc:
         logger.warning(
             "GBP AI post generation rejected",
@@ -188,10 +215,14 @@ async def _handle_gbp_generate_post(
         )
         return JobOutcome(result="retryable_failure", safe_error="GBP_POST_GENERATION_FAILED")
 
-    suffix = ":image" if asset is not None else ":text"
+    if asset is None:
+        return JobOutcome(
+            result="permanent_failure",
+            safe_error="GBP_POST_DELIVERY_BINDING_MISSING",
+        )
     return JobOutcome(
         result="succeeded",
-        result_reference=f"gbp-post-revision:{revision.id}{suffix}",
+        result_reference=f"gbp-post-revision:{revision.id}:image",
     )
 
 
