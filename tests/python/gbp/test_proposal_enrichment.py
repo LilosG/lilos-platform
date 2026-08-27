@@ -97,6 +97,28 @@ def test_target_url_prefers_relevant_service_page() -> None:
     assert target == "https://wheylandelectric.com/services/ev-charger-installation/"
 
 
+def test_target_url_does_not_fall_back_to_homepage_without_relevance() -> None:
+    profile: dict[str, object] = {"websiteUri": "https://wheylandelectric.com/"}
+    knowledge = {
+        "website_knowledge": [
+            {
+                "url": "https://wheylandelectric.com/services/panel-upgrades/",
+                "title": "Electrical Panel Upgrades",
+                "h1": "Panel Upgrades",
+                "body_text": "Upgrade residential electrical panels.",
+            }
+        ]
+    }
+
+    target = GBPPostProposalEnrichmentService._select_target_url(
+        profile,
+        knowledge,
+        "A customer praised the team for installing recessed kitchen lighting.",
+    )
+
+    assert target is None
+
+
 def test_cta_rejects_external_model_url_and_uses_client_target() -> None:
     target = "https://wheylandelectric.com/services/ev-charger-installation/"
 
