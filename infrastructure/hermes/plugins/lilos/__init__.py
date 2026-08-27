@@ -100,14 +100,17 @@ SCHEMAS = {
             "source_evidence_references",
         ],
     ),
+    # The agent supplies evidence, not copy. LILOs generates the post through its
+    # governed generator: grounding source, drafting via the AI task, CTA
+    # resolution and Drive image binding all happen server-side. Declaring
+    # `content`/`post_type` here made the agent send fields the tool refuses,
+    # producing HERMES_TOOL_DENIED for a call the schema itself demanded.
     "generate_gbp_post_proposal": _object(
         {
-            "post_type": {"type": "string", "enum": ["standard", "event", "offer", "alert"]},
-            "content": STRING,
-            "call_to_action": OBJECT,
             "source_evidence_references": STRINGS,
+            "review_id": STRING,
         },
-        ["post_type", "content", "source_evidence_references"],
+        ["source_evidence_references"],
     ),
     "create_gbp_optimization_proposal": _object(
         {
@@ -146,7 +149,12 @@ DESCRIPTIONS = {
     "generate_content_draft_proposal": (
         "Create an editorial-review Content revision grounded in a ready brief."
     ),
-    "generate_gbp_post_proposal": "Create an approval-waiting GBP post revision; never publishes.",
+    "generate_gbp_post_proposal": (
+        "Ask LILOs to generate an approval-waiting GBP post from evidence this run "
+        "observed. LILOs writes the copy, resolves the CTA and binds the image; do "
+        "not supply post text. Pass review_id only to force a specific source review. "
+        "Never publishes."
+    ),
     "create_gbp_optimization_proposal": (
         "Create an approval-waiting GBP change-set; never edits Google."
     ),
