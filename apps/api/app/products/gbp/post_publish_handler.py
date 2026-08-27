@@ -33,6 +33,9 @@ from apps.api.app.products.gbp.post_publication_contract import (
     build_provider_post_body,
     verify_provider_post,
 )
+from apps.api.app.products.gbp.provider_write_outcome import (
+    classify_provider_write_failure,
+)
 from apps.api.app.products.gbp.resource_names import v4_localposts_parent
 
 logger = logging.getLogger(__name__)
@@ -374,20 +377,27 @@ async def handle_gbp_publish_post(
     try:
         created = await adapter.create_local_post(token, location_name, post_body)
     except Exception as exc:
+        # Only park this for human reconciliation when the write may actually have
+        # landed. A rejected or undelivered request definitely created nothing.
+        outcome = classify_provider_write_failure(exc)
         publication = await session.get(GBPPostPublication, publication_id)
         if publication is not None:
-            publication.status = "reconciliation_required"
-            publication.safe_error_code = "PROVIDER_WRITE_AMBIGUOUS"
+            publication.status = (
+                "reconciliation_required" if outcome.requires_reconciliation else "failed"
+            )
+            publication.safe_error_code = outcome.safe_error_code
         await session.commit()
         logger.warning(
             "GBP post creation failed",
             extra={
                 "event_name": "gbp.publish_post.failed",
                 "publication_id": str(publication_id),
+                "provider_write_applied": outcome.applied,
+                "safe_error_code": outcome.safe_error_code,
                 "error": str(exc)[:200],
             },
         )
-        return JobOutcome(result="ambiguous", safe_error="PROVIDER_WRITE_AMBIGUOUS")
+        return JobOutcome(result=outcome.job_result, safe_error=outcome.safe_error_code)
 
     provider_post_name = str(created.get("name", ""))
     if not provider_post_name:

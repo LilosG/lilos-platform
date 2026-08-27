@@ -137,6 +137,29 @@ def _uuid(value: object, name: str) -> UUID:
         raise AgentToolDeniedError(f"{name} must be a UUID") from exc
 
 
+# Per-item text budgets. A full page of results must fit MAX_TOOL_RESULT_BYTES
+# with room left for keys, references and timestamps, so these are sized against
+# the maximum page (50) rather than a typical one. Excerpts only need to support
+# triage and repetition-avoidance, not reproduce the source text.
+REVIEW_BODY_EXCERPT_CHARACTERS = 500
+POST_TEXT_EXCERPT_CHARACTERS = 250
+
+
+def _excerpt(text: str | None, limit: int = REVIEW_BODY_EXCERPT_CHARACTERS) -> str | None:
+    """Collapse whitespace and bound free text destined for a tool result."""
+    if text is None:
+        return None
+    collapsed = " ".join(str(text).split())
+    return collapsed[:limit]
+
+
+def _is_truncated(text: str | None, limit: int = REVIEW_BODY_EXCERPT_CHARACTERS) -> bool:
+    """Whether _excerpt dropped content, so the agent knows the text is partial."""
+    if text is None:
+        return False
+    return len(" ".join(str(text).split())) > limit
+
+
 class AgentToolService:
     def __init__(self) -> None:
         self.audit = AuditEventService()
@@ -447,10 +470,14 @@ class AgentToolService:
         )[:limit]
         return {
             "data": {
+                # This read exists so the agent can avoid repeating itself. Post
+                # summaries and draft bodies each run to ~1.5k characters, and fifty
+                # of both exceeds the bounded-result policy, so they are excerpted:
+                # recognising a covered topic does not need the full text.
                 "provider_posts": [
                     {
                         "post_type": item.post_type,
-                        "summary": item.summary,
+                        "summary": _excerpt(item.summary, POST_TEXT_EXCERPT_CHARACTERS),
                         "state": item.state,
                         "observed_at": item.observed_at.isoformat(),
                     }
@@ -460,7 +487,7 @@ class AgentToolService:
                     {
                         "reference": f"gbp-post-revision:{item.revision.id}",
                         "post_type": item.revision.post_type,
-                        "content": item.revision.content,
+                        "content": _excerpt(item.revision.content, POST_TEXT_EXCERPT_CHARACTERS),
                         "status": item.revision.status,
                         "created_at": item.revision.created_at.isoformat(),
                     }
@@ -546,7 +573,14 @@ class AgentToolService:
                     "sentiment": review.sentiment,
                     "risk_level": review.risk_level,
                     "topics": review.topics,
-                    "body": latest.body if latest else None,
+                    # Google review bodies run to thousands of characters. Fifty of
+                    # them at full length exceeds the bounded-result policy on its
+                    # own, which used to deny this read outright and blocked the
+                    # Reviews agent the same way full page bodies blocked the GBP
+                    # agent. An excerpt is enough to triage and draft a response;
+                    # the full text stays reachable through the review reference.
+                    "body_excerpt": _excerpt(latest.body if latest else None),
+                    "body_truncated": _is_truncated(latest.body if latest else None),
                     "review_created_at": review.review_created_at.isoformat(),
                 }
             )

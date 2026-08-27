@@ -341,3 +341,40 @@ def test_run_site_crawl_denies_when_no_website_is_registered() -> None:
             )
 
     asyncio.run(scenario())
+
+
+def test_excerpt_collapses_whitespace_and_bounds_length() -> None:
+    """Free text in a tool result is bounded at source, not by the generic trimmer."""
+    from apps.api.app.agents.tools import _excerpt, _is_truncated
+
+    assert _excerpt(None) is None
+    assert _is_truncated(None) is False
+    assert _excerpt("  a\n\n  b  ") == "a b"
+    assert _is_truncated("short") is False
+
+    long_body = "word " * 1_000
+    excerpt = _excerpt(long_body)
+    assert excerpt is not None
+    assert len(excerpt) <= 900
+    assert _is_truncated(long_body) is True
+
+
+def test_review_and_post_excerpt_budgets_fit_the_bounded_policy() -> None:
+    """Fifty full-length reviews or posts used to exceed MAX_TOOL_RESULT_BYTES.
+
+    Regression guard: the per-item budgets must leave a whole page of results
+    inside the cap, so read_reviews_state and read_gbp_recent_posts degrade at
+    source rather than being denied or silently halved.
+    """
+    from apps.api.app.agents.tools import (
+        POST_TEXT_EXCERPT_CHARACTERS,
+        REVIEW_BODY_EXCERPT_CHARACTERS,
+    )
+
+    max_page = 50
+    # Text must not consume the whole budget: keys, references, timestamps and the
+    # summary object share it. Cap free text at 60% so a full page still fits.
+    headroom = MAX_TOOL_RESULT_BYTES * 0.6
+    # Reviews carry one excerpt each; posts carry a provider summary and a draft body.
+    assert max_page * REVIEW_BODY_EXCERPT_CHARACTERS <= headroom
+    assert max_page * 2 * POST_TEXT_EXCERPT_CHARACTERS <= headroom
