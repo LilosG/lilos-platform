@@ -441,7 +441,11 @@ class GBPPostGenerationService:
             version=1,
             owning_product="gbp",
             purpose="Generate review-grounded Google Business Profile posts for approval.",
-            input_schema={"source_review": "object", "governed_facts": "array", "knowledge": "object"},
+            input_schema={
+                "source_review": "object",
+                "governed_facts": "array",
+                "knowledge": "object",
+            },
             output_schema={"draft": "string"},
             risk_level="medium",
             maximum_cost_microunits=0,
@@ -487,9 +491,7 @@ class GBPPostGenerationService:
         del profile
         pages = knowledge.get("website_knowledge")
         terms = {
-            part
-            for part in relevance_text.casefold().replace("-", " ").split()
-            if len(part) > 3
+            part for part in relevance_text.casefold().replace("-", " ").split() if len(part) > 3
         }
         ranked: list[tuple[int, str]] = []
         if isinstance(pages, list):
