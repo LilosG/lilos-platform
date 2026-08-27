@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import Select, String, and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.app.administration.knowledge_service import BusinessKnowledgeService
@@ -378,31 +378,13 @@ class GBPPostGenerationService:
                 )
             return review, revision
 
-        prior_executions = list(
-            await session.scalars(
-                select(AIExecution)
-                .where(
-                    AIExecution.organization_id == organization_id,
-                    AIExecution.location_id == location_id,
-                    AIExecution.status == "completed",
-                )
-                .order_by(AIExecution.created_at.desc())
-                .limit(250)
-            )
-        )
-        used_review_ids = {
-            str((execution.output_document or {}).get("source_review_id") or "")
-            for execution in prior_executions
-            if (execution.output_document or {}).get("source_review_id")
-        }
-        candidates = (
+        row = (
             await session.execute(
-                base.where(Review.rating >= 4).order_by(Review.review_created_at.desc()).limit(100)
+                self._unused_eligible_review_statement(base, organization_id, location_id)
             )
-        ).all()
-        for review, revision in candidates:
-            if str(review.id) in used_review_ids:
-                continue
+        ).first()
+        if row is not None:
+            review, revision = row
             if self._review_text(revision):
                 return review, revision
         raise GBPProposalEnrichmentError(
@@ -463,6 +445,50 @@ class GBPPostGenerationService:
         session.add(task)
         await session.flush()
         return task
+
+    @staticmethod
+    def _unused_eligible_review_statement(
+        base: Select[tuple[Review, ReviewRevision]],
+        organization_id: UUID,
+        location_id: UUID,
+    ) -> Select[tuple[Review, ReviewRevision]]:
+        """Select the newest 4-5 star review this task has never already used.
+
+        A review counts as used only when a completed execution of THIS task recorded it
+        as its source. The exclusion is a correlated NOT EXISTS over the full execution
+        history rather than a bounded recency window, because a window can (a) let an
+        already-used review age out and be selected again, producing a duplicate post on
+        a live profile, and (b) be consumed by unrelated AI tasks at the same location
+        (review responses, content drafts, SEO runs), which accelerates (a). Eligibility
+        is likewise resolved in SQL rather than by scanning a capped candidate page, so a
+        location with many reviews cannot report exhaustion while unused ones remain.
+        """
+        used_by_prior_generation = (
+            select(AIExecution.id)
+            .join(AITaskDefinition, AITaskDefinition.id == AIExecution.task_definition_id)
+            .where(
+                AIExecution.organization_id == organization_id,
+                AIExecution.location_id == location_id,
+                AIExecution.status == "completed",
+                AITaskDefinition.key == TASK_KEY,
+                AIExecution.output_document["source_review_id"].astext == Review.id.cast(String),
+            )
+            .exists()
+        )
+        # Mirrors _review_text: a revision is usable when its title or body has content.
+        has_usable_text = or_(
+            func.btrim(func.coalesce(ReviewRevision.title, "")) != "",
+            func.btrim(func.coalesce(ReviewRevision.body, "")) != "",
+        )
+        return (
+            base.where(
+                Review.rating >= 4,
+                has_usable_text,
+                ~used_by_prior_generation,
+            )
+            .order_by(Review.review_created_at.desc())
+            .limit(1)
+        )
 
     @staticmethod
     def _review_text(revision: ReviewRevision) -> str:
