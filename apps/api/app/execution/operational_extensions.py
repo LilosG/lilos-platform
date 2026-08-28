@@ -20,11 +20,16 @@ from apps.api.app.products.seo.orchestration import SEOOrchestrationService
 
 logger = logging.getLogger(__name__)
 
+# Retrying a malformed or rejected Drive credential just burns the job's attempts
+# and delays the operator seeing the real cause, so only transport-class Drive
+# failures are retryable. The classified codes come from DriveDiscoveryError.
 _RETRYABLE_GBP_ENRICHMENT_ERRORS = frozenset(
     {
         "GBP_WEBSITE_KNOWLEDGE_UNAVAILABLE",
         "GBP_DRIVE_MEDIA_UNAVAILABLE",
         "GBP_DRIVE_MEDIA_PROXY_UNAVAILABLE",
+        "GBP_DRIVE_UNREACHABLE",
+        "GBP_DRIVE_TEMPORARILY_UNAVAILABLE",
     }
 )
 

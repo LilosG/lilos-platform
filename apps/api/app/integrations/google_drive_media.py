@@ -28,6 +28,25 @@ GBP_PHOTO_MAX_BYTES = 5 * 1024 * 1024
 GBP_PHOTO_MIN_DIMENSION = 250
 
 
+class DriveDiscoveryError(RuntimeError):
+    """Safe, classified Drive read failure.
+
+    Every failure in this path — a malformed credential, a rejected JWT, a Drive
+    API that is not enabled, a folder never shared with the service account —
+    used to reach the operator as one sentence: "verify the configured Drive
+    credential and folder access". Those have completely different fixes, and the
+    operator was left to guess which one applied. The cause is only knowable
+    here, where the exception still has its context, so it is classified here.
+
+    The message carries the provider's status and reason, never the credential.
+    """
+
+    def __init__(self, safe_code: str, message: str, *, retryable: bool) -> None:
+        self.safe_code = safe_code
+        self.retryable = retryable
+        super().__init__(message)
+
+
 class ProviderMediaPreflightError(RuntimeError):
     """Safe provider-media failure detected before any Google post write."""
 
@@ -43,6 +62,38 @@ class ProviderMediaPreflight:
     size_bytes: int
     width_pixels: int
     height_pixels: int
+
+
+def _safe_oauth_reason(response: httpx.Response) -> str:
+    """Google's OAuth error code, which is the actionable part and is not secret."""
+    try:
+        payload = response.json()
+    except ValueError:
+        return "unparseable response"
+    if not isinstance(payload, dict):
+        return "unexpected response"
+    code = str(payload.get("error") or "unspecified")
+    description = str(payload.get("error_description") or "").strip()
+    return f"{code} - {description}"[:200] if description else code[:200]
+
+
+def _safe_drive_reason(response: httpx.Response) -> str:
+    """Google Drive's error status/reason, e.g. accessNotConfigured or forbidden."""
+    try:
+        payload = response.json()
+    except ValueError:
+        return "unparseable response"
+    error = payload.get("error") if isinstance(payload, dict) else None
+    if not isinstance(error, dict):
+        return "unexpected response"
+    reasons = [
+        str(item.get("reason"))
+        for item in (error.get("errors") or [])
+        if isinstance(item, dict) and item.get("reason")
+    ]
+    message = str(error.get("message") or "").strip()
+    parts = [part for part in (", ".join(reasons), message) if part]
+    return " - ".join(parts)[:200] or "unspecified"
 
 
 @dataclass(frozen=True, slots=True)
@@ -297,17 +348,64 @@ class GoogleDriveMediaService:
         raw = settings.google_drive_service_account_json
         if not raw:
             return None
-        payload = json.loads(raw)
+        candidate = raw.strip()
+        # A dashboard paste often arrives wrapped in quotes.
+        if len(candidate) >= 2 and candidate[0] == candidate[-1] and candidate[0] in "\"'":
+            candidate = candidate[1:-1]
+        try:
+            payload = json.loads(candidate)
+        except json.JSONDecodeError as exc:
+            raise DriveDiscoveryError(
+                "GBP_DRIVE_CREDENTIAL_MALFORMED",
+                "The Google Drive service-account credential is not valid JSON "
+                f"(at line {exc.lineno}, column {exc.colno}). Re-paste the key file "
+                "contents exactly as downloaded.",
+                retryable=False,
+            ) from exc
         if not isinstance(payload, dict):
-            raise ValueError("Google Drive service-account JSON must be an object")
-        for key in ("client_email", "private_key", "token_uri"):
-            if not payload.get(key):
-                raise ValueError(f"Google Drive service-account JSON is missing {key}")
+            raise DriveDiscoveryError(
+                "GBP_DRIVE_CREDENTIAL_MALFORMED",
+                "The Google Drive service-account credential must be a JSON object.",
+                retryable=False,
+            )
+        missing = [
+            key for key in ("client_email", "private_key", "token_uri") if not payload.get(key)
+        ]
+        if missing:
+            raise DriveDiscoveryError(
+                "GBP_DRIVE_CREDENTIAL_INCOMPLETE",
+                f"The Google Drive service-account credential is missing {', '.join(missing)}.",
+                retryable=False,
+            )
+        # An environment variable set through a dashboard or shell commonly stores
+        # the PEM with literal backslash-n rather than real newlines, which the
+        # crypto layer cannot parse. Repairing it here cannot make an otherwise
+        # invalid key valid, and it removes the single most common cause of a
+        # credential that looks correct in the dashboard and fails at runtime.
+        private_key = str(payload["private_key"])
+        if "\\n" in private_key and "\n" not in private_key:
+            payload = {**payload, "private_key": private_key.replace("\\n", "\n")}
         return payload
 
     async def _access_token(self, credentials: dict[str, Any]) -> str:
         now = datetime.now(UTC)
-        assertion = jwt.encode(
+        try:
+            assertion = self._signed_assertion(credentials, now)
+        except DriveDiscoveryError:
+            raise
+        except Exception as exc:
+            raise DriveDiscoveryError(
+                "GBP_DRIVE_CREDENTIAL_UNREADABLE",
+                "The Drive service-account private key could not be read for signing. "
+                "It is usually stored with escaped rather than real newlines, or is "
+                "truncated.",
+                retryable=False,
+            ) from exc
+        return await self._exchange_assertion(credentials, assertion)
+
+    @staticmethod
+    def _signed_assertion(credentials: dict[str, Any], now: datetime) -> str:
+        return jwt.encode(
             {
                 "iss": str(credentials["client_email"]),
                 "scope": DRIVE_SCOPE,
@@ -318,19 +416,43 @@ class GoogleDriveMediaService:
             str(credentials["private_key"]),
             algorithm="RS256",
         )
-        async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
-            response = await client.post(
-                str(credentials["token_uri"]),
-                data={
-                    "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
-                    "assertion": assertion,
-                },
+
+    async def _exchange_assertion(self, credentials: dict[str, Any], assertion: str) -> str:
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+                response = await client.post(
+                    str(credentials["token_uri"]),
+                    data={
+                        "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
+                        "assertion": assertion,
+                    },
+                )
+        except httpx.RequestError as exc:
+            raise DriveDiscoveryError(
+                "GBP_DRIVE_UNREACHABLE",
+                "Google could not be reached to exchange the Drive credential.",
+                retryable=True,
+            ) from exc
+        if response.status_code >= 400:
+            # Google returns the actionable part as error/error_description:
+            # "invalid_grant" means the key or clock is wrong, whereas
+            # "invalid_scope" means the scope was never granted. Both are safe.
+            raise DriveDiscoveryError(
+                "GBP_DRIVE_CREDENTIAL_REJECTED",
+                "Google rejected the Drive service-account credential "
+                f"({response.status_code}: {_safe_oauth_reason(response)}). Check that the "
+                "service account exists, its key is current, and the Drive API is enabled "
+                "for the project.",
+                retryable=False,
             )
-        response.raise_for_status()
         payload = response.json()
         token = payload.get("access_token") if isinstance(payload, dict) else None
         if not token:
-            raise RuntimeError("Google Drive token exchange returned no access token")
+            raise DriveDiscoveryError(
+                "GBP_DRIVE_CREDENTIAL_REJECTED",
+                "Google returned no access token for the Drive service-account credential.",
+                retryable=False,
+            )
         return str(token)
 
     async def _list_visible_files(self, access_token: str) -> list[dict[str, Any]]:
@@ -349,19 +471,58 @@ class GoogleDriveMediaService:
             }
             if page_token:
                 params["pageToken"] = page_token
-            async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
-                response = await client.get(
-                    DRIVE_FILES_ENDPOINT,
-                    params=params,
-                    headers={"Authorization": f"Bearer {access_token}"},
+            try:
+                async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+                    response = await client.get(
+                        DRIVE_FILES_ENDPOINT,
+                        params=params,
+                        headers={"Authorization": f"Bearer {access_token}"},
+                    )
+            except httpx.RequestError as exc:
+                raise DriveDiscoveryError(
+                    "GBP_DRIVE_UNREACHABLE",
+                    "Google Drive could not be reached to list client media.",
+                    retryable=True,
+                ) from exc
+            if response.status_code in (401, 403):
+                # accessNotConfigured means the Drive API is not enabled on the
+                # project; forbidden or insufficientPermissions means the folder was
+                # never shared with the service account. Different fixes entirely.
+                raise DriveDiscoveryError(
+                    "GBP_DRIVE_ACCESS_DENIED",
+                    "Google Drive denied the service account "
+                    f"({response.status_code}: {_safe_drive_reason(response)}). Confirm the "
+                    "Drive API is enabled for the project and the client image folder is "
+                    "shared with the service-account address.",
+                    retryable=False,
                 )
-            response.raise_for_status()
+            if response.status_code == 429 or response.status_code >= 500:
+                raise DriveDiscoveryError(
+                    "GBP_DRIVE_TEMPORARILY_UNAVAILABLE",
+                    f"Google Drive is temporarily unavailable ({response.status_code}).",
+                    retryable=True,
+                )
+            if response.status_code >= 400:
+                raise DriveDiscoveryError(
+                    "GBP_DRIVE_LIST_REJECTED",
+                    "Google Drive rejected the media listing request "
+                    f"({response.status_code}: {_safe_drive_reason(response)}).",
+                    retryable=False,
+                )
             payload = response.json()
             if not isinstance(payload, dict):
-                raise RuntimeError("Google Drive files response was invalid")
+                raise DriveDiscoveryError(
+                    "GBP_DRIVE_LIST_REJECTED",
+                    "Google Drive returned an unexpected media listing response.",
+                    retryable=True,
+                )
             raw_files = payload.get("files") or []
             if not isinstance(raw_files, list):
-                raise RuntimeError("Google Drive files response was invalid")
+                raise DriveDiscoveryError(
+                    "GBP_DRIVE_LIST_REJECTED",
+                    "Google Drive returned an unexpected media listing response.",
+                    retryable=True,
+                )
             results.extend(item for item in raw_files if isinstance(item, dict))
             raw_next = payload.get("nextPageToken")
             page_token = str(raw_next) if raw_next else None

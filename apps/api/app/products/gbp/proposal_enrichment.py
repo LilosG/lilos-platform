@@ -19,7 +19,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.app.administration.knowledge_service import BusinessKnowledgeService
 from apps.api.app.config import Settings
-from apps.api.app.integrations.google_drive_media import DriveImage, GoogleDriveMediaService
+from apps.api.app.integrations.google_drive_media import (
+    DriveDiscoveryError,
+    DriveImage,
+    GoogleDriveMediaService,
+)
 from apps.api.app.organizations.models import Organization
 from apps.api.app.products.gbp.models import GBPLocation, GBPProfileSnapshot
 from apps.api.app.products.gbp.operations_models import GBPPostRevision
@@ -210,6 +214,13 @@ class GBPPostProposalEnrichmentService:
 
         try:
             images = await self.drive.discover_images(settings, organization_name, limit=100)
+        except DriveDiscoveryError as exc:
+            # The Drive layer has already classified this into a cause the operator
+            # can act on — a malformed credential, a rejected key, a Drive API that
+            # is not enabled, a folder never shared. Collapsing them all into
+            # "verify the credential and folder access" is what left the last run
+            # undiagnosed, so the classified code and reason are passed through.
+            raise GBPProposalEnrichmentError(exc.safe_code, str(exc)) from exc
         except Exception as exc:
             raise GBPProposalEnrichmentError(
                 "GBP_DRIVE_MEDIA_UNAVAILABLE",

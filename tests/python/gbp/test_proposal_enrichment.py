@@ -6,7 +6,7 @@ from uuid import uuid4
 import pytest
 
 from apps.api.app.config import Settings
-from apps.api.app.integrations.google_drive_media import DriveImage
+from apps.api.app.integrations.google_drive_media import DriveDiscoveryError, DriveImage
 from apps.api.app.products.gbp.proposal_enrichment import (
     GBPPostProposalEnrichmentService,
     GBPProposalEnrichmentError,
@@ -148,3 +148,63 @@ async def test_drive_media_is_required_for_automated_proposals() -> None:
         )
 
     assert exc_info.value.safe_code == "GBP_DRIVE_MEDIA_NOT_CONFIGURED"
+
+
+@pytest.mark.anyio
+async def test_classified_drive_failure_reaches_the_operator_unchanged() -> None:
+    """The Wheyland run reported GBP_DRIVE_MEDIA_UNAVAILABLE and nothing else.
+
+    Every Drive fault — malformed credential, rejected key, Drive API not enabled,
+    folder never shared — arrived as that one code with one generic sentence, so
+    the operator could not tell which of four unrelated fixes applied. The Drive
+    layer classifies the cause now, and this proves the classification survives
+    the enrichment boundary instead of being collapsed again.
+    """
+    service = GBPPostProposalEnrichmentService()
+    session = AsyncMock()
+    session.scalar.return_value = None
+    settings = Settings(google_drive_service_account_json='{"client_email": "a@b.com"}')
+
+    service.drive = AsyncMock()
+    service.drive.discover_images.side_effect = DriveDiscoveryError(
+        "GBP_DRIVE_ACCESS_DENIED",
+        "Google Drive denied the service account (403: accessNotConfigured).",
+        retryable=False,
+    )
+
+    with pytest.raises(GBPProposalEnrichmentError) as exc_info:
+        await service._attach_best_drive_image(
+            session,
+            settings,
+            organization_id=uuid4(),
+            organization_name="Wheyland Electric",
+            post_revision_id=uuid4(),
+            content="HOA property maintenance electrical work in Carlsbad.",
+        )
+
+    assert exc_info.value.safe_code == "GBP_DRIVE_ACCESS_DENIED"
+    assert "accessNotConfigured" in str(exc_info.value)
+
+
+@pytest.mark.anyio
+async def test_unclassified_drive_failure_still_fails_closed() -> None:
+    """An unexpected error must not become a post without media."""
+    service = GBPPostProposalEnrichmentService()
+    session = AsyncMock()
+    session.scalar.return_value = None
+    settings = Settings(google_drive_service_account_json='{"client_email": "a@b.com"}')
+
+    service.drive = AsyncMock()
+    service.drive.discover_images.side_effect = RuntimeError("unexpected")
+
+    with pytest.raises(GBPProposalEnrichmentError) as exc_info:
+        await service._attach_best_drive_image(
+            session,
+            settings,
+            organization_id=uuid4(),
+            organization_name="Wheyland Electric",
+            post_revision_id=uuid4(),
+            content="HOA property maintenance electrical work in Carlsbad.",
+        )
+
+    assert exc_info.value.safe_code == "GBP_DRIVE_MEDIA_UNAVAILABLE"
