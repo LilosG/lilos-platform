@@ -13,117 +13,133 @@
   --font-family-display:
     "Playfair Display Variable", "Playfair Display", ui-serif, Georgia, serif;
 
-  /* Neutral palette — warm bone rather than cool grey. A cool grey canvas is what
-     made the platform read as a developer tool; the client dashboard uses a warm
-     parchment ground with tonal separation instead of hard borders. Contrast
-     ratios against --palette-neutral-900 are verified in tokens.test.ts. */
-  --palette-neutral-0: #fdfcf8;
-  --palette-neutral-50: #f6f3ea;
-  --palette-neutral-100: #efebde;
-  --palette-neutral-200: #e2ddcb;
-  --palette-neutral-300: #cdc6ae;
-  --palette-neutral-400: #9c9581;
-  --palette-neutral-500: #6f6a5b;
-  --palette-neutral-600: #5a564a;
-  --palette-neutral-700: #423f36;
-  --palette-neutral-800: #2a2823;
-  --palette-neutral-900: #1c1b17;
+  /* Palette sampled directly from the client-facing report at
+     dashboard.lilosgrowth/portal/wheyland. Every value below is a measured
+     pixel from that artifact, not an interpretation of it — the previous pass
+     rethemed the page canvas and left the sidebar and every other dark surface
+     forest green, which is nowhere in the reference.
 
-  /* LILOs forest palette */
-  --palette-forest-50: #eaf4ef;
-  --palette-forest-100: #d6e9de;
-  --palette-forest-200: #b2d5c1;
-  --palette-forest-300: #86bba0;
-  --palette-forest-400: #559b7b;
-  --palette-forest-500: #327d5e;
-  --palette-forest-600: #216447;
-  --palette-forest-700: #184f3b;
-  --palette-forest-800: #123d2e;
-  --palette-forest-900: #0f3325;
-  --palette-forest-950: #081e16;
+     Where the reference itself fails WCAG AA, the nearest compliant tone is
+     used and the deviation is noted on the token. That happens twice: its small
+     caps label grey (#99948c, 2.5:1) and its amber used as text (#b9893c,
+     2.6:1). Both are fine as the reference uses them — decoration and large
+     figures — but the platform reuses these roles for body-sized text. */
 
-  /* Sage and gold accents, taken from the client dashboard: muted olive for
-     positive series and rank badges, muted gold for the secondary series and
-     "current period" emphasis. Nothing saturated. */
-  --palette-sage-50: #f1f3ea;
-  --palette-sage-100: #e2e6d6;
-  --palette-sage-200: #c7cfb4;
-  --palette-sage-300: #a7b38d;
-  --palette-sage-400: #8a9970;
-  --palette-sage-500: #6e7f63;
-  --palette-sage-600: #59684f;
-  --palette-sage-700: #45513e;
-  --palette-gold-50: #faf3e2;
-  --palette-gold-100: #f2e5c4;
-  --palette-gold-200: #e3cd93;
-  --palette-gold-300: #d3b463;
-  --palette-gold-400: #c49a3c;
-  --palette-gold-500: #a97f28;
-  --palette-gold-600: #86631d;
+  /* Warm greige ground. Note the raised surface is DARKER than the canvas:
+     the reference separates a card from the page by dropping it a shade, not
+     by lifting it, and uses no card borders at all. */
+  --palette-neutral-0: #f4f2ea;
+  --palette-neutral-50: #eceae0; /* page canvas — sampled */
+  --palette-neutral-100: #e5e1d6; /* card surface — sampled */
+  --palette-neutral-200: #dad6cb; /* sunken, toggle track, hairline — sampled */
+  --palette-neutral-300: #c6c1b7;
+  --palette-neutral-400: #a6a198; /* secondary text on dark — sampled */
+  --palette-neutral-500: #66625a; /* AA-compliant stand-in for the reference's #99948c label grey */
+  --palette-neutral-600: #5a5850; /* secondary text — sampled */
+  --palette-neutral-700: #3f3d36;
+  --palette-neutral-800: #272a24; /* hairline on dark — sampled */
+  --palette-neutral-900: #1a1b16; /* primary text — sampled */
 
-  /* LILOs lime palette */
-  --palette-lime-50: #fafceb;
-  --palette-lime-100: #f3f8d2;
-  --palette-lime-200: #e8f0a6;
-  --palette-lime-300: #ddeb77;
-  --palette-lime-400: #c9d956;
-  --palette-lime-500: #aebf3e;
-  --palette-lime-600: #8b9b2d;
-  --palette-lime-700: #697823;
-  --palette-lime-800: #4f5c1f;
-  --palette-lime-900: #3d481b;
+  /* Ink: the near-black warm charcoal the reference uses for its dark
+     surfaces — the CURRENT card and the active period pill. This replaces the
+     forest ramp, which put a saturated green sidebar next to a warm greige
+     page and is the single largest thing that made the platform look unrelated
+     to the report it is judged against. */
+  --palette-ink-50: #eceee8;
+  --palette-ink-100: #d9ddd4;
+  --palette-ink-200: #b6bcb1;
+  --palette-ink-300: #8d948a;
+  --palette-ink-400: #5e655c;
+  --palette-ink-500: #434a42;
+  --palette-ink-600: #343a33;
+  --palette-ink-700: #272a24;
+  --palette-ink-800: #1f221c;
+  --palette-ink-900: #181a14; /* dark surface — sampled */
+  --palette-ink-950: #101208;
 
-  /* Semantic palettes */
-  --palette-success-foreground: #0f6f66;
-  --palette-success-background: #e8f6f3;
-  --palette-success-border: #a9ddd5;
-  --palette-warning-foreground: #704a00;
-  --palette-warning-background: #fff4da;
-  --palette-warning-border: #e9c56d;
-  --palette-danger-foreground: #812f24;
-  --palette-danger-background: #fdede9;
-  --palette-danger-border: #e3b1a6;
-  --palette-info-foreground: #4d437c;
-  --palette-info-background: #f1effa;
-  --palette-info-border: #cbc5e5;
-  --palette-delta-positive-foreground: #256796;
-  --palette-delta-positive-background: #edf5fa;
-  --palette-delta-positive-border: #bdd5e5;
-  --palette-delta-negative-foreground: #974914;
-  --palette-delta-negative-background: #fff1e6;
-  --palette-delta-negative-border: #e9c1a5;
+  /* Brass: the reference's single accent, sampled from the CURRENT pill and the
+     impressions series. It is one colour used for both, which is why the report
+     reads as having a point of view rather than a palette. */
+  --palette-brass-50: #f4ecdc;
+  --palette-brass-100: #ecdcbd;
+  --palette-brass-200: #dcc08a;
+  --palette-brass-300: #cba75f;
+  --palette-brass-400: #b9893c; /* accent and impressions series — sampled */
+  --palette-brass-500: #a2762f;
+  --palette-brass-600: #856026;
+  --palette-brass-700: #7a5822; /* amber as body text, AA on card at 4.95:1 */
+  --palette-brass-800: #65491d;
+  --palette-brass-900: #4d3716;
 
-  /* Chart series palette */
-  --palette-chart-1: #6e7f63;
-  --palette-chart-2: #c49a3c;
-  --palette-chart-3: #184f3b;
-  --palette-chart-4: #2f6f97;
-  --palette-chart-5: #a8493d;
-  --palette-chart-6: #6d7c25;
+  /* Sage: the clicks series and every positive signal. */
+  --palette-sage-50: #e7eee6;
+  --palette-sage-100: #d7e2d6;
+  --palette-sage-200: #bacfbc;
+  --palette-sage-300: #9bb89d;
+  --palette-sage-400: #7a9e7e; /* clicks series — sampled */
+  --palette-sage-500: #5d8464;
+  --palette-sage-600: #4a6f52;
+  --palette-sage-700: #3a6a45; /* positive text on light, AA at 4.83:1 */
+  --palette-sage-800: #2f5639;
+  /* The reference's positive delta on its dark card. Lighter and more saturated
+     than sage-400 because it has to carry on near-black (6.09:1). */
+  --palette-sage-on-inverse: #5ca870;
+
+  /* Semantic palettes, pulled into the same warm family so a status chip does
+     not arrive from a different design system than the page. */
+  --palette-success-foreground: #3a6a45;
+  --palette-success-background: #e7eee6;
+  --palette-success-border: #bacfbc;
+  --palette-warning-foreground: #7a5822;
+  --palette-warning-background: #f4ecdc;
+  --palette-warning-border: #dcc08a;
+  --palette-danger-foreground: #8a3323;
+  --palette-danger-background: #f6e6e1;
+  --palette-danger-border: #e0bcae;
+  --palette-info-foreground: #41507a;
+  --palette-info-background: #e8eaf2;
+  --palette-info-border: #ccd2e4;
+  --palette-delta-positive-foreground: #3a6a45;
+  --palette-delta-positive-background: #e7eee6;
+  --palette-delta-positive-border: #bacfbc;
+  --palette-delta-negative-foreground: #8a3323;
+  --palette-delta-negative-background: #f6e6e1;
+  --palette-delta-negative-border: #e0bcae;
+
+  /* Chart series palette. Impressions lead in brass and clicks follow in sage,
+     which is the pairing and the order the reference uses. */
+  --palette-chart-1: #b9893c;
+  --palette-chart-2: #7a9e7e;
+  --palette-chart-3: #6f7c8e;
+  --palette-chart-4: #a8654a;
+  --palette-chart-5: #8a7b3f;
+  --palette-chart-6: #5f7f7a;
 
   /* Semantic roles */
   --color-surface: var(--palette-neutral-50);
-  --color-surface-raised: var(--palette-neutral-0);
-  --color-surface-sunken: var(--palette-neutral-100);
+  --color-surface-raised: var(--palette-neutral-100);
+  --color-surface-sunken: var(--palette-neutral-200);
   --color-border-subtle: var(--palette-neutral-200);
   --color-border-strong: var(--palette-neutral-300);
   --color-text-primary: var(--palette-neutral-900);
   --color-text-secondary: var(--palette-neutral-600);
   --color-text-tertiary: var(--palette-neutral-500);
-  --color-action-primary: var(--palette-forest-700);
-  --color-action-primary-hover: var(--palette-forest-800);
-  --color-action-primary-active: var(--palette-forest-900);
-  --color-focus-ring: var(--palette-forest-500);
-  --color-brand-accent: var(--palette-lime-300);
-  --color-surface-inverse: var(--palette-forest-900);
-  --color-surface-inverse-raised: var(--palette-forest-800);
-  --color-text-on-inverse-primary: var(--palette-neutral-0);
-  --color-text-on-inverse-secondary: var(--palette-forest-200);
-  --color-border-inverse: var(--palette-forest-600);
-  --color-nav-item-hover: var(--palette-forest-800);
-  --color-nav-item-active: var(--palette-forest-700);
-  --color-nav-item-active-accent: var(--palette-lime-300);
-  --color-overlay-scrim: rgb(23 29 26 / 0.56);
+  /* The reference's only strong control is a near-black pill, so primary
+     actions are ink rather than a brand colour. */
+  --color-action-primary: var(--palette-ink-900);
+  --color-action-primary-hover: var(--palette-ink-700);
+  --color-action-primary-active: var(--palette-ink-950);
+  --color-focus-ring: var(--palette-brass-500);
+  --color-brand-accent: var(--palette-brass-400);
+  --color-surface-inverse: var(--palette-ink-900);
+  --color-surface-inverse-raised: var(--palette-ink-800);
+  --color-text-on-inverse-primary: var(--palette-neutral-200);
+  --color-text-on-inverse-secondary: var(--palette-neutral-400);
+  --color-border-inverse: var(--palette-ink-700);
+  --color-nav-item-hover: var(--palette-ink-800);
+  --color-nav-item-active: var(--palette-ink-700);
+  --color-nav-item-active-accent: var(--palette-brass-400);
+  --color-overlay-scrim: rgb(24 26 20 / 0.56);
   --color-success-foreground: var(--palette-success-foreground);
   --color-success-background: var(--palette-success-background);
   --color-success-border: var(--palette-success-border);
@@ -142,6 +158,14 @@
   --color-delta-negative-foreground: var(--palette-delta-negative-foreground);
   --color-delta-negative-background: var(--palette-delta-negative-background);
   --color-delta-negative-border: var(--palette-delta-negative-border);
+  /* Deltas on the inverted card: the light-card foregrounds fail against
+     near-black, so the inverted surface carries its own pair. */
+  --color-delta-positive-on-inverse: var(--palette-sage-on-inverse);
+  --color-delta-negative-on-inverse: #e0967f;
+  --color-delta-neutral-foreground: var(--palette-neutral-600);
+  --color-delta-neutral-background: var(--palette-neutral-200);
+  --color-delta-neutral-border: var(--palette-neutral-300);
+
   /* Rank quality bands. A position is coloured by how good the position is, so
      a long keyword table can be scanned for wins and gaps without reading every
      number. Contrast against each band's own background is pinned in
@@ -149,25 +173,25 @@
   --color-rank-top-foreground: var(--palette-sage-700);
   --color-rank-top-background: var(--palette-sage-50);
   --color-rank-top-border: var(--palette-sage-200);
-  --color-rank-page-one-foreground: var(--palette-gold-600);
-  --color-rank-page-one-background: var(--palette-gold-50);
-  --color-rank-page-one-border: var(--palette-gold-200);
-  --color-rank-reachable-foreground: var(--palette-info-foreground);
-  --color-rank-reachable-background: var(--palette-info-background);
-  --color-rank-reachable-border: var(--palette-info-border);
+  --color-rank-page-one-foreground: var(--palette-brass-700);
+  --color-rank-page-one-background: var(--palette-brass-50);
+  --color-rank-page-one-border: var(--palette-brass-200);
+  /* The lower two bands separate by weight rather than by hue. An info-blue
+     chip was the only cool colour on the page and read as belonging to another
+     product; the reference palette is two hues and a greige ramp, so the bands
+     go green, brass, dark neutral, light neutral. */
+  --color-rank-reachable-foreground: var(--palette-neutral-900);
+  --color-rank-reachable-background: var(--palette-neutral-100);
+  --color-rank-reachable-border: var(--palette-neutral-300);
   --color-rank-distant-foreground: var(--palette-neutral-600);
-  --color-rank-distant-background: var(--palette-neutral-100);
+  --color-rank-distant-background: var(--palette-neutral-200);
   --color-rank-distant-border: var(--palette-neutral-200);
-
-  --color-delta-neutral-foreground: var(--palette-neutral-600);
-  --color-delta-neutral-background: var(--palette-neutral-100);
-  --color-delta-neutral-border: var(--palette-neutral-200);
 
   /* Table roles */
   --color-table-header-background: var(--palette-neutral-100);
   --color-table-header-foreground: var(--palette-neutral-600);
   --color-table-row-background: var(--palette-neutral-0);
-  --color-table-row-hover: var(--palette-forest-50);
+  --color-table-row-hover: var(--palette-neutral-50);
   --color-table-row-border: var(--palette-neutral-200);
   --color-table-row-zebra: var(--palette-neutral-50);
   --table-content-column-width: 1%;
@@ -241,10 +265,10 @@
   --border-width-strong: 2px;
 
   /* Elevation */
-  --shadow-raised: 0 1px 2px rgb(23 29 26 / 0.06);
-  --shadow-sticky: 0 4px 8px rgb(23 29 26 / 0.08);
-  --shadow-overlay: 0 8px 24px rgb(23 29 26 / 0.12);
-  --shadow-modal: 0 16px 48px rgb(23 29 26 / 0.16);
+  --shadow-raised: 0 1px 2px rgb(24 26 20 / 0.06);
+  --shadow-sticky: 0 4px 8px rgb(24 26 20 / 0.08);
+  --shadow-overlay: 0 8px 24px rgb(24 26 20 / 0.12);
+  --shadow-modal: 0 16px 48px rgb(24 26 20 / 0.16);
   --shadow-nav-active: inset 2px 0 0 var(--color-nav-item-active-accent);
   --color-table-sticky-header-shadow: var(--shadow-sticky);
 
@@ -294,22 +318,25 @@
   --chart-series-4: var(--palette-chart-4);
   --chart-series-5: var(--palette-chart-5);
   --chart-series-6: var(--palette-chart-6);
-  --chart-series-1-fill-start: rgb(112 184 145 / 0.38);
-  --chart-series-1-fill-end: rgb(224 243 232 / 0.02);
+  --chart-series-1-fill-start: rgb(185 137 60 / 0.22);
+  --chart-series-1-fill-end: rgb(185 137 60 / 0.02);
   --chart-grid: var(--palette-neutral-200);
   --chart-grid-vertical: var(--palette-neutral-100);
   --chart-axis: var(--palette-neutral-500);
   --chart-tooltip-background: var(--palette-neutral-900);
-  --chart-tooltip-foreground: var(--palette-neutral-0);
+  --chart-tooltip-foreground: var(--palette-neutral-200);
   --chart-line-width: 2.5;
   --chart-plot-height: 14rem;
 
-  /* Compatibility aliases during the Section 7 surface rebuild */
-  --green: var(--color-action-primary);
-  --green-dark: var(--color-surface-inverse);
-  --green-light: var(--palette-forest-50);
-  --lime: var(--color-brand-accent);
-  --lime-dark: var(--palette-lime-400);
+  /* Short aliases used by the older page-level CSS. Renamed away from
+     --green/--lime: those names described the retired forest-and-lime palette,
+     and a token called --green that resolves to near-black charcoal is how the
+     sidebar kept its green through a retheme that was supposed to remove it. */
+  --surface-ink: var(--color-surface-inverse);
+  --surface-ink-tint: var(--palette-ink-50);
+  --action-ink: var(--color-action-primary);
+  --accent-brass: var(--color-brand-accent);
+  --accent-brass-strong: var(--palette-brass-500);
   --ink: var(--color-text-primary);
   --muted: var(--color-text-secondary);
   --muted-soft: var(--color-text-tertiary);

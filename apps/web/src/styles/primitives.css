@@ -1253,7 +1253,7 @@
   outline-offset: calc(var(--border-width-strong) * -1);
 }
 .ui-stage-strip__item[aria-pressed="true"] {
-  background: var(--palette-forest-50);
+  background: var(--palette-ink-50);
   color: var(--color-action-primary);
   box-shadow: inset 0 calc(var(--border-width-strong) * -1) 0
     var(--color-action-primary);
@@ -1557,7 +1557,10 @@
   color: var(--color-text-on-inverse-primary);
 }
 .ui-comparison-card--current .delta--positive {
-  color: var(--color-brand-accent);
+  color: var(--color-delta-positive-on-inverse);
+}
+.ui-comparison-card--current .delta--negative {
+  color: var(--color-delta-negative-on-inverse);
 }
 
 .ui-rank-badge {

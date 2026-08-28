@@ -111,7 +111,7 @@
 
 #agent-start-actions .ui-button:hover:not(:disabled) {
   border-color: var(--color-action-primary);
-  background: var(--palette-forest-50);
+  background: var(--palette-ink-50);
   box-shadow: var(--shadow-sticky);
 }
 
@@ -205,7 +205,7 @@
 }
 
 .agent-run__disclosure > summary:hover {
-  background: var(--palette-forest-50);
+  background: var(--palette-ink-50);
 }
 
 .agent-run__disclosure[open] > summary {

@@ -76,11 +76,11 @@ input:focus-visible,
 select:focus-visible,
 textarea:focus-visible,
 summary:focus-visible {
-  outline: var(--border-width-strong) solid var(--green);
+  outline: var(--border-width-strong) solid var(--action-ink);
   outline-offset: var(--border-width-strong);
 }
 a {
-  color: var(--green);
+  color: var(--action-ink);
   text-decoration: none;
 }
 a:hover {
@@ -155,7 +155,7 @@ a:hover {
   position: sticky;
   top: 0;
   height: 100vh;
-  background: var(--green-dark);
+  background: var(--surface-ink);
   color: var(--color-text-on-inverse-primary);
   padding: var(--space-5) var(--space-3);
   display: flex;
@@ -217,8 +217,8 @@ a:hover {
   width: 1.85rem;
   height: 1.85rem;
   border-radius: var(--radius-xs);
-  background: var(--lime);
-  color: var(--green-dark);
+  background: var(--accent-brass);
+  color: var(--surface-ink);
   font-weight: 900;
   font-size: var(--text-sm);
   flex-shrink: 0;
@@ -309,8 +309,8 @@ a:hover {
   width: 2rem;
   height: 2rem;
   border-radius: 50%;
-  background: var(--lime);
-  color: var(--green-dark);
+  background: var(--accent-brass);
+  color: var(--surface-ink);
   font-weight: 800;
   font-size: var(--text-sm);
   flex-shrink: 0;
@@ -471,7 +471,7 @@ main {
 }
 .section-heading > a,
 .section-heading > .section-heading__action {
-  color: var(--green);
+  color: var(--action-ink);
   font-weight: 600;
   font-size: var(--text-sm);
 }
@@ -488,7 +488,7 @@ main {
 .button {
   border: 0;
   border-radius: var(--radius-sm);
-  background: var(--green);
+  background: var(--action-ink);
   color: var(--palette-neutral-0);
   padding: var(--space-2) var(--space-4);
   font-weight: 600;
@@ -503,7 +503,7 @@ main {
   text-decoration: none;
 }
 .button:hover {
-  background: var(--green-dark);
+  background: var(--surface-ink);
   text-decoration: none;
   color: var(--palette-neutral-0);
 }
@@ -530,13 +530,13 @@ main {
 }
 .button--ghost {
   background: transparent;
-  color: var(--green);
+  color: var(--action-ink);
   border: var(--border-width) solid transparent;
   box-shadow: none;
 }
 .button--ghost:hover {
-  background: var(--green-light);
-  color: var(--green-dark);
+  background: var(--surface-ink-tint);
+  color: var(--surface-ink);
 }
 .button--sm {
   padding: var(--space-1) var(--space-3);
@@ -553,7 +553,7 @@ main {
 .card .button,
 .attention-card .button,
 .metric-card .button {
-  background: var(--green);
+  background: var(--action-ink);
   color: var(--palette-neutral-0);
 }
 .card .button--secondary,
@@ -917,7 +917,7 @@ main {
   height: 0.9rem;
   border-radius: 50%;
   border: var(--border-width-strong) solid var(--line-strong);
-  border-top-color: var(--green);
+  border-top-color: var(--action-ink);
   animation: spin var(--motion-duration-slow) linear infinite;
 }
 @keyframes spin {
@@ -1048,7 +1048,7 @@ td {
   font-size: var(--text-xs);
 }
 .product-list a {
-  color: var(--green);
+  color: var(--action-ink);
   font-weight: 600;
 }
 .product-list--compact li {
@@ -1136,9 +1136,9 @@ textarea {
 .field input:focus-visible,
 .field select:focus-visible,
 .field textarea:focus-visible {
-  outline: var(--border-width-strong) solid var(--green);
+  outline: var(--border-width-strong) solid var(--action-ink);
   outline-offset: var(--border-width);
-  border-color: var(--green);
+  border-color: var(--action-ink);
 }
 .field-hint {
   font-size: var(--text-xs);
@@ -1181,7 +1181,7 @@ textarea {
   cursor: pointer;
 }
 .radio-group input {
-  accent-color: var(--green);
+  accent-color: var(--action-ink);
 }
 .form-actions {
   display: flex;
@@ -1258,8 +1258,8 @@ textarea {
   color: var(--ink);
 }
 .tabs__tab[aria-selected="true"] {
-  color: var(--green);
-  border-bottom-color: var(--green);
+  color: var(--action-ink);
+  border-bottom-color: var(--action-ink);
 }
 .tab-panel > .card + .card,
 #provider-content > .card + .card,
@@ -1519,7 +1519,7 @@ textarea {
   background: var(--surface-alt);
   font-size: var(--text-lg);
   font-weight: 800;
-  color: var(--green);
+  color: var(--action-ink);
   flex-shrink: 0;
 }
 .integration-card__title,
@@ -1568,7 +1568,7 @@ textarea {
   color: var(--ink);
 }
 .stepper__step--active {
-  color: var(--green);
+  color: var(--action-ink);
   font-weight: 700;
 }
 .stepper__step--completed {
@@ -1586,8 +1586,8 @@ textarea {
   flex-shrink: 0;
 }
 .stepper__step--active .stepper__number {
-  border-color: var(--green);
-  background: var(--green);
+  border-color: var(--action-ink);
+  background: var(--action-ink);
   color: var(--palette-neutral-0);
 }
 .stepper__step--completed .stepper__number {
@@ -1623,7 +1623,7 @@ textarea {
 .progress-bar__fill {
   width: 0;
   height: 100%;
-  background: var(--green);
+  background: var(--action-ink);
   border-radius: var(--radius-full);
   transition: width var(--motion-duration-standard)
     var(--motion-easing-standard);
@@ -1692,7 +1692,7 @@ textarea {
   display: block;
   width: 12%;
   height: var(--bar);
-  background: var(--green);
+  background: var(--action-ink);
   border-radius: var(--radius-xs) var(--radius-xs) 0 0;
 }
 
@@ -2101,12 +2101,12 @@ details {
   color: var(--ink);
 }
 .ui-segmented__option--active {
-  background: var(--green);
+  background: var(--action-ink);
   color: var(--palette-neutral-0);
-  border-color: var(--green);
+  border-color: var(--action-ink);
 }
 .ui-segmented__option--active:hover {
-  background: var(--green-dark);
+  background: var(--surface-ink);
   color: var(--palette-neutral-0);
 }
 
@@ -2133,8 +2133,8 @@ details {
   padding: var(--space-1) var(--space-3);
 }
 .reporting-trend__metric[aria-pressed="true"] {
-  background: var(--green);
-  border-color: var(--green);
+  background: var(--action-ink);
+  border-color: var(--action-ink);
   color: var(--palette-neutral-0);
 }
 /* Overlay charts carry a shared legend instead of a switcher: both series are
@@ -2219,7 +2219,7 @@ details {
    REPORTING — Performance summary
    ============================================================ */
 .performance-summary {
-  border-left: 3px solid var(--green);
+  border-left: 3px solid var(--action-ink);
   color: var(--ink);
   font-size: var(--text-sm);
   margin-top: var(--space-5);
