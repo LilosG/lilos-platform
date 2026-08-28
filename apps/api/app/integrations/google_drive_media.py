@@ -215,6 +215,50 @@ def _safe_drive_reason(response: httpx.Response) -> str:
 
 
 @dataclass(frozen=True, slots=True)
+class DriveDiscovery:
+    """Images found for one client, plus why the count is what it is.
+
+    GBP_DRIVE_NO_ELIGIBLE_IMAGE covered two situations with completely different
+    fixes: the service account can see nothing in Drive at all (the folder was
+    never shared with it), or it can see plenty but no folder path identifies this
+    client (the folder is named something the tenant match cannot recognise).
+    These counts separate them.
+
+    Deliberately no folder or file names: this description reaches an agent run
+    scoped to one organization, and naming another client's folders there would be
+    a cross-tenant leak.
+    """
+
+    images: list[DriveImage]
+    visible_files: int
+    visible_images: int
+    service_account_email: str
+    match_terms: tuple[str, ...]
+
+    def explain(self) -> str:
+        if self.visible_files == 0:
+            return (
+                "The Drive service account can see no files at all. Share the "
+                f"client's image folder with {self.service_account_email} "
+                "(Viewer is enough)."
+            )
+        if self.visible_images == 0:
+            return (
+                f"The service account can see {self.visible_files} Drive items but no "
+                "images among them. Confirm the shared folder contains JPEG or PNG "
+                "files rather than only documents or shortcuts."
+            )
+        return (
+            f"The service account can see {self.visible_files} Drive items including "
+            f"{self.visible_images} images, but none sit under a folder path naming "
+            f"this client. A folder in the path has to contain one of: "
+            f"{', '.join(self.match_terms)}. Rename the client folder to include the "
+            "business name, or share the correctly named folder with "
+            f"{self.service_account_email}."
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class DriveImage:
     file_id: str
     name: str
@@ -234,15 +278,29 @@ class GoogleDriveMediaService:
         *,
         limit: int = 25,
     ) -> list[DriveImage]:
+        """Images for one client. See discover() for the self-explaining version."""
+        return (await self.discover(settings, organization_name, limit=limit)).images
+
+    async def discover(
+        self,
+        settings: Settings,
+        organization_name: str,
+        *,
+        limit: int = 25,
+    ) -> DriveDiscovery:
         """Return images only from a Drive folder tree matching the organization.
 
         The account can see multiple client folders, so there is deliberately no
         global-image fallback. If no folder path meaningfully matches the client
         name, no image is returned rather than risking cross-client leakage.
+
+        The counts travel with the result so an empty outcome can explain itself:
+        nothing shared, nothing image-shaped, or nothing named for this client.
         """
         credentials = self._credentials(settings)
         if credentials is None:
-            return []
+            return DriveDiscovery([], 0, 0, "not configured", ())
+        account_email = str(credentials.get("client_email") or "unknown")
         access_token = await self._access_token(credentials)
         files = await self._list_visible_files(access_token)
         folders = {
@@ -250,9 +308,12 @@ class GoogleDriveMediaService:
             for item in files
             if item.get("mimeType") == "application/vnd.google-apps.folder"
         }
+        visible_images = sum(
+            1 for item in files if str(item.get("mimeType") or "").startswith("image/")
+        )
         org_terms = self._terms(organization_name)
         if not org_terms:
-            return []
+            return DriveDiscovery([], len(files), visible_images, account_email, ())
 
         candidates: list[tuple[int, DriveImage]] = []
         for item in files:
@@ -291,7 +352,13 @@ class GoogleDriveMediaService:
             key=lambda row: (row[0], row[1].modified_time or "", row[1].name.casefold()),
             reverse=True,
         )
-        return [image for _, image in candidates[: max(1, min(limit, 100))]]
+        return DriveDiscovery(
+            images=[image for _, image in candidates[: max(1, min(limit, 100))]],
+            visible_files=len(files),
+            visible_images=visible_images,
+            service_account_email=account_email,
+            match_terms=tuple(sorted(org_terms)),
+        )
 
     async def fetch_image(self, settings: Settings, token: str) -> tuple[bytes, str]:
         payload = self.verify_proxy_token(settings, token)

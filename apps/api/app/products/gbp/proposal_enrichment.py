@@ -213,7 +213,8 @@ class GBPPostProposalEnrichmentService:
             )
 
         try:
-            images = await self.drive.discover_images(settings, organization_name, limit=100)
+            discovery = await self.drive.discover(settings, organization_name, limit=100)
+            images = discovery.images
         except DriveDiscoveryError as exc:
             # The Drive layer has already classified this into a cause the operator
             # can act on — a malformed credential, a rejected key, a Drive API that
@@ -228,9 +229,14 @@ class GBPPostProposalEnrichmentService:
                 "Verify the configured Drive credential and folder access.",
             ) from exc
         if not images:
+            # "No eligible image" covered three situations with three different
+            # fixes: nothing shared with the service account at all, plenty shared
+            # but no images, or images shared under a folder that does not name
+            # this client. The discovery result carries the counts that separate
+            # them, and names the address to share with.
             raise GBPProposalEnrichmentError(
                 "GBP_DRIVE_NO_ELIGIBLE_IMAGE",
-                "No eligible image was found in the client-scoped Google Drive folder tree.",
+                f"No eligible image was found for this client. {discovery.explain()}",
             )
 
         recent_assets = list(
@@ -253,7 +259,8 @@ class GBPPostProposalEnrichmentService:
         if selected is None:
             raise GBPProposalEnrichmentError(
                 "GBP_DRIVE_NO_ELIGIBLE_IMAGE",
-                "No eligible image was found in the client-scoped Google Drive folder tree.",
+                f"{len(images)} client images were found but none could be selected "
+                "for this post. Confirm the folder holds JPEG or PNG photographs.",
             )
 
         proxy_url = self.drive.public_proxy_url(
