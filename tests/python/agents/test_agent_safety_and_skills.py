@@ -421,3 +421,38 @@ def test_gbp_skill_does_not_promise_a_text_only_fallback() -> None:
     assert "there is no text-only" in instructions
     assert "when Drive media is configured" not in instructions
     assert "You do not write post copy" in instructions
+
+
+def test_gbp_post_tool_names_its_failure_causes() -> None:
+    """A governed refusal is only useful if it says what to fix.
+
+    The tool previously let any non-enrichment failure escape as the route's
+    generic HERMES_TOOL_FAILED / "Sanctioned tool execution failed". A live run
+    reported the cause as "not diagnosed" and recommended re-running later, which
+    is not actionable. The workflow handler already translated these; the tool now
+    does too.
+    """
+    import inspect
+
+    source = inspect.getsource(AgentToolService._tool_generate_gbp_post_proposal)
+
+    # Each failure mode the generator can raise becomes a named code.
+    assert "AIProviderError" in source
+    assert "AI_PROVIDER_" in source
+    assert "GBP_LOCATION_NOT_FOUND" in source
+    assert "GBP_POST_GROUNDING_REQUIRED" in source
+    # Translated into a denial, which the route reports with its safe message,
+    # rather than falling through to the generic failure handler.
+    assert "AgentToolDeniedError" in source
+
+
+def test_ai_provider_failures_are_reported_as_denials_not_generic_failures() -> None:
+    """AIProviderError must not reach the route's generic exception handler."""
+    import inspect
+
+    source = inspect.getsource(AgentToolService._tool_generate_gbp_post_proposal)
+    provider_block = source[source.index("except AIProviderError") :]
+
+    # The category and safe message both survive into the reported code.
+    assert "exc.category" in provider_block
+    assert "exc.safe_message" in provider_block

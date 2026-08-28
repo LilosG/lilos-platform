@@ -22,6 +22,7 @@ from apps.api.app.agents.safety import (
     safe_argument_metadata,
 )
 from apps.api.app.agents.skills import SKILLS
+from apps.api.app.ai.errors import AIProviderError
 from apps.api.app.ai.models import AIExecution
 from apps.api.app.audit.contracts import AuditEventCreate
 from apps.api.app.audit.enums import AuditActorType, AuditResult
@@ -1002,15 +1003,36 @@ class AgentToolService:
         review_id = arguments.get("review_id")
         source_review_id = _uuid(review_id, "review_id") if review_id is not None else None
 
-        revision, execution, asset = await self.gbp_post_generation.generate(
-            session,
-            Settings(),
-            run.organization_id,
-            run.location_id,
-            workflow_run_id=run.workflow_run_id,
-            correlation_id=run.correlation_id,
-            source_review_id=source_review_id,
-        )
+        # Translate the generator's failure modes into safe codes the agent can
+        # report. The workflow handler already does this; the tool did not, so any
+        # non-enrichment failure surfaced as the route's generic
+        # HERMES_TOOL_FAILED / "Sanctioned tool execution failed" and the operator
+        # was told the cause "is not diagnosed". A governed refusal is only useful
+        # if it names what to fix.
+        try:
+            revision, execution, asset = await self.gbp_post_generation.generate(
+                session,
+                Settings(),
+                run.organization_id,
+                run.location_id,
+                workflow_run_id=run.workflow_run_id,
+                correlation_id=run.correlation_id,
+                source_review_id=source_review_id,
+            )
+        except AIProviderError as exc:
+            # With LILOS_AI_PROVIDER=hermes the gateway calls Hermes itself, so this
+            # path is Hermes -> LILOs tool -> gateway -> Hermes while the agent run
+            # blocks on the tool response. A timeout here points at that nesting
+            # rather than at the client's data.
+            raise AgentToolDeniedError(
+                f"AI_PROVIDER_{exc.category.upper()}: {exc.safe_message}"
+            ) from exc
+        except LookupError as exc:
+            raise AgentToolDeniedError("GBP_LOCATION_NOT_FOUND") from exc
+        except ValueError as exc:
+            # Raised when no approved fact, GBP profile or website knowledge is
+            # available to ground the post.
+            raise AgentToolDeniedError(f"GBP_POST_GROUNDING_REQUIRED: {exc}") from exc
 
         output = execution.output_document or {}
         ref = f"gbp-post-revision:{revision.id}"
