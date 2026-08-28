@@ -387,6 +387,17 @@ type WheylandContext = {
   locationName: string;
   isPlatformAdmin: boolean;
   gbpLocationId: string;
+  /**
+   * Whether provider writes are enabled for that mapped GBP location.
+   *
+   * The governance test used to publish its canary unconditionally, and its own
+   * comments assumed writes were disabled ("unlikely with writes disabled").
+   * Wheyland now has writes ENABLED, so that path would push a post reading
+   * "[PROD-ACCEPTANCE] ... do not publish externally" onto the client's live
+   * Google Business Profile and then record FAIL -- after the damage. The flag
+   * was already fetched and thrown away; it is now carried and honoured.
+   */
+  gbpWriteEnabled: boolean;
 };
 
 /** Resolved once by the authoritative AUTH aggregate test. */
@@ -402,6 +413,9 @@ function locationId(): string {
 }
 function gbpLocationId(): string {
   return _ctx?.gbpLocationId ?? "";
+}
+function gbpWriteEnabled(): boolean {
+  return _ctx?.gbpWriteEnabled ?? false;
 }
 
 let SEO_WEBSITE_ID = "";
@@ -517,6 +531,7 @@ async function resolveWheylandContext(
 
   // 6. Resolve GBP mapping — use the confirmed GBP locations endpoint
   let gbpLid = "";
+  let gbpWrites = false;
   const gbpR = await apiCall<{
     data?: Array<{
       id: string;
@@ -530,9 +545,14 @@ async function resolveWheylandContext(
     const match = gbpLocs.find(
       (l) => l.location_id === lid && l.mapping_status === "confirmed",
     );
-    if (match?.id) gbpLid = match.id;
+    if (match?.id) {
+      gbpLid = match.id;
+      gbpWrites = match.write_enabled === true;
+    }
   }
-  console.log(`  GBP location: ${gbpLid || "none mapped"}`);
+  console.log(
+    `  GBP location: ${gbpLid || "none mapped"}${gbpLid ? ` (writes ${gbpWrites ? "ENABLED" : "disabled"})` : ""}`,
+  );
 
   // 7. Platform admin
   const admR = await apiCall<{ is_platform_administrator?: boolean }>(
@@ -550,6 +570,7 @@ async function resolveWheylandContext(
     locationName: lname,
     isPlatformAdmin: isPa,
     gbpLocationId: gbpLid,
+    gbpWriteEnabled: gbpWrites,
   };
 }
 
@@ -899,7 +920,60 @@ test.describe("4. GBP Governance", () => {
     console.log(`  Post revision created: ${postRevisionId}`);
     expect(postRevisionId).toBeTruthy();
 
-    // Step 2: Approve the revision (requires AAL2)
+    // The canary is a REAL draft in a REAL client's pipeline. Whatever happens
+    // below, it must not be left sitting in the approval queue: a reviewer
+    // clearing a backlog should never find a test artifact that looks approvable.
+    const discardCanary = async (): Promise<void> => {
+      if (!postRevisionId) return;
+      const rejectR = await apiCall(
+        page,
+        "POST",
+        `/api/v1/organizations/${orgId()}/locations/${locationId()}/gbp/operations/posts/${postRevisionId}/decision`,
+        { approve: false },
+      );
+      console.log(
+        rejectR.ok
+          ? `  Canary discarded (rejected): ${postRevisionId}`
+          : `  Canary NOT discarded (HTTP ${rejectR.status}) — clear ${postRevisionId} by hand`,
+      );
+    };
+
+    // Step 2: publishing is only safe to exercise when provider writes are OFF.
+    //
+    // This test's publish step asserted "provider write failed-closed" and treated
+    // a completed run as FAIL. That reasoning only holds while writes are disabled.
+    // With writes ENABLED -- Wheyland's current state -- the run would succeed, and
+    // the recorded FAIL would arrive after a post reading "[PROD-ACCEPTANCE] ... do
+    // not publish externally" had already gone live on the client's profile. A test
+    // must not be the thing that publishes to a client.
+    if (gbpWriteEnabled()) {
+      const postsR = await apiCall<{
+        data?: Array<{ id: string; status: string }>;
+      }>(
+        page,
+        "GET",
+        `/api/v1/organizations/${orgId()}/locations/${locationId()}/gbp/operations/locations/${gbpLocationId()}/posts`,
+      );
+      const observed = (postsR.data?.data ?? []).find(
+        (candidate) => candidate.id === postRevisionId,
+      );
+      // Unapproved is the whole point: a freshly proposed post must not be
+      // publishable until a human decides on it.
+      const gated =
+        observed?.status === "awaiting_approval" ||
+        observed?.status === "draft";
+      recordVerdict(
+        "GBP GOVERNANCE",
+        gated ? "PASS" : "FAIL",
+        gated
+          ? "Proposal created and held for approval; publish not exercised because provider writes are ENABLED for this client"
+          : `Proposed post was not held for approval (status=${observed?.status ?? "missing"})`,
+      );
+      await discardCanary();
+      return;
+    }
+
+    // Step 3: Approve the revision (requires AAL2)
     const approveR = await apiCall(
       page,
       "POST",
@@ -908,31 +982,17 @@ test.describe("4. GBP Governance", () => {
     );
 
     if (approveR.status === 403) {
-      // AAL2 requirement — approval blocked at auth gate.  That IS fail-closed governance.
-      // The proposal was created but cannot be approved without MFA step-up.
+      // AAL2 requirement — approval blocked at auth gate. That IS fail-closed
+      // governance: the proposal exists but cannot be approved without MFA step-up.
       console.log(
         "  Approval blocked at AAL2 gate — expected governance behavior",
       );
-      // Verify the revision still exists and shows correct state
-      const postsR = await apiCall<{
-        data?: Array<{ id: string; status: string }>;
-      }>(
-        page,
-        "GET",
-        `/api/v1/organizations/${orgId()}/locations/${locationId()}/gbp/operations/locations/${gbpLocationId()}/posts`,
-      );
-      if (postsR.ok) {
-        const posts = postsR.data?.data ?? [];
-        const post = posts.find(
-          (p: Record<string, unknown>) => p.id === postRevisionId,
-        );
-        if (post) console.log(`  Post status: ${post.status}`);
-      }
       recordVerdict(
         "GBP GOVERNANCE",
         "PASS",
         "Proposal created, approval gated by AAL2 (fail-closed governance)",
       );
+      await discardCanary();
       return;
     }
 
@@ -942,12 +1002,14 @@ test.describe("4. GBP Governance", () => {
         "FAIL",
         `Post revision decision failed: HTTP ${approveR.status}`,
       );
+      await discardCanary();
       return;
     }
 
     console.log("  Post revision approved");
 
-    // Step 3: Try to publish — should go through workflow reservation
+    // Step 4: attempt publication. Reached only with provider writes disabled,
+    // so the expected outcome is a safe, blocked write.
     const publishR = await apiCall<{ data?: { workflow_run_id?: string } }>(
       page,
       "POST",
@@ -965,21 +1027,19 @@ test.describe("4. GBP Governance", () => {
         "PASS",
         "Governance pipeline: proposal+approval verified, publish gated by AAL2 (fail-closed)",
       );
+      await discardCanary();
       return;
     }
 
     if (publishR.status === 202) {
       const runId = publishR.data?.data?.workflow_run_id;
       console.log(`  Publish workflow created: ${runId}`);
-      // Poll — the handler should refuse provider writes if writes are disabled
-      // or the provider callback should fail safely
       const finalRun = await pollWorkflowRun(page, orgId(), runId!, 40, 5000);
       if (finalRun) {
         const runStatus = finalRun.status as string;
         console.log(`  Publish workflow result: ${runStatus}`);
-        // completed = provider write succeeded (unlikely with writes disabled)
-        // failed = provider write blocked (expected with writes disabled)
-        // dead_lettered = max retries exceeded (acceptable safety)
+        // failed / dead_lettered = provider write blocked, which is the point.
+        // completed = a write landed while writes are disabled, which is a breach.
         if (runStatus === "failed" || runStatus === "dead_lettered") {
           recordVerdict(
             "GBP GOVERNANCE",
@@ -990,7 +1050,7 @@ test.describe("4. GBP Governance", () => {
           recordVerdict(
             "GBP GOVERNANCE",
             "FAIL",
-            `Provider write SUCCEEDED when writes should be disabled (${runStatus})`,
+            `Provider write SUCCEEDED while writes are disabled (${runStatus})`,
           );
         } else {
           recordVerdict(
@@ -1013,6 +1073,8 @@ test.describe("4. GBP Governance", () => {
         `Publish endpoint returned unexpected ${publishR.status}`,
       );
     }
+
+    await discardCanary();
   });
 });
 

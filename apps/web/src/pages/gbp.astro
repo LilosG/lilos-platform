@@ -1125,21 +1125,63 @@ import "../styles/global.css";
               statusBadge(presentation.tone, presentation.label),
             );
             if (post.status === "awaiting_approval") {
-              const approveBtn = document.createElement("button");
-              approveBtn.type = "button";
-              approveBtn.className =
-                "ui-button ui-button--primary ui-button--sm";
-              approveBtn.textContent = "Approve";
-              approveBtn.addEventListener("click", async () => {
-                await decidePostRevision(
-                  organizationId,
-                  selectedPlatformLocationId!,
-                  post.id,
+              // Approve and Discard share one handler. Discard existed in the API
+              // (`approve: false` -> status "rejected") but had no control here, so
+              // a draft that should never go live -- a near-duplicate, or a test
+              // canary -- could only be approved or left in the queue forever.
+              const decide = (
+                label: string,
+                busyLabel: string,
+                approve: boolean,
+                className: string,
+              ): HTMLButtonElement => {
+                const button = document.createElement("button");
+                button.type = "button";
+                button.className = className;
+                button.textContent = label;
+                button.addEventListener("click", async () => {
+                  if (
+                    !approve &&
+                    !confirm(
+                      "Discard this draft? It will not be published and cannot be approved afterwards.",
+                    )
+                  ) {
+                    return;
+                  }
+                  button.disabled = true;
+                  button.textContent = busyLabel;
+                  const result = await decidePostRevision(
+                    organizationId,
+                    selectedPlatformLocationId!,
+                    post.id,
+                    approve,
+                  );
+                  // Previously the result was discarded, so a rejected decision
+                  // looked identical to a successful one after the re-render.
+                  if (result.kind === "ok") {
+                    await renderPosts();
+                    return;
+                  }
+                  actionStatus.textContent = describeFailure(result, label);
+                  button.disabled = false;
+                  button.textContent = label;
+                });
+                return button;
+              };
+              item.append(
+                decide(
+                  "Approve",
+                  "Approving…",
                   true,
-                );
-                await renderPosts();
-              });
-              item.append(approveBtn);
+                  "ui-button ui-button--primary ui-button--sm",
+                ),
+                decide(
+                  "Discard",
+                  "Discarding…",
+                  false,
+                  "ui-button ui-button--ghost ui-button--sm",
+                ),
+              );
             }
             if (presentation.canPublish) {
               const publishBtn = document.createElement("button");
