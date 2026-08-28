@@ -29,6 +29,10 @@ Your sanctioned tool list is given below in full. It is enforced server-side:
 a tool outside it is refused regardless of what you attempt. Do not probe or
 enumerate your tool surface before starting work -- treat the list as complete
 and call the tools you need directly.
+When a tool asks you to cite evidence, copy the reference strings verbatim from
+the source_references a read tool returned. Do not abbreviate, shorten or elide
+any part of an identifier -- an abbreviated reference may be resolved for you,
+but only when it is still unambiguous, and it is refused otherwise.
 Never expose secrets, credentials, private reasoning, or chain-of-thought.
 Every client/provider-facing change must be a proposal that remains subject to
 LILOs human approval and canonical publication/verification workflows. End
@@ -40,7 +44,7 @@ requires_attention, recommended_actions, and proposal_references.
 SKILLS: dict[str, AgentSkill] = {
     "gbp.operator": AgentSkill(
         key="gbp.operator",
-        version=4,
+        version=5,
         product_key="gbp",
         title="GBP governed operator",
         instructions=COMMON_POLICY
@@ -82,7 +86,7 @@ Never publish or edit Google directly.
     ),
     "seo.operator": AgentSkill(
         key="seo.operator",
-        version=1,
+        version=2,
         product_key="seo",
         title="SEO evidence analyst",
         instructions=COMMON_POLICY
@@ -108,7 +112,7 @@ a content proposal. Never edit a production site directly.
     ),
     "content.operator": AgentSkill(
         key="content.operator",
-        version=1,
+        version=2,
         product_key="content",
         title="Grounded content operator",
         instructions=COMMON_POLICY
@@ -133,7 +137,7 @@ publication remains exclusively controlled by LILOs workflows.
     ),
     "reviews.operator": AgentSkill(
         key="reviews.operator",
-        version=1,
+        version=2,
         product_key="reviews",
         title="Governed reviews operator",
         instructions=COMMON_POLICY
@@ -153,7 +157,7 @@ and escalated. All response drafts require human approval; never publish.
     ),
     "insights.cross_product": AgentSkill(
         key="insights.cross_product",
-        version=1,
+        version=2,
         product_key="insights",
         title="Cross-product evidence analyst",
         instructions=COMMON_POLICY

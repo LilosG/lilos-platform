@@ -70,11 +70,16 @@ def test_complete_product_skill_and_sanctioned_tool_plane() -> None:
     expected_versions = {
         # v4: the agent no longer writes post copy; generate_gbp_post_proposal
         # routes through the single governed generator.
-        "gbp.operator": 4,
-        "seo.operator": 1,
-        "content.operator": 1,
-        "reviews.operator": 1,
-        "insights.cross_product": 1,
+        # v5 / v2 across the board: COMMON_POLICY gained the verbatim-citation
+        # rule. Every skill embeds it, so every prompt changed, and the AI task
+        # definition each run registers is keyed on this version -- leaving it
+        # unchanged would record a prompt version that no longer matches the
+        # text that ran.
+        "gbp.operator": 5,
+        "seo.operator": 2,
+        "content.operator": 2,
+        "reviews.operator": 2,
+        "insights.cross_product": 2,
     }
     for skill in SKILLS.values():
         assert skill.version == expected_versions[skill.key]
@@ -125,10 +130,91 @@ def test_proposal_evidence_must_have_been_observed_by_the_bound_run() -> None:
     assert AgentToolService._observed_source_references(
         run, ["seo-opportunity:observed"], label="SEO evidence"
     ) == ["seo-opportunity:observed"]
-    with pytest.raises(AgentToolDeniedError, match="observed by this bound agent run"):
+    with pytest.raises(AgentToolDeniedError, match="did not observe"):
         AgentToolService._observed_source_references(
             run, ["seo-opportunity:invented"], label="SEO evidence"
         )
+
+
+def test_abbreviated_uuid_citation_resolves_to_the_observed_reference() -> None:
+    """A real Wheyland run died here.
+
+    The agent read the profile snapshot, then cited it back as
+    ``gbp-profile-snapshot:b3cfad5b-...``. Byte-exact matching called that
+    unobserved evidence and denied the proposal; the skill forbids retrying a
+    mutating tool with different arguments, so the run ended with no post. The
+    abbreviation is a presentation habit, not a governance failure.
+    """
+    snapshot = "gbp-profile-snapshot:b3cfad5b-7d21-4f0e-9c33-5a1f2b8e4d67"
+    run = cast(AgentRun, SimpleNamespace(source_references=[snapshot]))
+
+    for cited in (
+        f"{snapshot[:30]}...",
+        f"{snapshot[:30]}…",
+        f"  {snapshot}  ",
+        snapshot.upper(),
+    ):
+        assert AgentToolService._observed_source_references(
+            run, [cited], label="GBP post evidence"
+        ) == [snapshot], cited
+
+
+def test_ambiguous_abbreviation_is_still_denied() -> None:
+    """Resolution must be unique: two candidates mean the citation is unproven."""
+    run = cast(
+        AgentRun,
+        SimpleNamespace(
+            source_references=[
+                "gbp-post-revision:11111111-1111-4111-8111-111111111111",
+                "gbp-post-revision:11111111-1111-4111-8111-222222222222",
+            ]
+        ),
+    )
+    with pytest.raises(AgentToolDeniedError, match="did not observe"):
+        AgentToolService._observed_source_references(
+            run, ["gbp-post-revision:11111111-1111-4111-8111-"], label="GBP post evidence"
+        )
+
+
+def test_bare_kind_prefix_never_resolves_a_citation() -> None:
+    """Otherwise "gbp-post-revision:" would cite whatever the run happened to read."""
+    run = cast(
+        AgentRun,
+        SimpleNamespace(
+            source_references=["gbp-post-revision:11111111-1111-4111-8111-111111111111"]
+        ),
+    )
+    for cited in ("gbp-post-revision:", "gbp-post", ":", "..."):
+        with pytest.raises(AgentToolDeniedError, match="did not observe"):
+            AgentToolService._observed_source_references(run, [cited], label="GBP post evidence")
+
+
+def test_denial_names_the_unmatched_citation_and_what_is_citable() -> None:
+    """A refusal the agent cannot act on ends the run, because retrying is forbidden."""
+    run = cast(AgentRun, SimpleNamespace(source_references=["business-fact:abc", "gbp-state:xyz"]))
+
+    with pytest.raises(AgentToolDeniedError) as denied:
+        AgentToolService._observed_source_references(
+            run, ["business-fact:nope"], label="GBP post evidence"
+        )
+    message = str(denied.value)
+    assert "business-fact:nope" in message
+    assert "business-fact:abc" in message
+    assert "gbp-state:xyz" in message
+
+
+def test_empty_citation_list_says_to_read_first_when_nothing_was_observed() -> None:
+    run = cast(AgentRun, SimpleNamespace(source_references=[]))
+    with pytest.raises(AgentToolDeniedError, match="call the read tools first"):
+        AgentToolService._observed_source_references(run, [], label="GBP post evidence")
+
+
+def test_citable_summary_is_bounded_for_a_run_with_long_evidence() -> None:
+    """The denial goes back to a model inside a bounded context; it cannot be unbounded."""
+    observed = [f"business-knowledge:{index}" for index in range(120)]
+    summary = AgentToolService._citable_summary(observed)
+    assert "+100 more" in summary
+    assert len(summary) < 1200
 
 
 def test_review_agent_cannot_bypass_deterministic_restricted_risk() -> None:

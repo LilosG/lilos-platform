@@ -323,16 +323,83 @@ class AgentToolService:
         }
 
     @staticmethod
-    def _observed_source_references(run: AgentRun, values: object, *, label: str) -> list[str]:
+    def _citable_summary(observed: list[str], limit: int = 20) -> str:
+        """The references a governed proposal is allowed to cite, for a denial message.
+
+        A refusal that does not say what would have been accepted is unactionable,
+        and the skills forbid retrying a mutating tool with different arguments — so
+        an opaque denial ends the run.
+        """
+        if not observed:
+            return "no references have been observed by this run yet; call the read tools first"
+        head = ", ".join(observed[:limit])
+        remainder = len(observed) - min(len(observed), limit)
+        return f"citable references: {head}" + (f" (+{remainder} more)" if remainder else "")
+
+    @staticmethod
+    def _canonical_reference(requested: str, observed: list[str]) -> str | None:
+        """Match one requested citation to the reference the run actually observed.
+
+        Byte-exact matching failed a real Wheyland run: the agent echoed
+        ``gbp-profile-snapshot:b3cfad5b-...`` — an abbreviated UUID — and the
+        proposal was denied for citing "unobserved" evidence it had in fact read
+        moments earlier. Asking a language model to reproduce 36-character UUIDs
+        verbatim is brittle by construction, and the abbreviation is a presentation
+        habit rather than a governance failure.
+
+        This resolves an abbreviation to the single reference it can only mean, and
+        returns None when it is unmatched or ambiguous. Governance is unchanged:
+        nothing outside the observed set is ever accepted, and what gets recorded on
+        the proposal is always the canonical observed string, never the model's.
+        """
+        candidate = requested.strip()
+        if candidate in observed:
+            return candidate
+
+        # Trailing ellipsis / dots are how the abbreviation is written.
+        trimmed = candidate.rstrip(". ").rstrip("…").rstrip(". ").strip()
+        if trimmed in observed:
+            return trimmed
+        # The abbreviation has to carry enough of the identifier to be evidence.
+        # Measuring the whole string is not enough: "gbp-post-revision:" is 18
+        # characters of kind prefix and would resolve whenever a run happened to
+        # observe exactly one revision, letting a citation name evidence the model
+        # never actually looked at. Only the part after the kind counts.
+        kind, _, identifier = trimmed.rpartition(":")
+        if not kind or len(identifier) < 8:
+            return None
+
+        lowered = trimmed.lower()
+        matches = [value for value in observed if value.lower().startswith(lowered)]
+        return matches[0] if len(matches) == 1 else None
+
+    @classmethod
+    def _observed_source_references(cls, run: AgentRun, values: object, *, label: str) -> list[str]:
         if not isinstance(values, list):
             raise AgentToolDeniedError(f"{label} must be a list")
         requested = list(dict.fromkeys(str(value)[:500] for value in values))[:100]
-        observed = {str(value) for value in run.source_references}
-        if not requested or not set(requested) <= observed:
+        observed = [str(value) for value in run.source_references]
+        if not requested:
             raise AgentToolDeniedError(
-                f"{label} must be non-empty references observed by this bound agent run"
+                f"{label} must cite at least one reference observed by this bound agent run; "
+                + cls._citable_summary(observed)
             )
-        return requested
+
+        resolved: list[str] = []
+        unmatched: list[str] = []
+        for value in requested:
+            canonical = cls._canonical_reference(value, observed)
+            if canonical is None:
+                unmatched.append(value)
+            else:
+                resolved.append(canonical)
+
+        if unmatched:
+            raise AgentToolDeniedError(
+                f"{label} cites references this run did not observe: "
+                f"{', '.join(unmatched[:10])}; " + cls._citable_summary(observed)
+            )
+        return list(dict.fromkeys(resolved))
 
     async def _gbp_location(self, session: AsyncSession, run: AgentRun) -> GBPLocation:
         if run.location_id is None:
@@ -823,8 +890,13 @@ class AgentToolService:
             raise AgentToolDeniedError("accepted Content opportunity is outside the bound location")
         source_ref = f"content-opportunity:{opportunity_id}"
         if source_ref not in {str(value) for value in run.source_references}:
+            # The server builds this reference from a validated id, so it cannot be
+            # an abbreviation problem — the run genuinely has not read the
+            # opportunity. Say so, and say what it has read.
             raise AgentToolDeniedError(
-                "Content opportunity must be observed by this bound agent run"
+                "Content opportunity must be observed by this bound agent run: "
+                f"{source_ref} is not among the run's observed references; "
+                + self._citable_summary([str(value) for value in run.source_references])
             )
         item = await self.content.create_item(
             session,
@@ -1106,9 +1178,12 @@ class AgentToolService:
         required_sources = {f"review-revision:{revisions[0].id}"} | {
             f"business-fact:{item}" for item in requested
         }
-        if not required_sources <= {str(value) for value in run.source_references}:
+        observed_review_sources = {str(value) for value in run.source_references}
+        if not required_sources <= observed_review_sources:
+            missing = sorted(required_sources - observed_review_sources)
             raise AgentToolDeniedError(
-                "review response evidence must be observed by this bound agent run"
+                "review response evidence must be observed by this bound agent run; "
+                f"not yet read: {', '.join(missing[:10])}"
             )
         response = await self.reviews.draft(
             session,
