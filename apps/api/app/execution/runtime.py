@@ -105,6 +105,10 @@ class RuntimeOptions:
     sweep_batch_size: int = 100
     database_failure_limit: int = 3
     shutdown_seconds: float = 270.0
+    # Budget for a single poll cycle. This used to read shutdown_seconds, which
+    # is the shutdown grace period and a different thing entirely: the scheduler
+    # asked for a 45s shutdown grace and silently got a 45s cycle budget with it.
+    cycle_seconds: float = 270.0
 
     def __post_init__(self) -> None:
         if not 0 < self.minimum_poll_seconds <= self.maximum_poll_seconds:
@@ -119,6 +123,8 @@ class RuntimeOptions:
             raise ValueError("sweep batch size is invalid")
         if self.database_failure_limit < 1:
             raise ValueError("database failure limit is invalid")
+        if self.cycle_seconds <= 0:
+            raise ValueError("cycle budget is invalid")
         if self.shutdown_seconds <= 0:
             raise ValueError("shutdown allowance is invalid")
 
@@ -501,7 +507,7 @@ async def run_process(
                     await backend.sweep()
                     next_sweep = monotonic() + backend.options.sweep_seconds
                 worked = await asyncio.wait_for(
-                    backend.cycle(), timeout=backend.options.shutdown_seconds
+                    backend.cycle(), timeout=backend.options.cycle_seconds
                 )
                 failures = 0
             except SQLAlchemyError as exc:
@@ -537,6 +543,14 @@ async def run_process(
                         raise
                     worked = False
             except TimeoutError:
+                # A single slow cycle used to terminate the process outright, so
+                # one slow query or a cold connection pool produced a restart
+                # loop that never made progress: the scheduler crashed roughly
+                # every 90 seconds in production. Timeouts are now counted the
+                # same way database failures are, so a blip is absorbed and a
+                # genuine hang still exits loudly after the limit rather than
+                # being hidden.
+                failures += 1
                 logger.error(
                     "Durable process cycle timed out",
                     extra={
@@ -544,9 +558,33 @@ async def run_process(
                         "operation": "poll",
                         "outcome": "failure",
                         "normalized_error_code": "PROCESS_CYCLE_TIMEOUT",
+                        "retry_count": failures,
+                        "cycle_seconds": backend.options.cycle_seconds,
                     },
                 )
-                raise
+                if failures >= backend.options.database_failure_limit:
+                    raise
+                worked = False
+            except OSError as exc:
+                # ConnectionRefusedError and ConnectionResetError arrive from the
+                # driver socket, not from SQLAlchemy, so they bypassed every
+                # handler above and killed the process. Ordering matters:
+                # TimeoutError is an OSError subclass and is handled above.
+                failures += 1
+                logger.error(
+                    "Durable process lost its database connection",
+                    extra={
+                        "event_name": "process.database.transport_failed",
+                        "operation": "poll",
+                        "outcome": "failure",
+                        "normalized_error_code": "DATABASE_TRANSPORT_UNAVAILABLE",
+                        "exception_type": type(exc).__name__,
+                        "retry_count": failures,
+                    },
+                )
+                if failures >= backend.options.database_failure_limit:
+                    raise
+                worked = False
 
             if worked:
                 delay = backend.options.minimum_poll_seconds
@@ -591,7 +629,7 @@ async def run_scheduler(
     options: RuntimeOptions | None = None,
     database: DatabaseRuntime | None = None,
 ) -> None:
-    scheduler_options = options or RuntimeOptions(shutdown_seconds=45.0)
+    scheduler_options = options or RuntimeOptions(shutdown_seconds=45.0, cycle_seconds=45.0)
     await run_process(SchedulerBackend(settings, scheduler_options, database), stop)
 
 

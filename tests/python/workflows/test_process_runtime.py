@@ -483,3 +483,152 @@ async def test_process_survives_deterministic_database_error() -> None:
 
     assert len(backend.cycle_times) == 4
     assert backend.closed
+
+
+@pytest.mark.anyio
+async def test_a_single_slow_cycle_does_not_terminate_the_process() -> None:
+    """The scheduler crash-looped in production on exactly this path.
+
+    One cycle exceeded its budget, the timeout was re-raised, the process died,
+    Render restarted it, and the loop repeated roughly every 90 seconds without
+    ever dispatching anything. A slow cycle is transient until it proves
+    otherwise.
+    """
+    options = RuntimeOptions(
+        minimum_poll_seconds=0.001,
+        maximum_poll_seconds=0.001,
+        heartbeat_seconds=1,
+        database_failure_limit=3,
+        shutdown_seconds=1,
+        cycle_seconds=0.01,
+    )
+    stop = asyncio.Event()
+    calls = {"count": 0}
+
+    async def cycle() -> bool:
+        calls["count"] += 1
+        backend.cycle_times.append(asyncio.get_running_loop().time())
+        if calls["count"] == 1:
+            await asyncio.sleep(0.2)  # exceeds cycle_seconds
+            return True
+        if calls["count"] >= 3:
+            stop.set()
+        return False
+
+    backend = FakeBackend(options, [False])
+    backend.cycle = cycle  # type: ignore[method-assign]
+
+    await run_process(backend, stop)
+
+    assert calls["count"] >= 3
+    assert backend.closed
+
+
+@pytest.mark.anyio
+async def test_persistent_cycle_timeouts_still_fail_closed() -> None:
+    """Absorbing a blip must not hide a real hang."""
+    options = RuntimeOptions(
+        minimum_poll_seconds=0.001,
+        maximum_poll_seconds=0.001,
+        heartbeat_seconds=1,
+        database_failure_limit=2,
+        shutdown_seconds=1,
+        cycle_seconds=0.01,
+    )
+
+    async def cycle() -> bool:
+        backend.cycle_times.append(asyncio.get_running_loop().time())
+        await asyncio.sleep(0.2)
+        return True
+
+    backend = FakeBackend(options, [False])
+    backend.cycle = cycle  # type: ignore[method-assign]
+
+    with pytest.raises(TimeoutError):
+        await run_process(backend, asyncio.Event())
+
+    assert len(backend.cycle_times) == 2
+    assert backend.closed
+
+
+@pytest.mark.anyio
+async def test_a_recovered_cycle_resets_the_failure_budget() -> None:
+    """Otherwise unrelated blips hours apart accumulate into a false hard failure."""
+    options = RuntimeOptions(
+        minimum_poll_seconds=0.001,
+        maximum_poll_seconds=0.001,
+        heartbeat_seconds=1,
+        database_failure_limit=2,
+        shutdown_seconds=1,
+        cycle_seconds=1,
+    )
+    stop = asyncio.Event()
+    sequence: list[bool | Exception] = [
+        ConnectionRefusedError("synthetic"),
+        True,
+        ConnectionRefusedError("synthetic"),
+        True,
+    ]
+    calls = {"count": 0}
+
+    async def cycle() -> bool:
+        index = calls["count"]
+        calls["count"] += 1
+        backend.cycle_times.append(asyncio.get_running_loop().time())
+        if index >= len(sequence):
+            stop.set()
+            return False
+        value = sequence[index]
+        if isinstance(value, Exception):
+            raise value
+        return value
+
+    backend = FakeBackend(options, [False])
+    backend.cycle = cycle  # type: ignore[method-assign]
+
+    await run_process(backend, stop)
+
+    assert calls["count"] > len(sequence)
+    assert backend.closed
+
+
+@pytest.mark.anyio
+async def test_a_refused_database_connection_is_retried_not_fatal() -> None:
+    """ConnectionRefusedError comes from the driver socket, not SQLAlchemy.
+
+    Production logged process.terminated with ConnectionRefusedError because the
+    error bypassed every handler in the loop.
+    """
+    options = RuntimeOptions(
+        minimum_poll_seconds=0.001,
+        maximum_poll_seconds=0.001,
+        heartbeat_seconds=1,
+        database_failure_limit=2,
+        shutdown_seconds=1,
+        cycle_seconds=1,
+    )
+    backend = FakeBackend(options, [ConnectionRefusedError("synthetic")])
+
+    with pytest.raises(ConnectionRefusedError):
+        await run_process(backend, asyncio.Event())
+
+    # Retried up to the limit rather than dying on the first occurrence.
+    assert len(backend.cycle_times) == 2
+    assert backend.closed
+
+
+def test_cycle_budget_is_independent_of_the_shutdown_grace_period() -> None:
+    options = RuntimeOptions(shutdown_seconds=45.0, cycle_seconds=5.0)
+    assert options.cycle_seconds == 5.0
+    assert options.shutdown_seconds == 45.0
+
+    with pytest.raises(ValueError, match="cycle budget is invalid"):
+        RuntimeOptions(cycle_seconds=0)
+
+
+def test_the_scheduler_keeps_a_bounded_cycle_budget() -> None:
+    """Named explicitly now: it previously inherited the shutdown grace period."""
+    import inspect
+
+    source = inspect.getsource(runtime_module.run_scheduler)
+    assert "cycle_seconds=45.0" in source
