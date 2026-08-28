@@ -1,6 +1,8 @@
 """Tests for signed Google Drive provider-media URLs and classified read failures."""
 
 import asyncio
+import json
+from base64 import b64encode
 from datetime import timedelta
 from uuid import uuid4
 
@@ -16,6 +18,7 @@ from apps.api.app.integrations.google_drive_media import (
     DriveImage,
     GoogleDriveMediaService,
     ProviderMediaPreflightError,
+    _decode_service_account,
 )
 from apps.api.app.routes import provider_media
 
@@ -184,6 +187,16 @@ async def test_provider_media_route_supports_anonymous_head(
 PEM_BEGIN = "-----BEGIN " + "PRIVATE KEY-----"
 PEM_END = "-----END " + "PRIVATE KEY-----"
 
+_KEY_FILE = json.dumps(
+    {
+        "type": "service_account",
+        "project_id": "lilos-prod",
+        "private_key": f"{PEM_BEGIN}\nMIIabc\n{PEM_END}\n",
+        "client_email": "drive@lilos-prod.iam.gserviceaccount.com",
+        "token_uri": "https://oauth2.googleapis.com/token",
+    }
+)
+
 
 def _service_account_json(private_key: str) -> str:
     return (
@@ -197,14 +210,103 @@ def _settings_with_credential(raw: str) -> Settings:
     return Settings(google_drive_service_account_json=raw)
 
 
-def test_malformed_drive_credential_names_the_parse_position() -> None:
-    """The operator was told to "verify the credential" with no idea what was wrong."""
+def test_malformed_drive_credential_names_the_reason_not_just_the_position() -> None:
+    """A position alone is not actionable.
+
+    The first version of this reported "not valid JSON (at line 1, column 14)".
+    A real run returned exactly that, and it was impossible to tell whether the
+    value was base64, a file path, or a key whose PEM newlines had been pasted
+    literally — three different fixes.
+    """
     with pytest.raises(DriveDiscoveryError) as failure:
         GoogleDriveMediaService()._credentials(_settings_with_credential("{not json"))
 
+    message = str(failure.value)
     assert failure.value.safe_code == "GBP_DRIVE_CREDENTIAL_MALFORMED"
     assert failure.value.retryable is False
-    assert "line 1" in str(failure.value)
+    # The parser's own reason, the position, and the shape of the value.
+    assert "Expecting property name" in message
+    assert "line 1" in message
+    assert "characters" in message
+
+
+def test_a_bare_private_key_is_identified_as_the_wrong_value_entirely() -> None:
+    pasted = f"{PEM_BEGIN}\nMIIabc\n{PEM_END}"
+    with pytest.raises(DriveDiscoveryError) as failure:
+        GoogleDriveMediaService()._credentials(_settings_with_credential(pasted))
+
+    assert "bare private key" in str(failure.value)
+
+
+def test_a_file_path_is_identified_rather_than_reported_as_bad_json() -> None:
+    with pytest.raises(DriveDiscoveryError) as failure:
+        GoogleDriveMediaService()._credentials(
+            _settings_with_credential("/etc/secrets/drive-key.json")
+        )
+
+    assert "filesystem path" in str(failure.value)
+
+
+def test_no_rejection_message_can_carry_key_material() -> None:
+    """These messages surface in an operator report and in an AI context."""
+    secret = "MIIsupersecretkeymaterial"
+    with pytest.raises(DriveDiscoveryError) as failure:
+        GoogleDriveMediaService()._credentials(
+            _settings_with_credential(f"{PEM_BEGIN}\n{secret}\n{PEM_END}")
+        )
+
+    assert secret not in str(failure.value)
+
+
+def test_a_key_file_whose_newlines_were_pasted_literally_still_parses() -> None:
+    """The exact mangling that produces an invalid-control-character parse error.
+
+    A key file stores its PEM on one line with escaped newlines. Editors, shells
+    and dashboard fields convert those to real newlines, which is invalid JSON.
+    The key itself is intact, so it is read rather than refused.
+    """
+    payload, failure = _decode_service_account(_KEY_FILE.replace("\\n", "\n"))
+
+    assert failure == ""
+    assert isinstance(payload, dict)
+    assert payload["client_email"] == "drive@lilos-prod.iam.gserviceaccount.com"
+    assert payload["private_key"].startswith(PEM_BEGIN)
+
+
+def test_a_base64_encoded_key_file_is_accepted() -> None:
+    """The way an operator sidesteps newline mangling entirely."""
+    encoded = b64encode(_KEY_FILE.encode()).decode()
+    payload, failure = _decode_service_account(encoded)
+
+    assert failure == ""
+    assert isinstance(payload, dict)
+    assert payload["type"] == "service_account"
+
+
+def test_base64_wrapped_across_lines_is_accepted() -> None:
+    encoded = b64encode(_KEY_FILE.encode()).decode()
+    wrapped = "\n".join(encoded[index : index + 64] for index in range(0, len(encoded), 64))
+    payload, _ = _decode_service_account(wrapped)
+
+    assert isinstance(payload, dict)
+    assert payload["type"] == "service_account"
+
+
+def test_typographic_quotes_from_a_rich_text_paste_are_straightened() -> None:
+    payload, _ = _decode_service_account(
+        "{\u201ctype\u201d: \u201cservice_account\u201d, "
+        "\u201cclient_email\u201d: \u201ca@b.iam.gserviceaccount.com\u201d}"
+    )
+
+    assert isinstance(payload, dict)
+    assert payload["type"] == "service_account"
+
+
+def test_json_structure_is_never_altered_by_the_control_character_repair() -> None:
+    """The repair must only touch the inside of string literals."""
+    payload, _ = _decode_service_account('{"a": "line1\nline2", "b": {"c": ["d", "e"]}, "f": 12}')
+
+    assert payload == {"a": "line1\nline2", "b": {"c": ["d", "e"]}, "f": 12}
 
 
 def test_incomplete_drive_credential_names_the_missing_fields() -> None:

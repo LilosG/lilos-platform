@@ -9,6 +9,9 @@ from __future__ import annotations
 
 import json
 import re
+from base64 import b64decode
+from binascii import Error as BinasciiError
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -19,6 +22,9 @@ import httpx
 import jwt
 
 from apps.api.app.config import Settings
+
+_BASE64_PATTERN = re.compile(r"[A-Za-z0-9+/]+={0,2}")
+_SMART_QUOTES = str.maketrans({"\u201c": '"', "\u201d": '"', "\u2018": "'", "\u2019": "'"})
 
 DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.readonly"
 DRIVE_FILES_ENDPOINT = "https://www.googleapis.com/drive/v3/files"
@@ -62,6 +68,118 @@ class ProviderMediaPreflight:
     size_bytes: int
     width_pixels: int
     height_pixels: int
+
+
+def _credential_shape(raw: str) -> str:
+    """Describe a credential value without revealing any of it.
+
+    The parse position alone is not actionable: line 1 column 14 is the same
+    report whether the value is base64, a file path, or JSON whose private key
+    was pasted with literal newlines. These counts name the mangling, and none of
+    them is key material — only lengths, character classes and counts.
+    """
+    stripped = raw.strip()
+    if not stripped:
+        return "The value is empty."
+    leading = stripped[0]
+    kind = (
+        "starts with '{' so it looks like JSON"
+        if leading == "{"
+        else "starts with a PEM header, so it looks like a bare private key rather "
+        "than the key file"
+        if stripped.startswith("-----BEGIN")
+        else "looks like a filesystem path rather than the key contents"
+        if leading == "/"
+        else f"starts with {leading!r}"
+    )
+    return (
+        f"The value is {len(stripped)} characters, {kind}, and contains "
+        f"{stripped.count(chr(10))} real newlines, {stripped.count(chr(9))} tabs and "
+        f"{stripped.count(chr(92) + 'n')} escaped newline sequences."
+    )
+
+
+def _escape_control_characters_in_strings(candidate: str) -> str:
+    """Escape raw control characters that appear inside JSON string literals.
+
+    A service-account key file holds its PEM as a single line with \\n escapes.
+    Editors, shells and dashboard fields routinely convert those into real
+    newlines, which is invalid JSON — a control character inside a string — and is
+    the most common reason a key that looks right fails to parse. Only characters
+    inside string literals are touched, so JSON structure is never altered.
+    """
+    out: list[str] = []
+    in_string = False
+    escaped = False
+    replacements = {"\n": "\\n", "\r": "\\r", "\t": "\\t"}
+    for character in candidate:
+        if escaped:
+            out.append(character)
+            escaped = False
+            continue
+        if character == "\\":
+            out.append(character)
+            escaped = in_string
+            continue
+        if character == '"':
+            in_string = not in_string
+            out.append(character)
+            continue
+        if in_string and character in replacements:
+            out.append(replacements[character])
+            continue
+        out.append(character)
+    return "".join(out)
+
+
+def _decode_service_account(raw: str) -> tuple[object | None, str]:
+    """Read a service-account key that survived an environment variable.
+
+    Returns the parsed payload, or None plus a safe description of why not.
+    Three tolerated encodings, in order of directness: the key file as-is, the
+    same file base64-encoded (which is how an operator avoids newline mangling
+    entirely), and JSON whose string literals contain raw control characters.
+    Anything still unparseable is reported with the parser's own reason.
+    """
+    candidate = raw.strip()
+    # A dashboard or shell paste often arrives wrapped in quotes.
+    if len(candidate) >= 2 and candidate[0] == candidate[-1] and candidate[0] in "\"'":
+        candidate = candidate[1:-1]
+
+    first_error: json.JSONDecodeError | None = None
+    try:
+        return json.loads(candidate), ""
+    except json.JSONDecodeError as exc:
+        first_error = exc
+
+    # Base64, tolerating whitespace introduced by line wrapping.
+    compact = "".join(candidate.split())
+    if compact and len(compact) % 4 == 0 and _BASE64_PATTERN.fullmatch(compact):
+        try:
+            decoded = b64decode(compact, validate=True).decode("utf-8")
+        except (BinasciiError, UnicodeDecodeError):
+            decoded = ""
+        if decoded:
+            with suppress(json.JSONDecodeError):
+                return json.loads(decoded), ""
+
+    with suppress(json.JSONDecodeError):
+        return json.loads(_escape_control_characters_in_strings(candidate)), ""
+
+    # Curly quotes: a value pasted through a rich-text field or a chat client on
+    # macOS arrives with typographic quotes that JSON cannot read.
+    straightened = candidate.translate(_SMART_QUOTES)
+    if straightened != candidate:
+        with suppress(json.JSONDecodeError):
+            return json.loads(straightened), ""
+        with suppress(json.JSONDecodeError):
+            return json.loads(_escape_control_characters_in_strings(straightened)), ""
+
+    reason = (
+        f"The parser reported: {first_error.msg} at line {first_error.lineno}, "
+        f"column {first_error.colno}."
+    )
+    return None, f"{reason} {_credential_shape(raw)}"
 
 
 def _safe_oauth_reason(response: httpx.Response) -> str:
@@ -348,20 +466,15 @@ class GoogleDriveMediaService:
         raw = settings.google_drive_service_account_json
         if not raw:
             return None
-        candidate = raw.strip()
-        # A dashboard paste often arrives wrapped in quotes.
-        if len(candidate) >= 2 and candidate[0] == candidate[-1] and candidate[0] in "\"'":
-            candidate = candidate[1:-1]
-        try:
-            payload = json.loads(candidate)
-        except json.JSONDecodeError as exc:
+        payload, failure = _decode_service_account(raw)
+        if payload is None:
             raise DriveDiscoveryError(
                 "GBP_DRIVE_CREDENTIAL_MALFORMED",
-                "The Google Drive service-account credential is not valid JSON "
-                f"(at line {exc.lineno}, column {exc.colno}). Re-paste the key file "
-                "contents exactly as downloaded.",
+                "The Google Drive service-account credential could not be read. "
+                f"{failure} Paste the key file exactly as downloaded, or paste it "
+                "base64-encoded if the dashboard mangles newlines.",
                 retryable=False,
-            ) from exc
+            )
         if not isinstance(payload, dict):
             raise DriveDiscoveryError(
                 "GBP_DRIVE_CREDENTIAL_MALFORMED",
