@@ -30,6 +30,7 @@ export {
 } from "./boot";
 export {
   buildDataTable,
+  buildGroupedDataTable,
   cellText,
   cellBadge,
   cellMeta,
@@ -37,7 +38,21 @@ export {
   formatDate,
   relativeTime,
   type TableColumn,
+  type TableDisclosure,
+  type TableGroup,
+  type TableOptions,
 } from "./table";
+export {
+  periodComparisonCard,
+  periodComparisonGrid,
+  rankBadge,
+  rankTier,
+  healthSummary,
+  type ComparisonMetric,
+  type ComparisonPeriod,
+  type RankTier,
+  type SummaryItem,
+} from "./comparison";
 export {
   card,
   cardBody,

@@ -138,7 +138,7 @@ import "../styles/global.css";
         sourceFreshness,
         formatFreshness,
         formatDateRange,
-        buildGscDataTable,
+        searchPerformanceTable,
       } from "../lib/reporting";
       import { reportingTrendChart } from "../lib/reporting-chart";
       import { statusLabel, statusTone } from "../lib/status-language";
@@ -747,6 +747,9 @@ import "../styles/global.css";
               },
             ],
             opps.data,
+            {
+              disclosure: { initialRows: 10, noun: "opportunities" },
+            },
           ),
         );
       }
@@ -1233,34 +1236,25 @@ import "../styles/global.css";
             queriesSection.append(qHeader);
             const qBody = document.createElement("div");
             qBody.className = "ui-card__body";
-            const queryRows = data.top_queries.map((q) => ({
-              primary: q.query,
-              clicks: q.clicks,
-              impressions: q.impressions,
-              ctr: q.ctr !== null ? `${(q.ctr * 100).toFixed(1)}%` : "—",
-              position: q.position !== null ? q.position.toFixed(1) : "—",
-            }));
-            const qTable = buildGscDataTable(
-              ["Query", "Clicks", "Impressions", "CTR", "Position"],
-              queryRows.slice(0, 5),
+            /*
+             * The previous "View all" replaced the table's own children,
+             * destroying the control that produced it — expansion was one-way
+             * and could not be undone. The shared table discloses and collapses,
+             * and colours position by rank band.
+             */
+            qBody.append(
+              searchPerformanceTable(
+                "Query",
+                data.top_queries.map((q) => ({
+                  primary: q.query,
+                  clicks: q.clicks,
+                  impressions: q.impressions,
+                  ctr: q.ctr,
+                  position: q.position,
+                })),
+                "queries",
+              ),
             );
-            qBody.append(qTable);
-            if (data.top_queries.length > 5) {
-              const viewAll = document.createElement("button");
-              viewAll.type = "button";
-              viewAll.className =
-                "ui-button ui-button--secondary ui-button--sm";
-              viewAll.textContent = `View all ${data.top_queries.length} queries`;
-              viewAll.addEventListener("click", () => {
-                qBody.replaceChildren(
-                  buildGscDataTable(
-                    ["Query", "Clicks", "Impressions", "CTR", "Position"],
-                    queryRows,
-                  ),
-                );
-              });
-              qBody.append(viewAll);
-            }
             queriesSection.append(qBody);
             panel.append(queriesSection);
           }
@@ -1278,34 +1272,19 @@ import "../styles/global.css";
             pagesSection.append(pHeader);
             const pBody = document.createElement("div");
             pBody.className = "ui-card__body";
-            const pageRows = data.top_pages.map((page) => ({
-              primary: page.page,
-              clicks: page.clicks,
-              impressions: page.impressions,
-              ctr: page.ctr !== null ? `${(page.ctr * 100).toFixed(1)}%` : "—",
-              position: page.position !== null ? page.position.toFixed(1) : "—",
-            }));
-            const pTable = buildGscDataTable(
-              ["Page", "Clicks", "Impressions", "CTR", "Position"],
-              pageRows.slice(0, 5),
+            pBody.append(
+              searchPerformanceTable(
+                "Page",
+                data.top_pages.map((page) => ({
+                  primary: page.page,
+                  clicks: page.clicks,
+                  impressions: page.impressions,
+                  ctr: page.ctr,
+                  position: page.position,
+                })),
+                "pages",
+              ),
             );
-            pBody.append(pTable);
-            if (data.top_pages.length > 5) {
-              const viewAll = document.createElement("button");
-              viewAll.type = "button";
-              viewAll.className =
-                "ui-button ui-button--secondary ui-button--sm";
-              viewAll.textContent = `View all ${data.top_pages.length} pages`;
-              viewAll.addEventListener("click", () => {
-                pBody.replaceChildren(
-                  buildGscDataTable(
-                    ["Page", "Clicks", "Impressions", "CTR", "Position"],
-                    pageRows,
-                  ),
-                );
-              });
-              pBody.append(viewAll);
-            }
             pagesSection.append(pBody);
             panel.append(pagesSection);
           }

@@ -8,9 +8,15 @@
  *   formatDelta — human-readable delta formatting
  *   formatPercentDelta — safe percent change formatting
  *   performanceSummary — deterministic digest text
+ *   searchPerformanceTable — bounded, rank-coloured query/page table
  */
 
-import { formatTimestamp } from "./ui";
+import {
+  buildDataTable,
+  formatTimestamp,
+  rankBadge,
+  type TableColumn,
+} from "./ui";
 
 // ---------- Formatting helpers ----------
 
@@ -267,45 +273,62 @@ export function formatDateRange(start: string, end: string): string {
 
 // ---------- Search Console data table ----------
 
-export interface GscTableRow {
+export interface SearchPerformanceRow {
   primary: string;
   clicks: number | null;
   impressions: number | null;
-  ctr: string;
-  position: string;
+  ctr: number | null;
+  position: number | null;
 }
 
-function fmtCount(v: number | null): string {
-  return v !== null ? v.toLocaleString() : "—";
-}
+/**
+ * Search Console rows as a bounded, rank-coloured table.
+ *
+ * Both Insights and SEO rendered this themselves, and both got it wrong in the
+ * same way: the table was hard-truncated to five rows, and the remainder was
+ * either on another page or behind a one-way "View all" that destroyed its own
+ * control when clicked. Data the browser already holds should not require a
+ * navigation to read. The head leads, the rest discloses in place and collapses
+ * again, and position is coloured by rank band so a long table can be scanned
+ * for wins and gaps rather than read number by number.
+ */
+export function searchPerformanceTable(
+  primaryHeader: string,
+  rows: SearchPerformanceRow[],
+  noun: string,
+  initialRows = 5,
+): HTMLElement {
+  const columns: TableColumn<SearchPerformanceRow>[] = [
+    { key: "primary", header: primaryHeader, render: (row) => row.primary },
+    {
+      key: "clicks",
+      header: "Clicks",
+      format: { unit: "count" },
+      render: (row) => row.clicks,
+    },
+    {
+      key: "impressions",
+      header: "Impressions",
+      format: { unit: "count" },
+      render: (row) => row.impressions,
+    },
+    {
+      key: "ctr",
+      header: "CTR",
+      format: { unit: "percentage", sourceScale: "ratio" },
+      render: (row) => row.ctr,
+    },
+    {
+      key: "position",
+      header: "Position",
+      width: "content",
+      render: (row) => rankBadge(row.position),
+    },
+  ];
 
-export function buildGscDataTable(
-  headers: string[],
-  rows: GscTableRow[],
-): HTMLDivElement {
-  const table = document.createElement("div");
-  table.className = "data-table";
-  const t = document.createElement("table");
-  const thead = document.createElement("thead");
-  thead.innerHTML = `<tr>${headers.map((h) => `<th>${h}</th>`).join("")}</tr>`;
-  t.append(thead);
-  const tbody = document.createElement("tbody");
-  for (const row of rows) {
-    const tr = document.createElement("tr");
-    tr.innerHTML = `<td class="cell-meta"><span class="cell-meta__primary">${escHtml(row.primary)}</span></td>
-      <td>${fmtCount(row.clicks)}</td>
-      <td>${fmtCount(row.impressions)}</td>
-      <td>${row.ctr}</td>
-      <td>${row.position}</td>`;
-    tbody.append(tr);
-  }
-  t.append(tbody);
-  table.append(t);
-  return table;
-}
-
-function escHtml(text: string): string {
-  const div = document.createElement("div");
-  div.textContent = text;
-  return div.innerHTML;
+  return buildDataTable(columns, rows, {
+    disclosure: { initialRows, noun },
+    emptyHeading: `No ${noun} reported`,
+    emptyDescription: "Search Console returned no rows for this period yet.",
+  });
 }

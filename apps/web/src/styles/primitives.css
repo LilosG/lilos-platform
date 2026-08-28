@@ -1334,3 +1334,265 @@
     animation: none;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   Report register: grouped tables, disclosure, period comparison, rank bands.
+
+   These carry the client-facing dashboard's structure into the platform. The
+   token retheme changed the platform's colour and type; these change what the
+   page actually does with them — which period leads, which rank is good, and
+   how a long list stays a fixed height as history accumulates.
+   --------------------------------------------------------------------------- */
+
+.ui-table__group-row th {
+  padding: var(--space-3) var(--space-4);
+  border-top: var(--border-width) solid var(--color-table-row-border);
+  background: var(--color-surface-sunken);
+  color: var(--color-text-primary);
+  font-size: var(--type-body-sm-size);
+  font-weight: 600;
+  letter-spacing: normal;
+  text-transform: none;
+}
+.ui-table--grouped tbody:first-of-type .ui-table__group-row th {
+  border-top: 0;
+}
+.ui-table__group-label {
+  margin-right: var(--space-2);
+}
+.ui-table__group-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.5rem;
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-raised);
+  color: var(--color-text-secondary);
+  font-size: var(--type-caption-size);
+  font-variant-numeric: var(--type-numeric-variant);
+  font-weight: 600;
+}
+.ui-table__group-caption {
+  display: block;
+  margin-top: var(--space-1);
+  color: var(--color-text-secondary);
+  font-size: var(--type-caption-size);
+  font-weight: 400;
+}
+.ui-table__group-footer td {
+  padding: 0;
+}
+.ui-table__group-footer .ui-table-frame__footer {
+  justify-content: flex-start;
+  border-top: 0;
+  padding-block: var(--space-2);
+}
+/* Disclosure reads as a continuation of the rows above it, so it aligns with
+   the first column rather than drifting to the right edge like a footer action.
+   The grouped and flat tables previously disagreed about this. */
+.ui-table__disclosure {
+  justify-content: flex-start;
+  background: var(--color-surface-raised);
+}
+
+/* Dividers are a ring around each item, meeting in the 1px grid gap.
+   Two simpler approaches both fail on a real summary: a per-item left border
+   leaves a rule with nothing to its left on every wrapped row, and colouring
+   the container so the gap shows through turns a trailing empty grid cell into
+   a solid block of divider colour. A ring per item is independent of both
+   column count and item count. */
+.ui-summary-strip {
+  display: grid;
+  grid-template-columns: repeat(
+    auto-fit,
+    minmax(min(100%, var(--layout-card-min-sm)), 1fr)
+  );
+  gap: var(--border-width);
+  overflow: hidden;
+  border-radius: var(--radius-md);
+  background: var(--color-surface-raised);
+  box-shadow: var(--shadow-raised);
+}
+.ui-summary-strip__item {
+  display: grid;
+  align-content: start;
+  gap: var(--space-1);
+  padding: var(--space-5) var(--space-6);
+  background: var(--color-surface-raised);
+  box-shadow: 0 0 0 var(--border-width) var(--color-border-subtle);
+}
+.ui-summary-strip__label {
+  color: var(--color-text-secondary);
+  font-size: var(--type-overline-size);
+  font-weight: var(--type-overline-weight);
+  letter-spacing: var(--type-overline-tracking);
+  line-height: var(--type-overline-line);
+  text-transform: uppercase;
+}
+.ui-summary-strip__value {
+  color: var(--color-text-primary);
+  font-family: var(--type-figure-family);
+  font-size: var(--type-figure-sm-size);
+  font-weight: var(--type-figure-weight);
+  letter-spacing: var(--type-figure-tracking);
+  line-height: var(--type-figure-line);
+  font-variant-numeric: var(--type-numeric-variant);
+}
+.ui-summary-strip__meta {
+  color: var(--color-text-secondary);
+  font-size: var(--type-caption-size);
+  line-height: var(--type-caption-line);
+}
+.ui-summary-strip__item[data-tone="attention"] .ui-summary-strip__value {
+  color: var(--color-warning-foreground);
+}
+.ui-summary-strip__item[data-tone="critical"] .ui-summary-strip__value {
+  color: var(--color-danger-foreground);
+}
+
+.ui-comparison-grid {
+  display: grid;
+  grid-template-columns: repeat(
+    auto-fit,
+    minmax(min(100%, var(--layout-card-min-md)), 1fr)
+  );
+  align-items: stretch;
+  gap: var(--space-4);
+}
+.ui-comparison-card {
+  border: 0;
+}
+.ui-comparison-card__body {
+  display: grid;
+  align-content: start;
+  gap: var(--space-2);
+}
+.ui-comparison-card__caption {
+  color: var(--color-text-secondary);
+  font-size: var(--type-overline-size);
+  font-weight: var(--type-overline-weight);
+  letter-spacing: var(--type-overline-tracking);
+  line-height: var(--type-overline-line);
+  text-transform: uppercase;
+}
+.ui-comparison-card__label {
+  color: var(--color-text-secondary);
+  font-size: var(--type-body-sm-size);
+}
+.ui-comparison-card__lead {
+  display: grid;
+  gap: var(--space-1);
+  margin-top: var(--space-2);
+}
+.ui-comparison-card__lead-value {
+  color: var(--color-text-primary);
+  font-family: var(--type-figure-family);
+  font-size: var(--type-figure-size);
+  font-weight: var(--type-figure-weight);
+  letter-spacing: var(--type-figure-tracking);
+  line-height: var(--type-figure-line);
+  font-variant-numeric: var(--type-numeric-variant);
+}
+.ui-comparison-card__lead-label {
+  color: var(--color-text-secondary);
+  font-size: var(--type-caption-size);
+  letter-spacing: var(--type-overline-tracking);
+  text-transform: uppercase;
+}
+.ui-comparison-card__lead-delta {
+  font-size: var(--type-caption-size);
+  font-weight: 600;
+}
+.ui-comparison-card__metrics {
+  display: grid;
+  margin-top: var(--space-3);
+}
+.ui-comparison-card__metric {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: baseline;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+  border-top: var(--border-width) solid var(--color-border-subtle);
+}
+.ui-comparison-card__metric-label {
+  color: var(--color-text-secondary);
+  font-size: var(--type-body-sm-size);
+}
+.ui-comparison-card__metric-value {
+  color: var(--color-text-primary);
+  font-size: var(--type-body-sm-size);
+  font-variant-numeric: var(--type-numeric-variant);
+  font-weight: 600;
+}
+.ui-comparison-card__metric-delta {
+  font-size: var(--type-caption-size);
+  font-variant-numeric: var(--type-numeric-variant);
+  font-weight: 600;
+}
+
+/* The inverted current-period card. One dark card in a row of light ones is
+   what tells the eye where "now" is without a legend. */
+.ui-comparison-card--current {
+  background: var(--color-surface-inverse);
+}
+.ui-comparison-card--current .ui-comparison-card__caption,
+.ui-comparison-card--current .ui-comparison-card__label,
+.ui-comparison-card--current .ui-comparison-card__lead-label,
+.ui-comparison-card--current .ui-comparison-card__metric-label {
+  color: var(--color-text-on-inverse-secondary);
+}
+.ui-comparison-card--current .ui-comparison-card__lead-value,
+.ui-comparison-card--current .ui-comparison-card__metric-value {
+  color: var(--color-text-on-inverse-primary);
+}
+.ui-comparison-card--current .ui-comparison-card__metric {
+  border-top-color: var(--color-border-inverse);
+}
+/* Delta foregrounds are tuned for a light card and fail contrast on the
+   inverted one, so the inverted card states direction in its own palette. */
+.ui-comparison-card--current .ui-comparison-card__lead-delta,
+.ui-comparison-card--current .ui-comparison-card__metric-delta {
+  color: var(--color-text-on-inverse-primary);
+}
+.ui-comparison-card--current .delta--positive {
+  color: var(--color-brand-accent);
+}
+
+.ui-rank-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.75rem;
+  padding: var(--space-1) var(--space-2);
+  border: var(--border-width) solid transparent;
+  border-radius: var(--radius-sm);
+  font-size: var(--type-body-sm-size);
+  font-variant-numeric: var(--type-numeric-variant);
+  font-weight: 600;
+}
+.ui-rank-badge--top {
+  border-color: var(--color-rank-top-border);
+  background: var(--color-rank-top-background);
+  color: var(--color-rank-top-foreground);
+}
+.ui-rank-badge--page-one {
+  border-color: var(--color-rank-page-one-border);
+  background: var(--color-rank-page-one-background);
+  color: var(--color-rank-page-one-foreground);
+}
+.ui-rank-badge--reachable {
+  border-color: var(--color-rank-reachable-border);
+  background: var(--color-rank-reachable-background);
+  color: var(--color-rank-reachable-foreground);
+}
+.ui-rank-badge--distant {
+  border-color: var(--color-rank-distant-border);
+  background: var(--color-rank-distant-background);
+  color: var(--color-rank-distant-foreground);
+}
+.ui-rank-badge--unranked {
+  background: transparent;
+  color: var(--color-text-tertiary);
+}

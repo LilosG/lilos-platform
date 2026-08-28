@@ -24,6 +24,20 @@ function tokenValue(name: string): string {
   return match[1].trim();
 }
 
+/**
+ * Follows a token through any number of var() indirections to the literal hex.
+ * Semantic roles are defined in terms of palette entries, so a contrast check on
+ * a semantic role has to resolve the chain rather than measure the string
+ * "var(--palette-sage-700)".
+ */
+function resolve(name: string, depth = 0): string {
+  if (depth > 10) throw new Error(`token ${name} does not resolve to a value`);
+  const value = tokenValue(name);
+  const indirection = value.match(/^var\(\s*(--[\w-]+)\s*\)$/);
+  if (indirection) return resolve(indirection[1], depth + 1);
+  return value.replace(/\s/g, "");
+}
+
 function channel(value: number): number {
   const c = value / 255;
   return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
@@ -98,6 +112,46 @@ describe("design tokens", () => {
     expect(tokenValue("--palette-chart-2")).toBe(
       tokenValue("--palette-gold-400"),
     );
+  });
+
+  it("keeps every rank band legible on its own background", () => {
+    // A rank badge is coloured by band, so each band carries its own
+    // foreground/background pair and each pair has to clear AA on its own.
+    for (const band of ["top", "page-one", "reachable", "distant"]) {
+      const foreground = resolve(`--color-rank-${band}-foreground`);
+      const background = resolve(`--color-rank-${band}-background`);
+      expect(
+        contrast(foreground, background),
+        `rank band ${band} should clear AA`,
+      ).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
+  it("keeps the rank bands distinguishable from one another", () => {
+    // Colour is doing the work of communicating the band, so two bands that
+    // resolve to the same background would silently collapse into one.
+    const backgrounds = ["top", "page-one", "reachable", "distant"].map(
+      (band) => resolve(`--color-rank-${band}-background`),
+    );
+    expect(new Set(backgrounds).size).toBe(backgrounds.length);
+  });
+
+  it("keeps the inverted current-period card legible", () => {
+    // The comparison row inverts the current period, so its text roles are
+    // measured against the inverse surface rather than the card.
+    const surface = resolve("--color-surface-inverse");
+
+    expect(
+      contrast(resolve("--color-text-on-inverse-primary"), surface),
+    ).toBeGreaterThanOrEqual(4.5);
+    expect(
+      contrast(resolve("--color-text-on-inverse-secondary"), surface),
+    ).toBeGreaterThanOrEqual(4.5);
+    // Positive deltas on the inverted card use the brand accent, not the
+    // light-card delta foreground, which fails against a dark ground.
+    expect(
+      contrast(resolve("--color-brand-accent"), surface),
+    ).toBeGreaterThanOrEqual(4.5);
   });
 
   it("sizes display figures well above body text", () => {

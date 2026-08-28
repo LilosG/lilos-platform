@@ -104,18 +104,21 @@ import "../styles/global.css";
         emptyState,
         errorAlert,
         describeFailure,
+        periodComparisonGrid,
         type BootRegions,
       } from "../lib/ui";
       import {
         reportingPeriodSelector,
-        comparisonKPI,
         toTimeSeriesPoints,
         sourceFreshness,
         performanceSummary,
         formatDateRange,
-        buildGscDataTable,
+        searchPerformanceTable,
       } from "../lib/reporting";
-      import { reportingTrendChart } from "../lib/reporting-chart";
+      import {
+        reportingOverlayChart,
+        reportingTrendChart,
+      } from "../lib/reporting-chart";
 
       let organizationId = "";
       let currentPeriodDays = 28;
@@ -236,26 +239,52 @@ import "../styles/global.css";
           "ga4.conversions": "Conversions",
         };
 
-        const kpiGrid = document.createElement("div");
-        kpiGrid.className = "ui-card-grid ui-card-grid--sm";
-        for (const key of kpiOrder) {
-          const kpi = data.metrics[key];
-          if (kpi) {
-            kpiGrid.append(
-              comparisonKPI(
-                kpiLabels[key] || kpi.label,
-                kpi.current,
-                kpi.previous,
-                kpi.delta,
-                kpi.percent_delta,
-                undefined,
-                key,
-                `${currentPeriodDays} days`,
-              ),
-            );
-          }
-        }
-        panel.append(kpiGrid);
+        /*
+         * Periods side by side rather than one card per metric.
+         *
+         * Four cards each showing a current value and a delta make the reader
+         * assemble the comparison themselves. Two cards — this period against
+         * the last, current inverted — state it directly, which is what the
+         * client-facing dashboard does and why it reads as a report.
+         */
+        panel.append(
+          periodComparisonGrid([
+            {
+              label: data.range
+                ? formatDateRange(data.range.start, data.range.end)
+                : `Last ${currentPeriodDays} days`,
+              caption: "Current period",
+              current: true,
+              metrics: kpiOrder
+                .filter((key) => data.metrics[key])
+                .map((key) => ({
+                  label: kpiLabels[key] || data.metrics[key].label,
+                  value: data.metrics[key].current,
+                  delta: data.metrics[key].delta,
+                  format: {
+                    unit: "count" as const,
+                    outcome: "higher-is-better" as const,
+                  },
+                })),
+            },
+            {
+              label: data.comparison_range
+                ? formatDateRange(
+                    data.comparison_range.start,
+                    data.comparison_range.end,
+                  )
+                : `Prior ${currentPeriodDays} days`,
+              caption: "Prior period",
+              metrics: kpiOrder
+                .filter((key) => data.metrics[key])
+                .map((key) => ({
+                  label: kpiLabels[key] || data.metrics[key].label,
+                  value: data.metrics[key].previous,
+                  format: { unit: "count" as const },
+                })),
+            },
+          ]),
+        );
 
         // Daily trend chart
         if (data.series && data.series.length > 0) {
@@ -348,38 +377,62 @@ import "../styles/global.css";
           ctr: "CTR",
           position: "Avg position",
         };
-        const gscFormatters: Record<string, (v: number | null) => string> = {
-          clicks: (v) => (v !== null ? v.toLocaleString() : "—"),
-          impressions: (v) => (v !== null ? v.toLocaleString() : "—"),
-          ctr: (v) => (v !== null ? `${(v * 100).toFixed(1)}%` : "No data"),
-          position: (v) => (v !== null ? v.toFixed(1) : "No data"),
+        /*
+         * Search metrics carry their own units, and one of them inverts: a
+         * falling average position is an improvement. The shared metric formats
+         * encode that, so a -2.1 position change reads as positive here rather
+         * than being coloured as a decline.
+         */
+        const gscFormats: Record<
+          string,
+          import("../lib/ui").ComparisonMetric["format"]
+        > = {
+          clicks: { unit: "count", outcome: "higher-is-better" },
+          impressions: { unit: "count", outcome: "higher-is-better" },
+          ctr: {
+            unit: "percentage",
+            sourceScale: "ratio",
+            outcome: "higher-is-better",
+          },
+          position: {
+            unit: "position",
+            precision: 1,
+            outcome: "lower-is-better",
+          },
         };
 
-        const gscGrid = document.createElement("div");
-        gscGrid.className = "ui-card-grid ui-card-grid--sm";
-        for (const key of gscOrder) {
-          const metric = data.metrics[key];
-          if (metric) {
-            const card = comparisonKPI(
-              gscLabels[key] || key,
-              metric.current as number | null,
-              metric.previous as number | null,
-              metric.delta as number | null,
-              metric.percent_delta as number | null,
-              undefined,
-              key,
-              `${currentPeriodDays} days`,
-            );
-            // Override value formatting for position/CTR
-            const valueEl = card.querySelector(".ui-metric-card__value");
-            if (valueEl) {
-              valueEl.textContent =
-                gscFormatters[key]?.(metric.current as number | null) || "—";
-            }
-            gscGrid.append(card);
-          }
-        }
-        panel.append(gscGrid);
+        const gscPresent = gscOrder.filter((key) => data.metrics[key]);
+        panel.append(
+          periodComparisonGrid([
+            {
+              label: data.range
+                ? formatDateRange(data.range.start, data.range.end)
+                : `Last ${currentPeriodDays} days`,
+              caption: "Current period",
+              current: true,
+              metrics: gscPresent.map((key) => ({
+                label: gscLabels[key] || key,
+                value: data.metrics[key].current as number | null,
+                delta: data.metrics[key].delta as number | null,
+                format: gscFormats[key],
+              })),
+            },
+            {
+              label: data.comparison_range
+                ? formatDateRange(
+                    data.comparison_range.start,
+                    data.comparison_range.end,
+                  )
+                : `Prior ${currentPeriodDays} days`,
+              caption: "Prior period",
+              metrics: gscPresent.map((key) => ({
+                label: gscLabels[key] || key,
+                value: data.metrics[key].previous as number | null,
+                format: gscFormats[key],
+              })),
+            },
+          ]),
+        );
 
         // Daily series chart
         if (data.series && data.series.length > 0) {
@@ -395,25 +448,38 @@ import "../styles/global.css";
           chartSection.append(chartHeader);
           const chartBody = document.createElement("div");
           chartBody.className = "ui-card__body";
+          /*
+           * Impressions and clicks overlaid, each on its own axis.
+           *
+           * Behind a switcher these two could only be compared from memory, and
+           * on a shared axis clicks would flatten onto the baseline — they
+           * differ by an order of magnitude. Overlaid with independent scales,
+           * the question an operator actually asks ("did clicks follow
+           * impressions?") is answered by looking once.
+           */
+          chartBody.append(
+            reportingOverlayChart(
+              {
+                key: "impressions",
+                label: "Impressions",
+                points: data.series.map((item) => ({
+                  date: item.date,
+                  value: item.impressions ?? null,
+                })),
+              },
+              {
+                key: "clicks",
+                label: "Clicks",
+                points: data.series.map((item) => ({
+                  date: item.date,
+                  value: item.clicks ?? null,
+                })),
+              },
+            ),
+          );
           chartBody.append(
             reportingTrendChart(
               [
-                {
-                  key: "clicks",
-                  label: "Clicks",
-                  points: data.series.map((item) => ({
-                    date: item.date,
-                    value: item.clicks ?? null,
-                  })),
-                },
-                {
-                  key: "impressions",
-                  label: "Impressions",
-                  points: data.series.map((item) => ({
-                    date: item.date,
-                    value: item.impressions ?? null,
-                  })),
-                },
                 {
                   key: "ctr",
                   label: "CTR",
@@ -433,7 +499,10 @@ import "../styles/global.css";
                   formatValue: (value) => value.toFixed(1),
                 },
               ],
-              "clicks",
+              // Rate metrics keep the switcher: CTR and average position share
+              // neither a unit nor a direction, so overlaying them would invite
+              // exactly the misreading the overlay above exists to prevent.
+              "ctr",
             ),
           );
           chartSection.append(chartBody);
@@ -453,21 +522,23 @@ import "../styles/global.css";
           queriesSection.append(qHeader);
           const qBody = document.createElement("div");
           qBody.className = "ui-card__body";
-          const qTable = buildGscDataTable(
-            ["Query", "Clicks", "Impressions", "CTR", "Position"],
-            data.top_queries.slice(0, 5).map((q) => ({
-              primary: q.query,
-              clicks: q.clicks,
-              impressions: q.impressions,
-              ctr: `${(q.ctr * 100).toFixed(1)}%`,
-              position: q.position.toFixed(1),
-            })),
+          qBody.append(
+            searchPerformanceTable(
+              "Query",
+              data.top_queries.map((q) => ({
+                primary: q.query,
+                clicks: q.clicks,
+                impressions: q.impressions,
+                ctr: q.ctr,
+                position: q.position,
+              })),
+              "queries",
+            ),
           );
-          qBody.append(qTable);
           const viewAll = document.createElement("a");
           viewAll.className = "ui-button ui-button--ghost ui-button--sm";
           viewAll.href = "/seo";
-          viewAll.textContent = "View all queries in SEO";
+          viewAll.textContent = "Work these queries in SEO";
           qBody.append(viewAll);
           queriesSection.append(qBody);
           panel.append(queriesSection);
@@ -487,21 +558,22 @@ import "../styles/global.css";
           const body = document.createElement("div");
           body.className = "ui-card__body";
           body.append(
-            buildGscDataTable(
-              ["Page", "Clicks", "Impressions", "CTR", "Position"],
-              data.top_pages.slice(0, 5).map((page) => ({
+            searchPerformanceTable(
+              "Page",
+              data.top_pages.map((page) => ({
                 primary: page.page,
                 clicks: page.clicks,
                 impressions: page.impressions,
-                ctr: `${(page.ctr * 100).toFixed(1)}%`,
-                position: page.position.toFixed(1),
+                ctr: page.ctr,
+                position: page.position,
               })),
+              "pages",
             ),
           );
           const viewAll = document.createElement("a");
           viewAll.className = "ui-button ui-button--ghost ui-button--sm";
           viewAll.href = "/seo";
-          viewAll.textContent = "View all pages in SEO";
+          viewAll.textContent = "Work these pages in SEO";
           body.append(viewAll);
           pagesSection.append(header, body);
           panel.append(pagesSection);

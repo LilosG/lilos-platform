@@ -1,6 +1,5 @@
 ---
 import AppShell from "../components/AppShell.astro";
-import CardGrid from "../lib/ui/CardGrid.astro";
 import EmptyState from "../lib/ui/EmptyState.astro";
 import Notice from "../lib/ui/Notice.astro";
 import PageHeader from "../lib/ui/PageHeader.astro";
@@ -46,6 +45,24 @@ import "../styles/automations.css";
           description="Run, schedule, pause, resume, and inspect governed recurring work."
         />
 
+        <Region id="automation-action-status" live="polite" />
+
+        {
+          /*
+           * Health leads the page.
+           *
+           * This summary used to sit below the agent run history, which renders
+           * every run ever executed — on a real workspace that put the answer to
+           * "are my automations working?" roughly ten screens down. The question
+           * the page exists to answer is now the first thing on it.
+           */
+        }
+        <PageSection eyebrow="Health" title="Automation summary">
+          <Region id="automation-metrics">
+            <Skeleton lines={2} label="Loading automation health" />
+          </Region>
+        </PageSection>
+
         <Notice title="Execution scope">
           <div class="ui-field">
             <label class="ui-field__label" for="automation-location-select"
@@ -60,8 +77,6 @@ import "../styles/automations.css";
           </div>
         </Notice>
 
-        <Region id="automation-action-status" live="polite" />
-
         <PageSection
           eyebrow="Agents"
           title="Governed Hermes work"
@@ -75,10 +90,6 @@ import "../styles/automations.css";
             <Skeleton lines={3} label="Loading agent runs" />
           </Region>
           <Region id="agent-run-detail" live="polite" />
-        </PageSection>
-
-        <PageSection eyebrow="Health" title="Automation summary">
-          <CardGrid id="automation-metrics" minimum="sm" />
         </PageSection>
 
         <PageSection
@@ -116,8 +127,9 @@ import "../styles/automations.css";
         populateSwitcher,
         setActiveOrganization,
         buildDataTable,
+        buildGroupedDataTable,
         cellMeta,
-        metricCard,
+        healthSummary,
         statusBadge,
         emptyState,
         errorAlert,
@@ -713,51 +725,79 @@ import "../styles/automations.css";
           );
           return;
         }
+        /*
+         * Grouped by agent, bounded per agent.
+         *
+         * A flat reverse-chronological list of every run cannot answer "is the
+         * GBP agent healthy" — the reader has to scan the whole table and hold
+         * counts in their head. Grouping puts each agent's own history under its
+         * own header with its own count and latest state, and bounding each
+         * group keeps the page a fixed height however much history accrues.
+         *
+         * Skill and Model leave the row: skill is the group, and model is
+         * identical for every run under one agent, so as a column it repeated
+         * the same string down the whole table.
+         */
+        const columns = [
+          {
+            key: "status",
+            header: "Status",
+            render: (run: AgentRunSummary) =>
+              statusBadge(statusTone(run.status), statusLabel(run.status)),
+          },
+          {
+            key: "started",
+            header: "Started",
+            render: (run: AgentRunSummary) => {
+              const at = run.started_at ?? run.created_at;
+              const ago = elapsed(at);
+              return ago ? `${ago} · ${formatTime(at)}` : formatTime(at);
+            },
+          },
+          {
+            key: "inspect",
+            header: "Inspect",
+            width: "content" as const,
+            render: (run: AgentRunSummary) =>
+              actionButton("Open run", async () => {
+                pendingAgentSelection = null;
+                selectedAgentRunId = run.id;
+                const result = await getAgentRun(activeOrgId, run.id);
+                if (result.kind === "ok") renderAgentDetail(result.data);
+                else {
+                  setActionMessage(describeFailure(result, "Agent run"), true);
+                }
+              }),
+          },
+        ];
+
+        const bySkill = new Map<string, AgentRunSummary[]>();
+        for (const run of items) {
+          const bucket = bySkill.get(run.skill_key);
+          if (bucket) bucket.push(run);
+          else bySkill.set(run.skill_key, [run]);
+        }
+
+        const groups = [...bySkill.entries()].map(([skillKey, runs]) => {
+          const active = runs.filter((run) => agentRunIsActive(run));
+          const latest = runs[0]?.started_at ?? runs[0]?.created_at ?? null;
+          const model = runs.find((run) => run.model)?.model;
+          const caption = [
+            latest ? `Last run ${elapsed(latest) || formatTime(latest)}` : null,
+            active.length ? `${active.length} running` : null,
+            model,
+          ]
+            .filter(Boolean)
+            .join(" · ");
+          return { key: skillKey, label: skillKey, caption, rows: runs };
+        });
+
         region.append(
-          buildDataTable(
-            [
-              {
-                key: "skill",
-                header: "Skill",
-                render: (run: AgentRunSummary) => run.skill_key,
-              },
-              {
-                key: "status",
-                header: "Status",
-                render: (run: AgentRunSummary) =>
-                  statusBadge(statusTone(run.status), statusLabel(run.status)),
-              },
-              {
-                key: "model",
-                header: "Model",
-                render: (run: AgentRunSummary) => run.model ?? "Unavailable",
-              },
-              {
-                key: "started",
-                header: "Started",
-                render: (run: AgentRunSummary) =>
-                  formatTime(run.started_at ?? run.created_at),
-              },
-              {
-                key: "inspect",
-                header: "Inspect",
-                render: (run: AgentRunSummary) =>
-                  actionButton("Open run", async () => {
-                    pendingAgentSelection = null;
-                    selectedAgentRunId = run.id;
-                    const result = await getAgentRun(activeOrgId, run.id);
-                    if (result.kind === "ok") renderAgentDetail(result.data);
-                    else {
-                      setActionMessage(
-                        describeFailure(result, "Agent run"),
-                        true,
-                      );
-                    }
-                  }),
-              },
-            ],
-            items,
-          ),
+          buildGroupedDataTable(columns, groups, {
+            disclosure: { initialRows: 5, noun: "runs" },
+            emptyHeading: "No agent runs",
+            emptyDescription: "Start governed agent work above.",
+          }),
         );
       }
 
@@ -1069,34 +1109,59 @@ import "../styles/automations.css";
             "waiting_approval",
           ].includes(run.status),
         ).length;
+        /*
+         * Tone escalates only on the counts that mean something is wrong. An
+         * overdue schedule or an unresolved failure is an operational fault and
+         * is coloured as one; "running now" is merely notable. Rendering all
+         * five at identical weight is what made the operator read every number
+         * to discover that none of them needed action.
+         */
         panel.append(
-          metricCard(
-            "Available automations",
-            catalog && catalog.length > 0 ? String(catalog.length) : "No data",
-            catalog ? "Governed workflow catalog" : "Catalog unavailable",
-          ),
-          metricCard(
-            "Active schedules",
-            schedules ? String(active ?? 0) : "No data",
-            schedules ? "Recurring work" : "Schedules unavailable",
-          ),
-          metricCard(
-            "Overdue schedules",
-            schedules ? String(overdue ?? 0) : "No data",
-            overdue ? "Scheduler attention required" : "Scheduler current",
-          ),
-          metricCard(
-            "Running now",
-            runs ? String(running ?? 0) : "No data",
-            runs ? "In progress or queued" : "Run history unavailable",
-          ),
-          metricCard(
-            "Needs attention",
-            runs ? String(failed ?? 0) : "No data",
-            runs
-              ? "Latest unresolved workflow failures"
-              : "Run history unavailable",
-          ),
+          healthSummary([
+            {
+              label: "Needs attention",
+              value: runs ? (failed ?? 0) : null,
+              format: { unit: "count" },
+              tone: failed ? "critical" : "neutral",
+              meta: runs
+                ? failed
+                  ? "Unresolved workflow failures"
+                  : "No unresolved failures"
+                : "Run history unavailable",
+            },
+            {
+              label: "Overdue schedules",
+              value: schedules ? (overdue ?? 0) : null,
+              format: { unit: "count" },
+              tone: overdue ? "critical" : "neutral",
+              meta: schedules
+                ? overdue
+                  ? "Scheduler attention required"
+                  : "Scheduler current"
+                : "Schedules unavailable",
+            },
+            {
+              label: "Running now",
+              value: runs ? (running ?? 0) : null,
+              format: { unit: "count" },
+              tone: running ? "attention" : "neutral",
+              meta: runs ? "In progress or queued" : "Run history unavailable",
+            },
+            {
+              label: "Active schedules",
+              value: schedules ? (active ?? 0) : null,
+              format: { unit: "count" },
+              meta: schedules ? "Recurring work" : "Schedules unavailable",
+            },
+            {
+              label: "Available automations",
+              value: catalog && catalog.length > 0 ? catalog.length : null,
+              format: { unit: "count" },
+              meta: catalog
+                ? "Governed workflow catalog"
+                : "Catalog unavailable",
+            },
+          ]),
         );
       }
 
@@ -1264,6 +1329,11 @@ import "../styles/automations.css";
               },
             ],
             items,
+            {
+              // Recent runs is a chronological feed, so it stays flat — but it
+              // is still bounded, because the useful part of a feed is its head.
+              disclosure: { initialRows: 8, noun: "runs" },
+            },
           ),
         );
       }

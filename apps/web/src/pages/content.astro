@@ -659,6 +659,11 @@ import "../styles/global.css";
               },
             ],
             visibleItems,
+            {
+              // Content items accumulate indefinitely; the head is what the
+              // editor is working on, so the rest discloses in place.
+              disclosure: { initialRows: 10, noun: "items" },
+            },
           ),
         );
       }

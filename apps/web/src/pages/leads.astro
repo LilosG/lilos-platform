@@ -538,6 +538,11 @@ import "../styles/global.css";
               },
             ],
             rows,
+            {
+              // Speed-to-lead is judged on the newest leads; older ones stay
+              // one click away rather than pushing the page open.
+              disclosure: { initialRows: 10, noun: "leads" },
+            },
           ),
         );
       }

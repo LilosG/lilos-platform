@@ -2137,6 +2137,37 @@ details {
   border-color: var(--green);
   color: var(--palette-neutral-0);
 }
+/* Overlay charts carry a shared legend instead of a switcher: both series are
+   drawn at once, so the control that used to choose between them is replaced by
+   a key that says which line is which. */
+.reporting-trend__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  margin-bottom: var(--space-2);
+}
+.reporting-trend__legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-text-secondary);
+  font-size: var(--type-caption-size);
+  font-weight: 600;
+  letter-spacing: var(--type-overline-tracking);
+  text-transform: uppercase;
+}
+.reporting-trend__legend-swatch {
+  display: inline-block;
+  width: 0.75rem;
+  height: 0.1875rem;
+  border-radius: var(--radius-full);
+}
+.reporting-trend--overlay + .reporting-trend {
+  margin-top: var(--space-5);
+  padding-top: var(--space-4);
+  border-top: var(--border-width) solid var(--color-border-subtle);
+}
+
 .reporting-trend__visual {
   height: var(--chart-plot-height);
   margin-inline: calc(-1 * var(--space-4));

@@ -208,6 +208,135 @@ export function themedLineDataset(
   };
 }
 
+/**
+ * A line for an overlay chart: no fill, so two series can be read together.
+ *
+ * The single-series dataset fills to the baseline, which is right when one line
+ * owns the plot. Two filled areas stacked on each other are unreadable, so an
+ * overlaid series is drawn as a line and carries its own series colour.
+ */
+export function themedOverlayDataset(
+  theme: ChartTheme,
+  label: string,
+  values: Array<number | null>,
+  seriesIndex: number,
+  axisId: string,
+): ChartDataset<"line", Array<number | null>> {
+  return {
+    label,
+    data: values,
+    borderColor: theme.series[seriesIndex % theme.series.length],
+    backgroundColor: theme.series[seriesIndex % theme.series.length],
+    borderWidth: theme.lineWidth,
+    fill: false,
+    yAxisID: axisId,
+    spanGaps: false,
+  };
+}
+
+/**
+ * Options for two metrics on one plot, each with its own axis.
+ *
+ * Impressions and clicks differ by an order of magnitude; on a shared axis the
+ * smaller series flattens onto the baseline and the comparison the chart exists
+ * to show is destroyed. Each series therefore keeps its own scale, and only the
+ * left axis draws gridlines so the plot does not turn into a grid of two.
+ */
+export function overlayChartOptions(args: {
+  theme: ChartTheme;
+  primary: {
+    axis: NiceAxis;
+    label: string;
+    formatValue: (v: number) => string;
+  };
+  secondary: {
+    axis: NiceAxis;
+    label: string;
+    formatValue: (v: number) => string;
+  };
+  formatDate: (date: string, includeYear?: boolean) => string;
+}): ChartOptions<"line"> {
+  const format = (item: TooltipItem<"line">): string => {
+    const side =
+      item.dataset.yAxisID === "ySecondary" ? "secondary" : "primary";
+    const spec = side === "secondary" ? args.secondary : args.primary;
+    return `${item.dataset.label ?? spec.label}: ${spec.formatValue(item.parsed.y ?? 0)}`;
+  };
+
+  return {
+    interaction: { intersect: false, mode: "index" },
+    layout: { padding: 0 },
+    plugins: {
+      tooltip: {
+        displayColors: true,
+        callbacks: {
+          title: (items: TooltipItem<"line">[]) =>
+            args.formatDate(items[0]?.label ?? "", true),
+          label: format,
+        },
+      },
+    },
+    scales: {
+      x: {
+        offset: false,
+        border: { display: false },
+        grid: {
+          color: args.theme.gridVertical,
+          display: true,
+          drawTicks: false,
+          lineWidth: 1,
+          offset: false,
+        },
+        ticks: {
+          autoSkip: true,
+          maxRotation: 0,
+          maxTicksLimit: 7,
+          minRotation: 0,
+          padding: 8,
+          callback(value) {
+            return args.formatDate(this.getLabelForValue(Number(value)));
+          },
+        },
+      },
+      yPrimary: {
+        position: "left",
+        beginAtZero: false,
+        bounds: "ticks",
+        border: { display: false },
+        grid: {
+          color: (context) =>
+            Number(context.tick.value) === args.primary.axis.minimum
+              ? "transparent"
+              : args.theme.grid,
+        },
+        min: args.primary.axis.minimum,
+        max: args.primary.axis.maximum,
+        ticks: {
+          maxTicksLimit: 6,
+          padding: 8,
+          stepSize: args.primary.axis.stepSize,
+          callback: (value) => args.primary.formatValue(Number(value)),
+        },
+      },
+      ySecondary: {
+        position: "right",
+        beginAtZero: false,
+        bounds: "ticks",
+        border: { display: false },
+        grid: { display: false },
+        min: args.secondary.axis.minimum,
+        max: args.secondary.axis.maximum,
+        ticks: {
+          maxTicksLimit: 6,
+          padding: 8,
+          stepSize: args.secondary.axis.stepSize,
+          callback: (value) => args.secondary.formatValue(Number(value)),
+        },
+      },
+    },
+  };
+}
+
 export function reportingChartOptions(args: {
   theme: ChartTheme;
   axis: NiceAxis;
