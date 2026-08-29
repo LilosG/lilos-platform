@@ -159,6 +159,9 @@ import "../styles/global.css";
         fetchOrganizationProfile,
         replaceOrganizationProfile,
         fetchOrganizationDomains,
+        createOrganizationDomain,
+        setPrimaryOrganizationDomain,
+        archiveOrganizationDomain,
         type OrganizationProfile,
       } from "../lib/settings";
       import {
@@ -188,6 +191,8 @@ import "../styles/global.css";
         statusBadge,
         emptyState,
         errorAlert,
+        successAlert,
+        confirmInline,
         describeFailure,
         hasPlatformAdminGrant,
         meetsPlatformAdminRequiredAssurance,
@@ -558,6 +563,37 @@ import "../styles/global.css";
           );
           return;
         }
+        const status = document.createElement("div");
+        status.setAttribute("role", "status");
+        status.setAttribute("aria-live", "polite");
+
+        async function domainAction(
+          button: HTMLButtonElement,
+          run: () => Promise<{ kind: string } & Record<string, unknown>>,
+          success: string,
+        ): Promise<void> {
+          const original = button.textContent ?? "";
+          button.disabled = true;
+          button.textContent = "Working…";
+          const outcome = await run();
+          if (outcome.kind === "ok") {
+            status.replaceChildren(successAlert(success));
+            await openWebsite();
+            return;
+          }
+          // A failed action previously re-rendered identically to a success.
+          status.replaceChildren(
+            errorAlert(
+              describeFailure(
+                outcome as Parameters<typeof describeFailure>[0],
+                "Domain",
+              ),
+            ),
+          );
+          button.disabled = false;
+          button.textContent = original;
+        }
+
         const list = document.createElement("ul");
         list.className = "ui-record-list";
         for (const dom of result.data) {
@@ -575,9 +611,126 @@ import "../styles/global.css";
             dom.is_primary ? "Primary" : "Configured",
           );
           item.append(info, badge);
+
+          if (isAgencyWorkspace) {
+            const actions = document.createElement("div");
+            actions.className = "ui-inline ui-inline--center";
+            if (!dom.is_primary) {
+              const promote = document.createElement("button");
+              promote.type = "button";
+              promote.className =
+                "ui-button ui-button--secondary ui-button--sm";
+              promote.textContent = "Set primary";
+              promote.addEventListener("click", () => {
+                void domainAction(
+                  promote,
+                  () =>
+                    setPrimaryOrganizationDomain(
+                      organizationId,
+                      dom.id,
+                      dom.version,
+                    ),
+                  `${dom.domain} is now the primary domain.`,
+                );
+              });
+              actions.append(promote);
+            }
+            const archive = document.createElement("button");
+            archive.type = "button";
+            archive.className = "ui-button ui-button--ghost ui-button--sm";
+            archive.textContent = "Remove";
+            archive.addEventListener("click", () => {
+              // Archiving the primary domain detaches every downstream
+              // dependency, so it confirms first.
+              archive.replaceWith(
+                confirmInline(
+                  dom.is_primary
+                    ? `Remove ${dom.domain}? It is the primary domain, so SEO, Search Console and post destinations lose their site until another is set primary.`
+                    : `Remove ${dom.domain}?`,
+                  () => {
+                    void domainAction(
+                      archive,
+                      () =>
+                        archiveOrganizationDomain(
+                          organizationId,
+                          dom.id,
+                          dom.version,
+                        ),
+                      `${dom.domain} was removed.`,
+                    );
+                  },
+                  () => void openWebsite(),
+                ),
+              );
+            });
+            actions.append(archive);
+            item.append(actions);
+          }
+
           list.append(item);
         }
-        domainContent.replaceChildren(list);
+
+        const children: HTMLElement[] = [status, list];
+
+        if (isAgencyWorkspace) {
+          const addCard = document.createElement("div");
+          addCard.className = "ui-card";
+          const addHeader = document.createElement("div");
+          addHeader.className = "ui-card__header";
+          const addTitle = document.createElement("h3");
+          addTitle.className = "ui-card__heading";
+          addTitle.textContent = "Add a domain";
+          const addHint = document.createElement("p");
+          addHint.className = "ui-card__description";
+          addHint.textContent =
+            "Correcting a typo? Add the right domain, set it primary, then remove the old one.";
+          addHeader.append(addTitle, addHint);
+          const addBody = document.createElement("div");
+          addBody.className = "ui-card__body ui-stack";
+
+          const input = document.createElement("input");
+          input.type = "text";
+          input.className = "ui-input";
+          input.placeholder = "example.com";
+          input.setAttribute("aria-label", "Domain");
+
+          const primaryToggle = document.createElement("label");
+          primaryToggle.className = "ui-inline ui-inline--center";
+          const primaryBox = document.createElement("input");
+          primaryBox.type = "checkbox";
+          primaryBox.checked = true;
+          primaryToggle.append(
+            primaryBox,
+            document.createTextNode("Make this the primary domain"),
+          );
+
+          const submit = document.createElement("button");
+          submit.type = "button";
+          submit.className = "ui-button ui-button--primary ui-button--sm";
+          submit.textContent = "Add domain";
+          submit.addEventListener("click", () => {
+            const value = input.value.trim();
+            if (!value) {
+              status.replaceChildren(errorAlert("Enter a domain first."));
+              return;
+            }
+            void domainAction(
+              submit,
+              () =>
+                createOrganizationDomain(organizationId, {
+                  domain: value,
+                  is_primary: primaryBox.checked,
+                }),
+              `${value} was added.`,
+            );
+          });
+
+          addBody.append(input, primaryToggle, submit);
+          addCard.append(addHeader, addBody);
+          children.push(addCard);
+        }
+
+        domainContent.replaceChildren(...children);
       }
 
       // ---- Users & Access ----
