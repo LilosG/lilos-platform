@@ -444,7 +444,10 @@ def test_confirm_mapping_preserves_aal2_route_requirement(
     )
 
     assert response.status_code == 403
-    assert response.json()["error"]["code"] == "AUTHORIZATION_DENIED"
+    # Confirming a mapping is an AAL2 route, so an AAL1 member is refused for
+    # assurance rather than permission and is told which: the client can prompt a
+    # step-up instead of showing "you do not have permission".
+    assert response.json()["error"]["code"] == "STEP_UP_REQUIRED"
 
 
 @pytest.mark.integration

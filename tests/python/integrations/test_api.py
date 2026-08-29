@@ -214,8 +214,12 @@ def test_connect_without_effective_entitlement_is_blocked(
     )
     assert response.status_code == 403, response.text
     # RR-1 intentionally denies the product-scoped permission at the shared
-    # authorization boundary when no effective entitlement exists.
-    assert response.json()["error"]["code"] == "AUTHORIZATION_DENIED"
+    # authorization boundary when no effective entitlement exists. The refusal
+    # now names that cause: an operator hitting this on a newly onboarded client
+    # was previously told "you do not have permission", which sent them looking
+    # at roles instead of at the product entitlement that was actually missing.
+    assert response.json()["error"]["code"] == "PRODUCT_NOT_ENABLED"
+    assert "not enabled for this client" in response.json()["error"]["message"]
 
 
 @pytest.mark.integration

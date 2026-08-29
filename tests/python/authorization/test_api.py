@@ -189,7 +189,12 @@ def test_real_routes_apply_fixed_permissions_aal_and_no_store(
         json={"role_id": str(ids["owner_role"]), "scope_type": "organization"},
     )
     assert denied.status_code == 403
-    assert denied.json()["error"]["code"] == "AUTHORIZATION_DENIED"
+    # An AAL1 principal holding the permission is refused for assurance, not for
+    # permission, and a member is told which so the client can prompt a step-up
+    # instead of showing "no permission". The route policy is unchanged; only the
+    # reported reason became specific.
+    assert denied.json()["error"]["code"] == "STEP_UP_REQUIRED"
+    assert "multi-factor" in denied.json()["error"]["message"]
     assert denied.headers["Cache-Control"] == "no-store"
     assert (
         client.post(
@@ -242,7 +247,8 @@ def test_guarded_invitation_issuance_requires_fixed_aal2_and_never_trusts_actor_
     verifier.result = claims(ids["assigned_subject"], AssuranceLevel.AAL1)
     denied = client.post(target, headers=headers, json=payload)
     assert denied.status_code == 403
-    assert denied.json()["error"]["code"] == "AUTHORIZATION_DENIED"
+    # Same distinction on the invitation route: assurance, not permission.
+    assert denied.json()["error"]["code"] == "STEP_UP_REQUIRED"
 
     verifier.result = claims(ids["assigned_subject"], AssuranceLevel.AAL2)
     issued = client.post(target, headers=headers, json=payload)
