@@ -128,11 +128,29 @@ class AuthorizationService:
             session, request.organization_id
         )
         if organization is None or organization.status is not OrganizationStatus.ACTIVE:
+            # The membership lookup normally happens after this check, but the
+            # denial is far more useful when it can say "this client is not
+            # activated yet" instead of "no permission" — and that sentence is
+            # only safe to say to someone who is actually a member. One extra
+            # query on the denial path buys an actionable refusal without telling
+            # a stranger whether an organization id exists.
+            member = (
+                await self.membership_repository.get_by_user(
+                    session, request.organization_id, principal.platform_user_id
+                )
+                if organization is not None
+                else None
+            )
             return self._decision(
                 principal,
                 request,
                 correlation_id=correlation_id,
                 reason=AuthorizationReason.ORGANIZATION_NOT_EFFECTIVE,
+                membership_id=(
+                    member.id
+                    if member is not None and member.status is MembershipStatus.ACTIVE
+                    else None
+                ),
                 organization_validated=organization is not None,
             )
 

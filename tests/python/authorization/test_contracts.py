@@ -1,6 +1,7 @@
 """Immutable authorization request and decision contracts."""
 
 from datetime import UTC, datetime, timedelta
+from http import HTTPStatus
 from uuid import UUID, uuid4
 
 import pytest
@@ -19,6 +20,7 @@ from apps.api.app.authorization.entitlements import (
     product_key_for_permission,
 )
 from apps.api.app.authorization.enums import AuthorizationReason
+from apps.api.app.authorization.errors import AuthorizationDeniedError
 from apps.api.app.authorization.service import assurance_satisfies, scope_applies
 
 
@@ -161,3 +163,77 @@ def test_entitlement_effectiveness_and_location_scope_fail_closed() -> None:
         EntitlementStatus.ACTIVE.value,
         has_location_scope=True,
     ).authorizes(ScopeType.LOCATION, location_id, now=now)
+
+
+def test_a_denial_explains_itself_to_a_member() -> None:
+    """Every refusal used to read "You do not have permission to view this".
+
+    A new client's Google integration page showed exactly that, and the real cause
+    was that the organization had not been activated yet — an unactionable message
+    for a fix that takes one click. The service already computes the reason; this
+    carries it to the caller.
+    """
+    denial = AuthorizationDeniedError(
+        reason=AuthorizationReason.ORGANIZATION_NOT_EFFECTIVE, member=True
+    )
+
+    assert denial.code == "ORGANIZATION_NOT_ACTIVE"
+    assert "not active yet" in denial.public_message
+    assert "activation" in denial.public_message
+
+
+def test_each_disclosable_reason_names_a_different_fix() -> None:
+    expected = {
+        AuthorizationReason.ORGANIZATION_NOT_EFFECTIVE: "ORGANIZATION_NOT_ACTIVE",
+        AuthorizationReason.MEMBERSHIP_INACTIVE: "MEMBERSHIP_INACTIVE",
+        AuthorizationReason.INSUFFICIENT_ASSURANCE: "STEP_UP_REQUIRED",
+        AuthorizationReason.PERMISSION_NOT_GRANTED: "PERMISSION_NOT_GRANTED",
+        AuthorizationReason.EXPLICIT_DENY: "PERMISSION_EXPLICITLY_DENIED",
+        AuthorizationReason.PRODUCT_ENTITLEMENT_NOT_EFFECTIVE: "PRODUCT_NOT_ENABLED",
+    }
+    codes = set()
+    for reason, code in expected.items():
+        denial = AuthorizationDeniedError(reason=reason, member=True)
+        assert denial.code == code, reason
+        codes.add(denial.code)
+    # Distinct codes, so a client can branch on them.
+    assert len(codes) == len(expected)
+
+
+def test_a_non_member_is_told_nothing_beyond_the_refusal() -> None:
+    """The reason can reveal that an organization exists and what state it is in.
+
+    A member already knows both. Someone probing organization ids must not learn
+    the difference between "does not exist", "not activated" and "you are not a
+    member".
+    """
+    for reason in (
+        AuthorizationReason.ORGANIZATION_NOT_EFFECTIVE,
+        AuthorizationReason.MEMBERSHIP_MISSING,
+        AuthorizationReason.PERMISSION_NOT_GRANTED,
+        AuthorizationReason.USER_INACTIVE,
+    ):
+        denial = AuthorizationDeniedError(reason=reason, member=False)
+        assert denial.code == "AUTHORIZATION_DENIED"
+        assert denial.public_message == "Authorization is required for this action."
+
+
+def test_a_missing_membership_is_never_disclosed_even_to_a_member() -> None:
+    """MEMBERSHIP_MISSING and USER_INACTIVE carry no member-safe wording.
+
+    They are reached before membership is confirmed, so there is no member to
+    disclose to; the mapping deliberately omits them.
+    """
+    for reason in (
+        AuthorizationReason.MEMBERSHIP_MISSING,
+        AuthorizationReason.USER_INACTIVE,
+    ):
+        denial = AuthorizationDeniedError(reason=reason, member=True)
+        assert denial.code == "AUTHORIZATION_DENIED"
+
+
+def test_a_denial_without_a_reason_keeps_the_original_contract() -> None:
+    denial = AuthorizationDeniedError()
+    assert denial.code == "AUTHORIZATION_DENIED"
+    assert denial.status_code == HTTPStatus.FORBIDDEN
+    assert denial.response_headers == {"Cache-Control": "no-store"}

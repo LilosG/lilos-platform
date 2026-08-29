@@ -54,7 +54,13 @@ def require_authorization(
         if decision.reason_code is AuthorizationReason.LOCATION_NOT_FOUND:
             raise LocationNotFoundError
         if not decision.allowed:
-            raise AuthorizationDeniedError
+            # membership_id is set only once the service has confirmed an active
+            # membership, which is exactly the condition under which the reason is
+            # safe to disclose.
+            raise AuthorizationDeniedError(
+                reason=decision.reason_code,
+                member=decision.membership_id is not None,
+            )
         return decision
 
     if resource_scope is ScopeType.ORGANIZATION:
