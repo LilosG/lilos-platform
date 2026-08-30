@@ -54,6 +54,9 @@ from apps.api.app.onboarding.contracts import (
     StepAssignmentRequest,
 )
 from apps.api.app.onboarding.service import OnboardingOrchestrationService
+from apps.api.app.onboarding.website_provisioning import (
+    OnboardingWebsiteProvisioningService,
+)
 from apps.api.app.organizations.contracts import (
     OrganizationCreate,
     OrganizationData,
@@ -93,6 +96,7 @@ locations = LocationService()
 industries = IndustryService()
 platform_administration = PlatformAdministrationService()
 onboarding_service = OnboardingOrchestrationService()
+website_provisioning = OnboardingWebsiteProvisioningService()
 organization_profiles = OrganizationProfileService()
 organization_domains = OrganizationDomainService()
 administration = AdministrationService()
@@ -239,9 +243,20 @@ async def activate_organization(
                 for blocker in state.blockers
             ],
         )
-    return await _transition_organization(
+    activated = await _transition_organization(
         request, organization_id, command, session, OrganizationLifecycleAction.ACTIVATE
     )
+    # Activation is the point where the configured primary domain becomes a
+    # crawlable website: eligibility already guarantees the domain and primary
+    # location exist. Provisioning shares this transaction, so the client is
+    # either active with a website and a queued first crawl, or not active.
+    await website_provisioning.provision(
+        session,
+        organization_id,
+        actor_id=None,
+        correlation_id=request_correlation_id(request),
+    )
+    return activated
 
 
 @router.get(

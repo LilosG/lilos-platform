@@ -81,6 +81,7 @@ from apps.api.app.audit.enums import AuditActorType, AuditResult
 from apps.api.app.audit.metadata import JsonValue
 from apps.api.app.audit.service import AuditEventService
 from apps.api.app.database.base import utc_now
+from apps.api.app.domains.matching import origin_matches_domain
 from apps.api.app.locations.enums import LocationStatus
 from apps.api.app.locations.errors import LocationNotFoundError
 from apps.api.app.locations.models import Location
@@ -350,16 +351,6 @@ def _normalize_service_name(name: str) -> str:
 def _service_claim_key(name: str) -> str:
     """Deduplication key: lowercase, punctuation-stripped service name."""
     return re.sub(r"[^\w\s]", "", _normalize_service_name(name).lower())
-
-
-def _website_matches_domain(canonical_origin: str, domain: str) -> bool:
-    """Return True when a website's canonical origin belongs to the domain."""
-    try:
-        host = (urlparse(canonical_origin).hostname or "").lower().strip(".")
-    except ValueError:
-        return False
-    domain_clean = domain.lower().strip(".")
-    return bool(host) and (host == domain_clean or host.endswith(f".{domain_clean}"))
 
 
 def _is_safe_service_claim(claim: str) -> bool:
@@ -1268,7 +1259,7 @@ class AdministrationService:
             matching_websites = [
                 website
                 for website in seo_websites
-                if _website_matches_domain(website.canonical_origin, primary_domain.domain)
+                if origin_matches_domain(website.canonical_origin, primary_domain.domain)
             ]
             seo_pages: list[object] = []
             for website in matching_websites:

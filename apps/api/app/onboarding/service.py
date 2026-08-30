@@ -398,7 +398,15 @@ class OnboardingOrchestrationService:
                 detail="Profile complete." if has_profile else "Organization profile is missing.",
                 next_action=None
                 if has_profile
-                else "Complete the organization profile (legal name, contact, locale details).",
+                # Names the fields the profile contract actually has. The old
+                # copy asked for a legal name, contact and locale details, none
+                # of which exist on the profile, so an operator following it
+                # looked for form fields that were never there.
+                else (
+                    "Create the organization profile — brand name, business description "
+                    "and default call to action. Every field is optional; saving the "
+                    "profile completes this step."
+                ),
             )
         )
         if not has_profile:

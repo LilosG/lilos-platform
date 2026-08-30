@@ -24,6 +24,9 @@ from apps.api.app.authentication.repository import UserProfileRepository
 from apps.api.app.database.session import get_database_session
 from apps.api.app.errors import request_correlation_id
 from apps.api.app.onboarding.service import OnboardingOrchestrationService
+from apps.api.app.onboarding.website_provisioning import (
+    OnboardingWebsiteProvisioningService,
+)
 from apps.api.app.organizations.contracts import (
     OrganizationCreate,
     OrganizationData,
@@ -48,6 +51,7 @@ router = APIRouter(
 
 organizations = OrganizationService()
 onboarding_service = OnboardingOrchestrationService()
+website_provisioning = OnboardingWebsiteProvisioningService()
 access = AccessControlService()
 platform_admin_repo = PlatformAdministratorRepository()
 user_profile_repo = UserProfileRepository()
@@ -247,6 +251,16 @@ async def activate_self_service_organization(
         organization_id,
         action=OrganizationLifecycleAction.ACTIVATE,
         expected_version=command.expected_version,
+        correlation_id=request_correlation_id(request),
+    )
+    # Same transaction as the transition: the configured primary domain becomes
+    # a crawlable SEO website with a queued first crawl at the moment the client
+    # goes active, so no separate manual step stands between "activated" and
+    # "the platform knows this website".
+    await website_provisioning.provision(
+        session,
+        organization_id,
+        actor_id=principal.platform_user_id,
         correlation_id=request_correlation_id(request),
     )
     return JSONResponse(
