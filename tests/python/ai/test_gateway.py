@@ -8,12 +8,18 @@ from uuid import UUID, uuid4
 import pytest
 
 from apps.api.app.ai.errors import AIProviderConfigurationError
-from apps.api.app.ai.factory import build_ai_gateway, resolve_ai_provider
+from apps.api.app.ai.factory import (
+    build_ai_gateway,
+    resolve_ai_provider,
+    resolve_task_provider_key,
+    unservable_direct_generation,
+)
 from apps.api.app.ai.gateway import (
     AIGateway,
     AIGatewayRequest,
     DeterministicAIProvider,
 )
+from apps.api.app.ai.providers import OpenRouterProvider
 from apps.api.app.config import EnvironmentName, Settings
 
 
@@ -277,3 +283,132 @@ def test_build_ai_gateway_routes_task_models(monkeypatch: pytest.MonkeyPatch) ->
     gateway = build_ai_gateway(Settings())
     assert gateway._resolve_model("content.draft_revision") == "test/model-x"
     assert gateway._resolve_model("reviews.draft_response") is None
+
+
+# ---------------------------------------------------------------------------
+# Per-task provider routing
+# ---------------------------------------------------------------------------
+
+
+def _hermes_settings(**overrides: Any) -> Settings:
+    """Production-shaped settings with both providers credentialed."""
+    payload: dict[str, Any] = {
+        "environment": EnvironmentName.TEST,
+        "ai_provider": "hermes",
+        "ai_hermes_base_url": "https://hermes.internal",
+        "ai_hermes_api_key": "hermes-key-value",
+        "ai_openrouter_api_key": "openrouter-key-value",
+    }
+    payload.update(overrides)
+    return Settings.model_validate(payload)
+
+
+@pytest.mark.parametrize(
+    "task_key",
+    ["reviews.response_draft", "content.draft_revision", "gbp.generate_post"],
+)
+def test_single_shot_generation_never_routes_to_the_agent_runtime(task_key: str) -> None:
+    """The agent runtime cannot serve these and would hang until the timeout.
+
+    Hermes answers a chat completion by running a tool loop, and every LILOs
+    tool is refused because an AI Gateway request has no AgentRun to bind to.
+    Honouring ``ai_provider=hermes`` for these tasks guarantees failure.
+    """
+    assert resolve_task_provider_key(task_key, _hermes_settings()) == "openrouter"
+    assert isinstance(
+        resolve_ai_provider(_hermes_settings(), task_key=task_key), OpenRouterProvider
+    )
+
+
+def test_agent_work_still_reaches_the_agent_runtime() -> None:
+    # The redirect is narrow: anything outside the direct-generation set keeps
+    # the configured provider, so governed agent routing is not weakened.
+    settings = _hermes_settings()
+    assert resolve_task_provider_key("agents.gbp_operator", settings) == "hermes"
+    assert resolve_task_provider_key(None, settings) == "hermes"
+
+
+def test_an_unservable_task_fails_immediately_instead_of_hanging() -> None:
+    # With no direct-inference provider credentialed there is nothing to redirect
+    # to, and the agent runtime cannot serve the task. Accepting the request
+    # would produce a 120-second hang reported as "timed out"; the operator
+    # needs to be told it can never succeed, and what to set.
+    settings = _hermes_settings(ai_openrouter_api_key=None)
+    assert unservable_direct_generation("reviews.response_draft", settings) is True
+    with pytest.raises(AIProviderConfigurationError, match="LILOS_OPENROUTER_API_KEY"):
+        resolve_ai_provider(settings, task_key="reviews.response_draft")
+
+
+def test_an_explicit_override_to_hermes_is_still_honoured() -> None:
+    # If an operator deliberately routes a task at the agent runtime, that is
+    # their call to make, not ours to veto.
+    settings = _hermes_settings(
+        ai_openrouter_api_key=None,
+        ai_task_provider_overrides='{"reviews.response_draft": "hermes"}',
+    )
+    assert unservable_direct_generation("reviews.response_draft", settings) is False
+    assert resolve_task_provider_key("reviews.response_draft", settings) == "hermes"
+
+
+def test_agent_tasks_are_unaffected_by_the_servability_check() -> None:
+    settings = _hermes_settings(ai_openrouter_api_key=None)
+    assert unservable_direct_generation("agents.gbp_operator", settings) is False
+    assert unservable_direct_generation(None, settings) is False
+
+
+def test_an_explicit_per_task_override_beats_the_default_and_the_redirect() -> None:
+    settings = _hermes_settings(
+        ai_task_provider_overrides='{"reviews.response_draft": "hermes",'
+        ' "agents.custom": "openrouter"}'
+    )
+    assert resolve_task_provider_key("reviews.response_draft", settings) == "hermes"
+    assert resolve_task_provider_key("agents.custom", settings) == "openrouter"
+
+
+def test_a_non_hermes_default_is_left_alone() -> None:
+    settings = Settings.model_validate(
+        {
+            "environment": EnvironmentName.TEST,
+            "ai_provider": "openrouter",
+            "ai_openrouter_api_key": "openrouter-key-value",
+        }
+    )
+    assert resolve_task_provider_key("reviews.response_draft", settings) == "openrouter"
+    assert resolve_task_provider_key("agents.gbp_operator", settings) == "openrouter"
+
+
+@pytest.mark.anyio
+async def test_the_gateway_resolves_a_provider_per_task_and_caches_it() -> None:
+    resolved: list[str | None] = []
+
+    def resolver(task_key: str | None) -> Any:
+        resolved.append(task_key)
+        return FakeProvider({"draft": "ok", "provider": "openrouter", "model": "m"})
+
+    gateway = AIGateway(provider_resolver=resolver, global_max_cost_microunits=100_000)
+
+    await gateway.execute(_request(task_key="reviews.response_draft"))
+    await gateway.execute(_request(task_key="reviews.response_draft"))
+    await gateway.execute(_request(task_key="content.draft_revision"))
+
+    # One resolution per distinct task, not per execution: a rebuilt HTTP
+    # client on every draft would be a needless cost.
+    assert resolved == ["reviews.response_draft", "content.draft_revision"]
+
+
+@pytest.mark.anyio
+async def test_the_recorded_provider_is_the_one_that_actually_ran() -> None:
+    # The audit trail must name the provider used, not the one configured,
+    # or a redirected task would be attributed to the wrong runtime.
+    gateway = AIGateway(
+        provider_resolver=lambda _task: FakeProvider(
+            {"draft": "ok", "provider": "openrouter", "model": "deepseek/deepseek-v4-flash-0731"}
+        )
+    )
+    result = await gateway.execute(_request(task_key="reviews.response_draft"))
+    assert result["provider"] == "openrouter"
+
+
+def test_a_gateway_with_no_provider_at_all_is_rejected() -> None:
+    with pytest.raises(ValueError, match="provider"):
+        AIGateway()

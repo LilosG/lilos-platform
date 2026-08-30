@@ -62,15 +62,22 @@ class AIGateway:
         provider: AIProvider | None = None,
         *,
         provider_factory: Callable[[], AIProvider] | None = None,
+        provider_resolver: Callable[[str | None], AIProvider] | None = None,
         task_model_overrides: dict[str, str] | None = None,
         default_model: str | None = None,
         global_max_output_tokens: int = 2_000,
         global_max_cost_microunits: int = 200_000,
     ) -> None:
-        if provider is None and provider_factory is None:
-            raise ValueError("AIGateway requires a provider or provider_factory")
+        if provider is None and provider_factory is None and provider_resolver is None:
+            raise ValueError("AIGateway requires a provider, provider_factory or provider_resolver")
         self._provider = provider
         self._provider_factory = provider_factory
+        # Per-task resolution exists because the configured providers are not
+        # interchangeable across tasks: a single-shot generation task cannot be
+        # served by the agent runtime. Resolved providers are cached per task
+        # key so repeated executions do not rebuild an HTTP client.
+        self._provider_resolver = provider_resolver
+        self._task_providers: dict[str | None, AIProvider] = {}
         self._task_models = task_model_overrides or {}
         self._default_model = default_model
         self._global_max_output_tokens = global_max_output_tokens
@@ -78,11 +85,23 @@ class AIGateway:
 
     @property
     def provider(self) -> AIProvider:
-        if self._provider is None:
-            if self._provider_factory is None:
-                raise AIProviderConfigurationError("AI provider is not configured")
-            self._provider = self._provider_factory()
-        return self._provider
+        return self._provider_for(None)
+
+    def _provider_for(self, task_key: str | None) -> AIProvider:
+        """Return the provider that serves this task, resolving it if needed."""
+        if self._provider is not None:
+            return self._provider
+        cached = self._task_providers.get(task_key)
+        if cached is not None:
+            return cached
+        if self._provider_resolver is not None:
+            resolved = self._provider_resolver(task_key)
+        elif self._provider_factory is not None:
+            resolved = self._provider_factory()
+        else:
+            raise AIProviderConfigurationError("AI provider is not configured")
+        self._task_providers[task_key] = resolved
+        return resolved
 
     def _resolve_model(self, task_key: str) -> str | None:
         """Resolve the model for a task key from overrides or default."""
@@ -141,7 +160,7 @@ class AIGateway:
         maximum_tokens = self._global_max_output_tokens
 
         try:
-            output = await self.provider.generate(
+            output = await self._provider_for(request.task_key).generate(
                 organization_id=request.organization_id,
                 location_id=request.location_id,
                 task_key=request.task_key,

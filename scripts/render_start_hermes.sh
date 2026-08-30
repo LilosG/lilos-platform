@@ -37,7 +37,20 @@ if [ -n "${HERMES_INFERENCE_MODEL:-}" ]; then
     /command/s6-setuidgid hermes /opt/hermes/.venv/bin/hermes config set agent.disabled_toolsets '["bfl"]'
     /command/s6-setuidgid hermes /opt/hermes/.venv/bin/hermes config set sessions.auto_prune true
     /command/s6-setuidgid hermes /opt/hermes/.venv/bin/hermes config set sessions.retention_days 30
+
+    # Auxiliary tasks (vision, context compression) run their own inference
+    # outside the AI Gateway, so the platform's cost ceiling does not bound
+    # them. Left at the default "auto" chain the runtime probed Nous on every
+    # call -- unauthenticated here -- logged the failure, marked it unhealthy
+    # for 60s, and then fell through to a PAID OpenRouter model, warning that
+    # it "may incur real spend". Pin the provider so it stops probing an
+    # account we do not have, and restrict the fallback to free SKUs so no
+    # auxiliary call can spend outside a governed budget.
+    /command/s6-setuidgid hermes /opt/hermes/.venv/bin/hermes config set auxiliary.free_only true
+    /command/s6-setuidgid hermes /opt/hermes/.venv/bin/hermes config set auxiliary.vision.provider openrouter
+    /command/s6-setuidgid hermes /opt/hermes/.venv/bin/hermes config set auxiliary.compression.provider openrouter
     echo "[lilos-hermes] Gateway model: $HERMES_INFERENCE_MODEL via $HERMES_INFERENCE_PROVIDER; toolset: lilos"
+    echo "[lilos-hermes] Auxiliary inference: openrouter, free SKUs only"
 fi
 
 echo "[lilos-hermes] Bootstrap complete; starting foreground gateway"

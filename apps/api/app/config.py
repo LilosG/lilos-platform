@@ -150,6 +150,10 @@ class Settings(BaseSettings):
     ] = "https://openrouter.ai/api/v1"
     ai_default_model: Annotated[str, Field(min_length=1, max_length=128)] | None = None
     ai_task_model_overrides: Annotated[str, Field(max_length=4_096)] = ""
+    # JSON map of task_key → provider key, overriding ``ai_provider`` per task.
+    # Exists because the two providers are not interchangeable: see
+    # DIRECT_GENERATION_TASK_KEYS in apps.api.app.ai.factory.
+    ai_task_provider_overrides: Annotated[str, Field(max_length=4_096)] = ""
     ai_timeout_seconds: Annotated[float, Field(gt=0, le=300)] = 60.0
     ai_max_output_tokens: Annotated[int, Field(ge=1, le=32_768)] = 2_000
     ai_maximum_cost_microunits: Annotated[int, Field(ge=0, le=10_000_000)] = 200_000
@@ -261,6 +265,18 @@ class Settings(BaseSettings):
         if not isinstance(parsed, dict):
             raise ValueError("LILOS_AI_TASK_MODEL_OVERRIDES must be a JSON object")
         return {str(k): str(v) for k, v in parsed.items()}
+
+    def ai_task_provider_map(self) -> dict[str, str]:
+        """Parse LILOS_AI_TASK_PROVIDER_OVERRIDES as a JSON map of task_key → provider."""
+        raw = self.ai_task_provider_overrides.strip()
+        if not raw:
+            return {}
+        import json
+
+        parsed = json.loads(raw)
+        if not isinstance(parsed, dict):
+            raise ValueError("LILOS_AI_TASK_PROVIDER_OVERRIDES must be a JSON object")
+        return {str(k): str(v).strip().lower() for k, v in parsed.items()}
 
 
 def _normalize_postgresql_url(value: PostgresDsn | None) -> str | None:
