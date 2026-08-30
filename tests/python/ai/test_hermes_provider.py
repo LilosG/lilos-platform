@@ -180,12 +180,41 @@ async def test_hermes_timeout_becomes_governed_provider_failure(
 
 
 @pytest.mark.anyio
-async def test_hermes_invalid_output_fails_closed(
+async def test_hermes_prose_output_is_used_as_the_draft(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """The agent runtime cannot be sent response_format, so it answers in prose.
+
+    Rejecting that answer is what surfaced as "Hermes agent returned content
+    that is not valid JSON" on a review reply the model had written correctly.
+    """
+    reply = "Thank you for the detailed feedback — we have shared it with our team."
     _fake_http(
         monkeypatch,
-        FakeResponse({"choices": [{"message": {"content": "not-json"}}]}),
+        FakeResponse({"choices": [{"message": {"content": reply}}]}),
+    )
+    provider = HermesAgentProvider(api_key="hermes-secret-key", base_url="lilos-hermes:8642")
+
+    output = await provider.generate(
+        organization_id=uuid4(),
+        location_id=None,
+        task_key="content.draft_revision",
+        input_document={},
+        maximum_tokens=100,
+    )
+
+    assert output["draft"] == reply
+    assert output["requires_human_review"] is True
+
+
+@pytest.mark.anyio
+async def test_hermes_truncated_json_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A half-written object is truncation, and its fragments are not a draft."""
+    _fake_http(
+        monkeypatch,
+        FakeResponse({"choices": [{"message": {"content": '{"draft": "Thank you'}}]}),
     )
     provider = HermesAgentProvider(api_key="hermes-secret-key", base_url="lilos-hermes:8642")
 

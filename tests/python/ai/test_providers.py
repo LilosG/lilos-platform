@@ -195,15 +195,43 @@ async def test_openrouter_provider_malformed_response(
 
 
 @pytest.mark.anyio
-async def test_openrouter_provider_non_json_content(
+async def test_openrouter_provider_accepts_prose_content(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """A draft is prose; the JSON envelope is our convenience, not the answer.
+
+    This previously raised, so a usable reply was discarded and the operator
+    was shown "returned content that is not valid JSON".
+    """
     _fake_http(
         monkeypatch,
         FakeResponse(
             200,
             {
-                "choices": [{"message": {"content": "plain text, not json"}}],
+                "choices": [{"message": {"content": "Thank you for the kind words."}}],
+                "usage": {},
+            },
+        ),
+    )
+    output = await _provider().generate(
+        task_key="content.draft_revision", input_document={}, maximum_tokens=100
+    )
+    assert output["draft"] == "Thank you for the kind words."
+    # Salvaged or structured, a draft is never publishable without review.
+    assert output["requires_human_review"] is True
+
+
+@pytest.mark.anyio
+async def test_openrouter_provider_truncated_json_still_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Structured output that arrived broken is a real failure, not a draft."""
+    _fake_http(
+        monkeypatch,
+        FakeResponse(
+            200,
+            {
+                "choices": [{"message": {"content": '{"draft": "Thank you for vis'}}],
                 "usage": {},
             },
         ),

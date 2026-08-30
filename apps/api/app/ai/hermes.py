@@ -18,6 +18,7 @@ from uuid import UUID
 
 import httpx
 
+from apps.api.app.ai.completion_text import DraftExtractionError, extract_draft
 from apps.api.app.ai.errors import AIProviderConfigurationError, AIProviderError
 from apps.api.app.ai.hermes_endpoint import normalize_hermes_base_url
 from apps.api.app.ai.providers import _SYSTEM_PROMPT, _build_prompt, _classify_http_error
@@ -132,29 +133,13 @@ class HermesAgentProvider:
         message = choices[0].get("message")
         if not isinstance(message, dict):
             raise AIProviderError("provider", "Hermes agent returned an invalid completion")
-        content_text = str(message.get("content", "")).strip()
-        if not content_text:
-            raise AIProviderError("provider", "Hermes agent returned empty content")
-
-        if content_text.startswith("```json") and content_text.endswith("```"):
-            content_text = content_text[7:-3].strip()
-        elif content_text.startswith("```") and content_text.endswith("```"):
-            content_text = content_text[3:-3].strip()
-
+        content_text = str(message.get("content", ""))
+        # The agent runtime cannot be sent response_format, so it answers in
+        # prose as often as in JSON. Both are accepted; see completion_text.
         try:
-            parsed = json.loads(content_text)
-        except (json.JSONDecodeError, ValueError):
-            raise AIProviderError(
-                "provider", "Hermes agent returned content that is not valid JSON"
-            ) from None
-        if not isinstance(parsed, dict):
-            raise AIProviderError(
-                "provider", "Hermes agent returned content that is not a JSON object"
-            )
-
-        draft = str(parsed.get("draft", "")).strip()
-        if not draft:
-            raise AIProviderError("provider", "Hermes agent returned no draft field")
+            draft = extract_draft(content_text, subject="Hermes agent")
+        except DraftExtractionError as error:
+            raise AIProviderError("provider", error.reason) from None
 
         usage = body.get("usage", {}) or {}
         if not isinstance(usage, dict):

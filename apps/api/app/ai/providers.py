@@ -10,6 +10,7 @@ from uuid import UUID
 
 import httpx
 
+from apps.api.app.ai.completion_text import DraftExtractionError, extract_draft
 from apps.api.app.ai.errors import AIProviderConfigurationError, AIProviderError
 
 logger = logging.getLogger(__name__)
@@ -162,21 +163,14 @@ class OpenRouterProvider:
         if not choices:
             raise AIProviderError("provider", "AI provider returned no completion choices")
         message = choices[0].get("message", {})
-        content_text = str(message.get("content", "")).strip()
-        if not content_text:
-            raise AIProviderError("provider", "AI provider returned empty content")
-
-        # Parse the JSON content
+        content_text = str(message.get("content", ""))
+        # response_format=json_object makes structured output the norm here, but
+        # a model that answers in prose anyway has still answered. Shared with
+        # the agent-runtime provider so one rule governs both.
         try:
-            parsed = json.loads(content_text)
-        except (json.JSONDecodeError, ValueError):
-            raise AIProviderError(
-                "provider", "AI provider returned content that is not valid JSON"
-            ) from None
-
-        draft = str(parsed.get("draft", "")).strip()
-        if not draft:
-            raise AIProviderError("provider", "AI provider returned content with no draft field")
+            draft = extract_draft(content_text, subject="AI provider")
+        except DraftExtractionError as error:
+            raise AIProviderError("provider", error.reason) from None
 
         # Usage metadata
         usage = body.get("usage", {}) or {}
