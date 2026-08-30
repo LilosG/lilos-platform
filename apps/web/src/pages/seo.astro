@@ -130,8 +130,11 @@ import "../styles/global.css";
         formField,
         createSelectControl,
         buildDataTable,
+        successAlert,
+        canUsePlatformAdministration,
         type BootRegions,
       } from "../lib/ui";
+      import { provisionOrganizationWebsite } from "../lib/platform-admin";
       import {
         reportingPeriodSelector,
         comparisonKPI,
@@ -165,6 +168,20 @@ import "../styles/global.css";
           fetchOpportunities(organizationId),
         ]);
 
+        renderMetrics(summaryResult, websitesResult, oppsResult);
+        renderOverview(websitesResult, oppsResult);
+        renderCrawl(websitesResult);
+        renderOpportunities(oppsResult);
+        renderSearchConsole(websitesResult);
+      }
+
+      /** Re-read and re-render the current organization after a write. */
+      async function refreshOrganization(): Promise<void> {
+        const [summaryResult, websitesResult, oppsResult] = await Promise.all([
+          fetchSEOSummary(organizationId),
+          fetchWebsites(organizationId),
+          fetchOpportunities(organizationId),
+        ]);
         renderMetrics(summaryResult, websitesResult, oppsResult);
         renderOverview(websitesResult, oppsResult);
         renderCrawl(websitesResult);
@@ -263,11 +280,56 @@ import "../styles/global.css";
                 "Add the organization website before crawl and opportunity work can begin.",
             }),
           );
+          const actions = document.createElement("div");
+          actions.className = "ui-inline ui-inline--center";
+
+          // An operator sent to /settings found the domain already configured
+          // and no way to turn it into a website: a dead end at the exact point
+          // of the problem. When the caller holds the authority to fix it, the
+          // fix belongs here.
+          if (canUsePlatformAdministration()) {
+            const status = document.createElement("div");
+            status.setAttribute("role", "status");
+            status.setAttribute("aria-live", "polite");
+
+            const provision = document.createElement("button");
+            provision.type = "button";
+            provision.className = "ui-button ui-button--primary ui-button--sm";
+            provision.textContent = "Set up website and crawl";
+            provision.addEventListener("click", () => {
+              void (async () => {
+                provision.disabled = true;
+                provision.textContent = "Working…";
+                const result =
+                  await provisionOrganizationWebsite(organizationId);
+                if (result.kind !== "ok") {
+                  status.replaceChildren(
+                    errorAlert(describeFailure(result, "Website setup")),
+                  );
+                  provision.disabled = false;
+                  provision.textContent = "Set up website and crawl";
+                  return;
+                }
+                status.replaceChildren(
+                  successAlert(
+                    result.data.crawl_enqueued
+                      ? `${result.data.canonical_origin} is set up and its first crawl is queued.`
+                      : `${result.data.canonical_origin} is set up; a crawl was already started.`,
+                  ),
+                );
+                await refreshOrganization();
+              })();
+            });
+            actions.append(provision);
+            copy.append(status);
+          }
+
           const link = document.createElement("a");
           link.className = "ui-button ui-button--secondary ui-button--sm";
           link.href = "/settings";
           link.textContent = "Manage website";
-          banner.append(copy, link);
+          actions.append(link);
+          banner.append(copy, actions);
           panel.append(banner);
           return;
         }

@@ -165,6 +165,11 @@ import "../styles/global.css";
         type OrganizationProfile,
       } from "../lib/settings";
       import {
+        createOrganizationDomain as createOrganizationDomainAsOperator,
+        setPrimaryOrganizationDomain as setPrimaryOrganizationDomainAsOperator,
+        archiveOrganizationDomain as archiveOrganizationDomainAsOperator,
+      } from "../lib/platform-admin";
+      import {
         fetchLocations,
         PRODUCT_KEYS,
         PRODUCT_LABELS,
@@ -205,6 +210,24 @@ import "../styles/global.css";
       let isAgencyWorkspace = false;
       let canOperateClientSettings = false;
       let _needsMfaForOperatorControls = false;
+
+      /**
+       * Whether the signed-in operator may change this organization's domains.
+       *
+       * `membership_type` is a relationship (client / internal / partner /
+       * support), not an authority — an agency operator working inside a client
+       * workspace holds a `client` membership, so gating writes on it hid Set
+       * primary / Remove / Add domain from the one person entitled to use them
+       * and left a wrong domain permanently wrong.
+       *
+       * Two real authorities exist: an agency-side membership, or an active
+       * platform-administrator grant at the required assurance level. The
+       * backend remains the decider; this only decides whether to offer the
+       * control, and a refusal now names its own cause.
+       */
+      function canManageDomains(): boolean {
+        return isAgencyWorkspace || canOperateClientSettings;
+      }
 
       const regions: BootRegions = {
         notConfigured: document.getElementById("boot-not-configured")!,
@@ -554,11 +577,11 @@ import "../styles/global.css";
           domainContent.replaceChildren(
             emptyState(
               "No domains yet",
-              isAgencyWorkspace
+              canManageDomains()
                 ? "Add the client’s website in guided onboarding."
                 : "Your account team has not added a website yet.",
-              isAgencyWorkspace ? "Open guided onboarding" : undefined,
-              isAgencyWorkspace ? "/onboarding" : undefined,
+              canManageDomains() ? "Open guided onboarding" : undefined,
+              canManageDomains() ? "/onboarding" : undefined,
             ),
           );
           return;
@@ -594,6 +617,52 @@ import "../styles/global.css";
           button.textContent = original;
         }
 
+        // Route each write to the endpoint the caller's authority actually
+        // satisfies. The organization routes authorize on org RBAC
+        // ("organization.settings.manage"), which an agency operator holding
+        // only a platform-administrator grant does not have; the platform
+        // routes authorize on that grant. Sending every write to the
+        // organization route would have replaced a hidden button with a
+        // refused one.
+        const asOperator = !isAgencyWorkspace && canOperateClientSettings;
+        const domainWrites = {
+          create: (domain: string, isPrimary: boolean) =>
+            asOperator
+              ? createOrganizationDomainAsOperator(
+                  organizationId,
+                  domain,
+                  isPrimary,
+                )
+              : createOrganizationDomain(organizationId, {
+                  domain,
+                  is_primary: isPrimary,
+                }),
+          setPrimary: (domainId: string, expectedVersion: number) =>
+            asOperator
+              ? setPrimaryOrganizationDomainAsOperator(
+                  organizationId,
+                  domainId,
+                  expectedVersion,
+                )
+              : setPrimaryOrganizationDomain(
+                  organizationId,
+                  domainId,
+                  expectedVersion,
+                ),
+          archive: (domainId: string, expectedVersion: number) =>
+            asOperator
+              ? archiveOrganizationDomainAsOperator(
+                  organizationId,
+                  domainId,
+                  expectedVersion,
+                )
+              : archiveOrganizationDomain(
+                  organizationId,
+                  domainId,
+                  expectedVersion,
+                ),
+        };
+
         const list = document.createElement("ul");
         list.className = "ui-record-list";
         for (const dom of result.data) {
@@ -612,7 +681,7 @@ import "../styles/global.css";
           );
           item.append(info, badge);
 
-          if (isAgencyWorkspace) {
+          if (canManageDomains()) {
             const actions = document.createElement("div");
             actions.className = "ui-inline ui-inline--center";
             if (!dom.is_primary) {
@@ -624,12 +693,7 @@ import "../styles/global.css";
               promote.addEventListener("click", () => {
                 void domainAction(
                   promote,
-                  () =>
-                    setPrimaryOrganizationDomain(
-                      organizationId,
-                      dom.id,
-                      dom.version,
-                    ),
+                  () => domainWrites.setPrimary(dom.id, dom.version),
                   `${dom.domain} is now the primary domain.`,
                 );
               });
@@ -650,12 +714,7 @@ import "../styles/global.css";
                   () => {
                     void domainAction(
                       archive,
-                      () =>
-                        archiveOrganizationDomain(
-                          organizationId,
-                          dom.id,
-                          dom.version,
-                        ),
+                      () => domainWrites.archive(dom.id, dom.version),
                       `${dom.domain} was removed.`,
                     );
                   },
@@ -672,7 +731,7 @@ import "../styles/global.css";
 
         const children: HTMLElement[] = [status, list];
 
-        if (isAgencyWorkspace) {
+        if (canManageDomains()) {
           const addCard = document.createElement("div");
           addCard.className = "ui-card";
           const addHeader = document.createElement("div");
@@ -716,11 +775,7 @@ import "../styles/global.css";
             }
             void domainAction(
               submit,
-              () =>
-                createOrganizationDomain(organizationId, {
-                  domain: value,
-                  is_primary: primaryBox.checked,
-                }),
+              () => domainWrites.create(value, primaryBox.checked),
               `${value} was added.`,
             );
           });

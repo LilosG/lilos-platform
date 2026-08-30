@@ -197,6 +197,11 @@ def test_non_platform_administrator_gets_403_on_every_mutating_route(
             f"/api/v1/platform/organizations/{organization_id}/owner",
             {"auth_user_id": str(uuid4())},
         ),
+        (
+            "POST",
+            f"/api/v1/platform/organizations/{organization_id}/provision-website",
+            None,
+        ),
     ]
     for method, path, body in requests:
         response = client.request(method, path, headers=HEADERS, json=body)
@@ -574,3 +579,70 @@ def test_non_admin_cannot_create_product_entitlement(
     )
     assert response.status_code == 403, response.text
     assert response.json()["error"]["code"] == "AUTHORIZATION_DENIED"
+
+
+@pytest.mark.integration
+def test_platform_administrator_provisions_the_website_for_an_existing_client(
+    platform_administration_client: tuple[TestClient, FakeVerifier, dict[str, UUID]],
+) -> None:
+    """The manual path for clients activated before activation provisioned websites.
+
+    Those clients hold a configured primary domain and no SEO website, so the
+    crawler and every CTA destination have nothing to use, and no action in the
+    product created one.
+    """
+    client, verifier, ids = platform_administration_client
+    verifier.result = claims(ids["admin_subject"])
+
+    organization = _create_organization(client, slug=f"provision-{uuid4().hex[:10]}")
+    organization_id = organization["id"]
+
+    domain_response = client.post(
+        f"/api/v1/platform/organizations/{organization_id}/domains",
+        headers=HEADERS,
+        json={"domain": "provision-target.test", "is_primary": True},
+    )
+    assert domain_response.status_code == 201, domain_response.text
+
+    first = client.post(
+        f"/api/v1/platform/organizations/{organization_id}/provision-website",
+        headers=HEADERS,
+    )
+    assert first.status_code == 200, first.text
+    created = first.json()["data"]
+    assert created["website_created"] is True
+    assert created["crawl_enqueued"] is True
+    assert created["canonical_origin"] == "https://provision-target.test"
+    assert created["website_id"] is not None
+    assert created["crawl_run_id"] is not None
+
+    # Pressing it twice must not cost the client a second website or crawl.
+    second = client.post(
+        f"/api/v1/platform/organizations/{organization_id}/provision-website",
+        headers=HEADERS,
+    )
+    assert second.status_code == 200, second.text
+    repeated = second.json()["data"]
+    assert repeated["website_id"] == created["website_id"]
+    assert repeated["website_created"] is False
+    assert repeated["crawl_enqueued"] is False
+    assert repeated["skipped_reason"] == "CRAWL_ALREADY_STARTED"
+
+
+@pytest.mark.integration
+def test_provisioning_without_a_primary_domain_says_so_instead_of_guessing(
+    platform_administration_client: tuple[TestClient, FakeVerifier, dict[str, UUID]],
+) -> None:
+    client, verifier, ids = platform_administration_client
+    verifier.result = claims(ids["admin_subject"])
+
+    organization = _create_organization(client, slug=f"nodomain-{uuid4().hex[:10]}")
+    response = client.post(
+        f"/api/v1/platform/organizations/{organization['id']}/provision-website",
+        headers=HEADERS,
+    )
+    assert response.status_code == 409, response.text
+    error = response.json()["error"]
+    assert error["code"] == "NO_PRIMARY_DOMAIN"
+    # The message has to name the fix, not just the refusal.
+    assert "mark it primary" in error["message"]

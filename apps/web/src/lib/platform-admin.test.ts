@@ -14,6 +14,7 @@ import {
   fetchOrganizationDomains,
   fetchOrganizationLocations,
   fetchOrganizations,
+  provisionOrganizationWebsite,
   type AdminOrganization,
   type IndustriesResponse,
   type OrganizationDomain,
@@ -192,5 +193,61 @@ describe("platform-admin list endpoints consume the REAL configured API payload 
     if (outcome.kind !== "ok") return;
     expect(Array.isArray(outcome.data)).toBe(true);
     expect(outcome.data).toHaveLength(1);
+  });
+});
+
+describe("website provisioning uses the endpoint the operator's grant satisfies", () => {
+  it("posts to the platform route, not the organization route", async () => {
+    // The organization route authorizes on org RBAC
+    // ("organization.settings.manage"), which an agency operator holding only
+    // a platform-administrator grant does not have. Sending this write there
+    // would replace a hidden control with a refused one.
+    vi.mocked(readPublicConfig).mockReturnValue(config);
+    vi.mocked(getAccessToken).mockResolvedValue("token");
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse({
+        data: {
+          website_id: "web-1",
+          canonical_origin: "https://example.com",
+          website_created: true,
+          crawl_run_id: "crawl-1",
+          crawl_enqueued: true,
+          skipped_reason: null,
+        },
+        meta: { correlation_id: "c-1" },
+      }),
+    );
+
+    const outcome = await provisionOrganizationWebsite("org-1");
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "https://api.lilos.invalid/api/v1/platform/organizations/org-1/provision-website",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(outcome.kind === "ok" && outcome.data.crawl_enqueued).toBe(true);
+    expect(outcome.kind === "ok" && outcome.data.canonical_origin).toBe(
+      "https://example.com",
+    );
+  });
+
+  it("surfaces a refusal rather than reporting a silent success", async () => {
+    vi.mocked(readPublicConfig).mockReturnValue(config);
+    vi.mocked(getAccessToken).mockResolvedValue("token");
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          error: {
+            code: "NO_PRIMARY_DOMAIN",
+            message:
+              "This client has no active primary domain, so there is no website to provision. Add the domain and mark it primary first.",
+            category: "conflict",
+          },
+        }),
+        { status: 409 },
+      ),
+    );
+
+    const outcome = await provisionOrganizationWebsite("org-1");
+    expect(outcome.kind).not.toBe("ok");
   });
 });

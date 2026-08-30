@@ -446,6 +446,33 @@ export function archiveOrganizationDomain(
   );
 }
 
+export type WebsiteProvisioning = {
+  website_id: string | null;
+  canonical_origin: string | null;
+  website_created: boolean;
+  crawl_run_id: string | null;
+  crawl_enqueued: boolean;
+  skipped_reason: string | null;
+};
+
+/**
+ * Provision the SEO website implied by the organization's primary domain and
+ * queue its first crawl.
+ *
+ * Activation does this for organizations activated from now on. This is the
+ * path for the ones activated before that existed — a configured primary
+ * domain and no website — and the recovery path when a crawl never started.
+ * Idempotent: safe to press twice.
+ */
+export function provisionOrganizationWebsite(
+  organizationId: string,
+): Promise<ApiOutcome<WebsiteProvisioning>> {
+  return apiRequest<WebsiteProvisioning>(
+    `${base}/organizations/${organizationId}/provision-website`,
+    { method: "POST" },
+  );
+}
+
 export function fetchOnboardingState(
   organizationId: string,
 ): Promise<ApiOutcome<OnboardingState>> {

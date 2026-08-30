@@ -212,6 +212,56 @@ async def start_onboarding(
 
 
 @router.post(
+    "/organizations/{organization_id}/provision-website",
+    response_model=DataResponse,
+    summary="Provision the SEO website implied by the primary domain, and crawl it",
+    responses={409: {"description": "No active primary domain to provision from"}},
+)
+async def provision_organization_website(
+    request: Request,
+    organization_id: UUID,
+    session: DatabaseSession,
+) -> DataResponse | JSONResponse:
+    """Bring an already-active organization up to the post-activation contract.
+
+    Activation provisions the website going forward, but organizations activated
+    before that existed hold a configured primary domain and no website — the
+    crawler, website knowledge, and CTA destinations all have nothing to use.
+    This is the manual path for that state and the recovery path if a crawl was
+    never started: same service, same idempotency, so running it twice costs
+    neither a duplicate website nor a second crawl.
+    """
+    outcome = await website_provisioning.provision(
+        session,
+        organization_id,
+        actor_id=None,
+        correlation_id=request_correlation_id(request),
+    )
+    if outcome.skipped_reason == "NO_PRIMARY_DOMAIN":
+        return error_response(
+            request,
+            status_code=status.HTTP_409_CONFLICT,
+            code="NO_PRIMARY_DOMAIN",
+            message=(
+                "This client has no active primary domain, so there is no website to "
+                "provision. Add the domain and mark it primary first."
+            ),
+            category=ErrorCategory.CONFLICT,
+        )
+    return response(
+        request,
+        {
+            "website_id": str(outcome.website_id) if outcome.website_id else None,
+            "canonical_origin": outcome.canonical_origin,
+            "website_created": outcome.website_created,
+            "crawl_run_id": str(outcome.crawl_run_id) if outcome.crawl_run_id else None,
+            "crawl_enqueued": outcome.crawl_enqueued,
+            "skipped_reason": outcome.skipped_reason,
+        },
+    )
+
+
+@router.post(
     "/organizations/{organization_id}/activate",
     response_model=DataResponse,
     summary="Activate an organization",
