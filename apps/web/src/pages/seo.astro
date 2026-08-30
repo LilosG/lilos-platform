@@ -144,7 +144,11 @@ import "../styles/global.css";
         searchPerformanceTable,
       } from "../lib/reporting";
       import { reportingTrendChart } from "../lib/reporting-chart";
-      import { statusLabel, statusTone } from "../lib/status-language";
+      import {
+        statusLabel,
+        statusTone,
+        websiteStatusPresentation,
+      } from "../lib/status-language";
 
       let organizationId = "";
 
@@ -240,24 +244,6 @@ import "../styles/global.css";
             ),
           );
         }
-      }
-
-      function clientWebsiteStatus(status: string): {
-        kind: string;
-        label: string;
-        note: string;
-      } {
-        if (status === "archived") {
-          return { kind: "neutral", label: "Unavailable", note: "Archived" };
-        }
-        if (status === "paused") {
-          return { kind: "setup", label: "Needs attention", note: "Paused" };
-        }
-        return {
-          kind: statusTone(status),
-          label: status === "active" ? "Ready" : statusLabel(status),
-          note: "Website configured",
-        };
       }
 
       function renderOverview(
@@ -356,8 +342,8 @@ import "../styles/global.css";
           const body = document.createElement("div");
           body.className = "ui-card__body";
 
-          const websiteTerm = clientWebsiteStatus(website.status);
-          body.append(statusBadge(websiteTerm.kind, websiteTerm.label));
+          const websiteTerm = websiteStatusPresentation(website.status);
+          body.append(statusBadge(websiteTerm.tone, websiteTerm.label));
           if (websiteTerm.note) {
             const detail = document.createElement("p");
             detail.className = "ui-text-secondary";
