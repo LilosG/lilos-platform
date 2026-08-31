@@ -96,9 +96,17 @@
   --palette-danger-foreground: #8a3323;
   --palette-danger-background: #f6e6e1;
   --palette-danger-border: #e0bcae;
-  --palette-info-foreground: #41507a;
-  --palette-info-background: #e8eaf2;
-  --palette-info-border: #ccd2e4;
+  /* Info is the one status family the retheme missed: it stayed a cool
+     blue-grey (#41507a on #e8eaf2) while success, warning and danger were all
+     resampled warm, so every informational notice read as foreign on a
+     parchment page. It resolves to warm stone rather than a hue of its own —
+     an informational note states a fact and should sit quiet, and the three
+     hues that remain are reserved for states that mean something (sage,
+     brass, terracotta). Deeper than both the canvas and the card so it is
+     still legible as a distinct band. */
+  --palette-info-foreground: #44412f;
+  --palette-info-background: #ded9c9;
+  --palette-info-border: #c6c0aa;
   --palette-delta-positive-foreground: #3a6a45;
   --palette-delta-positive-background: #e7eee6;
   --palette-delta-positive-border: #bacfbc;

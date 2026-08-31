@@ -119,6 +119,45 @@ describe("design tokens", () => {
     expect(resolve("--palette-chart-2")).toBe(resolve("--palette-sage-400"));
   });
 
+  it("keeps every status family warm, info included", () => {
+    // Success, warning and danger were resampled during the retheme; info was
+    // missed and stayed a cool blue-grey, so informational notices rendered as
+    // the only foreign element on a parchment page. Warm means the red channel
+    // is not beaten by the blue channel.
+    for (const family of ["success", "warning", "danger", "info"]) {
+      const hex = resolve(`--color-${family}-background`).replace("#", "");
+      const red = parseInt(hex.slice(0, 2), 16);
+      const blue = parseInt(hex.slice(4, 6), 16);
+      expect(
+        red,
+        `${family} background should not be cooler than it is warm`,
+      ).toBeGreaterThanOrEqual(blue);
+    }
+  });
+
+  it("keeps each status family legible on its own ground", () => {
+    for (const family of ["success", "warning", "danger", "info"]) {
+      expect(
+        contrast(
+          resolve(`--color-${family}-foreground`),
+          resolve(`--color-${family}-background`),
+        ),
+        `${family} should clear AA on its own background`,
+      ).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
+  it("separates an info band from the surfaces it sits between", () => {
+    // A notice the same value as the card it sits on is not a band at all.
+    const info = resolve("--color-info-background");
+    expect(info).not.toBe(resolve("--color-surface"));
+    expect(info).not.toBe(resolve("--color-surface-raised"));
+    expect(
+      contrast(info, resolve("--color-surface")),
+      "an info band should be distinguishable from the page",
+    ).toBeGreaterThan(1.05);
+  });
+
   it("has no forest or lime ramp left to reintroduce a green sidebar", () => {
     // The retheme is only real if the old ramps are gone: while they existed,
     // any component could reach past the semantic roles and pull green back in.

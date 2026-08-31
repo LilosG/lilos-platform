@@ -55,29 +55,10 @@ import "../styles/global.css";
         </PageHeader>
 
         <PageSection
-          eyebrow="Context"
-          title="Client and reporting scope"
-          density="compact"
-        >
-          <CardGrid minimum="sm">
-            <MetricCard
-              id="overview-client-context"
-              label="Client"
-              labelId="overview-client-label"
-              value="Current organization"
-              valueId="overview-client-name"
-            />
-            <MetricCard
-              label="Reporting period"
-              value="All recorded activity"
-            />
-          </CardGrid>
-        </PageSection>
-
-        <PageSection
           id="kpi-section"
           eyebrow="Results"
           title="Recorded outcomes"
+          description="Every result recorded for this client to date."
         >
           <CardGrid id="kpi-grid" minimum="sm"
             ><MetricCard label="Loading" value="—" missing /></CardGrid
@@ -169,16 +150,11 @@ import "../styles/global.css";
         organization: import("../lib/workspace").MyOrganization,
       ): Promise<void> {
         setActiveOrganization(organization);
-        document.getElementById("overview-client-name")!.textContent =
-          organization.organization_name;
         document.getElementById("active-organization-status")!.textContent =
           statusLabel(organization.organization_status);
         const isAgency = ["internal", "partner", "support"].includes(
           organization.membership_type,
         );
-        document.getElementById("overview-client-label")!.textContent = isAgency
-          ? "Client"
-          : "Account";
         document.getElementById("overview-title")!.textContent = isAgency
           ? "Operating overview"
           : "Your account overview";
