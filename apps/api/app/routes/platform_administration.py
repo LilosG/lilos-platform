@@ -206,9 +206,32 @@ async def start_onboarding(
     command: OrganizationTransition,
     session: DatabaseSession,
 ) -> DataResponse:
-    return await _transition_organization(
+    """Begin onboarding, and crawl the client's website while it is still useful.
+
+    Activation is blocked until business details are confirmed, and the website
+    crawl is one of the three sources those details are proposed from
+    (administration.service: claim_sources "seo_crawl", alongside
+    "organization_profile" and "gbp_profile_snapshot"). Provisioning the site
+    only at activation therefore closed a loop on the operator: activation
+    needed confirmed facts, the richest source of facts was the crawl, and the
+    crawl did not run until activation — so the facts had to be typed in by hand
+    that the platform could have discovered.
+
+    The crawl now starts here, at the beginning of onboarding, so evidence is
+    already in hand by the time readiness is evaluated. Provisioning is
+    idempotent and still runs at activation, which covers a client whose primary
+    domain is added after this point.
+    """
+    started = await _transition_organization(
         request, organization_id, command, session, OrganizationLifecycleAction.START_ONBOARDING
     )
+    await website_provisioning.provision(
+        session,
+        organization_id,
+        actor_id=None,
+        correlation_id=request_correlation_id(request),
+    )
+    return started
 
 
 @router.post(
