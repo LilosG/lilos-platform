@@ -203,9 +203,27 @@ class AgentToolService:
 
     @staticmethod
     def _validate_skill_tool(run: AgentRun, tool_name: str) -> None:
+        """Refuse a tool the bound skill does not sanction, and say what it may use.
+
+        The runtime advertises every LILOs tool to the model regardless of which
+        skill a run is bound to, so a GBP run is shown SEO, Reviews and
+        workflow-inspection tools it will never be allowed to call. A bare
+        refusal taught it nothing and it kept probing, spending iterations on
+        calls that could only be denied. Naming the sanctioned set turns a
+        wasted iteration into a corrective one.
+
+        The list is not privileged: it is the same set already written into the
+        run's own instructions, so this discloses nothing new to the model.
+        """
         skill = SKILLS.get(run.skill_key)
-        if skill is None or tool_name not in skill.required_tools:
+        if skill is None:
             raise AgentToolDeniedError("tool is not sanctioned for the bound agent skill")
+        if tool_name not in skill.required_tools:
+            allowed = ", ".join(sorted(skill.required_tools))
+            raise AgentToolDeniedError(
+                f"tool is not sanctioned for the bound agent skill; "
+                f"this run may call only: {allowed}"
+            )
 
     async def invoke(
         self,

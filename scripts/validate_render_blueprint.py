@@ -247,6 +247,12 @@ def validate_blueprint(path: Path = BLUEPRINT) -> tuple[str, ...]:
             "agent.disabled_toolsets",
             "sessions.auto_prune",
             "sessions.retention_days 30",
+            # The config-schema rotation and the auxiliary spend cap are both
+            # load-bearing: without the rotation our toolset restriction is
+            # read under obsolete key semantics and silently ignored, and
+            # without the cap auxiliary inference bills outside the AI Gateway.
+            "below the v12 support floor",
+            "auxiliary.free_only true",
             "LILOS_TOOL_API_KEY",
             "Bootstrap complete; starting foreground gateway",
         ):

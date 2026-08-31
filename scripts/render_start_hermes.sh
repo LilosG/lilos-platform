@@ -25,6 +25,29 @@ if [ -z "${LILOS_TOOL_BASE_URL:-}" ] || [ -z "${LILOS_TOOL_API_KEY:-}" ]; then
     exit 1
 fi
 
+# Hermes stopped auto-migrating configs older than schema v12 (its support
+# floor). A below-floor config is left byte-for-byte untouched and the runtime
+# continues with defaults deep-merged at read time -- so every setting written
+# here lands in the file, is read back under obsolete v11-era key semantics, and
+# the current-schema keys silently fall back to their defaults. That is why
+# `platform_toolsets.api_server` did not restrict the model to the LILOs
+# toolset: it kept Hermes' own bridge tools, and runs wasted iterations calling
+# tool_search and tool_call before failing.
+#
+# The config on this disk was only ever written by this script, so rotating it
+# loses nothing: the settings below rebuild it on the current schema. The old
+# file is kept beside it rather than deleted, so a hand edit is recoverable.
+HERMES_CONFIG_FILE="${HERMES_HOME}/config.yaml"
+if [ -f "$HERMES_CONFIG_FILE" ]; then
+    HERMES_CONFIG_VERSION="$(/command/s6-setuidgid hermes /opt/hermes/.venv/bin/hermes config get _config_version 2>/dev/null | tr -dc '0-9')"
+    if [ -z "$HERMES_CONFIG_VERSION" ] || [ "$HERMES_CONFIG_VERSION" -lt 12 ]; then
+        HERMES_CONFIG_BACKUP="${HERMES_CONFIG_FILE}.below-floor-$(date -u +%Y%m%dT%H%M%SZ).bak"
+        cp "$HERMES_CONFIG_FILE" "$HERMES_CONFIG_BACKUP"
+        rm -f "$HERMES_CONFIG_FILE"
+        echo "[lilos-hermes] Config schema '${HERMES_CONFIG_VERSION:-unreadable}' is below the v12 support floor; backed up to ${HERMES_CONFIG_BACKUP} and regenerating on the current schema"
+    fi
+fi
+
 # The OpenAI-compatible gateway reads its default inference route from the
 # persisted Hermes config, not from the one-shot HERMES_INFERENCE_MODEL flag.
 # Enforce the governed LILOs production route on every boot so a stale model

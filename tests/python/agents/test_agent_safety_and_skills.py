@@ -542,3 +542,46 @@ def test_ai_provider_failures_are_reported_as_denials_not_generic_failures() -> 
     # The category and safe message both survive into the reported code.
     assert "exc.category" in provider_block
     assert "exc.safe_message" in provider_block
+
+
+def test_a_refused_tool_names_what_the_run_may_call_instead() -> None:
+    """A bare refusal taught the model nothing and it kept probing.
+
+    The runtime advertises every LILOs tool regardless of the bound skill, so a
+    GBP run is offered Reviews, SEO and workflow-inspection tools it can never
+    call. Production logs show it trying them one after another — each attempt
+    an iteration spent on a call that could only be denied.
+    """
+    run = cast(AgentRun, SimpleNamespace(skill_key="gbp.operator"))
+
+    with pytest.raises(AgentToolDeniedError) as denial:
+        AgentToolService._validate_skill_tool(run, "read_reviews_state")
+
+    message = str(denial.value)
+    assert "this run may call only:" in message
+    # The sanctioned set is named in full, in a stable order.
+    for sanctioned in SKILLS["gbp.operator"].required_tools:
+        assert sanctioned in message
+    # And the refused tool is not presented as if it were allowed.
+    assert "read_reviews_state" not in message.split("this run may call only:")[1]
+
+
+def test_the_named_set_is_exactly_the_skill_contract_not_the_whole_tool_plane() -> None:
+    # Disclosing the full tool plane here would hand the model a menu of calls
+    # that are refused for this run — the very probing this is meant to stop.
+    run = cast(AgentRun, SimpleNamespace(skill_key="gbp.operator"))
+    with pytest.raises(AgentToolDeniedError) as denial:
+        AgentToolService._validate_skill_tool(run, "inspect_workflow")
+
+    listed = str(denial.value).split("this run may call only:")[1]
+    named = {item.strip() for item in listed.split(",")}
+    assert named == set(SKILLS["gbp.operator"].required_tools)
+    assert named < set(TOOL_SPECS)
+
+
+def test_an_unknown_skill_is_refused_without_naming_anything() -> None:
+    # No skill means no contract to quote; the refusal must not invent one.
+    run = cast(AgentRun, SimpleNamespace(skill_key="not.a.skill"))
+    with pytest.raises(AgentToolDeniedError) as denial:
+        AgentToolService._validate_skill_tool(run, "read_gbp_state")
+    assert "may call only" not in str(denial.value)
