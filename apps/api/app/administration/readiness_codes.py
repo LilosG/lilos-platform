@@ -54,7 +54,7 @@ RESOLUTIONS: dict[ReadinessCode, BlockerResolution] = {
         step_key="organization_profile",
         route="/onboarding",
         control="organization-profile",
-        permission="organization.update",
+        permission="profiles.update",
         label="Create the organization profile",
     ),
     ReadinessCode.LOCATION_NOT_OPERATIONAL: BlockerResolution(
@@ -68,14 +68,14 @@ RESOLUTIONS: dict[ReadinessCode, BlockerResolution] = {
         step_key="locations",
         route="/onboarding",
         control="location-profile",
-        permission="locations.update",
+        permission="profiles.update",
         label="Complete the location profile",
     ),
     ReadinessCode.CONFIGURATION_INVALID: BlockerResolution(
         step_key=None,
         route="/settings",
         control="configuration",
-        permission="organization.settings.manage",
+        permission="configuration.manage",
         label="Activate a valid configuration revision",
     ),
     ReadinessCode.BUSINESS_FACT_UNRESOLVED: BlockerResolution(
@@ -96,7 +96,7 @@ RESOLUTIONS: dict[ReadinessCode, BlockerResolution] = {
         step_key=None,
         route="/settings",
         control="runtime-controls",
-        permission="organization.settings.manage",
+        permission="runtime_controls.manage",
         label="Clear the runtime control blocking this product",
     ),
     # The three non-activation-blocking codes still need a destination, because

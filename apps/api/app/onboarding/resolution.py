@@ -17,7 +17,7 @@ STEP_RESOLUTIONS: dict[str, BlockerResolution] = {
         step_key="organization_profile",
         route="/onboarding",
         control="organization-profile",
-        permission="organization.update",
+        permission="profiles.update",
         label="Create the organization profile",
     ),
     "locations": BlockerResolution(
@@ -45,7 +45,7 @@ STEP_RESOLUTIONS: dict[str, BlockerResolution] = {
         step_key="industry",
         route="/onboarding",
         control="industry",
-        permission="organization.update",
+        permission="organization.settings.manage",
         label="Select the industry",
     ),
     # Services are assigned on the Administration page, not in onboarding. This
