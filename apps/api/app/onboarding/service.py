@@ -27,14 +27,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.app.access_control.enums import MembershipStatus
 from apps.api.app.access_control.service import AccessControlService
-from apps.api.app.administration.contracts import ReadinessFinding
+from apps.api.app.administration.contracts import BlockerResolution, ReadinessFinding
 from apps.api.app.administration.enums import NOT_SELECTED_ENTITLEMENT_STATUSES
 from apps.api.app.administration.errors import AdministrationNotFoundError
+from apps.api.app.administration.readiness_codes import NON_ACTIVATION_BLOCKING_CODES
 from apps.api.app.administration.service import AdministrationService
 from apps.api.app.database.base import utc_now
 from apps.api.app.domains.service import OrganizationDomainService
 from apps.api.app.locations.service import LocationService
 from apps.api.app.onboarding.contracts import (
+    OnboardingBlocker,
     OnboardingClientState,
     OnboardingModeControl,
     OnboardingProductStatus,
@@ -45,6 +47,7 @@ from apps.api.app.onboarding.contracts import (
     OnboardingStepState,
 )
 from apps.api.app.onboarding.models import OnboardingStepAssignmentRecord
+from apps.api.app.onboarding.resolution import STEP_RESOLUTIONS
 from apps.api.app.organizations.service import OrganizationService
 from apps.api.app.profiles.errors import OrganizationProfileNotFoundError
 from apps.api.app.profiles.service import OrganizationProfileService
@@ -70,13 +73,10 @@ _ALL_STEP_KEYS: tuple[str, ...] = (
     "products",
 )
 
-# Findings that reflect external integration/connection or platform-level
-# state the operator resolves per-product, not something that should block
-# *organization* activation — they remain truthfully visible as per-product
-# blockers only.
-_NON_ACTIVATION_BLOCKING_CODES = frozenset(
-    {"CONNECTION_REQUIRED", "ORGANIZATION_NOT_ACTIVE", "ENTITLEMENT_NOT_EFFECTIVE"}
-)
+# Which findings do not block *organization* activation is decided once, in
+# administration.readiness_codes, alongside the findings themselves. It used
+# to be restated here as a set of bare strings, which is how the two drifted.
+_NON_ACTIVATION_BLOCKING_CODES = frozenset(code.value for code in NON_ACTIVATION_BLOCKING_CODES)
 
 # ---------------------------------------------------------------------------
 # Responsibility-mode step control map
@@ -194,7 +194,8 @@ class OnboardingOrchestrationService:
             responsibility_mode=mode,
             steps=tuple(steps),
             products=tuple(products),
-            blockers=tuple(blockers),
+            blockers=tuple(item.message for item in blockers),
+            blocker_details=tuple(blockers),
             warnings=tuple(warnings),
             progress_percent=progress_percent,
             activation_eligible=activation_eligible,
@@ -374,10 +375,10 @@ class OnboardingOrchestrationService:
 
     async def _evaluate_steps(
         self, session: AsyncSession, organization: Any
-    ) -> tuple[list[OnboardingStep], list[str], list[str]]:
+    ) -> tuple[list[OnboardingStep], list[OnboardingBlocker], list[str]]:
         """Evaluate all canonical onboarding steps from domain state."""
         steps: list[OnboardingStep] = []
-        blockers: list[str] = []
+        blockers: list[OnboardingBlocker] = []
         warnings: list[str] = []
         organization_id = organization.id
 
@@ -410,7 +411,12 @@ class OnboardingOrchestrationService:
             )
         )
         if not has_profile:
-            blockers.append("Complete the organization profile.")
+            blockers.append(
+                OnboardingBlocker(
+                    message="Complete the organization profile.",
+                    resolution=STEP_RESOLUTIONS["organization_profile"],
+                )
+            )
 
         # --- locations ---
         all_locations, _ = await self.locations.list(session, organization_id, limit=100, offset=0)
@@ -431,7 +437,12 @@ class OnboardingOrchestrationService:
             )
         )
         if not has_location:
-            blockers.append("Add at least one business location.")
+            blockers.append(
+                OnboardingBlocker(
+                    message="Add at least one business location.",
+                    resolution=STEP_RESOLUTIONS["locations"],
+                )
+            )
         steps.append(
             OnboardingStep(
                 key="primary_location",
@@ -449,7 +460,12 @@ class OnboardingOrchestrationService:
             )
         )
         if has_location and not has_primary_location:
-            blockers.append("Mark one location as the primary location.")
+            blockers.append(
+                OnboardingBlocker(
+                    message="Mark one location as the primary location.",
+                    resolution=STEP_RESOLUTIONS["primary_location"],
+                )
+            )
 
         # --- website / domain ---
         domains = await self.domains.list(session, organization_id)
@@ -473,7 +489,12 @@ class OnboardingOrchestrationService:
             )
         )
         if not has_primary_domain:
-            blockers.append("Configure the client's primary website domain.")
+            blockers.append(
+                OnboardingBlocker(
+                    message="Configure the client's primary website domain.",
+                    resolution=STEP_RESOLUTIONS["website_domain"],
+                )
+            )
 
         # --- industry ---
         industry_assigned = organization.industry_id is not None
@@ -490,7 +511,12 @@ class OnboardingOrchestrationService:
             )
         )
         if not industry_assigned:
-            blockers.append("Select the client's industry.")
+            blockers.append(
+                OnboardingBlocker(
+                    message="Select the client's industry.",
+                    resolution=STEP_RESOLUTIONS["industry"],
+                )
+            )
 
         # --- services ---
         effective_services = await self.administration.effective_services(
@@ -543,7 +569,12 @@ class OnboardingOrchestrationService:
             )
         )
         if not has_active_member:
-            blockers.append("Assign at least one active user with organization access.")
+            blockers.append(
+                OnboardingBlocker(
+                    message="Assign at least one active user with organization access.",
+                    resolution=STEP_RESOLUTIONS["users"],
+                )
+            )
 
         # --- products ---
         # Check whether any canonical product has a selected entitlement.
@@ -582,6 +613,12 @@ class OnboardingOrchestrationService:
         if not has_products:
             warnings.append("No products have been enabled for this client yet.")
 
+        # Attach each step's destination here rather than at the eight
+        # construction sites, so a new step cannot be added without one: a
+        # missing key surfaces as None and the deadlock-freedom suite fails.
+        steps = [
+            step.model_copy(update={"resolution": STEP_RESOLUTIONS.get(step.key)}) for step in steps
+        ]
         return steps, blockers, warnings
 
     # ------------------------------------------------------------------
@@ -592,12 +629,13 @@ class OnboardingOrchestrationService:
         self,
         session: AsyncSession,
         organization_id: UUID,
-        blockers: list[str],
+        blockers: list[OnboardingBlocker],
         warnings: list[str],
     ) -> list[OnboardingProductStatus]:
         """Evaluate product entitlement and readiness for all canonical products."""
         products: list[OnboardingProductStatus] = []
         grouped_blockers: dict[str, list[str]] = {}
+        grouped_resolutions: dict[str, BlockerResolution | None] = {}
         connection_required_products: list[str] = []
 
         for key in CANONICAL_PRODUCT_KEYS:
@@ -653,6 +691,7 @@ class OnboardingOrchestrationService:
                     continue
                 other_findings.append(item)
                 grouped_blockers.setdefault(item.remediation, []).append(product.name)
+                grouped_resolutions.setdefault(item.remediation, item.resolution)
             if connection_required:
                 connection_required_products.append(product.name)
             products.append(
@@ -671,10 +710,25 @@ class OnboardingOrchestrationService:
 
         for remediation, names in grouped_blockers.items():
             unique = list(dict.fromkeys(names))
-            if len(unique) == 1:
-                blockers.append(f"[{unique[0]}] {remediation}")
-            else:
-                blockers.append(f"{remediation} (required by: {', '.join(unique)})")
+            resolution = grouped_resolutions.get(remediation)
+            if resolution is None:
+                # Every finding the platform emits today carries a resolution.
+                # A finding that somehow does not is still worth showing, so it
+                # falls back to the onboarding page rather than being dropped.
+                resolution = BlockerResolution(
+                    step_key=None,
+                    route="/onboarding",
+                    control="blockers",
+                    permission=None,
+                    label=remediation.rstrip("."),
+                )
+            blockers.append(
+                OnboardingBlocker(
+                    message=remediation,
+                    resolution=resolution,
+                    product_name=unique[0] if len(unique) == 1 else ", ".join(unique),
+                )
+            )
         for name in connection_required_products:
             warnings.append(f"[{name}] requires a connected external integration.")
 

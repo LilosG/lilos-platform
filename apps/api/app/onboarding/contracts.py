@@ -7,6 +7,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from apps.api.app.administration.contracts import BlockerResolution
 from apps.api.app.schemas import ResponseMeta
 
 
@@ -38,6 +39,27 @@ class OnboardingStep(BaseModel):
     blocking: bool
     detail: str
     next_action: str | None
+    # Where this step is completed. Additive with a default so a frontend built
+    # against the older shape keeps working through a deploy skew.
+    resolution: BlockerResolution | None = None
+
+
+class OnboardingBlocker(BaseModel):
+    """One thing standing between this client and activation.
+
+    ``message`` is the sentence the operator reads; ``resolution`` is what turns
+    it into a control they can press. Blockers used to be bare strings, which is
+    exactly why they were unactionable — the UI had nothing to link to, so it
+    rendered them as flat text and the operator went hunting.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    message: str
+    resolution: BlockerResolution
+    # Set when the blocker came from one product's readiness rather than from a
+    # step every client must complete.
+    product_name: str | None = None
 
 
 class OnboardingStepAssignment(BaseModel):
@@ -88,7 +110,11 @@ class OnboardingState(BaseModel):
     responsibility_mode: OnboardingResponsibilityMode | None = None
     steps: tuple[OnboardingStep, ...]
     products: tuple[OnboardingProductStatus, ...]
+    # The sentences, kept so a frontend built against the older shape keeps
+    # rendering through a deploy skew. `blocker_details` is the same list with
+    # the destination attached and is what the UI should read.
     blockers: tuple[str, ...]
+    blocker_details: tuple[OnboardingBlocker, ...] = ()
     warnings: tuple[str, ...]
     progress_percent: Annotated[int, Field(ge=0, le=100)]
     activation_eligible: bool

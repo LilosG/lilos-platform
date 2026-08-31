@@ -272,7 +272,15 @@ async def _readiness_aggregation(factory: async_sessionmaker[AsyncSession]) -> N
     ]
     # GBP requires business.name, business.address, business.hours (3 unresolved).
     assert len(fact_findings) == 1
-    assert "Review 3 business details" in fact_findings[0].remediation
+    assert "Confirm 3 business details" in fact_findings[0].remediation
+    # The count is the human sentence; the resolution is what makes the blocker
+    # actionable. An operator shown this must be told where to go and be able to
+    # go there, so both halves are pinned.
+    resolution = fact_findings[0].resolution
+    assert resolution is not None
+    assert resolution.route == "/onboarding"
+    assert resolution.control == "business-facts"
+    assert resolution.permission == "business_facts.approve"
 
 
 # ── Hotfix B: business.hours derivation from GBP regularHours ─────────────

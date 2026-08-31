@@ -254,11 +254,36 @@ class ControlResolution(Contract):
     reason: str | None
 
 
+class BlockerResolution(Contract):
+    """Where a blocker is resolved, and by whom.
+
+    Carried alongside the human sentence so the product can render a blocker as
+    an action rather than a sentence the operator has to go hunting behind, and
+    so a test can assert that everything shown to an operator is clearable by
+    that operator.
+    """
+
+    # The onboarding step that clears this, when one does. None means the
+    # blocker is resolved by a control that is not itself an onboarding step.
+    step_key: str | None
+    route: str
+    # Stable identifier of the control within that route. The frontend uses it
+    # as the scroll/focus target, so it is part of the contract, not a hint.
+    control: str
+    # The permission that clears it. None means it is deliberately not
+    # resolvable by an operator inside the platform — an external connection.
+    permission: str | None
+    label: str
+
+
 class ReadinessFinding(Contract):
     code: str
     blocking: bool
     resource_key: str | None = None
     remediation: str
+    # Additive with a default so existing consumers and stored payloads keep
+    # working; every finding the platform emits today populates it.
+    resolution: BlockerResolution | None = None
 
 
 class ProductReadiness(Contract):

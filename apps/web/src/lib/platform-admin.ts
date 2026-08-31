@@ -154,6 +154,23 @@ export type OnboardingStepKey =
 export type OnboardingResponsibilityMode =
   "managed" | "co_managed" | "self_service";
 
+/**
+ * Where a blocker or step is resolved.
+ *
+ * Blockers used to reach the frontend as bare sentences, so the UI could only
+ * print them and the operator had to work out where the control lived. The
+ * backend now names the route, the control within it, and the permission that
+ * clears it — see `apps/api/app/administration/readiness_codes.py`.
+ */
+export type BlockerResolution = {
+  step_key: OnboardingStepKey | null;
+  route: string;
+  /** Stable id of the control to scroll to and focus on arrival. */
+  control: string;
+  permission: string | null;
+  label: string;
+};
+
 export type OnboardingStep = {
   key: OnboardingStepKey;
   label: string;
@@ -161,6 +178,13 @@ export type OnboardingStep = {
   blocking: boolean;
   detail: string;
   next_action: string | null;
+  resolution?: BlockerResolution | null;
+};
+
+export type OnboardingBlocker = {
+  message: string;
+  resolution: BlockerResolution;
+  product_name: string | null;
 };
 
 export type OnboardingProductStatus = {
@@ -183,7 +207,13 @@ export type OnboardingState = {
   responsibility_mode: OnboardingResponsibilityMode | null;
   steps: OnboardingStep[];
   products: OnboardingProductStatus[];
+  /**
+   * The blocker sentences. Retained so this client keeps rendering against an
+   * API that predates `blocker_details` during a deploy skew; prefer
+   * `blocker_details`, which carries where each one is resolved.
+   */
   blockers: string[];
+  blocker_details?: OnboardingBlocker[];
   warnings: string[];
   progress_percent: number;
   activation_eligible: boolean;

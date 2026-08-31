@@ -66,6 +66,7 @@ from apps.api.app.administration.models import (
     ServiceAssignment,
     ServiceDefinition,
 )
+from apps.api.app.administration.readiness_codes import ReadinessCode, finding
 from apps.api.app.administration.repository import (
     AdministrationCatalogRepository,
     ConfigurationRepository,
@@ -2215,20 +2216,15 @@ class AdministrationService:
         policy_ids: list[UUID] = []
         if entitlement is None or entitlement.status in {"not_enabled", "archived", "suspended"}:
             findings.append(
-                ReadinessFinding(
-                    code="ENTITLEMENT_NOT_EFFECTIVE",
-                    blocking=True,
+                finding(
+                    ReadinessCode.ENTITLEMENT_NOT_EFFECTIVE,
                     resource_key=product_key,
-                    remediation="Create or restore an effective entitlement.",
                 )
             )
         if organization.status.value != "active":
             findings.append(
-                ReadinessFinding(
-                    code="ORGANIZATION_NOT_ACTIVE",
-                    blocking=True,
-                    resource_key=None,
-                    remediation="Complete the organization lifecycle prerequisites.",
+                finding(
+                    ReadinessCode.ORGANIZATION_NOT_ACTIVE,
                 )
             )
         if (
@@ -2241,21 +2237,16 @@ class AdministrationService:
             is None
         ):
             findings.append(
-                ReadinessFinding(
-                    code="ORGANIZATION_PROFILE_MISSING",
-                    blocking=True,
-                    resource_key=None,
-                    remediation="Create the organization profile.",
+                finding(
+                    ReadinessCode.ORGANIZATION_PROFILE_MISSING,
                 )
             )
         for location in evaluation_locations:
             if location.status.value in {"closed_permanently", "archived"}:
                 findings.append(
-                    ReadinessFinding(
-                        code="LOCATION_NOT_OPERATIONAL",
-                        blocking=True,
+                    finding(
+                        ReadinessCode.LOCATION_NOT_OPERATIONAL,
                         resource_key=str(location.id),
-                        remediation="Select an eligible location.",
                     )
                 )
             if (
@@ -2269,11 +2260,9 @@ class AdministrationService:
                 is None
             ):
                 findings.append(
-                    ReadinessFinding(
-                        code="LOCATION_PROFILE_MISSING",
-                        blocking=True,
+                    finding(
+                        ReadinessCode.LOCATION_PROFILE_MISSING,
                         resource_key=str(location.id),
-                        remediation="Create the location profile.",
                     )
                 )
         for key in product.required_configuration_keys:
@@ -2282,11 +2271,9 @@ class AdministrationService:
             )
             if not configuration_resolution.valid:
                 findings.append(
-                    ReadinessFinding(
-                        code="CONFIGURATION_INVALID",
-                        blocking=True,
+                    finding(
+                        ReadinessCode.CONFIGURATION_INVALID,
                         resource_key=key,
-                        remediation="Activate a valid configuration revision.",
                     )
                 )
             config_ids.extend(
@@ -2315,16 +2302,9 @@ class AdministrationService:
         if unresolved_fact_keys:
             count = len(unresolved_fact_keys)
             findings.append(
-                ReadinessFinding(
-                    code="BUSINESS_FACT_UNRESOLVED",
-                    blocking=True,
-                    resource_key=None,
-                    remediation=(
-                        f"Review {count} business detail"
-                        f"{'s' if count != 1 else ''} needing confirmation."
-                        if count
-                        else "Approve one unambiguous current business fact."
-                    ),
+                finding(
+                    ReadinessCode.BUSINESS_FACT_UNRESOLVED,
+                    remediation=(f"Confirm {count} business detail{'s' if count != 1 else ''}."),
                 )
             )
         if product.required_integrations:
@@ -2336,11 +2316,12 @@ class AdministrationService:
                 connected = await self._integration_connected(session, organization_id, key)
                 if not connected:
                     findings.append(
-                        ReadinessFinding(
-                            code="CONNECTION_REQUIRED",
-                            blocking=True,
+                        finding(
+                            ReadinessCode.CONNECTION_REQUIRED,
                             resource_key=key,
-                            remediation=_integration_remediation(key),
+                            remediation=_integration_remediation(
+                                key,
+                            ),
                         )
                     )
         if product.requires_approval_policy:
@@ -2349,11 +2330,9 @@ class AdministrationService:
             )
             if not policies:
                 findings.append(
-                    ReadinessFinding(
-                        code="APPROVAL_POLICY_MISSING",
-                        blocking=True,
+                    finding(
+                        ReadinessCode.APPROVAL_POLICY_MISSING,
                         resource_key=product_key,
-                        remediation="Provision the default approval policy for this client.",
                     )
                 )
             policy_ids.extend(item.id for item in policies)
@@ -2362,23 +2341,27 @@ class AdministrationService:
         )
         if not control.allowed:
             findings.append(
-                ReadinessFinding(
-                    code="RUNTIME_CONTROL_BLOCKED",
-                    blocking=True,
+                finding(
+                    ReadinessCode.RUNTIME_CONTROL_BLOCKED,
                     resource_key=product_key,
-                    remediation="Resolve the winning runtime control.",
                 )
             )
-        onboarding = await self.onboarding(session, organization_id)
-        if onboarding.blockers:
-            findings.append(
-                ReadinessFinding(
-                    code="ONBOARDING_BLOCKED",
-                    blocking=True,
-                    resource_key=None,
-                    remediation="Complete blocking onboarding requirements.",
-                )
-            )
+        # Deliberately no ONBOARDING_BLOCKED finding here.
+        #
+        # This used to read the stored onboarding checklist and, if it held any
+        # blocker, emit "Complete blocking onboarding requirements." The
+        # onboarding read model folds each product's blocking findings into its
+        # own blocker list, so that sentence came back to the operator as a
+        # blocker on onboarding caused by onboarding — restated once per enabled
+        # product, and clearable only as a side effect of clearing everything
+        # else.
+        #
+        # It also crossed two independent models: readiness read the stored
+        # `OnboardingChecklistItem` table while the onboarding page renders live
+        # domain state, so the two could disagree with no way for an operator to
+        # see why. Readiness now reports only what *this product* is missing.
+        # Whether onboarding as a whole is complete is the onboarding read
+        # model's question, and it is the only thing that answers it.
         ready = not any(item.blocking for item in findings)
         return ProductReadiness(
             ready=ready,
