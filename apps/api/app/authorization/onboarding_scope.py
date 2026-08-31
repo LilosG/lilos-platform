@@ -22,6 +22,13 @@ activation." An unactivated client can be configured; it cannot act.
 
 from apps.api.app.organizations.enums import OrganizationStatus
 
+# The rule this set follows, so it is derived rather than guessed at: any
+# permission whose absence can block activation must be usable before
+# activation. Otherwise the platform demands something of the operator and
+# refuses them the means to do it — which is how three separate deadlocks
+# reached production in one afternoon. test_onboarding_gate_reachability walks
+# every blocking readiness code the administration service can emit and fails
+# if the permission that resolves it is missing here.
 ONBOARDING_SETUP_PERMISSIONS: frozenset[str] = frozenset(
     {
         # The client's own record and who may work on it.
@@ -43,9 +50,23 @@ ONBOARDING_SETUP_PERMISSIONS: frozenset[str] = frozenset(
         "business_facts.read",
         "business_facts.propose",
         "business_facts.approve",
+        # The organization and location profiles. LOCATION_PROFILE_MISSING and
+        # ORGANIZATION_PROFILE_MISSING are both blocking readiness findings, so
+        # without these the client is told to create a profile it is not allowed
+        # to create.
+        "profiles.read",
+        "profiles.update",
         # The onboarding read model and the steps themselves.
         "onboarding.read",
         "onboarding.manage",
+        # CONFIGURATION_INVALID blocks activation, and the fix is to activate a
+        # valid configuration revision.
+        "configuration.read",
+        "configuration.manage",
+        # RUNTIME_CONTROL_BLOCKED blocks activation, and the fix is to resolve
+        # the winning control.
+        "runtime_controls.read",
+        "runtime_controls.manage",
         # Product selection and the services/policies a product's readiness
         # depends on. Selecting a product is not using it.
         "products.read",
