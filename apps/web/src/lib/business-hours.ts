@@ -256,3 +256,101 @@ export function formatBusinessHours(value: unknown): string {
   if (!rows || rows.length === 0) return "\u2014";
   return rows.map((r) => `${r.dayLabel}\t${r.timeLabel}`).join("\n");
 }
+
+// ---------------------------------------------------------------------------
+// Entering hours by hand
+// ---------------------------------------------------------------------------
+
+/**
+ * business.hours could only ever be derived from a connected Google Business
+ * Profile sync. Connecting a provider happens after activation, and activation
+ * waits on the business details — so a client with no GBP connection yet had a
+ * required detail marked Missing with no way in the product to supply it.
+ *
+ * These build the same shape a GBP sync produces, so a manually entered
+ * schedule and a synced one are indistinguishable downstream and render
+ * through the same formatter.
+ */
+
+export const BUSINESS_DAYS = [
+  "MONDAY",
+  "TUESDAY",
+  "WEDNESDAY",
+  "THURSDAY",
+  "FRIDAY",
+  "SATURDAY",
+  "SUNDAY",
+] as const;
+
+export type BusinessDay = (typeof BUSINESS_DAYS)[number];
+
+export interface BusinessHoursDayInput {
+  day: BusinessDay;
+  closed: boolean;
+  /** 24-hour "HH:MM". */
+  open: string;
+  close: string;
+}
+
+export interface BusinessHoursBuildResult {
+  value: { periods: Period[] } | null;
+  errors: string[];
+}
+
+const TIME_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
+
+function minutesOf(time: string): number | null {
+  const match = TIME_PATTERN.exec(time.trim());
+  if (!match) return null;
+  return Number(match[1]) * 60 + Number(match[2]);
+}
+
+function dayLabel(day: BusinessDay): string {
+  return day.charAt(0) + day.slice(1).toLowerCase();
+}
+
+/**
+ * Convert a per-day schedule into GBP `regularHours` periods.
+ *
+ * A closing time at or before the opening time is read as closing after
+ * midnight and rolls the close onto the following day, which is how Google
+ * models it and how a bar that shuts at 2am has to be expressed. Anything that
+ * cannot be read is reported rather than guessed at, because a silently wrong
+ * opening hour is worse than a refusal.
+ */
+export function buildBusinessHoursValue(
+  days: BusinessHoursDayInput[],
+): BusinessHoursBuildResult {
+  const errors: string[] = [];
+  const periods: Period[] = [];
+
+  for (const entry of days) {
+    if (entry.closed) continue;
+    const open = minutesOf(entry.open);
+    const close = minutesOf(entry.close);
+    if (open === null || close === null) {
+      errors.push(
+        `${dayLabel(entry.day)}: enter both times as HH:MM, 24-hour.`,
+      );
+      continue;
+    }
+    const openIndex = BUSINESS_DAYS.indexOf(entry.day);
+    const closesNextDay = close <= open;
+    const closeDay = closesNextDay
+      ? BUSINESS_DAYS[(openIndex + 1) % BUSINESS_DAYS.length]
+      : entry.day;
+    periods.push({
+      openDay: entry.day,
+      openTime: entry.open.trim(),
+      closeDay,
+      closeTime: entry.close.trim(),
+    });
+  }
+
+  if (errors.length === 0 && periods.length === 0) {
+    errors.push(
+      "Set opening times for at least one day, or the client has no hours.",
+    );
+  }
+  return { value: errors.length === 0 ? { periods } : null, errors };
+}

@@ -186,8 +186,13 @@ import "../styles/global.css";
         businessFactLabel,
         factSourceLabel,
         formatBusinessFactValue,
+        proposeBusinessFact,
       } from "../lib/administration";
-      import { formatBusinessHoursRows } from "../lib/business-hours";
+      import {
+        BUSINESS_DAYS,
+        buildBusinessHoursValue,
+        formatBusinessHoursRows,
+      } from "../lib/business-hours";
       import {
         bootWorkspace,
         applyBootResult,
@@ -1130,6 +1135,18 @@ import "../styles/global.css";
             detail.textContent = "Not configured";
             info.append(h3, detail);
             item.append(info, statusBadge("missing", "Missing"));
+
+            // business.hours could only ever arrive from a Google Business
+            // Profile sync, and a provider is connected after activation —
+            // while activation waits on this very detail. A required fact with
+            // no way to supply it is a dead end, so it gets an editor here.
+            if (key === "business.hours") {
+              const setBtn = _makeBtn("Set business hours", "secondary", "sm");
+              setBtn.addEventListener("click", () => {
+                setBtn.replaceWith(_buildHoursEditor(item));
+              });
+              item.append(setBtn);
+            }
             list.append(item);
           }
         }
@@ -1267,6 +1284,110 @@ import "../styles/global.css";
         body.append(list);
         card.append(body);
         return card;
+      }
+
+      /**
+       * Inline editor for business hours, proposed as an ordinary business fact.
+       *
+       * Deliberately proposes rather than writes: hours reach a client's Google
+       * profile, so they pass the same human confirmation every other fact does.
+       */
+      function _buildHoursEditor(host: HTMLElement): HTMLElement {
+        const wrap = document.createElement("div");
+        wrap.className = "ui-stack";
+
+        const status = document.createElement("div");
+        status.setAttribute("role", "status");
+        status.setAttribute("aria-live", "polite");
+
+        const grid = document.createElement("div");
+        grid.className = "ui-stack";
+        const controls = BUSINESS_DAYS.map((day) => {
+          const row = document.createElement("div");
+          row.className = "ui-inline ui-inline--center";
+
+          const openToggle = document.createElement("input");
+          openToggle.type = "checkbox";
+          openToggle.id = `hours-open-${day}`;
+          const label = document.createElement("label");
+          label.htmlFor = openToggle.id;
+          label.textContent = day.charAt(0) + day.slice(1).toLowerCase();
+
+          const open = document.createElement("input");
+          open.type = "time";
+          open.className = "ui-input";
+          open.value = "09:00";
+          open.setAttribute("aria-label", `${label.textContent} opening time`);
+
+          const close = document.createElement("input");
+          close.type = "time";
+          close.className = "ui-input";
+          close.value = "17:00";
+          close.setAttribute("aria-label", `${label.textContent} closing time`);
+
+          const syncEnabled = (): void => {
+            open.disabled = !openToggle.checked;
+            close.disabled = !openToggle.checked;
+          };
+          openToggle.addEventListener("change", syncEnabled);
+          syncEnabled();
+
+          row.append(openToggle, label, open, close);
+          grid.append(row);
+          return { day, openToggle, open, close };
+        });
+
+        const save = _makeBtn("Save business hours", "primary", "sm");
+        save.addEventListener("click", () => {
+          void (async () => {
+            const { value, errors } = buildBusinessHoursValue(
+              controls.map((control) => ({
+                day: control.day,
+                closed: !control.openToggle.checked,
+                open: control.open.value,
+                close: control.close.value,
+              })),
+            );
+            if (!value) {
+              status.replaceChildren(errorAlert(errors.join(" ")));
+              return;
+            }
+            save.disabled = true;
+            save.textContent = "Working…";
+            const proposed = await proposeBusinessFact(
+              organizationId,
+              "business.hours",
+              "object",
+              value,
+              "Entered by the agency during onboarding.",
+            );
+            if (proposed.kind !== "ok") {
+              status.replaceChildren(
+                errorAlert(describeFailure(proposed, "Business hours")),
+              );
+              save.disabled = false;
+              save.textContent = "Save business hours";
+              return;
+            }
+            status.replaceChildren(
+              successAlert(
+                "Business hours proposed. Confirm them under Pending Confirmations below.",
+              ),
+            );
+            await openGovernance();
+          })();
+        });
+
+        const cancel = _makeBtn("Cancel", "secondary", "sm");
+        cancel.addEventListener("click", () => void openGovernance());
+
+        const actions = document.createElement("div");
+        actions.className = "ui-inline ui-inline--center";
+        actions.append(save, cancel);
+
+        wrap.append(grid, actions, status);
+        host.classList.add("ui-record-list__item--expanded");
+        return wrap;
       }
 
       function _makeBtn(
