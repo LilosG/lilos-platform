@@ -13,7 +13,9 @@ from apps.api.app.middleware import CORRELATION_ID_HEADER
 
 def payload(slug: str = "fabricated-api-org") -> dict[str, str]:
     return {
-        "name": "Fabricated API Organization",
+        # Derived from the slug: creation refuses a second client whose name
+        # matches an existing one, and these fixtures share a database.
+        "name": f"Fabricated API Organization {slug}",
         "slug": slug,
         "organization_type": "test",
         "timezone": "UTC",

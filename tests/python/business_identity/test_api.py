@@ -33,7 +33,9 @@ def create_organization(client: TestClient, slug: str) -> str:
     response = client.post(
         "/internal/organizations",
         json={
-            "name": "Fabricated Identity Organization",
+            # Unique per slug: creation refuses a second client whose name
+            # matches an existing one, and these fixtures share a database.
+            "name": f"Fabricated Identity Organization {slug}",
             "slug": slug,
             "organization_type": "test",
             "timezone": "UTC",

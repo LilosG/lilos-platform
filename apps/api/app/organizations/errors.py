@@ -29,3 +29,19 @@ class OrganizationTransitionConflictError(ConflictError):
 
     code = "ORGANIZATION_TRANSITION_CONFLICT"
     public_message = "The organization cannot perform that lifecycle transition."
+
+
+class OrganizationNameConflictError(ConflictError):
+    """Another organization already carries the same name.
+
+    Only slug uniqueness was enforced, so "Cococabana" and "cococabana" were
+    accepted as two separate clients with no warning. The result is a permanent
+    duplicate in every switcher and client list, and no obvious way to tell
+    which one holds the real work.
+    """
+
+    code = "ORGANIZATION_NAME_CONFLICT"
+    public_message = (
+        "Another organization already uses this name. Open the existing one, or "
+        "resend with allow_duplicate_name to create a second client with the same name."
+    )

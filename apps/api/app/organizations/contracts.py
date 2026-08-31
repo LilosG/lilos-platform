@@ -56,6 +56,10 @@ class OrganizationCreate(BaseModel):
     onboarding_status: Annotated[str, Field(min_length=1, max_length=64)] | None = None
     onboarding_mode: Annotated[str, Field(min_length=1, max_length=16)] | None = None
     industry_id: UUID | None = None
+    # Two real clients may legitimately share a name. Creation refuses a
+    # collision by default so an accidental duplicate cannot be made silently;
+    # this is the deliberate override, and it is never set by default.
+    allow_duplicate_name: bool = False
 
     @field_validator("slug", mode="before")
     @classmethod

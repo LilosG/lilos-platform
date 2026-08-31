@@ -28,7 +28,9 @@ def internal_client(
 
 def organization_payload(slug: str) -> dict[str, str]:
     return {
-        "name": "Fabricated Organization",
+        # Derived from the slug: creation refuses a second client whose name
+        # matches an existing one, and these fixtures share a database.
+        "name": f"Fabricated Organization {slug}",
         "slug": slug,
         "organization_type": "test",
         "timezone": "UTC",

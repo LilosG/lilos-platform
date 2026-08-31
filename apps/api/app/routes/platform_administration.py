@@ -385,6 +385,56 @@ async def resume_organization(
 
 
 @router.post(
+    "/organizations/{organization_id}/start-offboarding",
+    response_model=DataResponse,
+    summary="Begin retiring an organization",
+)
+async def start_offboarding_organization(
+    request: Request,
+    organization_id: UUID,
+    command: OrganizationTransition,
+    session: DatabaseSession,
+) -> DataResponse:
+    """Move a client into offboarding, the first half of retiring it.
+
+    The lifecycle engine has always supported retirement — prospect,
+    onboarding, active, paused and suspended all lead to offboarding, and
+    offboarding leads to archived — but neither transition was ever exposed. A
+    client created by mistake, or one that has left, was therefore permanent:
+    it stayed in every switcher and every client list with no way to remove it.
+    Kept as two steps rather than one because archiving is irreversible through
+    this API, and a deliberate pause between them is worth more than the click
+    it costs.
+    """
+    return await _transition_organization(
+        request, organization_id, command, session, OrganizationLifecycleAction.START_OFFBOARDING
+    )
+
+
+@router.post(
+    "/organizations/{organization_id}/archive",
+    response_model=DataResponse,
+    summary="Archive an offboarding organization",
+)
+async def archive_organization(
+    request: Request,
+    organization_id: UUID,
+    command: OrganizationTransition,
+    session: DatabaseSession,
+) -> DataResponse:
+    """Retire an offboarded client.
+
+    Archived is terminal in the transition map: nothing leads out of it. The
+    organization and all of its records are retained — this is a lifecycle
+    state, not a delete — but it stops appearing in the organizations a member
+    can switch into.
+    """
+    return await _transition_organization(
+        request, organization_id, command, session, OrganizationLifecycleAction.ARCHIVE
+    )
+
+
+@router.post(
     "/organizations/{organization_id}/locations",
     response_model=DataResponse,
     status_code=status.HTTP_201_CREATED,

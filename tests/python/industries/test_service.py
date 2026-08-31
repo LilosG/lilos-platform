@@ -47,7 +47,9 @@ def organization_command(
     slug: str = "fabricated_organization",
 ) -> OrganizationCreate:
     return OrganizationCreate(
-        name="Fabricated Organization",
+        # Derived from the slug: creation refuses a second client whose name
+        # matches an existing one, and these fixtures share a database.
+        name=f"Fabricated Organization {slug}",
         slug=slug.replace("_", "-"),
         organization_type=organization_type,
         timezone="UTC",

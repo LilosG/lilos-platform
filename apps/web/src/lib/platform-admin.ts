@@ -328,6 +328,37 @@ export function activateOrganization(
   );
 }
 
+/**
+ * Begin retiring a client — the first of two deliberate steps.
+ *
+ * The lifecycle engine always supported retirement, but neither transition was
+ * exposed, so a client created by mistake (or one that has left) stayed in
+ * every switcher and client list permanently.
+ */
+export function startOffboardingOrganization(
+  organizationId: string,
+  expectedVersion: number,
+): Promise<ApiOutcome<AdminOrganization>> {
+  return apiRequest<AdminOrganization>(
+    `${base}/organizations/${organizationId}/start-offboarding`,
+    { method: "POST", body: { expected_version: expectedVersion } },
+  );
+}
+
+/**
+ * Retire an offboarding client. Archived is terminal — nothing leads out of it
+ * through this API — so the caller must confirm before this is reached.
+ */
+export function archiveOrganization(
+  organizationId: string,
+  expectedVersion: number,
+): Promise<ApiOutcome<AdminOrganization>> {
+  return apiRequest<AdminOrganization>(
+    `${base}/organizations/${organizationId}/archive`,
+    { method: "POST", body: { expected_version: expectedVersion } },
+  );
+}
+
 export function fetchOrganizationLocations(
   organizationId: string,
 ): Promise<ApiOutcome<PaginatedLocations>> {

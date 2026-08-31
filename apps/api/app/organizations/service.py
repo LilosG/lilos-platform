@@ -21,12 +21,14 @@ from apps.api.app.organizations.enums import (
     OrganizationStatus,
 )
 from apps.api.app.organizations.errors import (
+    OrganizationNameConflictError,
     OrganizationNotFoundError,
     OrganizationSlugConflictError,
     OrganizationTransitionConflictError,
     OrganizationVersionConflictError,
 )
 from apps.api.app.organizations.models import Organization
+from apps.api.app.organizations.naming import normalize_organization_name
 from apps.api.app.organizations.repository import OrganizationRepository
 
 TRANSITIONS: dict[
@@ -90,6 +92,16 @@ class OrganizationService:
         """Create one prospect organization and its audit record without committing."""
         if await self.repository.get_by_slug(session, command.slug) is not None:
             raise OrganizationSlugConflictError
+        if not command.allow_duplicate_name:
+            # Slug uniqueness alone let "Cococabana" and "cococabana" become two
+            # separate clients. The name is what an operator recognises a client
+            # by, so a collision is refused here unless it is asked for
+            # explicitly.
+            existing = await self.repository.get_by_normalized_name(
+                session, normalize_organization_name(command.name)
+            )
+            if existing is not None:
+                raise OrganizationNameConflictError
         industry = None
         if command.industry_id is not None:
             industry = await self.industry_repository.get_by_id(session, command.industry_id)

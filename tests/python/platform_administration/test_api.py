@@ -202,6 +202,16 @@ def test_non_platform_administrator_gets_403_on_every_mutating_route(
             f"/api/v1/platform/organizations/{organization_id}/provision-website",
             None,
         ),
+        (
+            "POST",
+            f"/api/v1/platform/organizations/{organization_id}/start-offboarding",
+            {"expected_version": 1},
+        ),
+        (
+            "POST",
+            f"/api/v1/platform/organizations/{organization_id}/archive",
+            {"expected_version": 1},
+        ),
     ]
     for method, path, body in requests:
         response = client.request(method, path, headers=HEADERS, json=body)
@@ -646,3 +656,120 @@ def test_provisioning_without_a_primary_domain_says_so_instead_of_guessing(
     assert error["code"] == "NO_PRIMARY_DOMAIN"
     # The message has to name the fix, not just the refusal.
     assert "mark it primary" in error["message"]
+
+
+@pytest.mark.integration
+def test_a_second_client_with_the_same_name_is_refused_and_names_the_escape_hatch(
+    platform_administration_client: tuple[TestClient, FakeVerifier, dict[str, UUID]],
+) -> None:
+    """Only the slug was unique, so "Cococabana" and "cococabana" both saved.
+
+    The result was a permanent duplicate in every switcher and client list,
+    with nothing to indicate which one held the real work.
+    """
+    client, verifier, ids = platform_administration_client
+    verifier.result = claims(ids["admin_subject"])
+
+    first = client.post(
+        "/api/v1/platform/organizations",
+        headers=HEADERS,
+        json={
+            "name": "cococabana",
+            "slug": f"cococabana-{uuid4().hex[:8]}",
+            "organization_type": "test",
+            "timezone": "UTC",
+            "default_currency": "USD",
+        },
+    )
+    assert first.status_code == 201, first.text
+
+    # Different capitalisation, different slug: previously accepted in full.
+    duplicate = client.post(
+        "/api/v1/platform/organizations",
+        headers=HEADERS,
+        json={
+            "name": "Cococabana",
+            "slug": f"cococabana-{uuid4().hex[:8]}",
+            "organization_type": "test",
+            "timezone": "UTC",
+            "default_currency": "USD",
+        },
+    )
+    assert duplicate.status_code == 409, duplicate.text
+    error = duplicate.json()["error"]
+    assert error["code"] == "ORGANIZATION_NAME_CONFLICT"
+    assert "allow_duplicate_name" in error["message"]
+
+
+@pytest.mark.integration
+def test_two_genuinely_same_named_clients_remain_possible_on_purpose(
+    platform_administration_client: tuple[TestClient, FakeVerifier, dict[str, UUID]],
+) -> None:
+    """The guard must not make a real business situation impossible."""
+    client, verifier, ids = platform_administration_client
+    verifier.result = claims(ids["admin_subject"])
+    name = f"Twin Client {uuid4().hex[:6]}"
+
+    for index in range(2):
+        body: dict[str, object] = {
+            "name": name,
+            "slug": f"twin-{uuid4().hex[:10]}",
+            "organization_type": "test",
+            "timezone": "UTC",
+            "default_currency": "USD",
+        }
+        if index == 1:
+            body["allow_duplicate_name"] = True
+        response = client.post("/api/v1/platform/organizations", headers=HEADERS, json=body)
+        assert response.status_code == 201, response.text
+
+
+@pytest.mark.integration
+def test_a_client_created_by_mistake_can_be_retired(
+    platform_administration_client: tuple[TestClient, FakeVerifier, dict[str, UUID]],
+) -> None:
+    """Retirement existed in the lifecycle engine and was never exposed.
+
+    Prospect leads to offboarding and offboarding leads to archived, but
+    neither route was mounted, so a client created by mistake was permanent.
+    """
+    client, verifier, ids = platform_administration_client
+    verifier.result = claims(ids["admin_subject"])
+
+    organization = _create_organization(client, slug=f"retire-{uuid4().hex[:10]}")
+    organization_id = organization["id"]
+    assert organization["status"] == "prospect"
+
+    offboarding = client.post(
+        f"/api/v1/platform/organizations/{organization_id}/start-offboarding",
+        headers=HEADERS,
+        json={"expected_version": organization["version"]},
+    )
+    assert offboarding.status_code == 200, offboarding.text
+    assert offboarding.json()["data"]["status"] == "offboarding"
+
+    archived = client.post(
+        f"/api/v1/platform/organizations/{organization_id}/archive",
+        headers=HEADERS,
+        json={"expected_version": offboarding.json()["data"]["version"]},
+    )
+    assert archived.status_code == 200, archived.text
+    assert archived.json()["data"]["status"] == "archived"
+
+
+@pytest.mark.integration
+def test_archiving_is_refused_without_offboarding_first(
+    platform_administration_client: tuple[TestClient, FakeVerifier, dict[str, UUID]],
+) -> None:
+    """Two steps, on purpose: archived is terminal in the transition map."""
+    client, verifier, ids = platform_administration_client
+    verifier.result = claims(ids["admin_subject"])
+
+    organization = _create_organization(client, slug=f"direct-{uuid4().hex[:10]}")
+    response = client.post(
+        f"/api/v1/platform/organizations/{organization['id']}/archive",
+        headers=HEADERS,
+        json={"expected_version": organization["version"]},
+    )
+    assert response.status_code == 409, response.text
+    assert response.json()["error"]["code"] == "ORGANIZATION_TRANSITION_CONFLICT"

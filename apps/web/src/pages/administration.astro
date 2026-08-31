@@ -325,6 +325,8 @@ import "../styles/global.css";
         createOrganization,
         startOnboarding,
         activateOrganization,
+        startOffboardingOrganization,
+        archiveOrganization,
         fetchOrganizationLocations,
         createLocation,
         activateLocation,
@@ -347,6 +349,8 @@ import "../styles/global.css";
         applyShellPrincipal,
         setPlatformAdminStatus,
         metricCard,
+        confirmInline,
+        describeFailure as sharedDescribeFailure,
       } from "../lib/ui";
       import { statusLabel } from "../lib/status-language";
 
@@ -368,22 +372,14 @@ import "../styles/global.css";
       }
 
       function describeFailure(outcome: ApiOutcome<unknown>): string {
-        switch (outcome.kind) {
-          case "forbidden":
-            return "You do not have permission to view Administration for this organization.";
-          case "not-found":
-            return "The requested resource could not be found.";
-          case "disconnected":
-            return "Could not reach the platform API.";
-          case "unauthenticated":
-            return "Your session has expired. Sign in again.";
-          case "not-configured":
-            return "This deployment is not configured.";
-          case "error":
-            return outcome.message;
-          case "ok":
-            return "";
+        // A second, older copy of this logic lived here and hardcoded its own
+        // refusal sentence, so the backend's named cause — an unactivated
+        // client, a product never enabled, a missing step-up — never reached
+        // this page either. One implementation now serves both.
+        if (outcome.kind === "forbidden" && !outcome.message) {
+          return "You do not have permission to view Administration for this organization.";
         }
+        return sharedDescribeFailure(outcome);
       }
 
       function goToLogin(): void {
@@ -714,6 +710,55 @@ import "../styles/global.css";
             await renderClientDetail(activated.data);
           });
           actions.append(activateButton);
+        }
+        if (organization.status !== "archived") {
+          // Retiring a client existed in the lifecycle engine and was exposed
+          // nowhere, so a client created by mistake — or one that has left —
+          // stayed in every switcher and client list permanently. Archiving is
+          // a lifecycle state, not a delete: the records are retained.
+          const retireButton = document.createElement("button");
+          retireButton.type = "button";
+          retireButton.className = "button button--secondary button--sm";
+          retireButton.textContent = "Retire client";
+          retireButton.title =
+            "Removes this client from the workspace switcher and client lists. Records are retained.";
+          retireButton.addEventListener("click", () => {
+            retireButton.replaceWith(
+              confirmInline(
+                `Retire ${organization.name}? It disappears from the switcher and every client list, and cannot be brought back from the UI. Its records are kept.`,
+                async () => {
+                  let current = organization;
+                  if (current.status !== "offboarding") {
+                    const offboarded = await startOffboardingOrganization(
+                      current.id,
+                      current.version,
+                    );
+                    if (offboarded.kind !== "ok") {
+                      platformAlert("error", describeFailure(offboarded));
+                      return;
+                    }
+                    current = offboarded.data;
+                  }
+                  const archived = await archiveOrganization(
+                    current.id,
+                    current.version,
+                  );
+                  if (archived.kind !== "ok") {
+                    platformAlert("error", describeFailure(archived));
+                    return;
+                  }
+                  platformAlert(
+                    "success",
+                    `${archived.data.name} was retired.`,
+                  );
+                  await renderClientsList();
+                  document.getElementById("client-detail")!.hidden = true;
+                },
+                () => void renderClientDetail(organization),
+              ),
+            );
+          });
+          actions.append(retireButton);
         }
         if (currentPrincipal) {
           const ownerButton = document.createElement("button");

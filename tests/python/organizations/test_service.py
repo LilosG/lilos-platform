@@ -23,9 +23,12 @@ from apps.api.app.organizations.models import Organization
 from apps.api.app.organizations.service import OrganizationService
 
 
-def command(slug: str = "fabricated-organization") -> OrganizationCreate:
+def command(slug: str = "fabricated-organization", name: str | None = None) -> OrganizationCreate:
+    # The name defaults to one derived from the slug because creation now
+    # refuses a second client whose name matches an existing one: two fixtures
+    # that differ only by slug are two distinct clients, not a duplicate.
     return OrganizationCreate(
-        name="Fabricated Organization",
+        name=name or slug.replace("-", " ").title(),
         slug=slug,
         organization_type=OrganizationType.TEST,
         timezone="America/Los_Angeles",

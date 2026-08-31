@@ -76,6 +76,7 @@ from apps.api.app.authentication.models import UserProfile
 from apps.api.app.authentication.repository import UserProfileRepository
 from apps.api.app.database.base import utc_now
 from apps.api.app.locations.models import Location
+from apps.api.app.organizations.enums import OrganizationStatus
 from apps.api.app.organizations.models import Organization
 
 MEMBERSHIP_TRANSITIONS = {
@@ -368,7 +369,14 @@ class AccessControlService:
             organization.id: organization
             for organization in (
                 await session.scalars(
-                    select(Organization).where(Organization.id.in_(organization_ids))
+                    select(Organization).where(
+                        Organization.id.in_(organization_ids),
+                        # A retired client stays in the database — archiving is a
+                        # lifecycle state, not a delete — but it must leave the
+                        # switcher, or retiring it would change nothing an
+                        # operator can see.
+                        Organization.status != OrganizationStatus.ARCHIVED,
+                    )
                 )
             ).all()
         }

@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from apps.api.app.database.base import utc_now
 from apps.api.app.organizations.enums import OrganizationStatus
 from apps.api.app.organizations.models import Organization
+from apps.api.app.organizations.naming import normalize_organization_name
 
 MAX_ORGANIZATION_LIST_LIMIT = 100
 
@@ -37,6 +38,23 @@ class OrganizationRepository:
             Organization | None,
             await session.scalar(select(Organization).where(Organization.slug == slug)),
         )
+
+    async def get_by_normalized_name(
+        self, session: AsyncSession, normalized_name: str
+    ) -> Organization | None:
+        """Return an organization whose name matches ignoring case and spacing.
+
+        Name is not unique in the database and should not become so — two real
+        clients may legitimately share a name. This exists so creation can warn
+        about a collision rather than silently produce a duplicate.
+        """
+        candidates = await session.scalars(
+            select(Organization).where(Organization.status != OrganizationStatus.ARCHIVED)
+        )
+        for organization in candidates:
+            if normalize_organization_name(organization.name) == normalized_name:
+                return organization
+        return None
 
     async def list(
         self,
