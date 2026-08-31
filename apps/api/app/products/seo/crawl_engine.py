@@ -37,16 +37,94 @@ ANCHOR_NOFOLLOW_PATTERN = re.compile(
     r"""rel\s*=\s*["'][^"']*\bnofollow\b[^"']*["']""", re.IGNORECASE
 )
 TITLE_PATTERN = re.compile(r"<title[^>]*>(.*?)</title>", re.IGNORECASE | re.DOTALL)
-META_DESCRIPTION_PATTERN = re.compile(
-    r'<meta[^>]+name=["\']description["\'][^>]+content=["\']([^"\']*)["\']', re.IGNORECASE
-)
-CANONICAL_LINK_PATTERN = re.compile(
-    r'<link[^>]+rel=["\']canonical["\'][^>]+href=["\']([^"\']*)["\']', re.IGNORECASE
-)
-ROBOTS_META_PATTERN = re.compile(
-    r'<meta[^>]+name=["\']robots["\'][^>]+content=["\']([^"\']*)["\']', re.IGNORECASE
+# Tag scanners. Deliberately NOT one regex per attribute pair.
+#
+# The previous patterns were of the form
+#   <meta[^>]+name=["']description["'][^>]+content=["']([^"']*)["']
+# which is wrong in three ways that all produced false SEO findings against
+# real client sites:
+#
+#   1. It required `name` to appear before `content`. HTML attribute order is
+#      arbitrary, and `<meta content="..." name="description">` is emitted by
+#      several generators and minifiers. No match, so the page was reported as
+#      missing_meta_description while the tag was plainly there.
+#   2. The capture group `[^"']*` stops at the first apostrophe, so
+#      content="Carlsbad's best plumber" captured just "Carlsbad" — a silently
+#      corrupted value that then fed length checks and AI content generation.
+#   3. It required quoted values, so `name=description` never matched.
+#
+# The robots variant mattered most: a page marked noindex via
+# `<meta content="noindex" name="robots">` was read as indexable and ingested.
+#
+# These scan for the tag, then parse its attributes properly, which is order-
+# independent, quote-style independent, and apostrophe-safe.
+META_TAG_PATTERN = re.compile(r"<meta\b([^>]*)>", re.IGNORECASE)
+LINK_TAG_PATTERN = re.compile(r"<link\b([^>]*)>", re.IGNORECASE)
+# Attribute values may be double-quoted, single-quoted, or bare.
+_ATTRIBUTE_PATTERN = re.compile(
+    r"""([a-zA-Z_:][-a-zA-Z0-9_:.]*)      # attribute name
+        (?:\s*=\s*
+          (?: "([^"]*)"                    # double-quoted value
+            | '([^']*)'                    # single-quoted value
+            | ([^\s"'=<>`]+)               # bare value
+          )
+        )?""",
+    re.VERBOSE,
 )
 H1_PATTERN = re.compile(r"<h1[^>]*>", re.IGNORECASE)
+
+
+def _tag_attributes(attribute_text: str) -> dict[str, str]:
+    """Parse a tag's attributes into a lowercased name -> value mapping.
+
+    A valueless attribute maps to the empty string. Later duplicates lose to
+    the first, matching how browsers resolve repeated attributes.
+    """
+    attributes: dict[str, str] = {}
+    for match in _ATTRIBUTE_PATTERN.finditer(attribute_text):
+        name = match.group(1).lower()
+        if name in attributes:
+            continue
+        double, single, bare = match.group(2), match.group(3), match.group(4)
+        value = double if double is not None else single if single is not None else bare
+        attributes[name] = value if value is not None else ""
+    return attributes
+
+
+def _meta_content(html: str, meta_name: str) -> str | None:
+    """Return the content of ``<meta name="...">``, whatever the attribute order.
+
+    Matching on ``name`` is case-insensitive because HTML attribute values here
+    are keywords, not data — ``name="Description"`` is the same tag.
+    """
+    wanted = meta_name.lower()
+    for match in META_TAG_PATTERN.finditer(html):
+        attributes = _tag_attributes(match.group(1))
+        if attributes.get("name", "").strip().lower() != wanted:
+            continue
+        content = attributes.get("content")
+        if content is not None:
+            return content
+    return None
+
+
+def _link_href(html: str, rel: str) -> str | None:
+    """Return the href of ``<link rel="...">``, whatever the attribute order.
+
+    ``rel`` is a space-separated token list, so this matches on membership
+    rather than string equality — ``rel="canonical alternate"`` still counts.
+    """
+    wanted = rel.lower()
+    for match in LINK_TAG_PATTERN.finditer(html):
+        attributes = _tag_attributes(match.group(1))
+        if wanted not in attributes.get("rel", "").lower().split():
+            continue
+        href = attributes.get("href")
+        if href is not None:
+            return href
+    return None
+
+
 SCRIPT_STYLE_PATTERN = re.compile(
     r"<(?:script|style|noscript|iframe|svg|canvas|template)[^>]*>.*?"
     r"</(?:script|style|noscript|iframe|svg|canvas|template)>",
@@ -376,16 +454,16 @@ def extract_page_signals(
         title_match.group(1).strip() if title_match else None
     )
 
-    meta_desc_match = META_DESCRIPTION_PATTERN.search(html)
+    raw_description = _meta_content(html, "description")
     meta_description, meta_description_truncated = _truncate_content(
-        meta_desc_match.group(1).strip() if meta_desc_match else None
+        raw_description.strip() if raw_description is not None else None
     )
 
-    canonical_match = CANONICAL_LINK_PATTERN.search(html)
+    canonical_href = _link_href(html, "canonical")
     canonical_url = None
     canonical_url_too_long = False
-    if canonical_match:
-        candidate = normalize_crawl_url(canonical_match.group(1).strip(), base_url)
+    if canonical_href is not None and canonical_href.strip():
+        candidate = normalize_crawl_url(canonical_href.strip(), base_url)
         if len(candidate) <= MAX_URL_LENGTH:
             canonical_url = candidate
         else:
@@ -663,10 +741,12 @@ class CrawlEngine:
                             enqueue(normalized_final, depth)
 
             robots_directives: list[str] = []
-            robots_meta = ROBOTS_META_PATTERN.search(response.text or "")
-            if robots_meta:
+            robots_content = _meta_content(response.text or "", "robots")
+            if robots_content:
                 robots_directives = [
-                    d.strip().lower() for d in robots_meta.group(1).split(",") if d.strip()
+                    directive.strip().lower()
+                    for directive in robots_content.split(",")
+                    if directive.strip()
                 ]
 
             signals: dict[str, Any] = {}
