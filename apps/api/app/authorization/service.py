@@ -26,9 +26,9 @@ from apps.api.app.authorization.entitlements import (
     product_key_for_permission,
 )
 from apps.api.app.authorization.enums import AuthorizationReason
+from apps.api.app.authorization.onboarding_scope import organization_permits
 from apps.api.app.database.base import utc_now
 from apps.api.app.locations.repository import LocationRepository
-from apps.api.app.organizations.enums import OrganizationStatus
 from apps.api.app.organizations.repository import OrganizationRepository
 
 logger = logging.getLogger("lilos.security.authorization")
@@ -127,7 +127,9 @@ class AuthorizationService:
         organization = await self.organization_repository.get_by_id(
             session, request.organization_id
         )
-        if organization is None or organization.status is not OrganizationStatus.ACTIVE:
+        if organization is None or not organization_permits(
+            organization.status, request.permission_key
+        ):
             # The membership lookup normally happens after this check, but the
             # denial is far more useful when it can say "this client is not
             # activated yet" instead of "no permission" — and that sentence is

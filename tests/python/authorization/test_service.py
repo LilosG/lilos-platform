@@ -530,7 +530,12 @@ def test_user_organization_membership_mfa_isolation_and_catalog_fail_closed(
         assert "Bearer" not in log_text and "@" not in log_text
 
         for status in OrganizationStatus:
-            if status is OrganizationStatus.ACTIVE:
+            if status in {OrganizationStatus.ACTIVE, OrganizationStatus.ONBOARDING}:
+                # Onboarding is covered separately below: it now permits the
+                # bounded setup surface, because refusing everything until a
+                # client was active made onboarding impossible to finish —
+                # activation waits on business facts, and confirming them was
+                # itself refused as "this client is not active yet".
                 continue
             async with authorization_session_factory.begin() as session:
                 scoped_org = make_organization(f"state-{status.value.replace('_', '-')}", status)
@@ -544,6 +549,30 @@ def test_user_organization_membership_mfa_isolation_and_catalog_fail_closed(
                     correlation_id=f"org-{status.value}",
                 )
                 assert result.reason_code is AuthorizationReason.ORGANIZATION_NOT_EFFECTIVE
+
+        # An onboarding client is past the organization gate for setup work, so
+        # the decision turns on membership like any active client would...
+        async with authorization_session_factory.begin() as session:
+            onboarding_org = make_organization("state-onboarding", OrganizationStatus.ONBOARDING)
+            onboarding_user = make_user()
+            session.add_all([onboarding_org, onboarding_user])
+        async with authorization_session_factory() as session:
+            setup = await evaluator.evaluate(
+                session,
+                principal(onboarding_user),
+                request(onboarding_user, onboarding_org, "business_facts.approve"),
+                correlation_id="org-onboarding-setup",
+            )
+            assert setup.reason_code is AuthorizationReason.MEMBERSHIP_MISSING
+            # ...while anything that acts on the client's behalf is still
+            # refused on the organization's state alone.
+            acting = await evaluator.evaluate(
+                session,
+                principal(onboarding_user),
+                request(onboarding_user, onboarding_org, "gbp.manage"),
+                correlation_id="org-onboarding-acting",
+            )
+            assert acting.reason_code is AuthorizationReason.ORGANIZATION_NOT_EFFECTIVE
 
         async with authorization_session_factory.begin() as session:
             await session.execute(
