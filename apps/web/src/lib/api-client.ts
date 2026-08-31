@@ -7,7 +7,16 @@ export type ApiOutcome<T> =
   | { kind: "ok"; data: T }
   | { kind: "not-configured" }
   | { kind: "unauthenticated" }
-  | { kind: "forbidden" }
+  /**
+   * A refusal, carrying the cause when the backend named one.
+   *
+   * The transport discarded the 403 body entirely, so every authorization
+   * failure reached the operator as one canned sentence no matter which of six
+   * causes produced it — an unactivated client, a product that was never
+   * enabled, a role missing the permission, a suspended membership, a missing
+   * step-up. The backend distinguishes them; this is where that was thrown away.
+   */
+  | { kind: "forbidden"; code?: string; message?: string }
   | { kind: "not-found" }
   | { kind: "disconnected" }
   | {
@@ -128,7 +137,12 @@ async function attemptRequest<T>(
     return { kind: "unauthenticated" };
   }
   if (response.status === 403) {
-    return { kind: "forbidden" };
+    const envelope = await safeJson<ErrorEnvelope>(response);
+    return {
+      kind: "forbidden",
+      code: envelope?.error?.code,
+      message: envelope?.error?.message,
+    };
   }
   if (response.status === 404) {
     return { kind: "not-found" };

@@ -81,7 +81,8 @@ describe("platform-admin entitlement client functions target the production plat
         | { kind: "ok"; data: ProductEntitlement[] }
         | { kind: "not-configured" }
         | { kind: "unauthenticated" }
-        | { kind: "forbidden" }
+        // Carries the named cause when the backend disclosed one.
+        | { kind: "forbidden"; code?: string; message?: string }
         | { kind: "not-found" }
         | { kind: "disconnected" }
         | {

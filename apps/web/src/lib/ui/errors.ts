@@ -14,8 +14,19 @@ export function describeFailure(
 ): string {
   const prefix = context ? `${context}: ` : "";
   switch (outcome.kind) {
-    case "forbidden":
-      return `${prefix}You do not have permission to view this.`;
+    case "forbidden": {
+      // The backend names the cause and what to do about it whenever the
+      // caller is a confirmed member; only the deliberately non-disclosing
+      // generic denial falls back to the canned sentence, which is more
+      // specific than "Authorization is required for this action."
+      const named =
+        outcome.code && outcome.code !== "AUTHORIZATION_DENIED"
+          ? outcome.message?.trim()
+          : undefined;
+      return named
+        ? `${prefix}${named}`
+        : `${prefix}You do not have permission to view this.`;
+    }
     case "not-found":
       return `${prefix}The requested resource could not be found.`;
     case "disconnected":
