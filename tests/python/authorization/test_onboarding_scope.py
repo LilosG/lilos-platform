@@ -41,6 +41,10 @@ class TestOnboardingClients:
             "onboarding.manage",
             "organization.settings.manage",
             "products.entitlements.manage",
+            "gbp.read",
+            "gbp.connect",
+            "integrations.read",
+            "integrations.connect",
         ],
     )
     def test_setup_work_is_permitted_while_onboarding(self, permission: str) -> None:
@@ -50,16 +54,15 @@ class TestOnboardingClients:
         "permission",
         [
             "gbp.publish",
-            "gbp.manage",
+            "gbp.propose",
             "reviews.publish",
             "content.publish",
-            "integrations.connect",
             "seo.manage",
         ],
     )
     def test_acting_on_a_client_is_still_refused_while_onboarding(self, permission: str) -> None:
-        # Provider authorization, resource mapping and publication stay gated on
-        # activation — which is what the product already tells the operator.
+        # Provider writes, publication, and product execution stay gated on
+        # activation. Read-only provider setup is covered above.
         assert organization_permits(OrganizationStatus.ONBOARDING, permission) is False
 
     def test_an_unknown_permission_is_refused_rather_than_assumed_safe(self) -> None:
@@ -84,8 +87,9 @@ class TestEveryOtherState:
         assert organization_permits(status, "business_facts.approve") is False
 
 
-def test_the_setup_surface_grants_nothing_that_reaches_a_provider() -> None:
-    # A guard against the allowlist quietly growing into external actions.
+def test_the_setup_surface_grants_source_collection_but_not_provider_writes() -> None:
+    # A guard against the bounded read/setup surface quietly growing into
+    # publication or product execution.
     for permission in ONBOARDING_SETUP_PERMISSIONS:
         domain = permission.split(".", 1)[0]
         assert domain in {
@@ -99,6 +103,12 @@ def test_the_setup_surface_grants_nothing_that_reaches_a_provider() -> None:
             "products",
             "services",
             "policies",
+            "integrations",
+            "gbp",
         }, permission
         assert "publish" not in permission
-        assert "connect" not in permission
+        assert permission not in {
+            "gbp.propose",
+            "gbp.approve",
+            "gbp.publish",
+        }

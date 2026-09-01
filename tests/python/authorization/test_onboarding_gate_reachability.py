@@ -30,7 +30,6 @@ from apps.api.app.administration.readiness_codes import (
     ReadinessCode,
 )
 from apps.api.app.authorization.onboarding_scope import organization_permits
-from apps.api.app.onboarding.service import _NON_ACTIVATION_BLOCKING_CODES
 from apps.api.app.organizations.enums import OrganizationStatus
 
 SERVICE_SOURCE = (
@@ -90,18 +89,7 @@ def test_an_activation_blocker_can_be_cleared_before_activation(code: ReadinessC
     )
 
 
-def test_the_codes_excluded_from_activation_are_the_ones_we_think() -> None:
-    # If a code is removed from that exclusion set it starts blocking
-    # activation, and this file must then prove it is clearable.
-    assert (
-        frozenset({"CONNECTION_REQUIRED", "ORGANIZATION_NOT_ACTIVE", "ENTITLEMENT_NOT_EFFECTIVE"})
-        == _NON_ACTIVATION_BLOCKING_CODES
-    )
-
-
-def test_the_onboarding_service_and_the_registry_agree_on_the_exclusions() -> None:
-    """One set, read two ways, so the two modules cannot drift apart."""
-    assert (
-        frozenset(code.value for code in NON_ACTIVATION_BLOCKING_CODES)
-        == _NON_ACTIVATION_BLOCKING_CODES
-    )
+def test_the_product_readiness_exclusions_are_the_ones_we_think() -> None:
+    assert frozenset(
+        {"CONNECTION_REQUIRED", "ORGANIZATION_NOT_ACTIVE", "ENTITLEMENT_NOT_EFFECTIVE"}
+    ) == frozenset(code.value for code in NON_ACTIVATION_BLOCKING_CODES)

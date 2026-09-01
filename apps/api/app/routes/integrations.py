@@ -96,7 +96,13 @@ async def _require_effective_entitlement(session: AsyncSession, organization_id:
         raise ReadinessBlockedError
 
 
-def _frontend_return_url(settings: Settings, *, connected: bool, reason: str | None = None) -> str:
+def _frontend_return_url(
+    settings: Settings,
+    *,
+    organization_id: UUID | None = None,
+    connected: bool,
+    reason: str | None = None,
+) -> str:
     """Best-effort absolute redirect target for the browser after the callback.
 
     No dedicated frontend-base-URL setting exists; the exact environment
@@ -109,7 +115,9 @@ def _frontend_return_url(settings: Settings, *, connected: bool, reason: str | N
     origins = settings.allowed_web_origins()
     base = origins[0] if origins else ""
     params = {"connected": "1"} if connected else {"connected": "0", "reason": reason or "error"}
-    return f"{base}/gbp?{urlencode(params)}"
+    if organization_id is not None:
+        params["org"] = str(organization_id)
+    return f"{base}/integrations?{urlencode(params)}"
 
 
 @router.post(
@@ -307,7 +315,12 @@ async def callback(
             correlation_id=correlation_id,
         )
         return RedirectResponse(
-            url=_frontend_return_url(settings, connected=False, reason=error or "missing_code"),
+            url=_frontend_return_url(
+                settings,
+                organization_id=organization_id,
+                connected=False,
+                reason=error or "missing_code",
+            ),
             status_code=status.HTTP_302_FOUND,
         )
     try:
@@ -326,11 +339,20 @@ async def callback(
         IntegrationNotConfiguredError,
     ) as exc:
         return RedirectResponse(
-            url=_frontend_return_url(settings, connected=False, reason=type(exc).__name__.lower()),
+            url=_frontend_return_url(
+                settings,
+                organization_id=organization_id,
+                connected=False,
+                reason=type(exc).__name__.lower(),
+            ),
             status_code=status.HTTP_302_FOUND,
         )
     return RedirectResponse(
-        url=_frontend_return_url(settings, connected=True),
+        url=_frontend_return_url(
+            settings,
+            organization_id=organization_id,
+            connected=True,
+        ),
         status_code=status.HTTP_302_FOUND,
     )
 

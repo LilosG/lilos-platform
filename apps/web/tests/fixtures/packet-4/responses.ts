@@ -83,6 +83,266 @@ export const platformAdministratorStatus = {
   required_assurance_level: "aal2",
 } satisfies PlatformAdministratorSelfStatus;
 
+export const onboardingOrganization = {
+  id: organizationId,
+  name: "Wheyland Electric",
+  slug: "wheyland-electric",
+  organization_type: "client",
+  status: "onboarding",
+  timezone: "America/Los_Angeles",
+  default_currency: "USD",
+  industry_id: "industry-electrical",
+  onboarding_mode: "managed",
+  version: 2,
+};
+
+export const onboardingOrganizations = {
+  items: [onboardingOrganization],
+  limit: 100,
+  offset: 0,
+  next_offset: null,
+  has_more: false,
+};
+
+export const onboardingIndustries = {
+  items: [
+    {
+      id: "industry-electrical",
+      key: "electrical_services",
+      name: "Electrical services",
+    },
+  ],
+};
+
+export const onboardingLocations = {
+  items: [
+    {
+      id: locationId,
+      organization_id: organizationId,
+      name: "Downtown",
+      slug: "downtown",
+      location_type: "physical",
+      status: "setup_required",
+      timezone: "America/Los_Angeles",
+      is_primary: true,
+      address_line_1: "421 Market Street",
+      city: "San Diego",
+      region: "CA",
+      postal_code: "92101",
+      country_code: "US",
+      phone: "+1 619 555 0142",
+      version: 1,
+    },
+  ],
+  limit: 100,
+  offset: 0,
+  next_offset: null,
+  has_more: false,
+};
+
+export const onboardingOrganizationProfile = {
+  organization_id: organizationId,
+  brand_name: "Wheyland Electric",
+  business_description:
+    "Licensed residential and commercial electrical services in San Diego.",
+  version: 1,
+};
+
+export const onboardingDomains: unknown[] = [];
+
+export const onboardingProductCatalog = [
+  ["gbp-id", "gbp", "LILOs GBP"],
+  ["seo-id", "seo", "LILOs SEO"],
+  ["reviews-id", "reviews", "LILOs Reviews"],
+  ["content-id", "content", "LILOs Content"],
+  ["leads-id", "leads", "LILOs Leads"],
+  ["automations-id", "automations", "LILOs Automations"],
+  ["insights-id", "insights", "LILOs Insights"],
+].map(([id, key, name]) => ({
+  id,
+  key,
+  name,
+  description: `${name} product`,
+  status: "registered",
+  owning_module: `products.${key}`,
+}));
+
+export const onboardingEntitlements = [
+  {
+    id: "entitlement-gbp",
+    organization_id: organizationId,
+    product_id: "gbp-id",
+    status: "setup_required",
+    source: "platform_admin_onboarding",
+    reason: "Selected during onboarding",
+    effective_from: observedAt,
+    effective_until: null,
+    activated_at: null,
+    archived_at: null,
+    version: 1,
+    created_at: observedAt,
+    updated_at: observedAt,
+  },
+  {
+    id: "entitlement-seo",
+    organization_id: organizationId,
+    product_id: "seo-id",
+    status: "setup_required",
+    source: "platform_admin_onboarding",
+    reason: "Selected during onboarding",
+    effective_from: observedAt,
+    effective_until: null,
+    activated_at: null,
+    archived_at: null,
+    version: 1,
+    created_at: observedAt,
+    updated_at: observedAt,
+  },
+];
+
+export const onboardingState = {
+  organization_id: organizationId,
+  organization_name: "Wheyland Electric",
+  organization_status: "onboarding",
+  organization_version: 2,
+  responsibility_mode: "managed",
+  steps: [
+    ["organization_profile", "Organization profile", "complete", true],
+    ["locations", "Business locations", "complete", true],
+    ["primary_location", "Primary location", "complete", true],
+    ["website_domain", "Website and primary domain", "incomplete", true],
+    ["industry", "Industry", "complete", true],
+    ["services", "Services", "optional_incomplete", false],
+    ["users", "Users and access", "complete", true],
+    ["products", "Products and entitlements", "complete", false],
+  ].map(([key, label, state, blocking]) => ({
+    key,
+    label,
+    state,
+    blocking,
+    detail:
+      key === "website_domain"
+        ? "No primary domain configured."
+        : state === "complete"
+          ? "Complete."
+          : "Can be finished later.",
+    next_action:
+      key === "website_domain"
+        ? "Add the client's primary website domain and mark it primary."
+        : null,
+    resolution: {
+      step_key: key,
+      route: key === "services" ? "/administration" : "/onboarding",
+      control:
+        key === "organization_profile"
+          ? "organization-profile"
+          : key === "website_domain"
+            ? "website-domain"
+            : key,
+      permission: "onboarding.manage",
+      label: "Complete this step",
+    },
+  })),
+  products: onboardingProductCatalog.map((product) => ({
+    product_key: product.key,
+    product_name: product.name,
+    selected: product.key === "gbp" || product.key === "seo",
+    entitlement_status:
+      product.key === "gbp" || product.key === "seo"
+        ? "setup_required"
+        : "not_enabled",
+    readiness_state:
+      product.key === "gbp" || product.key === "seo" ? "blocked" : null,
+    ready: false,
+    blocking_findings:
+      product.key === "seo" ? ["Complete the location profile."] : [],
+    external_integration_pending: false,
+    next_action:
+      product.key === "seo" ? "Complete the location profile." : null,
+  })),
+  blockers: ["Configure the client's primary website domain."],
+  blocker_details: [
+    {
+      message: "Configure the client's primary website domain.",
+      product_name: null,
+      resolution: {
+        step_key: "website_domain",
+        route: "/onboarding",
+        control: "website-domain",
+        permission: "organization.settings.manage",
+        label: "Add the primary domain",
+      },
+    },
+  ],
+  warnings: [
+    "[LILOs SEO] Product setup still needs: Complete the location profile.",
+  ],
+  progress_percent: 83,
+  activation_eligible: false,
+  evaluated_at: observedAt,
+};
+
+export const onboardingMemberships = [
+  {
+    id: "membership-onboarding-owner",
+    organization_id: organizationId,
+    user_profile_id: "user-packet-4",
+    membership_type: "internal",
+    status: "active",
+    version: 1,
+  },
+];
+
+export const onboardingApprovalPolicies = [
+  {
+    id: "policy-default-approval",
+    organization_id: organizationId,
+    policy_identity: "default.approval",
+    policy_key: "default.approval",
+    category: "approval",
+    status: "active",
+    revision: 1,
+  },
+];
+
+export const onboardingEffectiveFacts = [
+  {
+    fact_key: "business.name",
+    revision_id: "fact-business-name",
+    fact_identity: "business.name:organization",
+    value: "Wheyland Electric",
+    value_type: "string",
+    location_id: null,
+    source: "organization_profile",
+    authority: "operator_verified",
+    revision: 1,
+    approved_at: observedAt,
+  },
+];
+
+export const onboardingFactCandidates = [
+  {
+    id: "fact-address-candidate",
+    organization_id: organizationId,
+    location_id: locationId,
+    fact_identity: `business.address:${locationId}`,
+    fact_key: "business.address",
+    value_type: "object",
+    value: {
+      address_line_1: "421 Market Street",
+      city: "San Diego",
+      region: "CA",
+      postal_code: "92101",
+      country_code: "US",
+    },
+    status: "pending_approval",
+    revision: 1,
+    authority: "system_derived",
+    source: "location",
+    approved_at: null,
+  },
+];
+
 export const entitledProducts = [
   "gbp",
   "reviews",
@@ -430,6 +690,16 @@ export const githubWorkspace = {
       name: "wheyland-electric-site",
       default_branch: "main",
       private: true,
+    },
+  ],
+  publishing_targets: [
+    {
+      id: "publishing-target-1",
+      key: "primary-site",
+      repository_id: "repo-1",
+      base_branch: "main",
+      allowed_path_prefix: "src/content/blog",
+      status: "active",
     },
   ],
 } satisfies GitHubWorkspace;

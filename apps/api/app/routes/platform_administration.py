@@ -67,9 +67,19 @@ from apps.api.app.organizations.enums import OrganizationLifecycleAction
 from apps.api.app.organizations.service import OrganizationService
 from apps.api.app.platform_admin.dependencies import require_platform_administrator
 from apps.api.app.platform_admin.service import PlatformAdministrationService
-from apps.api.app.profiles.contracts import OrganizationProfileCreate, OrganizationProfileData
-from apps.api.app.profiles.errors import OrganizationProfileNotFoundError
-from apps.api.app.profiles.service import OrganizationProfileService
+from apps.api.app.profiles.contracts import (
+    LocationProfileCreate,
+    LocationProfileData,
+    LocationProfileReplace,
+    OrganizationProfileCreate,
+    OrganizationProfileData,
+    OrganizationProfileReplace,
+)
+from apps.api.app.profiles.errors import (
+    LocationProfileNotFoundError,
+    OrganizationProfileNotFoundError,
+)
+from apps.api.app.profiles.service import LocationProfileService, OrganizationProfileService
 from apps.api.app.schemas import ErrorCategory, ErrorDetail, ResponseMeta
 
 
@@ -98,6 +108,7 @@ platform_administration = PlatformAdministrationService()
 onboarding_service = OnboardingOrchestrationService()
 website_provisioning = OnboardingWebsiteProvisioningService()
 organization_profiles = OrganizationProfileService()
+location_profiles = LocationProfileService()
 organization_domains = OrganizationDomainService()
 administration = AdministrationService()
 DatabaseSession = Annotated[AsyncSession, Depends(get_database_session)]
@@ -348,6 +359,26 @@ async def get_onboarding_state(
     )
 
 
+@router.get(
+    "/products",
+    response_model=DataResponse,
+    summary="List the product catalog for platform administration",
+)
+async def list_platform_products(
+    request: Request,
+    session: DatabaseSession,
+) -> DataResponse:
+    """Return catalog rows on an unambiguous platform-admin route.
+
+    ``/api/v1/organizations/{id}/products`` is the client entitlement-summary
+    contract. The shared-administration router historically registered another
+    handler at that exact path with a catalog response, so which shape a caller
+    received depended on router order. Operator pages use this explicit route.
+    """
+    items = await administration.catalog.list_products(session)
+    return response(request, [_row(item) for item in items])
+
+
 @router.post(
     "/organizations/{organization_id}/reconcile-defaults",
     response_model=DataResponse,
@@ -578,6 +609,89 @@ async def get_organization_profile(
     except OrganizationProfileNotFoundError:
         return response(request, None)
     return response(request, OrganizationProfileData.model_validate(profile))
+
+
+@router.put(
+    "/organizations/{organization_id}/profile",
+    response_model=DataResponse,
+    summary="Replace the organization profile during onboarding",
+)
+async def replace_organization_profile(
+    request: Request,
+    organization_id: UUID,
+    command: OrganizationProfileReplace,
+    session: DatabaseSession,
+) -> DataResponse:
+    profile = await organization_profiles.replace(
+        session,
+        organization_id,
+        command,
+        correlation_id=request_correlation_id(request),
+    )
+    return response(request, OrganizationProfileData.model_validate(profile))
+
+
+@router.post(
+    "/organizations/{organization_id}/locations/{location_id}/profile",
+    response_model=DataResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a location profile during onboarding",
+)
+async def create_location_profile(
+    request: Request,
+    organization_id: UUID,
+    location_id: UUID,
+    command: LocationProfileCreate,
+    session: DatabaseSession,
+) -> DataResponse:
+    profile = await location_profiles.create(
+        session,
+        organization_id,
+        location_id,
+        command,
+        correlation_id=request_correlation_id(request),
+    )
+    return response(request, LocationProfileData.model_validate(profile))
+
+
+@router.get(
+    "/organizations/{organization_id}/locations/{location_id}/profile",
+    response_model=DataResponse,
+    summary="Get a location profile during onboarding",
+)
+async def get_location_profile(
+    request: Request,
+    organization_id: UUID,
+    location_id: UUID,
+    session: DatabaseSession,
+) -> DataResponse:
+    try:
+        profile = await location_profiles.get(session, organization_id, location_id)
+    except LocationProfileNotFoundError:
+        return response(request, None)
+    return response(request, LocationProfileData.model_validate(profile))
+
+
+@router.put(
+    "/organizations/{organization_id}/locations/{location_id}/profile",
+    response_model=DataResponse,
+    summary="Replace a location profile during onboarding",
+)
+async def replace_location_profile(
+    request: Request,
+    organization_id: UUID,
+    location_id: UUID,
+    command: LocationProfileReplace,
+    session: DatabaseSession,
+) -> DataResponse:
+    profile = await location_profiles.replace(
+        session,
+        organization_id,
+        location_id,
+        command,
+        correlation_id=request_correlation_id(request),
+    )
+    return response(request, LocationProfileData.model_validate(profile))
 
 
 @router.post(

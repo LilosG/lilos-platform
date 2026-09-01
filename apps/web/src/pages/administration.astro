@@ -303,10 +303,10 @@ import "../styles/global.css";
     </AppShell>
     <script>
       import {
-        fetchProducts,
         fetchServices,
         type AdministeredProduct,
       } from "../lib/administration";
+      import { fetchPlatformProducts } from "../lib/platform-admin";
       import {
         fetchMyOrganizations,
         fetchMyPlatformAdministratorStatus,
@@ -459,7 +459,7 @@ import "../styles/global.css";
       async function renderProducts(): Promise<void> {
         const list = document.getElementById("products-list")!;
         list.replaceChildren();
-        const outcome = await fetchProducts(organizationId);
+        const outcome = await fetchPlatformProducts();
         // Build product_id -> product_key so entitlement rows (which carry
         // product_id) can be associated with the stable product key the rest
         // of the UI uses. The entitlement rows are only loaded when the

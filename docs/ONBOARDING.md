@@ -17,32 +17,34 @@ from the owning domain service at request time.
 audited create/set-primary/archive. This is new — previously the platform had only a single
 `website_url` scalar field on `Organization`/`Location`, with no primary/additional-domain concept.
 
-**Two-phase setup, driven by the existing authorization architecture.** The general
-`/api/v1/organizations/{id}/...` routes (services, business facts, entitlements, policies,
-additional memberships/invitations) all require the organization to already be `ACTIVE` — this is
-the pre-existing, unchanged `ORGANIZATION_NOT_EFFECTIVE` gate in `AuthorizationService`. So
-onboarding is naturally two phases:
+**Source-first setup.** Onboarding separates read-only source configuration from operational
+provider writes. A platform administrator can create the organization, automatically establish its
+profile and owner membership, add a primary location and domain, connect Google, discover and map a
+Business Profile location, and start the first website crawl before activation. Discovery and
+mapping reconcile source-backed business-fact candidates immediately, so the operator reviews and
+confirms details instead of re-entering information already available from the client's website or
+Google profile.
 
-1. **Pre-activation** (via the always-mounted, platform-administrator-gated
-   `/api/v1/platform/organizations/{id}/...` routes, which bypass per-organization RBAC exactly as
-   organization/location creation already did): organization profile, locations (with a primary),
-   approved domains (with a primary), industry assignment, and bootstrapping the platform
-   administrator's own account as the organization's first owner.
-2. **Post-activation** (via the standard RBAC-protected organization routes, using the
-   now-owner-privileged account from step 1): service assignment, business-fact proposal/approval,
-   product entitlement creation, and approval/notification policy configuration. The onboarding
-   workspace shows these sections as available once the organization is active, rather than hiding
-   or faking their state beforehand.
+The onboarding authorization allowlist permits only the read/setup side of Integrations and GBP
+(`integrations.read`, `integrations.connect`, `gbp.read`, and `gbp.connect`). Provider mutations,
+proposals, publishing, workflow execution, and other operational product actions remain denied
+until the organization is active and the normal organization-scoped policy authorizes them. This
+keeps setup resumable without weakening the provider-write boundary.
+
+The operator flow is presented as five high-level stages: Client details, Source data, Products,
+Review, and Activate. The underlying single onboarding engine and its managed, co-managed, and
+self-service responsibility modes remain unchanged.
 
 **Activation gate.** `POST /api/v1/platform/organizations/{id}/activate` recomputes
 `OnboardingState` server-side on every call and returns `409 ONBOARDING_INCOMPLETE` (with the exact
 blocker list in `error.details`) unless `activation_eligible` is true. The frontend never decides
 activation eligibility itself. Blocking requirements are: organization profile, at least one
 location with one marked primary, an active primary domain, an assigned industry, and at least one
-active member. A selected product's own missing business facts/entitlement/policy prerequisites are
-tracked and shown, but external-integration-only findings
-(`INTEGRATION_FOUNDATION_DEFERRED`) never block organization activation — only that product's own
-readiness, consistent with the existing readiness engine's separation of entitlement from readiness.
+active member. Product selection, business facts, location profile, policies, configuration,
+integration health, and runtime controls remain visible in each selected product's readiness
+result, but they are setup warnings rather than organization-activation blockers. Activation means
+the client workspace exists and can be operated; it does not claim that every selected product is
+ready to run or publish.
 
 **Invitations.** Adding an existing user or inviting a new one resolves the target by email
 (`AccessControlService.find_user_by_email`) rather than a client-supplied UUID. A `UserProfile` is

@@ -231,6 +231,39 @@ authorization check was weakened; `require_platform_administrator` still hard-re
 
 ## Release 1 Closure Batch 1 — Client onboarding and administration (2026-08-05)
 
+### Source-first onboarding completion (2026-09-01)
+
+The onboarding workspace now removes the circular activation dependency between client setup and
+source discovery. Creating a client automatically creates its organization profile and bootstraps
+the current operator as owner. Read-only Google authorization, GBP discovery/mapping, primary-domain
+provisioning and website crawl startup are available during onboarding; GBP discovery/mapping also
+reconciles source-backed business-fact candidates for explicit review. Location profiles can be
+created and edited directly in the same workspace.
+
+Organization activation now gates only the core client identity requirements: profile, location,
+primary location, primary domain, industry, and an active member. Selected-product readiness
+findings remain visible and keep the product itself not ready, but appear as non-blocking product
+setup warnings. Provider writes, publishing, proposals, and workflow execution remain unavailable
+until normal post-activation authorization permits them.
+
+The recovered control-plane gaps are also closed: onboarding blockers deep-link to their actual
+controls, Search Console properties can be discovered and explicitly mapped to an SEO website, and
+multi-repository GitHub App installations can be assigned an explicit Content publishing target.
+The Google OAuth callback preserves the selected organization and returns to Integrations.
+
+Repository acceptance for this pass is recorded on branch
+`fix/unified-onboarding-completion-2026-09-01`; live Google, crawl, Search Console, and GitHub
+provider acceptance remains separate from code-level implementation evidence.
+
+**Validation:** Ruff format/check and mypy (547 source files) pass. The full Python suite reports
+890 passed and 516 integration/environment-dependent tests skipped because no PostgreSQL integration
+fixture is configured in this workspace. Frontend Prettier, ESLint/stylelint, Astro check (0 errors/warnings/
+hints), Vitest (386 passed), and the 14-page Astro production build pass. The deterministic Packet 4
+onboarding browser fixture asserts the source-first controls and 83% core-readiness state; a new
+pixel baseline could not be captured locally because the Playwright Chromium executable is not
+installed, so the fixture uses structural browser assertions without adding a missing snapshot to
+CI. Secret scanning and `git diff --check` pass.
+
 A platform administrator can now onboard and activate a real client organization entirely through
 the production web application at `/onboarding`, reusing existing organization, location, profile,
 industry, administration (services/business-facts/entitlements/policies/onboarding-checklist), and

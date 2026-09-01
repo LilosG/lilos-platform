@@ -377,7 +377,7 @@ def test_callback_with_invalid_state_redirects_with_failure_reason(
     )
     assert response.status_code == 302
     location = response.headers["location"]
-    assert location.startswith("https://app.example.invalid/gbp?")
+    assert location.startswith("https://app.example.invalid/integrations?")
     assert "connected=0" in location
     assert "reason=invalid_state" in location
 
@@ -404,3 +404,4 @@ def test_callback_with_provider_denial_redirects_with_failure_reason(
     location = response.headers["location"]
     assert "connected=0" in location
     assert "reason=access_denied" in location
+    assert f"org={organization_id}" in location

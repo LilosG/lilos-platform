@@ -84,6 +84,14 @@ export type GitHubWorkspace = {
   connection_id: string | null;
   external_account_reference: string | null;
   repositories: GitHubRepository[];
+  publishing_targets: {
+    id: string;
+    key: string;
+    repository_id: string;
+    base_branch: string;
+    allowed_path_prefix: string;
+    status: string;
+  }[];
 };
 
 function githubBase(organizationId: string): string {

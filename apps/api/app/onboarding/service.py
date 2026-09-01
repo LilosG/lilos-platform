@@ -27,10 +27,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.app.access_control.enums import MembershipStatus
 from apps.api.app.access_control.service import AccessControlService
-from apps.api.app.administration.contracts import BlockerResolution, ReadinessFinding
+from apps.api.app.administration.contracts import ReadinessFinding
 from apps.api.app.administration.enums import NOT_SELECTED_ENTITLEMENT_STATUSES
 from apps.api.app.administration.errors import AdministrationNotFoundError
-from apps.api.app.administration.readiness_codes import NON_ACTIVATION_BLOCKING_CODES
 from apps.api.app.administration.service import AdministrationService
 from apps.api.app.database.base import utc_now
 from apps.api.app.domains.service import OrganizationDomainService
@@ -72,11 +71,6 @@ _ALL_STEP_KEYS: tuple[str, ...] = (
     "users",
     "products",
 )
-
-# Which findings do not block *organization* activation is decided once, in
-# administration.readiness_codes, alongside the findings themselves. It used
-# to be restated here as a set of bare strings, which is how the two drifted.
-_NON_ACTIVATION_BLOCKING_CODES = frozenset(code.value for code in NON_ACTIVATION_BLOCKING_CODES)
 
 # ---------------------------------------------------------------------------
 # Responsibility-mode step control map
@@ -179,10 +173,13 @@ class OnboardingOrchestrationService:
         mode = _resolve_mode(organization.onboarding_mode)
 
         steps, blockers, warnings = await self._evaluate_steps(session, organization)
-        products = await self._evaluate_products(session, organization_id, blockers, warnings)
+        products = await self._evaluate_products(session, organization_id, warnings)
 
-        total_steps = len(steps)
-        complete_steps = sum(1 for step in steps if step.state is OnboardingStepState.COMPLETE)
+        required_steps = [step for step in steps if step.blocking]
+        total_steps = len(required_steps)
+        complete_steps = sum(
+            1 for step in required_steps if step.state is OnboardingStepState.COMPLETE
+        )
         progress_percent = round((complete_steps / total_steps) * 100) if total_steps else 0
         activation_eligible = not blockers
 
@@ -224,7 +221,7 @@ class OnboardingOrchestrationService:
         mode = _resolve_mode(organization.onboarding_mode)
 
         steps, blockers, warnings = await self._evaluate_steps(session, organization)
-        await self._evaluate_products(session, organization_id, blockers, warnings)
+        await self._evaluate_products(session, organization_id, warnings)
 
         if is_platform_admin:
             visible_steps = steps
@@ -248,10 +245,11 @@ class OnboardingOrchestrationService:
         else:
             accessible_product_keys = ()
 
-        total_steps = len(visible_steps) if visible_steps else 1
+        required_visible_steps = [step for step in visible_steps if step.blocking]
+        total_steps = len(required_visible_steps) if required_visible_steps else 1
         complete_steps = (
-            sum(1 for step in visible_steps if step.state is OnboardingStepState.COMPLETE)
-            if visible_steps
+            sum(1 for step in required_visible_steps if step.state is OnboardingStepState.COMPLETE)
+            if required_visible_steps
             else 0
         )
         progress_percent = round((complete_steps / total_steps) * 100) if total_steps else 0
@@ -629,13 +627,11 @@ class OnboardingOrchestrationService:
         self,
         session: AsyncSession,
         organization_id: UUID,
-        blockers: list[OnboardingBlocker],
         warnings: list[str],
     ) -> list[OnboardingProductStatus]:
         """Evaluate product entitlement and readiness for all canonical products."""
         products: list[OnboardingProductStatus] = []
-        grouped_blockers: dict[str, list[str]] = {}
-        grouped_resolutions: dict[str, BlockerResolution | None] = {}
+        grouped_product_work: dict[str, list[str]] = {}
         connection_required_products: list[str] = []
 
         for key in CANONICAL_PRODUCT_KEYS:
@@ -687,11 +683,13 @@ class OnboardingOrchestrationService:
                 if item.code == "CONNECTION_REQUIRED":
                     connection_required = True
                     continue
-                if item.code in _NON_ACTIVATION_BLOCKING_CODES:
+                if item.code in {
+                    "ORGANIZATION_NOT_ACTIVE",
+                    "ENTITLEMENT_NOT_EFFECTIVE",
+                }:
                     continue
                 other_findings.append(item)
-                grouped_blockers.setdefault(item.remediation, []).append(product.name)
-                grouped_resolutions.setdefault(item.remediation, item.resolution)
+                grouped_product_work.setdefault(item.remediation, []).append(product.name)
             if connection_required:
                 connection_required_products.append(product.name)
             products.append(
@@ -708,27 +706,17 @@ class OnboardingOrchestrationService:
                 )
             )
 
-        for remediation, names in grouped_blockers.items():
+        # Product readiness is deliberately separate from organization
+        # activation. A client account should become active once its core
+        # identity, location, domain, industry, and owner are confirmed; a
+        # selected product may still need facts, a profile, policy, or provider
+        # mapping before that product can run. Promoting those findings into
+        # organization blockers created circular onboarding gates and made the
+        # lifecycle of one product hold the entire client account hostage.
+        for remediation, names in grouped_product_work.items():
             unique = list(dict.fromkeys(names))
-            resolution = grouped_resolutions.get(remediation)
-            if resolution is None:
-                # Every finding the platform emits today carries a resolution.
-                # A finding that somehow does not is still worth showing, so it
-                # falls back to the onboarding page rather than being dropped.
-                resolution = BlockerResolution(
-                    step_key=None,
-                    route="/onboarding",
-                    control="blockers",
-                    permission=None,
-                    label=remediation.rstrip("."),
-                )
-            blockers.append(
-                OnboardingBlocker(
-                    message=remediation,
-                    resolution=resolution,
-                    product_name=unique[0] if len(unique) == 1 else ", ".join(unique),
-                )
-            )
+            product_names = unique[0] if len(unique) == 1 else ", ".join(unique)
+            warnings.append(f"[{product_names}] Product setup still needs: {remediation}")
         for name in connection_required_products:
             warnings.append(f"[{name}] requires a connected external integration.")
 

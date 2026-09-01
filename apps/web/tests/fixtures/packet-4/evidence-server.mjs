@@ -72,8 +72,74 @@ function responseFor(pathname) {
   if (pathname === "/api/v1/me/platform-administrator") {
     return fixtures.platformAdministratorStatus;
   }
+  if (pathname === "/api/v1/platform/industries") {
+    return fixtures.onboardingIndustries;
+  }
+  if (pathname === "/api/v1/platform/products") {
+    return fixtures.onboardingProductCatalog;
+  }
+  if (pathname === "/api/v1/platform/organizations") {
+    return fixtures.onboardingOrganizations;
+  }
+  if (
+    pathname === `/api/v1/platform/organizations/${fixtures.organizationId}`
+  ) {
+    return fixtures.onboardingOrganization;
+  }
+  if (
+    pathname ===
+    `/api/v1/platform/organizations/${fixtures.organizationId}/profile`
+  ) {
+    return fixtures.onboardingOrganizationProfile;
+  }
+  if (
+    pathname ===
+    `/api/v1/platform/organizations/${fixtures.organizationId}/locations`
+  ) {
+    return fixtures.onboardingLocations;
+  }
+  if (
+    pathname ===
+    `/api/v1/platform/organizations/${fixtures.organizationId}/locations/${fixtures.locationId}/profile`
+  ) {
+    return null;
+  }
+  if (
+    pathname ===
+    `/api/v1/platform/organizations/${fixtures.organizationId}/domains`
+  ) {
+    return fixtures.onboardingDomains;
+  }
+  if (
+    pathname ===
+    `/api/v1/platform/organizations/${fixtures.organizationId}/onboarding-state`
+  ) {
+    return fixtures.onboardingState;
+  }
+  if (
+    pathname ===
+    `/api/v1/platform/organizations/${fixtures.organizationId}/product-entitlements`
+  ) {
+    return fixtures.onboardingEntitlements;
+  }
   if (pathname === `${organizationBase}/products`) {
     return fixtures.entitledProducts;
+  }
+  if (pathname === `${organizationBase}/memberships`) {
+    return fixtures.onboardingMemberships;
+  }
+  if (pathname === `${organizationBase}/invitations`) return [];
+  if (pathname === `${organizationBase}/policies/effective/approval`) {
+    return fixtures.onboardingApprovalPolicies;
+  }
+  if (pathname === `${organizationBase}/policies/effective/notification`) {
+    return [];
+  }
+  if (pathname === `${organizationBase}/business-facts/candidates`) {
+    return fixtures.onboardingFactCandidates;
+  }
+  if (pathname === `${organizationBase}/business-facts/effective`) {
+    return fixtures.onboardingEffectiveFacts;
   }
   if (pathname.startsWith(`${organizationBase}/products/`)) {
     const segments = pathname.split("/");

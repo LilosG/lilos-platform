@@ -123,7 +123,7 @@ def test_external_actions_stay_outside_the_onboarding_setup_surface() -> None:
     """
     forbidden = [
         "gbp.publish",
-        "gbp.connect",
+        "gbp.propose",
         "content.publish",
         "reviews.publish_response",
         "seo.execute",
@@ -134,7 +134,7 @@ def test_external_actions_stay_outside_the_onboarding_setup_surface() -> None:
         for permission in forbidden
         if organization_permits(OrganizationStatus.ONBOARDING, permission)
     ]
-    assert not leaked, f"An onboarding client can perform external actions it must not: {leaked}"
+    assert not leaked, f"An onboarding client can perform external writes it must not: {leaked}"
 
 
 def test_non_active_non_onboarding_states_permit_nothing() -> None:

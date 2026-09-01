@@ -12,12 +12,12 @@ permissions must work. This is the bounded set that must: reading and shaping
 the client's own record, its locations, its business facts, its onboarding
 state, its product selection and governance policy.
 
-It deliberately excludes everything that reaches outside the platform or that
-publishes on a client's behalf — provider authorization, resource mapping,
-publication. Those stay gated on activation, which is what the product already
-tells the operator: "Provider authorization and resource mapping are
-intentionally completed in the standard organization workspace after
-activation." An unactivated client can be configured; it cannot act.
+Provider authorization, read-only discovery, and explicit GBP resource mapping
+are setup work too. They are permitted here because they are often the best
+authoritative source for the facts an operator is reviewing during onboarding.
+Provider writes, publication, and product execution remain excluded: an
+unactivated client may gather and confirm source data, but it cannot act on the
+outside world.
 """
 
 from apps.api.app.organizations.enums import OrganizationStatus
@@ -75,6 +75,14 @@ ONBOARDING_SETUP_PERMISSIONS: frozenset[str] = frozenset(
         "services.manage",
         "policies.read",
         "policies.manage",
+        # Read-only provider setup. ``gbp.connect`` authorizes OAuth, discovers
+        # provider resources, syncs snapshots, and confirms a mapping. It does
+        # not permit a profile change or publication; those use the separate
+        # propose/approve/publish permissions and remain closed below.
+        "integrations.read",
+        "integrations.connect",
+        "gbp.read",
+        "gbp.connect",
     }
 )
 

@@ -49,11 +49,7 @@ import "../styles/global.css";
       </PageShell>
 
       <PageShell id="integrations-content" hidden>
-        <Region
-          id="integrations-directory"
-          as="section"
-          labelledBy="integrations-title"
-        >
+        <Region id="connections" as="section" labelledBy="integrations-title">
           <PageHeader
             eyebrow="Manage"
             title="Integrations"
@@ -132,6 +128,16 @@ import "../styles/global.css";
       } from "../lib/ui";
       import { statusLabel } from "../lib/status-language";
       import { fetchLocations, type LocationSummary } from "../lib/workspace";
+      import { reconcileBusinessFacts } from "../lib/administration";
+      import {
+        createPublishingTarget,
+        type PublishingTarget,
+      } from "../lib/content";
+      import { fetchWebsites } from "../lib/seo";
+      import {
+        discoverSearchConsole,
+        mapSearchConsole,
+      } from "../lib/search-console";
 
       let organizationId = "";
 
@@ -143,7 +149,7 @@ import "../styles/global.css";
         content: document.getElementById("integrations-content")!,
       };
 
-      const directory = document.getElementById("integrations-directory")!;
+      const directory = document.getElementById("connections")!;
       const providerView = document.getElementById("provider-workspace")!;
       const providerTitle = document.getElementById("provider-title")!;
       const providerDesc = document.getElementById("provider-description")!;
@@ -303,6 +309,15 @@ import "../styles/global.css";
         await loadGoogleWorkspace();
       }
 
+      async function reconcileGoogleSourceData(): Promise<void> {
+        // Discovery and an explicit GBP mapping change the authoritative source
+        // set used by onboarding. Prepare fresh fact candidates immediately so
+        // the operator does not have to know a separate reconciliation step
+        // exists before returning to onboarding.
+        await reconcileBusinessFacts(organizationId);
+        await reloadGoogleWorkspace();
+      }
+
       async function loadGoogleWorkspace(): Promise<void> {
         const content = providerContent;
         content.replaceChildren(createLoading());
@@ -347,7 +362,139 @@ import "../styles/global.css";
 
         if (canUsePlatformAdministration()) {
           await renderUnmappedQueue(content, wsResult);
+          if (
+            ws.capabilities.some(
+              (cap) => cap.key === "search_console" && cap.enabled,
+            )
+          ) {
+            await renderSearchConsoleSetup(content);
+          }
         }
+      }
+
+      async function renderSearchConsoleSetup(
+        parent: HTMLElement,
+      ): Promise<void> {
+        const card = makeCard("Search Console property");
+        const body = card.querySelector(".ui-card__body") as HTMLElement;
+        parent.append(card);
+
+        const websitesResult = await fetchWebsites(organizationId);
+        if (websitesResult.kind !== "ok") {
+          body.append(
+            errorAlert(describeFailure(websitesResult, "SEO websites")),
+          );
+          return;
+        }
+        if (websitesResult.data.length === 0) {
+          body.append(
+            emptyState(
+              "Add a website first",
+              "Save the client's domain in onboarding, then return here to map its Search Console property.",
+            ),
+          );
+          return;
+        }
+
+        const websiteSelect = createSelectControl(
+          "search-console-website",
+          "Website",
+          websitesResult.data.map((website) => ({
+            value: website.id,
+            label: `${website.name} · ${website.canonical_origin}`,
+          })),
+          websitesResult.data.length === 1 ? websitesResult.data[0].id : "",
+          "Select website…",
+        );
+        const discoverButton = document.createElement("button");
+        discoverButton.type = "button";
+        discoverButton.className = "ui-button ui-button--primary ui-button--md";
+        discoverButton.textContent = "Discover Search Console properties";
+        const results = document.createElement("div");
+        results.className = "ui-stack ui-stack--3";
+        body.append(websiteSelect.root, discoverButton, results);
+
+        discoverButton.addEventListener("click", async () => {
+          const websiteId = websiteSelect.input.value;
+          if (!websiteId) {
+            results.replaceChildren(errorAlert("Select a website first."));
+            return;
+          }
+          discoverButton.disabled = true;
+          discoverButton.textContent = "Discovering…";
+          results.replaceChildren(createLoading());
+          const discovery = await discoverSearchConsole(
+            organizationId,
+            websiteId,
+          );
+          discoverButton.disabled = false;
+          discoverButton.textContent = "Discover Search Console properties";
+          if (discovery.kind !== "ok") {
+            results.replaceChildren(
+              errorAlert(
+                describeFailure(discovery, "Search Console discovery"),
+              ),
+            );
+            return;
+          }
+          if (discovery.data.properties.length === 0) {
+            results.replaceChildren(
+              emptyState(
+                "No accessible properties found",
+                "Confirm this Google account can access the client's Search Console property.",
+              ),
+            );
+            return;
+          }
+
+          const propertySelect = createSelectControl(
+            "search-console-property",
+            "Search Console property",
+            discovery.data.properties.map((property) => ({
+              value: `${property.property_type}\t${property.external_property_id}`,
+              label: `${property.external_property_id} · ${property.permission_level}`,
+            })),
+            discovery.data.recommended
+              ? `${discovery.data.recommended.property_type}\t${discovery.data.recommended.external_property_id}`
+              : "",
+            "Select property…",
+          );
+          const mapButton = document.createElement("button");
+          mapButton.type = "button";
+          mapButton.className = "ui-button ui-button--primary ui-button--md";
+          mapButton.textContent = "Map selected property";
+          mapButton.addEventListener("click", async () => {
+            const [propertyType, externalPropertyId] =
+              propertySelect.input.value.split("\t", 2);
+            if (
+              !externalPropertyId ||
+              (propertyType !== "domain" && propertyType !== "url_prefix")
+            ) {
+              results.append(
+                errorAlert("Select a Search Console property first."),
+              );
+              return;
+            }
+            mapButton.disabled = true;
+            mapButton.textContent = "Mapping…";
+            const mapped = await mapSearchConsole(organizationId, websiteId, {
+              external_property_id: externalPropertyId,
+              property_type: propertyType,
+            });
+            if (mapped.kind === "ok") {
+              results.replaceChildren(
+                statusBadge("ready", "Search Console property mapped"),
+              );
+            } else {
+              mapButton.disabled = false;
+              mapButton.textContent = "Map selected property";
+              results.append(
+                errorAlert(describeFailure(mapped, "Search Console mapping")),
+              );
+            }
+          });
+          results.replaceChildren(propertySelect.root, mapButton);
+        });
       }
 
       function renderGoogleConnection(
@@ -500,7 +647,7 @@ import "../styles/global.css";
             discoverBtn.textContent = "Discovering…";
             const result = await discoverGoogleResourcesAndReconcile(
               organizationId,
-              reloadGoogleWorkspace,
+              reconcileGoogleSourceData,
             );
             if (result.kind !== "ok") {
               discoverBtn.textContent = "Discover accounts and locations";
@@ -650,7 +797,7 @@ import "../styles/global.css";
                           platformLocationId,
                           gbpLocationId,
                           desiredWriteEnabled,
-                          reloadGoogleWorkspace,
+                          reconcileGoogleSourceData,
                         );
                         if (result.kind !== "ok") {
                           action.disabled = false;
@@ -690,6 +837,7 @@ import "../styles/global.css";
 
         const disclosure = document.createElement("details");
         disclosure.className = "ui-card";
+        disclosure.open = true;
         const summary = document.createElement("summary");
         summary.className = "ui-card__header";
         summary.textContent = `Unmapped resources (${wsResult.data.unmapped_count})`;
@@ -757,7 +905,7 @@ import "../styles/global.css";
                 value: location.id,
                 label: location.name,
               })),
-              "",
+              availableLocations.length === 1 ? availableLocations[0].id : "",
               "Select location…",
             );
             locationSelect.root.classList.add("ui-control--compact");
@@ -782,7 +930,7 @@ import "../styles/global.css";
                 selectedLocationId,
                 resource.id,
                 false,
-                reloadGoogleWorkspace,
+                reconcileGoogleSourceData,
               );
               if (mapResult.kind !== "ok") {
                 mapBtn.textContent = "Map";
@@ -934,6 +1082,128 @@ import "../styles/global.css";
 
           reposBody.append(list);
         }
+
+        renderGitHubPublishingTargets(content, ws);
+      }
+
+      function renderGitHubPublishingTargets(
+        parent: HTMLElement,
+        ws: GitHubWorkspace,
+      ): void {
+        const card = makeCard("Publishing target");
+        const body = card.querySelector(".ui-card__body") as HTMLElement;
+        parent.append(card);
+
+        if (ws.publishing_targets.length > 0) {
+          const list = document.createElement("ul");
+          list.className = "ui-record-list";
+          for (const target of ws.publishing_targets) {
+            const item = document.createElement("li");
+            const info = document.createElement("div");
+            const name = document.createElement("h3");
+            name.textContent = target.key;
+            const detail = document.createElement("p");
+            detail.textContent = `${target.repository_id} · ${target.base_branch} · ${target.allowed_path_prefix}`;
+            info.append(name, detail);
+            item.append(
+              info,
+              statusBadge(
+                target.status === "active" ? "ready" : "setup",
+                statusLabel(target.status),
+              ),
+            );
+            list.append(item);
+          }
+          body.append(list);
+          return;
+        }
+
+        if (!canUsePlatformAdministration() || !ws.connection_id) {
+          body.append(
+            emptyState(
+              "No publishing target configured",
+              "An administrator with elevated access can select the client's publishing repository.",
+            ),
+          );
+          return;
+        }
+        if (ws.repositories.length === 0) {
+          body.append(
+            emptyState(
+              "No accessible repositories",
+              "Grant the LILOs GitHub App access to the client's website repository.",
+            ),
+          );
+          return;
+        }
+
+        const repositorySelect = createSelectControl(
+          "github-publishing-repository",
+          "Publishing repository",
+          ws.repositories.map((repository) => ({
+            value: repository.repository_id,
+            label: repository.name,
+          })),
+          ws.repositories.length === 1 ? ws.repositories[0].repository_id : "",
+          "Select repository…",
+        );
+        const pathControl = document.createElement("label");
+        pathControl.className = "ui-control";
+        const pathLabel = document.createElement("span");
+        pathLabel.className = "ui-control__label";
+        pathLabel.textContent = "Allowed content path";
+        const pathInput = document.createElement("input");
+        pathInput.className = "ui-input";
+        pathInput.value = "src/content/blog";
+        pathInput.required = true;
+        pathControl.append(pathLabel, pathInput);
+        const feedback = document.createElement("div");
+        const saveButton = document.createElement("button");
+        saveButton.type = "button";
+        saveButton.className = "ui-button ui-button--primary ui-button--md";
+        saveButton.textContent = "Use repository for publishing";
+        body.append(repositorySelect.root, pathControl, saveButton, feedback);
+
+        saveButton.addEventListener("click", async () => {
+          const repository = ws.repositories.find(
+            (item) => item.repository_id === repositorySelect.input.value,
+          );
+          if (!repository || !pathInput.value.trim()) {
+            feedback.replaceChildren(
+              errorAlert(
+                "Select a repository and enter an allowed content path.",
+              ),
+            );
+            return;
+          }
+          saveButton.disabled = true;
+          saveButton.textContent = "Saving…";
+          const result = await createPublishingTarget(organizationId, {
+            key: "primary-site",
+            connectionId: ws.connection_id!,
+            repositoryId: repository.repository_id,
+            baseBranch: repository.default_branch || "main",
+            allowedPathPrefix: pathInput.value.trim(),
+          });
+          if (result.kind === "ok") {
+            const target: PublishingTarget = result.data;
+            feedback.replaceChildren(
+              statusBadge(
+                "ready",
+                `${target.key} publishing target configured`,
+              ),
+            );
+            repositorySelect.input.disabled = true;
+            pathInput.disabled = true;
+            saveButton.remove();
+          } else {
+            saveButton.disabled = false;
+            saveButton.textContent = "Use repository for publishing";
+            feedback.replaceChildren(
+              errorAlert(describeFailure(result, "publishing target")),
+            );
+          }
+        });
       }
 
       async function performGitHubDisconnect(): Promise<void> {
@@ -985,6 +1255,11 @@ import "../styles/global.css";
             (o) => o.organization_id === result.context.organizationId,
           ) ?? result.organizations[0];
         await loadOrganization(org);
+        if (
+          new URLSearchParams(window.location.search).get("connected") === "1"
+        ) {
+          await openGoogle();
+        }
       }
 
       void boot();

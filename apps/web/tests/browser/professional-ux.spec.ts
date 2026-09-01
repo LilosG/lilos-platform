@@ -189,8 +189,14 @@ test.describe("Onboarding stepper", () => {
     await page.goto("/onboarding");
     await expect(page.locator("#onboarding-stepper")).toBeAttached();
     const steps = page.locator(".stepper__step");
-    await expect(steps).toHaveCount(9);
-    await expect(steps.last()).toContainText("Connect");
+    await expect(steps).toHaveCount(5);
+    await expect(steps).toHaveText([
+      /Client details/,
+      /Source data/,
+      /Products/,
+      /Review/,
+      /Activate/,
+    ]);
   });
 });
 

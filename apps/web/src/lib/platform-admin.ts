@@ -85,6 +85,15 @@ export type Industry = {
   name: string;
 };
 
+export type PlatformProduct = {
+  id: string;
+  key: string;
+  name: string;
+  description: string;
+  status: string;
+  owning_module: string;
+};
+
 /**
  * Real response shape of `GET /api/v1/platform/industries`:
  * `{ data: { items: [...] }, meta: ... }`. The shared client unwraps the
@@ -170,6 +179,24 @@ export type CreateOrganizationProfileInput = {
   default_call_to_action?: string | null;
 };
 
+export type LocationProfile = {
+  id: string;
+  organization_id: string;
+  location_id: string;
+  local_description: string | null;
+  primary_services: string[] | null;
+  service_area: string | null;
+  call_to_action_override: string | null;
+  version: number;
+};
+
+export type SaveLocationProfileInput = {
+  local_description?: string | null;
+  primary_services?: string[] | null;
+  service_area?: string | null;
+  call_to_action_override?: string | null;
+};
+
 export type OrganizationDomain = {
   id: string;
   organization_id: string;
@@ -186,7 +213,8 @@ export type OnboardingStepKey =
   | "website_domain"
   | "industry"
   | "services"
-  | "users";
+  | "users"
+  | "products";
 
 export type OnboardingResponsibilityMode =
   "managed" | "co_managed" | "self_service";
@@ -349,6 +377,12 @@ const base = "/api/v1/platform";
 
 export function fetchIndustries(): Promise<ApiOutcome<IndustriesResponse>> {
   return apiGet<IndustriesResponse>(`${base}/industries`);
+}
+
+export function fetchPlatformProducts(): Promise<
+  ApiOutcome<PlatformProduct[]>
+> {
+  return apiGet<PlatformProduct[]>(`${base}/products`);
 }
 
 export function fetchOrganizations(): Promise<
@@ -554,6 +588,47 @@ export function createOrganizationProfile(
   return apiRequest<OrganizationProfile>(
     `${base}/organizations/${organizationId}/profile`,
     { method: "POST", body: command },
+  );
+}
+
+export function replaceOrganizationProfile(
+  organizationId: string,
+  command: CreateOrganizationProfileInput & { expected_version: number },
+): Promise<ApiOutcome<OrganizationProfile>> {
+  return apiRequest<OrganizationProfile>(
+    `${base}/organizations/${organizationId}/profile`,
+    { method: "PUT", body: command },
+  );
+}
+
+export function fetchLocationProfile(
+  organizationId: string,
+  locationId: string,
+): Promise<ApiOutcome<LocationProfile | null>> {
+  return apiGet<LocationProfile | null>(
+    `${base}/organizations/${organizationId}/locations/${locationId}/profile`,
+  );
+}
+
+export function createLocationProfile(
+  organizationId: string,
+  locationId: string,
+  command: SaveLocationProfileInput,
+): Promise<ApiOutcome<LocationProfile>> {
+  return apiRequest<LocationProfile>(
+    `${base}/organizations/${organizationId}/locations/${locationId}/profile`,
+    { method: "POST", body: command },
+  );
+}
+
+export function replaceLocationProfile(
+  organizationId: string,
+  locationId: string,
+  command: SaveLocationProfileInput & { expected_version: number },
+): Promise<ApiOutcome<LocationProfile>> {
+  return apiRequest<LocationProfile>(
+    `${base}/organizations/${organizationId}/locations/${locationId}/profile`,
+    { method: "PUT", body: command },
   );
 }
 
