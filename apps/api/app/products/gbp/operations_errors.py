@@ -8,6 +8,14 @@ class GBPLocationNotFoundError(NotFoundError):
     public_message = "The requested Business Profile location was not found."
 
 
+class GBPLocationAlreadyMappedError(ConflictError):
+    code = "GBP_LOCATION_ALREADY_MAPPED"
+    public_message = (
+        "This LILOs location already has a confirmed Business Profile mapping. "
+        "Remove the existing mapping before mapping another profile."
+    )
+
+
 class GBPCapabilitySnapshotNotFoundError(NotFoundError):
     code = "GBP_CAPABILITY_SNAPSHOT_NOT_FOUND"
     public_message = "No capability snapshot has been recorded for this location yet."
