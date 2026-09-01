@@ -40,6 +40,43 @@ export type AdminLocation = {
   timezone: string;
   is_primary: boolean;
   version: number;
+  // The editable detail. Present on every location response; previously
+  // omitted from this type because nothing could edit a location, so the
+  // fields had nowhere to go.
+  address_line_1?: string | null;
+  address_line_2?: string | null;
+  city?: string | null;
+  region?: string | null;
+  postal_code?: string | null;
+  country_code?: string | null;
+  service_area_description?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  website_url?: string | null;
+};
+
+/**
+ * A correction to an existing location.
+ *
+ * Only the keys present are sent, and the backend writes only what it is
+ * given, so editing the address cannot blank the phone number. `slug` is
+ * absent on purpose: it is routing identity, not a detail.
+ */
+export type UpdateLocationInput = {
+  expected_version: number;
+  name?: string;
+  location_type?: LocationType;
+  timezone?: string;
+  address_line_1?: string | null;
+  address_line_2?: string | null;
+  city?: string | null;
+  region?: string | null;
+  postal_code?: string | null;
+  country_code?: string;
+  service_area_description?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  website_url?: string | null;
 };
 
 export type Industry = {
@@ -417,6 +454,60 @@ export function activateLocation(
 ): Promise<ApiOutcome<AdminLocation>> {
   return apiRequest<AdminLocation>(
     `${base}/organizations/${organizationId}/locations/${locationId}/activate`,
+    { method: "POST", body: { expected_version: expectedVersion } },
+  );
+}
+
+/**
+ * Correct an existing location's details.
+ *
+ * A location could be created and retired but never edited, so a typo in the
+ * name or a wrong address was permanent and the only way round it was a second
+ * location — which then blocked activation, because product readiness
+ * evaluates every non-archived location.
+ */
+export function updateLocation(
+  organizationId: string,
+  locationId: string,
+  command: UpdateLocationInput,
+): Promise<ApiOutcome<AdminLocation>> {
+  return apiRequest<AdminLocation>(
+    `${base}/organizations/${organizationId}/locations/${locationId}`,
+    { method: "PATCH", body: command },
+  );
+}
+
+/**
+ * Move the primary designation to this location.
+ *
+ * The primary location is what GBP mapping and product readiness resolve
+ * against, and it could only be chosen at creation time.
+ */
+export function setPrimaryLocation(
+  organizationId: string,
+  locationId: string,
+  expectedVersion: number,
+): Promise<ApiOutcome<AdminLocation>> {
+  return apiRequest<AdminLocation>(
+    `${base}/organizations/${organizationId}/locations/${locationId}/set-primary`,
+    { method: "POST", body: { expected_version: expectedVersion } },
+  );
+}
+
+/**
+ * Retire a location that should not have been created.
+ *
+ * This is the escape from the two-location trap: readiness evaluates every
+ * location that is not archived or closed-permanently, so an unwanted spare
+ * blocks activation until it is archived.
+ */
+export function archiveLocation(
+  organizationId: string,
+  locationId: string,
+  expectedVersion: number,
+): Promise<ApiOutcome<AdminLocation>> {
+  return apiRequest<AdminLocation>(
+    `${base}/organizations/${organizationId}/locations/${locationId}/archive`,
     { method: "POST", body: { expected_version: expectedVersion } },
   );
 }

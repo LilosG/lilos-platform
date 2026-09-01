@@ -702,6 +702,9 @@ import "../styles/global.css";
         assignIndustry,
         fetchOrganizationLocations,
         createLocation,
+        updateLocation,
+        setPrimaryLocation,
+        archiveLocation,
         fetchOrganizationProfile,
         createOrganizationProfile,
         fetchOrganizationDomains,
@@ -1108,20 +1111,229 @@ import "../styles/global.css";
           return;
         }
         for (const location of locations) {
-          const item = document.createElement("li");
-          const info = document.createElement("div");
-          const title = document.createElement("h3");
-          title.textContent =
-            location.name + (location.is_primary ? " (primary)" : "");
-          const meta = document.createElement("p");
-          meta.textContent = `${statusLabel(location.location_type)} · ${statusLabel(location.status)}`;
-          info.append(title, meta);
-          item.append(
-            info,
-            badge(location.status === "active" ? "ready" : "setup"),
-          );
-          list.append(item);
+          list.append(locationRow(organizationId, location));
         }
+      }
+
+      /**
+       * One location, with the controls to actually do something about it.
+       *
+       * This list used to be read-only. A location could be created and never
+       * corrected or removed, so a typo was permanent and a spare location
+       * blocked activation with no way out — product readiness evaluates every
+       * location that is not archived.
+       */
+      function locationRow(
+        organizationId: string,
+        location: AdminLocation,
+      ): HTMLLIElement {
+        const item = document.createElement("li");
+        item.className = "location-row";
+        item.id = `location-${location.id}`;
+
+        const header = document.createElement("div");
+        header.className = "location-row__header";
+
+        const info = document.createElement("div");
+        const title = document.createElement("h3");
+        title.textContent =
+          location.name + (location.is_primary ? " (primary)" : "");
+        const meta = document.createElement("p");
+        const where = [location.city, location.region]
+          .filter(Boolean)
+          .join(", ");
+        meta.textContent =
+          `${statusLabel(location.location_type)} · ${statusLabel(location.status)}` +
+          (where ? ` · ${where}` : "");
+        info.append(title, meta);
+
+        const actions = document.createElement("div");
+        actions.className = "location-row__actions";
+        actions.append(badge(location.status === "active" ? "ready" : "setup"));
+
+        const editToggle = document.createElement("button");
+        editToggle.type = "button";
+        editToggle.className = "ui-button ui-button--quiet";
+        editToggle.textContent = "Edit details";
+        actions.append(editToggle);
+
+        if (!location.is_primary) {
+          const makePrimary = document.createElement("button");
+          makePrimary.type = "button";
+          makePrimary.className = "ui-button ui-button--quiet";
+          makePrimary.textContent = "Make primary";
+          makePrimary.addEventListener("click", async () => {
+            makePrimary.disabled = true;
+            const outcome = await setPrimaryLocation(
+              organizationId,
+              location.id,
+              location.version,
+            );
+            if (outcome.kind !== "ok") {
+              showLocationError(describeFailure(outcome));
+              makePrimary.disabled = false;
+              return;
+            }
+            await refreshAfterLocationChange();
+          });
+          actions.append(makePrimary);
+
+          // Archiving the primary is deliberately not offered: it is what GBP
+          // mapping and readiness resolve against, so removing it would leave a
+          // client that cannot be activated. Move primary elsewhere first.
+          const archive = document.createElement("button");
+          archive.type = "button";
+          archive.className = "ui-button ui-button--quiet";
+          archive.textContent = "Remove";
+          archive.addEventListener("click", async () => {
+            const confirmed = window.confirm(
+              `Remove "${location.name}"? It stops counting toward activation. ` +
+                "This cannot be undone from here.",
+            );
+            if (!confirmed) return;
+            archive.disabled = true;
+            const outcome = await archiveLocation(
+              organizationId,
+              location.id,
+              location.version,
+            );
+            if (outcome.kind !== "ok") {
+              showLocationError(describeFailure(outcome));
+              archive.disabled = false;
+              return;
+            }
+            await refreshAfterLocationChange();
+          });
+          actions.append(archive);
+        }
+
+        header.append(info, actions);
+        item.append(header);
+
+        const form = buildLocationEditForm(organizationId, location);
+        form.hidden = true;
+        editToggle.addEventListener("click", () => {
+          form.hidden = !form.hidden;
+          editToggle.textContent = form.hidden ? "Edit details" : "Cancel";
+        });
+        item.append(form);
+        return item;
+      }
+
+      /** The fields an operator can correct, prefilled with what is on record. */
+      function buildLocationEditForm(
+        organizationId: string,
+        location: AdminLocation,
+      ): HTMLFormElement {
+        const form = document.createElement("form");
+        form.className = "form-grid stack-top-4";
+        form.id = `edit-location-${location.id}`;
+
+        const fields: {
+          key: keyof AdminLocation;
+          label: string;
+          value: string;
+        }[] = [
+          { key: "name", label: "Location name", value: location.name ?? "" },
+          {
+            key: "address_line_1",
+            label: "Address",
+            value: location.address_line_1 ?? "",
+          },
+          { key: "city", label: "City", value: location.city ?? "" },
+          {
+            key: "region",
+            label: "State / region",
+            value: location.region ?? "",
+          },
+          {
+            key: "postal_code",
+            label: "Postal code",
+            value: location.postal_code ?? "",
+          },
+          { key: "phone", label: "Phone", value: location.phone ?? "" },
+        ];
+
+        for (const field of fields) {
+          const wrapper = document.createElement("div");
+          wrapper.className = "field";
+          const label = document.createElement("label");
+          const inputId = `edit-${location.id}-${String(field.key)}`;
+          label.setAttribute("for", inputId);
+          label.textContent = field.label;
+          const input = document.createElement("input");
+          input.id = inputId;
+          input.name = String(field.key);
+          input.type = "text";
+          input.value = field.value;
+          wrapper.append(label, input);
+          form.append(wrapper);
+        }
+
+        const submit = document.createElement("button");
+        submit.type = "submit";
+        submit.className = "ui-button";
+        submit.textContent = "Save changes";
+        const actions = document.createElement("div");
+        actions.className = "field field--full";
+        actions.append(submit);
+        form.append(actions);
+
+        form.addEventListener("submit", async (event) => {
+          event.preventDefault();
+          submit.disabled = true;
+          const data = new FormData(form);
+          // Send only what actually changed. The backend writes only supplied
+          // fields, so this keeps an untouched field untouched rather than
+          // rewriting it with the same value and burning a version.
+          const command: Record<string, unknown> = {
+            expected_version: location.version,
+          };
+          for (const field of fields) {
+            const next = String(data.get(String(field.key)) ?? "").trim();
+            const current = field.value ?? "";
+            if (next !== current) {
+              command[String(field.key)] = next === "" ? null : next;
+            }
+          }
+          const outcome = await updateLocation(
+            organizationId,
+            location.id,
+            command as Parameters<typeof updateLocation>[2],
+          );
+          if (outcome.kind !== "ok") {
+            showLocationError(describeFailure(outcome));
+            submit.disabled = false;
+            return;
+          }
+          await refreshAfterLocationChange();
+        });
+
+        return form;
+      }
+
+      function showLocationError(message: string): void {
+        const alert = document.getElementById("locations-alert")!;
+        alert.replaceChildren();
+        const box = document.createElement("div");
+        box.className = "alert alert--error";
+        box.setAttribute("role", "alert");
+        box.textContent = message;
+        alert.append(box);
+      }
+
+      /**
+       * Re-read the whole workspace after a location changes.
+       *
+       * Deliberately not just the location list: editing or removing a location
+       * can clear an activation blocker, and refreshing the list alone would
+       * leave the operator staring at a stale reason they are still blocked.
+       * `refreshWorkspace` already re-reads locations, profile, domains and
+       * onboarding state together, which is exactly the set that can move.
+       */
+      async function refreshAfterLocationChange(): Promise<void> {
+        document.getElementById("locations-alert")!.replaceChildren();
+        await refreshWorkspace();
       }
 
       function wireCreateLocationForm(): void {

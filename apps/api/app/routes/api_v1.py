@@ -77,6 +77,7 @@ from apps.api.app.locations.contracts import (
     LocationPagination,
     LocationResponse,
     LocationTransition,
+    LocationUpdate,
 )
 from apps.api.app.locations.enums import LocationLifecycleAction
 from apps.api.app.locations.service import LocationService
@@ -372,6 +373,57 @@ async def get_location(
     _authorization: Annotated[AuthorizationDecision, location_policy("locations.read")],
 ) -> LocationResponse:
     item = await location_service.get(session, organization_id, location_id)
+    return LocationResponse(data=LocationData.model_validate(item), meta=meta(request))
+
+
+@organizations.patch("/locations/{location_id}", response_model=LocationResponse)
+async def update_location(
+    request: Request,
+    organization_id: UUID,
+    location_id: UUID,
+    command: LocationUpdate,
+    session: DatabaseSession,
+    _authorization: Annotated[AuthorizationDecision, location_policy("locations.update")],
+) -> LocationResponse:
+    """Correct an existing location's details.
+
+    Until this existed a location could be created and retired but never
+    edited, so a typo in the name or address was permanent and the only way
+    round it was a second location — which then blocked activation, because
+    product readiness evaluates every non-archived location.
+    """
+    item = await location_service.update(
+        session,
+        organization_id,
+        location_id,
+        command,
+        correlation_id=request_correlation_id(request),
+    )
+    return LocationResponse(data=LocationData.model_validate(item), meta=meta(request))
+
+
+@organizations.post("/locations/{location_id}/set-primary", response_model=LocationResponse)
+async def set_primary_location(
+    request: Request,
+    organization_id: UUID,
+    location_id: UUID,
+    command: LocationTransition,
+    session: DatabaseSession,
+    _authorization: Annotated[AuthorizationDecision, location_policy("locations.update")],
+) -> LocationResponse:
+    """Move the primary designation to this location.
+
+    The primary location is what GBP mapping and product readiness resolve
+    against. It could only be chosen at creation time, so a client that got it
+    wrong had no way to correct it.
+    """
+    item = await location_service.set_primary(
+        session,
+        organization_id,
+        location_id,
+        expected_version=command.expected_version,
+        correlation_id=request_correlation_id(request),
+    )
     return LocationResponse(data=LocationData.model_validate(item), meta=meta(request))
 
 

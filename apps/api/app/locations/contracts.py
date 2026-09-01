@@ -119,6 +119,53 @@ class LocationTransition(BaseModel):
     expected_version: Annotated[int, Field(ge=1)]
 
 
+class LocationUpdate(BaseModel):
+    """Correct the details of an existing location.
+
+    A location could be created and its lifecycle changed, but never edited: a
+    typo in the name or a wrong address was permanent, and the only escape was
+    creating a second location, which then blocked activation because product
+    readiness evaluates every non-archived location.
+
+    Every field is optional and only supplied fields are written, so a caller
+    correcting the address cannot blank the phone number by omitting it.
+    ``slug`` is deliberately absent — it is routing identity, not a detail, and
+    changing it would silently break anything already pointing at it.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True, str_strip_whitespace=True)
+
+    expected_version: Annotated[int, Field(ge=1)]
+
+    name: Annotated[str, Field(min_length=1, max_length=200)] | None = None
+    location_type: LocationType | None = None
+    timezone: Annotated[str, Field(min_length=1, max_length=64)] | None = None
+    address_line_1: OptionalAddress = None
+    address_line_2: OptionalAddress = None
+    city: Annotated[str, Field(min_length=1, max_length=100)] | None = None
+    region: Annotated[str, Field(min_length=1, max_length=100)] | None = None
+    postal_code: Annotated[str, Field(min_length=1, max_length=32)] | None = None
+    country_code: Annotated[str, Field(pattern=r"^[A-Z]{2}$")] | None = None
+    latitude: Annotated[Decimal, Field(ge=-90, le=90, max_digits=9, decimal_places=6)] | None = None
+    longitude: (
+        Annotated[Decimal, Field(ge=-180, le=180, max_digits=10, decimal_places=6)] | None
+    ) = None
+    service_area_description: Annotated[str, Field(min_length=1, max_length=1000)] | None = None
+    phone: Annotated[str, Field(min_length=1, max_length=32)] | None = None
+    email: OptionalEmail = None
+    website_url: AnyHttpUrl | None = None
+    external_reference: Annotated[str, Field(min_length=1, max_length=200)] | None = None
+
+    @field_validator("timezone")
+    @classmethod
+    def validate_timezone(cls, value: str) -> str:
+        try:
+            ZoneInfo(value)
+        except (ZoneInfoNotFoundError, ValueError):
+            raise ValueError("timezone must be a valid IANA identifier") from None
+        return value
+
+
 class LocationData(BaseModel):
     model_config = ConfigDict(from_attributes=True, extra="forbid")
 

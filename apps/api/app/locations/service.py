@@ -1,6 +1,7 @@
 """Location rules, scoped isolation, concurrency, and transactional auditing."""
 
 from dataclasses import dataclass, field
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy.exc import IntegrityError
@@ -9,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from apps.api.app.audit.contracts import AuditEventCreate
 from apps.api.app.audit.enums import AuditActorType, AuditResult
 from apps.api.app.audit.service import AuditEventService
-from apps.api.app.locations.contracts import LocationCreate
+from apps.api.app.locations.contracts import LocationCreate, LocationUpdate
 from apps.api.app.locations.enums import LocationLifecycleAction, LocationStatus
 from apps.api.app.locations.errors import (
     LocationNotFoundError,
@@ -144,6 +145,132 @@ class LocationService:
                     "status": location.status.value,
                     "version": location.version,
                     "is_primary": location.is_primary,
+                },
+            ),
+        )
+        return location
+
+    async def update(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        location_id: UUID,
+        command: LocationUpdate,
+        *,
+        correlation_id: str,
+    ) -> Location:
+        """Correct the details of an existing location.
+
+        Only fields the caller supplied are written. Everything else keeps its
+        current value, so correcting an address cannot blank a phone number by
+        omission — which matters because this is reached from a form that may
+        only render a subset of the fields.
+        """
+        await self._organization(session, organization_id)
+        location = await self.repository.get_by_id(session, organization_id, location_id)
+        if location is None:
+            raise LocationNotFoundError
+        if location.version != command.expected_version:
+            raise LocationVersionConflictError
+
+        supplied = command.model_dump(exclude={"expected_version"}, exclude_unset=True)
+        changed: dict[str, Any] = {}
+        for attribute, value in supplied.items():
+            if attribute == "website_url" and value is not None:
+                value = str(value)
+            if getattr(location, attribute) != value:
+                changed[attribute] = value
+
+        if not changed:
+            # Nothing to write. Returning early keeps the version stable, so a
+            # no-op save does not invalidate a form the operator still has open.
+            return location
+
+        for attribute, value in changed.items():
+            setattr(location, attribute, value)
+        location.version += 1
+        await session.flush()
+
+        await self.audit_service.record(
+            session,
+            AuditEventCreate(
+                event_type="platform.location.updated",
+                action="location.update",
+                result=AuditResult.SUCCEEDED,
+                actor_type=AuditActorType.SYSTEM,
+                organization_id=organization_id,
+                location_id=location.id,
+                resource_type="location",
+                resource_id=location.id,
+                correlation_id=correlation_id,
+                summary="Location details corrected.",
+                # Field names only. The values can carry a client's address and
+                # contact details, which do not belong in the audit payload.
+                metadata={
+                    "fields": ", ".join(sorted(changed)),
+                    "version": location.version,
+                },
+            ),
+        )
+        return location
+
+    async def set_primary(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        location_id: UUID,
+        *,
+        expected_version: int,
+        correlation_id: str,
+    ) -> Location:
+        """Move the primary designation to this location.
+
+        A partial unique index enforces one primary per organization, so the
+        incumbent must be demoted before the new one is promoted, in that order
+        and in one transaction. Doing it the other way round trips the
+        constraint; doing it in two transactions can leave a client with no
+        primary at all, which blocks activation.
+        """
+        await self._organization(session, organization_id)
+        location = await self.repository.get_by_id(session, organization_id, location_id)
+        if location is None:
+            raise LocationNotFoundError
+        if location.version != expected_version:
+            raise LocationVersionConflictError
+        if location.status in {LocationStatus.CLOSED_PERMANENTLY, LocationStatus.ARCHIVED}:
+            # The primary location is what product readiness and GBP mapping
+            # resolve against. Pointing it at a retired location would create a
+            # client that looks configured and cannot work.
+            raise LocationTransitionConflictError
+        if location.is_primary:
+            return location
+
+        incumbent = await self.repository.get_primary(session, organization_id)
+        if incumbent is not None:
+            incumbent.is_primary = False
+            incumbent.version += 1
+            await session.flush()
+
+        location.is_primary = True
+        location.version += 1
+        await session.flush()
+
+        await self.audit_service.record(
+            session,
+            AuditEventCreate(
+                event_type="platform.location.primary_changed",
+                action="location.set_primary",
+                result=AuditResult.SUCCEEDED,
+                actor_type=AuditActorType.SYSTEM,
+                organization_id=organization_id,
+                location_id=location.id,
+                resource_type="location",
+                resource_id=location.id,
+                correlation_id=correlation_id,
+                summary="Primary location changed.",
+                metadata={
+                    "previous_primary_id": str(incumbent.id) if incumbent else None,
+                    "version": location.version,
                 },
             ),
         )
