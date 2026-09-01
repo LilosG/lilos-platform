@@ -19,6 +19,7 @@ from apps.api.app.routes.client_onboarding import router as client_onboarding_ro
 from apps.api.app.routes.content import router as content_router
 from apps.api.app.routes.gbp import organization_router as gbp_organization_router
 from apps.api.app.routes.gbp import router as gbp_router
+from apps.api.app.routes.gbp_mapping import router as gbp_mapping_router
 from apps.api.app.routes.gbp_operations import router as gbp_operations_router
 from apps.api.app.routes.github_app import callback_router as github_app_callback_router
 from apps.api.app.routes.github_app import router as github_app_router
@@ -94,6 +95,7 @@ def create_app(
     application.include_router(api_v1_router)
     application.include_router(administration_router)
     application.include_router(gbp_router)
+    application.include_router(gbp_mapping_router)
     application.include_router(gbp_operations_router)
     application.include_router(gbp_organization_router)
     application.include_router(reviews_router)
