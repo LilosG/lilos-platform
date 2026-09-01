@@ -117,3 +117,26 @@ for (const surface of surfaces) {
     });
   });
 }
+
+test("onboarding fixture exposes the source-first activation path", async ({
+  page,
+}) => {
+  await openFixture(
+    page,
+    "/onboarding?org=org-packet-4",
+    "#onboarding-content",
+  );
+  await expect(page.locator("#progress-label")).toHaveText("83% complete");
+  await expect(
+    page.getByText("Source data", { exact: true }).first(),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Start or retry website crawl" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: /Connect or map Google/i }),
+  ).toBeVisible();
+  await expect(page.locator("#blockers-panel")).toContainText(
+    "Before activation, finish these core details",
+  );
+});

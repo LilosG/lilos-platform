@@ -289,6 +289,12 @@ def test_platform_administrator_creates_organization_and_location_and_bootstraps
     assert list_orgs.status_code == 200
     assert any(item["id"] == organization_id for item in list_orgs.json()["data"]["items"])
 
+    product_catalog = client.get("/api/v1/platform/products", headers=HEADERS)
+    assert product_catalog.status_code == 200, product_catalog.text
+    product_rows = product_catalog.json()["data"]
+    assert product_rows
+    assert {"id", "key", "name"}.issubset(product_rows[0])
+
     location_response = client.post(
         f"/api/v1/platform/organizations/{organization_id}/locations",
         headers=HEADERS,
@@ -358,6 +364,34 @@ def test_platform_administrator_creates_organization_and_location_and_bootstraps
         json={},
     )
     assert profile_created.status_code == 201, profile_created.text
+
+    location_profile_created = client.post(
+        f"/api/v1/platform/organizations/{organization_id}/locations/{location['id']}/profile",
+        headers=HEADERS,
+        json={"local_description": "Primary client location"},
+    )
+    assert location_profile_created.status_code == 201, location_profile_created.text
+    location_profile = location_profile_created.json()["data"]
+    assert location_profile["location_id"] == location["id"]
+    assert location_profile["version"] == 1
+
+    location_profile_read = client.get(
+        f"/api/v1/platform/organizations/{organization_id}/locations/{location['id']}/profile",
+        headers=HEADERS,
+    )
+    assert location_profile_read.status_code == 200, location_profile_read.text
+    assert location_profile_read.json()["data"]["local_description"] == ("Primary client location")
+
+    location_profile_updated = client.put(
+        f"/api/v1/platform/organizations/{organization_id}/locations/{location['id']}/profile",
+        headers=HEADERS,
+        json={
+            "local_description": "Confirmed primary client location",
+            "expected_version": 1,
+        },
+    )
+    assert location_profile_updated.status_code == 200, location_profile_updated.text
+    assert location_profile_updated.json()["data"]["version"] == 2
 
     domain_created = client.post(
         f"/api/v1/platform/organizations/{organization_id}/domains",

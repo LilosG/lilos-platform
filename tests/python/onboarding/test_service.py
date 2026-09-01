@@ -14,6 +14,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from apps.api.app.access_control.enums import MembershipStatus, MembershipType
 from apps.api.app.access_control.models import OrganizationMembership
+from apps.api.app.administration.models import ProductEntitlement
+from apps.api.app.administration.repository import AdministrationCatalogRepository
 from apps.api.app.authentication.enums import UserStatus
 from apps.api.app.authentication.models import UserProfile
 from apps.api.app.database.base import utc_now
@@ -180,6 +182,39 @@ def test_onboarding_state_progresses_to_activation_eligible(
             "insights",
         }
         assert all(product.selected is False for product in final_state.products)
+
+        # Selecting a product must not turn its internal setup checklist into
+        # organization lifecycle blockers. The product remains truthfully
+        # blocked until its profile/facts/policy are ready, while the client
+        # account itself remains eligible for activation.
+        async with onboarding_session_factory.begin() as session:
+            seo = await AdministrationCatalogRepository().get_product_by_key(
+                session,
+                "seo",
+            )
+            assert seo is not None
+            session.add(
+                ProductEntitlement(
+                    organization_id=organization_id,
+                    product_id=seo.id,
+                    status="setup_required",
+                    source="test",
+                    reason="Prove product setup does not deadlock onboarding.",
+                    version=1,
+                )
+            )
+
+        async with onboarding_session_factory() as session:
+            selected_product_state = await service.get_state(session, organization_id)
+        selected_seo = next(
+            item for item in selected_product_state.products if item.product_key == "seo"
+        )
+        assert selected_seo.selected is True
+        assert selected_seo.ready is False
+        assert selected_seo.blocking_findings
+        assert selected_product_state.activation_eligible is True
+        assert selected_product_state.blockers == ()
+        assert any("Product setup still needs" in item for item in selected_product_state.warnings)
 
     asyncio.run(exercise())
 

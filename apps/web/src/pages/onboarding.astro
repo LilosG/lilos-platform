@@ -117,6 +117,7 @@ import "../styles/global.css";
               <label for="org-industry-create">Industry</label><select
                 id="org-industry-create"
                 name="industry_id"
+                required
               >
                 <option value="">Loading industries…</option>
               </select>
@@ -151,40 +152,24 @@ import "../styles/global.css";
 
         <div id="client-workspace" hidden>
           <div class="stepper" id="onboarding-stepper">
-            <button class="stepper__step" data-step="profile" type="button"
-              ><span class="stepper__number">1</span>Profile</button
+            <button class="stepper__step" data-step="details" type="button"
+              ><span class="stepper__number">1</span>Client details</button
             >
             <div class="stepper__connector"></div>
-            <button class="stepper__step" data-step="locations" type="button"
-              ><span class="stepper__number">2</span>Locations</button
-            >
-            <div class="stepper__connector"></div>
-            <button class="stepper__step" data-step="website" type="button"
-              ><span class="stepper__number">3</span>Website</button
-            >
-            <div class="stepper__connector"></div>
-            <button class="stepper__step" data-step="industry" type="button"
-              ><span class="stepper__number">4</span>Industry</button
-            >
-            <div class="stepper__connector"></div>
-            <button class="stepper__step" data-step="users" type="button"
-              ><span class="stepper__number">5</span>Users</button
+            <button class="stepper__step" data-step="sources" type="button"
+              ><span class="stepper__number">2</span>Source data</button
             >
             <div class="stepper__connector"></div>
             <button class="stepper__step" data-step="products" type="button"
-              ><span class="stepper__number">6</span>Products</button
+              ><span class="stepper__number">3</span>Products</button
             >
             <div class="stepper__connector"></div>
-            <button class="stepper__step" data-step="policies" type="button"
-              ><span class="stepper__number">7</span>Policies</button
+            <button class="stepper__step" data-step="review" type="button"
+              ><span class="stepper__number">4</span>Review</button
             >
             <div class="stepper__connector"></div>
             <button class="stepper__step" data-step="activate" type="button"
-              ><span class="stepper__number">8</span>Activate</button
-            >
-            <div class="stepper__connector"></div>
-            <button class="stepper__step" data-step="connect" type="button"
-              ><span class="stepper__number">9</span>Connect</button
+              ><span class="stepper__number">5</span>Activate</button
             >
           </div>
 
@@ -253,10 +238,16 @@ import "../styles/global.css";
             <ul class="checklist" id="assignments-list"></ul>
           </section>
 
-          <section id="section-profile" aria-labelledby="profile-title">
+          <section
+            id="section-profile"
+            data-control="organization-profile"
+            aria-labelledby="profile-title"
+          >
             <div class="section-heading">
               <div>
-                <p class="eyebrow">Step 1</p><h2 id="profile-title">
+                <p class="eyebrow">Step 1 · Client details</p><h2
+                  id="profile-title"
+                >
                   Organization profile
                 </h2>
               </div>
@@ -286,15 +277,25 @@ import "../styles/global.css";
             </form>
           </section>
 
-          <section id="section-locations" aria-labelledby="locations-title">
+          <section
+            id="section-locations"
+            data-control="locations"
+            aria-labelledby="locations-title"
+          >
             <div class="section-heading">
               <div>
-                <p class="eyebrow">Step 2</p><h2 id="locations-title">
+                <p class="eyebrow">Step 1 · Client details</p><h2
+                  id="locations-title"
+                >
                   Locations
                 </h2>
               </div>
             </div>
             <div id="locations-alert"></div>
+            <p id="location-profile" class="field-hint">
+              Confirm the location record first. Product-specific local context
+              can be added from each location profile below.
+            </p>
             <ul class="product-list" id="locations-list"></ul>
             <h3 class="stack-top-6">Add a location</h3>
             <form id="create-location-form" class="form-grid stack-top-4">
@@ -398,8 +399,12 @@ import "../styles/global.css";
               </div>
               <div class="field field--full">
                 <label
-                  ><input id="loc-primary" name="is_primary" type="checkbox" /> Mark
-                  as the primary location</label
+                  ><input
+                    id="loc-primary"
+                    name="is_primary"
+                    type="checkbox"
+                    checked
+                  /> Mark as the primary location</label
                 >
               </div>
               <div class="field--full form-actions">
@@ -410,15 +415,22 @@ import "../styles/global.css";
             </form>
           </section>
 
-          <section id="section-domain" aria-labelledby="domain-title">
+          <section
+            id="section-domain"
+            data-control="website-domain"
+            aria-labelledby="domain-title"
+          >
             <div class="section-heading">
               <div>
-                <p class="eyebrow">Step 3</p><h2 id="domain-title">
+                <p class="eyebrow">Step 2 · Source data</p><h2
+                  id="domain-title"
+                >
                   Website and domain
                 </h2>
               </div>
             </div>
             <div id="domain-alert"></div>
+            <div id="website-provisioning-status"></div>
             <ul class="product-list" id="domains-list"></ul>
             <form id="create-domain-form" class="form-grid stack-top-4">
               <div class="field">
@@ -443,15 +455,26 @@ import "../styles/global.css";
               <div class="field--full form-actions">
                 <button type="submit" class="button" id="create-domain-submit"
                   >Add domain</button
+                ><button
+                  type="button"
+                  class="button button--secondary"
+                  id="provision-website-button"
+                  >Start or retry website crawl</button
                 >
               </div>
             </form>
           </section>
 
-          <section id="section-industry" aria-labelledby="industry-title">
+          <section
+            id="section-industry"
+            data-control="industry"
+            aria-labelledby="industry-title"
+          >
             <div class="section-heading">
               <div>
-                <p class="eyebrow">Step 4</p><h2 id="industry-title">
+                <p class="eyebrow">Step 1 · Client details</p><h2
+                  id="industry-title"
+                >
                   Industry
                 </h2>
               </div>
@@ -474,10 +497,16 @@ import "../styles/global.css";
             </form>
           </section>
 
-          <section id="section-users" aria-labelledby="users-title">
+          <section
+            id="section-users"
+            data-control="users"
+            aria-labelledby="users-title"
+          >
             <div class="section-heading">
               <div>
-                <p class="eyebrow">Step 5</p><h2 id="users-title">
+                <p class="eyebrow">Step 1 · Client details</p><h2
+                  id="users-title"
+                >
                   Users and access
                 </h2>
               </div>
@@ -534,10 +563,58 @@ import "../styles/global.css";
             </form>
           </section>
 
-          <section id="section-products" aria-labelledby="products-title">
+          <section
+            id="section-connect"
+            data-control="connections"
+            aria-labelledby="connect-title"
+          >
             <div class="section-heading">
               <div>
-                <p class="eyebrow">Step 6</p><h2 id="products-title">
+                <p class="eyebrow">Step 2 · Source data</p><h2
+                  id="connect-title"
+                >
+                  Connect Google and gather client data
+                </h2>
+              </div>
+              <span id="connect-status"></span>
+            </div>
+            <p id="connect-help">
+              Connect Google during onboarding, confirm the correct Business
+              Profile location, and use that verified source with the website
+              crawl to prepare the client’s business details.
+            </p>
+            <div class="directory-grid">
+              <a class="settings-card" href="/integrations">
+                <div class="settings-card__title">Connect and map Google</div>
+                <p class="settings-card__desc">
+                  Authorize read access, discover Business Profile locations,
+                  and map the correct one to this client.
+                </p>
+              </a>
+              <a class="settings-card" href="#section-domain">
+                <div class="settings-card__title">Crawl the website</div>
+                <p class="settings-card__desc">
+                  Add the primary domain and start or retry its first crawl.
+                </p>
+              </a>
+              <a class="settings-card" href="#business-facts">
+                <div class="settings-card__title">Review gathered details</div>
+                <p class="settings-card__desc">
+                  Reconcile Google, location, profile, and crawl data into
+                  details you can confirm.
+                </p>
+              </a>
+            </div>
+          </section>
+
+          <section
+            id="section-products"
+            data-control="products"
+            aria-labelledby="products-title"
+          >
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Step 3</p><h2 id="products-title">
                   Products
                 </h2>
               </div>
@@ -547,15 +624,26 @@ import "../styles/global.css";
             <ul class="product-list" id="onboarding-products-list"></ul>
           </section>
 
-          <section id="section-policies" aria-labelledby="policies-title">
+          <section
+            id="section-policies"
+            data-control="approval-policy"
+            aria-labelledby="policies-title"
+          >
             <div class="section-heading">
               <div>
-                <p class="eyebrow">Step 7</p><h2 id="policies-title">
+                <p class="eyebrow">Step 4 · Review</p><h2 id="policies-title">
                   Approval and notification policies
                 </h2>
               </div>
             </div>
             <p id="policies-help" class="field-hint"></p>
+            <div id="policies-alert"></div>
+            <button
+              type="button"
+              class="button button--secondary"
+              id="provision-default-policy-button"
+              >Use the safe default approval policy</button
+            >
             <h3>Approval policies</h3>
             <ul class="product-list" id="approval-policies-list"></ul>
             <form
@@ -608,10 +696,42 @@ import "../styles/global.css";
             </form>
           </section>
 
-          <section id="section-activate" aria-labelledby="readiness-title">
+          <section id="business-facts" aria-labelledby="business-facts-title">
             <div class="section-heading">
               <div>
-                <p class="eyebrow">Step 8</p><h2 id="readiness-title">
+                <p class="eyebrow">Step 4 · Review</p><h2
+                  id="business-facts-title"
+                >
+                  Confirm gathered business details
+                </h2>
+              </div>
+              <button
+                type="button"
+                class="button button--secondary button--sm"
+                id="reconcile-business-facts-button"
+                >Refresh from source data</button
+              >
+            </div>
+            <p class="field-hint">
+              LILOs proposes details from the organization profile, primary
+              location, website crawl, and confirmed Google Business Profile.
+              Only confirm details that match the client.
+            </p>
+            <div id="business-facts-alert"></div>
+            <h3>Needs confirmation</h3>
+            <ul class="product-list" id="pending-business-facts-list"></ul>
+            <h3 class="stack-top-6">Confirmed</h3>
+            <ul class="product-list" id="effective-business-facts-list"></ul>
+          </section>
+
+          <section
+            id="section-activate"
+            data-control="activate"
+            aria-labelledby="readiness-title"
+          >
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Step 5</p><h2 id="readiness-title">
                   Readiness and activation
                 </h2>
               </div>
@@ -643,58 +763,13 @@ import "../styles/global.css";
               >Activate organization</button
             >
           </section>
-
-          <section id="section-connect" aria-labelledby="connect-title">
-            <div class="section-heading">
-              <div>
-                <p class="eyebrow">Step 9</p><h2 id="connect-title">
-                  Connect services and complete setup
-                </h2>
-              </div>
-              <span id="connect-status"></span>
-            </div>
-            <p id="connect-help">
-              Activate the client first. Then connect providers, map their
-              resources, and confirm each enabled product’s operational
-              readiness from the product workspace.
-            </p>
-            <div class="directory-grid">
-              <a class="settings-card" href="/integrations">
-                <div class="settings-card__title">Connect providers</div>
-                <p class="settings-card__desc">
-                  Authorize Google and GitHub capabilities without exposing
-                  credentials.
-                </p>
-              </a>
-              <a class="settings-card" href="/gbp">
-                <div class="settings-card__title">Map Business Profile</div>
-                <p class="settings-card__desc">
-                  Confirm which discovered Google location belongs to this
-                  client location.
-                </p>
-              </a>
-              <a class="settings-card" href="/seo">
-                <div class="settings-card__title">Verify website data</div>
-                <p class="settings-card__desc">
-                  Review the site, Search Console property, and first crawl.
-                </p>
-              </a>
-              <a class="settings-card" href="/settings">
-                <div class="settings-card__title">
-                  Confirm product readiness
-                </div>
-                <p class="settings-card__desc">
-                  Resolve remaining product requirements before handoff.
-                </p>
-              </a>
-            </div>
-          </section>
         </div>
       </div>
     </AppShell>
     <script>
       import {
         fetchIndustries,
+        fetchPlatformProducts,
         fetchOrganizations,
         fetchOrganization,
         createOrganization,
@@ -705,11 +780,16 @@ import "../styles/global.css";
         updateLocation,
         setPrimaryLocation,
         archiveLocation,
+        fetchLocationProfile,
+        createLocationProfile,
+        replaceLocationProfile,
         fetchOrganizationProfile,
         createOrganizationProfile,
+        replaceOrganizationProfile,
         fetchOrganizationDomains,
         createOrganizationDomain,
         setPrimaryOrganizationDomain,
+        provisionOrganizationWebsite,
         bootstrapOwner,
         fetchOnboardingState,
         activateOrganization,
@@ -725,7 +805,6 @@ import "../styles/global.css";
         type OnboardingResponsibilityMode,
       } from "../lib/platform-admin";
       import {
-        fetchProducts,
         fetchEffectivePolicies,
         createPolicy,
         approvePolicy,
@@ -733,6 +812,14 @@ import "../styles/global.css";
         inviteUser,
         fetchMemberships,
         fetchInvitations,
+        fetchBusinessFactCandidates,
+        fetchEffectiveBusinessFacts,
+        decideBusinessFact,
+        reconcileBusinessFacts,
+        reconcileDefaultPolicy,
+        businessFactLabel,
+        factSourceLabel,
+        formatBusinessFactValue,
         type PolicyRevision,
       } from "../lib/administration";
       import {
@@ -757,6 +844,16 @@ import "../styles/global.css";
         setPlatformAdminStatus,
       } from "../lib/ui";
       import { statusLabel } from "../lib/status-language";
+      import { fetchConnectionStatus } from "../lib/gbp-connection";
+      import {
+        blockerActionLabel,
+        blockerHref,
+        blockerText,
+        focusControl,
+        isSamePage,
+        pendingControlFromHash,
+        resolveBlockers,
+      } from "../lib/onboarding-blockers";
 
       const regions = {
         notConfigured: document.getElementById("boot-not-configured")!,
@@ -895,31 +992,12 @@ import "../styles/global.css";
 
       let currentPrincipal: PrincipalSummary | null = null;
       let currentOrganization: AdminOrganization | null = null;
+      let currentOrganizationProfileVersion: number | null = null;
 
       function setOrgQueryParam(organizationId: string): void {
         const url = new URL(window.location.href);
         url.searchParams.set("org", organizationId);
         window.history.replaceState(null, "", url.toString());
-      }
-
-      function orgIsActive(): boolean {
-        return currentOrganization?.status === "active";
-      }
-
-      function lockPostActivationSection(
-        sectionId: string,
-        helpId: string,
-        message: string,
-      ): void {
-        const help = document.getElementById(helpId);
-        if (help) help.textContent = message;
-        const section = document.getElementById(sectionId);
-        if (!section) return;
-        for (const control of section.querySelectorAll(
-          "button, input, select, textarea",
-        )) {
-          (control as HTMLButtonElement | HTMLInputElement).disabled = true;
-        }
       }
 
       function unlockSection(sectionId: string): void {
@@ -969,7 +1047,7 @@ import "../styles/global.css";
           "org-industry-create",
         ) as HTMLSelectElement;
         createSelect.innerHTML =
-          '<option value="">No industry yet</option>' + options;
+          '<option value="">Select an industry…</option>' + options;
         const assignSelect = document.getElementById(
           "industry-select",
         ) as HTMLSelectElement;
@@ -986,6 +1064,14 @@ import "../styles/global.css";
           event.preventDefault();
           const data = new FormData(form);
           const industryId = String(data.get("industry_id") ?? "");
+          if (!industryId) {
+            alertInto(
+              "picker-alert",
+              "error",
+              "Select the client’s industry before starting onboarding.",
+            );
+            return;
+          }
           const outcome = await createOrganization({
             name: String(data.get("name") ?? ""),
             slug: String(data.get("slug") ?? ""),
@@ -1005,14 +1091,41 @@ import "../styles/global.css";
             alertInto("picker-alert", "error", describeFailure(outcome));
             return;
           }
+
+          // Creating a second empty profile and then separately granting the
+          // operator access added two low-level gates to every client. Complete
+          // those deterministic setup records from information already known
+          // at creation time; both APIs are idempotent/recoverable from the
+          // visible profile and owner controls if either request is interrupted.
+          const started = await startOnboarding(
+            outcome.data.id,
+            outcome.data.version,
+          );
+          const setupOrganization =
+            started.kind === "ok" ? started.data : outcome.data;
+          const setupResults = await Promise.all([
+            createOrganizationProfile(setupOrganization.id, {
+              brand_name: setupOrganization.name,
+            }),
+            currentPrincipal
+              ? bootstrapOwner(setupOrganization.id, {
+                  auth_user_id: currentPrincipal.auth_user_id,
+                })
+              : Promise.resolve({ kind: "unauthenticated" } as const),
+          ]);
+          const setupFailures = setupResults.filter(
+            (result) => result.kind !== "ok",
+          );
           alertInto(
             "picker-alert",
-            "success",
-            `${outcome.data.name} created. Continuing onboarding…`,
+            setupFailures.length === 0 ? "success" : "info",
+            setupFailures.length === 0
+              ? `${outcome.data.name} created with your owner access. Add the primary location and domain next.`
+              : `${outcome.data.name} was created. One automatic setup step needs attention in the workspace below.`,
           );
           form.reset();
           await populateOrgPicker();
-          await loadOrganization(outcome.data.id);
+          await loadOrganization(setupOrganization.id);
         });
       }
 
@@ -1052,6 +1165,7 @@ import "../styles/global.css";
         const statusBox = document.getElementById("profile-status")!;
         const form = document.getElementById("profile-form") as HTMLFormElement;
         if (outcome.kind !== "ok") {
+          currentOrganizationProfileVersion = null;
           statusBox.hidden = false;
           form.hidden = true;
           statusBox.innerHTML = `<h3>Could not load profile</h3><p>${describeFailure(outcome)}</p>`;
@@ -1059,6 +1173,7 @@ import "../styles/global.css";
         }
         statusBox.hidden = true;
         form.hidden = false;
+        currentOrganizationProfileVersion = outcome.data?.version ?? null;
         (form.elements.namedItem("brand_name") as HTMLInputElement).value =
           outcome.data?.brand_name ?? "";
         (
@@ -1072,14 +1187,18 @@ import "../styles/global.css";
           event.preventDefault();
           if (!currentOrganization) return;
           const data = new FormData(form);
-          const outcome = await createOrganizationProfile(
-            currentOrganization.id,
-            {
-              brand_name: String(data.get("brand_name") ?? "") || null,
-              business_description:
-                String(data.get("business_description") ?? "") || null,
-            },
-          );
+          const command = {
+            brand_name: String(data.get("brand_name") ?? "") || null,
+            business_description:
+              String(data.get("business_description") ?? "") || null,
+          };
+          const outcome =
+            currentOrganizationProfileVersion === null
+              ? await createOrganizationProfile(currentOrganization.id, command)
+              : await replaceOrganizationProfile(currentOrganization.id, {
+                  ...command,
+                  expected_version: currentOrganizationProfileVersion,
+                });
           if (outcome.kind !== "ok") {
             alertInto("profile-alert", "error", describeFailure(outcome));
             return;
@@ -1217,7 +1336,132 @@ import "../styles/global.css";
           editToggle.textContent = form.hidden ? "Edit details" : "Cancel";
         });
         item.append(form);
+
+        const profileHost = document.createElement("div");
+        profileHost.className = "stack-top-4";
+        item.append(profileHost);
+        void renderLocationProfileEditor(profileHost, organizationId, location);
         return item;
+      }
+
+      async function renderLocationProfileEditor(
+        host: HTMLElement,
+        organizationId: string,
+        location: AdminLocation,
+      ): Promise<void> {
+        const outcome = await fetchLocationProfile(organizationId, location.id);
+        if (outcome.kind !== "ok") {
+          const message = document.createElement("p");
+          message.className = "field-hint";
+          message.textContent = `Location profile could not be loaded: ${describeFailure(outcome)}`;
+          host.replaceChildren(message);
+          return;
+        }
+
+        const profile = outcome.data;
+        const disclosure = document.createElement("details");
+        const summary = document.createElement("summary");
+        summary.textContent = profile
+          ? "Location profile · ready"
+          : "Add product-specific location context";
+        disclosure.append(summary);
+
+        const form = document.createElement("form");
+        form.className = "form-grid stack-top-4";
+
+        const textField = (
+          name: string,
+          labelText: string,
+          value: string,
+          multiline = false,
+        ): void => {
+          const wrapper = document.createElement("div");
+          wrapper.className = "field field--full";
+          const label = document.createElement("label");
+          const id = `location-profile-${location.id}-${name}`;
+          label.htmlFor = id;
+          label.textContent = labelText;
+          const control = multiline
+            ? document.createElement("textarea")
+            : document.createElement("input");
+          control.id = id;
+          control.name = name;
+          control.value = value;
+          if (control instanceof HTMLTextAreaElement) control.rows = 3;
+          wrapper.append(label, control);
+          form.append(wrapper);
+        };
+
+        textField(
+          "local_description",
+          "Local description",
+          profile?.local_description ?? "",
+          true,
+        );
+        textField(
+          "primary_services",
+          "Primary services (comma separated)",
+          profile?.primary_services?.join(", ") ?? "",
+        );
+        textField(
+          "service_area",
+          "Service area",
+          profile?.service_area ?? location.service_area_description ?? "",
+        );
+        textField(
+          "call_to_action_override",
+          "Local call to action",
+          profile?.call_to_action_override ?? "",
+        );
+
+        const actions = document.createElement("div");
+        actions.className = "field field--full";
+        const submit = document.createElement("button");
+        submit.type = "submit";
+        submit.className = "ui-button ui-button--secondary";
+        submit.textContent = profile
+          ? "Save location profile"
+          : "Create location profile";
+        actions.append(submit);
+        form.append(actions);
+
+        form.addEventListener("submit", async (event) => {
+          event.preventDefault();
+          submit.disabled = true;
+          const data = new FormData(form);
+          const services = String(data.get("primary_services") ?? "")
+            .split(",")
+            .map((value) => value.trim())
+            .filter(Boolean);
+          const command = {
+            local_description:
+              String(data.get("local_description") ?? "").trim() || null,
+            primary_services: services.length > 0 ? services : null,
+            service_area: String(data.get("service_area") ?? "").trim() || null,
+            call_to_action_override:
+              String(data.get("call_to_action_override") ?? "").trim() || null,
+          };
+          const saved = profile
+            ? await replaceLocationProfile(organizationId, location.id, {
+                ...command,
+                expected_version: profile.version,
+              })
+            : await createLocationProfile(organizationId, location.id, command);
+          if (saved.kind !== "ok") {
+            showLocationError(describeFailure(saved));
+            submit.disabled = false;
+            return;
+          }
+          alertInto(
+            "locations-alert",
+            "success",
+            `${location.name} location profile saved.`,
+          );
+          await refreshWorkspace();
+        });
+
+        disclosure.append(form);
+        host.replaceChildren(disclosure);
       }
 
       /** The fields an operator can correct, prefilled with what is on record. */
@@ -1370,6 +1614,8 @@ import "../styles/global.css";
             `${outcome.data.name} added.`,
           );
           form.reset();
+          (form.elements.namedItem("is_primary") as HTMLInputElement).checked =
+            true;
           await refreshWorkspace();
         });
       }
@@ -1418,6 +1664,7 @@ import "../styles/global.css";
                 alertInto("domain-alert", "error", describeFailure(result));
                 return;
               }
+              await provisionWebsiteFromPrimaryDomain(organizationId);
               await refreshWorkspace();
             });
             actions.append(setPrimaryButton);
@@ -1448,11 +1695,66 @@ import "../styles/global.css";
             alertInto("domain-alert", "error", describeFailure(outcome));
             return;
           }
-          alertInto("domain-alert", "success", `${outcome.data.domain} added.`);
+          const provisioning = await provisionWebsiteFromPrimaryDomain(
+            currentOrganization.id,
+          );
+          alertInto(
+            "domain-alert",
+            "success",
+            provisioning
+              ? `${outcome.data.domain} added and the website crawl was prepared.`
+              : `${outcome.data.domain} added. Use “Start or retry website crawl” if source collection did not begin.`,
+          );
           form.reset();
           (form.elements.namedItem("is_primary") as HTMLInputElement).checked =
             true;
           await refreshWorkspace();
+        });
+      }
+
+      async function provisionWebsiteFromPrimaryDomain(
+        organizationId: string,
+      ): Promise<boolean> {
+        const status = document.getElementById("website-provisioning-status")!;
+        status.replaceChildren();
+        const outcome = await provisionOrganizationWebsite(organizationId);
+        if (outcome.kind !== "ok") {
+          alertInto(
+            "website-provisioning-status",
+            "error",
+            describeFailure(outcome),
+          );
+          return false;
+        }
+        if (outcome.data.skipped_reason) {
+          alertInto(
+            "website-provisioning-status",
+            "info",
+            outcome.data.skipped_reason,
+          );
+          return false;
+        }
+        alertInto(
+          "website-provisioning-status",
+          "success",
+          outcome.data.crawl_enqueued
+            ? "The website is ready and its first crawl is queued."
+            : "The website is already provisioned. Existing crawl data will be reused.",
+        );
+        return true;
+      }
+
+      function wireWebsiteProvisioningButton(): void {
+        const button = document.getElementById(
+          "provision-website-button",
+        ) as HTMLButtonElement;
+        button.addEventListener("click", async () => {
+          if (!currentOrganization) return;
+          button.disabled = true;
+          button.textContent = "Preparing crawl…";
+          await provisionWebsiteFromPrimaryDomain(currentOrganization.id);
+          button.disabled = false;
+          button.textContent = "Start or retry website crawl";
         });
       }
 
@@ -1710,7 +2012,7 @@ import "../styles/global.css";
       ): Promise<void> {
         const list = document.getElementById("onboarding-products-list")!;
         list.replaceChildren();
-        const productsOutcome = await fetchProducts(organizationId);
+        const productsOutcome = await fetchPlatformProducts();
         const productsByKey = new Map(
           productsOutcome.kind === "ok"
             ? (Array.isArray(productsOutcome?.data)
@@ -1963,6 +2265,170 @@ import "../styles/global.css";
         });
       }
 
+      function wireProvisionDefaultPolicyButton(): void {
+        const button = document.getElementById(
+          "provision-default-policy-button",
+        ) as HTMLButtonElement;
+        button.addEventListener("click", async () => {
+          if (!currentOrganization) return;
+          button.disabled = true;
+          button.textContent = "Applying safe default…";
+          const outcome = await reconcileDefaultPolicy(currentOrganization.id);
+          if (outcome.kind !== "ok") {
+            alertInto("policies-alert", "error", describeFailure(outcome));
+            button.disabled = false;
+            button.textContent = "Use the safe default approval policy";
+            return;
+          }
+          alertInto(
+            "policies-alert",
+            "success",
+            outcome.data.approval_policy_provisioned
+              ? "The default approval policy is active."
+              : "An active approval policy is already in place.",
+          );
+          button.textContent = "Safe default applied";
+          await refreshWorkspace();
+        });
+      }
+
+      async function renderBusinessFacts(
+        organizationId: string,
+      ): Promise<void> {
+        const pendingList = document.getElementById(
+          "pending-business-facts-list",
+        )!;
+        const effectiveList = document.getElementById(
+          "effective-business-facts-list",
+        )!;
+        pendingList.replaceChildren();
+        effectiveList.replaceChildren();
+
+        const [pending, effective] = await Promise.all([
+          fetchBusinessFactCandidates(organizationId),
+          fetchEffectiveBusinessFacts(organizationId),
+        ]);
+
+        if (pending.kind !== "ok") {
+          const item = document.createElement("li");
+          item.textContent = describeFailure(pending);
+          pendingList.append(item);
+        } else if (pending.data.length === 0) {
+          const empty = document.createElement("div");
+          empty.className = "empty-state";
+          empty.innerHTML =
+            "<h3>No details waiting for confirmation</h3><p>Refresh from source data after mapping Google or completing a crawl.</p>";
+          pendingList.append(empty);
+        } else {
+          for (const candidate of pending.data) {
+            const item = document.createElement("li");
+            const info = document.createElement("div");
+            const title = document.createElement("h3");
+            title.textContent = businessFactLabel(candidate.fact_key);
+            const value = document.createElement("p");
+            value.textContent = formatBusinessFactValue(candidate.value);
+            const source = document.createElement("p");
+            source.className = "field-hint";
+            source.textContent = factSourceLabel(candidate.source ?? "");
+            info.append(title, value, source);
+
+            const actions = document.createElement("div");
+            actions.className = "ui-inline ui-inline--center ui-inline--tight";
+            for (const decision of ["approve", "reject"] as const) {
+              const button = document.createElement("button");
+              button.type = "button";
+              button.className =
+                decision === "approve"
+                  ? "ui-button ui-button--primary ui-button--sm"
+                  : "ui-button ui-button--secondary ui-button--sm";
+              button.textContent =
+                decision === "approve" ? "Confirm" : "Reject";
+              button.addEventListener("click", async () => {
+                button.disabled = true;
+                const outcome = await decideBusinessFact(
+                  organizationId,
+                  candidate.id,
+                  decision,
+                );
+                if (outcome.kind !== "ok") {
+                  alertInto(
+                    "business-facts-alert",
+                    "error",
+                    describeFailure(outcome),
+                  );
+                  button.disabled = false;
+                  return;
+                }
+                await refreshWorkspace();
+              });
+              actions.append(button);
+            }
+            item.append(info, actions);
+            pendingList.append(item);
+          }
+        }
+
+        if (effective.kind !== "ok") {
+          const item = document.createElement("li");
+          item.textContent = describeFailure(effective);
+          effectiveList.append(item);
+        } else if (effective.data.length === 0) {
+          const empty = document.createElement("div");
+          empty.className = "empty-state";
+          empty.innerHTML =
+            "<h3>No confirmed details yet</h3><p>Confirm the source-backed details above.</p>";
+          effectiveList.append(empty);
+        } else {
+          for (const fact of effective.data) {
+            const item = document.createElement("li");
+            const info = document.createElement("div");
+            const title = document.createElement("h3");
+            title.textContent = businessFactLabel(fact.fact_key);
+            const value = document.createElement("p");
+            value.textContent = formatBusinessFactValue(fact.value);
+            const source = document.createElement("p");
+            source.className = "field-hint";
+            source.textContent = factSourceLabel(fact.source);
+            info.append(title, value, source);
+            item.append(info, badge("ready", "confirmed"));
+            effectiveList.append(item);
+          }
+        }
+      }
+
+      function wireBusinessFactsReconcile(): void {
+        const button = document.getElementById(
+          "reconcile-business-facts-button",
+        ) as HTMLButtonElement;
+        button.addEventListener("click", async () => {
+          if (!currentOrganization) return;
+          button.disabled = true;
+          button.textContent = "Refreshing…";
+          const outcome = await reconcileBusinessFacts(currentOrganization.id);
+          button.disabled = false;
+          button.textContent = "Refresh from source data";
+          if (outcome.kind !== "ok") {
+            alertInto(
+              "business-facts-alert",
+              "error",
+              describeFailure(outcome),
+            );
+            return;
+          }
+          const proposed = outcome.data.proposed.length;
+          const unresolved = outcome.data.unresolved.length;
+          alertInto(
+            "business-facts-alert",
+            "success",
+            `${proposed} detail${proposed === 1 ? "" : "s"} prepared for review` +
+              (unresolved > 0
+                ? `; ${unresolved} still need another source or manual entry.`
+                : "."),
+          );
+          await refreshWorkspace();
+        });
+      }
+
       // ---------- Readiness + activation ----------
 
       const STEP_SECTION_IDS: Partial<
@@ -1973,7 +2439,9 @@ import "../styles/global.css";
         primary_location: "section-locations",
         website_domain: "section-domain",
         industry: "section-industry",
+        services: "section-products",
         users: "section-users",
+        products: "section-products",
       };
 
       async function renderChecklist(state: OnboardingState): Promise<void> {
@@ -2028,17 +2496,34 @@ import "../styles/global.css";
 
         const blockersPanel = document.getElementById("blockers-panel")!;
         blockersPanel.replaceChildren();
-        if (state.blockers.length > 0) {
+        const blockers = resolveBlockers(state);
+        if (blockers.length > 0) {
           const box = document.createElement("div");
           box.className = "alert alert--error";
           box.setAttribute("role", "alert");
           const heading = document.createElement("p");
-          heading.textContent =
-            "Activation is blocked until these are resolved:";
+          heading.textContent = "Before activation, finish these core details:";
           const list = document.createElement("ul");
-          for (const blocker of state.blockers) {
+          for (const blocker of blockers) {
             const li = document.createElement("li");
-            li.textContent = blocker;
+            const message = document.createElement("span");
+            message.textContent = blockerText(blocker) + " ";
+            const action = document.createElement("a");
+            action.className = "button button--secondary button--sm";
+            action.href = blockerHref(
+              blocker.resolution,
+              currentOrganization?.id ?? null,
+            );
+            action.textContent = blockerActionLabel(blocker);
+            if (isSamePage(blocker.resolution, "/onboarding")) {
+              action.addEventListener("click", (event) => {
+                event.preventDefault();
+                const control = blocker.resolution.control;
+                window.history.replaceState(null, "", `#${control}`);
+                focusControl(document, control);
+              });
+            }
+            li.append(message, action);
             list.append(li);
           }
           box.append(heading, list);
@@ -2052,7 +2537,8 @@ import "../styles/global.css";
           box.className = "alert alert--warning";
           box.setAttribute("role", "status");
           const heading = document.createElement("p");
-          heading.textContent = "Non-blocking, worth reviewing:";
+          heading.textContent =
+            "Product setup can continue without blocking client activation:";
           const list = document.createElement("ul");
           for (const warning of state.warnings) {
             const li = document.createElement("li");
@@ -2271,40 +2757,28 @@ import "../styles/global.css";
           }
         }
 
-        await renderUsers(organizationId);
-        await renderProducts(organizationId, state);
-        renderConnectStep();
+        await Promise.all([
+          renderUsers(organizationId),
+          renderProducts(organizationId, state),
+          renderPolicies(organizationId),
+          renderBusinessFacts(organizationId),
+          renderConnectStep(),
+        ]);
 
-        if (orgIsActive()) {
-          unlockSection("section-users");
-          unlockSection("section-policies");
-          document.getElementById("users-help")!.textContent = "";
-          document.getElementById("policies-help")!.textContent = "";
-          document.getElementById("products-help")!.textContent = "";
-          await renderPolicies(organizationId);
-        } else {
-          document.getElementById("users-help")!.textContent =
-            "You can bootstrap yourself as the workspace owner now. Adding or inviting additional users beyond that requires the organization to be active first.";
-          lockPostActivationSection(
-            "section-users",
-            "users-help",
-            document.getElementById("users-help")!.textContent!,
-          );
-          // Owner-bootstrap remains usable before activation.
-          (
-            document.getElementById(
-              "bootstrap-owner-button",
-            ) as HTMLButtonElement
-          ).disabled = false;
-          document.getElementById("policies-help")!.textContent =
-            "Policies can be created once this organization is active.";
-          lockPostActivationSection(
-            "section-policies",
-            "policies-help",
-            document.getElementById("policies-help")!.textContent!,
-          );
-          document.getElementById("products-help")!.textContent =
-            "Enable products for this client. Initial setup access is enough to permit the Google Business Profile OAuth connection.";
+        unlockSection("section-users");
+        unlockSection("section-policies");
+        document.getElementById("users-help")!.textContent =
+          "The creator is added as owner automatically. Add the client team now or return to it later.";
+        document.getElementById("policies-help")!.textContent =
+          "Use the safe default for a fast setup, or use the advanced controls below when this client needs a custom policy.";
+        document.getElementById("products-help")!.textContent =
+          "Enable the products this client is buying. Google Business Profile can be connected and mapped during onboarding; provider writes remain unavailable until activation.";
+
+        const pendingControl = pendingControlFromHash(window.location.hash);
+        if (pendingControl) {
+          requestAnimationFrame(() => {
+            focusControl(document, pendingControl, { smooth: false });
+          });
         }
       }
 
@@ -2339,26 +2813,25 @@ import "../styles/global.css";
         wireProfileForm();
         wireCreateLocationForm();
         wireCreateDomainForm();
+        wireWebsiteProvisioningButton();
         wireIndustryForm();
         wireBootstrapOwnerButton();
         wireAddUserForm();
         wireCreateApprovalPolicyForm();
         wireCreateNotificationPolicyForm();
+        wireProvisionDefaultPolicyButton();
+        wireBusinessFactsReconcile();
         wireActivation();
         wireStepper();
       }
 
       function wireStepper(): void {
         const sections: Record<string, string> = {
-          profile: "section-profile",
-          locations: "section-locations",
-          website: "section-domain",
-          industry: "section-industry",
-          users: "section-users",
+          details: "section-profile",
+          sources: "section-connect",
           products: "section-products",
-          policies: "section-policies",
+          review: "business-facts",
           activate: "section-activate",
-          connect: "section-connect",
         };
         document
           .querySelectorAll<HTMLButtonElement>(
@@ -2376,36 +2849,34 @@ import "../styles/global.css";
           });
       }
 
-      function renderConnectStep(): void {
+      async function renderConnectStep(): Promise<void> {
         if (!currentOrganization) return;
-        const active = currentOrganization.status === "active";
+        const connection = await fetchConnectionStatus(currentOrganization.id);
+        const connected =
+          connection.kind === "ok" &&
+          connection.data !== null &&
+          connection.data.status === "connected";
         const status = document.getElementById("connect-status")!;
         status.replaceChildren(
           badge(
-            active ? "ready" : "setup",
-            active ? "Available" : "After activation",
+            connected ? "ready" : "setup",
+            connected ? "Google connected" : "Ready to connect",
           ),
         );
-        document.getElementById("connect-help")!.textContent = active
-          ? "Continue with provider authorization, resource mapping, and product-specific readiness. A connection is not complete until the required resource is mapped and current."
-          : "Activate the client first. Provider authorization and resource mapping are intentionally completed in the standard organization workspace after activation.";
+        document.getElementById("connect-help")!.textContent = connected
+          ? "Google is connected. Confirm the correct Business Profile mapping, then refresh the gathered business details below."
+          : "Enable Google Business Profile under Products, then connect Google and map the correct location now. Onboarding permits source discovery and read-only mapping; provider writes remain locked until activation.";
         document
           .querySelectorAll<HTMLAnchorElement>("#section-connect a")
           .forEach((link) => {
             const destination = new URL(link.href);
             destination.searchParams.set("org", currentOrganization!.id);
-            link.href = destination.pathname + destination.search;
-            link.setAttribute("aria-disabled", String(!active));
-            link.tabIndex = active ? 0 : -1;
-            link.onclick = active
-              ? null
-              : (event) => {
-                  event.preventDefault();
-                };
+            if (destination.pathname === "/integrations") {
+              destination.searchParams.set("from", "onboarding");
+            }
+            link.href =
+              destination.pathname + destination.search + destination.hash;
           });
-        document
-          .getElementById("section-connect")!
-          .classList.toggle("is-disabled", !active);
       }
 
       /**
