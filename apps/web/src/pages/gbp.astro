@@ -103,6 +103,7 @@ import "../styles/global.css";
     <script>
       import {
         fetchGBPLocations,
+        removeLocationMapping,
         workspaceContextFor,
         type GBPLocationSummary,
       } from "../lib/gbp";
@@ -387,7 +388,7 @@ import "../styles/global.css";
                 header: "Actions",
                 width: "content",
                 render: ({ location }) =>
-                  locationOpenButton(location, connectionReady),
+                  locationActions(location, connectionReady),
               },
             ],
             rows,
@@ -460,6 +461,59 @@ import "../styles/global.css";
         button.disabled = !connectionReady || !workspaceContextFor(location);
         button.addEventListener("click", () => void openWorkspace(location));
         return button;
+      }
+
+      function locationActions(
+        location: GBPLocationSummary,
+        connectionReady: boolean,
+      ): HTMLDivElement {
+        const actions = document.createElement("div");
+        actions.className = "ui-stack ui-stack--1";
+        actions.append(locationOpenButton(location, connectionReady));
+
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.className = "ui-button ui-button--danger ui-button--sm";
+        remove.textContent = "Remove mapping";
+        const status = document.createElement("span");
+        status.className = "ui-text-secondary";
+        status.setAttribute("role", "status");
+        remove.addEventListener("click", async () => {
+          const context = workspaceContextFor(location);
+          if (!context) return;
+          if (
+            !confirm(
+              `Remove ${location.business_name} from this client? This only removes the LILOs mapping. It does not delete or change the Google Business Profile.`,
+            )
+          ) {
+            return;
+          }
+          remove.disabled = true;
+          remove.textContent = "Removing…";
+          status.textContent = "";
+          const result = await removeLocationMapping(
+            organizationId,
+            context.platformLocationId,
+            context.gbpLocationId,
+          );
+          if (result.kind === "ok") {
+            const refreshed = await fetchGBPLocations(organizationId);
+            if (refreshed.kind === "ok") {
+              await renderLocationPicker(refreshed.data, googleConnectionReady);
+              return;
+            }
+            status.textContent = describeFailure(
+              refreshed,
+              "refresh Business Profile locations",
+            );
+          } else {
+            status.textContent = describeFailure(result, "remove mapping");
+          }
+          remove.disabled = false;
+          remove.textContent = "Remove mapping";
+        });
+        actions.append(remove, status);
+        return actions;
       }
 
       async function openWorkspace(loc: GBPLocationSummary): Promise<void> {

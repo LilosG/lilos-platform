@@ -8,7 +8,7 @@ vi.mock("./api-client", () => ({
 }));
 
 import { beginConnection, connectGoogle } from "./gbp-connection";
-import { confirmLocationMapping } from "./gbp";
+import { confirmLocationMapping, removeLocationMapping } from "./gbp";
 
 describe("Google connection product route", () => {
   beforeEach(() => {
@@ -59,6 +59,19 @@ describe("canonical GBP mapping and write-access route", () => {
           write_enabled: false,
         },
       },
+    );
+  });
+
+  it("removes only the selected local mapping through the AAL2 GBP route", async () => {
+    await removeLocationMapping(
+      "org-1",
+      "platform-location-1",
+      "gbp-location-1",
+    );
+
+    expect(apiRequest).toHaveBeenCalledWith(
+      "/api/v1/organizations/org-1/locations/platform-location-1/gbp/locations/gbp-location-1/mapping",
+      { method: "DELETE" },
     );
   });
 });

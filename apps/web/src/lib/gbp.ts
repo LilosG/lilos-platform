@@ -89,3 +89,16 @@ export function confirmLocationMapping(
     },
   );
 }
+
+export function removeLocationMapping(
+  organizationId: string,
+  platformLocationId: string,
+  gbpLocationId: string,
+): Promise<
+  ApiOutcome<{ id: string; mapping_status: string; write_enabled: boolean }>
+> {
+  return apiRequest(
+    `/api/v1/organizations/${organizationId}/locations/${platformLocationId}/gbp/locations/${gbpLocationId}/mapping`,
+    { method: "DELETE" },
+  );
+}
