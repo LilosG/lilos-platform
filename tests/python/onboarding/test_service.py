@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from apps.api.app.access_control.enums import MembershipStatus, MembershipType
 from apps.api.app.access_control.models import OrganizationMembership
+from apps.api.app.administration.catalog import AdministrationCatalogSeeder
 from apps.api.app.administration.models import ProductEntitlement
 from apps.api.app.administration.repository import AdministrationCatalogRepository
 from apps.api.app.authentication.enums import UserStatus
@@ -188,6 +189,7 @@ def test_onboarding_state_progresses_to_activation_eligible(
         # blocked until its profile/facts/policy are ready, while the client
         # account itself remains eligible for activation.
         async with onboarding_session_factory.begin() as session:
+            await AdministrationCatalogSeeder().seed(session, correlation_id="onboarding-test")
             seo = await AdministrationCatalogRepository().get_product_by_key(
                 session,
                 "seo",
