@@ -697,3 +697,44 @@ class GBPConnectionService:
             metadata={"external_resource_id": item.external_resource_id},
         )
         return item
+
+    async def deactivate_mapping(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        mapping_id: UUID,
+        *,
+        actor_id: UUID | None,
+        correlation_id: str,
+    ) -> ProviderResourceMapping:
+        """Retire one local provider mapping without changing provider data.
+
+        The discovered provider resource remains available for a future
+        remap. Clearing the platform resource prevents a stale relationship
+        from being treated as authoritative by product readers.
+        """
+        item = await session.scalar(
+            select(ProviderResourceMapping)
+            .where(
+                ProviderResourceMapping.organization_id == organization_id,
+                ProviderResourceMapping.id == mapping_id,
+            )
+            .with_for_update()
+        )
+        if item is None:
+            raise IntegrationNotFoundError
+        item.status = "stale"
+        item.platform_resource_id = None
+        await session.flush()
+        await self._audit(
+            session,
+            event="gbp.mapping.removed",
+            organization_id=organization_id,
+            actor_id=actor_id,
+            resource_type="provider_resource_mapping",
+            resource_id=item.id,
+            correlation_id=correlation_id,
+            summary="GBP provider resource mapping removed.",
+            metadata={"external_resource_id": item.external_resource_id},
+        )
+        return item

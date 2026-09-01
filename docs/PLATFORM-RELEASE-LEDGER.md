@@ -566,6 +566,38 @@ The **Implementation** column uses the formal status vocabulary. The **Live acce
   Hermes/AI, integrations, onboarding, or product implementation changes.
 - Ledger rows changed: Entitlement-aware navigation; Release/production acceptance.
 
+### 2026-09-01 — Governed GBP Mapping Removal
+
+- State: `IMPLEMENTED_NOT_ACCEPTED`. Repository-focused validation is green; deployed behavior
+  and a controlled live removal remain pending.
+- Root cause confirmed: confirmed GBP mappings had a canonical AAL2 mutation for confirm and
+  write-access changes, but no inverse transition in the integration or product service and no
+  removal control in the Business Profile UI. Operators could not correct an accidentally mapped
+  provider location without disconnecting the shared Google connection or resorting to data-layer
+  intervention.
+- Implementation: `GBPConnectionService.deactivate_mapping()` retires the selected local
+  `ProviderResourceMapping` and clears its platform resource identity. `GBPService.remove_mapping()`
+  clears only the selected `GBPLocation` mapping and provider-write authority while retaining the
+  discovered Google resource and all observed history. A location-scoped `gbp.connect` AAL2 DELETE
+  route exposes the transition. The Business Profile location row now provides `Remove mapping`
+  with explicit confirmation that Google will not be deleted or changed, then refreshes backend
+  truth.
+- Safety invariants: no provider API call is made; no Google connection, GBP account, provider
+  resource, profile snapshot, post, or media record is deleted; another confirmed mapping to the
+  same client location remains unchanged; the removal emits provider-mapping and GBP-location audit
+  events; AAL1 callers fail with `STEP_UP_REQUIRED`.
+- Focused validation: web route regression 4/4 passed; Astro typecheck 0 diagnostics; ESLint and
+  Stylelint passed; Ruff and mypy passed for touched backend files. The PostgreSQL integration
+  scenarios are present but skipped locally because `LILOS_TEST_DATABASE_URL` is unavailable; CI
+  execution remains required.
+- Acceptance scenario: two GBP resources mapped to one client location, remove the accidental
+  read-only resource, preserve the correct write-enabled resource, and exclude only the removed
+  resource from the product read path.
+- Ledger rows changed: Google provider resource mapping; GBP operational product; Integrations
+  control plane; Release/production acceptance.
+- Adjacent work intentionally not implemented: bulk unmapping, provider-resource deletion, Google
+  connection disconnection, and redesign of the broader Integrations discovery/mapping surface.
+
 ---
 
 ## Known baseline questions — Round 0 answers

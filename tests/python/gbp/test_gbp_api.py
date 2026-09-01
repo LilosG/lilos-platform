@@ -274,6 +274,104 @@ def test_organization_scoped_discovery_lists_are_real_and_tenant_isolated(
 
 
 @pytest.mark.integration
+def test_remove_mapping_retires_only_selected_gbp_and_preserves_google_resource(
+    gbp_client: tuple[TestClient, dict[str, UUID], FakeVerifier],
+    gbp_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    client, ids, _verifier = gbp_client
+    org, platform_location = ids["organization"], ids["location"]
+
+    async def add_correct_location() -> UUID:
+        async with gbp_session_factory.begin() as session:
+            wrong = await session.get(GBPLocation, ids["gbp_location"])
+            assert wrong is not None
+            correct = GBPLocation(
+                organization_id=org,
+                connection_id=wrong.connection_id,
+                account_id=wrong.account_id,
+                external_location_id="locations/coco-maya",
+                business_name="Coco Maya by Miss B's",
+                mapping_status="unmapped",
+            )
+            session.add(correct)
+            await session.flush()
+            return correct.id
+
+    correct_id = asyncio.run(add_correct_location())
+    base = f"/api/v1/organizations/{org}/locations/{platform_location}/gbp"
+    for gbp_location_id, write_enabled in (
+        (ids["gbp_location"], False),
+        (correct_id, True),
+    ):
+        response = client.post(
+            f"{base}/locations/{gbp_location_id}/confirm",
+            headers=HEADERS,
+            json={"location_id": str(platform_location), "write_enabled": write_enabled},
+        )
+        assert response.status_code == 200
+
+    removed = client.delete(
+        f"{base}/locations/{ids['gbp_location']}/mapping",
+        headers=HEADERS,
+    )
+    assert removed.status_code == 200
+    assert removed.json()["data"] == {
+        "id": str(ids["gbp_location"]),
+        "mapping_status": "unmapped",
+        "write_enabled": False,
+    }
+
+    product_locations = client.get(f"/api/v1/organizations/{org}/gbp/locations", headers=HEADERS)
+    assert product_locations.status_code == 200
+    assert [item["business_name"] for item in product_locations.json()["data"]] == [
+        "Coco Maya by Miss B's"
+    ]
+
+    async def mapping_state() -> tuple[
+        GBPLocation, GBPLocation, list[ProviderResourceMapping], str
+    ]:
+        async with gbp_session_factory() as session:
+            wrong = await session.get(GBPLocation, ids["gbp_location"])
+            correct = await session.get(GBPLocation, correct_id)
+            mappings = list(
+                await session.scalars(
+                    select(ProviderResourceMapping)
+                    .where(ProviderResourceMapping.organization_id == org)
+                    .order_by(ProviderResourceMapping.external_resource_id)
+                )
+            )
+            audit_event = await session.scalar(
+                select(AuditEvent)
+                .where(
+                    AuditEvent.organization_id == org,
+                    AuditEvent.resource_type == "gbp_location",
+                    AuditEvent.resource_id == ids["gbp_location"],
+                    AuditEvent.event_type == "gbp.location.mapping_removed",
+                )
+                .order_by(AuditEvent.occurred_at.desc())
+            )
+            assert wrong is not None
+            assert correct is not None
+            assert audit_event is not None
+            return wrong, correct, mappings, audit_event.event_type
+
+    wrong, correct, mappings, event_type = asyncio.run(mapping_state())
+    mapping_by_external = {item.external_resource_id: item for item in mappings}
+    assert wrong.mapping_status == "unmapped"
+    assert wrong.location_id is None
+    assert wrong.integration_resource_id is None
+    assert wrong.write_enabled is False
+    assert mapping_by_external["locations/456"].status == "stale"
+    assert mapping_by_external["locations/456"].platform_resource_id is None
+    assert correct.mapping_status == "confirmed"
+    assert correct.location_id == platform_location
+    assert correct.write_enabled is True
+    assert mapping_by_external["locations/coco-maya"].status == "active"
+    assert mapping_by_external["locations/coco-maya"].platform_resource_id == platform_location
+    assert event_type == "gbp.location.mapping_removed"
+
+
+@pytest.mark.integration
 def test_full_vertical_slice_flow_produces_readable_audit_history(
     gbp_client: tuple[TestClient, dict[str, UUID], FakeVerifier],
     gbp_session_factory: async_sessionmaker[AsyncSession],
@@ -448,6 +546,16 @@ def test_confirm_mapping_preserves_aal2_route_requirement(
     # assurance rather than permission and is told which: the client can prompt a
     # step-up instead of showing "you do not have permission".
     assert response.json()["error"]["code"] == "STEP_UP_REQUIRED"
+
+    remove = client.delete(
+        (
+            f"/api/v1/organizations/{ids['organization']}"
+            f"/locations/{ids['location']}/gbp/locations/{ids['gbp_location']}/mapping"
+        ),
+        headers=HEADERS,
+    )
+    assert remove.status_code == 403
+    assert remove.json()["error"]["code"] == "STEP_UP_REQUIRED"
 
 
 @pytest.mark.integration

@@ -197,6 +197,70 @@ class GBPService:
         )
         return item
 
+    async def remove_mapping(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        location_id: UUID,
+        gbp_location_id: UUID,
+        user_id: UUID,
+        *,
+        correlation_id: str,
+    ) -> GBPLocation:
+        """Remove one confirmed local mapping without mutating Google."""
+        item = await session.scalar(
+            select(GBPLocation)
+            .where(
+                GBPLocation.organization_id == organization_id,
+                GBPLocation.id == gbp_location_id,
+                GBPLocation.location_id == location_id,
+                GBPLocation.mapping_status == "confirmed",
+            )
+            .with_for_update()
+        )
+        if item is None:
+            raise LookupError("confirmed GBP location mapping not found")
+
+        prior_write_enabled = item.write_enabled
+        mapping_id = item.integration_resource_id
+        if mapping_id is not None:
+            await self.connection.deactivate_mapping(
+                session,
+                organization_id,
+                mapping_id,
+                actor_id=user_id,
+                correlation_id=correlation_id,
+            )
+
+        item.location_id = None
+        item.mapping_status = "unmapped"
+        item.write_enabled = False
+        item.integration_resource_id = None
+        item.confirmed_by_user_id = None
+        item.confirmed_at = None
+        await session.flush()
+        await self._audit(
+            session,
+            event="gbp.location.mapping_removed",
+            organization_id=organization_id,
+            location_id=location_id,
+            actor_id=user_id,
+            resource_type="gbp_location",
+            resource_id=item.id,
+            correlation_id=correlation_id,
+            summary="GBP location mapping removed.",
+            metadata={
+                "previous_location_id": str(location_id),
+                "new_location_id": None,
+                "previous_mapping_status": "confirmed",
+                "new_mapping_status": item.mapping_status,
+                "previous_write_enabled": prior_write_enabled,
+                "new_write_enabled": item.write_enabled,
+                "provider_resource_changed": False,
+            },
+        )
+        return item
+
     async def store_snapshot(
         self,
         session: AsyncSession,

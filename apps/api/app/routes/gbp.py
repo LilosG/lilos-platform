@@ -102,6 +102,34 @@ async def confirm_mapping(
     }
 
 
+@router.delete("/locations/{gbp_location_id}/mapping", dependencies=[Depends(no_store)])
+async def remove_mapping(
+    request: Request,
+    organization_id: UUID,
+    location_id: UUID,
+    gbp_location_id: UUID,
+    session: Session,
+    principal: Authenticated,
+    _: Annotated[AuthorizationDecision, policy("gbp.connect", True)],
+) -> dict[str, object]:
+    item = await service.remove_mapping(
+        session,
+        organization_id,
+        location_id,
+        gbp_location_id,
+        principal.platform_user_id,
+        correlation_id=request_correlation_id(request),
+    )
+    return {
+        "data": {
+            "id": str(item.id),
+            "mapping_status": item.mapping_status,
+            "write_enabled": item.write_enabled,
+        },
+        "meta": {"correlation_id": request_correlation_id(request)},
+    }
+
+
 @router.get("/locations/{gbp_location_id}/profile", dependencies=[Depends(no_store)])
 async def profile(
     request: Request,
