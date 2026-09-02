@@ -25,10 +25,14 @@ from apps.api.app.integrations.models import ProviderResourceMapping
 from apps.api.app.products.gbp.adapter import GBPAdapter, GoogleBusinessProfileAdapter
 from apps.api.app.products.gbp.models import GBPAccount, GBPLocation
 from apps.api.app.products.gbp.resource_names import v4_location_parent
+from apps.api.app.products.reviews.models import Review, ReviewResponseRevision, ReviewRevision
 from apps.api.app.products.reviews.service import (
+    PROVIDER_OBSERVED_TYPE,
     PROVIDER_REPLY_STATE_UNSPECIFIED,
     ProviderReplyObservation,
     ReviewService,
+    lilos_publication_confirmation_lifecycle,
+    provider_reply_hash,
 )
 
 _STAR_RATING = {
@@ -109,13 +113,98 @@ def _normalize_provider_reply(
     )
 
 
+class IngestionReviewService(ReviewService):
+    """Make read-side ingestion aware of LILOs replies awaiting verification."""
+
+    async def _reconcile_provider_reply(
+        self,
+        session: AsyncSession,
+        *,
+        review: Review,
+        review_revision: ReviewRevision,
+        provider_reply: ProviderReplyObservation | None,
+        correlation_id: str,
+    ) -> None:
+        if provider_reply is None:
+            await super()._reconcile_provider_reply(
+                session,
+                review=review,
+                review_revision=review_revision,
+                provider_reply=None,
+                correlation_id=correlation_id,
+            )
+            return
+
+        # A publication handler durably records the deterministic Google review
+        # resource before crossing the provider write boundary. If ingestion sees
+        # that exact resource and exact text before the publication worker's own
+        # verification pass, it is confirmation of the existing LILOs response,
+        # not a new provider-authored response that should create another row.
+        inflight = await session.scalar(
+            select(ReviewResponseRevision)
+            .where(
+                ReviewResponseRevision.organization_id == review.organization_id,
+                ReviewResponseRevision.location_id == review.location_id,
+                ReviewResponseRevision.review_id == review.id,
+                ReviewResponseRevision.generated_by_type != PROVIDER_OBSERVED_TYPE,
+                ReviewResponseRevision.external_response_id == provider_reply.external_response_id,
+                ReviewResponseRevision.published_at.is_(None),
+                ReviewResponseRevision.status.in_(("publishing", "reconciliation_required")),
+            )
+            .order_by(ReviewResponseRevision.revision_number.desc())
+            .with_for_update()
+            .limit(1)
+        )
+        if inflight is None or inflight.response_text.strip() != provider_reply.comment.strip():
+            await super()._reconcile_provider_reply(
+                session,
+                review=review,
+                review_revision=review_revision,
+                provider_reply=provider_reply,
+                correlation_id=correlation_id,
+            )
+            return
+
+        response_status, review_status, safe_error_code = (
+            lilos_publication_confirmation_lifecycle(provider_reply)
+        )
+        inflight.status = response_status
+        inflight.safe_error_code = safe_error_code
+        if response_status == "published":
+            inflight.published_at = provider_reply.updated_at or datetime.now(UTC)
+
+        imported_responses = list(
+            await session.scalars(
+                select(ReviewResponseRevision).where(
+                    ReviewResponseRevision.organization_id == review.organization_id,
+                    ReviewResponseRevision.location_id == review.location_id,
+                    ReviewResponseRevision.review_id == review.id,
+                    ReviewResponseRevision.generated_by_type == PROVIDER_OBSERVED_TYPE,
+                    ReviewResponseRevision.status != "superseded",
+                )
+            )
+        )
+        for imported in imported_responses:
+            imported.status = "superseded"
+
+        review.status = review_status
+        await self._audit_provider_confirmation_once(
+            session,
+            response=inflight,
+            review=review,
+            provider_reply=provider_reply,
+            provider_observation_hash=provider_reply_hash(provider_reply),
+            correlation_id=correlation_id,
+        )
+
+
 @dataclass(slots=True)
 class ReviewIngestionService:
     """Pull reviews from GBP and ingest them through the governed review path."""
 
     adapter: GBPAdapter = field(default_factory=GoogleBusinessProfileAdapter)
     connection: GBPConnectionService = field(default_factory=GBPConnectionService)
-    reviews: ReviewService = field(default_factory=ReviewService)
+    reviews: ReviewService = field(default_factory=IngestionReviewService)
     audit: AuditEventService = field(default_factory=AuditEventService)
 
     async def ingest_for_location(
