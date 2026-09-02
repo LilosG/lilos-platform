@@ -930,47 +930,56 @@ import "../styles/global.css";
 
         const disclosure = document.createElement("details");
         disclosure.className = "ui-card";
-        disclosure.open = true;
+        disclosure.open = false;
         const summary = document.createElement("summary");
         summary.className = "ui-card__header";
-        summary.textContent = `Unmapped Business Profiles (${wsResult.data.unmapped_count})`;
+        summary.textContent = "Find another Business Profile";
         const body = document.createElement("div");
         body.className = "ui-card__body";
         disclosure.append(summary, body);
         parent.append(disclosure);
 
-        // Search
+        const guidance = document.createElement("p");
+        guidance.className = "ui-text-secondary";
+        guidance.textContent =
+          "Search the connected Google account only when you need to replace or add a Business Profile. Other clients accessible to this Google account are not shown by default.";
+
         const searchRow = document.createElement("div");
         searchRow.className = "ui-control--compact";
         const searchInput = document.createElement("input");
         searchInput.type = "search";
-        searchInput.placeholder = "Search unmapped Business Profiles…";
+        searchInput.placeholder = "Search Business Profiles by business name…";
         searchInput.className = "ui-input";
         searchRow.append(searchInput);
-        body.append(searchRow);
+        body.append(guidance, searchRow);
 
-        // Location picker for mapping (shared across all rows)
         const locationsResult = await fetchLocations(organizationId);
         const availableLocations: LocationSummary[] =
           locationsResult.kind === "ok" ? locationsResult.data : [];
 
         const listContainer = document.createElement("div");
+        listContainer.append(
+          emptyState(
+            "Search to find a Business Profile",
+            "Enter at least 3 characters. No account-wide Business Profile list is displayed automatically.",
+          ),
+        );
         body.append(listContainer);
 
-        async function loadUnmapped(search?: string): Promise<void> {
+        async function loadUnmapped(search: string): Promise<void> {
           listContainer.replaceChildren(createLoading());
           const result = await fetchUnmappedResources(organizationId, search);
           if (result.kind !== "ok") {
             listContainer.replaceChildren(
-              errorAlert(describeFailure(result, "unmapped resources")),
+              errorAlert(describeFailure(result, "Business Profile search")),
             );
             return;
           }
           if (result.data.length === 0) {
             listContainer.replaceChildren(
               emptyState(
-                "No unmapped Business Profiles",
-                "All discovered Business Profile resources have been mapped.",
+                "No matching Business Profiles",
+                "Try a more specific business name or discover Google accounts and locations again.",
               ),
             );
             return;
@@ -986,7 +995,6 @@ import "../styles/global.css";
             detail.textContent = resource.primary_category || "";
             info.append(name, detail);
 
-            // Location picker + map button
             const rowActions = document.createElement("div");
             rowActions.className =
               "ui-inline ui-inline--center ui-inline--tight";
@@ -1043,13 +1051,21 @@ import "../styles/global.css";
           listContainer.replaceChildren(list);
         }
 
-        await loadUnmapped();
         let debounceTimer: ReturnType<typeof setTimeout>;
         searchInput.addEventListener("input", () => {
           clearTimeout(debounceTimer);
           debounceTimer = setTimeout(() => {
             const q = searchInput.value.trim();
-            void loadUnmapped(q || undefined);
+            if (q.length < 3) {
+              listContainer.replaceChildren(
+                emptyState(
+                  "Search to find a Business Profile",
+                  "Enter at least 3 characters. No account-wide Business Profile list is displayed automatically.",
+                ),
+              );
+              return;
+            }
+            void loadUnmapped(q);
           }, 300);
         });
       }
