@@ -1,0 +1,467 @@
+name: Patch GBP post observability
+
+on:
+  push:
+    branches:
+      - fix/gbp-post-run-observability
+    paths:
+      - .github/workflows/patch-gbp-post-observability.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: fix/gbp-post-run-observability
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Apply focused UI patch
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(text: str, old: str, new: str, label: str) -> str:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected exactly one match, found {count}")
+              return text.replace(old, new, 1)
+
+          gbp_path = Path("apps/web/src/pages/gbp.astro")
+          gbp = gbp_path.read_text()
+          gbp = replace_once(
+              gbp,
+              '''          <Button
+            slot="actions"
+            href="/automations?agent=agent.gbp"
+            variant="secondary"
+            size="sm">Run GBP agent</Button
+          >''',
+              '''          <Button
+            slot="actions"
+            href="/automations?agent=agent.gbp"
+            variant="secondary"
+            size="sm">Run GBP operator</Button
+          >''',
+              "GBP header action",
+          )
+          gbp = replace_once(
+              gbp,
+              '''          if (result.kind === "ok") {
+            postsStatusMessage = `${result.data.live_count} live on Google · ${result.data.processing_count} processing · ${result.data.persisted_count} observed over time.`;
+            await renderPosts();
+          } else {''',
+              '''          if (result.kind === "ok") {
+            postsStatusMessage = "Google Local Posts refreshed.";
+            await renderPosts();
+          } else {''',
+              "provider refresh status",
+          )
+          gbp = replace_once(
+              gbp,
+              '''        providerBody.append(reconcileBtn, providerStatus);
+        if (providerPostsResult.kind === "ok") {''',
+              '''        const generateBtn = document.createElement("button");
+        generateBtn.type = "button";
+        generateBtn.className = "ui-button ui-button--secondary ui-button--md";
+        generateBtn.textContent = "Generate post proposal";
+        generateBtn.addEventListener("click", async () => {
+          generateBtn.disabled = true;
+          generateBtn.textContent = "Starting…";
+          postsStatusMessage = "Starting post generation…";
+          actionStatus.textContent = postsStatusMessage;
+          const workflowStart = await startWorkflowRun(
+            organizationId,
+            "gbp.generate_post",
+            {
+              locationId: selectedPlatformLocationId!,
+              idempotencyKey: `operator-gbp-generate-post-${Date.now()}`,
+              execute: true,
+            },
+          );
+          if (workflowStart.kind === "ok") {
+            postsStatusMessage = "Post generation queued.";
+            actionStatus.replaceChildren(
+              document.createTextNode(
+                "Post generation queued. The proposal will appear below when it is ready for approval. ",
+              ),
+            );
+            const runLink = document.createElement("a");
+            runLink.href = `/automations?workflowRun=${encodeURIComponent(workflowStart.data.workflow_run_id)}`;
+            runLink.textContent = "View run status";
+            actionStatus.append(runLink);
+            window.setTimeout(() => void renderPosts(), 5_000);
+            window.setTimeout(() => void renderPosts(), 15_000);
+          } else {
+            postsStatusMessage = describeFailure(
+              workflowStart,
+              "Generate post proposal",
+            );
+            actionStatus.textContent = postsStatusMessage;
+          }
+          generateBtn.disabled = false;
+          generateBtn.textContent = "Generate post proposal";
+        });
+        const providerActions = document.createElement("div");
+        providerActions.className = "ui-inline";
+        providerActions.append(generateBtn, reconcileBtn);
+        providerBody.append(providerActions, providerStatus);
+        if (providerPostsResult.kind === "ok") {''',
+              "post-specific generation action",
+          )
+          gbp_path.write_text(gbp)
+
+          automations_path = Path("apps/web/src/pages/automations.astro")
+          automations = automations_path.read_text()
+          automations = replace_once(
+              automations,
+              '''        <PageSection eyebrow="Activity" title="Recent runs">
+          <Region id="run-history">
+            <Skeleton lines={4} label="Loading run history" />
+          </Region>
+        </PageSection>''',
+              '''        <PageSection eyebrow="Activity" title="Recent runs">
+          <Region id="run-history">
+            <Skeleton lines={4} label="Loading run history" />
+          </Region>
+          <Region id="workflow-run-detail" live="polite" />
+        </PageSection>''',
+              "workflow detail region",
+          )
+          automations = replace_once(
+              automations,
+              '''        listWorkflowRuns,
+        startWorkflowRun,
+        createSchedule,
+        updateSchedule,
+        type WorkflowTypeEntry,
+        type WorkflowScheduleEntry,
+        type WorkflowRunSummary,''',
+              '''        listWorkflowRuns,
+        getWorkflowRun,
+        startWorkflowRun,
+        createSchedule,
+        updateSchedule,
+        type WorkflowTypeEntry,
+        type WorkflowScheduleEntry,
+        type WorkflowRunDetail,
+        type WorkflowRunSummary,''',
+              "workflow detail import",
+          )
+          automations = replace_once(
+              automations,
+              '''      let hermesCapabilities: AgentCapabilities | null = null;
+      let selectedAgentRunId: string | null = null;
+      let pendingAgentSelection: PendingAgentSelection | null = null;''',
+              '''      let hermesCapabilities: AgentCapabilities | null = null;
+      let selectedAgentRunId: string | null = null;
+      let selectedWorkflowRunId: string | null = null;
+      let pendingAgentSelection: PendingAgentSelection | null = null;''',
+              "selected workflow run state",
+          )
+          automations = replace_once(
+              automations,
+              '''      const agentSteerDrafts = new Map<string, string>();
+      const requestedAgentWorkflow = new URLSearchParams(
+        window.location.search,
+      ).get("agent");''',
+              '''      const agentSteerDrafts = new Map<string, string>();
+      const query = new URLSearchParams(window.location.search);
+      const requestedAgentWorkflow = query.get("agent");
+      const requestedWorkflowRunId = query.get("workflowRun");''',
+              "workflow run query parameter",
+          )
+          automations = replace_once(
+              automations,
+              '''      async function openAgentRun(run: AgentRunSummary): Promise<void> {
+        pendingAgentSelection = null;
+        selectedAgentRunId = run.id;
+        const result = await getAgentRun(activeOrgId, run.id);
+        if (result.kind === "ok") renderAgentDetail(result.data);
+        else setActionMessage(describeFailure(result, "Agent run"), true);
+      }''',
+              '''      async function openAgentRun(run: AgentRunSummary): Promise<void> {
+        pendingAgentSelection = null;
+        selectedAgentRunId = run.id;
+        const result = await getAgentRun(activeOrgId, run.id);
+        if (result.kind === "ok") {
+          renderAgentDetail(result.data);
+          const region = document.getElementById("agent-run-detail")!;
+          const disclosures = region.querySelectorAll("details");
+          const logs = disclosures.item(
+            disclosures.length - 1,
+          ) as HTMLDetailsElement | null;
+          if (logs) logs.open = true;
+          region.scrollIntoView({ behavior: "smooth", block: "start" });
+        } else {
+          setActionMessage(describeFailure(result, "Agent run"), true);
+        }
+      }''',
+              "agent log navigation",
+          )
+          automations = replace_once(
+              automations,
+              '''                    actionButton("Open run", async () => openAgentRun(run)),''',
+              '''                    actionButton("View logs", async () => openAgentRun(run)),''',
+              "agent log action label",
+          )
+          workflow_detail = '''
+      function renderWorkflowRunDetail(detail: WorkflowRunDetail): void {
+        const region = document.getElementById("workflow-run-detail")!;
+        region.replaceChildren();
+        const card = document.createElement("article");
+        card.className = "ui-card ui-stack";
+
+        const headingRow = document.createElement("div");
+        headingRow.className = "agent-run__summary";
+        const heading = document.createElement("h3");
+        heading.textContent = detail.workflow_name ?? "Automation run";
+        headingRow.append(
+          heading,
+          statusBadge(statusTone(detail.status), statusLabel(detail.status)),
+        );
+        card.append(headingRow);
+
+        const meta = document.createElement("p");
+        meta.className = "ui-text-secondary";
+        meta.textContent = `${formatTime(detail.created_at)} · run ${detail.id}`;
+        card.append(meta);
+
+        if (detail.failure_code) {
+          const failure = document.createElement("div");
+          failure.className = "ui-alert ui-alert--danger";
+          failure.textContent = `${detail.failure_code}${detail.job_attempt_count != null && detail.job_max_attempts != null ? ` · attempt ${detail.job_attempt_count}/${detail.job_max_attempts}` : ""}`;
+          card.append(failure);
+        }
+
+        if (detail.output_reference) {
+          const outputLink = document.createElement("a");
+          outputLink.className = "ui-button ui-button--secondary ui-button--sm";
+          outputLink.href = proposalHref(detail.output_reference);
+          outputLink.textContent = `Open result · ${detail.output_reference}`;
+          card.append(outputLink);
+        }
+
+        if (detail.jobs.length) {
+          const jobsHeading = document.createElement("h4");
+          jobsHeading.textContent = "Jobs";
+          card.append(jobsHeading);
+          card.append(
+            buildDataTable(
+              [
+                {
+                  key: "job",
+                  header: "Job",
+                  render: (job: WorkflowRunDetail["jobs"][number]) =>
+                    job.job_type,
+                },
+                {
+                  key: "status",
+                  header: "Status",
+                  render: (job: WorkflowRunDetail["jobs"][number]) =>
+                    statusBadge(statusTone(job.status), statusLabel(job.status)),
+                },
+                {
+                  key: "attempts",
+                  header: "Attempts",
+                  render: (job: WorkflowRunDetail["jobs"][number]) =>
+                    `${job.attempt_count}/${job.max_attempts}`,
+                },
+                {
+                  key: "error",
+                  header: "Error",
+                  render: (job: WorkflowRunDetail["jobs"][number]) =>
+                    job.last_error_category ?? "—",
+                },
+              ],
+              detail.jobs,
+            ),
+          );
+        }
+
+        const attempts = document.createElement("details");
+        attempts.className = "agent-run__disclosure";
+        attempts.open = true;
+        const attemptsSummary = document.createElement("summary");
+        attemptsSummary.textContent = `Execution attempts (${detail.latest_attempts.length})`;
+        attempts.append(attemptsSummary);
+        if (!detail.latest_attempts.length) {
+          const empty = document.createElement("p");
+          empty.className = "ui-muted";
+          empty.textContent = "No execution attempt has started yet.";
+          attempts.append(empty);
+        } else {
+          const list = document.createElement("ol");
+          list.className = "agent-run__logs";
+          for (const attempt of detail.latest_attempts) {
+            const item = document.createElement("li");
+            item.textContent = `Attempt ${attempt.attempt_number} · ${statusLabel(attempt.status)}${attempt.safe_error ? ` · ${attempt.safe_error}` : attempt.error_category ? ` · ${attempt.error_category}` : ""}`;
+            list.append(item);
+          }
+          attempts.append(list);
+        }
+        card.append(attempts);
+        region.append(card);
+      }
+
+      async function openWorkflowRun(runId: string): Promise<void> {
+        selectedWorkflowRunId = runId;
+        const result = await getWorkflowRun(activeOrgId, runId);
+        if (result.kind === "ok") {
+          renderWorkflowRunDetail(result.data);
+          document.getElementById("workflow-run-detail")!.scrollIntoView({
+            behavior: "smooth",
+            block: "start",
+          });
+        } else {
+          setActionMessage(describeFailure(result, "Workflow run"), true);
+        }
+      }
+
+'''
+          automations = replace_once(
+              automations,
+              '''      function renderRuns(items: WorkflowRunSummary[]): void {''',
+              workflow_detail + '''      function renderRuns(items: WorkflowRunSummary[]): void {''',
+              "workflow detail renderer",
+          )
+          automations = replace_once(
+              automations,
+              '''              {
+                key: "recovery",
+                header: "Failure / retry",
+                render: (run: WorkflowRunSummary) => {
+                  if (run.failure_code) {
+                    const attempts = run.job_attempt_count ?? 0;
+                    const maxAttempts = run.job_max_attempts ?? 0;
+                    return `${run.failure_code} · attempt ${attempts}/${maxAttempts}`;
+                  }
+                  if (run.status === "retry_scheduled")
+                    return "Retry scheduled";
+                  if (run.status === "queued") return "Waiting for worker";
+                  return "—";
+                },
+              },''',
+              '''              {
+                key: "recovery",
+                header: "Failure / retry",
+                render: (run: WorkflowRunSummary) => {
+                  if (run.failure_code) {
+                    const attempts = run.job_attempt_count ?? 0;
+                    const maxAttempts = run.job_max_attempts ?? 0;
+                    return `${run.failure_code} · attempt ${attempts}/${maxAttempts}`;
+                  }
+                  if (run.status === "retry_scheduled")
+                    return "Retry scheduled";
+                  if (run.status === "queued") return "Waiting for worker";
+                  return "—";
+                },
+              },
+              {
+                key: "actions",
+                header: "Actions",
+                width: "content",
+                render: (run: WorkflowRunSummary) =>
+                  actionButton("View details", async () => openWorkflowRun(run.id)),
+              },''',
+              "recent run details action",
+          )
+          automations = replace_once(
+              automations,
+              '''        renderMetrics(
+          catalog.kind === "ok" ? catalog.data : null,
+          schedules.kind === "ok" ? schedules.data : null,
+          runs.kind === "ok" ? runs.data : null,
+        );
+        await loadAgentData();
+      }''',
+              '''        renderMetrics(
+          catalog.kind === "ok" ? catalog.data : null,
+          schedules.kind === "ok" ? schedules.data : null,
+          runs.kind === "ok" ? runs.data : null,
+        );
+        await loadAgentData();
+        if (
+          requestedWorkflowRunId &&
+          selectedWorkflowRunId !== requestedWorkflowRunId
+        ) {
+          await openWorkflowRun(requestedWorkflowRunId);
+        }
+      }''',
+              "direct workflow run opening",
+          )
+          automations = replace_once(
+              automations,
+              '''      locationSelect.addEventListener("change", () => {
+        selectedAgentRunId = null;
+        pendingAgentSelection = null;
+        agentSteerDrafts.clear();
+        document.getElementById("agent-run-detail")!.replaceChildren();
+        void loadAutomationData();
+      });''',
+              '''      locationSelect.addEventListener("change", () => {
+        selectedAgentRunId = null;
+        selectedWorkflowRunId = null;
+        pendingAgentSelection = null;
+        agentSteerDrafts.clear();
+        document.getElementById("agent-run-detail")!.replaceChildren();
+        document.getElementById("workflow-run-detail")!.replaceChildren();
+        void loadAutomationData();
+      });''',
+              "location detail reset",
+          )
+          automations = replace_once(
+              automations,
+              '''        activeOrgId = organization.organization_id;
+        selectedAgentRunId = null;
+        pendingAgentSelection = null;
+        agentHasActiveRuns = false;''',
+              '''        activeOrgId = organization.organization_id;
+        selectedAgentRunId = null;
+        selectedWorkflowRunId = null;
+        pendingAgentSelection = null;
+        agentHasActiveRuns = false;''',
+              "organization workflow reset",
+          )
+          automations = replace_once(
+              automations,
+              '''        actionStatus.replaceChildren();
+        document.getElementById("agent-run-detail")!.replaceChildren();
+        await loadLocations();''',
+              '''        actionStatus.replaceChildren();
+        document.getElementById("agent-run-detail")!.replaceChildren();
+        document.getElementById("workflow-run-detail")!.replaceChildren();
+        await loadLocations();''',
+              "organization detail clearing",
+          )
+          automations_path.write_text(automations)
+          PY
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Format changed pages
+        run: npx prettier --write apps/web/src/pages/gbp.astro apps/web/src/pages/automations.astro
+
+      - name: Frontend lint
+        run: npm run lint:web
+
+      - name: Frontend typecheck
+        run: npm run typecheck:web
+
+      - name: Commit validated patch and remove helper
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/web/src/pages/gbp.astro apps/web/src/pages/automations.astro
+          git rm .github/workflows/patch-gbp-post-observability.yml
+          git commit -m "Fix GBP post generation and run observability"
+          git push origin HEAD:fix/gbp-post-run-observability
