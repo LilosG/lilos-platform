@@ -55,7 +55,7 @@ def _job_is_active(job: Job | None, now: datetime) -> bool:
 
 
 async def _latest_job(session: AsyncSession, run: WorkflowRun) -> Job | None:
-    return await session.scalar(
+    latest_job: Job | None = await session.scalar(
         select(Job)
         .where(
             Job.organization_id == run.organization_id,
@@ -64,6 +64,7 @@ async def _latest_job(session: AsyncSession, run: WorkflowRun) -> Job | None:
         .order_by(Job.created_at.desc())
         .limit(1)
     )
+    return latest_job
 
 
 async def _latest_error(session: AsyncSession, job: Job) -> str | None:
@@ -100,10 +101,10 @@ async def reconcile_exhausted_workflows(
             .limit(limit)
         )
     ).all()
-    for job in exhausted_jobs:
-        job.status = "dead_lettered"
-        job.lease_owner = None
-        job.lease_expires_at = None
+    for exhausted_job in exhausted_jobs:
+        exhausted_job.status = "dead_lettered"
+        exhausted_job.lease_owner = None
+        exhausted_job.lease_expires_at = None
         changed += 1
 
     runs = (
@@ -116,21 +117,25 @@ async def reconcile_exhausted_workflows(
         )
     ).all()
     for run in runs:
-        job = await _latest_job(session, run)
-        if job is None or _job_is_active(job, now) or job.status not in TERMINAL_JOB_STATUSES:
+        latest_job = await _latest_job(session, run)
+        if (
+            latest_job is None
+            or _job_is_active(latest_job, now)
+            or latest_job.status not in TERMINAL_JOB_STATUSES
+        ):
             continue
-        if job.status == "completed":
+        if latest_job.status == "completed":
             run.status = "completed"
             run.completed_at = run.completed_at or now
-            run.output_reference = run.output_reference or job.result_reference
+            run.output_reference = run.output_reference or latest_job.result_reference
             run.failure_code = None
-        elif job.status == "cancelled":
+        elif latest_job.status == "cancelled":
             run.status = "cancelled"
             run.cancelled_at = run.cancelled_at or now
         else:
             run.status = "failed"
             run.completed_at = run.completed_at or now
-            run.failure_code = (await _latest_error(session, job)) or run.failure_code
+            run.failure_code = (await _latest_error(session, latest_job)) or run.failure_code
         changed += 1
 
     await session.flush()
