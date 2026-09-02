@@ -115,7 +115,7 @@ def test_successful_write_with_eventual_consistency_is_not_reposted(
     adapter = FakeAdapter({"reviewReply": {}})
     _install_provider(monkeypatch, adapter)
     fake = FakeSession(
-        [response, review, mapping, location, response, response],
+        [response, review, mapping, location, response, response, response],
         account=account,
         review=review,
     )
@@ -136,6 +136,40 @@ def test_successful_write_with_eventual_consistency_is_not_reposted(
     assert adapter.update_calls == 1
     assert adapter.get_calls == 1
     assert response.external_response_id is not None
+    assert response.status == "reconciliation_required"
+
+
+def test_dispatched_crash_marker_restarts_as_read_only(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    response, review, mapping, location, account = _objects(
+        response_status="reconciliation_required",
+        safe_error_code="PROVIDER_WRITE_DISPATCHED",
+    )
+    response.external_response_id = "accounts/account-789/locations/location-456/reviews/review-123"
+    adapter = FakeAdapter({"reviewReply": {}})
+    _install_provider(monkeypatch, adapter)
+    fake = FakeSession(
+        [response, review, mapping, location, response],
+        account=account,
+        review=review,
+    )
+
+    outcome = asyncio.run(
+        handle_reviews_publish_response(
+            cast(AsyncSession, fake),
+            organization_id=uuid4(),
+            location_id=review.location_id,
+            input_document={"response_id": str(response.id)},
+            correlation_id="test-review-dispatch-recovery",
+            workflow_run_id=uuid4(),
+        )
+    )
+
+    assert outcome.result == "retryable_failure"
+    assert outcome.safe_error == "VERIFICATION_CONTENT_PENDING"
+    assert adapter.update_calls == 0
+    assert adapter.get_calls == 1
     assert response.status == "reconciliation_required"
 
 
