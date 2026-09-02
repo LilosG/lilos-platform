@@ -94,7 +94,13 @@ describe("other outcomes keep their existing language", () => {
   it("distinguishes an operation timeout from an unreachable API", () => {
     expect(
       describeFailure(
-        { kind: "timeout", timeoutMs: 90_000 },
+        {
+          kind: "error",
+          status: 0,
+          code: "REQUEST_TIMEOUT",
+          message: "The platform API did not finish within 90 seconds.",
+          details: [],
+        },
         "Search Console sync",
       ),
     ).toBe(

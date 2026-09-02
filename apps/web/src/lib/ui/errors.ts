@@ -31,13 +31,14 @@ export function describeFailure(
       return `${prefix}The requested resource could not be found.`;
     case "disconnected":
       return `${prefix}Could not reach the platform API.`;
-    case "timeout":
-      return `${prefix}The platform API did not finish within ${Math.round(outcome.timeoutMs / 1000)} seconds.`;
     case "unauthenticated":
       return `${prefix}Your session has expired. Sign in again.`;
     case "not-configured":
       return `${prefix}This deployment is not configured.`;
     case "error": {
+      if (outcome.code === "REQUEST_TIMEOUT") {
+        return `${prefix}${outcome.message}`;
+      }
       // Field-level validation details take priority.
       const details = outcome.details;
       if (details && details.length > 0) {

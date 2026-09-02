@@ -48,7 +48,7 @@ describe("apiGet", () => {
     expect(outcome).toEqual({ kind: "disconnected" });
   });
 
-  it("classifies a stalled request as a timeout instead of a disconnected API", async () => {
+  it("classifies a stalled request as a timeout error instead of a disconnected API", async () => {
     vi.useFakeTimers();
     vi.mocked(readPublicConfig).mockReturnValue(config);
     vi.mocked(getAccessToken).mockResolvedValue("token");
@@ -68,7 +68,13 @@ describe("apiGet", () => {
     await vi.advanceTimersByTimeAsync(15_000);
     const outcome = await outcomePromise;
 
-    expect(outcome).toEqual({ kind: "timeout", timeoutMs: 15_000 });
+    expect(outcome).toEqual({
+      kind: "error",
+      status: 0,
+      code: "REQUEST_TIMEOUT",
+      message: "The platform API did not finish within 15 seconds.",
+      details: [],
+    });
     vi.useRealTimers();
   });
 

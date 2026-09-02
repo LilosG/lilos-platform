@@ -19,7 +19,6 @@ export type ApiOutcome<T> =
   | { kind: "forbidden"; code?: string; message?: string }
   | { kind: "not-found" }
   | { kind: "disconnected" }
-  | { kind: "timeout"; timeoutMs: number }
   | {
       kind: "error";
       status: number;
@@ -128,7 +127,13 @@ async function attemptRequest<T>(
     });
   } catch {
     if (timeoutController.signal.aborted) {
-      return { kind: "timeout", timeoutMs };
+      return {
+        kind: "error",
+        status: 0,
+        code: "REQUEST_TIMEOUT",
+        message: `The platform API did not finish within ${Math.round(timeoutMs / 1000)} seconds.`,
+        details: [],
+      };
     }
     return { kind: "disconnected" };
   } finally {
