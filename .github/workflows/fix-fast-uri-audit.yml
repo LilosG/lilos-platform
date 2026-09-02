@@ -1,0 +1,33 @@
+name: Fix fast-uri audit
+
+on:
+  push:
+    branches:
+      - fix/gbp-search-only-ui
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: fix/gbp-search-only-ui
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm audit fix
+      - run: npm audit --audit-level=high
+      - name: Commit dependency audit fix
+        run: |
+          rm .github/workflows/fix-fast-uri-audit.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package-lock.json package.json .github/workflows/fix-fast-uri-audit.yml
+          git commit -m "Update fast-uri transitive dependency"
+          git push origin HEAD:fix/gbp-search-only-ui
