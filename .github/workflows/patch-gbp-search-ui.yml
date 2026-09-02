@@ -1,0 +1,193 @@
+name: Patch GBP search UI
+
+on:
+  push:
+    branches:
+      - fix/gbp-search-only-ui
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: fix/gbp-search-only-ui
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Make unmapped Business Profiles search-only
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('apps/web/src/pages/integrations.astro')
+          text = path.read_text()
+          start = text.index('      async function renderUnmappedQueue(')
+          end = text.index('      // -- GitHub workspace', start)
+          replacement = '''      async function renderUnmappedQueue(
+        parent: HTMLElement,
+        wsResult: Awaited<ReturnType<typeof fetchGoogleWorkspace>>,
+      ): Promise<void> {
+        if (wsResult.kind !== "ok" || wsResult.data.unmapped_count === 0)
+          return;
+
+        const disclosure = document.createElement("details");
+        disclosure.className = "ui-card";
+        disclosure.open = false;
+        const summary = document.createElement("summary");
+        summary.className = "ui-card__header";
+        summary.textContent = "Find another Business Profile";
+        const body = document.createElement("div");
+        body.className = "ui-card__body";
+        disclosure.append(summary, body);
+        parent.append(disclosure);
+
+        const guidance = document.createElement("p");
+        guidance.className = "ui-text-secondary";
+        guidance.textContent =
+          "Search the connected Google account only when you need to replace or add a Business Profile. Other clients accessible to this Google account are not shown by default.";
+
+        const searchRow = document.createElement("div");
+        searchRow.className = "ui-control--compact";
+        const searchInput = document.createElement("input");
+        searchInput.type = "search";
+        searchInput.placeholder = "Search Business Profiles by business name…";
+        searchInput.className = "ui-input";
+        searchRow.append(searchInput);
+        body.append(guidance, searchRow);
+
+        const locationsResult = await fetchLocations(organizationId);
+        const availableLocations: LocationSummary[] =
+          locationsResult.kind === "ok" ? locationsResult.data : [];
+
+        const listContainer = document.createElement("div");
+        listContainer.append(
+          emptyState(
+            "Search to find a Business Profile",
+            "Enter at least 3 characters. No account-wide Business Profile list is displayed automatically.",
+          ),
+        );
+        body.append(listContainer);
+
+        async function loadUnmapped(search: string): Promise<void> {
+          listContainer.replaceChildren(createLoading());
+          const result = await fetchUnmappedResources(organizationId, search);
+          if (result.kind !== "ok") {
+            listContainer.replaceChildren(
+              errorAlert(describeFailure(result, "Business Profile search")),
+            );
+            return;
+          }
+          if (result.data.length === 0) {
+            listContainer.replaceChildren(
+              emptyState(
+                "No matching Business Profiles",
+                "Try a more specific business name or discover Google accounts and locations again.",
+              ),
+            );
+            return;
+          }
+          const list = document.createElement("ul");
+          list.className = "ui-record-list";
+          for (const resource of result.data) {
+            const item = document.createElement("li");
+            const info = document.createElement("div");
+            const name = document.createElement("h3");
+            name.textContent = resource.display_name;
+            const detail = document.createElement("p");
+            detail.textContent = resource.primary_category || "";
+            info.append(name, detail);
+
+            const rowActions = document.createElement("div");
+            rowActions.className =
+              "ui-inline ui-inline--center ui-inline--tight";
+
+            const locationSelect = createSelectControl(
+              `mapping-location-${resource.id}`,
+              "LILOs location",
+              availableLocations.map((location) => ({
+                value: location.id,
+                label: location.name,
+              })),
+              availableLocations.length === 1 ? availableLocations[0].id : "",
+              "Select location…",
+            );
+            locationSelect.root.classList.add("ui-control--compact");
+
+            const mapBtn = document.createElement("button");
+            mapBtn.type = "button";
+            mapBtn.className = "ui-button ui-button--primary ui-button--sm";
+            mapBtn.textContent = "Map";
+            mapBtn.addEventListener("click", async () => {
+              const selectedLocationId = locationSelect.input.value;
+              if (!selectedLocationId) {
+                const errorEl = document.createElement("p");
+                errorEl.className = "ui-text-danger";
+                errorEl.textContent = "Select a location first.";
+                item.append(errorEl);
+                return;
+              }
+              mapBtn.disabled = true;
+              mapBtn.textContent = "Mapping…";
+              const mapResult = await confirmGbpMappingAndReconcile(
+                organizationId,
+                selectedLocationId,
+                resource.id,
+                false,
+                reconcileGoogleSourceData,
+              );
+              if (mapResult.kind !== "ok") {
+                mapBtn.textContent = "Map";
+                mapBtn.disabled = false;
+                item.append(
+                  errorAlert(describeFailure(mapResult, "confirm mapping")),
+                );
+              }
+            });
+
+            rowActions.append(locationSelect.root, mapBtn);
+            info.append(rowActions);
+
+            item.append(info);
+            list.append(item);
+          }
+          listContainer.replaceChildren(list);
+        }
+
+        let debounceTimer: ReturnType<typeof setTimeout>;
+        searchInput.addEventListener("input", () => {
+          clearTimeout(debounceTimer);
+          debounceTimer = setTimeout(() => {
+            const q = searchInput.value.trim();
+            if (q.length < 3) {
+              listContainer.replaceChildren(
+                emptyState(
+                  "Search to find a Business Profile",
+                  "Enter at least 3 characters. No account-wide Business Profile list is displayed automatically.",
+                ),
+              );
+              return;
+            }
+            void loadUnmapped(q);
+          }, 300);
+        });
+      }
+
+'''
+          path.write_text(text[:start] + replacement + text[end:])
+          PY
+          npx prettier --write apps/web/src/pages/integrations.astro
+      - name: Commit patch
+        run: |
+          rm .github/workflows/patch-gbp-search-ui.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/web/src/pages/integrations.astro .github/workflows/patch-gbp-search-ui.yml
+          git commit -m "Make GBP replacement search explicit"
+          git push origin HEAD:fix/gbp-search-only-ui
