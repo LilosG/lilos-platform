@@ -85,9 +85,7 @@ def _provider_observation(
     )
     raw_policy = raw_reply.get("policyViolation")
     policy_violation = (
-        raw_policy.strip().upper()
-        if isinstance(raw_policy, str) and raw_policy.strip()
-        else None
+        raw_policy.strip().upper() if isinstance(raw_policy, str) and raw_policy.strip() else None
     )
     if (
         not comment.strip()
@@ -152,9 +150,7 @@ async def handle_reviews_publish_response(
     if location_id is not None and review.location_id != location_id:
         response.status = "failed"
         response.safe_error_code = "REVIEW_LOCATION_SCOPE_MISMATCH"
-        return JobOutcome(
-            result="permanent_failure", safe_error="REVIEW_LOCATION_SCOPE_MISMATCH"
-        )
+        return JobOutcome(result="permanent_failure", safe_error="REVIEW_LOCATION_SCOPE_MISMATCH")
 
     resource_mapping = await session.scalar(
         select(ProviderResourceMapping).where(
