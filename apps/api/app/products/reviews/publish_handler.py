@@ -43,6 +43,9 @@ VERIFY_ONLY_SAFE_ERRORS = frozenset(
         "GOOGLE_REVIEW_REPLY_STATE_UNRESOLVED",
     }
 )
+LEGACY_VERIFICATION_SAFE_ERRORS = frozenset(
+    {"VERIFICATION_REREAD_FAILED", "VERIFICATION_CONTENT_MISMATCH"}
+)
 
 
 async def _response_for_update(
@@ -201,6 +204,16 @@ async def handle_reviews_publish_response(
     approved_comment = response.response_text.strip()
     review_id = review.id
 
+    # Legacy verification rows were produced only after updateReply had already
+    # returned. Backfill their deterministic provider reference before OAuth so
+    # even a token-refresh failure cannot erase the verify-only recovery phase.
+    if (
+        verify_only
+        and response.external_response_id is None
+        and response.safe_error_code in LEGACY_VERIFICATION_SAFE_ERRORS
+    ):
+        response.external_response_id = review_name
+
     # Release the response row lock before OAuth and provider I/O. Every later
     # state transition re-locks the response before writing durable state.
     await session.commit()
@@ -312,17 +325,6 @@ async def handle_reviews_publish_response(
         response.status = "reconciliation_required"
         response.safe_error_code = "VERIFICATION_CONTENT_PENDING"
         await session.commit()
-    elif response.external_response_id is None and response.safe_error_code in {
-        "VERIFICATION_REREAD_FAILED",
-        "VERIFICATION_CONTENT_MISMATCH",
-    }:
-        # Legacy rows predate the durable dispatch marker, but these two codes
-        # were emitted only after updateReply returned successfully. Backfill the
-        # marker before their one safe read-only recovery attempt.
-        response = await _response_for_update(session, organization_id, response_id)
-        if response is not None:
-            response.external_response_id = review_name
-            await session.commit()
 
     try:
         re_read = await adapter.get_review(token, review_name)
