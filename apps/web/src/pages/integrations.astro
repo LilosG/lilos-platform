@@ -102,6 +102,8 @@ import "../styles/global.css";
         confirmGbpMappingAndReconcile,
         discoverGoogleResourcesAndReconcile,
         gbpWriteGovernanceFor,
+        removeGbpMappingAndReconcile,
+        REMOVE_GBP_MAPPING_CONFIRMATION,
       } from "../lib/google-workspace-governance";
       import { beginGitHubInstall, disconnectGitHub } from "../lib/github-app";
       import {
@@ -322,10 +324,12 @@ import "../styles/global.css";
         const content = providerContent;
         content.replaceChildren(createLoading());
 
-        const [currentConnectionResult, wsResult] = await Promise.all([
-          fetchConnectionStatus(organizationId),
-          fetchGoogleWorkspace(organizationId),
-        ]);
+        const [currentConnectionResult, wsResult, locationsResult] =
+          await Promise.all([
+            fetchConnectionStatus(organizationId),
+            fetchGoogleWorkspace(organizationId),
+            fetchLocations(organizationId),
+          ]);
 
         content.replaceChildren();
 
@@ -344,7 +348,9 @@ import "../styles/global.css";
         }
 
         const ws = wsResult.data;
-        const capsCard = makeCard("Connected Services");
+        const platformLocations =
+          locationsResult.kind === "ok" ? locationsResult.data : [];
+        const capsCard = makeCard("Authorized Google services");
         content.append(capsCard);
         const capsBody = capsCard.querySelector(
           ".ui-card__body",
@@ -352,11 +358,12 @@ import "../styles/global.css";
         renderCapabilities(capsBody, ws);
 
         if (ws.mapped_resources.length > 0) {
-          const mappedCard = makeCard("Mapped Resources");
+          const mappedCard = makeCard("Business Profile mappings");
           content.append(mappedCard);
           renderMappedResources(
             mappedCard.querySelector(".ui-card__body") as HTMLElement,
             ws,
+            platformLocations,
           );
         }
 
@@ -698,6 +705,12 @@ import "../styles/global.css";
         panel: HTMLElement,
         ws: GoogleWorkspace,
       ): void {
+        const explanation = document.createElement("p");
+        explanation.className = "ui-text-secondary";
+        explanation.textContent =
+          "Authorization means the connected Google account granted LILOs access. It does not mean a Business Profile or Search Console property is mapped or that data has synced.";
+        panel.append(explanation);
+
         const list = document.createElement("ul");
         list.className = "ui-record-list";
         for (const cap of ws.capabilities) {
@@ -710,7 +723,7 @@ import "../styles/global.css";
             info,
             statusBadge(
               cap.enabled ? "ready" : "setup",
-              cap.enabled ? "Granted" : "Not granted",
+              cap.enabled ? "Authorized" : "Not authorized",
             ),
           );
           list.append(item);
@@ -721,7 +734,42 @@ import "../styles/global.css";
       function renderMappedResources(
         panel: HTMLElement,
         ws: GoogleWorkspace,
+        platformLocations: LocationSummary[],
       ): void {
+        const locationNames = new Map(
+          platformLocations.map((location) => [location.id, location.name]),
+        );
+        const mappedCounts = new Map<string, number>();
+        for (const resource of ws.mapped_resources) {
+          if (!resource.platform_resource_id) continue;
+          mappedCounts.set(
+            resource.platform_resource_id,
+            (mappedCounts.get(resource.platform_resource_id) ?? 0) + 1,
+          );
+        }
+        const duplicateLocationIds = new Set(
+          [...mappedCounts.entries()]
+            .filter(([, count]) => count > 1)
+            .map(([locationId]) => locationId),
+        );
+
+        if (duplicateLocationIds.size > 0) {
+          const duplicateNames = [...duplicateLocationIds].map(
+            (locationId) => locationNames.get(locationId) ?? "a LILOs location",
+          );
+          panel.append(
+            errorAlert(
+              `${ws.mapped_resources.filter((resource) => resource.platform_resource_id && duplicateLocationIds.has(resource.platform_resource_id)).length} Business Profile resources are mapped across ${duplicateLocationIds.size} duplicate ${duplicateLocationIds.size === 1 ? "location" : "locations"}: ${duplicateNames.join(", ")}. Keep the correct Business Profile and remove the incorrect mapping below.`,
+            ),
+          );
+        }
+
+        const explanation = document.createElement("p");
+        explanation.className = "ui-text-secondary";
+        explanation.textContent =
+          "These are Google Business Profile resources attached to LILOs locations. Removing a mapping only detaches it from this workspace; it does not delete or change the Google profile.";
+        panel.append(explanation);
+
         const list = document.createElement("ul");
         list.className = "ui-record-list";
         for (const res of ws.mapped_resources) {
@@ -736,7 +784,11 @@ import "../styles/global.css";
               : res.sync_freshness === "stale"
                 ? "Stale"
                 : "Never synced";
-          detail.textContent = syncLabel;
+          const mappedTo = res.platform_resource_id
+            ? (locationNames.get(res.platform_resource_id) ??
+              "Unknown LILOs location")
+            : "No LILOs location";
+          detail.textContent = `Mapped to ${mappedTo} · ${syncLabel}`;
           if (res.last_synced_at) {
             detail.textContent += ` · ${formatTimestamp(res.last_synced_at)}`;
           }
@@ -820,6 +872,47 @@ import "../styles/global.css";
             }
           }
 
+          if (
+            canUsePlatformAdministration() &&
+            res.platform_resource_id !== null &&
+            res.gbp_location_id !== null
+          ) {
+            const removeAction = document.createElement("button");
+            removeAction.type = "button";
+            removeAction.className =
+              "ui-button ui-button--secondary ui-button--sm";
+            removeAction.textContent = "Remove mapping";
+            removeAction.addEventListener("click", () => {
+              removeAction.disabled = true;
+              feedback.replaceChildren(
+                confirmInline(
+                  REMOVE_GBP_MAPPING_CONFIRMATION,
+                  () => {
+                    void (async () => {
+                      const result = await removeGbpMappingAndReconcile(
+                        organizationId,
+                        res.platform_resource_id!,
+                        res.gbp_location_id!,
+                        reconcileGoogleSourceData,
+                      );
+                      if (result.kind !== "ok") {
+                        removeAction.disabled = false;
+                        feedback.replaceChildren(
+                          errorAlert(describeFailure(result, "remove mapping")),
+                        );
+                      }
+                    })();
+                  },
+                  () => {
+                    removeAction.disabled = false;
+                  },
+                  "Remove mapping",
+                ),
+              );
+            });
+            states.append(removeAction);
+          }
+
           item.append(info, states);
           list.append(item);
         }
@@ -840,7 +933,7 @@ import "../styles/global.css";
         disclosure.open = true;
         const summary = document.createElement("summary");
         summary.className = "ui-card__header";
-        summary.textContent = `Unmapped resources (${wsResult.data.unmapped_count})`;
+        summary.textContent = `Unmapped Business Profiles (${wsResult.data.unmapped_count})`;
         const body = document.createElement("div");
         body.className = "ui-card__body";
         disclosure.append(summary, body);
@@ -851,7 +944,7 @@ import "../styles/global.css";
         searchRow.className = "ui-control--compact";
         const searchInput = document.createElement("input");
         searchInput.type = "search";
-        searchInput.placeholder = "Search unmapped locations…";
+        searchInput.placeholder = "Search unmapped Business Profiles…";
         searchInput.className = "ui-input";
         searchRow.append(searchInput);
         body.append(searchRow);
@@ -876,8 +969,8 @@ import "../styles/global.css";
           if (result.data.length === 0) {
             listContainer.replaceChildren(
               emptyState(
-                "No unmapped resources",
-                "All discovered resources have been mapped.",
+                "No unmapped Business Profiles",
+                "All discovered Business Profile resources have been mapped.",
               ),
             );
             return;

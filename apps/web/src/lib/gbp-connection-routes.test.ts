@@ -8,7 +8,7 @@ vi.mock("./api-client", () => ({
 }));
 
 import { beginConnection, connectGoogle } from "./gbp-connection";
-import { confirmLocationMapping } from "./gbp";
+import { confirmLocationMapping, removeLocationMapping } from "./gbp";
 
 describe("Google connection product route", () => {
   beforeEach(() => {
@@ -36,13 +36,13 @@ describe("Google connection product route", () => {
   });
 });
 
-describe("canonical GBP mapping and write-access route", () => {
+describe("canonical GBP mapping lifecycle route", () => {
   beforeEach(() => {
     apiRequest.mockReset();
     apiRequest.mockResolvedValue({ kind: "ok", data: {} });
   });
 
-  it("uses the existing AAL2 GBP confirm endpoint with explicit write state", async () => {
+  it("confirms a mapping through the governed AAL2 mapping boundary", async () => {
     await confirmLocationMapping(
       "org-1",
       "platform-location-1",
@@ -51,7 +51,7 @@ describe("canonical GBP mapping and write-access route", () => {
     );
 
     expect(apiRequest).toHaveBeenCalledWith(
-      "/api/v1/organizations/org-1/locations/platform-location-1/gbp/locations/gbp-location-1/confirm",
+      "/api/v1/organizations/org-1/locations/platform-location-1/gbp-mapping/gbp-location-1/confirm",
       {
         method: "POST",
         body: {
@@ -59,6 +59,19 @@ describe("canonical GBP mapping and write-access route", () => {
           write_enabled: false,
         },
       },
+    );
+  });
+
+  it("removes a mapping without issuing a provider mutation", async () => {
+    await removeLocationMapping(
+      "org-1",
+      "platform-location-1",
+      "gbp-location-1",
+    );
+
+    expect(apiRequest).toHaveBeenCalledWith(
+      "/api/v1/organizations/org-1/locations/platform-location-1/gbp-mapping/gbp-location-1",
+      { method: "DELETE" },
     );
   });
 });
