@@ -67,6 +67,12 @@ function base(organizationId: string): string {
   return `/api/v1/organizations/${organizationId}/insights`;
 }
 
+export function analyticsReportHasData(
+  report: AnalyticsPerformanceReport,
+): boolean {
+  return report.range !== null && Object.keys(report.metrics).length > 0;
+}
+
 export function discoverAnalytics(
   organizationId: string,
   websiteId?: string,
@@ -108,13 +114,24 @@ export function syncAnalytics(
   );
 }
 
-export function fetchAnalyticsPerformance(
+export async function fetchAnalyticsPerformance(
   organizationId: string,
   days = 28,
 ): Promise<ApiOutcome<AnalyticsPerformanceReport>> {
-  return apiGet<AnalyticsPerformanceReport>(
+  const outcome = await apiGet<AnalyticsPerformanceReport>(
     `${base(organizationId)}/analytics/performance?days=${days}`,
   );
+  if (
+    outcome.kind === "ok" &&
+    outcome.data.connected &&
+    !analyticsReportHasData(outcome.data)
+  ) {
+    return {
+      ...outcome,
+      data: { ...outcome.data, connected: false },
+    };
+  }
+  return outcome;
 }
 
 export function fetchAnalyticsSummary(

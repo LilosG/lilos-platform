@@ -42,48 +42,38 @@ import "../styles/automations.css";
         <PageHeader
           eyebrow="Operations"
           title="Automations"
-          description="Run, schedule, pause, resume, and inspect governed recurring work."
+          description="See what is running, what is queued, what runs on a schedule, and what needs attention."
         />
 
         <Region id="automation-action-status" live="polite" />
 
-        {
-          /*
-           * Health leads the page.
-           *
-           * This summary used to sit below the agent run history, which renders
-           * every run ever executed — on a real workspace that put the answer to
-           * "are my automations working?" roughly ten screens down. The question
-           * the page exists to answer is now the first thing on it.
-           */
-        }
         <PageSection eyebrow="Health" title="Automation summary">
           <Region id="automation-metrics">
             <Skeleton lines={2} label="Loading automation health" />
           </Region>
         </PageSection>
 
-        <Notice title="Execution scope">
+        <Notice title="Location">
           <div class="ui-field">
             <label class="ui-field__label" for="automation-location-select"
-              >Location</label
+              >Operate on</label
             >
             <select id="automation-location-select" class="ui-input">
               <option value="">Choose a location</option>
             </select>
             <p class="ui-field__description">
-              Run-now actions and new schedules execute against this location.
+              Run-now actions and new schedules use this LILOs location.
             </p>
           </div>
         </Notice>
 
         <PageSection
           eyebrow="Agents"
-          title="Governed Hermes work"
-          description="Start product-scoped agent work, inspect structured tool activity, and use native lifecycle controls."
+          title="AI agents"
+          description="Start an agent, see its current state immediately, stop an active run, and inspect details only when needed."
         >
           <Region id="agent-runtime-status">
-            <Skeleton lines={2} label="Checking Hermes capabilities" />
+            <Skeleton lines={2} label="Checking agent runtime" />
           </Region>
           <Region id="agent-start-actions" />
           <Region id="agent-run-history">
@@ -94,8 +84,8 @@ import "../styles/automations.css";
 
         <PageSection
           eyebrow="Workflows"
-          title="Automation catalog"
-          description="Operational controls are shown only where the workflow can execute independently."
+          title="Other automations"
+          description="Run or schedule recurring product workflows from the selected location."
         >
           <Region id="workflow-catalog">
             <Skeleton lines={4} label="Loading automation catalog" />
@@ -105,7 +95,7 @@ import "../styles/automations.css";
         <PageSection
           eyebrow="Recurring"
           title="Schedules"
-          description="Active schedules should always have a future next-run time. Overdue schedules are surfaced as operational failures."
+          description="Pause, resume, change cadence, or cancel recurring work."
         >
           <Region id="schedule-list">
             <Skeleton lines={3} label="Loading schedules" />
@@ -127,7 +117,6 @@ import "../styles/automations.css";
         populateSwitcher,
         setActiveOrganization,
         buildDataTable,
-        buildGroupedDataTable,
         cellMeta,
         healthSummary,
         statusBadge,
@@ -152,6 +141,7 @@ import "../styles/automations.css";
       import {
         AGENT_WORKFLOWS,
         agentCapabilities,
+        agentLabelForSkill,
         canControlAgent,
         decideAgentApproval,
         getAgentRun,
@@ -220,6 +210,18 @@ import "../styles/automations.css";
         ["0 16 * * 2", "Weekly · Tuesday 4 PM"],
         ["0 16 1 * *", "Monthly · 1st at 4 PM"],
       ] as const;
+      const RUNNING_AGENT_STATUSES = new Set([
+        "running",
+        "waiting_approval",
+        "stopping",
+      ]);
+      const QUEUED_WORKFLOW_STATUSES = new Set(["queued", "retry_scheduled"]);
+      const RUNNING_WORKFLOW_STATUSES = new Set([
+        "running",
+        "waiting",
+        "waiting_approval",
+        "stopping",
+      ]);
 
       let activeOrgId = "";
       let locations: LocationSummary[] = [];
@@ -232,10 +234,6 @@ import "../styles/automations.css";
       let catalogCache: WorkflowTypeEntry[] | null = null;
       let schedulesCache: WorkflowScheduleEntry[] | null = null;
       const agentSteerDrafts = new Map<string, string>();
-      const agentDisclosureState = new Map<
-        string,
-        { details: boolean; logs: boolean }
-      >();
       const requestedAgentWorkflow = new URLSearchParams(
         window.location.search,
       ).get("agent");
@@ -246,9 +244,9 @@ import "../styles/automations.css";
 
       function formatTime(iso: string | null): string {
         if (!iso) return "—";
-        const d = new Date(iso);
-        if (Number.isNaN(d.getTime())) return iso;
-        return d.toLocaleString(undefined, {
+        const date = new Date(iso);
+        if (Number.isNaN(date.getTime())) return iso;
+        return date.toLocaleString(undefined, {
           month: "short",
           day: "numeric",
           hour: "numeric",
@@ -294,14 +292,6 @@ import "../styles/automations.css";
         actionStatus.append(node);
       }
 
-      /**
-       * Show a failure beside the control that produced it.
-       *
-       * setActionMessage writes to a region near the top of the page. The
-       * schedules table sits far below it, so a failed Pause/Resume/Cancel
-       * reported only there is invisible: the row simply appears not to have
-       * changed. Row actions therefore report in place as well.
-       */
       function setRowFailure(row: HTMLElement, message: string): void {
         row
           .querySelectorAll(".js-row-failure")
@@ -360,11 +350,11 @@ import "../styles/automations.css";
         const card = document.createElement("article");
         card.className = "ui-card ui-stack";
         const heading = document.createElement("h3");
-        heading.textContent = `${agentWorkflowLabel(workflowKey)} · Starting`;
+        heading.textContent = `${agentWorkflowLabel(workflowKey)} · Queued`;
         const copy = document.createElement("p");
         copy.className = "agent-run__pending";
         copy.textContent =
-          "Waiting for the worker to bind the new governed Hermes run. The page will open that exact run automatically.";
+          "Waiting for a worker to start this run. It will move to Running when execution actually begins.";
         card.append(heading, copy);
         region.replaceChildren(card);
       }
@@ -382,7 +372,7 @@ import "../styles/automations.css";
           return;
         }
         if (!hermesCapabilities?.available) {
-          setActionMessage("Hermes agent runtime is unavailable.", true);
+          setActionMessage("Agent runtime is unavailable.", true);
           return;
         }
         const requestedAtMs = Date.now();
@@ -402,12 +392,10 @@ import "../styles/automations.css";
           selectedAgentRunId = null;
           agentHasActiveRuns = true;
           renderPendingAgentRun(workflowKey);
-          setActionMessage(
-            `${agentWorkflowLabel(workflowKey)} queued in the governed workflow runtime.`,
-          );
+          setActionMessage(`${agentWorkflowLabel(workflowKey)} queued.`);
           await refreshLiveAgentSurfaces();
         } else {
-          setActionMessage(describeFailure(result, "Agent run"), true);
+          setActionMessage(describeFailure(result, agentWorkflowLabel(workflowKey)), true);
         }
         button.disabled = false;
         button.textContent = originalLabel;
@@ -416,14 +404,27 @@ import "../styles/automations.css";
       function renderAgentRuntime(capabilities: AgentCapabilities): void {
         const region = document.getElementById("agent-runtime-status")!;
         region.replaceChildren();
+
         const alert = document.createElement("div");
         alert.className = capabilities.available
           ? "ui-alert ui-alert--success"
           : "ui-alert ui-alert--warning";
         alert.textContent = capabilities.available
-          ? `Hermes ${capabilities.runtime_release ?? "release unavailable"} / runtime ${capabilities.runtime_version ?? "version unavailable"} ready · ${capabilities.model ?? "model unavailable"} · ${capabilities.sanctioned_tools?.length ?? 0} sanctioned tools · native Runs/SSE/approval/stop/steer`
-          : `Hermes agent controls unavailable · ${capabilities.reason_code ?? "CAPABILITY_UNAVAILABLE"}`;
+          ? "Agent runtime ready"
+          : `Agent runtime unavailable · ${capabilities.reason_code ?? "CAPABILITY_UNAVAILABLE"}`;
         region.append(alert);
+
+        if (capabilities.available) {
+          const diagnostics = document.createElement("details");
+          diagnostics.className = "agent-run__disclosure";
+          const summary = document.createElement("summary");
+          summary.textContent = "Runtime diagnostics";
+          const detail = document.createElement("p");
+          detail.className = "ui-text-secondary";
+          detail.textContent = `Hermes ${capabilities.runtime_release ?? "release unavailable"} · runtime ${capabilities.runtime_version ?? "version unavailable"} · ${capabilities.model ?? "model unavailable"} · ${capabilities.sanctioned_tools?.length ?? 0} sanctioned tools`;
+          diagnostics.append(summary, detail);
+          region.append(diagnostics);
+        }
 
         const actions = document.getElementById("agent-start-actions")!;
         actions.replaceChildren();
@@ -460,65 +461,37 @@ import "../styles/automations.css";
           setActionMessage(describeFailure(result, `Agent ${action}`), true);
         } else if (action === "steer") {
           agentSteerDrafts.delete(detail.id);
-          setActionMessage("Steer instruction sent to the active Hermes run.");
+          setActionMessage("Steer instruction sent.");
         } else if (action === "stop") {
-          setActionMessage("Stop requested for the active Hermes run.");
+          setActionMessage("Stop requested.");
         } else if (action === "approve") {
-          setActionMessage("One-time approval sent to the active Hermes run.");
+          setActionMessage("One-time approval sent.");
         } else {
-          setActionMessage("Agent approval request denied.");
+          setActionMessage("Approval request denied.");
         }
         await refreshLiveAgentSurfaces();
       }
 
       function renderAgentDetail(detail: AgentRunDetail): void {
         const region = document.getElementById("agent-run-detail")!;
-        const previousInput = region.querySelector<HTMLInputElement>(
-          `input[data-steer-run-id="${detail.id}"]`,
-        );
-        const steerWasFocused = previousInput === document.activeElement;
-        const selectionStart = previousInput?.selectionStart ?? null;
-        const selectionEnd = previousInput?.selectionEnd ?? null;
-        if (previousInput) agentSteerDrafts.set(detail.id, previousInput.value);
-
-        const previousDetails = region.querySelector<HTMLDetailsElement>(
-          `details[data-agent-disclosure="details"][data-agent-run-id="${detail.id}"]`,
-        );
-        const previousLogs = region.querySelector<HTMLDetailsElement>(
-          `details[data-agent-disclosure="logs"][data-agent-run-id="${detail.id}"]`,
-        );
-        const previousLogList = region.querySelector<HTMLOListElement>(
-          `ol[data-agent-log-list="${detail.id}"]`,
-        );
-        const priorDisclosure = agentDisclosureState.get(detail.id) ?? {
-          details: false,
-          logs: false,
-        };
-        const disclosureState = {
-          details: previousDetails?.open ?? priorDisclosure.details,
-          logs: previousLogs?.open ?? priorDisclosure.logs,
-        };
-        const priorLogScrollTop = previousLogList?.scrollTop ?? 0;
-        agentDisclosureState.set(detail.id, disclosureState);
-
         region.replaceChildren();
+
         const card = document.createElement("article");
         card.className = "ui-card ui-stack";
-
-        const summary = document.createElement("div");
-        summary.className = "agent-run__summary";
+        const headingRow = document.createElement("div");
+        headingRow.className = "agent-run__summary";
         const heading = document.createElement("h3");
-        heading.textContent = detail.skill_key;
-        summary.append(
+        heading.textContent = agentLabelForSkill(detail.skill_key);
+        headingRow.append(
           heading,
           statusBadge(statusTone(detail.status), statusLabel(detail.status)),
         );
-        card.append(summary);
+        card.append(headingRow);
 
-        const summaryMeta = document.createElement("p");
-        summaryMeta.className = "agent-run__summary-meta";
-        summaryMeta.textContent = `${formatTime(detail.started_at ?? detail.created_at)} · ${detail.provider}/${detail.model ?? "model unavailable"}${detail.safe_error_code ? ` · ${detail.safe_error_code}` : ""}`;
-        card.append(summaryMeta);
+        const meta = document.createElement("p");
+        meta.className = "agent-run__summary-meta";
+        meta.textContent = `${formatTime(detail.started_at ?? detail.created_at)}${detail.safe_error_code ? ` · ${detail.safe_error_code}` : ""}`;
+        card.append(meta);
 
         const controls = document.createElement("div");
         controls.className = "ui-inline";
@@ -532,16 +505,12 @@ import "../styles/automations.css";
         }
         if (
           detail.status === "running" &&
-          canControlAgent(
-            hermesCapabilities ?? detail.capabilities,
-            "run_steer",
-          )
+          canControlAgent(hermesCapabilities ?? detail.capabilities, "run_steer")
         ) {
           const input = document.createElement("input");
           input.className = "ui-input";
           input.placeholder = "Steer this active run";
           input.maxLength = 4000;
-          input.dataset.steerRunId = detail.id;
           input.value = agentSteerDrafts.get(detail.id) ?? "";
           input.addEventListener("input", () => {
             agentSteerDrafts.set(detail.id, input.value);
@@ -557,8 +526,6 @@ import "../styles/automations.css";
               await controlAgent(detail, "steer", value);
             }),
           );
-        } else {
-          agentSteerDrafts.delete(detail.id);
         }
         if (
           detail.current_approval &&
@@ -591,7 +558,7 @@ import "../styles/automations.css";
               );
               setActionMessage(
                 result.kind === "ok"
-                  ? "Scoped Hermes session reset. Approved LILOs facts remain authoritative."
+                  ? "Scoped agent session reset."
                   : describeFailure(result, "Session reset"),
                 result.kind !== "ok",
               );
@@ -626,9 +593,6 @@ import "../styles/automations.css";
 
         const diagnostics = document.createElement("details");
         diagnostics.className = "agent-run__disclosure";
-        diagnostics.dataset.agentDisclosure = "details";
-        diagnostics.dataset.agentRunId = detail.id;
-        diagnostics.open = disclosureState.details;
         const diagnosticsSummary = document.createElement("summary");
         diagnosticsSummary.textContent = "Run details";
         const diagnosticsBody = document.createElement("div");
@@ -636,7 +600,7 @@ import "../styles/automations.css";
         const identity = document.createElement("p");
         identity.textContent = `Workflow ${detail.workflow_run_id} · Hermes ${detail.hermes_run_id ?? "starting"} · session ${detail.hermes_session_id} · audit ${detail.audit_correlation_id}`;
         const telemetry = document.createElement("p");
-        telemetry.textContent = `Location ${detail.location_id ?? "organization-wide"} · ${detail.usage.input_tokens ?? "—"} input / ${detail.usage.output_tokens ?? "—"} output tokens · ${detail.usage.latency_ms ?? "—"} ms`;
+        telemetry.textContent = `Location ${detail.location_id ?? "organization-wide"} · ${detail.provider}/${detail.model ?? "model unavailable"} · ${detail.usage.input_tokens ?? "—"} input / ${detail.usage.output_tokens ?? "—"} output tokens · ${detail.usage.latency_ms ?? "—"} ms`;
         diagnosticsBody.append(identity, telemetry);
         if (detail.source_references.length) {
           const evidence = document.createElement("p");
@@ -644,34 +608,21 @@ import "../styles/automations.css";
           diagnosticsBody.append(evidence);
         }
         diagnostics.append(diagnosticsSummary, diagnosticsBody);
-        diagnostics.addEventListener("toggle", () => {
-          const current = agentDisclosureState.get(detail.id) ?? {
-            details: false,
-            logs: false,
-          };
-          agentDisclosureState.set(detail.id, {
-            ...current,
-            details: diagnostics.open,
-          });
-        });
         card.append(diagnostics);
 
         const logsDisclosure = document.createElement("details");
         logsDisclosure.className = "agent-run__disclosure";
-        logsDisclosure.dataset.agentDisclosure = "logs";
-        logsDisclosure.dataset.agentRunId = detail.id;
-        logsDisclosure.open = disclosureState.logs;
         const logsSummary = document.createElement("summary");
         logsSummary.textContent = `View logs (${detail.events.length})`;
+        logsDisclosure.append(logsSummary);
         if (!detail.events.length) {
           const empty = document.createElement("p");
           empty.className = "ui-muted";
           empty.textContent = "No structured activity has arrived yet.";
-          logsDisclosure.append(logsSummary, empty);
+          logsDisclosure.append(empty);
         } else {
           const events = document.createElement("ol");
           events.className = "agent-run__logs";
-          events.dataset.agentLogList = detail.id;
           for (const event of detail.events) {
             const item = document.createElement("li");
             const presentation = presentAgentEvent(event);
@@ -684,36 +635,35 @@ import "../styles/automations.css";
             item.append(label, raw);
             events.append(item);
           }
-          logsDisclosure.append(logsSummary, events);
+          logsDisclosure.append(events);
         }
-        logsDisclosure.addEventListener("toggle", () => {
-          const current = agentDisclosureState.get(detail.id) ?? {
-            details: false,
-            logs: false,
-          };
-          agentDisclosureState.set(detail.id, {
-            ...current,
-            logs: logsDisclosure.open,
-          });
-        });
         card.append(logsDisclosure);
         region.append(card);
+      }
 
-        if (steerWasFocused) {
-          const restored = region.querySelector<HTMLInputElement>(
-            `input[data-steer-run-id="${detail.id}"]`,
-          );
-          if (restored) {
-            restored.focus();
-            if (selectionStart !== null && selectionEnd !== null) {
-              restored.setSelectionRange(selectionStart, selectionEnd);
-            }
-          }
+      async function openAgentRun(run: AgentRunSummary): Promise<void> {
+        pendingAgentSelection = null;
+        selectedAgentRunId = run.id;
+        const result = await getAgentRun(activeOrgId, run.id);
+        if (result.kind === "ok") renderAgentDetail(result.data);
+        else setActionMessage(describeFailure(result, "Agent run"), true);
+      }
+
+      async function stopAgentSummary(
+        run: AgentRunSummary,
+        button: HTMLButtonElement,
+      ): Promise<void> {
+        button.disabled = true;
+        button.textContent = "Stopping…";
+        const result = await stopAgentRun(activeOrgId, run.id);
+        if (result.kind === "ok") {
+          setActionMessage(`${agentLabelForSkill(run.skill_key)} stop requested.`);
+          await refreshLiveAgentSurfaces();
+          return;
         }
-        const restoredLogList = region.querySelector<HTMLOListElement>(
-          `ol[data-agent-log-list="${detail.id}"]`,
-        );
-        if (restoredLogList) restoredLogList.scrollTop = priorLogScrollTop;
+        setActionMessage(describeFailure(result, "Stop agent"), true);
+        button.disabled = false;
+        button.textContent = "Stop";
       }
 
       function renderAgentRuns(items: AgentRunSummary[]): void {
@@ -721,83 +671,90 @@ import "../styles/automations.css";
         region.replaceChildren();
         if (!items.length) {
           region.append(
-            emptyState("No agent runs", "Start governed agent work above."),
+            emptyState("No agent runs", "Start an agent above when work is needed."),
           );
           return;
         }
-        /*
-         * Grouped by agent, bounded per agent.
-         *
-         * A flat reverse-chronological list of every run cannot answer "is the
-         * GBP agent healthy" — the reader has to scan the whole table and hold
-         * counts in their head. Grouping puts each agent's own history under its
-         * own header with its own count and latest state, and bounding each
-         * group keeps the page a fixed height however much history accrues.
-         *
-         * Skill and Model leave the row: skill is the group, and model is
-         * identical for every run under one agent, so as a column it repeated
-         * the same string down the whole table.
-         */
-        const columns = [
-          {
-            key: "status",
-            header: "Status",
-            render: (run: AgentRunSummary) =>
-              statusBadge(statusTone(run.status), statusLabel(run.status)),
-          },
-          {
-            key: "started",
-            header: "Started",
-            render: (run: AgentRunSummary) => {
-              const at = run.started_at ?? run.created_at;
-              const ago = elapsed(at);
-              return ago ? `${ago} · ${formatTime(at)}` : formatTime(at);
-            },
-          },
-          {
-            key: "inspect",
-            header: "Inspect",
-            width: "content" as const,
-            render: (run: AgentRunSummary) =>
-              actionButton("Open run", async () => {
-                pendingAgentSelection = null;
-                selectedAgentRunId = run.id;
-                const result = await getAgentRun(activeOrgId, run.id);
-                if (result.kind === "ok") renderAgentDetail(result.data);
-                else {
-                  setActionMessage(describeFailure(result, "Agent run"), true);
-                }
-              }),
-          },
-        ];
 
-        const bySkill = new Map<string, AgentRunSummary[]>();
-        for (const run of items) {
-          const bucket = bySkill.get(run.skill_key);
-          if (bucket) bucket.push(run);
-          else bySkill.set(run.skill_key, [run]);
-        }
-
-        const groups = [...bySkill.entries()].map(([skillKey, runs]) => {
-          const active = runs.filter((run) => agentRunIsActive(run));
-          const latest = runs[0]?.started_at ?? runs[0]?.created_at ?? null;
-          const model = runs.find((run) => run.model)?.model;
-          const caption = [
-            latest ? `Last run ${elapsed(latest) || formatTime(latest)}` : null,
-            active.length ? `${active.length} running` : null,
-            model,
-          ]
-            .filter(Boolean)
-            .join(" · ");
-          return { key: skillKey, label: skillKey, caption, rows: runs };
+        const ordered = [...items].sort((a, b) => {
+          const rank = (run: AgentRunSummary): number =>
+            RUNNING_AGENT_STATUSES.has(run.status)
+              ? 0
+              : run.status === "queued"
+                ? 1
+                : 2;
+          const rankDelta = rank(a) - rank(b);
+          if (rankDelta !== 0) return rankDelta;
+          return (
+            new Date(b.created_at ?? 0).getTime() -
+            new Date(a.created_at ?? 0).getTime()
+          );
         });
 
         region.append(
-          buildGroupedDataTable(columns, groups, {
-            disclosure: { initialRows: 5, noun: "runs" },
-            emptyHeading: "No agent runs",
-            emptyDescription: "Start governed agent work above.",
-          }),
+          buildDataTable(
+            [
+              {
+                key: "agent",
+                header: "Agent",
+                render: (run: AgentRunSummary) =>
+                  cellMeta(
+                    agentLabelForSkill(run.skill_key),
+                    run.location_id
+                      ? (locations.find((item) => item.id === run.location_id)
+                          ?.name ?? "Location scoped")
+                      : "Organization scoped",
+                  ),
+              },
+              {
+                key: "status",
+                header: "Status",
+                render: (run: AgentRunSummary) =>
+                  statusBadge(statusTone(run.status), statusLabel(run.status)),
+              },
+              {
+                key: "started",
+                header: "Started / queued",
+                render: (run: AgentRunSummary) => {
+                  const at = run.started_at ?? run.created_at;
+                  const ago = elapsed(at);
+                  return ago ? `${ago} · ${formatTime(at)}` : formatTime(at);
+                },
+              },
+              {
+                key: "failure",
+                header: "Failure",
+                render: (run: AgentRunSummary) =>
+                  run.safe_error_code ?? "—",
+              },
+              {
+                key: "actions",
+                header: "Actions",
+                width: "content",
+                render: (run: AgentRunSummary) => {
+                  const actions = document.createElement("div");
+                  actions.className = "ui-inline ui-inline--tight";
+                  if (
+                    ["running", "waiting_approval"].includes(run.status) &&
+                    hermesCapabilities &&
+                    canControlAgent(hermesCapabilities, "run_stop")
+                  ) {
+                    actions.append(
+                      actionButton("Stop", (button) =>
+                        stopAgentSummary(run, button),
+                      ),
+                    );
+                  }
+                  actions.append(
+                    actionButton("Open run", async () => openAgentRun(run)),
+                  );
+                  return actions;
+                },
+              },
+            ],
+            ordered,
+            { disclosure: { initialRows: 12, noun: "runs" } },
+          ),
         );
       }
 
@@ -814,13 +771,6 @@ import "../styles/automations.css";
             renderAgentRuntime(capabilities.data);
           } else {
             hermesCapabilities = null;
-            document
-              .getElementById("agent-runtime-status")!
-              .replaceChildren(
-                errorAlert(
-                  describeFailure(capabilities, "Hermes capabilities"),
-                ),
-              );
             renderAgentRuntime({
               available: false,
               reason_code: "CAPABILITY_PROBE_FAILED",
@@ -832,7 +782,7 @@ import "../styles/automations.css";
               if (Date.now() - pendingAgentSelection.requestedAtMs > 60_000) {
                 pendingAgentSelection = null;
                 setActionMessage(
-                  "The queued agent did not expose a run identity within 60 seconds. Inspect Recent runs before retrying.",
+                  "The queued agent did not expose a run identity within 60 seconds. Check Recent runs before retrying.",
                   true,
                 );
               } else {
@@ -885,13 +835,10 @@ import "../styles/automations.css";
           execute: true,
         });
         if (result.kind === "ok") {
-          setActionMessage(`${workflow.display_name} queued for execution.`);
+          setActionMessage(`${workflow.display_name} queued.`);
           await loadAutomationData();
         } else {
-          setActionMessage(
-            describeFailure(result, workflow.display_name),
-            true,
-          );
+          setActionMessage(describeFailure(result, workflow.display_name), true);
         }
         button.disabled = false;
         button.textContent = "Run now";
@@ -1027,7 +974,6 @@ import "../styles/automations.css";
       function scheduleActions(schedule: WorkflowScheduleEntry): HTMLElement {
         const wrapper = document.createElement("div");
         wrapper.className = "ui-inline";
-
         const cadence = document.createElement("select");
         cadence.className = "ui-input";
         cadence.setAttribute("aria-label", "Schedule cadence");
@@ -1062,9 +1008,6 @@ import "../styles/automations.css";
           );
         }
         if (rowActions.canCancel) {
-          // Cancelling is not reversible from this screen, so it asks first.
-          // Without it there was no way to retire a duplicate schedule at all:
-          // pausing only parks it and it stays in the list forever.
           const cancelBtn = actionButton("Cancel", async (button) => {
             button.disabled = true;
             wrapper.append(
@@ -1079,10 +1022,7 @@ import "../styles/automations.css";
               ),
             );
           });
-          cancelBtn.setAttribute(
-            "aria-label",
-            `Cancel schedule ${schedule.key}`,
-          );
+          cancelBtn.setAttribute("aria-label", `Cancel schedule ${schedule.key}`);
           wrapper.append(cancelBtn);
         }
         return wrapper;
@@ -1096,26 +1036,16 @@ import "../styles/automations.css";
         const panel = document.getElementById("automation-metrics")!;
         panel.replaceChildren();
         const failed = runs ? actionableWorkflowFailureCount(runs) : undefined;
-        const active = schedules?.filter(
+        const activeSchedules = schedules?.filter(
           (schedule) => schedule.status === "active",
         ).length;
         const overdue = schedules?.filter(scheduleIsOverdue).length;
         const running = runs?.filter((run) =>
-          [
-            "queued",
-            "running",
-            "retry_scheduled",
-            "waiting",
-            "waiting_approval",
-          ].includes(run.status),
+          RUNNING_WORKFLOW_STATUSES.has(run.status),
         ).length;
-        /*
-         * Tone escalates only on the counts that mean something is wrong. An
-         * overdue schedule or an unresolved failure is an operational fault and
-         * is coloured as one; "running now" is merely notable. Rendering all
-         * five at identical weight is what made the operator read every number
-         * to discover that none of them needed action.
-         */
+        const queued = runs?.filter((run) =>
+          QUEUED_WORKFLOW_STATUSES.has(run.status),
+        ).length;
         panel.append(
           healthSummary([
             {
@@ -1130,6 +1060,20 @@ import "../styles/automations.css";
                 : "Run history unavailable",
             },
             {
+              label: "Running now",
+              value: runs ? (running ?? 0) : null,
+              format: { unit: "count" },
+              tone: running ? "attention" : "neutral",
+              meta: runs ? "Execution has started" : "Run history unavailable",
+            },
+            {
+              label: "Queued / retrying",
+              value: runs ? (queued ?? 0) : null,
+              format: { unit: "count" },
+              tone: queued ? "attention" : "neutral",
+              meta: runs ? "Waiting for execution" : "Run history unavailable",
+            },
+            {
               label: "Overdue schedules",
               value: schedules ? (overdue ?? 0) : null,
               format: { unit: "count" },
@@ -1141,15 +1085,8 @@ import "../styles/automations.css";
                 : "Schedules unavailable",
             },
             {
-              label: "Running now",
-              value: runs ? (running ?? 0) : null,
-              format: { unit: "count" },
-              tone: running ? "attention" : "neutral",
-              meta: runs ? "In progress or queued" : "Run history unavailable",
-            },
-            {
               label: "Active schedules",
-              value: schedules ? (active ?? 0) : null,
+              value: schedules ? (activeSchedules ?? 0) : null,
               format: { unit: "count" },
               meta: schedules ? "Recurring work" : "Schedules unavailable",
             },
@@ -1172,11 +1109,11 @@ import "../styles/automations.css";
       ): void {
         const container = document.getElementById("workflow-catalog")!;
         container.replaceChildren();
-        if (items.length === 0) {
+        if (!items.length) {
           container.append(
             emptyState(
               "No automations available",
-              "Governed automations will appear here when they are enabled for this workspace.",
+              "Governed automations will appear here when enabled.",
             ),
           );
           return;
@@ -1228,7 +1165,7 @@ import "../styles/automations.css";
               },
               {
                 key: "result",
-                header: "Result",
+                header: "Status",
                 render: (workflow: WorkflowTypeEntry) => {
                   const run = runs.find(
                     (item) =>
@@ -1236,10 +1173,7 @@ import "../styles/automations.css";
                       item.location_id === selectedLocationId(),
                   );
                   return run
-                    ? statusBadge(
-                        statusTone(run.status),
-                        statusLabel(run.status),
-                      )
+                    ? statusBadge(statusTone(run.status), statusLabel(run.status))
                     : statusBadge("neutral", "No result");
                 },
               },
@@ -1273,11 +1207,11 @@ import "../styles/automations.css";
       function renderRuns(items: WorkflowRunSummary[]): void {
         const container = document.getElementById("run-history")!;
         container.replaceChildren();
-        if (items.length === 0) {
+        if (!items.length) {
           container.append(
             emptyState(
               "No runs recorded",
-              "Completed and failed automation runs will appear here with their recovery state.",
+              "Automation runs will appear here with their execution state.",
             ),
           );
           return;
@@ -1296,13 +1230,13 @@ import "../styles/automations.css";
               },
               {
                 key: "status",
-                header: "Result",
+                header: "Status",
                 render: (run: WorkflowRunSummary) =>
                   statusBadge(statusTone(run.status), statusLabel(run.status)),
               },
               {
                 key: "started",
-                header: "Started",
+                header: "Created",
                 render: (run: WorkflowRunSummary) =>
                   run.created_at
                     ? `${elapsed(run.created_at)} · ${formatTime(run.created_at)}`
@@ -1315,25 +1249,21 @@ import "../styles/automations.css";
               },
               {
                 key: "recovery",
-                header: "Recovery / failure",
+                header: "Failure / retry",
                 render: (run: WorkflowRunSummary) => {
                   if (run.failure_code) {
                     const attempts = run.job_attempt_count ?? 0;
                     const maxAttempts = run.job_max_attempts ?? 0;
                     return `${run.failure_code} · attempt ${attempts}/${maxAttempts}`;
                   }
-                  if (run.status === "retry_scheduled")
-                    return "Retry scheduled";
-                  return "No action required";
+                  if (run.status === "retry_scheduled") return "Retry scheduled";
+                  if (run.status === "queued") return "Waiting for worker";
+                  return "—";
                 },
               },
             ],
             items,
-            {
-              // Recent runs is a chronological feed, so it stays flat — but it
-              // is still bounded, because the useful part of a feed is its head.
-              disclosure: { initialRows: 8, noun: "runs" },
-            },
+            { disclosure: { initialRows: 10, noun: "runs" } },
           ),
         );
       }
@@ -1341,7 +1271,7 @@ import "../styles/automations.css";
       function renderSchedules(items: WorkflowScheduleEntry[]): void {
         const container = document.getElementById("schedule-list")!;
         container.replaceChildren();
-        if (items.length === 0) {
+        if (!items.length) {
           container.append(
             emptyState(
               "No schedules configured",
@@ -1355,7 +1285,7 @@ import "../styles/automations.css";
             [
               {
                 key: "workflow",
-                header: "Workflow",
+                header: "Automation",
                 render: (schedule: WorkflowScheduleEntry) =>
                   cellMeta(
                     schedule.workflow_name ??
@@ -1419,16 +1349,13 @@ import "../styles/automations.css";
         placeholder.value = "";
         placeholder.textContent = "Choose a location";
         locationSelect.append(placeholder);
-
         const result = await fetchLocations(activeOrgId);
         if (result.kind !== "ok") {
           locations = [];
           setActionMessage(describeFailure(result, "Locations"), true);
           return;
         }
-        locations = result.data.filter(
-          (location) => location.status === "active",
-        );
+        locations = result.data.filter((location) => location.status === "active");
         for (const location of locations) {
           const option = document.createElement("option");
           option.value = location.id;
@@ -1465,44 +1392,42 @@ import "../styles/automations.css";
 
       async function loadAutomationData(): Promise<void> {
         if (!activeOrgId) return;
-        const [cat, sched, runs] = await Promise.all([
+        const [catalog, schedules, runs] = await Promise.all([
           listWorkflowTypes(activeOrgId),
           listSchedules(activeOrgId),
           listWorkflowRuns(activeOrgId, { limit: 40 }),
         ]);
+        catalogCache = catalog.kind === "ok" ? catalog.data : null;
+        schedulesCache = schedules.kind === "ok" ? schedules.data : null;
 
-        catalogCache = cat.kind === "ok" ? cat.data : null;
-        schedulesCache = sched.kind === "ok" ? sched.data : null;
-
-        if (cat.kind === "ok") {
+        if (catalog.kind === "ok") {
           renderCatalog(
-            cat.data,
-            sched.kind === "ok" ? sched.data : [],
+            catalog.data,
+            schedules.kind === "ok" ? schedules.data : [],
             runs.kind === "ok" ? runs.data : [],
           );
         } else {
           document
             .getElementById("workflow-catalog")!
-            .replaceChildren(errorAlert(describeFailure(cat, "Catalog")));
+            .replaceChildren(errorAlert(describeFailure(catalog, "Catalog")));
         }
-
-        if (sched.kind === "ok") renderSchedules(sched.data);
+        if (schedules.kind === "ok") renderSchedules(schedules.data);
         else {
           document
             .getElementById("schedule-list")!
-            .replaceChildren(errorAlert(describeFailure(sched, "Schedules")));
+            .replaceChildren(
+              errorAlert(describeFailure(schedules, "Schedules")),
+            );
         }
-
         if (runs.kind === "ok") renderRuns(runs.data);
         else {
           document
             .getElementById("run-history")!
             .replaceChildren(errorAlert(describeFailure(runs, "Run history")));
         }
-
         renderMetrics(
-          cat.kind === "ok" ? cat.data : null,
-          sched.kind === "ok" ? sched.data : null,
+          catalog.kind === "ok" ? catalog.data : null,
+          schedules.kind === "ok" ? schedules.data : null,
           runs.kind === "ok" ? runs.data : null,
         );
         await loadAgentData();
@@ -1512,7 +1437,6 @@ import "../styles/automations.css";
         selectedAgentRunId = null;
         pendingAgentSelection = null;
         agentSteerDrafts.clear();
-        agentDisclosureState.clear();
         document.getElementById("agent-run-detail")!.replaceChildren();
         void loadAutomationData();
       });
@@ -1528,7 +1452,6 @@ import "../styles/automations.css";
         catalogCache = null;
         schedulesCache = null;
         agentSteerDrafts.clear();
-        agentDisclosureState.clear();
         actionStatus.replaceChildren();
         document.getElementById("agent-run-detail")!.replaceChildren();
         await loadLocations();

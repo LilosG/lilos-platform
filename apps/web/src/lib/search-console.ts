@@ -83,6 +83,12 @@ function seoBase(organizationId: string): string {
   return `/api/v1/organizations/${organizationId}/seo`;
 }
 
+export function searchConsoleReportHasData(
+  report: SearchConsolePerformanceReport,
+): boolean {
+  return report.range !== null && Object.keys(report.metrics).length > 0;
+}
+
 export function discoverSearchConsole(
   organizationId: string,
   websiteId: string,
@@ -118,14 +124,25 @@ export function syncSearchConsole(
   );
 }
 
-export function fetchSearchConsolePerformance(
+export async function fetchSearchConsolePerformance(
   organizationId: string,
   websiteId: string,
   days = 28,
 ): Promise<ApiOutcome<SearchConsolePerformanceReport>> {
-  return apiGet<SearchConsolePerformanceReport>(
+  const outcome = await apiGet<SearchConsolePerformanceReport>(
     `${seoBase(organizationId)}/websites/${websiteId}/search-console/performance?days=${days}`,
   );
+  if (
+    outcome.kind === "ok" &&
+    outcome.data.connected &&
+    !searchConsoleReportHasData(outcome.data)
+  ) {
+    return {
+      ...outcome,
+      data: { ...outcome.data, connected: false },
+    };
+  }
+  return outcome;
 }
 
 export function fetchSearchConsoleSummary(

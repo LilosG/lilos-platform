@@ -28,11 +28,9 @@ import "../styles/global.css";
           description="Connect the platform runtime configuration to enable Integrations."
         />
       </PageShell>
-
       <PageShell id="boot-loading" width="narrow" hidden>
         <Skeleton lines={4} label="Loading integrations" />
       </PageShell>
-
       <Region
         id="boot-error"
         as="div"
@@ -40,7 +38,6 @@ import "../styles/global.css";
         label="Integrations error"
         hidden
       />
-
       <PageShell id="workspace-empty" width="narrow" hidden>
         <EmptyState
           heading="No organization access yet"
@@ -54,7 +51,7 @@ import "../styles/global.css";
             eyebrow="Manage"
             title="Integrations"
             titleId="integrations-title"
-            description="Connect supported external providers here. Product pages consume confirmed connections and mappings."
+            description="Authorize provider accounts, map the correct client resources, and verify that source data is actually syncing."
           />
           <CardGrid id="integration-cards" />
         </Region>
@@ -67,7 +64,6 @@ import "../styles/global.css";
         >
           <PageHeader
             eyebrow="Integrations"
-            eyebrowId="provider-eyebrow"
             title="—"
             titleId="provider-title"
             description="Loading provider details."
@@ -89,6 +85,7 @@ import "../styles/global.css";
         </Region>
       </PageShell>
     </AppShell>
+
     <script>
       import {
         beginConnection,
@@ -135,11 +132,25 @@ import "../styles/global.css";
         createPublishingTarget,
         type PublishingTarget,
       } from "../lib/content";
-      import { fetchWebsites } from "../lib/seo";
+      import {
+        fetchWebsites,
+        fetchSearchProperties,
+        type SEOWebsite,
+      } from "../lib/seo";
       import {
         discoverSearchConsole,
+        fetchSearchConsolePerformance,
         mapSearchConsole,
+        searchConsoleReportHasData,
+        syncSearchConsole,
       } from "../lib/search-console";
+      import {
+        analyticsReportHasData,
+        discoverAnalytics,
+        fetchAnalyticsPerformance,
+        mapAnalytics,
+        syncAnalytics,
+      } from "../lib/analytics";
 
       let organizationId = "";
 
@@ -150,7 +161,6 @@ import "../styles/global.css";
         empty: document.getElementById("workspace-empty")!,
         content: document.getElementById("integrations-content")!,
       };
-
       const directory = document.getElementById("connections")!;
       const providerView = document.getElementById("provider-workspace")!;
       const providerTitle = document.getElementById("provider-title")!;
@@ -159,8 +169,8 @@ import "../styles/global.css";
 
       const PROVIDER_DESCRIPTIONS: Record<string, string> = {
         google:
-          "Manage Google Business Profile, Search Console, and Analytics.",
-        github: "Manage GitHub repository connections for content publishing.",
+          "Google account authorization, Business Profile mappings, Search Console, and Analytics source status.",
+        github: "GitHub repository connections for content publishing.",
       };
 
       function isGitHubConnected(
@@ -170,6 +180,57 @@ import "../styles/global.css";
           workspace?.connection_status === "connected" ||
           workspace?.connection_status === "active"
         );
+      }
+
+      function createLoading(): HTMLDivElement {
+        const element = document.createElement("div");
+        element.className = "ui-skeleton-group";
+        element.textContent = "Loading…";
+        return element;
+      }
+
+      function makeCard(title: string): HTMLDivElement {
+        const card = document.createElement("div");
+        card.className = "ui-card";
+        const header = document.createElement("div");
+        header.className = "ui-card__header";
+        const heading = document.createElement("h3");
+        heading.className = "ui-card__heading";
+        heading.textContent = title;
+        header.append(heading);
+        const body = document.createElement("div");
+        body.className = "ui-card__body";
+        card.append(header, body);
+        return card;
+      }
+
+      function appendSourceFact(
+        parent: HTMLElement,
+        label: string,
+        value: string,
+        state?: "ready" | "setup" | "blocked" | "neutral",
+      ): void {
+        const row = document.createElement("div");
+        row.className = "ui-inline ui-inline--center";
+        const copy = document.createElement("div");
+        const heading = document.createElement("strong");
+        heading.textContent = label;
+        const detail = document.createElement("p");
+        detail.className = "ui-text-secondary";
+        detail.textContent = value;
+        copy.append(heading, detail);
+        row.append(copy);
+        if (state) row.append(statusBadge(state, value));
+        parent.append(row);
+      }
+
+      function freshnessTone(
+        freshness: string,
+      ): "ready" | "setup" | "blocked" | "neutral" {
+        if (freshness === "fresh") return "ready";
+        if (freshness === "stale" || freshness === "error") return "blocked";
+        if (freshness === "never_synced") return "setup";
+        return "neutral";
       }
 
       function showDirectory(): void {
@@ -182,15 +243,7 @@ import "../styles/global.css";
         providerView.hidden = false;
         providerTitle.textContent = name;
         providerDesc.textContent = PROVIDER_DESCRIPTIONS[key] || "";
-        providerContent.replaceChildren();
-        providerContent.append(createLoading());
-      }
-
-      function createLoading(): HTMLDivElement {
-        const el = document.createElement("div");
-        el.className = "ui-skeleton-group";
-        el.textContent = "Loading…";
-        return el;
+        providerContent.replaceChildren(createLoading());
       }
 
       document
@@ -200,20 +253,14 @@ import "../styles/global.css";
           void renderDirectory();
         });
 
-      // -- Directory: assemble from individual provider status endpoints ---
-
       async function renderDirectory(): Promise<void> {
         const cards = document.getElementById("integration-cards")!;
         cards.replaceChildren(createLoading());
-
         const [googleResult, githubResult] = await Promise.all([
           fetchConnectionStatus(organizationId),
           fetchGitHubWorkspace(organizationId),
         ]);
-
         cards.replaceChildren();
-
-        // Google card
         cards.append(
           makeDirectoryCard(
             "google",
@@ -232,9 +279,7 @@ import "../styles/global.css";
             () => void openGoogle(),
           ),
         );
-
-        // GitHub card
-        const ghStatus: "connected" | "not_connected" =
+        const githubStatus =
           githubResult.kind === "ok" && isGitHubConnected(githubResult.data)
             ? "connected"
             : "not_connected";
@@ -243,7 +288,7 @@ import "../styles/global.css";
             "github",
             "GitHub",
             "Content publishing via GitHub repositories",
-            ghStatus,
+            githubStatus,
             () => void openGitHub(githubResult),
           ),
         );
@@ -261,18 +306,18 @@ import "../styles/global.css";
         card.type = "button";
         card.dataset.provider = key;
         card.addEventListener("click", onClick);
-
         const header = document.createElement("header");
         header.className = "ui-card__header";
         const title = document.createElement("h3");
         title.className = "ui-card__heading";
         title.textContent = name;
         header.append(title);
-
-        const desc = document.createElement("p");
-        desc.className = "ui-card__description";
-        desc.textContent = description;
-
+        const body = document.createElement("div");
+        body.className = "ui-card__body";
+        const descriptionNode = document.createElement("p");
+        descriptionNode.className = "ui-card__description";
+        descriptionNode.textContent = description;
+        body.append(descriptionNode);
         const footer = document.createElement("footer");
         footer.className = "ui-card__footer";
         const badgeKind =
@@ -285,22 +330,16 @@ import "../styles/global.css";
                 : "setup";
         const label =
           status === "connected"
-            ? "Connected"
+            ? "Authorized"
             : status === "degraded"
               ? "Needs attention"
               : status === "not_configured"
                 ? "Not configured"
-                : "Not connected";
+                : "Not authorized";
         footer.append(statusBadge(badgeKind, label));
-
-        const body = document.createElement("div");
-        body.className = "ui-card__body";
-        body.append(desc);
         card.append(header, body, footer);
         return card;
       }
-
-      // -- Google workspace --------------------------------------------------
 
       async function openGoogle(): Promise<void> {
         showProvider("google", "Google");
@@ -312,196 +351,75 @@ import "../styles/global.css";
       }
 
       async function reconcileGoogleSourceData(): Promise<void> {
-        // Discovery and an explicit GBP mapping change the authoritative source
-        // set used by onboarding. Prepare fresh fact candidates immediately so
-        // the operator does not have to know a separate reconciliation step
-        // exists before returning to onboarding.
         await reconcileBusinessFacts(organizationId);
         await reloadGoogleWorkspace();
       }
 
       async function loadGoogleWorkspace(): Promise<void> {
-        const content = providerContent;
-        content.replaceChildren(createLoading());
-
-        const [currentConnectionResult, wsResult, locationsResult] =
+        providerContent.replaceChildren(createLoading());
+        const [connectionResult, workspaceResult, locationsResult] =
           await Promise.all([
             fetchConnectionStatus(organizationId),
             fetchGoogleWorkspace(organizationId),
             fetchLocations(organizationId),
           ]);
+        providerContent.replaceChildren();
 
-        content.replaceChildren();
+        const connectionCard = makeCard("Google account authorization");
+        providerContent.append(connectionCard);
+        renderGoogleConnection(
+          connectionCard.querySelector(".ui-card__body") as HTMLElement,
+          connectionResult,
+        );
 
-        const connCard = makeCard("Connection");
-        content.append(connCard);
-        const connBody = connCard.querySelector(
-          ".ui-card__body",
-        ) as HTMLElement;
-        renderGoogleConnection(connBody, currentConnectionResult);
-
-        if (wsResult.kind !== "ok") {
-          content.append(
-            errorAlert(describeFailure(wsResult, "Google workspace")),
+        if (workspaceResult.kind !== "ok") {
+          providerContent.append(
+            errorAlert(describeFailure(workspaceResult, "Google workspace")),
           );
           return;
         }
 
-        const ws = wsResult.data;
+        const workspace = workspaceResult.data;
         const platformLocations =
           locationsResult.kind === "ok" ? locationsResult.data : [];
-        const capsCard = makeCard("Authorized Google services");
-        content.append(capsCard);
-        const capsBody = capsCard.querySelector(
-          ".ui-card__body",
-        ) as HTMLElement;
-        renderCapabilities(capsBody, ws);
+        const capabilitiesCard = makeCard("Authorized Google services");
+        providerContent.append(capabilitiesCard);
+        renderCapabilities(
+          capabilitiesCard.querySelector(".ui-card__body") as HTMLElement,
+          workspace,
+        );
 
-        if (ws.mapped_resources.length > 0) {
+        if (workspace.mapped_resources.length > 0) {
           const mappedCard = makeCard("Business Profile mappings");
-          content.append(mappedCard);
+          providerContent.append(mappedCard);
           renderMappedResources(
             mappedCard.querySelector(".ui-card__body") as HTMLElement,
-            ws,
+            workspace,
             platformLocations,
           );
         }
 
         if (canUsePlatformAdministration()) {
-          await renderUnmappedQueue(content, wsResult);
-          if (
-            ws.capabilities.some(
-              (cap) => cap.key === "search_console" && cap.enabled,
-            )
-          ) {
-            await renderSearchConsoleSetup(content);
-          }
-        }
-      }
-
-      async function renderSearchConsoleSetup(
-        parent: HTMLElement,
-      ): Promise<void> {
-        const card = makeCard("Search Console property");
-        const body = card.querySelector(".ui-card__body") as HTMLElement;
-        parent.append(card);
-
-        const websitesResult = await fetchWebsites(organizationId);
-        if (websitesResult.kind !== "ok") {
-          body.append(
-            errorAlert(describeFailure(websitesResult, "SEO websites")),
-          );
-          return;
-        }
-        if (websitesResult.data.length === 0) {
-          body.append(
-            emptyState(
-              "Add a website first",
-              "Save the client's domain in onboarding, then return here to map its Search Console property.",
-            ),
-          );
-          return;
+          await renderUnmappedQueue(providerContent, workspaceResult);
         }
 
-        const websiteSelect = createSelectControl(
-          "search-console-website",
-          "Website",
-          websitesResult.data.map((website) => ({
-            value: website.id,
-            label: `${website.name} · ${website.canonical_origin}`,
-          })),
-          websitesResult.data.length === 1 ? websitesResult.data[0].id : "",
-          "Select website…",
-        );
-        const discoverButton = document.createElement("button");
-        discoverButton.type = "button";
-        discoverButton.className = "ui-button ui-button--primary ui-button--md";
-        discoverButton.textContent = "Discover Search Console properties";
-        const results = document.createElement("div");
-        results.className = "ui-stack ui-stack--3";
-        body.append(websiteSelect.root, discoverButton, results);
+        if (
+          workspace.capabilities.some(
+            (capability) =>
+              capability.key === "search_console" && capability.enabled,
+          )
+        ) {
+          await renderSearchConsoleSource(providerContent);
+        }
 
-        discoverButton.addEventListener("click", async () => {
-          const websiteId = websiteSelect.input.value;
-          if (!websiteId) {
-            results.replaceChildren(errorAlert("Select a website first."));
-            return;
-          }
-          discoverButton.disabled = true;
-          discoverButton.textContent = "Discovering…";
-          results.replaceChildren(createLoading());
-          const discovery = await discoverSearchConsole(
-            organizationId,
-            websiteId,
-          );
-          discoverButton.disabled = false;
-          discoverButton.textContent = "Discover Search Console properties";
-          if (discovery.kind !== "ok") {
-            results.replaceChildren(
-              errorAlert(
-                describeFailure(discovery, "Search Console discovery"),
-              ),
-            );
-            return;
-          }
-          if (discovery.data.properties.length === 0) {
-            results.replaceChildren(
-              emptyState(
-                "No accessible properties found",
-                "Confirm this Google account can access the client's Search Console property.",
-              ),
-            );
-            return;
-          }
-
-          const propertySelect = createSelectControl(
-            "search-console-property",
-            "Search Console property",
-            discovery.data.properties.map((property) => ({
-              value: `${property.property_type}\t${property.external_property_id}`,
-              label: `${property.external_property_id} · ${property.permission_level}`,
-            })),
-            discovery.data.recommended
-              ? `${discovery.data.recommended.property_type}\t${discovery.data.recommended.external_property_id}`
-              : "",
-            "Select property…",
-          );
-          const mapButton = document.createElement("button");
-          mapButton.type = "button";
-          mapButton.className = "ui-button ui-button--primary ui-button--md";
-          mapButton.textContent = "Map selected property";
-          mapButton.addEventListener("click", async () => {
-            const [propertyType, externalPropertyId] =
-              propertySelect.input.value.split("\t", 2);
-            if (
-              !externalPropertyId ||
-              (propertyType !== "domain" && propertyType !== "url_prefix")
-            ) {
-              results.append(
-                errorAlert("Select a Search Console property first."),
-              );
-              return;
-            }
-            mapButton.disabled = true;
-            mapButton.textContent = "Mapping…";
-            const mapped = await mapSearchConsole(organizationId, websiteId, {
-              external_property_id: externalPropertyId,
-              property_type: propertyType,
-            });
-            if (mapped.kind === "ok") {
-              results.replaceChildren(
-                statusBadge("ready", "Search Console property mapped"),
-              );
-            } else {
-              mapButton.disabled = false;
-              mapButton.textContent = "Map selected property";
-              results.append(
-                errorAlert(describeFailure(mapped, "Search Console mapping")),
-              );
-            }
-          });
-          results.replaceChildren(propertySelect.root, mapButton);
-        });
+        if (
+          workspace.capabilities.some(
+            (capability) =>
+              capability.key === "analytics" && capability.enabled,
+          )
+        ) {
+          await renderAnalyticsSource(providerContent);
+        }
       }
 
       function renderGoogleConnection(
@@ -509,14 +427,13 @@ import "../styles/global.css";
         outcome: Awaited<ReturnType<typeof fetchConnectionStatus>>,
       ): void {
         panel.replaceChildren();
-
         if (
           outcome.kind === "error" &&
           outcome.code === "INTEGRATION_NOT_CONFIGURED"
         ) {
           panel.append(
             emptyState(
-              "Google connection is not configured",
+              "Google authorization is not configured",
               "This deployment has not been configured with Google OAuth credentials yet.",
             ),
           );
@@ -524,20 +441,19 @@ import "../styles/global.css";
         }
         if (outcome.kind !== "ok") {
           panel.append(
-            errorAlert(describeFailure(outcome, "Google connection")),
+            errorAlert(describeFailure(outcome, "Google authorization")),
           );
           return;
         }
-
         const state = outcome.data;
         if (state === null || state.status === "disconnected") {
-          const connectBtn = document.createElement("button");
-          connectBtn.type = "button";
-          connectBtn.className = "ui-button ui-button--primary ui-button--md";
-          connectBtn.textContent = "Connect Google";
-          connectBtn.addEventListener("click", async () => {
-            connectBtn.disabled = true;
-            connectBtn.textContent = "Connecting…";
+          const connectButton = document.createElement("button");
+          connectButton.type = "button";
+          connectButton.className = "ui-button ui-button--primary ui-button--md";
+          connectButton.textContent = "Authorize Google";
+          connectButton.addEventListener("click", async () => {
+            connectButton.disabled = true;
+            connectButton.textContent = "Redirecting…";
             const result = await connectGoogle(organizationId, [
               "gbp",
               "search_console",
@@ -546,18 +462,19 @@ import "../styles/global.css";
             if (result.kind === "ok") {
               window.location.assign(result.data.authorization_url);
             } else {
-              connectBtn.disabled = false;
-              connectBtn.textContent = "Connect Google";
-              const desc = describeGbpConnectFailure(result, organizationId);
-              panel.append(errorAlert(desc.message));
+              connectButton.disabled = false;
+              connectButton.textContent = "Authorize Google";
+              panel.append(
+                errorAlert(describeGbpConnectFailure(result, organizationId).message),
+              );
             }
           });
-          panel.append(connectBtn);
           panel.append(
+            connectButton,
             Object.assign(document.createElement("p"), {
               className: "ui-text-secondary",
               textContent:
-                "Connect your Google account to enable Business Profile, Search Console, and Analytics.",
+                "Authorization grants LILOs access to the selected Google services. Mapping and data sync happen separately below.",
             }),
           );
           return;
@@ -574,49 +491,43 @@ import "../styles/global.css";
             badgeKind,
             state.status === "reconnect_required"
               ? "Reconnect required"
-              : statusLabel(state.status),
+              : "Authorized",
           ),
         );
-
         if (state.last_verified_at) {
-          const verified = document.createElement("p");
-          verified.className = "ui-text-secondary";
-          verified.textContent = `Last verified ${formatTimestamp(state.last_verified_at)}`;
-          panel.append(verified);
-        }
-        if (state.token_expires_at) {
-          const expires = document.createElement("p");
-          expires.className = "ui-text-secondary";
-          expires.textContent = `Token expires ${formatTimestamp(state.token_expires_at)}`;
-          panel.append(expires);
+          panel.append(
+            Object.assign(document.createElement("p"), {
+              className: "ui-text-secondary",
+              textContent: `Last verified ${formatTimestamp(state.last_verified_at)}`,
+            }),
+          );
         }
 
         const actions = document.createElement("div");
         actions.className = "ui-inline ui-inline--center";
-
         const authorizationAction = googleAuthorizationAction(state);
         if (authorizationAction.kind === "reconnect") {
-          const reconnectBtn = document.createElement("button");
-          reconnectBtn.type = "button";
-          reconnectBtn.className = "ui-button ui-button--primary ui-button--md";
-          reconnectBtn.textContent = "Reconnect Google";
-          reconnectBtn.addEventListener("click", async () => {
+          const reconnectButton = document.createElement("button");
+          reconnectButton.type = "button";
+          reconnectButton.className = "ui-button ui-button--primary ui-button--md";
+          reconnectButton.textContent = "Reconnect Google";
+          reconnectButton.addEventListener("click", async () => {
             const result = await beginConnection(organizationId);
-            if (result.kind === "ok")
+            if (result.kind === "ok") {
               window.location.assign(result.data.authorization_url);
-            else panel.append(errorAlert(describeFailure(result, "Reconnect")));
+            } else {
+              panel.append(errorAlert(describeFailure(result, "Reconnect")));
+            }
           });
-          actions.append(reconnectBtn);
+          actions.append(reconnectButton);
         }
-
         if (authorizationAction.kind === "authorize_missing") {
-          const authorizeBtn = document.createElement("button");
-          authorizeBtn.type = "button";
-          authorizeBtn.className = "ui-button ui-button--primary ui-button--md";
-          authorizeBtn.textContent = "Authorize missing Google services";
-          authorizeBtn.addEventListener("click", async () => {
-            authorizeBtn.disabled = true;
-            authorizeBtn.textContent = "Redirecting…";
+          const authorizeButton = document.createElement("button");
+          authorizeButton.type = "button";
+          authorizeButton.className = "ui-button ui-button--primary ui-button--md";
+          authorizeButton.textContent = "Authorize missing services";
+          authorizeButton.addEventListener("click", async () => {
+            authorizeButton.disabled = true;
             const result = await connectGoogle(
               organizationId,
               authorizationAction.products,
@@ -624,77 +535,65 @@ import "../styles/global.css";
             if (result.kind === "ok") {
               window.location.assign(result.data.authorization_url);
             } else {
-              authorizeBtn.disabled = false;
-              authorizeBtn.textContent = "Authorize missing Google services";
+              authorizeButton.disabled = false;
               panel.append(
                 errorAlert(describeFailure(result, "Google authorization")),
               );
             }
           });
-          actions.append(authorizeBtn);
-          panel.append(
-            Object.assign(document.createElement("p"), {
-              className: "ui-text-secondary",
-              textContent:
-                "Authorize the remaining read-only Google services to enable Analytics and Search Console discovery.",
-            }),
-          );
+          actions.append(authorizeButton);
         }
-
         if (
           (state.status === "connected" || state.status === "degraded") &&
           canUsePlatformAdministration()
         ) {
-          const discoverBtn = document.createElement("button");
-          discoverBtn.type = "button";
-          discoverBtn.className = "ui-button ui-button--primary ui-button--md";
-          discoverBtn.textContent = "Discover accounts and locations";
-          discoverBtn.addEventListener("click", async () => {
-            discoverBtn.disabled = true;
-            discoverBtn.textContent = "Discovering…";
+          const discoverButton = document.createElement("button");
+          discoverButton.type = "button";
+          discoverButton.className = "ui-button ui-button--primary ui-button--md";
+          discoverButton.textContent = "Discover Business Profiles";
+          discoverButton.addEventListener("click", async () => {
+            discoverButton.disabled = true;
+            discoverButton.textContent = "Discovering…";
             const result = await discoverGoogleResourcesAndReconcile(
               organizationId,
               reconcileGoogleSourceData,
             );
             if (result.kind !== "ok") {
-              discoverBtn.textContent = "Discover accounts and locations";
-              discoverBtn.disabled = false;
+              discoverButton.disabled = false;
+              discoverButton.textContent = "Discover Business Profiles";
               panel.append(errorAlert(describeFailure(result, "Discovery")));
             }
           });
-          actions.append(discoverBtn);
+          actions.append(discoverButton);
         }
-
         if (state.status === "connected" || state.status === "degraded") {
-          const disconnectBtn = document.createElement("button");
-          disconnectBtn.type = "button";
-          disconnectBtn.className =
+          const disconnectButton = document.createElement("button");
+          disconnectButton.type = "button";
+          disconnectButton.className =
             "ui-button ui-button--secondary ui-button--md";
-          disconnectBtn.textContent = "Disconnect";
-          disconnectBtn.addEventListener("click", () => {
-            disconnectBtn.disabled = true;
+          disconnectButton.textContent = "Disconnect";
+          disconnectButton.addEventListener("click", () => {
+            disconnectButton.disabled = true;
             actions.append(
               confirmInline(
                 "Disconnect Google? New syncs and provider actions will stop.",
                 () => void performGoogleDisconnect(),
                 () => {
-                  disconnectBtn.disabled = false;
+                  disconnectButton.disabled = false;
                 },
                 "Disconnect Google",
               ),
             );
           });
-          actions.append(disconnectBtn);
+          actions.append(disconnectButton);
         }
-
         panel.append(actions);
       }
 
       async function performGoogleDisconnect(): Promise<void> {
         const result = await disconnectConnection(organizationId);
-        if (result.kind === "ok") {
-          await reloadGoogleWorkspace();
-        } else {
+        if (result.kind === "ok") await reloadGoogleWorkspace();
+        else {
           providerContent.append(
             errorAlert(describeFailure(result, "Disconnect")),
           );
@@ -703,27 +602,24 @@ import "../styles/global.css";
 
       function renderCapabilities(
         panel: HTMLElement,
-        ws: GoogleWorkspace,
+        workspace: GoogleWorkspace,
       ): void {
         const explanation = document.createElement("p");
         explanation.className = "ui-text-secondary";
         explanation.textContent =
-          "Authorization means the connected Google account granted LILOs access. It does not mean a Business Profile or Search Console property is mapped or that data has synced.";
+          "Authorized means the Google account granted LILOs access. It does not mean the client resource is mapped or that data has synced.";
         panel.append(explanation);
-
         const list = document.createElement("ul");
         list.className = "ui-record-list";
-        for (const cap of ws.capabilities) {
+        for (const capability of workspace.capabilities) {
           const item = document.createElement("li");
-          const info = document.createElement("div");
           const name = document.createElement("h3");
-          name.textContent = cap.label;
-          info.append(name);
+          name.textContent = capability.label;
           item.append(
-            info,
+            name,
             statusBadge(
-              cap.enabled ? "ready" : "setup",
-              cap.enabled ? "Authorized" : "Not authorized",
+              capability.enabled ? "ready" : "setup",
+              capability.enabled ? "Authorized" : "Not authorized",
             ),
           );
           list.append(item);
@@ -733,14 +629,14 @@ import "../styles/global.css";
 
       function renderMappedResources(
         panel: HTMLElement,
-        ws: GoogleWorkspace,
+        workspace: GoogleWorkspace,
         platformLocations: LocationSummary[],
       ): void {
         const locationNames = new Map(
           platformLocations.map((location) => [location.id, location.name]),
         );
         const mappedCounts = new Map<string, number>();
-        for (const resource of ws.mapped_resources) {
+        for (const resource of workspace.mapped_resources) {
           if (!resource.platform_resource_id) continue;
           mappedCounts.set(
             resource.platform_resource_id,
@@ -752,103 +648,82 @@ import "../styles/global.css";
             .filter(([, count]) => count > 1)
             .map(([locationId]) => locationId),
         );
-
         if (duplicateLocationIds.size > 0) {
-          const duplicateNames = [...duplicateLocationIds].map(
-            (locationId) => locationNames.get(locationId) ?? "a LILOs location",
-          );
           panel.append(
             errorAlert(
-              `${ws.mapped_resources.filter((resource) => resource.platform_resource_id && duplicateLocationIds.has(resource.platform_resource_id)).length} Business Profile resources are mapped across ${duplicateLocationIds.size} duplicate ${duplicateLocationIds.size === 1 ? "location" : "locations"}: ${duplicateNames.join(", ")}. Keep the correct Business Profile and remove the incorrect mapping below.`,
+              "More than one Business Profile is mapped to the same LILOs location. Keep the correct profile and remove the incorrect mapping below.",
             ),
           );
         }
-
         const explanation = document.createElement("p");
         explanation.className = "ui-text-secondary";
         explanation.textContent =
-          "These are Google Business Profile resources attached to LILOs locations. Removing a mapping only detaches it from this workspace; it does not delete or change the Google profile.";
+          "A Business Profile is a Google provider resource mapped to a LILOs location. It is not an additional LILOs location.";
         panel.append(explanation);
 
         const list = document.createElement("ul");
         list.className = "ui-record-list";
-        for (const res of ws.mapped_resources) {
+        for (const resource of workspace.mapped_resources) {
           const item = document.createElement("li");
           const info = document.createElement("div");
           const name = document.createElement("h3");
-          name.textContent = res.display_name || res.external_resource_id;
+          name.textContent = resource.display_name || resource.external_resource_id;
           const detail = document.createElement("p");
-          const syncLabel =
-            res.sync_freshness === "fresh"
-              ? "Synced"
-              : res.sync_freshness === "stale"
-                ? "Stale"
-                : "Never synced";
-          const mappedTo = res.platform_resource_id
-            ? (locationNames.get(res.platform_resource_id) ??
+          const mappedTo = resource.platform_resource_id
+            ? (locationNames.get(resource.platform_resource_id) ??
               "Unknown LILOs location")
             : "No LILOs location";
-          detail.textContent = `Mapped to ${mappedTo} · ${syncLabel}`;
-          if (res.last_synced_at) {
-            detail.textContent += ` · ${formatTimestamp(res.last_synced_at)}`;
+          detail.textContent = `Mapped to LILOs location: ${mappedTo}`;
+          if (resource.last_synced_at) {
+            detail.textContent += ` · Last sync ${formatTimestamp(resource.last_synced_at)}`;
           }
           const feedback = document.createElement("div");
           feedback.className = "ui-stack ui-stack--2";
           info.append(name, detail, feedback);
 
-          const states = document.createElement("div");
-          states.className = "ui-inline ui-inline--center ui-inline--tight";
-          states.append(
+          const actions = document.createElement("div");
+          actions.className = "ui-inline ui-inline--center ui-inline--tight";
+          actions.append(
             statusBadge(
-              res.sync_freshness === "fresh"
-                ? "ready"
-                : res.sync_freshness === "stale"
-                  ? "blocked"
-                  : "setup",
-              res.sync_freshness === "fresh"
-                ? "Fresh"
-                : res.sync_freshness === "stale"
+              freshnessTone(resource.sync_freshness),
+              resource.sync_freshness === "fresh"
+                ? "Synced"
+                : resource.sync_freshness === "stale"
                   ? "Stale"
-                  : "Pending",
+                  : "Sync pending",
             ),
           );
-
           const governance = gbpWriteGovernanceFor(
-            res,
+            resource,
             canUsePlatformAdministration(),
           );
           if (governance !== null) {
-            states.append(
+            actions.append(
               statusBadge(governance.stateKind, governance.stateLabel),
             );
-            const actionLabel = governance.actionLabel;
-            const confirmationMessage = governance.confirmationMessage;
-            const desiredWriteEnabled = governance.desiredWriteEnabled;
-            const platformLocationId = res.platform_resource_id;
-            const gbpLocationId = res.gbp_location_id;
             if (
-              actionLabel !== null &&
-              confirmationMessage !== null &&
-              desiredWriteEnabled !== null &&
-              platformLocationId !== null &&
-              gbpLocationId !== null
+              governance.actionLabel !== null &&
+              governance.confirmationMessage !== null &&
+              governance.desiredWriteEnabled !== null &&
+              resource.platform_resource_id !== null &&
+              resource.gbp_location_id !== null
             ) {
               const action = document.createElement("button");
               action.type = "button";
               action.className = "ui-button ui-button--secondary ui-button--sm";
-              action.textContent = actionLabel;
+              action.textContent = governance.actionLabel;
               action.addEventListener("click", () => {
                 action.disabled = true;
                 feedback.replaceChildren(
                   confirmInline(
-                    confirmationMessage,
+                    governance.confirmationMessage!,
                     () => {
                       void (async () => {
                         const result = await confirmGbpMappingAndReconcile(
                           organizationId,
-                          platformLocationId,
-                          gbpLocationId,
-                          desiredWriteEnabled,
+                          resource.platform_resource_id!,
+                          resource.gbp_location_id!,
+                          governance.desiredWriteEnabled!,
                           reconcileGoogleSourceData,
                         );
                         if (result.kind !== "ok") {
@@ -864,26 +739,25 @@ import "../styles/global.css";
                     () => {
                       action.disabled = false;
                     },
-                    actionLabel,
+                    governance.actionLabel!,
                   ),
                 );
               });
-              states.append(action);
+              actions.append(action);
             }
           }
-
           if (
             canUsePlatformAdministration() &&
-            res.platform_resource_id !== null &&
-            res.gbp_location_id !== null
+            resource.platform_resource_id !== null &&
+            resource.gbp_location_id !== null
           ) {
-            const removeAction = document.createElement("button");
-            removeAction.type = "button";
-            removeAction.className =
+            const removeButton = document.createElement("button");
+            removeButton.type = "button";
+            removeButton.className =
               "ui-button ui-button--secondary ui-button--sm";
-            removeAction.textContent = "Remove mapping";
-            removeAction.addEventListener("click", () => {
-              removeAction.disabled = true;
+            removeButton.textContent = "Remove mapping";
+            removeButton.addEventListener("click", () => {
+              removeButton.disabled = true;
               feedback.replaceChildren(
                 confirmInline(
                   REMOVE_GBP_MAPPING_CONFIRMATION,
@@ -891,12 +765,12 @@ import "../styles/global.css";
                     void (async () => {
                       const result = await removeGbpMappingAndReconcile(
                         organizationId,
-                        res.platform_resource_id!,
-                        res.gbp_location_id!,
+                        resource.platform_resource_id!,
+                        resource.gbp_location_id!,
                         reconcileGoogleSourceData,
                       );
                       if (result.kind !== "ok") {
-                        removeAction.disabled = false;
+                        removeButton.disabled = false;
                         feedback.replaceChildren(
                           errorAlert(describeFailure(result, "remove mapping")),
                         );
@@ -904,309 +778,674 @@ import "../styles/global.css";
                     })();
                   },
                   () => {
-                    removeAction.disabled = false;
+                    removeButton.disabled = false;
                   },
                   "Remove mapping",
                 ),
               );
             });
-            states.append(removeAction);
+            actions.append(removeButton);
           }
-
-          item.append(info, states);
+          item.append(info, actions);
           list.append(item);
         }
         panel.append(list);
       }
 
-      // -- Unmapped queue (privileged, uses canonical AAL2 confirm endpoint) ---
-
       async function renderUnmappedQueue(
         parent: HTMLElement,
-        wsResult: Awaited<ReturnType<typeof fetchGoogleWorkspace>>,
+        workspaceResult: Awaited<ReturnType<typeof fetchGoogleWorkspace>>,
       ): Promise<void> {
-        if (wsResult.kind !== "ok" || wsResult.data.unmapped_count === 0)
+        if (
+          workspaceResult.kind !== "ok" ||
+          workspaceResult.data.unmapped_count === 0
+        ) {
           return;
-
+        }
         const disclosure = document.createElement("details");
         disclosure.className = "ui-card";
-        disclosure.open = false;
         const summary = document.createElement("summary");
         summary.className = "ui-card__header";
         summary.textContent = "Find another Business Profile";
         const body = document.createElement("div");
         body.className = "ui-card__body";
-        disclosure.append(summary, body);
-        parent.append(disclosure);
-
         const guidance = document.createElement("p");
         guidance.className = "ui-text-secondary";
         guidance.textContent =
-          "Search the connected Google account only when you need to replace or add a Business Profile. Other clients accessible to this Google account are not shown by default.";
-
-        const searchRow = document.createElement("div");
-        searchRow.className = "ui-control--compact";
+          "Search the connected Google account only when you need to replace or add a Business Profile. Other clients are not shown by default.";
         const searchInput = document.createElement("input");
         searchInput.type = "search";
         searchInput.placeholder = "Search Business Profiles by business name…";
         searchInput.className = "ui-input";
-        searchRow.append(searchInput);
-        body.append(guidance, searchRow);
-
-        const locationsResult = await fetchLocations(organizationId);
-        const availableLocations: LocationSummary[] =
-          locationsResult.kind === "ok" ? locationsResult.data : [];
-
-        const listContainer = document.createElement("div");
-        listContainer.append(
+        const resultContainer = document.createElement("div");
+        resultContainer.append(
           emptyState(
             "Search to find a Business Profile",
-            "Enter at least 3 characters. No account-wide Business Profile list is displayed automatically.",
+            "Enter at least 3 characters.",
           ),
         );
-        body.append(listContainer);
+        body.append(guidance, searchInput, resultContainer);
+        disclosure.append(summary, body);
+        parent.append(disclosure);
 
-        async function loadUnmapped(search: string): Promise<void> {
-          listContainer.replaceChildren(createLoading());
-          const result = await fetchUnmappedResources(organizationId, search);
-          if (result.kind !== "ok") {
-            listContainer.replaceChildren(
-              errorAlert(describeFailure(result, "Business Profile search")),
-            );
-            return;
-          }
-          if (result.data.length === 0) {
-            listContainer.replaceChildren(
-              emptyState(
-                "No matching Business Profiles",
-                "Try a more specific business name or discover Google accounts and locations again.",
-              ),
-            );
-            return;
-          }
-          const list = document.createElement("ul");
-          list.className = "ui-record-list";
-          for (const resource of result.data) {
-            const item = document.createElement("li");
-            const info = document.createElement("div");
-            const name = document.createElement("h3");
-            name.textContent = resource.display_name;
-            const detail = document.createElement("p");
-            detail.textContent = resource.primary_category || "";
-            info.append(name, detail);
-
-            const rowActions = document.createElement("div");
-            rowActions.className =
-              "ui-inline ui-inline--center ui-inline--tight";
-
-            const locationSelect = createSelectControl(
-              `mapping-location-${resource.id}`,
-              "LILOs location",
-              availableLocations.map((location) => ({
-                value: location.id,
-                label: location.name,
-              })),
-              availableLocations.length === 1 ? availableLocations[0].id : "",
-              "Select location…",
-            );
-            locationSelect.root.classList.add("ui-control--compact");
-
-            const mapBtn = document.createElement("button");
-            mapBtn.type = "button";
-            mapBtn.className = "ui-button ui-button--primary ui-button--sm";
-            mapBtn.textContent = "Map";
-            mapBtn.addEventListener("click", async () => {
-              const selectedLocationId = locationSelect.input.value;
-              if (!selectedLocationId) {
-                const errorEl = document.createElement("p");
-                errorEl.className = "ui-text-danger";
-                errorEl.textContent = "Select a location first.";
-                item.append(errorEl);
-                return;
-              }
-              mapBtn.disabled = true;
-              mapBtn.textContent = "Mapping…";
-              const mapResult = await confirmGbpMappingAndReconcile(
-                organizationId,
-                selectedLocationId,
-                resource.id,
-                false,
-                reconcileGoogleSourceData,
-              );
-              if (mapResult.kind !== "ok") {
-                mapBtn.textContent = "Map";
-                mapBtn.disabled = false;
-                item.append(
-                  errorAlert(describeFailure(mapResult, "confirm mapping")),
-                );
-              }
-            });
-
-            rowActions.append(locationSelect.root, mapBtn);
-            info.append(rowActions);
-
-            item.append(info);
-            list.append(item);
-          }
-          listContainer.replaceChildren(list);
-        }
-
+        const locationsResult = await fetchLocations(organizationId);
+        const availableLocations =
+          locationsResult.kind === "ok" ? locationsResult.data : [];
         let debounceTimer: ReturnType<typeof setTimeout>;
         searchInput.addEventListener("input", () => {
           clearTimeout(debounceTimer);
           debounceTimer = setTimeout(() => {
-            const q = searchInput.value.trim();
-            if (q.length < 3) {
-              listContainer.replaceChildren(
+            const query = searchInput.value.trim();
+            if (query.length < 3) {
+              resultContainer.replaceChildren(
                 emptyState(
                   "Search to find a Business Profile",
-                  "Enter at least 3 characters. No account-wide Business Profile list is displayed automatically.",
+                  "Enter at least 3 characters.",
                 ),
               );
               return;
             }
-            void loadUnmapped(q);
+            void loadUnmappedProfiles(
+              query,
+              availableLocations,
+              resultContainer,
+            );
           }, 300);
         });
       }
 
-      // -- GitHub workspace ---------------------------------------------------
-
-      async function openGitHub(
-        wsResult: Awaited<ReturnType<typeof fetchGitHubWorkspace>>,
+      async function loadUnmappedProfiles(
+        query: string,
+        availableLocations: LocationSummary[],
+        container: HTMLElement,
       ): Promise<void> {
-        showProvider("github", "GitHub");
-        const content = providerContent;
-        content.replaceChildren();
+        container.replaceChildren(createLoading());
+        const result = await fetchUnmappedResources(organizationId, query);
+        if (result.kind !== "ok") {
+          container.replaceChildren(
+            errorAlert(describeFailure(result, "Business Profile search")),
+          );
+          return;
+        }
+        if (!result.data.length) {
+          container.replaceChildren(
+            emptyState("No matching Business Profiles", "Try a more specific business name."),
+          );
+          return;
+        }
+        const list = document.createElement("ul");
+        list.className = "ui-record-list";
+        for (const resource of result.data) {
+          const item = document.createElement("li");
+          const info = document.createElement("div");
+          const name = document.createElement("h3");
+          name.textContent = resource.display_name;
+          const detail = document.createElement("p");
+          detail.textContent = resource.primary_category || "";
+          const locationSelect = createSelectControl(
+            `mapping-location-${resource.id}`,
+            "LILOs location",
+            availableLocations.map((location) => ({
+              value: location.id,
+              label: location.name,
+            })),
+            availableLocations.length === 1 ? availableLocations[0].id : "",
+            "Select location…",
+          );
+          const mapButton = document.createElement("button");
+          mapButton.type = "button";
+          mapButton.className = "ui-button ui-button--primary ui-button--sm";
+          mapButton.textContent = "Map";
+          mapButton.addEventListener("click", async () => {
+            const locationId = locationSelect.input.value;
+            if (!locationId) {
+              item.append(errorAlert("Select a LILOs location first."));
+              return;
+            }
+            mapButton.disabled = true;
+            mapButton.textContent = "Mapping…";
+            const mapResult = await confirmGbpMappingAndReconcile(
+              organizationId,
+              locationId,
+              resource.id,
+              false,
+              reconcileGoogleSourceData,
+            );
+            if (mapResult.kind !== "ok") {
+              mapButton.disabled = false;
+              mapButton.textContent = "Map";
+              item.append(errorAlert(describeFailure(mapResult, "mapping")));
+            }
+          });
+          info.append(name, detail, locationSelect.root, mapButton);
+          item.append(info);
+          list.append(item);
+        }
+        container.replaceChildren(list);
+      }
 
-        const connCard = makeCard("Connection");
-        content.append(connCard);
-        const connBody = connCard.querySelector(
-          ".ui-card__body",
-        ) as HTMLElement;
-
-        if (wsResult.kind !== "ok") {
-          connBody.append(
-            errorAlert(describeFailure(wsResult, "GitHub connection")),
+      async function renderSearchConsoleSource(parent: HTMLElement): Promise<void> {
+        const card = makeCard("Search Console");
+        const body = card.querySelector(".ui-card__body") as HTMLElement;
+        parent.append(card);
+        const websitesResult = await fetchWebsites(organizationId);
+        if (websitesResult.kind !== "ok") {
+          body.append(
+            errorAlert(describeFailure(websitesResult, "SEO websites")),
+          );
+          return;
+        }
+        if (!websitesResult.data.length) {
+          body.append(
+            emptyState(
+              "No website configured",
+              "Add the client's domain in onboarding before mapping Search Console.",
+            ),
           );
           return;
         }
 
-        const ws = wsResult.data;
+        const websiteSelect = createSelectControl(
+          "search-console-website",
+          "Website",
+          websitesResult.data.map((website) => ({
+            value: website.id,
+            label: `${website.name} · ${website.canonical_origin}`,
+          })),
+          websitesResult.data.length === 1 ? websitesResult.data[0].id : "",
+          "Select website…",
+        );
+        const statusRegion = document.createElement("div");
+        statusRegion.className = "ui-stack ui-stack--3";
+        body.append(websiteSelect.root, statusRegion);
+        const refresh = (): void => {
+          const website = websitesResult.data.find(
+            (item) => item.id === websiteSelect.input.value,
+          );
+          if (!website) {
+            statusRegion.replaceChildren(
+              emptyState("Select a website", "Choose the website whose Search Console data should be used."),
+            );
+            return;
+          }
+          void renderSearchConsoleWebsiteStatus(website, statusRegion);
+        };
+        websiteSelect.input.addEventListener("change", refresh);
+        refresh();
+      }
 
-        if (!isGitHubConnected(ws)) {
-          const installBtn = document.createElement("button");
-          installBtn.type = "button";
-          installBtn.className = "ui-button ui-button--primary ui-button--md";
-          installBtn.textContent = "Install GitHub App";
-          installBtn.addEventListener("click", async () => {
-            installBtn.disabled = true;
-            installBtn.textContent = "Redirecting…";
+      async function renderSearchConsoleWebsiteStatus(
+        website: SEOWebsite,
+        region: HTMLElement,
+      ): Promise<void> {
+        region.replaceChildren(createLoading());
+        const [propertiesResult, performanceResult] = await Promise.all([
+          fetchSearchProperties(organizationId, website.id),
+          fetchSearchConsolePerformance(organizationId, website.id),
+        ]);
+        region.replaceChildren();
+        if (propertiesResult.kind !== "ok") {
+          region.append(
+            errorAlert(describeFailure(propertiesResult, "Search Console mapping")),
+          );
+          return;
+        }
+        const mapped = propertiesResult.data.find(
+          (property) =>
+            property.provider === "google_search_console" &&
+            property.mapping_status === "mapped",
+        );
+        if (!mapped) {
+          appendSourceFact(region, "Mapping", "Not mapped", "setup");
+          appendSourceFact(region, "Data", "No Search Console data", "setup");
+        } else {
+          appendSourceFact(region, "Mapping", "Mapped", "ready");
+          appendSourceFact(region, "Property", mapped.external_property_id);
+          appendSourceFact(
+            region,
+            "Sync",
+            mapped.last_synced_at
+              ? `Last successful sync ${formatTimestamp(mapped.last_synced_at)}`
+              : "Never synced",
+            freshnessTone(mapped.freshness_status),
+          );
+          const dataReady =
+            performanceResult.kind === "ok" &&
+            searchConsoleReportHasData(performanceResult.data);
+          appendSourceFact(
+            region,
+            "Data",
+            dataReady ? "Available in SEO and Insights" : "No synced report data",
+            dataReady ? "ready" : "setup",
+          );
+        }
+
+        if (!canUsePlatformAdministration()) return;
+        const feedback = document.createElement("div");
+        feedback.className = "ui-stack ui-stack--2";
+        const actions = document.createElement("div");
+        actions.className = "ui-inline ui-inline--center";
+        if (mapped) {
+          const syncButton = document.createElement("button");
+          syncButton.type = "button";
+          syncButton.className = "ui-button ui-button--primary ui-button--sm";
+          syncButton.textContent = "Sync now";
+          syncButton.addEventListener("click", async () => {
+            syncButton.disabled = true;
+            syncButton.textContent = "Syncing…";
+            const result = await syncSearchConsole(
+              organizationId,
+              website.id,
+              mapped.id,
+            );
+            if (result.kind === "ok") {
+              await renderSearchConsoleWebsiteStatus(website, region);
+            } else {
+              syncButton.disabled = false;
+              syncButton.textContent = "Sync now";
+              feedback.replaceChildren(
+                errorAlert(describeFailure(result, "Search Console sync")),
+              );
+            }
+          });
+          actions.append(syncButton);
+        }
+        const discoverButton = document.createElement("button");
+        discoverButton.type = "button";
+        discoverButton.className = "ui-button ui-button--secondary ui-button--sm";
+        discoverButton.textContent = mapped ? "Change property" : "Find property";
+        discoverButton.addEventListener("click", async () => {
+          await renderSearchConsoleDiscovery(website, feedback);
+        });
+        actions.append(discoverButton);
+        region.append(actions, feedback);
+      }
+
+      async function renderSearchConsoleDiscovery(
+        website: SEOWebsite,
+        region: HTMLElement,
+      ): Promise<void> {
+        region.replaceChildren(createLoading());
+        const discovery = await discoverSearchConsole(organizationId, website.id);
+        if (discovery.kind !== "ok") {
+          region.replaceChildren(
+            errorAlert(describeFailure(discovery, "Search Console discovery")),
+          );
+          return;
+        }
+        if (!discovery.data.properties.length) {
+          region.replaceChildren(
+            emptyState(
+              "No accessible Search Console properties",
+              "Confirm this Google account can access the client's property.",
+            ),
+          );
+          return;
+        }
+        const propertySelect = createSelectControl(
+          "search-console-property",
+          "Search Console property",
+          discovery.data.properties.map((property) => ({
+            value: `${property.property_type}\t${property.external_property_id}`,
+            label: `${property.external_property_id} · ${property.permission_level}`,
+          })),
+          discovery.data.recommended
+            ? `${discovery.data.recommended.property_type}\t${discovery.data.recommended.external_property_id}`
+            : "",
+          "Select property…",
+        );
+        const mapButton = document.createElement("button");
+        mapButton.type = "button";
+        mapButton.className = "ui-button ui-button--primary ui-button--sm";
+        mapButton.textContent = "Map and sync";
+        mapButton.addEventListener("click", async () => {
+          const [propertyType, externalPropertyId] =
+            propertySelect.input.value.split("\t", 2);
+          if (
+            !externalPropertyId ||
+            (propertyType !== "domain" && propertyType !== "url_prefix")
+          ) {
+            region.append(errorAlert("Select a Search Console property first."));
+            return;
+          }
+          mapButton.disabled = true;
+          mapButton.textContent = "Mapping…";
+          const mapped = await mapSearchConsole(organizationId, website.id, {
+            external_property_id: externalPropertyId,
+            property_type: propertyType,
+          });
+          if (mapped.kind !== "ok") {
+            mapButton.disabled = false;
+            mapButton.textContent = "Map and sync";
+            region.append(
+              errorAlert(describeFailure(mapped, "Search Console mapping")),
+            );
+            return;
+          }
+          const properties = await fetchSearchProperties(
+            organizationId,
+            website.id,
+          );
+          const mappedProperty =
+            properties.kind === "ok"
+              ? properties.data.find(
+                  (property) =>
+                    property.mapping_status === "mapped" &&
+                    property.external_property_id === externalPropertyId,
+                )
+              : undefined;
+          if (!mappedProperty) {
+            region.replaceChildren(
+              errorAlert(
+                "Search Console property was mapped, but LILOs could not resolve the new mapping for its first sync. Reload and use Sync now.",
+              ),
+            );
+            return;
+          }
+          mapButton.textContent = "Syncing…";
+          const synced = await syncSearchConsole(
+            organizationId,
+            website.id,
+            mappedProperty.id,
+          );
+          if (synced.kind === "ok") {
+            await reloadGoogleWorkspace();
+          } else {
+            region.replaceChildren(
+              errorAlert(
+                `Property mapped, but the first sync failed. ${describeFailure(synced, "Search Console sync")}`,
+              ),
+            );
+          }
+        });
+        region.replaceChildren(propertySelect.root, mapButton);
+      }
+
+      async function renderAnalyticsSource(parent: HTMLElement): Promise<void> {
+        const card = makeCard("Google Analytics 4");
+        const body = card.querySelector(".ui-card__body") as HTMLElement;
+        parent.append(card);
+        const performance = await fetchAnalyticsPerformance(organizationId);
+        if (performance.kind !== "ok") {
+          body.append(
+            errorAlert(describeFailure(performance, "Google Analytics")),
+          );
+          return;
+        }
+        const mappedProperties = performance.data.properties;
+        if (!mappedProperties.length) {
+          appendSourceFact(body, "Mapping", "Not mapped", "setup");
+          appendSourceFact(body, "Data", "No Analytics data", "setup");
+        } else {
+          appendSourceFact(body, "Mapping", "Mapped", "ready");
+          for (const property of mappedProperties) {
+            const propertyBlock = document.createElement("div");
+            propertyBlock.className = "ui-stack ui-stack--2";
+            appendSourceFact(
+              propertyBlock,
+              property.display_name,
+              property.external_property_id,
+            );
+            appendSourceFact(
+              propertyBlock,
+              "Sync",
+              property.last_synced_at
+                ? `Last successful sync ${formatTimestamp(property.last_synced_at)}`
+                : "Never synced",
+              freshnessTone(property.freshness_status),
+            );
+            if (canUsePlatformAdministration()) {
+              const syncButton = document.createElement("button");
+              syncButton.type = "button";
+              syncButton.className = "ui-button ui-button--secondary ui-button--sm";
+              syncButton.textContent = "Sync now";
+              const feedback = document.createElement("div");
+              syncButton.addEventListener("click", async () => {
+                syncButton.disabled = true;
+                syncButton.textContent = "Syncing…";
+                const result = await syncAnalytics(
+                  organizationId,
+                  property.id,
+                );
+                if (result.kind === "ok") await reloadGoogleWorkspace();
+                else {
+                  syncButton.disabled = false;
+                  syncButton.textContent = "Sync now";
+                  feedback.replaceChildren(
+                    errorAlert(describeFailure(result, "Analytics sync")),
+                  );
+                }
+              });
+              propertyBlock.append(syncButton, feedback);
+            }
+            body.append(propertyBlock);
+          }
+          const dataReady = analyticsReportHasData(performance.data);
+          appendSourceFact(
+            body,
+            "Data",
+            dataReady ? "Available in Insights" : "No synced report data",
+            dataReady ? "ready" : "setup",
+          );
+        }
+        if (!canUsePlatformAdministration()) return;
+        const discoveryRegion = document.createElement("div");
+        discoveryRegion.className = "ui-stack ui-stack--3";
+        const discoverButton = document.createElement("button");
+        discoverButton.type = "button";
+        discoverButton.className = "ui-button ui-button--secondary ui-button--sm";
+        discoverButton.textContent = mappedProperties.length
+          ? "Find another Analytics property"
+          : "Find Analytics property";
+        discoverButton.addEventListener("click", async () => {
+          discoverButton.disabled = true;
+          discoverButton.textContent = "Discovering…";
+          const websites = await fetchWebsites(organizationId);
+          const websiteId =
+            websites.kind === "ok" && websites.data.length === 1
+              ? websites.data[0].id
+              : undefined;
+          const discovery = await discoverAnalytics(organizationId, websiteId);
+          discoverButton.disabled = false;
+          discoverButton.textContent = mappedProperties.length
+            ? "Find another Analytics property"
+            : "Find Analytics property";
+          if (discovery.kind !== "ok") {
+            discoveryRegion.replaceChildren(
+              errorAlert(describeFailure(discovery, "Analytics discovery")),
+            );
+            return;
+          }
+          if (!discovery.data.properties.length) {
+            discoveryRegion.replaceChildren(
+              emptyState(
+                "No accessible Analytics properties",
+                "Confirm this Google account can access the client's GA4 property.",
+              ),
+            );
+            return;
+          }
+          const select = createSelectControl(
+            "analytics-property",
+            "Analytics property",
+            discovery.data.properties.map((property) => ({
+              value: property.external_property_id,
+              label: `${property.display_name} · ${property.account_display_name}`,
+            })),
+            discovery.data.recommended?.external_property_id ?? "",
+            "Select property…",
+          );
+          const mapButton = document.createElement("button");
+          mapButton.type = "button";
+          mapButton.className = "ui-button ui-button--primary ui-button--sm";
+          mapButton.textContent = "Map and sync";
+          mapButton.addEventListener("click", async () => {
+            const selected = discovery.data.properties.find(
+              (property) =>
+                property.external_property_id === select.input.value,
+            );
+            if (!selected) {
+              discoveryRegion.append(
+                errorAlert("Select an Analytics property first."),
+              );
+              return;
+            }
+            mapButton.disabled = true;
+            mapButton.textContent = "Mapping…";
+            const mapped = await mapAnalytics(organizationId, {
+              external_property_id: selected.external_property_id,
+              property_number: selected.property_number,
+              display_name: selected.display_name,
+            });
+            if (mapped.kind !== "ok") {
+              mapButton.disabled = false;
+              mapButton.textContent = "Map and sync";
+              discoveryRegion.append(
+                errorAlert(describeFailure(mapped, "Analytics mapping")),
+              );
+              return;
+            }
+            const refreshed = await fetchAnalyticsPerformance(organizationId);
+            const mappedProperty =
+              refreshed.kind === "ok"
+                ? refreshed.data.properties.find(
+                    (property) =>
+                      property.external_property_id ===
+                      selected.external_property_id,
+                  )
+                : undefined;
+            if (!mappedProperty) {
+              discoveryRegion.replaceChildren(
+                errorAlert(
+                  "Analytics property was mapped, but LILOs could not resolve the new mapping for its first sync. Reload and use Sync now.",
+                ),
+              );
+              return;
+            }
+            mapButton.textContent = "Syncing…";
+            const synced = await syncAnalytics(
+              organizationId,
+              mappedProperty.id,
+            );
+            if (synced.kind === "ok") await reloadGoogleWorkspace();
+            else {
+              discoveryRegion.replaceChildren(
+                errorAlert(
+                  `Property mapped, but the first sync failed. ${describeFailure(synced, "Analytics sync")}`,
+                ),
+              );
+            }
+          });
+          discoveryRegion.replaceChildren(select.root, mapButton);
+        });
+        body.append(discoverButton, discoveryRegion);
+      }
+
+      async function openGitHub(
+        workspaceResult: Awaited<ReturnType<typeof fetchGitHubWorkspace>>,
+      ): Promise<void> {
+        showProvider("github", "GitHub");
+        providerContent.replaceChildren();
+        const connectionCard = makeCard("Connection");
+        providerContent.append(connectionCard);
+        const connectionBody = connectionCard.querySelector(
+          ".ui-card__body",
+        ) as HTMLElement;
+        if (workspaceResult.kind !== "ok") {
+          connectionBody.append(
+            errorAlert(describeFailure(workspaceResult, "GitHub connection")),
+          );
+          return;
+        }
+        const workspace = workspaceResult.data;
+        if (!isGitHubConnected(workspace)) {
+          const installButton = document.createElement("button");
+          installButton.type = "button";
+          installButton.className = "ui-button ui-button--primary ui-button--md";
+          installButton.textContent = "Install GitHub App";
+          installButton.addEventListener("click", async () => {
+            installButton.disabled = true;
             const result = await beginGitHubInstall(organizationId);
             if (result.kind === "ok") {
               window.location.assign(result.data.authorization_url);
             } else {
-              installBtn.disabled = false;
-              installBtn.textContent = "Install GitHub App";
-              connBody.append(errorAlert(describeFailure(result, "GitHub")));
+              installButton.disabled = false;
+              connectionBody.append(
+                errorAlert(describeFailure(result, "GitHub")),
+              );
             }
           });
-
-          connBody.append(installBtn);
-          connBody.append(
-            Object.assign(document.createElement("p"), {
-              className: "ui-text-secondary",
-              textContent:
-                "Install the LILOs GitHub App to enable repository-backed publishing and implementation workflows.",
-            }),
-          );
+          connectionBody.append(installButton);
           return;
         }
-
-        connBody.append(statusBadge("ready", "Connected"));
-
-        const repositoryCount = ws.repositories.length;
-        connBody.append(
+        connectionBody.append(statusBadge("ready", "Connected"));
+        connectionBody.append(
           Object.assign(document.createElement("p"), {
             className: "ui-text-secondary",
-            textContent:
-              repositoryCount > 0
-                ? `LILOs GitHub App connected · ${repositoryCount} accessible ${
-                    repositoryCount === 1 ? "repository" : "repositories"
-                  }`
-                : "LILOs GitHub App installed and connected.",
+            textContent: `${workspace.repositories.length} accessible ${workspace.repositories.length === 1 ? "repository" : "repositories"}`,
           }),
         );
-
-        const disconnectBtn = document.createElement("button");
-        disconnectBtn.type = "button";
-        disconnectBtn.className =
+        const disconnectButton = document.createElement("button");
+        disconnectButton.type = "button";
+        disconnectButton.className =
           "ui-button ui-button--secondary ui-button--md";
-        disconnectBtn.textContent = "Disconnect GitHub App";
-        disconnectBtn.addEventListener("click", () => {
-          disconnectBtn.disabled = true;
-          connBody.append(
+        disconnectButton.textContent = "Disconnect GitHub App";
+        disconnectButton.addEventListener("click", () => {
+          disconnectButton.disabled = true;
+          connectionBody.append(
             confirmInline(
               "Disconnect GitHub? New publishing and implementation work will stop.",
               () => void performGitHubDisconnect(),
               () => {
-                disconnectBtn.disabled = false;
+                disconnectButton.disabled = false;
               },
               "Disconnect GitHub",
             ),
           );
         });
-        connBody.append(disconnectBtn);
+        connectionBody.append(disconnectButton);
 
-        if (ws.repositories.length > 0) {
-          const reposCard = makeCard("Accessible Repositories");
-          content.append(reposCard);
-          const reposBody = reposCard.querySelector(
+        if (workspace.repositories.length > 0) {
+          const repositoriesCard = makeCard("Accessible repositories");
+          providerContent.append(repositoriesCard);
+          const repositoriesBody = repositoriesCard.querySelector(
             ".ui-card__body",
           ) as HTMLElement;
-
           const list = document.createElement("ul");
           list.className = "ui-record-list";
-
-          for (const repo of ws.repositories) {
+          for (const repository of workspace.repositories) {
             const item = document.createElement("li");
             const info = document.createElement("div");
-
             const name = document.createElement("h3");
-            name.textContent = repo.name;
-
+            name.textContent = repository.name;
             const detail = document.createElement("p");
-            detail.textContent = `Default branch: ${repo.default_branch}`;
-
+            detail.textContent = `Default branch: ${repository.default_branch}`;
             info.append(name, detail);
             item.append(
               info,
               statusBadge(
-                repo.private ? "neutral" : "ready",
-                repo.private ? "Private" : "Public",
+                repository.private ? "neutral" : "ready",
+                repository.private ? "Private" : "Public",
               ),
             );
             list.append(item);
           }
-
-          reposBody.append(list);
+          repositoriesBody.append(list);
         }
-
-        renderGitHubPublishingTargets(content, ws);
+        renderGitHubPublishingTargets(providerContent, workspace);
       }
 
       function renderGitHubPublishingTargets(
         parent: HTMLElement,
-        ws: GitHubWorkspace,
+        workspace: GitHubWorkspace,
       ): void {
         const card = makeCard("Publishing target");
         const body = card.querySelector(".ui-card__body") as HTMLElement;
         parent.append(card);
-
-        if (ws.publishing_targets.length > 0) {
+        if (workspace.publishing_targets.length > 0) {
           const list = document.createElement("ul");
           list.className = "ui-record-list";
-          for (const target of ws.publishing_targets) {
+          for (const target of workspace.publishing_targets) {
             const item = document.createElement("li");
             const info = document.createElement("div");
             const name = document.createElement("h3");
@@ -1226,8 +1465,7 @@ import "../styles/global.css";
           body.append(list);
           return;
         }
-
-        if (!canUsePlatformAdministration() || !ws.connection_id) {
+        if (!canUsePlatformAdministration() || !workspace.connection_id) {
           body.append(
             emptyState(
               "No publishing target configured",
@@ -1236,7 +1474,7 @@ import "../styles/global.css";
           );
           return;
         }
-        if (ws.repositories.length === 0) {
+        if (!workspace.repositories.length) {
           body.append(
             emptyState(
               "No accessible repositories",
@@ -1245,15 +1483,16 @@ import "../styles/global.css";
           );
           return;
         }
-
         const repositorySelect = createSelectControl(
           "github-publishing-repository",
           "Publishing repository",
-          ws.repositories.map((repository) => ({
+          workspace.repositories.map((repository) => ({
             value: repository.repository_id,
             label: repository.name,
           })),
-          ws.repositories.length === 1 ? ws.repositories[0].repository_id : "",
+          workspace.repositories.length === 1
+            ? workspace.repositories[0].repository_id
+            : "",
           "Select repository…",
         );
         const pathControl = document.createElement("label");
@@ -1264,17 +1503,14 @@ import "../styles/global.css";
         const pathInput = document.createElement("input");
         pathInput.className = "ui-input";
         pathInput.value = "src/content/blog";
-        pathInput.required = true;
         pathControl.append(pathLabel, pathInput);
         const feedback = document.createElement("div");
         const saveButton = document.createElement("button");
         saveButton.type = "button";
         saveButton.className = "ui-button ui-button--primary ui-button--md";
         saveButton.textContent = "Use repository for publishing";
-        body.append(repositorySelect.root, pathControl, saveButton, feedback);
-
         saveButton.addEventListener("click", async () => {
-          const repository = ws.repositories.find(
+          const repository = workspace.repositories.find(
             (item) => item.repository_id === repositorySelect.input.value,
           );
           if (!repository || !pathInput.value.trim()) {
@@ -1286,10 +1522,9 @@ import "../styles/global.css";
             return;
           }
           saveButton.disabled = true;
-          saveButton.textContent = "Saving…";
           const result = await createPublishingTarget(organizationId, {
             key: "primary-site",
-            connectionId: ws.connection_id!,
+            connectionId: workspace.connection_id!,
             repositoryId: repository.repository_id,
             baseBranch: repository.default_branch || "main",
             allowedPathPrefix: pathInput.value.trim(),
@@ -1307,12 +1542,17 @@ import "../styles/global.css";
             saveButton.remove();
           } else {
             saveButton.disabled = false;
-            saveButton.textContent = "Use repository for publishing";
             feedback.replaceChildren(
               errorAlert(describeFailure(result, "publishing target")),
             );
           }
         });
+        body.append(
+          repositorySelect.root,
+          pathControl,
+          saveButton,
+          feedback,
+        );
       }
 
       async function performGitHubDisconnect(): Promise<void> {
@@ -1326,31 +1566,11 @@ import "../styles/global.css";
         }
       }
 
-      // -- Helpers ------------------------------------------------------------
-
-      function makeCard(title: string): HTMLDivElement {
-        const card = document.createElement("div");
-        card.className = "ui-card";
-        const header = document.createElement("div");
-        header.className = "ui-card__header";
-        const titleEl = document.createElement("h3");
-        titleEl.className = "ui-card__heading";
-        titleEl.textContent = title;
-        header.append(titleEl);
-        card.append(header);
-        const body = document.createElement("div");
-        body.className = "ui-card__body";
-        card.append(body);
-        return card;
-      }
-
-      // -- Boot ----------------------------------------------------------------
-
       async function loadOrganization(
-        org: import("../lib/workspace").MyOrganization,
+        organization: import("../lib/workspace").MyOrganization,
       ): Promise<void> {
-        setActiveOrganization(org);
-        organizationId = org.organization_id;
+        setActiveOrganization(organization);
+        organizationId = organization.organization_id;
         showDirectory();
         await renderDirectory();
       }
@@ -1358,12 +1578,15 @@ import "../styles/global.css";
       async function boot(): Promise<void> {
         const result = await bootWorkspace("Integrations");
         if (!applyBootResult(regions, result)) return;
-        populateSwitcher(result.organizations, (o) => void loadOrganization(o));
-        const org =
+        populateSwitcher(result.organizations, (organization) =>
+          void loadOrganization(organization),
+        );
+        const organization =
           result.organizations.find(
-            (o) => o.organization_id === result.context.organizationId,
+            (item) =>
+              item.organization_id === result.context.organizationId,
           ) ?? result.organizations[0];
-        await loadOrganization(org);
+        await loadOrganization(organization);
         if (
           new URLSearchParams(window.location.search).get("connected") === "1"
         ) {

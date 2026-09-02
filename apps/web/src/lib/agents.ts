@@ -77,6 +77,13 @@ export function agentSkillForWorkflow(workflowKey: string): string | null {
   );
 }
 
+export function agentLabelForSkill(skillKey: string): string {
+  const workflow = AGENT_WORKFLOWS.find(
+    ([workflowKey]) => AGENT_SKILL_BY_WORKFLOW[workflowKey] === skillKey,
+  );
+  return workflow?.[1] ?? skillKey;
+}
+
 export function canControlAgent(
   capabilities: AgentCapabilities,
   feature: "run_stop" | "run_steer" | "run_approval_response",
