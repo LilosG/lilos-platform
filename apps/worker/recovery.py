@@ -29,6 +29,7 @@ from apps.api.app.execution.models import (
     WorkflowRun,
     WorkflowVersion,
 )
+from apps.api.app.products.reviews.models import ReviewResponseRevision
 from apps.api.app.products.seo.models import SEOWebsite
 
 ACTIVE_JOB_STATUSES = {
@@ -39,7 +40,15 @@ ACTIVE_JOB_STATUSES = {
     "waiting_approval",
 }
 TERMINAL_JOB_STATUSES = {"completed", "cancelled", "failed", "dead_lettered"}
-RECOVERABLE_FAILURES = {"HERMES_SCOPED_SESSION_BUSY", "SEO_ACTIVE_WEBSITE_MISSING"}
+REVIEW_VERIFICATION_FAILURES = {
+    "VERIFICATION_REREAD_FAILED",
+    "VERIFICATION_CONTENT_MISMATCH",
+}
+RECOVERABLE_FAILURES = {
+    "HERMES_SCOPED_SESSION_BUSY",
+    "SEO_ACTIVE_WEBSITE_MISSING",
+    *REVIEW_VERIFICATION_FAILURES,
+}
 
 
 def _hermes_run_missing(exc: HermesRuntimeError) -> bool:
@@ -417,6 +426,31 @@ async def _has_active_agent_for_workflow(
     return bool(active)
 
 
+async def _review_verification_recoverable(
+    session: AsyncSession,
+    run: WorkflowRun,
+) -> bool:
+    """Prove an old Reviews failure can only perform read-only verification."""
+    if run.failure_code not in REVIEW_VERIFICATION_FAILURES:
+        return False
+    response_id_raw = run.input_document.get("response_id")
+    if not response_id_raw:
+        return False
+    try:
+        response_id = UUID(str(response_id_raw))
+    except (TypeError, ValueError):
+        return False
+    response = await session.scalar(
+        select(ReviewResponseRevision).where(
+            ReviewResponseRevision.organization_id == run.organization_id,
+            ReviewResponseRevision.id == response_id,
+            ReviewResponseRevision.status == "reconciliation_required",
+            ReviewResponseRevision.safe_error_code == run.failure_code,
+        )
+    )
+    return response is not None
+
+
 async def requeue_recoverable_failures(
     session: AsyncSession,
     *,
@@ -424,9 +458,10 @@ async def requeue_recoverable_failures(
 ) -> int:
     """Retry the newest safe failure per workflow scope once prerequisites recover.
 
-    Provider writes are never auto-replayed. Historical failures for the same
-    organization/location/workflow are deliberately collapsed so clearing one
-    stale Hermes lock cannot resurrect a backlog of redundant agent executions.
+    Provider writes are never auto-replayed. Historical review publication
+    failures are eligible only when their durable response state proves the
+    original write already crossed the provider boundary; the replacement
+    handler then performs read-only verification.
     """
     runs = (
         await session.scalars(
@@ -447,7 +482,11 @@ async def requeue_recoverable_failures(
         if resolved is None:
             continue
         version, definition = resolved
-        scope = (run.organization_id, run.location_id, definition.key)
+        scope_suffix = definition.key
+        if definition.key == "reviews.publish_response":
+            response_id = run.input_document.get("response_id")
+            scope_suffix = f"{definition.key}:{response_id}"
+        scope = (run.organization_id, run.location_id, scope_suffix)
         if scope in seen_scopes:
             continue
         seen_scopes.add(scope)
@@ -473,6 +512,11 @@ async def requeue_recoverable_failures(
                 )
             )
             if website is None:
+                continue
+        elif run.failure_code in REVIEW_VERIFICATION_FAILURES:
+            if definition.key != "reviews.publish_response":
+                continue
+            if not await _review_verification_recoverable(session, run):
                 continue
 
         failure_code = run.failure_code

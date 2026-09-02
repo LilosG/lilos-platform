@@ -337,10 +337,10 @@ async def _execute_workflow_job(session: AsyncSession, job: Job) -> JobOutcome:
     workflow_key = definition.key if definition else None
 
     if workflow_key:
-        from apps.api.app.execution.handlers import get_workflow_handler
+        from apps.api.app.execution.handler_resolver import resolve_workflow_handler
         from apps.api.app.execution.workflow_catalog import is_known_workflow_key
 
-        handler = get_workflow_handler(workflow_key)
+        handler = resolve_workflow_handler(workflow_key)
         if handler is not None:
             now = datetime.now(UTC)
             run.status = "running"
