@@ -77,6 +77,7 @@ export function agentSkillForWorkflow(workflowKey: string): string | null {
   );
 }
 
+// Keep runtime skill identifiers out of the primary operator-facing UI.
 export function agentLabelForSkill(skillKey: string): string {
   const workflow = AGENT_WORKFLOWS.find(
     ([workflowKey]) => AGENT_SKILL_BY_WORKFLOW[workflowKey] === skillKey,
