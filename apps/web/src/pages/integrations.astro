@@ -200,6 +200,8 @@ import "../styles/global.css";
           void renderDirectory();
         });
 
+      // -- Directory: assemble from individual provider status endpoints ---
+
       async function renderDirectory(): Promise<void> {
         const cards = document.getElementById("integration-cards")!;
         cards.replaceChildren(createLoading());
@@ -211,6 +213,7 @@ import "../styles/global.css";
 
         cards.replaceChildren();
 
+        // Google card
         cards.append(
           makeDirectoryCard(
             "google",
@@ -230,6 +233,7 @@ import "../styles/global.css";
           ),
         );
 
+        // GitHub card
         const ghStatus: "connected" | "not_connected" =
           githubResult.kind === "ok" && isGitHubConnected(githubResult.data)
             ? "connected"
@@ -296,6 +300,8 @@ import "../styles/global.css";
         return card;
       }
 
+      // -- Google workspace --------------------------------------------------
+
       async function openGoogle(): Promise<void> {
         showProvider("google", "Google");
         await loadGoogleWorkspace();
@@ -306,6 +312,10 @@ import "../styles/global.css";
       }
 
       async function reconcileGoogleSourceData(): Promise<void> {
+        // Discovery and an explicit GBP mapping change the authoritative source
+        // set used by onboarding. Prepare fresh fact candidates immediately so
+        // the operator does not have to know a separate reconciliation step
+        // exists before returning to onboarding.
         await reconcileBusinessFacts(organizationId);
         await reloadGoogleWorkspace();
       }
@@ -592,11 +602,9 @@ import "../styles/global.css";
           reconnectBtn.textContent = "Reconnect Google";
           reconnectBtn.addEventListener("click", async () => {
             const result = await beginConnection(organizationId);
-            if (result.kind === "ok") {
+            if (result.kind === "ok")
               window.location.assign(result.data.authorization_url);
-            } else {
-              panel.append(errorAlert(describeFailure(result, "Reconnect")));
-            }
+            else panel.append(errorAlert(describeFailure(result, "Reconnect")));
           });
           actions.append(reconnectBtn);
         }
@@ -749,16 +757,9 @@ import "../styles/global.css";
           const duplicateNames = [...duplicateLocationIds].map(
             (locationId) => locationNames.get(locationId) ?? "a LILOs location",
           );
-          const duplicateResourceCount = ws.mapped_resources.filter(
-            (resource) =>
-              resource.platform_resource_id &&
-              duplicateLocationIds.has(resource.platform_resource_id),
-          ).length;
-          const duplicateLabel =
-            duplicateLocationIds.size === 1 ? "location" : "locations";
           panel.append(
             errorAlert(
-              `${duplicateResourceCount} Business Profile resources are mapped across ${duplicateLocationIds.size} duplicate ${duplicateLabel}: ${duplicateNames.join(", ")}. Keep the correct Business Profile and remove the incorrect mapping below.`,
+              `${ws.mapped_resources.filter((resource) => resource.platform_resource_id && duplicateLocationIds.has(resource.platform_resource_id)).length} Business Profile resources are mapped across ${duplicateLocationIds.size} duplicate ${duplicateLocationIds.size === 1 ? "location" : "locations"}: ${duplicateNames.join(", ")}. Keep the correct Business Profile and remove the incorrect mapping below.`,
             ),
           );
         }
@@ -918,13 +919,14 @@ import "../styles/global.css";
         panel.append(list);
       }
 
+      // -- Unmapped queue (privileged, uses canonical AAL2 confirm endpoint) ---
+
       async function renderUnmappedQueue(
         parent: HTMLElement,
         wsResult: Awaited<ReturnType<typeof fetchGoogleWorkspace>>,
       ): Promise<void> {
-        if (wsResult.kind !== "ok" || wsResult.data.unmapped_count === 0) {
+        if (wsResult.kind !== "ok" || wsResult.data.unmapped_count === 0)
           return;
-        }
 
         const disclosure = document.createElement("details");
         disclosure.className = "ui-card";
@@ -937,6 +939,7 @@ import "../styles/global.css";
         disclosure.append(summary, body);
         parent.append(disclosure);
 
+        // Search
         const searchRow = document.createElement("div");
         searchRow.className = "ui-control--compact";
         const searchInput = document.createElement("input");
@@ -946,6 +949,7 @@ import "../styles/global.css";
         searchRow.append(searchInput);
         body.append(searchRow);
 
+        // Location picker for mapping (shared across all rows)
         const locationsResult = await fetchLocations(organizationId);
         const availableLocations: LocationSummary[] =
           locationsResult.kind === "ok" ? locationsResult.data : [];
@@ -982,6 +986,7 @@ import "../styles/global.css";
             detail.textContent = resource.primary_category || "";
             info.append(name, detail);
 
+            // Location picker + map button
             const rowActions = document.createElement("div");
             rowActions.className =
               "ui-inline ui-inline--center ui-inline--tight";
@@ -1048,6 +1053,8 @@ import "../styles/global.css";
           }, 300);
         });
       }
+
+      // -- GitHub workspace ---------------------------------------------------
 
       async function openGitHub(
         wsResult: Awaited<ReturnType<typeof fetchGitHubWorkspace>>,
@@ -1303,6 +1310,8 @@ import "../styles/global.css";
         }
       }
 
+      // -- Helpers ------------------------------------------------------------
+
       function makeCard(title: string): HTMLDivElement {
         const card = document.createElement("div");
         card.className = "ui-card";
@@ -1318,6 +1327,8 @@ import "../styles/global.css";
         card.append(body);
         return card;
       }
+
+      // -- Boot ----------------------------------------------------------------
 
       async function loadOrganization(
         org: import("../lib/workspace").MyOrganization,
