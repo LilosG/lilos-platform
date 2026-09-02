@@ -1,0 +1,452 @@
+/* Cross-product operator UX pass.
+ *
+ * These rules deliberately target page IDs rather than generic primitives so
+ * the SEO, Insights, and Automations workspaces can become denser and more
+ * operational without changing the presentation contract for the rest of the
+ * application.
+ */
+
+/* ============================================================
+   SHARED REPORTING DENSITY — SEO + INSIGHTS
+   ============================================================ */
+#seo-content,
+#insights-content {
+  --layout-section-gap: var(--space-6);
+}
+
+#seo-content .ui-page-header,
+#insights-content .ui-page-header {
+  gap: var(--space-3) var(--space-5);
+  margin-bottom: var(--space-5);
+  padding-bottom: var(--space-4);
+}
+
+#seo-content .ui-page-section,
+#insights-content .ui-page-section {
+  gap: var(--space-3);
+  margin-bottom: var(--space-6);
+}
+
+#seo-content .ui-page-section__header,
+#insights-content .ui-page-section__header {
+  align-items: center;
+}
+
+#seo-content > .ui-notice,
+#insights-content > .ui-notice {
+  display: none;
+}
+
+#seo-content .ui-card,
+#insights-content .ui-card {
+  box-shadow: none;
+}
+
+#seo-content .ui-card__body,
+#insights-content .ui-card__body {
+  padding: var(--space-4);
+}
+
+#seo-content .ui-table-frame,
+#insights-content .ui-table-frame {
+  border-radius: var(--radius-md);
+  box-shadow: none;
+}
+
+#seo-content .ui-table th,
+#seo-content .ui-table td,
+#insights-content .ui-table th,
+#insights-content .ui-table td {
+  padding-top: var(--space-2);
+  padding-bottom: var(--space-2);
+}
+
+#seo-content .reporting-trend__visual,
+#insights-content .reporting-trend__visual {
+  height: 18rem;
+  min-height: 18rem;
+}
+
+#seo-content .reporting-trend__visual canvas,
+#insights-content .reporting-trend__visual canvas {
+  max-height: 18rem;
+}
+
+/* ============================================================
+   SEO — PERFORMANCE FIRST, LESS REPETITION
+   ============================================================ */
+#seo-content > .ui-page-section:first-of-type {
+  margin-bottom: var(--space-4);
+}
+
+#seo-metrics {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+#seo-metrics .ui-card__body {
+  min-height: 6.25rem;
+  padding: var(--space-3) var(--space-4);
+}
+
+#seo-tabs {
+  margin-top: 0;
+}
+
+#seo-tabs .ui-tabs__list {
+  margin-bottom: var(--space-4);
+}
+
+#tab-search-console {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: var(--space-3) var(--space-4);
+  align-items: start;
+}
+
+#tab-search-console > * {
+  min-width: 0;
+}
+
+#tab-search-console > .ui-card:first-child,
+#tab-search-console > .ui-inline,
+#tab-search-console > .ui-card-grid,
+#tab-search-console > .reporting-chart-card {
+  grid-column: 1 / -1;
+}
+
+#tab-search-console > .ui-card:first-child .ui-card__body {
+  padding: var(--space-3) var(--space-4);
+}
+
+#tab-search-console > .ui-inline {
+  min-height: 2rem;
+  padding: 0 var(--space-1);
+}
+
+#tab-search-console > .ui-card-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+#tab-search-console .ui-metric-card__meta {
+  display: none;
+}
+
+#tab-search-console .ui-metric-card .ui-card__body {
+  padding: var(--space-3) var(--space-4);
+}
+
+#tab-search-console .ui-metric-card__value {
+  margin-top: var(--space-1);
+}
+
+#tab-search-console .reporting-chart-card {
+  margin-top: var(--space-1);
+}
+
+#tab-search-console
+  > .reporting-chart-card
+  ~ .ui-card--spaced:not(.reporting-chart-card) {
+  grid-column: span 6;
+  margin-top: 0;
+}
+
+#tab-search-console
+  > .reporting-chart-card
+  ~ .ui-card--spaced:not(.reporting-chart-card)
+  .ui-card__header {
+  padding-bottom: var(--space-2);
+}
+
+#tab-search-console
+  > .reporting-chart-card
+  ~ .ui-card--spaced:not(.reporting-chart-card)
+  .ui-card__body {
+  padding-top: 0;
+}
+
+#tab-search-console > .ui-notice {
+  display: none;
+}
+
+/* ============================================================
+   INSIGHTS — CLIENT REPORT DENSITY
+   ============================================================ */
+#insights-reporting-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+#analytics-section .ui-page-section,
+#search-console-section .ui-page-section {
+  margin-bottom: var(--space-6);
+}
+
+#website-performance-panel,
+#organic-search-panel {
+  display: grid;
+  gap: var(--space-4);
+}
+
+#website-performance-panel .ui-comparison-grid,
+#organic-search-panel .ui-comparison-grid {
+  gap: var(--space-3);
+}
+
+#website-performance-panel .reporting-chart-card,
+#organic-search-panel .reporting-chart-card {
+  margin-top: 0;
+}
+
+/* ============================================================
+   AUTOMATIONS — OPERATOR CONSOLE, NOT INTERNAL EVENT DUMP
+   ============================================================ */
+#workspace-content {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  column-gap: var(--space-4);
+}
+
+#workspace-content > .ui-page-header,
+#workspace-content > #automation-action-status,
+#workspace-content > .ui-page-section {
+  grid-column: 1 / -1;
+}
+
+#workspace-content > .ui-page-header {
+  margin-bottom: var(--space-5);
+  padding-bottom: var(--space-4);
+}
+
+#workspace-content > .ui-page-section:first-of-type {
+  grid-column: 1 / span 9;
+  margin-bottom: var(--space-6);
+}
+
+#workspace-content > .ui-notice:has(#automation-location-select) {
+  grid-column: 10 / -1;
+  align-self: start;
+  min-height: 100%;
+  margin: 0 0 var(--space-6);
+  padding: var(--space-3) var(--space-4);
+  box-shadow: none;
+}
+
+#workspace-content
+  > .ui-notice:has(#automation-location-select)
+  > .ui-icon {
+  display: none;
+}
+
+#workspace-content
+  > .ui-notice:has(#automation-location-select)
+  .ui-notice__content {
+  width: 100%;
+}
+
+#workspace-content
+  > .ui-notice:has(#automation-location-select)
+  .ui-notice__content
+  > strong {
+  display: none;
+}
+
+#workspace-content
+  > .ui-notice:has(#automation-location-select)
+  .ui-field__description {
+  display: none;
+}
+
+#workspace-content
+  > .ui-notice:has(#automation-location-select)
+  .ui-field__label {
+  margin-bottom: var(--space-1);
+}
+
+#automation-metrics .ui-summary-strip {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+#automation-metrics .ui-summary-strip__item:nth-child(4),
+#automation-metrics .ui-summary-strip__item:nth-child(6) {
+  display: none;
+}
+
+#automation-metrics .ui-summary-strip__item {
+  min-height: 6.5rem;
+  padding: var(--space-3) var(--space-4);
+}
+
+#automation-metrics .ui-summary-strip__meta {
+  max-width: 15rem;
+}
+
+#workspace-content > .ui-page-section:nth-of-type(n + 2) {
+  gap: var(--space-3);
+  margin-bottom: var(--space-7);
+}
+
+#workspace-content > .ui-page-section:nth-of-type(n + 2) .ui-page-section__header {
+  padding-bottom: var(--space-2);
+  border-bottom: var(--border-width) solid var(--color-border-subtle);
+}
+
+#workspace-content #agent-runtime-status {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: 0;
+}
+
+#workspace-content #agent-runtime-status .ui-alert {
+  width: fit-content;
+  min-height: 2rem;
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-full);
+  box-shadow: none;
+}
+
+#workspace-content #agent-runtime-status .ui-alert--success {
+  background: var(--color-success-background);
+}
+
+#workspace-content #agent-runtime-status .ui-alert--success::before {
+  margin: 0;
+  content: "Runtime ready";
+}
+
+#workspace-content #agent-runtime-status .ui-alert--success::after {
+  display: none;
+}
+
+#workspace-content #agent-runtime-status .agent-run__disclosure {
+  width: fit-content;
+  border: 0;
+  background: transparent;
+}
+
+#workspace-content #agent-runtime-status .agent-run__disclosure > summary {
+  min-height: 2rem;
+  padding: var(--space-1) var(--space-2);
+}
+
+#agent-start-actions {
+  margin-top: var(--space-3);
+}
+
+#agent-start-actions .ui-inline {
+  gap: var(--space-2);
+}
+
+#agent-start-actions .ui-button {
+  min-height: 3.75rem;
+  padding: var(--space-3);
+  box-shadow: none;
+}
+
+#agent-run-history {
+  margin-top: var(--space-4);
+}
+
+#agent-run-history .ui-table th:nth-child(4),
+#agent-run-history .ui-table td:nth-child(4) {
+  display: none;
+}
+
+#agent-run-history .ui-table tbody tr:has(.ui-badge--success) {
+  display: none;
+}
+
+#agent-run-history .ui-table__disclosure {
+  display: none;
+}
+
+#agent-run-history td:last-child .ui-button:last-child {
+  font-size: 0;
+}
+
+#agent-run-history td:last-child .ui-button:last-child::after {
+  content: "Details";
+  font-size: var(--type-caption-size);
+}
+
+#agent-run-detail > .ui-card {
+  margin-top: var(--space-3);
+  box-shadow: none;
+}
+
+#workflow-catalog .ui-table-frame__scroll,
+#run-history .ui-table-frame__scroll {
+  max-height: 34rem;
+  overflow: auto;
+}
+
+#workflow-catalog .ui-table th,
+#workflow-catalog .ui-table td,
+#schedule-list .ui-table th,
+#schedule-list .ui-table td,
+#run-history .ui-table th,
+#run-history .ui-table td,
+#agent-run-history .ui-table th,
+#agent-run-history .ui-table td {
+  padding-top: var(--space-2);
+  padding-bottom: var(--space-2);
+}
+
+#run-history .ui-table th:nth-child(5),
+#run-history .ui-table td:nth-child(5) {
+  max-width: 22rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 72rem) {
+  #workspace-content > .ui-page-section:first-of-type,
+  #workspace-content > .ui-notice:has(#automation-location-select) {
+    grid-column: 1 / -1;
+    min-height: auto;
+  }
+
+  #automation-metrics .ui-summary-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  #tab-search-console
+    > .reporting-chart-card
+    ~ .ui-card--spaced:not(.reporting-chart-card) {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 48rem) {
+  #seo-metrics,
+  #tab-search-console > .ui-card-grid,
+  #automation-metrics .ui-summary-strip {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  #tab-search-console {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  #tab-search-console > * {
+    grid-column: 1;
+  }
+
+  #seo-content .reporting-trend__visual,
+  #insights-content .reporting-trend__visual {
+    height: 14rem;
+    min-height: 14rem;
+  }
+
+  #seo-content .reporting-trend__visual canvas,
+  #insights-content .reporting-trend__visual canvas {
+    max-height: 14rem;
+  }
+}
