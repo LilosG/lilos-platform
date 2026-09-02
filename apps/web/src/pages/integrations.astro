@@ -834,8 +834,7 @@ import "../styles/global.css";
             ) {
               const action = document.createElement("button");
               action.type = "button";
-              action.className =
-                "ui-button ui-button--secondary ui-button--sm";
+              action.className = "ui-button ui-button--secondary ui-button--sm";
               action.textContent = actionLabel;
               action.addEventListener("click", () => {
                 action.disabled = true;
@@ -898,9 +897,7 @@ import "../styles/global.css";
                       if (result.kind !== "ok") {
                         removeAction.disabled = false;
                         feedback.replaceChildren(
-                          errorAlert(
-                            describeFailure(result, "remove mapping"),
-                          ),
+                          errorAlert(describeFailure(result, "remove mapping")),
                         );
                       }
                     })();
