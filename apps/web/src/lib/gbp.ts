@@ -73,19 +73,34 @@ export function fetchPlatformLocations(
   );
 }
 
+export type GBPMappingMutation = {
+  id: string;
+  mapping_status: string;
+  write_enabled: boolean;
+};
+
 export function confirmLocationMapping(
   organizationId: string,
   platformLocationId: string,
   gbpLocationId: string,
   writeEnabled: boolean,
-): Promise<
-  ApiOutcome<{ id: string; mapping_status: string; write_enabled: boolean }>
-> {
+): Promise<ApiOutcome<GBPMappingMutation>> {
   return apiRequest(
-    `/api/v1/organizations/${organizationId}/locations/${platformLocationId}/gbp/locations/${gbpLocationId}/confirm`,
+    `/api/v1/organizations/${organizationId}/locations/${platformLocationId}/gbp-mapping/${gbpLocationId}/confirm`,
     {
       method: "POST",
       body: { location_id: platformLocationId, write_enabled: writeEnabled },
     },
+  );
+}
+
+export function removeLocationMapping(
+  organizationId: string,
+  platformLocationId: string,
+  gbpLocationId: string,
+): Promise<ApiOutcome<GBPMappingMutation>> {
+  return apiRequest(
+    `/api/v1/organizations/${organizationId}/locations/${platformLocationId}/gbp-mapping/${gbpLocationId}`,
+    { method: "DELETE" },
   );
 }
