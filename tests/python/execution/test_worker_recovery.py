@@ -3,8 +3,9 @@
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
+from apps.api.app.agents.hermes_client import HermesRuntimeError
 from apps.api.app.execution.models import Job
-from apps.worker.recovery import _job_is_active
+from apps.worker.recovery import _hermes_run_missing, _job_is_active
 
 
 def _job(
@@ -58,3 +59,13 @@ def test_live_claim_is_active_work() -> None:
         _job("claimed", attempt_count=1, lease_expires_at=now + timedelta(seconds=30)),
         now,
     )
+
+
+def test_purged_hermes_run_is_safe_to_release() -> None:
+    error = HermesRuntimeError("HERMES_HTTP_ERROR", "Hermes request failed with 404")
+    assert _hermes_run_missing(error)
+
+
+def test_other_hermes_http_errors_do_not_release_session() -> None:
+    error = HermesRuntimeError("HERMES_HTTP_ERROR", "Hermes request failed with 500")
+    assert not _hermes_run_missing(error)

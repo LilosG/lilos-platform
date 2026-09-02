@@ -42,6 +42,11 @@ TERMINAL_JOB_STATUSES = {"completed", "cancelled", "failed", "dead_lettered"}
 RECOVERABLE_FAILURES = {"HERMES_SCOPED_SESSION_BUSY", "SEO_ACTIVE_WEBSITE_MISSING"}
 
 
+def _hermes_run_missing(exc: HermesRuntimeError) -> bool:
+    """Recognize a purged Hermes run without weakening other provider failures."""
+    return exc.safe_code == "HERMES_HTTP_ERROR" and str(exc).endswith("404")
+
+
 def _job_is_active(job: Job | None, now: datetime) -> bool:
     if job is None or job.cancellation_requested_at is not None:
         return False
@@ -320,7 +325,16 @@ async def reconcile_orphaned_agent_runs(
 
         try:
             remote = await client.get_run(hermes_run_id)
-        except HermesRuntimeError:
+        except HermesRuntimeError as exc:
+            if _hermes_run_missing(exc):
+                if await _apply_agent_terminal(
+                    sessions,
+                    agent_run_id,
+                    "failed",
+                    safe_error="HERMES_ORPHANED_REMOTE_RUN_MISSING",
+                ):
+                    changed += 1
+                continue
             await _mark_agent_recovery_state(
                 sessions,
                 agent_run_id,
@@ -342,7 +356,16 @@ async def reconcile_orphaned_agent_runs(
 
         try:
             await client.stop(hermes_run_id)
-        except HermesRuntimeError:
+        except HermesRuntimeError as exc:
+            if _hermes_run_missing(exc):
+                if await _apply_agent_terminal(
+                    sessions,
+                    agent_run_id,
+                    "failed",
+                    safe_error="HERMES_ORPHANED_REMOTE_RUN_MISSING",
+                ):
+                    changed += 1
+                continue
             await _mark_agent_recovery_state(
                 sessions,
                 agent_run_id,
@@ -399,12 +422,11 @@ async def requeue_recoverable_failures(
     *,
     limit: int = 50,
 ) -> int:
-    """Retry failures whose prerequisite is now demonstrably healthy.
+    """Retry the newest safe failure per workflow scope once prerequisites recover.
 
-    This is intentionally narrow. Provider writes are never auto-replayed.
-    Scoped-session contention is safe after its blocker has been reconciled,
-    and an SEO crawl that previously had no website is safe once an active
-    website exists.
+    Provider writes are never auto-replayed. Historical failures for the same
+    organization/location/workflow are deliberately collapsed so clearing one
+    stale Hermes lock cannot resurrect a backlog of redundant agent executions.
     """
     runs = (
         await session.scalars(
@@ -413,17 +435,23 @@ async def requeue_recoverable_failures(
                 WorkflowRun.status == "failed",
                 WorkflowRun.failure_code.in_(RECOVERABLE_FAILURES),
             )
-            .order_by(WorkflowRun.updated_at)
+            .order_by(WorkflowRun.updated_at.desc())
             .with_for_update(skip_locked=True)
             .limit(limit)
         )
     ).all()
     created = 0
+    seen_scopes: set[tuple[UUID, UUID | None, str]] = set()
     for run in runs:
         resolved = await _workflow_definition(session, run)
         if resolved is None:
             continue
         version, definition = resolved
+        scope = (run.organization_id, run.location_id, definition.key)
+        if scope in seen_scopes:
+            continue
+        seen_scopes.add(scope)
+
         if run.failure_code == "HERMES_SCOPED_SESSION_BUSY":
             if not definition.key.startswith("agent."):
                 continue
