@@ -29,12 +29,12 @@ from apps.api.app.products.reviews.service import (
 
 logger = logging.getLogger(__name__)
 
-# Every code in this set is emitted only after a provider write was accepted or
-# when the provider outcome is genuinely ambiguous. Retrying these states must
-# therefore be read-only: another updateReply could duplicate or overwrite a
-# reply that Google already accepted.
+# Every code in this set is emitted only after the durable dispatch boundary was
+# crossed. Retrying these states must therefore be read-only: another updateReply
+# could duplicate or overwrite a reply that Google already accepted.
 VERIFY_ONLY_SAFE_ERRORS = frozenset(
     {
+        "PROVIDER_WRITE_DISPATCHED",
         "PROVIDER_WRITE_AMBIGUOUS",
         "VERIFICATION_REREAD_FAILED",
         "VERIFICATION_CONTENT_PENDING",
@@ -255,6 +255,21 @@ async def handle_reviews_publish_response(
     adapter = execution_handlers._adapter_factory()
 
     if initial_publish:
+        # Claim the provider-write boundary durably before the network request.
+        # If the process dies after this commit, the next attempt can only read
+        # Google state; it cannot issue a second updateReply on an unknown outcome.
+        response = await _response_for_update(session, organization_id, response_id)
+        if response is None:
+            await session.rollback()
+            return JobOutcome(result="ambiguous", safe_error="RESPONSE_LOST_BEFORE_DISPATCH")
+        if response.status != "publishing":
+            await session.rollback()
+            return JobOutcome(result="ambiguous", safe_error="REVIEW_REPLY_DISPATCH_CONFLICT")
+        response.external_response_id = review_name
+        response.status = "reconciliation_required"
+        response.safe_error_code = "PROVIDER_WRITE_DISPATCHED"
+        await session.commit()
+
         try:
             await adapter.update_review_reply(token, review_name, approved_comment)
         except Exception as exc:
@@ -264,11 +279,13 @@ async def handle_reviews_publish_response(
                 if outcome.requires_reconciliation:
                     response.status = "reconciliation_required"
                 elif outcome.job_result == "retryable_failure":
-                    # Proof says Google did not apply the write, so retrying the
-                    # write is safe and remains in the publishing phase.
+                    # Google proved the write was not applied. Clear the dispatch
+                    # marker and permit a later attempt to cross the write boundary.
                     response.status = "publishing"
+                    response.external_response_id = None
                 else:
                     response.status = "failed"
+                    response.external_response_id = None
                 response.safe_error_code = outcome.safe_error_code
             await session.commit()
             logger.warning(
@@ -283,13 +300,12 @@ async def handle_reviews_publish_response(
             )
             return JobOutcome(result=outcome.job_result, safe_error=outcome.safe_error_code)
 
-        # updateReply returned successfully. Persist that fact before any re-read
-        # so a process loss can only resume with read-only verification.
+        # updateReply returned successfully. Advance the durable dispatch marker
+        # before the verification re-read; all later attempts remain read-only.
         response = await _response_for_update(session, organization_id, response_id)
         if response is None:
             await session.rollback()
             return JobOutcome(result="ambiguous", safe_error="RESPONSE_LOST_AFTER_DISPATCH")
-        response.external_response_id = review_name
         response.status = "reconciliation_required"
         response.safe_error_code = "VERIFICATION_CONTENT_PENDING"
         await session.commit()
