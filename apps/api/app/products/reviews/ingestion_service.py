@@ -165,8 +165,8 @@ class IngestionReviewService(ReviewService):
             )
             return
 
-        response_status, review_status, safe_error_code = (
-            lilos_publication_confirmation_lifecycle(provider_reply)
+        response_status, review_status, safe_error_code = lilos_publication_confirmation_lifecycle(
+            provider_reply
         )
         inflight.status = response_status
         inflight.safe_error_code = safe_error_code
