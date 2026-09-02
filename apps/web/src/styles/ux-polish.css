@@ -236,9 +236,7 @@
   box-shadow: none;
 }
 
-#workspace-content
-  > .ui-notice:has(#automation-location-select)
-  > .ui-icon {
+#workspace-content > .ui-notice:has(#automation-location-select) > .ui-icon {
   display: none;
 }
 
@@ -290,7 +288,9 @@
   margin-bottom: var(--space-7);
 }
 
-#workspace-content > .ui-page-section:nth-of-type(n + 2) .ui-page-section__header {
+#workspace-content
+  > .ui-page-section:nth-of-type(n + 2)
+  .ui-page-section__header {
   padding-bottom: var(--space-2);
   border-bottom: var(--border-width) solid var(--color-border-subtle);
 }
