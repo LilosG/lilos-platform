@@ -32,7 +32,6 @@ class FakeSession:
         self.add_calls += 1
 
 
-@pytest.mark.unit
 def test_ingestion_confirms_matching_inflight_lilos_reply_without_import(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
