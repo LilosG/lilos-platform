@@ -54,7 +54,9 @@ class FakeAdapter:
         self.update_calls = 0
         self.get_calls = 0
 
-    async def update_review_reply(self, _token: str, _review_name: str, _comment: str) -> dict[str, Any]:
+    async def update_review_reply(
+        self, _token: str, _review_name: str, _comment: str
+    ) -> dict[str, Any]:
         self.update_calls += 1
         return {}
 
@@ -92,7 +94,9 @@ def _objects(*, response_status: str, safe_error_code: str | None = None) -> tup
 
 
 def _install_provider(monkeypatch: pytest.MonkeyPatch, adapter: FakeAdapter) -> None:
-    async def token_resolver(_session: AsyncSession, _organization_id: object) -> tuple[str, object]:
+    async def token_resolver(
+        _session: AsyncSession, _organization_id: object
+    ) -> tuple[str, object]:
         return "token", object()
 
     monkeypatch.setattr(execution_handlers, "_adapter_factory", lambda: adapter)
