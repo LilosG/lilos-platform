@@ -17,7 +17,8 @@ the first handler invocation.
 import apps.api.app.access_control.models  # noqa: F401  — membership / roles
 import apps.api.app.administration.models  # noqa: F401  — BusinessFactRevision
 
-# ── AI models ───────────────────────────────────────────────────────────────
+# ── AI / agent models ───────────────────────────────────────────────────────
+import apps.api.app.agents.models  # noqa: F401  — AgentSession / AgentRun
 import apps.api.app.ai.models  # noqa: F401  — AIExecution, AITaskDefinition
 import apps.api.app.audit.models  # noqa: F401  — AuditEvent
 import apps.api.app.authentication.models  # noqa: F401  — UserProfile
