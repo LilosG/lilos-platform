@@ -395,7 +395,10 @@ import "../styles/automations.css";
           setActionMessage(`${agentWorkflowLabel(workflowKey)} queued.`);
           await refreshLiveAgentSurfaces();
         } else {
-          setActionMessage(describeFailure(result, agentWorkflowLabel(workflowKey)), true);
+          setActionMessage(
+            describeFailure(result, agentWorkflowLabel(workflowKey)),
+            true,
+          );
         }
         button.disabled = false;
         button.textContent = originalLabel;
@@ -505,7 +508,10 @@ import "../styles/automations.css";
         }
         if (
           detail.status === "running" &&
-          canControlAgent(hermesCapabilities ?? detail.capabilities, "run_steer")
+          canControlAgent(
+            hermesCapabilities ?? detail.capabilities,
+            "run_steer",
+          )
         ) {
           const input = document.createElement("input");
           input.className = "ui-input";
@@ -657,7 +663,9 @@ import "../styles/automations.css";
         button.textContent = "Stopping…";
         const result = await stopAgentRun(activeOrgId, run.id);
         if (result.kind === "ok") {
-          setActionMessage(`${agentLabelForSkill(run.skill_key)} stop requested.`);
+          setActionMessage(
+            `${agentLabelForSkill(run.skill_key)} stop requested.`,
+          );
           await refreshLiveAgentSurfaces();
           return;
         }
@@ -671,7 +679,10 @@ import "../styles/automations.css";
         region.replaceChildren();
         if (!items.length) {
           region.append(
-            emptyState("No agent runs", "Start an agent above when work is needed."),
+            emptyState(
+              "No agent runs",
+              "Start an agent above when work is needed.",
+            ),
           );
           return;
         }
@@ -724,8 +735,7 @@ import "../styles/automations.css";
               {
                 key: "failure",
                 header: "Failure",
-                render: (run: AgentRunSummary) =>
-                  run.safe_error_code ?? "—",
+                render: (run: AgentRunSummary) => run.safe_error_code ?? "—",
               },
               {
                 key: "actions",
@@ -838,7 +848,10 @@ import "../styles/automations.css";
           setActionMessage(`${workflow.display_name} queued.`);
           await loadAutomationData();
         } else {
-          setActionMessage(describeFailure(result, workflow.display_name), true);
+          setActionMessage(
+            describeFailure(result, workflow.display_name),
+            true,
+          );
         }
         button.disabled = false;
         button.textContent = "Run now";
@@ -1022,7 +1035,10 @@ import "../styles/automations.css";
               ),
             );
           });
-          cancelBtn.setAttribute("aria-label", `Cancel schedule ${schedule.key}`);
+          cancelBtn.setAttribute(
+            "aria-label",
+            `Cancel schedule ${schedule.key}`,
+          );
           wrapper.append(cancelBtn);
         }
         return wrapper;
@@ -1173,7 +1189,10 @@ import "../styles/automations.css";
                       item.location_id === selectedLocationId(),
                   );
                   return run
-                    ? statusBadge(statusTone(run.status), statusLabel(run.status))
+                    ? statusBadge(
+                        statusTone(run.status),
+                        statusLabel(run.status),
+                      )
                     : statusBadge("neutral", "No result");
                 },
               },
@@ -1256,7 +1275,8 @@ import "../styles/automations.css";
                     const maxAttempts = run.job_max_attempts ?? 0;
                     return `${run.failure_code} · attempt ${attempts}/${maxAttempts}`;
                   }
-                  if (run.status === "retry_scheduled") return "Retry scheduled";
+                  if (run.status === "retry_scheduled")
+                    return "Retry scheduled";
                   if (run.status === "queued") return "Waiting for worker";
                   return "—";
                 },
@@ -1355,7 +1375,9 @@ import "../styles/automations.css";
           setActionMessage(describeFailure(result, "Locations"), true);
           return;
         }
-        locations = result.data.filter((location) => location.status === "active");
+        locations = result.data.filter(
+          (location) => location.status === "active",
+        );
         for (const location of locations) {
           const option = document.createElement("option");
           option.value = location.id;

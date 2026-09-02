@@ -449,7 +449,8 @@ import "../styles/global.css";
         if (state === null || state.status === "disconnected") {
           const connectButton = document.createElement("button");
           connectButton.type = "button";
-          connectButton.className = "ui-button ui-button--primary ui-button--md";
+          connectButton.className =
+            "ui-button ui-button--primary ui-button--md";
           connectButton.textContent = "Authorize Google";
           connectButton.addEventListener("click", async () => {
             connectButton.disabled = true;
@@ -465,7 +466,9 @@ import "../styles/global.css";
               connectButton.disabled = false;
               connectButton.textContent = "Authorize Google";
               panel.append(
-                errorAlert(describeGbpConnectFailure(result, organizationId).message),
+                errorAlert(
+                  describeGbpConnectFailure(result, organizationId).message,
+                ),
               );
             }
           });
@@ -509,7 +512,8 @@ import "../styles/global.css";
         if (authorizationAction.kind === "reconnect") {
           const reconnectButton = document.createElement("button");
           reconnectButton.type = "button";
-          reconnectButton.className = "ui-button ui-button--primary ui-button--md";
+          reconnectButton.className =
+            "ui-button ui-button--primary ui-button--md";
           reconnectButton.textContent = "Reconnect Google";
           reconnectButton.addEventListener("click", async () => {
             const result = await beginConnection(organizationId);
@@ -524,7 +528,8 @@ import "../styles/global.css";
         if (authorizationAction.kind === "authorize_missing") {
           const authorizeButton = document.createElement("button");
           authorizeButton.type = "button";
-          authorizeButton.className = "ui-button ui-button--primary ui-button--md";
+          authorizeButton.className =
+            "ui-button ui-button--primary ui-button--md";
           authorizeButton.textContent = "Authorize missing services";
           authorizeButton.addEventListener("click", async () => {
             authorizeButton.disabled = true;
@@ -549,7 +554,8 @@ import "../styles/global.css";
         ) {
           const discoverButton = document.createElement("button");
           discoverButton.type = "button";
-          discoverButton.className = "ui-button ui-button--primary ui-button--md";
+          discoverButton.className =
+            "ui-button ui-button--primary ui-button--md";
           discoverButton.textContent = "Discover Business Profiles";
           discoverButton.addEventListener("click", async () => {
             discoverButton.disabled = true;
@@ -667,7 +673,8 @@ import "../styles/global.css";
           const item = document.createElement("li");
           const info = document.createElement("div");
           const name = document.createElement("h3");
-          name.textContent = resource.display_name || resource.external_resource_id;
+          name.textContent =
+            resource.display_name || resource.external_resource_id;
           const detail = document.createElement("p");
           const mappedTo = resource.platform_resource_id
             ? (locationNames.get(resource.platform_resource_id) ??
@@ -869,7 +876,10 @@ import "../styles/global.css";
         }
         if (!result.data.length) {
           container.replaceChildren(
-            emptyState("No matching Business Profiles", "Try a more specific business name."),
+            emptyState(
+              "No matching Business Profiles",
+              "Try a more specific business name.",
+            ),
           );
           return;
         }
@@ -924,7 +934,9 @@ import "../styles/global.css";
         container.replaceChildren(list);
       }
 
-      async function renderSearchConsoleSource(parent: HTMLElement): Promise<void> {
+      async function renderSearchConsoleSource(
+        parent: HTMLElement,
+      ): Promise<void> {
         const card = makeCard("Search Console");
         const body = card.querySelector(".ui-card__body") as HTMLElement;
         parent.append(card);
@@ -964,7 +976,10 @@ import "../styles/global.css";
           );
           if (!website) {
             statusRegion.replaceChildren(
-              emptyState("Select a website", "Choose the website whose Search Console data should be used."),
+              emptyState(
+                "Select a website",
+                "Choose the website whose Search Console data should be used.",
+              ),
             );
             return;
           }
@@ -986,7 +1001,9 @@ import "../styles/global.css";
         region.replaceChildren();
         if (propertiesResult.kind !== "ok") {
           region.append(
-            errorAlert(describeFailure(propertiesResult, "Search Console mapping")),
+            errorAlert(
+              describeFailure(propertiesResult, "Search Console mapping"),
+            ),
           );
           return;
         }
@@ -1015,7 +1032,9 @@ import "../styles/global.css";
           appendSourceFact(
             region,
             "Data",
-            dataReady ? "Available in SEO and Insights" : "No synced report data",
+            dataReady
+              ? "Available in SEO and Insights"
+              : "No synced report data",
             dataReady ? "ready" : "setup",
           );
         }
@@ -1052,8 +1071,11 @@ import "../styles/global.css";
         }
         const discoverButton = document.createElement("button");
         discoverButton.type = "button";
-        discoverButton.className = "ui-button ui-button--secondary ui-button--sm";
-        discoverButton.textContent = mapped ? "Change property" : "Find property";
+        discoverButton.className =
+          "ui-button ui-button--secondary ui-button--sm";
+        discoverButton.textContent = mapped
+          ? "Change property"
+          : "Find property";
         discoverButton.addEventListener("click", async () => {
           await renderSearchConsoleDiscovery(website, feedback);
         });
@@ -1066,7 +1088,10 @@ import "../styles/global.css";
         region: HTMLElement,
       ): Promise<void> {
         region.replaceChildren(createLoading());
-        const discovery = await discoverSearchConsole(organizationId, website.id);
+        const discovery = await discoverSearchConsole(
+          organizationId,
+          website.id,
+        );
         if (discovery.kind !== "ok") {
           region.replaceChildren(
             errorAlert(describeFailure(discovery, "Search Console discovery")),
@@ -1105,7 +1130,9 @@ import "../styles/global.css";
             !externalPropertyId ||
             (propertyType !== "domain" && propertyType !== "url_prefix")
           ) {
-            region.append(errorAlert("Select a Search Console property first."));
+            region.append(
+              errorAlert("Select a Search Console property first."),
+            );
             return;
           }
           mapButton.disabled = true;
@@ -1197,16 +1224,14 @@ import "../styles/global.css";
             if (canUsePlatformAdministration()) {
               const syncButton = document.createElement("button");
               syncButton.type = "button";
-              syncButton.className = "ui-button ui-button--secondary ui-button--sm";
+              syncButton.className =
+                "ui-button ui-button--secondary ui-button--sm";
               syncButton.textContent = "Sync now";
               const feedback = document.createElement("div");
               syncButton.addEventListener("click", async () => {
                 syncButton.disabled = true;
                 syncButton.textContent = "Syncing…";
-                const result = await syncAnalytics(
-                  organizationId,
-                  property.id,
-                );
+                const result = await syncAnalytics(organizationId, property.id);
                 if (result.kind === "ok") await reloadGoogleWorkspace();
                 else {
                   syncButton.disabled = false;
@@ -1233,7 +1258,8 @@ import "../styles/global.css";
         discoveryRegion.className = "ui-stack ui-stack--3";
         const discoverButton = document.createElement("button");
         discoverButton.type = "button";
-        discoverButton.className = "ui-button ui-button--secondary ui-button--sm";
+        discoverButton.className =
+          "ui-button ui-button--secondary ui-button--sm";
         discoverButton.textContent = mappedProperties.length
           ? "Find another Analytics property"
           : "Find Analytics property";
@@ -1361,7 +1387,8 @@ import "../styles/global.css";
         if (!isGitHubConnected(workspace)) {
           const installButton = document.createElement("button");
           installButton.type = "button";
-          installButton.className = "ui-button ui-button--primary ui-button--md";
+          installButton.className =
+            "ui-button ui-button--primary ui-button--md";
           installButton.textContent = "Install GitHub App";
           installButton.addEventListener("click", async () => {
             installButton.disabled = true;
@@ -1547,12 +1574,7 @@ import "../styles/global.css";
             );
           }
         });
-        body.append(
-          repositorySelect.root,
-          pathControl,
-          saveButton,
-          feedback,
-        );
+        body.append(repositorySelect.root, pathControl, saveButton, feedback);
       }
 
       async function performGitHubDisconnect(): Promise<void> {
@@ -1578,13 +1600,13 @@ import "../styles/global.css";
       async function boot(): Promise<void> {
         const result = await bootWorkspace("Integrations");
         if (!applyBootResult(regions, result)) return;
-        populateSwitcher(result.organizations, (organization) =>
-          void loadOrganization(organization),
+        populateSwitcher(
+          result.organizations,
+          (organization) => void loadOrganization(organization),
         );
         const organization =
           result.organizations.find(
-            (item) =>
-              item.organization_id === result.context.organizationId,
+            (item) => item.organization_id === result.context.organizationId,
           ) ?? result.organizations[0];
         await loadOrganization(organization);
         if (
