@@ -91,6 +91,17 @@ describe("other outcomes keep their existing language", () => {
     );
   });
 
+  it("distinguishes an operation timeout from an unreachable API", () => {
+    expect(
+      describeFailure(
+        { kind: "timeout", timeoutMs: 90_000 },
+        "Search Console sync",
+      ),
+    ).toBe(
+      "Search Console sync: The platform API did not finish within 90 seconds.",
+    );
+  });
+
   it("prefers field-level validation detail over the envelope message", () => {
     expect(
       describeFailure({

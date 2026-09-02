@@ -19,6 +19,7 @@ export type ApiOutcome<T> =
   | { kind: "forbidden"; code?: string; message?: string }
   | { kind: "not-found" }
   | { kind: "disconnected" }
+  | { kind: "timeout"; timeoutMs: number }
   | {
       kind: "error";
       status: number;
@@ -126,9 +127,9 @@ async function attemptRequest<T>(
       signal: timeoutController.signal,
     });
   } catch {
-    // Covers both a genuine network failure and a timed-out (aborted)
-    // request — either way the caller could not complete the request and
-    // must render that truthfully rather than hang.
+    if (timeoutController.signal.aborted) {
+      return { kind: "timeout", timeoutMs };
+    }
     return { kind: "disconnected" };
   } finally {
     clearTimeout(timeoutId);

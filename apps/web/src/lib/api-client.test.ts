@@ -48,11 +48,7 @@ describe("apiGet", () => {
     expect(outcome).toEqual({ kind: "disconnected" });
   });
 
-  it("times out and returns disconnected instead of hanging forever on a stalled request", async () => {
-    // Regression: a server that accepts a connection but never responds
-    // never rejects fetch() and never resolves it either -- with no
-    // timeout, the awaited request (and every page awaiting it, e.g.
-    // /onboarding's bootstrap calls) hung on "Loading…" indefinitely.
+  it("classifies a stalled request as a timeout instead of a disconnected API", async () => {
     vi.useFakeTimers();
     vi.mocked(readPublicConfig).mockReturnValue(config);
     vi.mocked(getAccessToken).mockResolvedValue("token");
@@ -65,8 +61,6 @@ describe("apiGet", () => {
               new DOMException("The operation was aborted.", "AbortError"),
             );
           });
-          // Never resolves and never rejects on its own -- simulates a
-          // stalled connection with no network error ever raised.
         }),
     );
 
@@ -74,7 +68,7 @@ describe("apiGet", () => {
     await vi.advanceTimersByTimeAsync(15_000);
     const outcome = await outcomePromise;
 
-    expect(outcome).toEqual({ kind: "disconnected" });
+    expect(outcome).toEqual({ kind: "timeout", timeoutMs: 15_000 });
     vi.useRealTimers();
   });
 

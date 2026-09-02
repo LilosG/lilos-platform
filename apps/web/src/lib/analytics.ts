@@ -63,6 +63,8 @@ export type AnalyticsPerformanceReport = {
   }[];
 };
 
+const PROVIDER_SYNC_TIMEOUT_MS = 90_000;
+
 function base(organizationId: string): string {
   return `/api/v1/organizations/${organizationId}/insights`;
 }
@@ -110,7 +112,11 @@ export function syncAnalytics(
 > {
   return apiRequest(
     `${base(organizationId)}/analytics/properties/${analyticsPropertyId}/sync`,
-    { method: "POST", body: { days } },
+    {
+      method: "POST",
+      body: { days },
+      timeoutMs: PROVIDER_SYNC_TIMEOUT_MS,
+    },
   );
 }
 

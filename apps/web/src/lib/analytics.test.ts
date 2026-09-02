@@ -54,7 +54,7 @@ describe("analytics lib routes", () => {
     await syncAnalytics("org-1", "prop-1", 28);
     expect(apiRequest).toHaveBeenCalledWith(
       "/api/v1/organizations/org-1/insights/analytics/properties/prop-1/sync",
-      { method: "POST", body: { days: 28 } },
+      { method: "POST", body: { days: 28 }, timeoutMs: 90_000 },
     );
   });
 

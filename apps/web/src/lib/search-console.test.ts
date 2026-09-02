@@ -53,7 +53,7 @@ describe("search-console lib routes", () => {
     await syncSearchConsole("org-1", "site-1", "prop-1", 90);
     expect(apiRequest).toHaveBeenCalledWith(
       "/api/v1/organizations/org-1/seo/websites/site-1/search-properties/prop-1/sync",
-      { method: "POST", body: { days: 90 } },
+      { method: "POST", body: { days: 90 }, timeoutMs: 90_000 },
     );
   });
 

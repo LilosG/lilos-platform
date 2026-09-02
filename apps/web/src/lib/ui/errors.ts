@@ -31,6 +31,8 @@ export function describeFailure(
       return `${prefix}The requested resource could not be found.`;
     case "disconnected":
       return `${prefix}Could not reach the platform API.`;
+    case "timeout":
+      return `${prefix}The platform API did not finish within ${Math.round(outcome.timeoutMs / 1000)} seconds.`;
     case "unauthenticated":
       return `${prefix}Your session has expired. Sign in again.`;
     case "not-configured":

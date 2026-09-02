@@ -79,6 +79,8 @@ export type SearchConsolePerformanceReport = {
   }[];
 };
 
+const PROVIDER_SYNC_TIMEOUT_MS = 90_000;
+
 function seoBase(organizationId: string): string {
   return `/api/v1/organizations/${organizationId}/seo`;
 }
@@ -120,7 +122,11 @@ export function syncSearchConsole(
 ): Promise<ApiOutcome<{ search_property_id: string; rows_synced: number }>> {
   return apiRequest(
     `${seoBase(organizationId)}/websites/${websiteId}/search-properties/${searchPropertyId}/sync`,
-    { method: "POST", body: { days } },
+    {
+      method: "POST",
+      body: { days },
+      timeoutMs: PROVIDER_SYNC_TIMEOUT_MS,
+    },
   );
 }
 
