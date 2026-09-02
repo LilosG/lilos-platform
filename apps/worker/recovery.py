@@ -460,9 +460,7 @@ async def requeue_recoverable_failures(
 
         is_agent = definition.key.startswith("agent.")
         max_attempts = 5 if is_agent else 3
-        timeout_seconds = (
-            max(version.timeout_seconds, 900) if is_agent else version.timeout_seconds
-        )
+        timeout_seconds = max(version.timeout_seconds, 900) if is_agent else version.timeout_seconds
         session.add(
             Job(
                 organization_id=run.organization_id,

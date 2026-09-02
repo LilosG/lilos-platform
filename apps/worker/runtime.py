@@ -42,13 +42,9 @@ class OperationalExecutionService(ExecutionService):
             return None
 
         run = await session.get(WorkflowRun, job.workflow_run_id)
-        version = (
-            await session.get(WorkflowVersion, run.workflow_version_id) if run else None
-        )
+        version = await session.get(WorkflowVersion, run.workflow_version_id) if run else None
         definition = (
-            await session.get(WorkflowDefinition, version.definition_id)
-            if version
-            else None
+            await session.get(WorkflowDefinition, version.definition_id) if version else None
         )
         if version is not None:
             job.timeout_seconds = max(job.timeout_seconds, version.timeout_seconds)
