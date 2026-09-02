@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
 from sqlalchemy import select
@@ -50,13 +50,16 @@ async def _response_for_update(
     organization_id: UUID,
     response_id: UUID,
 ) -> ReviewResponseRevision | None:
-    return await session.scalar(
-        select(ReviewResponseRevision)
-        .where(
-            ReviewResponseRevision.organization_id == organization_id,
-            ReviewResponseRevision.id == response_id,
-        )
-        .with_for_update()
+    return cast(
+        ReviewResponseRevision | None,
+        await session.scalar(
+            select(ReviewResponseRevision)
+            .where(
+                ReviewResponseRevision.organization_id == organization_id,
+                ReviewResponseRevision.id == response_id,
+            )
+            .with_for_update()
+        ),
     )
 
 
