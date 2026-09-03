@@ -216,7 +216,11 @@ async function resolveTargetOrganization(
         has_more?: boolean;
         next_offset?: number | null;
       };
-    }>(page, "GET", `/api/v1/platform/organizations?limit=100&offset=${offset}`);
+    }>(
+      page,
+      "GET",
+      `/api/v1/platform/organizations?limit=100&offset=${offset}`,
+    );
 
     if (result.status === 403) {
       platformAvailable = false;
@@ -274,7 +278,8 @@ async function resolveTargetOrganization(
 
   const matches = (memberships.data?.data ?? []).filter(
     (organization) =>
-      normalizeOrganizationName(organization.organization_name ?? "") === target,
+      normalizeOrganizationName(organization.organization_name ?? "") ===
+      target,
   );
   if (matches.length !== 1) {
     throw new Error(
@@ -299,8 +304,7 @@ async function resolveLocationIds(
     let offset = 0;
 
     for (let pageNumber = 0; pageNumber < 100; pageNumber += 1) {
-      const path =
-        `/api/v1/platform/organizations/${organization.id}/locations?limit=100&offset=${offset}`;
+      const path = `/api/v1/platform/organizations/${organization.id}/locations?limit=100&offset=${offset}`;
       const result = await apiCall<{
         data?: {
           items?: Array<{ id: string }>;
