@@ -51,8 +51,13 @@ type ApiResult<T = unknown> = {
 
 type Context = {
   orgId: string;
-  orgName: string;
   locationId: string;
+};
+
+type TargetOrganization = {
+  id: string;
+  name: string;
+  source: "platform" | "membership";
 };
 
 type AgentRun = {
@@ -195,6 +200,146 @@ async function apiCall<T = unknown>(
   return authenticatedFetch<T>(page, method, path, body);
 }
 
+async function resolveTargetOrganization(
+  page: import("@playwright/test").Page,
+  targetName: string,
+): Promise<TargetOrganization> {
+  const target = normalizeOrganizationName(targetName);
+  const platformMatches: Array<{ id: string; name: string }> = [];
+  let platformAvailable = true;
+  let offset = 0;
+
+  for (let pageNumber = 0; pageNumber < 100; pageNumber += 1) {
+    const result = await apiCall<{
+      data?: {
+        items?: Array<{ id: string; name: string }>;
+        has_more?: boolean;
+        next_offset?: number | null;
+      };
+    }>(page, "GET", `/api/v1/platform/organizations?limit=100&offset=${offset}`);
+
+    if (result.status === 403) {
+      platformAvailable = false;
+      break;
+    }
+    if (result.status !== 200) {
+      throw new Error(
+        `Platform organization lookup failed: HTTP ${result.status} — ${result.body ?? result.error ?? "no response body"}`,
+      );
+    }
+
+    const payload = result.data?.data;
+    for (const organization of payload?.items ?? []) {
+      if (normalizeOrganizationName(organization.name) === target) {
+        platformMatches.push(organization);
+      }
+    }
+
+    if (!payload?.has_more) break;
+    const nextOffset = payload.next_offset;
+    if (typeof nextOffset !== "number" || nextOffset <= offset) {
+      throw new Error(
+        "Platform organization pagination returned an invalid next_offset.",
+      );
+    }
+    offset = nextOffset;
+  }
+
+  if (platformAvailable) {
+    if (platformMatches.length === 1) {
+      return { ...platformMatches[0], source: "platform" };
+    }
+    if (platformMatches.length > 1) {
+      throw new Error(
+        `Target organization "${targetName}" is ambiguous in platform administration.`,
+      );
+    }
+    throw new Error(
+      `Target organization "${targetName}" was not found in platform administration.`,
+    );
+  }
+
+  const memberships = await apiCall<{
+    data?: Array<{
+      id: string;
+      organization_id: string;
+      organization_name: string;
+    }>;
+  }>(page, "GET", "/api/v1/me/organizations");
+  if (memberships.status !== 200) {
+    throw new Error(
+      `Membership organization lookup failed: HTTP ${memberships.status} — ${memberships.body ?? memberships.error ?? "no response body"}`,
+    );
+  }
+
+  const matches = (memberships.data?.data ?? []).filter(
+    (organization) =>
+      normalizeOrganizationName(organization.organization_name ?? "") === target,
+  );
+  if (matches.length !== 1) {
+    throw new Error(
+      `Target organization "${targetName}" must resolve to exactly one accessible organization; found ${matches.length}.`,
+    );
+  }
+
+  const organization = matches[0];
+  return {
+    id: organization.organization_id ?? organization.id,
+    name: organization.organization_name,
+    source: "membership",
+  };
+}
+
+async function resolveLocationIds(
+  page: import("@playwright/test").Page,
+  organization: TargetOrganization,
+): Promise<string[]> {
+  if (organization.source === "platform") {
+    const ids: string[] = [];
+    let offset = 0;
+
+    for (let pageNumber = 0; pageNumber < 100; pageNumber += 1) {
+      const path =
+        `/api/v1/platform/organizations/${organization.id}/locations?limit=100&offset=${offset}`;
+      const result = await apiCall<{
+        data?: {
+          items?: Array<{ id: string }>;
+          has_more?: boolean;
+          next_offset?: number | null;
+        };
+      }>(page, "GET", path);
+      if (result.status !== 200) {
+        throw new Error(
+          `Platform location lookup failed: HTTP ${result.status} — ${result.body ?? result.error ?? "no response body"}`,
+        );
+      }
+
+      const payload = result.data?.data;
+      ids.push(...(payload?.items ?? []).map((location) => location.id));
+      if (!payload?.has_more) break;
+      const nextOffset = payload.next_offset;
+      if (typeof nextOffset !== "number" || nextOffset <= offset) {
+        throw new Error(
+          "Platform location pagination returned an invalid next_offset.",
+        );
+      }
+      offset = nextOffset;
+    }
+
+    return ids;
+  }
+
+  const result = await apiCall<{
+    data?: Array<{ id: string }>;
+  }>(page, "GET", orgPath(organization.id, "/locations?limit=100"));
+  if (result.status !== 200) {
+    throw new Error(
+      `Organization location lookup failed: HTTP ${result.status} — ${result.body ?? result.error ?? "no response body"}`,
+    );
+  }
+  return (result.data?.data ?? []).map((location) => location.id);
+}
+
 async function resolveContext(
   page: import("@playwright/test").Page,
 ): Promise<Context> {
@@ -202,55 +347,16 @@ async function resolveContext(
   await expect(page.locator("#sign-out-button")).toBeVisible({
     timeout: 15_000,
   });
-
-  const selectedOrgName =
-    (await page.locator("#active-organization-name").textContent())?.trim() ??
-    "";
   expect(
-    selectedOrgName && selectedOrgName !== "Loading…",
-    "An active production organization must be selected",
+    TARGET_ORG_NAME,
+    "LILOS_PRODUCTION_ACCEPTANCE_ORG_NAME is required for production acceptance",
   ).toBeTruthy();
 
-  if (TARGET_ORG_NAME) {
-    expect(
-      normalizeOrganizationName(selectedOrgName),
-      `Saved auth is scoped to "${selectedOrgName}", not configured acceptance organization "${TARGET_ORG_NAME}"`,
-    ).toBe(normalizeOrganizationName(TARGET_ORG_NAME));
-  }
-
-  const organizations = await apiCall<{
-    data?: Array<{
-      id: string;
-      organization_id: string;
-      organization_name: string;
-    }>;
-  }>(page, "GET", "/api/v1/me/organizations");
-  expect(organizations.status, organizations.error).toBe(200);
-
-  const rows = organizations.data?.data ?? [];
-  const matches = rows.filter(
-    (row) =>
-      normalizeOrganizationName(row.organization_name ?? "") ===
-      normalizeOrganizationName(selectedOrgName),
-  );
+  const organization = await resolveTargetOrganization(page, TARGET_ORG_NAME);
+  const locationIds = await resolveLocationIds(page, organization);
   expect(
-    matches.length,
-    `Selected organization "${selectedOrgName}" must resolve to exactly one organization membership`,
-  ).toBe(1);
-
-  const selectedOrg = matches[0];
-  const orgId = selectedOrg?.organization_id ?? selectedOrg?.id ?? "";
-  expect(orgId).toBeTruthy();
-
-  const locationsPath = orgPath(orgId, "/locations?limit=100");
-  const locations = await apiCall<{
-    data?: Array<{ id: string; display_name?: string }>;
-  }>(page, "GET", locationsPath);
-  expect(locations.status, locations.error).toBe(200);
-  const locationRows = locations.data?.data ?? [];
-  expect(
-    locationRows.length,
-    `Selected organization "${selectedOrgName}" must have at least one location`,
+    locationIds.length,
+    `Target organization "${organization.name}" must have at least one location`,
   ).toBeGreaterThan(0);
 
   const gbpMappings = await apiCall<{
@@ -258,10 +364,10 @@ async function resolveContext(
       location_id: string;
       mapping_status: string;
     }>;
-  }>(page, "GET", orgPath(orgId, "/gbp/locations"));
-  expect(gbpMappings.status, gbpMappings.error).toBe(200);
+  }>(page, "GET", orgPath(organization.id, "/gbp/locations"));
+  expect(gbpMappings.status, gbpMappings.body ?? gbpMappings.error).toBe(200);
 
-  const knownLocationIds = new Set(locationRows.map((location) => location.id));
+  const knownLocationIds = new Set(locationIds);
   const confirmedMappings = (gbpMappings.data?.data ?? [])
     .filter(
       (mapping) =>
@@ -271,13 +377,13 @@ async function resolveContext(
     .sort((left, right) => left.location_id.localeCompare(right.location_id));
   expect(
     confirmedMappings.length,
-    `Selected organization "${selectedOrgName}" must have a confirmed GBP mapping for the Hermes production canary`,
+    `Target organization "${organization.name}" must have a confirmed GBP mapping for the Hermes production canary`,
   ).toBeGreaterThan(0);
 
   const locationId = confirmedMappings[0]?.location_id ?? "";
   expect(locationId).toBeTruthy();
 
-  return { orgId, orgName: selectedOrgName, locationId };
+  return { orgId: organization.id, locationId };
 }
 
 async function pollWorkflow(
