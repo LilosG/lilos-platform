@@ -1,9 +1,9 @@
 import { expect, test } from "@playwright/test";
 
-const PRODUCTION_WEB_BASE = "https://lilos-platform-web.vercel.app";
-const PRODUCTION_API_BASE = "https://lilos-api.onrender.com";
-const EXPECTED_GBP_MODEL = "deepseek/deepseek-v4-flash-0731";
-const EXPECTED_RUNTIME_RELEASE = "v2026.8.19";
+const WEB_BASE = "https://lilos-platform-web.vercel.app";
+const API_BASE = "https://lilos-api.onrender.com";
+const GBP_MODEL = "deepseek/deepseek-v4-flash-0731";
+const RUNTIME_RELEASE = "v2026.8.19";
 const REQUIRED_FEATURES = [
   "run_submission",
   "run_status",
@@ -20,26 +20,26 @@ const REQUIRED_READ_TOOLS = [
   "read_gbp_state",
   "read_gbp_recent_posts",
 ] as const;
-const MUTATING_GBP_TOOLS = new Set([
+const MUTATING_TOOLS = new Set([
   "generate_gbp_post_proposal",
   "create_gbp_optimization_proposal",
   "submit_for_approval",
 ]);
-const TERMINAL_WORKFLOW_STATUSES = new Set([
+const TERMINAL_WORKFLOWS = new Set([
   "completed",
   "failed",
   "cancelled",
   "expired",
   "dead_lettered",
 ]);
-const ACTIVE_AGENT_STATUSES = new Set([
+const ACTIVE_AGENTS = new Set([
   "queued",
   "running",
   "waiting_approval",
   "stopping",
 ]);
 
-type ApiCallResult<T = unknown> = {
+type ApiResult<T = unknown> = {
   ok: boolean;
   status: number;
   data?: T;
@@ -47,26 +47,24 @@ type ApiCallResult<T = unknown> = {
   body?: string;
 };
 
-type ProductionContext = {
+type Context = {
   orgId: string;
   locationId: string;
 };
 
-type AgentRunSummary = {
+type AgentRun = {
   id: string;
-  location_id?: string | null;
   skill_key?: string;
   status?: string;
-  model?: string | null;
-  safe_error_code?: string | null;
-  created_at?: string | null;
 };
 
-async function ensureProductionOrigin(
-  page: import("@playwright/test").Page,
-): Promise<void> {
-  if (page.url().startsWith(PRODUCTION_WEB_BASE)) return;
-  await page.goto(`${PRODUCTION_WEB_BASE}/`, { waitUntil: "domcontentloaded" });
+function orgPath(orgId: string, suffix: string): string {
+  return `/api/v1/organizations/${orgId}${suffix}`;
+}
+
+async function ensureOrigin(page: import("@playwright/test").Page): Promise<void> {
+  if (page.url().startsWith(WEB_BASE)) return;
+  await page.goto(`${WEB_BASE}/`, { waitUntil: "domcontentloaded" });
   await page.waitForSelector("#workspace-navigation", { timeout: 20_000 });
   await page.waitForTimeout(500);
 }
@@ -76,7 +74,7 @@ async function authenticatedFetch<T>(
   method: "GET" | "POST",
   path: string,
   body?: Record<string, unknown>,
-): Promise<ApiCallResult<T>> {
+): Promise<ApiResult<T>> {
   return page.evaluate(
     async ({ apiBase, requestPath, requestMethod, requestBody }) => {
       const keys = Object.keys(localStorage);
@@ -134,15 +132,15 @@ async function authenticatedFetch<T>(
       };
     },
     {
-      apiBase: PRODUCTION_API_BASE,
+      apiBase: API_BASE,
       requestPath: path,
       requestMethod: method,
       requestBody: body,
     },
-  ) as Promise<ApiCallResult<T>>;
+  ) as Promise<ApiResult<T>>;
 }
 
-async function refreshSupabaseSession(
+async function refreshSession(
   page: import("@playwright/test").Page,
 ): Promise<boolean> {
   return page.evaluate(async () => {
@@ -151,21 +149,18 @@ async function refreshSupabaseSession(
       (key) => key.startsWith("sb-") && key.endsWith("-auth-token"),
     );
     if (!authKey) return false;
+
     try {
       const session = JSON.parse(localStorage.getItem(authKey) ?? "{}");
       const refreshToken = session?.refresh_token;
       if (!refreshToken) return false;
-      const projectRef = authKey
-        .replace(/^sb-/, "")
-        .replace(/-auth-token$/, "");
-      const response = await fetch(
-        `https://${projectRef}.supabase.co/auth/v1/token?grant_type=refresh_token`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ refresh_token: refreshToken }),
-        },
-      );
+      const projectRef = authKey.replace(/^sb-/, "").replace(/-auth-token$/, "");
+      const url = `https://${projectRef}.supabase.co/auth/v1/token`;
+      const response = await fetch(`${url}?grant_type=refresh_token`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refresh_token: refreshToken }),
+      });
       if (!response.ok) return false;
       const refreshed = await response.json();
       localStorage.setItem(authKey, JSON.stringify(refreshed));
@@ -181,18 +176,18 @@ async function apiCall<T = unknown>(
   method: "GET" | "POST",
   path: string,
   body?: Record<string, unknown>,
-): Promise<ApiCallResult<T>> {
-  await ensureProductionOrigin(page);
+): Promise<ApiResult<T>> {
+  await ensureOrigin(page);
   const first = await authenticatedFetch<T>(page, method, path, body);
   if (first.status !== 401) return first;
-  if (!(await refreshSupabaseSession(page))) return first;
+  if (!(await refreshSession(page))) return first;
   return authenticatedFetch<T>(page, method, path, body);
 }
 
-async function resolveProductionContext(
+async function resolveContext(
   page: import("@playwright/test").Page,
-): Promise<ProductionContext> {
-  await ensureProductionOrigin(page);
+): Promise<Context> {
+  await ensureOrigin(page);
   await expect(page.locator("#sign-out-button")).toBeVisible({
     timeout: 15_000,
   });
@@ -205,62 +200,56 @@ async function resolveProductionContext(
     }>;
   }>(page, "GET", "/api/v1/me/organizations");
   expect(organizations.status, organizations.error).toBe(200);
-  const wheyland = (organizations.data?.data ?? []).find((organization) =>
-    organization.organization_name?.toLowerCase().includes("wheyland"),
+
+  const rows = organizations.data?.data ?? [];
+  const wheyland = rows.find((row) =>
+    row.organization_name?.toLowerCase().includes("wheyland"),
   );
-  expect(
-    wheyland,
-    "Wheyland Electric must be available to production acceptance",
-  ).toBeTruthy();
+  expect(wheyland, "Wheyland Electric must be available").toBeTruthy();
   const orgId = wheyland?.organization_id ?? wheyland?.id ?? "";
   expect(orgId).toBeTruthy();
 
+  const locationsPath = orgPath(orgId, "/locations?limit=5");
   const locations = await apiCall<{
-    data?: Array<{ id: string; display_name?: string }>;
-  }>(page, "GET", `/api/v1/organizations/${orgId}/locations?limit=5`);
+    data?: Array<{ id: string }>;
+  }>(page, "GET", locationsPath);
   expect(locations.status, locations.error).toBe(200);
   const locationId = locations.data?.data?.[0]?.id ?? "";
-  expect(
-    locationId,
-    "Wheyland Electric must have a production location",
-  ).toBeTruthy();
+  expect(locationId, "Wheyland Electric must have a location").toBeTruthy();
 
   return { orgId, locationId };
 }
 
-async function pollWorkflowRun(
+async function pollWorkflow(
   page: import("@playwright/test").Page,
-  orgId: string,
+  context: Context,
   workflowRunId: string,
 ): Promise<Record<string, unknown>> {
+  const suffix = `/workflows/runs/${workflowRunId}`;
+  const path = orgPath(context.orgId, suffix);
+
   for (let attempt = 0; attempt < 160; attempt += 1) {
     const result = await apiCall<{
       data?: { status?: string; [key: string]: unknown };
-    }>(
-      page,
-      "GET",
-      `/api/v1/organizations/${orgId}/workflows/runs/${workflowRunId}`,
-    );
+    }>(page, "GET", path);
     if (result.ok) {
       const workflow = result.data?.data;
       const status = workflow?.status;
-      if (status && TERMINAL_WORKFLOW_STATUSES.has(status)) {
+      if (status && TERMINAL_WORKFLOWS.has(status)) {
         return workflow as Record<string, unknown>;
       }
     }
     await page.waitForTimeout(3000);
   }
-  throw new Error(
-    `Hermes workflow ${workflowRunId} did not reach terminal state within 8 minutes`,
-  );
+
+  throw new Error(`Hermes workflow ${workflowRunId} exceeded 8 minutes`);
 }
 
 test.describe.serial("Native Hermes production acceptance", () => {
-  test("private Hermes runtime advertises the governed native-run contract", async ({
-    page,
-  }) => {
-    const context = await resolveProductionContext(page);
-    const capabilities = await apiCall<{
+  test("Hermes capabilities are production-ready", async ({ page }) => {
+    const context = await resolveContext(page);
+    const path = orgPath(context.orgId, "/agents/capabilities");
+    const result = await apiCall<{
       data?: {
         available?: boolean;
         reason_code?: string | null;
@@ -270,112 +259,85 @@ test.describe.serial("Native Hermes production acceptance", () => {
         sanctioned_tools?: string[];
         missing_required?: string[];
       };
-    }>(
-      page,
-      "GET",
-      `/api/v1/organizations/${context.orgId}/agents/capabilities`,
-    );
+    }>(page, "GET", path);
 
-    expect(capabilities.status, capabilities.error).toBe(200);
-    const data = capabilities.data?.data;
+    expect(result.status, result.error).toBe(200);
+    const data = result.data?.data;
     expect(data?.available, data?.reason_code ?? "Hermes unavailable").toBe(true);
     expect(data?.runtime_version).toBeTruthy();
-    expect(data?.runtime_release).toBe(EXPECTED_RUNTIME_RELEASE);
+    expect(data?.runtime_release).toBe(RUNTIME_RELEASE);
     expect(data?.missing_required ?? []).toEqual([]);
+
     for (const feature of REQUIRED_FEATURES) {
-      expect(
-        data?.features?.[feature],
-        `Missing Hermes capability: ${feature}`,
-      ).toBe(true);
+      const message = `Missing Hermes capability: ${feature}`;
+      expect(data?.features?.[feature], message).toBe(true);
     }
     for (const tool of REQUIRED_READ_TOOLS) {
-      expect(
-        data?.sanctioned_tools ?? [],
-        `Missing sanctioned LILOs tool: ${tool}`,
-      ).toContain(tool);
+      const message = `Missing sanctioned LILOs tool: ${tool}`;
+      expect(data?.sanctioned_tools ?? [], message).toContain(tool);
     }
   });
 
-  test("read-only GBP agent uses the governed OpenRouter model and LILOs tools end to end", async ({
-    page,
-  }) => {
+  test("GBP read-only canary completes through Hermes", async ({ page }) => {
     test.setTimeout(540_000);
-    const context = await resolveProductionContext(page);
+    const context = await resolveContext(page);
+    const listSuffix = `/agents/runs?location_id=${context.locationId}&limit=100`;
+    const listPath = orgPath(context.orgId, listSuffix);
 
-    const before = await apiCall<{ data?: AgentRunSummary[] }>(
+    const before = await apiCall<{ data?: AgentRun[] }>(
       page,
       "GET",
-      `/api/v1/organizations/${context.orgId}/agents/runs?location_id=${context.locationId}&limit=100`,
+      listPath,
     );
     expect(before.status, before.error).toBe(200);
     const beforeRuns = before.data?.data ?? [];
-    const active = beforeRuns.filter(
-      (run) =>
-        run.skill_key === "gbp.operator" &&
-        ACTIVE_AGENT_STATUSES.has(run.status ?? ""),
-    );
-    expect(
-      active,
-      `Existing active GBP agent run prevents an isolated acceptance canary: ${active
-        .map((run) => `${run.id}:${run.status}`)
-        .join(", ")}`,
-    ).toEqual([]);
+    const active = beforeRuns.filter((run) => {
+      const isGbp = run.skill_key === "gbp.operator";
+      return isGbp && ACTIVE_AGENTS.has(run.status ?? "");
+    });
+    const activeMessage = active
+      .map((run) => `${run.id}:${run.status}`)
+      .join(", ");
+    expect(active, `Existing active GBP run: ${activeMessage}`).toEqual([]);
     const previousIds = new Set(beforeRuns.map((run) => run.id));
 
-    const idempotencyKey = `prod-hermes-readonly-${Date.now()}`;
+    const startPath = orgPath(context.orgId, "/agents/agent.gbp/runs");
     const started = await apiCall<{
       data?: {
         workflow_run_id?: string;
-        status?: string;
         skill_key?: string;
       };
-    }>(
-      page,
-      "POST",
-      `/api/v1/organizations/${context.orgId}/agents/agent.gbp/runs`,
-      {
-        location_id: context.locationId,
-        idempotency_key: idempotencyKey,
-        objective:
-          "Production acceptance, read-only. Read approved business facts, website knowledge, current GBP state, and recent GBP posts for the bound location. Do not create any proposal, do not submit anything for approval, and do not request any provider write. Return only a concise evidence-backed status summary.",
-        context_reference: "production-acceptance:hermes-readonly-v1",
-      },
-    );
+    }>(page, "POST", startPath, {
+      location_id: context.locationId,
+      idempotency_key: `prod-hermes-readonly-${Date.now()}`,
+      objective:
+        "Production acceptance, read-only. Read approved business facts, website knowledge, current GBP state, and recent GBP posts for the bound location. Do not create any proposal, do not submit anything for approval, and do not request any provider write. Return only a concise evidence-backed status summary.",
+      context_reference: "production-acceptance:hermes-readonly-v1",
+    });
     expect(started.status, started.body ?? started.error).toBe(201);
     expect(started.data?.data?.skill_key).toBe("gbp.operator");
     const workflowRunId = started.data?.data?.workflow_run_id ?? "";
     expect(workflowRunId).toBeTruthy();
 
-    const workflow = await pollWorkflowRun(
-      page,
-      context.orgId,
-      workflowRunId,
-    );
-    expect(
-      workflow.status,
-      `Hermes workflow failed: failure_code=${String(
-        workflow.failure_code ?? "none",
-      )}`,
-    ).toBe("completed");
+    const workflow = await pollWorkflow(page, context, workflowRunId);
+    const failureCode = String(workflow.failure_code ?? "none");
+    expect(workflow.status, `Workflow failure: ${failureCode}`).toBe("completed");
 
-    const after = await apiCall<{ data?: AgentRunSummary[] }>(
+    const after = await apiCall<{ data?: AgentRun[] }>(
       page,
       "GET",
-      `/api/v1/organizations/${context.orgId}/agents/runs?location_id=${context.locationId}&limit=100`,
+      listPath,
     );
     expect(after.status, after.error).toBe(200);
-    const createdRuns = (after.data?.data ?? []).filter(
-      (run) => run.skill_key === "gbp.operator" && !previousIds.has(run.id),
-    );
-    expect(
-      createdRuns.length,
-      "Expected exactly one new governed GBP agent run",
-    ).toBe(1);
+    const createdRuns = (after.data?.data ?? []).filter((run) => {
+      return run.skill_key === "gbp.operator" && !previousIds.has(run.id);
+    });
+    expect(createdRuns.length, "Expected one new GBP agent run").toBe(1);
     const agentRunId = createdRuns[0].id;
 
-    const detailResponse = await apiCall<{
+    const detailPath = orgPath(context.orgId, `/agents/runs/${agentRunId}`);
+    const detailResult = await apiCall<{
       data?: {
-        id: string;
         status?: string;
         model?: string | null;
         provider?: string | null;
@@ -385,15 +347,12 @@ test.describe.serial("Native Hermes production acceptance", () => {
         capabilities?: {
           runtime_release?: string | null;
           model?: string | null;
-          features?: Record<string, boolean>;
-          sanctioned_tools?: string[];
         };
         source_references?: string[];
         final_output?: { text?: string } | null;
         usage?: {
           input_tokens?: number | null;
           output_tokens?: number | null;
-          estimated_cost_microunits?: number | null;
           latency_ms?: number | null;
         };
         events?: Array<{
@@ -401,51 +360,43 @@ test.describe.serial("Native Hermes production acceptance", () => {
           event_document?: {
             tool?: string;
             error?: boolean;
-            [key: string]: unknown;
           };
         }>;
       };
-    }>(
-      page,
-      "GET",
-      `/api/v1/organizations/${context.orgId}/agents/runs/${agentRunId}`,
-    );
-    expect(detailResponse.status, detailResponse.error).toBe(200);
-    const detail = detailResponse.data?.data;
-    expect(
-      detail?.status,
-      detail?.safe_error_code ?? "Agent run did not complete",
-    ).toBe("completed");
+    }>(page, "GET", detailPath);
+    expect(detailResult.status, detailResult.error).toBe(200);
+
+    const detail = detailResult.data?.data;
+    const runError = detail?.safe_error_code ?? "Agent run did not complete";
+    expect(detail?.status, runError).toBe("completed");
     expect(detail?.provider).toBe("hermes");
-    expect(detail?.model).toBe(EXPECTED_GBP_MODEL);
+    expect(detail?.model).toBe(GBP_MODEL);
     expect(detail?.hermes_run_id).toBeTruthy();
     expect(detail?.hermes_session_id).toBeTruthy();
-    expect(detail?.capabilities?.runtime_release).toBe(EXPECTED_RUNTIME_RELEASE);
-    expect(detail?.capabilities?.model).toBe(EXPECTED_GBP_MODEL);
+    expect(detail?.capabilities?.runtime_release).toBe(RUNTIME_RELEASE);
+    expect(detail?.capabilities?.model).toBe(GBP_MODEL);
 
     const events = detail?.events ?? [];
     const completedTools = events
-      .filter(
-        (event) =>
-          event.event_type === "tool.completed" &&
-          event.event_document?.error !== true,
-      )
+      .filter((event) => {
+        const completed = event.event_type === "tool.completed";
+        return completed && event.event_document?.error !== true;
+      })
       .map((event) => String(event.event_document?.tool ?? ""));
+
     for (const tool of REQUIRED_READ_TOOLS) {
-      expect(
-        completedTools,
-        `Hermes did not complete required read tool: ${tool}`,
-      ).toContain(tool);
+      const message = `Hermes did not complete required read tool: ${tool}`;
+      expect(completedTools, message).toContain(tool);
     }
     for (const tool of completedTools) {
-      expect(
-        MUTATING_GBP_TOOLS.has(tool),
-        `Read-only canary invoked mutating tool: ${tool}`,
-      ).toBe(false);
+      const message = `Read-only canary invoked mutating tool: ${tool}`;
+      expect(MUTATING_TOOLS.has(tool), message).toBe(false);
     }
-    expect(
-      events.some((event) => event.event_type === "run.completed"),
-    ).toBe(true);
+
+    const completed = events.some((event) => {
+      return event.event_type === "run.completed";
+    });
+    expect(completed).toBe(true);
     expect(detail?.source_references?.length ?? 0).toBeGreaterThan(0);
     expect(detail?.final_output?.text?.trim().length ?? 0).toBeGreaterThan(0);
     expect(detail?.usage?.input_tokens ?? 0).toBeGreaterThan(0);
