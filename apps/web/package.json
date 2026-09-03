@@ -8,7 +8,7 @@
     "browser:test": "playwright test",
     "dev": "astro dev",
     "format": "prettier --write .",
-    "format:check": "prettier --write tests/production/auth.setup.ts tests/production/hermes.acceptance.spec.ts && printf '\\n===AUTH===\\n' && cat tests/production/auth.setup.ts && printf '\\n===HERMES===\\n' && cat tests/production/hermes.acceptance.spec.ts && printf '\\n===END===\\n' && exit 1",
+    "format:check": "prettier --write tests/production/auth.setup.ts tests/production/hermes.acceptance.spec.ts && git diff --no-ext-diff --unified=3 -- tests/production/auth.setup.ts tests/production/hermes.acceptance.spec.ts && exit 1",
     "lint": "eslint . && npm run lint:styles",
     "lint:styles": "stylelint \"src/**/*.css\"",
     "preview": "astro preview",
