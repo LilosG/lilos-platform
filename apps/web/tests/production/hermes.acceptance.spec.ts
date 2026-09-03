@@ -62,7 +62,9 @@ function orgPath(orgId: string, suffix: string): string {
   return `/api/v1/organizations/${orgId}${suffix}`;
 }
 
-async function ensureOrigin(page: import("@playwright/test").Page): Promise<void> {
+async function ensureOrigin(
+  page: import("@playwright/test").Page,
+): Promise<void> {
   if (page.url().startsWith(WEB_BASE)) return;
   await page.goto(`${WEB_BASE}/`, { waitUntil: "domcontentloaded" });
   await page.waitForSelector("#workspace-navigation", { timeout: 20_000 });
@@ -154,7 +156,9 @@ async function refreshSession(
       const session = JSON.parse(localStorage.getItem(authKey) ?? "{}");
       const refreshToken = session?.refresh_token;
       if (!refreshToken) return false;
-      const projectRef = authKey.replace(/^sb-/, "").replace(/-auth-token$/, "");
+      const projectRef = authKey
+        .replace(/^sb-/, "")
+        .replace(/-auth-token$/, "");
       const url = `https://${projectRef}.supabase.co/auth/v1/token`;
       const response = await fetch(`${url}?grant_type=refresh_token`, {
         method: "POST",
@@ -263,7 +267,9 @@ test.describe.serial("Native Hermes production acceptance", () => {
 
     expect(result.status, result.error).toBe(200);
     const data = result.data?.data;
-    expect(data?.available, data?.reason_code ?? "Hermes unavailable").toBe(true);
+    expect(data?.available, data?.reason_code ?? "Hermes unavailable").toBe(
+      true,
+    );
     expect(data?.runtime_version).toBeTruthy();
     expect(data?.runtime_release).toBe(RUNTIME_RELEASE);
     expect(data?.missing_required ?? []).toEqual([]);
@@ -284,11 +290,7 @@ test.describe.serial("Native Hermes production acceptance", () => {
     const listSuffix = `/agents/runs?location_id=${context.locationId}&limit=100`;
     const listPath = orgPath(context.orgId, listSuffix);
 
-    const before = await apiCall<{ data?: AgentRun[] }>(
-      page,
-      "GET",
-      listPath,
-    );
+    const before = await apiCall<{ data?: AgentRun[] }>(page, "GET", listPath);
     expect(before.status, before.error).toBe(200);
     const beforeRuns = before.data?.data ?? [];
     const active = beforeRuns.filter((run) => {
@@ -321,13 +323,11 @@ test.describe.serial("Native Hermes production acceptance", () => {
 
     const workflow = await pollWorkflow(page, context, workflowRunId);
     const failureCode = String(workflow.failure_code ?? "none");
-    expect(workflow.status, `Workflow failure: ${failureCode}`).toBe("completed");
-
-    const after = await apiCall<{ data?: AgentRun[] }>(
-      page,
-      "GET",
-      listPath,
+    expect(workflow.status, `Workflow failure: ${failureCode}`).toBe(
+      "completed",
     );
+
+    const after = await apiCall<{ data?: AgentRun[] }>(page, "GET", listPath);
     expect(after.status, after.error).toBe(200);
     const createdRuns = (after.data?.data ?? []).filter((run) => {
       return run.skill_key === "gbp.operator" && !previousIds.has(run.id);
