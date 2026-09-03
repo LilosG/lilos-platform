@@ -116,7 +116,7 @@ async function authenticatedFetch<T>(
         };
       }
 
-      let responseBody = "";
+      let responseBody: string;
       try {
         const parsed = await response.json();
         if (response.ok) {
