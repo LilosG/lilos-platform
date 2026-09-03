@@ -49,7 +49,7 @@ import "../styles/global.css";
             slot="actions"
             href="/automations?agent=agent.gbp"
             variant="secondary"
-            size="sm">Run GBP agent</Button
+            size="sm">Run GBP operator</Button
           >
           <Button
             slot="actions"
@@ -153,6 +153,7 @@ import "../styles/global.css";
       let selectedGbpLocationId: string | null = null;
       let googleConnectionReady = false;
       let postsStatusMessage = "";
+      let postsStatusRunId: string | null = null;
 
       type LocationOperationalRow = {
         location: GBPLocationSummary;
@@ -963,6 +964,20 @@ import "../styles/global.css";
         }
       }
 
+      function renderPostActionStatus(node: HTMLElement): void {
+        node.replaceChildren();
+        if (postsStatusMessage) {
+          node.append(document.createTextNode(postsStatusMessage));
+        }
+        if (postsStatusRunId) {
+          if (postsStatusMessage) node.append(document.createTextNode(" "));
+          const link = document.createElement("a");
+          link.href = `/automations?workflowRun=${encodeURIComponent(postsStatusRunId)}`;
+          link.textContent = "View run status";
+          node.append(link);
+        }
+      }
+
       // ---- Posts tab ----
       async function renderPosts(): Promise<void> {
         const panel = document.getElementById("tab-posts")!;
@@ -1010,7 +1025,8 @@ import "../styles/global.css";
             selectedGbpLocationId!,
           );
           if (result.kind === "ok") {
-            postsStatusMessage = `${result.data.live_count} live on Google · ${result.data.processing_count} processing · ${result.data.persisted_count} observed over time.`;
+            postsStatusMessage = "Google Local Posts refreshed.";
+            postsStatusRunId = null;
             await renderPosts();
           } else {
             reconcileBtn.disabled = false;
@@ -1021,7 +1037,47 @@ import "../styles/global.css";
             );
           }
         });
-        providerBody.append(reconcileBtn, providerStatus);
+        const generateBtn = document.createElement("button");
+        generateBtn.type = "button";
+        generateBtn.className = "ui-button ui-button--secondary ui-button--md";
+        generateBtn.textContent = "Generate post proposal";
+        generateBtn.addEventListener("click", async () => {
+          generateBtn.disabled = true;
+          generateBtn.textContent = "Starting…";
+          postsStatusMessage = "Starting post generation…";
+          postsStatusRunId = null;
+          renderPostActionStatus(actionStatus);
+          const workflowStart = await startWorkflowRun(
+            organizationId,
+            "gbp.generate_post",
+            {
+              locationId: selectedPlatformLocationId!,
+              idempotencyKey: `operator-gbp-generate-post-${Date.now()}`,
+              execute: true,
+            },
+          );
+          if (workflowStart.kind === "ok") {
+            postsStatusMessage =
+              "Post generation queued. The proposal will appear below when it is ready for approval.";
+            postsStatusRunId = workflowStart.data.workflow_run_id;
+            renderPostActionStatus(actionStatus);
+            window.setTimeout(() => void renderPosts(), 5_000);
+            window.setTimeout(() => void renderPosts(), 15_000);
+          } else {
+            postsStatusMessage = describeFailure(
+              workflowStart,
+              "Generate post proposal",
+            );
+            postsStatusRunId = null;
+            renderPostActionStatus(actionStatus);
+          }
+          generateBtn.disabled = false;
+          generateBtn.textContent = "Generate post proposal";
+        });
+        const providerActions = document.createElement("div");
+        providerActions.className = "ui-inline";
+        providerActions.append(generateBtn, reconcileBtn);
+        providerBody.append(providerActions, providerStatus);
         if (providerPostsResult.kind === "ok") {
           const counts = providerPostCounts(providerPostsResult.data);
           const observed = document.createElement("p");
@@ -1036,7 +1092,7 @@ import "../styles/global.css";
         actionStatus.setAttribute("role", "status");
         actionStatus.setAttribute("aria-live", "polite");
         actionStatus.className = "ui-text-secondary";
-        actionStatus.textContent = postsStatusMessage;
+        renderPostActionStatus(actionStatus);
         panel.append(actionStatus);
 
         // Draft post form
@@ -1084,6 +1140,7 @@ import "../styles/global.css";
               : describeFailure(result, "Draft");
           if (result.kind === "ok") {
             postsStatusMessage = "Post drafted.";
+            postsStatusRunId = null;
             await renderPosts();
           }
         });
