@@ -8,12 +8,49 @@ on:
       - .github/workflows/patch-gbp-post-observability.yml
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  probe:
-    runs-on: ubuntu-latest
+  patch:
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
-      - name: Probe branch runner
-        run: echo "branch preflight runner is available"
+        with:
+          ref: fix/gbp-post-run-observability
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Apply focused patch
+        run: python .github/scripts/patch_gbp_post_observability.py
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Format changed pages
+        run: npx prettier --write apps/web/src/pages/gbp.astro apps/web/src/pages/automations.astro
+
+      - name: Lint frontend
+        run: npm run lint:web
+
+      - name: Typecheck frontend
+        run: npm run typecheck:web
+
+      - name: Test frontend
+        run: npm run test:web
+
+      - name: Build frontend
+        run: npm run build:web
+
+      - name: Commit validated patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/web/src/pages/gbp.astro apps/web/src/pages/automations.astro
+          git rm .github/scripts/patch_gbp_post_observability.py
+          git rm .github/workflows/patch-gbp-post-observability.yml
+          git commit -m "Fix GBP post generation and run observability"
+          git push origin HEAD:fix/gbp-post-run-observability
