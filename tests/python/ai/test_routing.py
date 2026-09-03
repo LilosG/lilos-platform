@@ -17,9 +17,7 @@ def test_task_model_override_beats_default_and_runtime_fallback() -> None:
         }
     )
     assert (
-        resolve_task_model(
-            "agent.seo.operator", settings, fallback="hermes/runtime-default"
-        )
+        resolve_task_model("agent.seo.operator", settings, fallback="hermes/runtime-default")
         == "reasoning/model"
     )
 

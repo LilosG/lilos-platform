@@ -302,9 +302,10 @@ class AgentRuntimeService:
         execution = await self._task_and_execution(
             session, organization_id, location_id, workflow_run_id, skill
         )
-        model_key = resolve_task_model(
-            f"agent.{skill.key}", settings, fallback=settings.ai_hermes_model
-        ) or settings.ai_hermes_model
+        model_key = (
+            resolve_task_model(f"agent.{skill.key}", settings, fallback=settings.ai_hermes_model)
+            or settings.ai_hermes_model
+        )
         run = AgentRun(
             organization_id=organization_id,
             location_id=location_id,
