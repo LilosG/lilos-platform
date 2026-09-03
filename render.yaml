@@ -22,6 +22,17 @@ envVarGroups:
         value: lilos-growth-operations
       - key: LILOS_AI_PROVIDER
         value: hermes
+      # Governed model routing. Exact dated slugs keep behavior reviewable;
+      # there is no automatic jump to an unbounded frontier model.
+      - key: LILOS_AI_DEFAULT_MODEL
+        value: deepseek/deepseek-v4-flash-0731
+      - key: LILOS_AI_TASK_MODEL_OVERRIDES
+        value: '{"gbp.generate_post":"deepseek/deepseek-v4-flash-0731","reviews.response_draft":"deepseek/deepseek-v4-flash-0731","content.draft_revision":"deepseek/deepseek-v4-pro-0813","agent.gbp.operator":"deepseek/deepseek-v4-flash-0731","agent.reviews.operator":"deepseek/deepseek-v4-flash-0731","agent.content.operator":"deepseek/deepseek-v4-flash-0731","agent.seo.operator":"deepseek/deepseek-v4-pro-0813","agent.insights.cross_product":"deepseek/deepseek-v4-pro-0813"}'
+      # $0.20 per direct AI Gateway task. Native Hermes runs are bounded by
+      # their explicit model tier plus HERMES_MAX_ITERATIONS below because the
+      # upstream Runs API does not accept a dollar/token budget.
+      - key: LILOS_AI_MAXIMUM_COST_MICROUNITS
+        value: "200000"
       - key: UV_CACHE_DIR
         value: /tmp/uv-cache
       - key: LILOS_SUPABASE_AUTH_AUDIENCE
@@ -62,6 +73,10 @@ services:
         value: openrouter
       - key: HERMES_INFERENCE_MODEL
         value: deepseek/deepseek-v4-flash-0731
+      - key: HERMES_AUXILIARY_MODEL
+        value: deepseek/deepseek-v4-flash-0731
+      - key: HERMES_AUXILIARY_VISION_MODEL
+        value: qwen/qwen3.7-flash
       # Spend control. Hermes runs its own inference loop outside the AI Gateway
       # and its API accepts no token budget, so iteration count is the only
       # enforceable bound on a runaway run -- each iteration resends a context

@@ -72,8 +72,8 @@ async def test_openrouter_provider_returns_governed_output(
                     "prompt_tokens": 120,
                     "completion_tokens": 80,
                     "total_tokens": 200,
+                    "cost": 0.0042,
                 },
-                "cost": 0.0042,
             },
         ),
     )
@@ -91,10 +91,11 @@ async def test_openrouter_provider_returns_governed_output(
     assert output["usage"]["input_tokens"] == 120
     assert output["usage"]["output_tokens"] == 80
     assert output["usage"]["total_tokens"] == 200
-    assert output["cost_microunits"] == 42  # 0.0042 cents * 10,000
+    assert output["cost_microunits"] == 4_200  # $0.0042 × 1,000,000 micro-USD
     assert output["request_id"] == "gen-123"
     assert output["latency_ms"] is not None
     assert len(client.calls) == 1
+    assert client.calls[0]["json"]["usage"] == {"include": True}
 
 
 @pytest.mark.anyio
@@ -339,6 +340,31 @@ async def test_openrouter_provider_missing_cost_is_none(
                 "model": "deepseek/deepseek-chat",
                 "choices": [{"message": {"content": '{"draft": "ok"}'}}],
                 "usage": {"prompt_tokens": 1, "completion_tokens": 2},
+            },
+        ),
+    )
+
+    output = await _provider().generate(
+        task_key="content.draft_revision", input_document={}, maximum_tokens=100
+    )
+    assert output["cost_microunits"] is None
+
+
+@pytest.mark.anyio
+async def test_openrouter_provider_ignores_ambiguous_top_level_cost(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Only OpenRouter's documented usage.cost USD field is accepted."""
+    _fake_http(
+        monkeypatch,
+        FakeResponse(
+            200,
+            {
+                "id": "gen-1",
+                "model": "deepseek/deepseek-chat",
+                "choices": [{"message": {"content": '{"draft": "ok"}'}}],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 2},
+                "cost": 99,
             },
         ),
     )
