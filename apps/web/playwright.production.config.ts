@@ -4,18 +4,24 @@ import { defineConfig, devices } from "@playwright/test";
  * Production acceptance configuration.
  *
  * Targets the live Vercel deployment at https://lilos-platform-web.vercel.app.
- * NEVER runs against local preview.  Uses a manually-bootstrapped storageState
+ * NEVER runs against local preview. Uses a manually bootstrapped storageState
  * file so acceptance checks can reuse one operator session.
  *
  * Usage:
  *   1. Bootstrap auth (one-time, headed):
- *      npm run production:auth
+ *      LILOS_PRODUCTION_ACCEPTANCE_ORG_NAME="<organization>" npm run production:auth
  *
- *   2. Run acceptance (reuses saved auth state):
+ *   2. Run the active production acceptance canary:
  *      npm run production:test
  *
- * The acceptance project does NOT depend on auth-setup.  If the storageState
- * file is missing, the first test will fail with a clear instruction to run
+ * The active production project intentionally matches only the native Hermes
+ * read-only acceptance spec. The older broad acceptance.spec.ts contains
+ * historical client-specific assumptions and is excluded from production
+ * execution until it is fully generalized. This prevents a stale tenant name
+ * from ever selecting or mutating a production client.
+ *
+ * The acceptance project does NOT depend on auth-setup. If the storageState
+ * file is missing, the acceptance run fails with a clear instruction to run
  * `npm run production:auth` first.
  */
 
@@ -49,12 +55,10 @@ export default defineConfig({
     },
 
     // ── Production acceptance (reuses saved auth state) ────────────────
-    // NO dependency on auth-setup.  The acceptance spec itself checks
-    // whether .auth/production-state.json exists and fails with a clear
-    // instruction if it does not.
+    // Only the tenant-generic, read-only Hermes canary is active here.
     {
       name: "production-acceptance",
-      testMatch: /acceptance\.spec\.ts/,
+      testMatch: /hermes\.acceptance\.spec\.ts/,
       use: {
         ...devices["Desktop Chrome"],
         channel: "chrome",
