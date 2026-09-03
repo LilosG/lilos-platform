@@ -4,6 +4,8 @@ const WEB_BASE = "https://lilos-platform-web.vercel.app";
 const API_BASE = "https://lilos-api.onrender.com";
 const GBP_MODEL = "deepseek/deepseek-v4-flash-0731";
 const RUNTIME_RELEASE = "v2026.8.19";
+const TARGET_ORG_NAME =
+  process.env.LILOS_PRODUCTION_ACCEPTANCE_ORG_NAME?.trim() ?? "";
 const REQUIRED_FEATURES = [
   "run_submission",
   "run_status",
@@ -49,6 +51,7 @@ type ApiResult<T = unknown> = {
 
 type Context = {
   orgId: string;
+  orgName: string;
   locationId: string;
 };
 
@@ -57,6 +60,10 @@ type AgentRun = {
   skill_key?: string;
   status?: string;
 };
+
+function normalizeOrganizationName(value: string): string {
+  return value.trim().replace(/\s+/g, " ").toLowerCase();
+}
 
 function orgPath(orgId: string, suffix: string): string {
   return `/api/v1/organizations/${orgId}${suffix}`;
@@ -196,6 +203,21 @@ async function resolveContext(
     timeout: 15_000,
   });
 
+  const selectedOrgName =
+    (await page.locator("#active-organization-name").textContent())?.trim() ??
+    "";
+  expect(
+    selectedOrgName && selectedOrgName !== "Loading…",
+    "An active production organization must be selected",
+  ).toBeTruthy();
+
+  if (TARGET_ORG_NAME) {
+    expect(
+      normalizeOrganizationName(selectedOrgName),
+      `Saved auth is scoped to "${selectedOrgName}", not configured acceptance organization "${TARGET_ORG_NAME}"`,
+    ).toBe(normalizeOrganizationName(TARGET_ORG_NAME));
+  }
+
   const organizations = await apiCall<{
     data?: Array<{
       id: string;
@@ -206,22 +228,56 @@ async function resolveContext(
   expect(organizations.status, organizations.error).toBe(200);
 
   const rows = organizations.data?.data ?? [];
-  const wheyland = rows.find((row) =>
-    row.organization_name?.toLowerCase().includes("wheyland"),
+  const matches = rows.filter(
+    (row) =>
+      normalizeOrganizationName(row.organization_name ?? "") ===
+      normalizeOrganizationName(selectedOrgName),
   );
-  expect(wheyland, "Wheyland Electric must be available").toBeTruthy();
-  const orgId = wheyland?.organization_id ?? wheyland?.id ?? "";
+  expect(
+    matches.length,
+    `Selected organization "${selectedOrgName}" must resolve to exactly one organization membership`,
+  ).toBe(1);
+
+  const selectedOrg = matches[0];
+  const orgId = selectedOrg?.organization_id ?? selectedOrg?.id ?? "";
   expect(orgId).toBeTruthy();
 
-  const locationsPath = orgPath(orgId, "/locations?limit=5");
+  const locationsPath = orgPath(orgId, "/locations?limit=100");
   const locations = await apiCall<{
-    data?: Array<{ id: string }>;
+    data?: Array<{ id: string; display_name?: string }>;
   }>(page, "GET", locationsPath);
   expect(locations.status, locations.error).toBe(200);
-  const locationId = locations.data?.data?.[0]?.id ?? "";
-  expect(locationId, "Wheyland Electric must have a location").toBeTruthy();
+  const locationRows = locations.data?.data ?? [];
+  expect(
+    locationRows.length,
+    `Selected organization "${selectedOrgName}" must have at least one location`,
+  ).toBeGreaterThan(0);
 
-  return { orgId, locationId };
+  const gbpMappings = await apiCall<{
+    data?: Array<{
+      location_id: string;
+      mapping_status: string;
+    }>;
+  }>(page, "GET", orgPath(orgId, "/gbp/locations"));
+  expect(gbpMappings.status, gbpMappings.error).toBe(200);
+
+  const knownLocationIds = new Set(locationRows.map((location) => location.id));
+  const confirmedMappings = (gbpMappings.data?.data ?? [])
+    .filter(
+      (mapping) =>
+        mapping.mapping_status === "confirmed" &&
+        knownLocationIds.has(mapping.location_id),
+    )
+    .sort((left, right) => left.location_id.localeCompare(right.location_id));
+  expect(
+    confirmedMappings.length,
+    `Selected organization "${selectedOrgName}" must have a confirmed GBP mapping for the Hermes production canary`,
+  ).toBeGreaterThan(0);
+
+  const locationId = confirmedMappings[0]?.location_id ?? "";
+  expect(locationId).toBeTruthy();
+
+  return { orgId, orgName: selectedOrgName, locationId };
 }
 
 async function pollWorkflow(
