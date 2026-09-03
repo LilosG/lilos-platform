@@ -8,7 +8,7 @@
     "browser:test": "playwright test",
     "dev": "astro dev",
     "format": "prettier --write .",
-    "format:check": "prettier --write tests/production/hermes.acceptance.spec.ts && git diff --exit-code -- tests/production/hermes.acceptance.spec.ts",
+    "format:check": "prettier --check .",
     "lint": "eslint . && npm run lint:styles",
     "lint:styles": "stylelint \"src/**/*.css\"",
     "preview": "astro preview",
