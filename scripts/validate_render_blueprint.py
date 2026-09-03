@@ -179,6 +179,8 @@ def validate_blueprint(path: Path = BLUEPRINT) -> tuple[str, ...]:
         "HERMES_RUNTIME_VERSION": "v2026.8.19",
         "HERMES_INFERENCE_PROVIDER": "openrouter",
         "HERMES_INFERENCE_MODEL": "deepseek/deepseek-v4-flash-0731",
+        "HERMES_AUXILIARY_MODEL": "deepseek/deepseek-v4-flash-0731",
+        "HERMES_AUXILIARY_VISION_MODEL": "qwen/qwen3.7-flash",
         # Spend bound: Hermes loops outside the AI Gateway and accepts no token
         # budget, so iteration count is the only enforceable cap on a runaway run.
         "HERMES_MAX_ITERATIONS": "25",
@@ -247,12 +249,16 @@ def validate_blueprint(path: Path = BLUEPRINT) -> tuple[str, ...]:
             "agent.disabled_toolsets",
             "sessions.auto_prune",
             "sessions.retention_days 30",
-            # The config-schema rotation and the auxiliary spend cap are both
-            # load-bearing: without the rotation our toolset restriction is
-            # read under obsolete key semantics and silently ignored, and
-            # without the cap auxiliary inference bills outside the AI Gateway.
+            # Config-schema rotation and explicit auxiliary routing are
+            # load-bearing production policy. The auxiliary checks below prove
+            # that cheap pinned routes are applied instead of free-SKU roulette.
             "below the v12 support floor",
-            "auxiliary.free_only true",
+            "auxiliary.free_only false",
+            'auxiliary.openrouter_model "$HERMES_AUXILIARY_MODEL"',
+            "auxiliary.vision.provider openrouter",
+            'auxiliary.vision.model "$HERMES_AUXILIARY_VISION_MODEL"',
+            "auxiliary.compression.provider openrouter",
+            'auxiliary.compression.model "$HERMES_AUXILIARY_MODEL"',
             "LILOS_TOOL_API_KEY",
             "Bootstrap complete; starting foreground gateway",
         ):
@@ -516,16 +522,3 @@ def validate_staging_blueprint(path: Path = STAGING_BLUEPRINT) -> tuple[str, ...
                 errors.append(f"{name}:secret-value")
 
     return tuple(sorted(errors))
-
-
-def main() -> int:
-    errors = (*validate_blueprint(), *validate_staging_blueprint())
-    if errors:
-        print("Render Blueprint policy validation failed: " + ", ".join(errors))
-        return 1
-    print("Render Blueprint policy validation passed")
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

@@ -24,6 +24,7 @@ from apps.api.app.agents.models import AgentRun, AgentRunEvent, AgentSession
 from apps.api.app.agents.safety import has_secret_key, redact_text, safe_event_document
 from apps.api.app.agents.skills import AgentSkill, skill_for_workflow
 from apps.api.app.ai.models import AIExecution, AITaskDefinition
+from apps.api.app.ai.routing import resolve_task_model
 from apps.api.app.audit.contracts import AuditEventCreate
 from apps.api.app.audit.enums import AuditActorType, AuditResult
 from apps.api.app.audit.service import AuditEventService
@@ -240,13 +241,13 @@ class AgentRuntimeService:
 
     @staticmethod
     def _capability_snapshot(
-        settings: Settings, capabilities: HermesCapabilities
+        settings: Settings, capabilities: HermesCapabilities, model_key: str
     ) -> dict[str, object]:
         return {
             "runtime_release": settings.hermes_runtime_release,
             "runtime_version": capabilities.runtime_version,
             "api_model_alias": capabilities.model,
-            "model": settings.ai_hermes_model,
+            "model": model_key,
             "features": {name: capabilities.supports(name) for name in sorted(REQUIRED_FEATURES)},
             "runtime": {
                 "mode": capabilities.runtime.get("mode"),
@@ -301,6 +302,10 @@ class AgentRuntimeService:
         execution = await self._task_and_execution(
             session, organization_id, location_id, workflow_run_id, skill
         )
+        model_key = (
+            resolve_task_model(f"agent.{skill.key}", settings, fallback=settings.ai_hermes_model)
+            or settings.ai_hermes_model
+        )
         run = AgentRun(
             organization_id=organization_id,
             location_id=location_id,
@@ -317,8 +322,8 @@ class AgentRuntimeService:
             correlation_id=correlation_id,
             status="queued",
             provider_key="hermes",
-            model_key=settings.ai_hermes_model,
-            capability_snapshot=self._capability_snapshot(settings, capabilities),
+            model_key=model_key,
+            capability_snapshot=self._capability_snapshot(settings, capabilities, model_key),
             output_references=[],
             source_references=[],
             event_count=0,
@@ -509,7 +514,10 @@ class AgentRuntimeService:
                     instructions=skill.instructions,
                     hermes_session_id=run.hermes_session_id,
                     session_key=scoped_session.hermes_session_key,
-                    model=settings.ai_hermes_model,
+                    # Persist the resolved model on AgentRun and reuse it on
+                    # retries so a configuration change cannot switch models
+                    # underneath an in-flight governed run.
+                    model=run.model_key or settings.ai_hermes_model,
                 )
                 run.hermes_run_id = hermes_run_id
                 run.status = "running"

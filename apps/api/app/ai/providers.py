@@ -86,8 +86,7 @@ class OpenRouterProvider:
 
         The returned dict always includes ``provider``, ``model``, ``draft``,
         ``requires_human_review``, ``usage``, ``latency_ms``, and
-        ``cost_microunits`` (estimated from provider-reported cost when
-        available, otherwise None).
+        ``cost_microunits`` (actual provider-reported USD cost when available).
         """
         del organization_id, location_id
         model = self._default_model
@@ -121,6 +120,10 @@ class OpenRouterProvider:
                         "max_tokens": max_tokens,
                         "temperature": 0.7,
                         "response_format": {"type": "json_object"},
+                        # Ask OpenRouter to include provider-accounted usage and
+                        # USD cost in the response. This avoids maintaining a
+                        # stale pricing table inside LILOs.
+                        "usage": {"include": True},
                     },
                 )
         except httpx.TimeoutException:
@@ -172,18 +175,16 @@ class OpenRouterProvider:
         except DraftExtractionError as error:
             raise AIProviderError("provider", error.reason) from None
 
-        # Usage metadata
+        # Usage metadata. OpenRouter returns request cost in USD as usage.cost.
         usage = body.get("usage", {}) or {}
         input_tokens = usage.get("prompt_tokens")
         output_tokens = usage.get("completion_tokens")
         total_tokens = usage.get("total_tokens")
-
-        # Cost — OpenRouter returns cost in the response body (cents)
-        provider_cost_cents = body.get("cost")
+        provider_cost_usd = usage.get("cost")
         cost_microunits: int | None = None
-        if isinstance(provider_cost_cents, (int, float)):
-            # Convert cents to microunits (1 cent = 10,000 microunits)
-            cost_microunits = int(round(float(provider_cost_cents) * 10_000))
+        if isinstance(provider_cost_usd, (int, float)) and provider_cost_usd >= 0:
+            # LILOs monetary microunits are millionths of one USD.
+            cost_microunits = int(round(float(provider_cost_usd) * 1_000_000))
 
         provider_model = str(body.get("model", model))
         request_id = str(body.get("id", ""))

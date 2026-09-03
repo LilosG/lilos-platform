@@ -11,6 +11,7 @@ from apps.api.app.ai.errors import AIProviderConfigurationError
 from apps.api.app.ai.gateway import AIGateway, AIProvider, DeterministicAIProvider
 from apps.api.app.ai.hermes import HermesAgentProvider
 from apps.api.app.ai.providers import OpenRouterProvider
+from apps.api.app.ai.routing import is_dynamic_openrouter_route, resolve_task_model
 from apps.api.app.config import Settings
 
 # AI Gateway tasks that are single-shot text generation, not agent work.
@@ -87,8 +88,8 @@ def resolve_ai_provider(
     - ``hermes`` → ``HermesAgentProvider`` (governed agent runtime)
     - In production, ``deterministic`` is rejected (fail-closed).
 
-    ``task_key`` selects the provider per task where the two are not
-    interchangeable; see ``resolve_task_provider_key``.
+    ``task_key`` selects both provider and model where execution paths differ;
+    model resolution is shared with native Hermes runs through ``ai.routing``.
     """
     if settings is None:
         settings = Settings()
@@ -119,12 +120,23 @@ def resolve_ai_provider(
                 "OpenRouter API key is required when LILOS_AI_PROVIDER=openrouter. "
                 "Set LILOS_OPENROUTER_API_KEY in the environment."
             )
+        model = resolve_task_model(task_key, settings)
+        if (
+            settings.environment.value == "production"
+            and task_key is not None
+            and is_dynamic_openrouter_route(model)
+        ):
+            raise AIProviderConfigurationError(
+                f"Production AI task '{task_key}' must resolve to an explicit model. "
+                "Set LILOS_AI_DEFAULT_MODEL or LILOS_AI_TASK_MODEL_OVERRIDES; "
+                "openrouter/auto is not permitted for governed production work."
+            )
         return OpenRouterProvider(
             api_key=api_key,
             base_url=settings.ai_openrouter_base_url,
             timeout_seconds=settings.ai_timeout_seconds,
             max_output_tokens=settings.ai_max_output_tokens,
-            default_model=settings.ai_default_model,
+            default_model=model,
         )
 
     if provider_key == "hermes":

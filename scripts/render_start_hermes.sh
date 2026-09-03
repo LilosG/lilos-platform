@@ -20,6 +20,10 @@ if [ "${HERMES_INFERENCE_PROVIDER}" = "openrouter" ] && [ -z "${OPENROUTER_API_K
     echo "OPENROUTER_API_KEY is required for the governed provider route" >&2
     exit 1
 fi
+if [ "${HERMES_INFERENCE_PROVIDER}" = "openrouter" ] && { [ -z "${HERMES_AUXILIARY_MODEL:-}" ] || [ -z "${HERMES_AUXILIARY_VISION_MODEL:-}" ]; }; then
+    echo "HERMES_AUXILIARY_MODEL and HERMES_AUXILIARY_VISION_MODEL are required for governed auxiliary inference" >&2
+    exit 1
+fi
 if [ -z "${LILOS_TOOL_BASE_URL:-}" ] || [ -z "${LILOS_TOOL_API_KEY:-}" ]; then
     echo "LILOS_TOOL_BASE_URL and LILOS_TOOL_API_KEY are required" >&2
     exit 1
@@ -61,19 +65,19 @@ if [ -n "${HERMES_INFERENCE_MODEL:-}" ]; then
     /command/s6-setuidgid hermes /opt/hermes/.venv/bin/hermes config set sessions.auto_prune true
     /command/s6-setuidgid hermes /opt/hermes/.venv/bin/hermes config set sessions.retention_days 30
 
-    # Auxiliary tasks (vision, context compression) run their own inference
-    # outside the AI Gateway, so the platform's cost ceiling does not bound
-    # them. Left at the default "auto" chain the runtime probed Nous on every
-    # call -- unauthenticated here -- logged the failure, marked it unhealthy
-    # for 60s, and then fell through to a PAID OpenRouter model, warning that
-    # it "may incur real spend". Pin the provider so it stops probing an
-    # account we do not have, and restrict the fallback to free SKUs so no
-    # auxiliary call can spend outside a governed budget.
-    /command/s6-setuidgid hermes /opt/hermes/.venv/bin/hermes config set auxiliary.free_only true
+    # Auxiliary inference is part of the same governed cost policy. Hermes'
+    # upstream ``auxiliary.free_only`` switch forces :free SKUs and can reject
+    # an otherwise healthy paid route; it is not a quality-aware budget. Pin
+    # exact inexpensive models instead. Compression stays on the long-context
+    # text model; vision uses a purpose-built multimodal model.
+    /command/s6-setuidgid hermes /opt/hermes/.venv/bin/hermes config set auxiliary.free_only false
+    /command/s6-setuidgid hermes /opt/hermes/.venv/bin/hermes config set auxiliary.openrouter_model "$HERMES_AUXILIARY_MODEL"
     /command/s6-setuidgid hermes /opt/hermes/.venv/bin/hermes config set auxiliary.vision.provider openrouter
+    /command/s6-setuidgid hermes /opt/hermes/.venv/bin/hermes config set auxiliary.vision.model "$HERMES_AUXILIARY_VISION_MODEL"
     /command/s6-setuidgid hermes /opt/hermes/.venv/bin/hermes config set auxiliary.compression.provider openrouter
+    /command/s6-setuidgid hermes /opt/hermes/.venv/bin/hermes config set auxiliary.compression.model "$HERMES_AUXILIARY_MODEL"
     echo "[lilos-hermes] Gateway model: $HERMES_INFERENCE_MODEL via $HERMES_INFERENCE_PROVIDER; toolset: lilos"
-    echo "[lilos-hermes] Auxiliary inference: openrouter, free SKUs only"
+    echo "[lilos-hermes] Auxiliary text/compression: $HERMES_AUXILIARY_MODEL; vision: $HERMES_AUXILIARY_VISION_MODEL via openrouter; free-only disabled"
 fi
 
 echo "[lilos-hermes] Bootstrap complete; starting foreground gateway"
