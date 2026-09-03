@@ -193,7 +193,9 @@ async function resolveProductionContext(
   page: import("@playwright/test").Page,
 ): Promise<ProductionContext> {
   await ensureProductionOrigin(page);
-  await expect(page.locator("#sign-out-button")).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator("#sign-out-button")).toBeVisible({
+    timeout: 15_000,
+  });
 
   const organizations = await apiCall<{
     data?: Array<{
@@ -206,7 +208,10 @@ async function resolveProductionContext(
   const wheyland = (organizations.data?.data ?? []).find((organization) =>
     organization.organization_name?.toLowerCase().includes("wheyland"),
   );
-  expect(wheyland, "Wheyland Electric must be available to production acceptance").toBeTruthy();
+  expect(
+    wheyland,
+    "Wheyland Electric must be available to production acceptance",
+  ).toBeTruthy();
   const orgId = wheyland?.organization_id ?? wheyland?.id ?? "";
   expect(orgId).toBeTruthy();
 
@@ -215,7 +220,10 @@ async function resolveProductionContext(
   }>(page, "GET", `/api/v1/organizations/${orgId}/locations?limit=5`);
   expect(locations.status, locations.error).toBe(200);
   const locationId = locations.data?.data?.[0]?.id ?? "";
-  expect(locationId, "Wheyland Electric must have a production location").toBeTruthy();
+  expect(
+    locationId,
+    "Wheyland Electric must have a production location",
+  ).toBeTruthy();
 
   return { orgId, locationId };
 }
@@ -248,12 +256,10 @@ async function pollWorkflowRun(
 }
 
 test.describe.serial("Native Hermes production acceptance", () => {
-  let context: ProductionContext;
-
   test("private Hermes runtime advertises the governed native-run contract", async ({
     page,
   }) => {
-    context = await resolveProductionContext(page);
+    const context = await resolveProductionContext(page);
     const capabilities = await apiCall<{
       data?: {
         available?: boolean;
@@ -277,12 +283,16 @@ test.describe.serial("Native Hermes production acceptance", () => {
     expect(data?.runtime_release).toBe(EXPECTED_RUNTIME_RELEASE);
     expect(data?.missing_required ?? []).toEqual([]);
     for (const feature of REQUIRED_FEATURES) {
-      expect(data?.features?.[feature], `Missing Hermes capability: ${feature}`).toBe(true);
+      expect(
+        data?.features?.[feature],
+        `Missing Hermes capability: ${feature}`,
+      ).toBe(true);
     }
     for (const tool of REQUIRED_READ_TOOLS) {
-      expect(data?.sanctioned_tools ?? [], `Missing sanctioned LILOs tool: ${tool}`).toContain(
-        tool,
-      );
+      expect(
+        data?.sanctioned_tools ?? [],
+        `Missing sanctioned LILOs tool: ${tool}`,
+      ).toContain(tool);
     }
   });
 
@@ -290,7 +300,7 @@ test.describe.serial("Native Hermes production acceptance", () => {
     page,
   }) => {
     test.setTimeout(540_000);
-    context ??= await resolveProductionContext(page);
+    const context = await resolveProductionContext(page);
 
     const before = await apiCall<{ data?: AgentRunSummary[] }>(
       page,
@@ -300,7 +310,9 @@ test.describe.serial("Native Hermes production acceptance", () => {
     expect(before.status, before.error).toBe(200);
     const beforeRuns = before.data?.data ?? [];
     const active = beforeRuns.filter(
-      (run) => run.skill_key === "gbp.operator" && ACTIVE_AGENT_STATUSES.has(run.status ?? ""),
+      (run) =>
+        run.skill_key === "gbp.operator" &&
+        ACTIVE_AGENT_STATUSES.has(run.status ?? ""),
     );
     expect(
       active,
@@ -312,7 +324,11 @@ test.describe.serial("Native Hermes production acceptance", () => {
 
     const idempotencyKey = `prod-hermes-readonly-${Date.now()}`;
     const started = await apiCall<{
-      data?: { workflow_run_id?: string; status?: string; skill_key?: string };
+      data?: {
+        workflow_run_id?: string;
+        status?: string;
+        skill_key?: string;
+      };
     }>(
       page,
       "POST",
@@ -330,10 +346,16 @@ test.describe.serial("Native Hermes production acceptance", () => {
     const workflowRunId = started.data?.data?.workflow_run_id ?? "";
     expect(workflowRunId).toBeTruthy();
 
-    const workflow = await pollWorkflowRun(page, context.orgId, workflowRunId);
+    const workflow = await pollWorkflowRun(
+      page,
+      context.orgId,
+      workflowRunId,
+    );
     expect(
       workflow.status,
-      `Hermes workflow failed: failure_code=${String(workflow.failure_code ?? "none")}`,
+      `Hermes workflow failed: failure_code=${String(
+        workflow.failure_code ?? "none",
+      )}`,
     ).toBe("completed");
 
     const after = await apiCall<{ data?: AgentRunSummary[] }>(
@@ -345,7 +367,10 @@ test.describe.serial("Native Hermes production acceptance", () => {
     const createdRuns = (after.data?.data ?? []).filter(
       (run) => run.skill_key === "gbp.operator" && !previousIds.has(run.id),
     );
-    expect(createdRuns.length, "Expected exactly one new governed GBP agent run").toBe(1);
+    expect(
+      createdRuns.length,
+      "Expected exactly one new governed GBP agent run",
+    ).toBe(1);
     const agentRunId = createdRuns[0].id;
 
     const detailResponse = await apiCall<{
@@ -387,9 +412,10 @@ test.describe.serial("Native Hermes production acceptance", () => {
     );
     expect(detailResponse.status, detailResponse.error).toBe(200);
     const detail = detailResponse.data?.data;
-    expect(detail?.status, detail?.safe_error_code ?? "Agent run did not complete").toBe(
-      "completed",
-    );
+    expect(
+      detail?.status,
+      detail?.safe_error_code ?? "Agent run did not complete",
+    ).toBe("completed");
     expect(detail?.provider).toBe("hermes");
     expect(detail?.model).toBe(EXPECTED_GBP_MODEL);
     expect(detail?.hermes_run_id).toBeTruthy();
@@ -401,18 +427,25 @@ test.describe.serial("Native Hermes production acceptance", () => {
     const completedTools = events
       .filter(
         (event) =>
-          event.event_type === "tool.completed" && event.event_document?.error !== true,
+          event.event_type === "tool.completed" &&
+          event.event_document?.error !== true,
       )
       .map((event) => String(event.event_document?.tool ?? ""));
     for (const tool of REQUIRED_READ_TOOLS) {
-      expect(completedTools, `Hermes did not complete required read tool: ${tool}`).toContain(tool);
+      expect(
+        completedTools,
+        `Hermes did not complete required read tool: ${tool}`,
+      ).toContain(tool);
     }
     for (const tool of completedTools) {
-      expect(MUTATING_GBP_TOOLS.has(tool), `Read-only canary invoked mutating tool: ${tool}`).toBe(
-        false,
-      );
+      expect(
+        MUTATING_GBP_TOOLS.has(tool),
+        `Read-only canary invoked mutating tool: ${tool}`,
+      ).toBe(false);
     }
-    expect(events.some((event) => event.event_type === "run.completed")).toBe(true);
+    expect(
+      events.some((event) => event.event_type === "run.completed"),
+    ).toBe(true);
     expect(detail?.source_references?.length ?? 0).toBeGreaterThan(0);
     expect(detail?.final_output?.text?.trim().length ?? 0).toBeGreaterThan(0);
     expect(detail?.usage?.input_tokens ?? 0).toBeGreaterThan(0);
