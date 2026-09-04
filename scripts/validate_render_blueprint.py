@@ -179,8 +179,8 @@ def validate_blueprint(path: Path = BLUEPRINT) -> tuple[str, ...]:
         "HERMES_RUNTIME_VERSION": "v2026.8.19",
         "HERMES_INFERENCE_PROVIDER": "openrouter",
         "HERMES_INFERENCE_MODEL": "deepseek/deepseek-v4-flash-0731",
-        "HERMES_AUXILIARY_MODEL": "deepseek/deepseek-v4-flash-0731",
-        "HERMES_AUXILIARY_VISION_MODEL": "qwen/qwen3.7-flash",
+        "HERMES_AUXILIARY_MODEL": "nvidia/nemotron-3-ultra-550b-a55b:free",
+        "HERMES_AUXILIARY_VISION_MODEL": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
         # Spend bound: Hermes loops outside the AI Gateway and accepts no token
         # budget, so iteration count is the only enforceable cap on a runaway run.
         "HERMES_MAX_ITERATIONS": "25",
@@ -250,10 +250,10 @@ def validate_blueprint(path: Path = BLUEPRINT) -> tuple[str, ...]:
             "sessions.auto_prune",
             "sessions.retention_days 30",
             # Config-schema rotation and explicit auxiliary routing are
-            # load-bearing production policy. The auxiliary checks below prove
-            # that cheap pinned routes are applied instead of free-SKU roulette.
+            # load-bearing production policy. The checks below prove that
+            # fixed free-only routes are applied instead of paid fallback.
             "below the v12 support floor",
-            "auxiliary.free_only false",
+            "auxiliary.free_only true",
             'auxiliary.openrouter_model "$HERMES_AUXILIARY_MODEL"',
             "auxiliary.vision.provider openrouter",
             'auxiliary.vision.model "$HERMES_AUXILIARY_VISION_MODEL"',
