@@ -175,6 +175,26 @@ class OpenRouterProvider:
         except DraftExtractionError as error:
             raise AIProviderError("provider", error.reason) from None
 
+        if task_key == "gbp.generate_post" and _looks_like_review_response(draft):
+            # A customer review may ground a Local Post, but the Local Post is
+            # public marketing content for prospective customers — never a reply
+            # addressed back to the reviewer. If the model drifts into review-
+            # response voice, use the already-governed manual fallback rather
+            # than persist a bad proposal for an operator to discover later.
+            fallback = " ".join(str(input_document.get("manual_fallback") or "").split())
+            if not fallback:
+                raise AIProviderError(
+                    "provider", "AI provider returned review-response copy for a GBP Local Post"
+                )
+            logger.warning(
+                "Rejected review-response voice from GBP Local Post generation",
+                extra={
+                    "event_name": "ai.gbp_post.review_response_rejected",
+                    "task_key": task_key,
+                },
+            )
+            draft = fallback[:1200].rstrip()
+
         # Usage metadata. OpenRouter returns request cost in USD as usage.cost.
         usage = body.get("usage", {}) or {}
         input_tokens = usage.get("prompt_tokens")
@@ -234,6 +254,41 @@ def _format_governed_facts(facts: list[dict[str, object]]) -> str:
     return "\n".join(lines)
 
 
+def _looks_like_review_response(draft: str) -> bool:
+    """Detect direct-to-reviewer reply language that is invalid for a Local Post."""
+    normalized = " ".join(draft.casefold().split())
+    if not normalized:
+        return False
+    direct_openers = (
+        "thank you",
+        "thanks for",
+        "we're so glad",
+        "we are so glad",
+        "we're thrilled",
+        "we are thrilled",
+        "we appreciate your",
+        "we appreciate the feedback",
+        "so glad you",
+        "glad to hear you",
+        "happy to hear you",
+    )
+    if normalized.startswith(direct_openers):
+        return True
+    response_signals = (
+        "thank you for the 5-star",
+        "thank you for your review",
+        "thanks for your review",
+        "appreciate your review",
+        "glad you enjoyed",
+        "happy you enjoyed",
+        "hope to see you again",
+        "hope to welcome you back",
+        "welcome you back soon",
+        "look forward to welcoming you back",
+    )
+    return any(signal in normalized for signal in response_signals)
+
+
 def _build_prompt(task_key: str, input_document: dict[str, Any]) -> str:
     """Build a task-specific prompt from the input document."""
     audience = str(input_document.get("audience", "general"))
@@ -244,6 +299,58 @@ def _build_prompt(task_key: str, input_document: dict[str, Any]) -> str:
     content_type = str(input_document.get("content_type", ""))
     governed_facts = input_document.get("governed_facts", [])
 
+    if task_key == "gbp.generate_post":
+        facts_section = _format_governed_facts(governed_facts) if governed_facts else ""
+        source_type = str(input_document.get("source_type", ""))
+        source_review = input_document.get("source_review")
+        source_service = input_document.get("source_service")
+        knowledge = input_document.get("knowledge")
+        profile = input_document.get("current_gbp_profile")
+        recent_posts = input_document.get("recent_posts_to_avoid_repeating")
+        selected_target_url = str(input_document.get("selected_target_url", ""))
+        instructions = str(input_document.get("instructions", ""))
+        parts = [
+            "Write a Google Business Profile Local Post for prospective customers.",
+            "This is public marketing content, NOT a response to a customer review.",
+            "Never address the reviewer directly. Never thank the reviewer, say 'your review', "
+            "say that 'we are glad/thrilled/happy you...' or invite that reviewer to return.",
+            "Never mention a star rating or write in review-reply voice.",
+            "If a customer review is supplied, use it only as third-person evidence of a real "
+            "customer experience. Faithfully paraphrase the relevant experience without "
+            "identifying the reviewer or inventing details.",
+            "Write for someone deciding whether to visit, book, call, or learn more about the "
+            "business. Keep the post natural, useful, and under 1,200 characters.",
+            "Do not place the target URL in the body; LILOs attaches it as the CTA.",
+            f"Audience: {audience}",
+            f"Intent: {intent}",
+            f"Content title: {content_title}",
+            f"Source type: {source_type}",
+        ]
+        if facts_section:
+            parts.append(
+                "\nAPPROVED BUSINESS FACTS "
+                "(authoritative — do not invent anything not listed here):"
+                f"\n{facts_section}"
+            )
+        if source_review is not None:
+            parts.append(f"\nSOURCE CUSTOMER REVIEW:\n{json.dumps(source_review, default=str)}")
+        if source_service is not None:
+            parts.append(f"\nSOURCE SERVICE:\n{json.dumps(source_service, default=str)}")
+        if profile:
+            parts.append(f"\nCURRENT GBP PROFILE:\n{json.dumps(profile, default=str)}")
+        if knowledge:
+            parts.append(f"\nCLIENT-OWNED KNOWLEDGE:\n{json.dumps(knowledge, default=str)}")
+        if recent_posts:
+            parts.append(
+                "\nRECENT POSTS TO AVOID REPEATING:\n"
+                f"{json.dumps(recent_posts, default=str)}"
+            )
+        if selected_target_url:
+            parts.append(f"\nCTA TARGET (do not paste into body): {selected_target_url}")
+        if instructions:
+            parts.append(f"\nTASK-SPECIFIC INSTRUCTIONS:\n{instructions}")
+        parts.append("\nReturn ONLY a JSON object with the key 'draft'.")
+        return "\n".join(parts)
     if task_key == "content.draft_revision":
         facts_section = _format_governed_facts(governed_facts) if governed_facts else ""
         parts = [
