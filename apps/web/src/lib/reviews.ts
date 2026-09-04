@@ -1,4 +1,10 @@
 import { apiGet, apiRequest, type ApiOutcome } from "./api-client";
+import {
+  getWorkflowRun,
+  listWorkflowRuns,
+  startWorkflowRun,
+  type WorkflowRunStart,
+} from "./workflows";
 
 export type ReviewSummary = {
   id: string;
@@ -226,18 +232,123 @@ export function publishResponse(
   );
 }
 
-export type ReviewIngestionSummary = {
-  total: number;
-  ingested: number;
-  updated: number;
+export type ReviewIngestionRun = {
+  workflow_run_id: string;
+  status: string;
+  product_key: string | null;
 };
 
-export function ingestReviews(
+const REVIEW_SYNC_ACTIVE_STATUSES = new Set([
+  "created",
+  "queued",
+  "running",
+  "retry_scheduled",
+]);
+const REVIEW_SYNC_TERMINAL_FAILURE_STATUSES = new Set([
+  "failed",
+  "cancelled",
+  "escalated",
+]);
+const REVIEW_SYNC_POLL_INTERVAL_MS = 1_500;
+const REVIEW_SYNC_MAX_WAIT_MS = 10 * 60 * 1_000;
+
+export function isReviewSyncActiveStatus(status: string): boolean {
+  return REVIEW_SYNC_ACTIVE_STATUSES.has(status);
+}
+
+function sleep(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+}
+
+function workflowFailure(run: {
+  status: string;
+  failure_code: string | null;
+}): ApiOutcome<ReviewIngestionRun> {
+  return {
+    kind: "error",
+    status: 409,
+    code: run.failure_code ?? "REVIEWS_INGEST_FAILED",
+    message:
+      run.status === "escalated"
+        ? "Google review sync requires reconciliation before it can continue."
+        : "Google review sync failed. Check the workflow run for the provider error.",
+    details: [],
+  };
+}
+
+async function waitForReviewIngestion(
+  organizationId: string,
+  initial: WorkflowRunStart,
+): Promise<ApiOutcome<ReviewIngestionRun>> {
+  let current: ReviewIngestionRun = initial;
+  const deadline = Date.now() + REVIEW_SYNC_MAX_WAIT_MS;
+
+  while (Date.now() < deadline) {
+    if (current.status === "completed") {
+      return { kind: "ok", data: current };
+    }
+    if (REVIEW_SYNC_TERMINAL_FAILURE_STATUSES.has(current.status)) {
+      const detail = await getWorkflowRun(organizationId, current.workflow_run_id);
+      if (detail.kind !== "ok") return detail;
+      return workflowFailure(detail.data);
+    }
+
+    await sleep(REVIEW_SYNC_POLL_INTERVAL_MS);
+    const detail = await getWorkflowRun(organizationId, current.workflow_run_id);
+    if (detail.kind !== "ok") return detail;
+    current = {
+      workflow_run_id: detail.data.id,
+      status: detail.data.status,
+      product_key: detail.data.product_key,
+    };
+  }
+
+  return {
+    kind: "error",
+    status: 0,
+    code: "REVIEWS_INGEST_STILL_RUNNING",
+    message:
+      "Google review sync is still running in the background. Refresh this page to see the latest completed data.",
+    details: [],
+  };
+}
+
+/**
+ * Start review ingestion on the platform's durable workflow queue, then poll
+ * the persisted run instead of holding one browser request open while Google
+ * paginates. If the page is refreshed while a sync is already active, reuse
+ * that run rather than enqueueing duplicate provider work.
+ */
+export async function ingestReviews(
   organizationId: string,
   locationId: string,
-): Promise<ApiOutcome<ReviewIngestionSummary>> {
-  return apiRequest<ReviewIngestionSummary>(
-    `${base(organizationId, locationId)}/ingest`,
-    { method: "POST", body: {} },
+): Promise<ApiOutcome<ReviewIngestionRun>> {
+  const existing = await listWorkflowRuns(organizationId, {
+    workflowKey: "reviews.ingest",
+    locationId,
+    limit: 20,
+  });
+  if (existing.kind !== "ok") return existing;
+
+  const active = existing.data.find((run) =>
+    isReviewSyncActiveStatus(run.status),
   );
+  let run: WorkflowRunStart;
+  if (active) {
+    run = {
+      workflow_run_id: active.id,
+      status: active.status,
+      product_key: active.product_key,
+    };
+  } else {
+    const started = await startWorkflowRun(organizationId, "reviews.ingest", {
+      locationId,
+      idempotencyKey: `web-reviews-ingest-${locationId}-${Date.now()}`,
+      execute: true,
+    });
+    if (started.kind !== "ok") return started;
+    run = started.data;
+  }
+
+  return waitForReviewIngestion(organizationId, run);
 }
