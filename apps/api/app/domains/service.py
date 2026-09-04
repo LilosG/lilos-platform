@@ -76,13 +76,49 @@ class OrganizationDomainService:
         correlation_id: str,
     ) -> OrganizationDomain:
         await self._require_organization(session, organization_id)
+
+        existing = await self.repository.get_by_domain(
+            session, organization_id, command.domain, lock=True
+        )
+        if existing is not None:
+            if existing.status is OrganizationDomainStatus.ACTIVE:
+                raise OrganizationDomainConflictError
+
+            if command.is_primary:
+                active_domains = await self.repository.list(session, organization_id)
+                if any(item.is_primary for item in active_domains):
+                    raise OrganizationDomainPrimaryConflictError
+
+            reactivated = await self.repository.reactivate(
+                session,
+                organization_id,
+                existing.id,
+                expected_version=existing.version,
+                is_primary=command.is_primary,
+            )
+            if reactivated is None:
+                raise OrganizationDomainConflictError
+            await self._audit(
+                session,
+                event="platform.organization_domain.reactivated",
+                action="organization_domain.reactivate",
+                organization_id=organization_id,
+                resource_id=reactivated.id,
+                correlation_id=correlation_id,
+                metadata={
+                    "domain_id": str(reactivated.id),
+                    "domain": reactivated.domain,
+                    "is_primary": reactivated.is_primary,
+                    "operation": "reactivated",
+                },
+            )
+            return reactivated
+
         if command.is_primary:
-            existing = await self.repository.list(session, organization_id)
-            if any(
-                item.is_primary and item.status is OrganizationDomainStatus.ACTIVE
-                for item in existing
-            ):
+            active_domains = await self.repository.list(session, organization_id)
+            if any(item.is_primary for item in active_domains):
                 raise OrganizationDomainPrimaryConflictError
+
         domain = OrganizationDomain(
             organization_id=organization_id,
             domain=command.domain,
