@@ -1,0 +1,315 @@
+---
+import AppShell from "../../components/AppShell.astro";
+import Button from "../../lib/ui/Button.astro";
+import EmptyState from "../../lib/ui/EmptyState.astro";
+import Notice from "../../lib/ui/Notice.astro";
+import PageHeader from "../../lib/ui/PageHeader.astro";
+import PageSection from "../../lib/ui/PageSection.astro";
+import PageShell from "../../lib/ui/PageShell.astro";
+import Region from "../../lib/ui/Region.astro";
+import Skeleton from "../../lib/ui/Skeleton.astro";
+import "../../styles/global.css";
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="LILOs SEO implementation actions" />
+    <title>SEO Actions · LILOs</title>
+  </head>
+  <body>
+    <AppShell>
+      <PageShell id="boot-not-configured"
+        ><EmptyState
+          heading="This deployment is not configured"
+          description="Connect the platform runtime configuration to enable SEO actions."
+        /></PageShell
+      >
+      <PageShell id="boot-loading" hidden
+        ><Skeleton lines={4} label="Loading SEO actions" /></PageShell
+      >
+      <PageShell id="boot-error" hidden><Region role="alert" /></PageShell>
+      <PageShell id="workspace-empty" hidden
+        ><EmptyState
+          heading="No organization access yet"
+          description="Ask an administrator to invite your account to an organization."
+        /></PageShell
+      >
+
+      <PageShell id="seo-actions-content" hidden>
+        <PageHeader
+          eyebrow="SEO · Execution"
+          title="SEO Actions"
+          description="Turn approved SEO evidence into governed content work that can move through review and publication."
+        >
+          <Button slot="actions" href="/seo" variant="secondary" size="sm"
+            >Back to SEO</Button
+          >
+          <Button slot="actions" href="/content" variant="secondary" size="sm"
+            >Content pipeline</Button
+          >
+        </PageHeader>
+
+        <Notice title="Best-practice execution only">
+          <p>
+            Every action keeps its SEO evidence and approved business facts attached.
+            Drafts require human review before publication. Canonical business, product,
+            service, menu-item, location and offer names may not be invented or renamed.
+          </p>
+        </Notice>
+
+        <PageSection
+          eyebrow="Approved recommendations"
+          title="Ready for implementation"
+          description="Choose the implementation that matches the approved recommendation. LILOs creates the Content opportunity, brief and grounded draft workflow automatically."
+        >
+          <Region id="seo-action-list" live="polite"
+            ><Skeleton lines={5} label="Loading approved SEO recommendations" /></Region
+          >
+        </PageSection>
+      </PageShell>
+    </AppShell>
+
+    <script>
+      import {
+        fetchOpportunities,
+        fetchRecommendations,
+        fetchImplementationTasks,
+        type SEOOpportunity,
+        type SEORecommendation,
+      } from "../../lib/seo";
+      import {
+        createSEOAction,
+        type SEOActionType,
+      } from "../../lib/seo-actions";
+      import {
+        bootWorkspace,
+        applyBootResult,
+        populateSwitcher,
+        setActiveOrganization,
+        emptyState,
+        errorAlert,
+        describeFailure,
+        statusBadge,
+        type BootRegions,
+      } from "../../lib/ui";
+      import { statusLabel, statusTone } from "../../lib/status-language";
+
+      let organizationId = "";
+
+      const regions: BootRegions = {
+        notConfigured: document.getElementById("boot-not-configured")!,
+        loading: document.getElementById("boot-loading")!,
+        error: document.getElementById("boot-error")!,
+        empty: document.getElementById("workspace-empty")!,
+        content: document.getElementById("seo-actions-content")!,
+      };
+
+      function deriveSlug(value: string): string {
+        return value
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-+|-+$/g, "")
+          .slice(0, 200)
+          .replace(/-+$/g, "");
+      }
+
+      async function loadOrganization(
+        org: import("../../lib/workspace").MyOrganization,
+      ): Promise<void> {
+        setActiveOrganization(org);
+        organizationId = org.organization_id;
+        await renderActions();
+      }
+
+      async function renderActions(): Promise<void> {
+        const region = document.getElementById("seo-action-list")!;
+        region.replaceChildren();
+        const opportunities = await fetchOpportunities(organizationId);
+        if (opportunities.kind !== "ok") {
+          region.append(errorAlert(describeFailure(opportunities, "SEO opportunities")));
+          return;
+        }
+
+        const actionable: Array<{
+          opportunity: SEOOpportunity;
+          recommendation: SEORecommendation;
+        }> = [];
+        for (const opportunity of opportunities.data) {
+          const recommendations = await fetchRecommendations(
+            organizationId,
+            opportunity.id,
+          );
+          if (recommendations.kind !== "ok") continue;
+          const approved = recommendations.data.find(
+            (item) => item.status === "approved",
+          );
+          if (approved) actionable.push({ opportunity, recommendation: approved });
+        }
+
+        if (actionable.length === 0) {
+          region.append(
+            emptyState(
+              "No approved recommendations are ready",
+              "Review SEO opportunities and approve a recommendation before creating implementation work.",
+              "Review SEO opportunities",
+              "/seo",
+            ),
+          );
+          return;
+        }
+
+        for (const entry of actionable) {
+          region.append(await actionCard(entry.opportunity, entry.recommendation));
+        }
+      }
+
+      async function actionCard(
+        opportunity: SEOOpportunity,
+        recommendation: SEORecommendation,
+      ): Promise<HTMLElement> {
+        const card = document.createElement("section");
+        card.className = "ui-card ui-card--spaced";
+
+        const header = document.createElement("div");
+        header.className = "ui-card__header";
+        const headingWrap = document.createElement("div");
+        const heading = document.createElement("h3");
+        heading.className = "ui-card__heading";
+        heading.textContent = recommendation.proposed_action;
+        const meta = document.createElement("p");
+        meta.className = "ui-text-secondary";
+        meta.textContent = `${opportunity.opportunity_type.replaceAll("_", " ")} · priority ${opportunity.priority_score}`;
+        headingWrap.append(heading, meta);
+        header.append(headingWrap, statusBadge("success", "Approved"));
+
+        const body = document.createElement("div");
+        body.className = "ui-card__body";
+        const hypothesis = document.createElement("p");
+        hypothesis.textContent = recommendation.expected_result_hypothesis;
+        body.append(hypothesis);
+
+        const tasks = await fetchImplementationTasks(
+          organizationId,
+          recommendation.id,
+        );
+        if (tasks.kind === "ok" && tasks.data.length > 0) {
+          const taskList = document.createElement("div");
+          taskList.className = "ui-stack ui-stack--2 stack-top-3";
+          for (const task of tasks.data) {
+            const row = document.createElement("p");
+            row.className = "ui-text-secondary";
+            row.textContent = `${task.target_type.replaceAll("_", " ")} · ${statusLabel(task.status)} · ${task.target_reference}`;
+            taskList.append(row);
+          }
+          body.append(taskList);
+        }
+
+        const form = document.createElement("form");
+        form.className = "ui-form-grid stack-top-4";
+
+        const actionField = document.createElement("div");
+        actionField.className = "ui-field";
+        const actionLabel = document.createElement("label");
+        actionLabel.className = "ui-field__label";
+        actionLabel.textContent = "Implementation";
+        const actionSelect = document.createElement("select");
+        actionSelect.className = "ui-input";
+        actionSelect.innerHTML = `
+          <option value="content_article">Create blog / resource article</option>
+          <option value="content_page">Create new page</option>
+          <option value="content_page_optimization">Optimize existing page content</option>
+        `;
+        actionField.append(actionLabel, actionSelect);
+
+        const titleField = document.createElement("div");
+        titleField.className = "ui-field ui-field--full";
+        const titleLabel = document.createElement("label");
+        titleLabel.className = "ui-field__label";
+        titleLabel.textContent = "Working title";
+        const titleInput = document.createElement("input");
+        titleInput.className = "ui-input";
+        titleInput.type = "text";
+        titleInput.maxLength = 300;
+        titleInput.required = true;
+        titleInput.value = recommendation.proposed_action.slice(0, 300);
+        titleField.append(titleLabel, titleInput);
+
+        const slugField = document.createElement("div");
+        slugField.className = "ui-field ui-field--full";
+        const slugLabel = document.createElement("label");
+        slugLabel.className = "ui-field__label";
+        slugLabel.textContent = "Slug";
+        const slugInput = document.createElement("input");
+        slugInput.className = "ui-input";
+        slugInput.type = "text";
+        slugInput.maxLength = 200;
+        slugInput.required = true;
+        slugInput.pattern = "^[a-z0-9]+(?:-[a-z0-9]+)*$";
+        slugInput.value = deriveSlug(titleInput.value);
+        slugField.append(slugLabel, slugInput);
+        titleInput.addEventListener("input", () => {
+          slugInput.value = deriveSlug(titleInput.value);
+        });
+
+        const submit = document.createElement("button");
+        submit.className = "ui-button ui-button--primary ui-button--md";
+        submit.type = "submit";
+        submit.textContent = "Create governed draft";
+        const status = document.createElement("p");
+        status.className = "ui-text-secondary";
+        status.setAttribute("role", "status");
+        status.setAttribute("aria-live", "polite");
+
+        form.append(actionField, titleField, slugField, submit, status);
+        form.addEventListener("submit", async (event) => {
+          event.preventDefault();
+          submit.disabled = true;
+          status.textContent = "Creating SEO implementation and content draft workflow…";
+          const result = await createSEOAction(
+            organizationId,
+            recommendation.id,
+            {
+              actionType: actionSelect.value as SEOActionType,
+              title: titleInput.value,
+              slug: slugInput.value,
+            },
+          );
+          if (result.kind === "ok") {
+            status.replaceChildren();
+            const text = document.createTextNode(
+              "Created. The grounded draft is now running in Content. ",
+            );
+            const link = document.createElement("a");
+            link.href = "/content";
+            link.textContent = "Open Content pipeline";
+            status.append(text, link);
+            await renderActions();
+          } else {
+            submit.disabled = false;
+            status.textContent = describeFailure(result, "SEO action");
+          }
+        });
+
+        body.append(form);
+        card.append(header, body);
+        return card;
+      }
+
+      async function boot(): Promise<void> {
+        const result = await bootWorkspace("SEO");
+        if (!applyBootResult(regions, result)) return;
+        populateSwitcher(result.organizations, (org) => void loadOrganization(org));
+        const org =
+          result.organizations.find(
+            (item) => item.organization_id === result.context.organizationId,
+          ) ?? result.organizations[0];
+        await loadOrganization(org);
+      }
+
+      void boot();
+    </script>
+  </body>
+</html>
