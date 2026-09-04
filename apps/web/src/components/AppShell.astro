@@ -136,6 +136,13 @@ const productKeys = [
         </div>
       </div>
       <div class="topbar__actions">
+        {
+          currentPath.startsWith("/seo") && (
+            <Button href="/seo/actions" variant="secondary" size="sm">
+              SEO actions
+            </Button>
+          )
+        }
         <Select
           id="organization-switcher"
           label="Switch organization"
