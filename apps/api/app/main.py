@@ -45,6 +45,7 @@ from apps.api.app.routes.platform_administration import router as platform_admin
 from apps.api.app.routes.provider_media import router as provider_media_router
 from apps.api.app.routes.reviews import router as reviews_router
 from apps.api.app.routes.seo import router as seo_router
+from apps.api.app.routes.seo_actions import router as seo_actions_router
 from apps.api.app.routes.workflows import router as workflows_router
 
 
@@ -105,6 +106,7 @@ def create_app(
     application.include_router(machine_intake_router)
     application.include_router(content_router)
     application.include_router(seo_router)
+    application.include_router(seo_actions_router)
     application.include_router(insights_router)
     application.include_router(platform_administration_router)
     application.include_router(client_onboarding_router)
