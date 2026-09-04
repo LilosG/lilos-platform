@@ -121,6 +121,21 @@ async def _handle_seo_crawl_and_analysis(
     correlation_id: str,
     workflow_run_id: UUID,
 ) -> JobOutcome:
+    """Run one crawl and analyze only after its website becomes verified usable state.
+
+    Onboarding provisions the SEO website from an already-approved primary
+    organization domain, then queues this combined workflow. The website begins
+    as ``pending_verification`` so the first successful crawl is the natural
+    verification boundary. Previously the crawl handler reported success even
+    when the crawl record ended in ``error`` and, when it really did succeed,
+    analysis immediately rejected the still-pending website as missing.
+    """
+    from datetime import UTC, datetime
+
+    from sqlalchemy import select
+
+    from apps.api.app.products.seo.models import SEOCrawlRun, SEOWebsite
+
     crawl = await _handle_seo_crawl(
         session,
         organization_id=organization_id,
@@ -131,6 +146,62 @@ async def _handle_seo_crawl_and_analysis(
     )
     if crawl.result != "succeeded":
         return crawl
+
+    crawl_run_raw = input_document.get("crawl_run_id")
+    if not crawl_run_raw:
+        return JobOutcome(result="permanent_failure", safe_error="MISSING_CRAWL_RUN_ID")
+    try:
+        crawl_run_id = UUID(str(crawl_run_raw))
+    except (TypeError, ValueError):
+        return JobOutcome(result="permanent_failure", safe_error="INVALID_CRAWL_RUN_ID")
+
+    crawl_run = await session.scalar(
+        select(SEOCrawlRun).where(
+            SEOCrawlRun.organization_id == organization_id,
+            SEOCrawlRun.id == crawl_run_id,
+        )
+    )
+    if crawl_run is None:
+        return JobOutcome(result="permanent_failure", safe_error="SEO_CRAWL_RUN_NOT_FOUND")
+    if crawl_run.status == "error":
+        return JobOutcome(result="retryable_failure", safe_error="SEO_CRAWL_FAILED")
+    if crawl_run.status not in {"success", "partial"}:
+        return JobOutcome(result="retryable_failure", safe_error="SEO_CRAWL_NOT_TERMINAL")
+
+    safe_result = crawl_run.safe_result or {}
+    pages_crawled = int(safe_result.get("pages_crawled") or 0)
+    if pages_crawled <= 0:
+        return JobOutcome(result="retryable_failure", safe_error="SEO_CRAWL_EMPTY")
+
+    website = await session.scalar(
+        select(SEOWebsite).where(
+            SEOWebsite.organization_id == organization_id,
+            SEOWebsite.id == crawl_run.website_id,
+        )
+    )
+    if website is None:
+        return JobOutcome(result="permanent_failure", safe_error="SEO_WEBSITE_NOT_FOUND")
+    if location_id is not None and website.location_id not in {None, location_id}:
+        return JobOutcome(result="permanent_failure", safe_error="SEO_WEBSITE_SCOPE_MISMATCH")
+    if website.status == "pending_verification":
+        website.status = "active"
+        website.ownership_status = "verified"
+        website.verified_at = datetime.now(UTC)
+        website.version += 1
+        await session.flush()
+        logger.info(
+            "SEO website activated after successful first crawl",
+            extra={
+                "event_name": "seo.website.verified_by_crawl",
+                "organization_id": str(organization_id),
+                "website_id": str(website.id),
+                "crawl_run_id": str(crawl_run.id),
+                "pages_crawled": pages_crawled,
+            },
+        )
+    elif website.status != "active":
+        return JobOutcome(result="permanent_failure", safe_error="SEO_WEBSITE_NOT_ACTIVE")
+
     analysis = await _handle_seo_analysis(
         session,
         organization_id=organization_id,
