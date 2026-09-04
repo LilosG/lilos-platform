@@ -11,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.app.execution.contracts import JobOutcome
+from apps.api.app.execution.models import Job
 from apps.api.app.integrations.errors import (
     IntegrationNotFoundError,
     IntegrationReconnectRequiredError,
@@ -46,6 +47,7 @@ VERIFY_ONLY_SAFE_ERRORS = frozenset(
 LEGACY_VERIFICATION_SAFE_ERRORS = frozenset(
     {"VERIFICATION_REREAD_FAILED", "VERIFICATION_CONTENT_MISMATCH"}
 )
+REVIEW_VERIFICATION_MAX_ATTEMPTS = 10
 
 
 async def _response_for_update(
@@ -64,6 +66,34 @@ async def _response_for_update(
             .with_for_update()
         ),
     )
+
+
+async def _ensure_verification_budget(
+    session: AsyncSession,
+    organization_id: UUID,
+    workflow_run_id: UUID,
+) -> None:
+    """Allow provider propagation to outlive the generic three-attempt budget.
+
+    updateReply may return before the new reply is visible through get_review.
+    Once the provider-write boundary is crossed every subsequent attempt is
+    read-only, so a longer reconciliation horizon is safe and avoids surfacing a
+    false operator failure after only a few seconds of Google propagation lag.
+    """
+    job = await session.scalar(
+        select(Job)
+        .where(
+            Job.organization_id == organization_id,
+            Job.workflow_run_id == workflow_run_id,
+            Job.job_type == "workflow.execute",
+        )
+        .order_by(Job.created_at.desc())
+        .with_for_update()
+        .limit(1)
+    )
+    if job is not None and job.max_attempts < REVIEW_VERIFICATION_MAX_ATTEMPTS:
+        job.max_attempts = REVIEW_VERIFICATION_MAX_ATTEMPTS
+        await session.flush()
 
 
 def _verification_only(response: ReviewResponseRevision) -> bool:
@@ -118,7 +148,7 @@ async def handle_reviews_publish_response(
     workflow_run_id: UUID,
 ) -> JobOutcome:
     """Publish once, then reconcile Google reply state with read-only retries."""
-    del correlation_id, workflow_run_id
+    del correlation_id
 
     # Keep the execution registry as the dependency boundary so the existing
     # test injection points and production connection lifecycle remain canonical.
@@ -143,6 +173,8 @@ async def handle_reviews_publish_response(
     if not initial_publish and not verify_only:
         return JobOutcome(result="permanent_failure", safe_error="RESPONSE_NOT_PUBLISHING")
 
+    await _ensure_verification_budget(session, organization_id, workflow_run_id)
+
     review = await session.scalar(
         select(Review).where(
             Review.organization_id == organization_id,
@@ -153,6 +185,10 @@ async def handle_reviews_publish_response(
         response.status = "failed"
         response.safe_error_code = "REVIEW_NOT_FOUND"
         return JobOutcome(result="permanent_failure", safe_error="REVIEW_NOT_FOUND")
+    if review.status == "removed":
+        response.status = "failed"
+        response.safe_error_code = "REVIEW_REMOVED_FROM_PROVIDER"
+        return JobOutcome(result="permanent_failure", safe_error="REVIEW_REMOVED_FROM_PROVIDER")
     if location_id is not None and review.location_id != location_id:
         response.status = "failed"
         response.safe_error_code = "REVIEW_LOCATION_SCOPE_MISMATCH"
