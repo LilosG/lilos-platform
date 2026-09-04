@@ -342,8 +342,7 @@ def _build_prompt(task_key: str, input_document: dict[str, Any]) -> str:
             parts.append(f"\nCLIENT-OWNED KNOWLEDGE:\n{json.dumps(knowledge, default=str)}")
         if recent_posts:
             parts.append(
-                "\nRECENT POSTS TO AVOID REPEATING:\n"
-                f"{json.dumps(recent_posts, default=str)}"
+                f"\nRECENT POSTS TO AVOID REPEATING:\n{json.dumps(recent_posts, default=str)}"
             )
         if selected_target_url:
             parts.append(f"\nCTA TARGET (do not paste into body): {selected_target_url}")
