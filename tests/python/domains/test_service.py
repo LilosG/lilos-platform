@@ -142,9 +142,7 @@ def test_domain_lifecycle_conflicts_and_audit(
             reactivated = await service.create(
                 session,
                 organization_id,
-                OrganizationDomainCreate(
-                    domain="https://second.example.com/path", is_primary=True
-                ),
+                OrganizationDomainCreate(domain="https://second.example.com/path", is_primary=True),
                 correlation_id="domain-reactivated",
             )
             assert reactivated.id == secondary_id
