@@ -2,9 +2,10 @@
 
 Resolves the GBP provider mapping for a platform location, pulls the current
 review list via the legacy My Business v4 API, and ingests each review through
-the existing ``ReviewService.ingest`` idempotent path.  This is the production
-read-side counterpart to the response publication write path — it does NOT
-publish any reply and preserves the approval workflow before publication.
+the existing ``ReviewService.ingest`` idempotent path.  A successful provider
+listing is also the authoritative inventory boundary for the mapped location:
+reviews imported through an old mapping, or reviews no longer returned by the
+current mapping, are retained for audit but removed from the active read model.
 """
 
 from dataclasses import dataclass, field
@@ -43,6 +44,17 @@ _STAR_RATING = {
     "FOUR": 4,
     "FIVE": 5,
 }
+
+_STALE_RESPONSE_STATUSES = frozenset(
+    {
+        "draft",
+        "generated",
+        "awaiting_approval",
+        "approved",
+        "publishing",
+        "reconciliation_required",
+    }
+)
 
 
 def _parse_rating(raw: Any) -> float | None:
@@ -200,12 +212,76 @@ class IngestionReviewService(ReviewService):
 
 @dataclass(slots=True)
 class ReviewIngestionService:
-    """Pull reviews from GBP and ingest them through the governed review path."""
+    """Pull reviews from GBP and reconcile the active provider inventory."""
 
     adapter: GBPAdapter = field(default_factory=GoogleBusinessProfileAdapter)
     connection: GBPConnectionService = field(default_factory=GBPConnectionService)
     reviews: ReviewService = field(default_factory=IngestionReviewService)
     audit: AuditEventService = field(default_factory=AuditEventService)
+
+    async def _reconcile_inventory(
+        self,
+        session: AsyncSession,
+        *,
+        organization_id: UUID,
+        location_id: UUID,
+        active_mapping_id: UUID,
+        observed_review_ids: set[str],
+    ) -> dict[str, int]:
+        """Retire rows that are not part of the authoritative current GBP inventory.
+
+        GoogleBusinessProfileAdapter.list_reviews validates provider pagination
+        completeness before returning.  Only after that successful full listing do
+        we retire stale rows.  Rows remain in the database for audit/history; the
+        ``removed`` lifecycle state excludes them from active counts and agent work.
+        """
+        rows = list(
+            await session.scalars(
+                select(Review)
+                .where(
+                    Review.organization_id == organization_id,
+                    Review.location_id == location_id,
+                )
+                .with_for_update()
+            )
+        )
+        wrong_mapping = 0
+        missing_from_google = 0
+        retired_ids: list[UUID] = []
+        for review in rows:
+            if review.integration_resource_id != active_mapping_id:
+                if review.status != "removed":
+                    review.status = "removed"
+                    retired_ids.append(review.id)
+                    wrong_mapping += 1
+                continue
+            if review.external_review_id not in observed_review_ids and review.status != "removed":
+                review.status = "removed"
+                retired_ids.append(review.id)
+                missing_from_google += 1
+
+        if retired_ids:
+            responses = list(
+                await session.scalars(
+                    select(ReviewResponseRevision)
+                    .where(
+                        ReviewResponseRevision.organization_id == organization_id,
+                        ReviewResponseRevision.location_id == location_id,
+                        ReviewResponseRevision.review_id.in_(retired_ids),
+                        ReviewResponseRevision.status.in_(_STALE_RESPONSE_STATUSES),
+                    )
+                    .with_for_update()
+                )
+            )
+            for response in responses:
+                response.status = "superseded"
+                response.safe_error_code = None
+
+        await session.flush()
+        return {
+            "removed_wrong_mapping": wrong_mapping,
+            "removed_missing_from_google": missing_from_google,
+        }
 
     async def ingest_for_location(
         self,
@@ -217,11 +293,7 @@ class ReviewIngestionService:
         actor_id: UUID | None,
         correlation_id: str,
     ) -> dict[str, object]:
-        """Ingest reviews for the platform location's mapped GBP resource.
-
-        Returns a summary dict: ``ingested``, ``updated``, ``total``.  No
-        review response is published; the approval workflow is preserved.
-        """
+        """Ingest and reconcile reviews for the platform location's GBP resource."""
         # Resolve the active GBP location resource mapping for this location.
         mapping = await session.scalar(
             select(ProviderResourceMapping).where(
@@ -261,10 +333,13 @@ class ReviewIngestionService:
 
         ingested = 0
         updated = 0
+        restored = 0
+        observed_review_ids: set[str] = set()
         for raw in raw_reviews:
             external_review_id = str(raw.get("reviewId") or "")
             if not external_review_id:
                 continue
+            observed_review_ids.add(external_review_id)
             rating = _parse_rating(raw.get("starRating"))
             comment = raw.get("comment") or ""
             body = comment if isinstance(comment, str) else None
@@ -280,7 +355,7 @@ class ReviewIngestionService:
             provider_reply = _normalize_provider_reply(
                 raw, external_response_id=external_response_id
             )
-            _review, _revision, created = await self.reviews.ingest(
+            review, revision, created = await self.reviews.ingest(
                 session,
                 organization_id=organization_id,
                 location_id=location_id,
@@ -295,11 +370,34 @@ class ReviewIngestionService:
                 correlation_id=correlation_id,
                 provider_reply=provider_reply,
             )
+            # A review can legitimately disappear and later return.  Ingestion has
+            # already reconciled any provider reply above; if it remains ``removed``
+            # it has no active provider reply, so restore its deterministic
+            # content/risk state rather than leaving a current Google review hidden.
+            if review.status == "removed":
+                self.reviews._restore_actionable_status(review, revision)
+                restored += 1
             if created:
                 ingested += 1
             else:
                 updated += 1
 
+        reconciliation = await self._reconcile_inventory(
+            session,
+            organization_id=organization_id,
+            location_id=location_id,
+            active_mapping_id=mapping.id,
+            observed_review_ids=observed_review_ids,
+        )
+
+        metadata = {
+            "total": len(observed_review_ids),
+            "ingested": ingested,
+            "updated": updated,
+            "restored": restored,
+            **reconciliation,
+            "active_mapping_id": str(mapping.id),
+        }
         await self.audit.record(
             session,
             AuditEventCreate(
@@ -314,15 +412,8 @@ class ReviewIngestionService:
                 resource_type="location",
                 resource_id=location_id,
                 correlation_id=correlation_id,
-                summary="Review ingestion completed.",
-                metadata=cast(
-                    dict[str, JsonValue],
-                    {
-                        "total": len(raw_reviews),
-                        "ingested": ingested,
-                        "updated": updated,
-                    },
-                ),
+                summary="Review ingestion and provider inventory reconciliation completed.",
+                metadata=cast(dict[str, JsonValue], metadata),
             ),
         )
-        return {"total": len(raw_reviews), "ingested": ingested, "updated": updated}
+        return metadata
