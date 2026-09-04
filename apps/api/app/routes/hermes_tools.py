@@ -12,10 +12,21 @@ from apps.api.app.agents.tools import AgentToolDeniedError, AgentToolService
 from apps.api.app.config import Settings
 from apps.api.app.database.session import get_database_session
 from apps.api.app.products.gbp.proposal_enrichment import GBPProposalEnrichmentError
+from apps.api.app.products.reviews.active_service import ActiveReviewService
 
 router = APIRouter(prefix="/api/internal/hermes", tags=["hermes-internal"])
 Session = Annotated[AsyncSession, Depends(get_database_session)]
-tools = AgentToolService()
+
+
+class ActiveAgentToolService(AgentToolService):
+    """Agent tool plane with the same active-review inventory as the client UI."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.reviews = ActiveReviewService()
+
+
+tools = ActiveAgentToolService()
 
 
 class ToolInvocation(BaseModel):
