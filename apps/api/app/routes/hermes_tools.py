@@ -12,7 +12,9 @@ from apps.api.app.agents.tools import AgentToolDeniedError, AgentToolService
 from apps.api.app.config import Settings
 from apps.api.app.database.session import get_database_session
 from apps.api.app.errors import ApiError
-from apps.api.app.products.gbp.capability_backfill import ensure_capability_snapshot_from_profile
+from apps.api.app.products.gbp.capability_backfill import (
+    ensure_capability_snapshot_from_profile,
+)
 from apps.api.app.products.gbp.proposal_enrichment import GBPProposalEnrichmentError
 
 router = APIRouter(prefix="/api/internal/hermes", tags=["hermes-internal"])
