@@ -121,17 +121,19 @@ async def _handle_seo_crawl_and_analysis(
     correlation_id: str,
     workflow_run_id: UUID,
 ) -> JobOutcome:
-    """Run one crawl and analyze only after its website becomes verified usable state.
+    """Run a crawl, activate a reachable website, then analyze its evidence.
 
-    Onboarding provisions the SEO website from an already-approved primary
-    organization domain, then queues this combined workflow. The website begins
-    as ``pending_verification`` so the first successful crawl is the natural
-    verification boundary. Previously the crawl handler reported success even
-    when the crawl record ended in ``error`` and, when it really did succeed,
-    analysis immediately rejected the still-pending website as missing.
+    Onboarding provisions the SEO website from an approved primary organization
+    domain, then queues this combined workflow. The website begins as
+    ``pending_verification``. A successful crawl proves it is reachable and safe
+    to use for SEO analysis, but it does not prove domain ownership; therefore
+    this transition changes only the website runtime status and leaves the
+    separate ownership fields untouched.
+
+    Previously the crawl handler reported success even when the crawl record
+    ended in ``error`` and, when it really did succeed, analysis immediately
+    rejected the still-pending website as missing.
     """
-    from datetime import UTC, datetime
-
     from sqlalchemy import select
 
     from apps.api.app.products.seo.models import SEOCrawlRun, SEOWebsite
@@ -169,7 +171,8 @@ async def _handle_seo_crawl_and_analysis(
         return JobOutcome(result="retryable_failure", safe_error="SEO_CRAWL_NOT_TERMINAL")
 
     safe_result = crawl_run.safe_result or {}
-    pages_crawled = int(safe_result.get("pages_crawled") or 0)
+    raw_pages_crawled = safe_result.get("pages_crawled")
+    pages_crawled = raw_pages_crawled if isinstance(raw_pages_crawled, int) else 0
     if pages_crawled <= 0:
         return JobOutcome(result="retryable_failure", safe_error="SEO_CRAWL_EMPTY")
 
@@ -185,14 +188,12 @@ async def _handle_seo_crawl_and_analysis(
         return JobOutcome(result="permanent_failure", safe_error="SEO_WEBSITE_SCOPE_MISMATCH")
     if website.status == "pending_verification":
         website.status = "active"
-        website.ownership_status = "verified"
-        website.verified_at = datetime.now(UTC)
         website.version += 1
         await session.flush()
         logger.info(
             "SEO website activated after successful first crawl",
             extra={
-                "event_name": "seo.website.verified_by_crawl",
+                "event_name": "seo.website.activated_by_crawl",
                 "organization_id": str(organization_id),
                 "website_id": str(website.id),
                 "crawl_run_id": str(crawl_run.id),
