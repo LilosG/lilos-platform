@@ -288,13 +288,19 @@ async function waitForReviewIngestion(
       return { kind: "ok", data: current };
     }
     if (REVIEW_SYNC_TERMINAL_FAILURE_STATUSES.has(current.status)) {
-      const detail = await getWorkflowRun(organizationId, current.workflow_run_id);
+      const detail = await getWorkflowRun(
+        organizationId,
+        current.workflow_run_id,
+      );
       if (detail.kind !== "ok") return detail;
       return workflowFailure(detail.data);
     }
 
     await sleep(REVIEW_SYNC_POLL_INTERVAL_MS);
-    const detail = await getWorkflowRun(organizationId, current.workflow_run_id);
+    const detail = await getWorkflowRun(
+      organizationId,
+      current.workflow_run_id,
+    );
     if (detail.kind !== "ok") return detail;
     current = {
       workflow_run_id: detail.data.id,
