@@ -73,10 +73,12 @@ services:
         value: openrouter
       - key: HERMES_INFERENCE_MODEL
         value: deepseek/deepseek-v4-flash-0731
+      # Auxiliary inference is deliberately zero-cost. The bootstrap also
+      # enforces auxiliary.free_only and refuses non-:free SKUs at startup.
       - key: HERMES_AUXILIARY_MODEL
-        value: deepseek/deepseek-v4-flash-0731
+        value: nvidia/nemotron-3-ultra-550b-a55b:free
       - key: HERMES_AUXILIARY_VISION_MODEL
-        value: qwen/qwen3.7-flash
+        value: nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free
       # Spend control. Hermes runs its own inference loop outside the AI Gateway
       # and its API accepts no token budget, so iteration count is the only
       # enforceable bound on a runaway run -- each iteration resends a context
