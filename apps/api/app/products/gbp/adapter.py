@@ -212,35 +212,29 @@ class GoogleBusinessProfileAdapter:
         provider-owned ``reviewReply`` moderation data). The adapter preserves
         that reply object for the Reviews domain to normalize and reconcile.
 
-        Google caps this endpoint at 50 reviews per page.  Follow the
-        provider's opaque page token until the collection is complete while
-        guarding against malformed, repeated, or unbounded token sequences.
+        Google caps this endpoint at 50 reviews per page. Follow the provider's
+        opaque ``nextPageToken`` until it is absent; that token is the
+        authoritative pagination-completion signal. ``totalReviewCount`` is
+        informational metadata and can lag the paginated collection, so it
+        must not be used to reject an otherwise complete token walk. Repeated,
+        malformed, and unbounded token sequences still fail closed.
         """
         url = f"{MYBUSINESS_BASE}/{location_name}/reviews"
         params: dict[str, int | str] = {"pageSize": REVIEW_PAGE_SIZE}
         reviews: list[dict[str, Any]] = []
         seen_tokens: set[str] = set()
-        provider_total: int | None = None
 
         for _page_number in range(MAX_PROVIDER_PAGES):
             payload = await self._request("GET", url, access_token, params=params)
             reviews.extend(self._page_items(payload, "reviews"))
 
-            raw_total = payload.get("totalReviewCount")
-            if raw_total is not None:
-                if isinstance(raw_total, bool) or not isinstance(raw_total, int) or raw_total < 0:
-                    raise ValueError("invalid provider totalReviewCount")
-                provider_total = max(provider_total or 0, raw_total)
-
-            raw_token = self._next_page_token(payload)
-            if raw_token is None:
-                if provider_total is not None and len(reviews) != provider_total:
-                    raise ValueError("provider review pagination is incomplete")
+            token = self._next_page_token(payload)
+            if token is None:
                 return reviews
-            if raw_token in seen_tokens:
+            if token in seen_tokens:
                 raise ValueError("provider review pagination token repeated")
-            seen_tokens.add(raw_token)
-            params = {"pageSize": REVIEW_PAGE_SIZE, "pageToken": raw_token}
+            seen_tokens.add(token)
+            params = {"pageSize": REVIEW_PAGE_SIZE, "pageToken": token}
 
         raise ValueError("provider review pagination exceeded safety limit")
 

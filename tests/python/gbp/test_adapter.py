@@ -226,15 +226,19 @@ async def test_all_list_collections_reject_repeated_tokens(method: str, key: str
 
 
 @pytest.mark.anyio
-async def test_list_reviews_rejects_provider_total_mismatch_as_incomplete() -> None:
+async def test_list_reviews_uses_terminal_token_state_when_total_count_is_stale() -> None:
     adapter = StubGoogleBusinessProfileAdapter(
-        [{"reviews": _reviews(0, 50), "totalReviewCount": 90}]
+        [
+            {"reviews": _reviews(0, 50), "nextPageToken": "page-2", "totalReviewCount": 90},
+            {"reviews": _reviews(50, 35), "totalReviewCount": 90},
+        ]
     )
 
-    with pytest.raises(ValueError, match="incomplete"):
-        await adapter.list_reviews("token", "accounts/1/locations/2")
+    result = await adapter.list_reviews("token", "accounts/1/locations/2")
 
-    assert len(adapter.calls) == 1
+    assert [review["reviewId"] for review in result] == [f"review-{i}" for i in range(85)]
+    assert len(adapter.calls) == 2
+    assert adapter.calls[1]["params"] == {"pageSize": 50, "pageToken": "page-2"}
 
 
 @pytest.mark.anyio
