@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   canDraftReviewResponse,
+  isReviewSyncActiveStatus,
   reviewResponseSourceLabel,
   summarizeReviewStatuses,
 } from "./reviews";
@@ -53,4 +54,20 @@ describe("review provider-reply presentation", () => {
     expect(canDraftReviewResponse("publication_failed")).toBe(true);
     expect(canDraftReviewResponse("classified")).toBe(true);
   });
+});
+
+describe("durable review sync run states", () => {
+  it.each(["created", "queued", "running", "retry_scheduled"])(
+    "treats %s as active so a refresh does not enqueue duplicate Google work",
+    (status) => {
+      expect(isReviewSyncActiveStatus(status)).toBe(true);
+    },
+  );
+
+  it.each(["completed", "failed", "cancelled", "escalated"])(
+    "treats %s as terminal",
+    (status) => {
+      expect(isReviewSyncActiveStatus(status)).toBe(false);
+    },
+  );
 });
