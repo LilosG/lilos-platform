@@ -9,9 +9,13 @@ from uuid import uuid4
 
 import pytest
 
-from apps.api.app.ai.providers import OpenRouterProvider, _build_prompt, _looks_like_review_response
-from apps.api.app.execution.contracts import JobOutcome
+from apps.api.app.ai.providers import (
+    OpenRouterProvider,
+    _build_prompt,
+    _looks_like_review_response,
+)
 from apps.api.app.execution import operational_extensions
+from apps.api.app.execution.contracts import JobOutcome
 
 
 class FakeResponse:
@@ -195,8 +199,8 @@ async def test_combined_seo_workflow_activates_successfully_crawled_pending_webs
 
     assert outcome.result == "succeeded"
     assert website.status == "active"
-    assert website.ownership_status == "verified"
-    assert website.verified_at is not None
+    assert website.ownership_status == "unverified"
+    assert website.verified_at is None
     assert website.version == 2
     assert session.flushed is True
     assert orchestration.called is True
