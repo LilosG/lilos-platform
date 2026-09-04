@@ -14,6 +14,7 @@ from apps.api.app.authorization.contracts import AuthorizationDecision
 from apps.api.app.authorization.dependencies import require_authorization
 from apps.api.app.database.session import get_database_session
 from apps.api.app.errors import request_correlation_id
+from apps.api.app.products.reviews.active_service import ActiveReviewService
 from apps.api.app.products.reviews.contracts import AIDraftCreate, DraftCreate, PublishResponse
 from apps.api.app.products.reviews.errors import (
     ReviewIngestionUnavailableError,
@@ -21,7 +22,6 @@ from apps.api.app.products.reviews.errors import (
 )
 from apps.api.app.products.reviews.ingestion_service import ReviewIngestionService
 from apps.api.app.products.reviews.models import Review, ReviewResponseRevision, ReviewRevision
-from apps.api.app.products.reviews.service import ReviewService
 from apps.api.app.routes.health import settings_from_request
 
 router = APIRouter(
@@ -29,7 +29,7 @@ router = APIRouter(
     tags=["reviews"],
     dependencies=[Depends(get_authenticated_principal)],
 )
-service = ReviewService()
+service = ActiveReviewService()
 Session = Annotated[AsyncSession, Depends(get_database_session)]
 
 
@@ -365,10 +365,7 @@ async def ingest_reviews(
     principal: Authenticated,
     _: Annotated[AuthorizationDecision, policy("reviews.generate_response")],
 ) -> dict[str, object]:
-    """Pull reviews from the connected GBP location and ingest them.
-
-    Does not publish any response; preserves the approval workflow.
-    """
+    """Pull and reconcile reviews from the connected GBP location."""
     ingestion = ReviewIngestionService()
     try:
         summary = await ingestion.ingest_for_location(
