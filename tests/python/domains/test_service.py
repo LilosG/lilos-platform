@@ -61,7 +61,7 @@ def test_domain_lifecycle_conflicts_and_audit(
             assert audit_event is not None
             assert audit_event.event_type == "platform.organization_domain.created"
 
-        # Duplicate domain for the same organization is rejected.
+        # Duplicate active domain for the same organization is rejected.
         async with domain_session_factory.begin() as session:
             with pytest.raises(OrganizationDomainConflictError):
                 await service.create(
@@ -129,6 +129,39 @@ def test_domain_lifecycle_conflicts_and_audit(
             assert archived.status.value == "archived"
             assert archived.is_primary is False
             assert archived.archived_at is not None
+
+        # Archived domains are history, not active configuration, so they must
+        # disappear from the normal organization-domain list.
+        async with domain_session_factory() as session:
+            domains = await service.list(session, organization_id)
+            assert {item.domain for item in domains} == {"example-client.com"}
+
+        # Re-adding the same normalized host restores the archived lifecycle
+        # record instead of colliding with its permanent uniqueness constraint.
+        async with domain_session_factory.begin() as session:
+            reactivated = await service.create(
+                session,
+                organization_id,
+                OrganizationDomainCreate(domain="https://second.example.com/path", is_primary=True),
+                correlation_id="domain-reactivated",
+            )
+            assert reactivated.id == secondary_id
+            assert reactivated.status.value == "active"
+            assert reactivated.is_primary is True
+            assert reactivated.archived_at is None
+            assert reactivated.version == 4
+
+        async with domain_session_factory() as session:
+            domains = await service.list(session, organization_id)
+            by_domain = {item.domain: item for item in domains}
+            assert set(by_domain) == {"example-client.com", "second.example.com"}
+            assert by_domain["second.example.com"].is_primary is True
+            assert by_domain["example-client.com"].is_primary is False
+            reactivation_audit = await session.scalar(
+                select(AuditEvent).where(AuditEvent.correlation_id == "domain-reactivated")
+            )
+            assert reactivation_audit is not None
+            assert reactivation_audit.event_type == "platform.organization_domain.reactivated"
 
         async with domain_session_factory.begin() as session:
             with pytest.raises(OrganizationDomainNotFoundError):

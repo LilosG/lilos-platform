@@ -30,10 +30,29 @@ class OrganizationDomainRepository:
             statement = statement.with_for_update()
         return cast(OrganizationDomain | None, await session.scalar(statement))
 
+    async def get_by_domain(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        domain: str,
+        *,
+        lock: bool = False,
+    ) -> OrganizationDomain | None:
+        statement = select(OrganizationDomain).where(
+            OrganizationDomain.organization_id == organization_id,
+            OrganizationDomain.domain == domain,
+        )
+        if lock:
+            statement = statement.with_for_update()
+        return cast(OrganizationDomain | None, await session.scalar(statement))
+
     async def list(self, session: AsyncSession, organization_id: UUID) -> list[OrganizationDomain]:
         result = await session.scalars(
             select(OrganizationDomain)
-            .where(OrganizationDomain.organization_id == organization_id)
+            .where(
+                OrganizationDomain.organization_id == organization_id,
+                OrganizationDomain.status == OrganizationDomainStatus.ACTIVE,
+            )
             .order_by(
                 OrganizationDomain.is_primary.desc(),
                 OrganizationDomain.created_at.asc(),
@@ -74,6 +93,36 @@ class OrganizationDomainRepository:
                 )
                 .values(
                     is_primary=True,
+                    version=OrganizationDomain.version + 1,
+                    updated_at=utc_now(),
+                )
+                .returning(OrganizationDomain)
+            ),
+        )
+
+    async def reactivate(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        domain_id: UUID,
+        *,
+        expected_version: int,
+        is_primary: bool,
+    ) -> OrganizationDomain | None:
+        return cast(
+            OrganizationDomain | None,
+            await session.scalar(
+                update(OrganizationDomain)
+                .where(
+                    OrganizationDomain.organization_id == organization_id,
+                    OrganizationDomain.id == domain_id,
+                    OrganizationDomain.status == OrganizationDomainStatus.ARCHIVED,
+                    OrganizationDomain.version == expected_version,
+                )
+                .values(
+                    status=OrganizationDomainStatus.ACTIVE,
+                    is_primary=is_primary,
+                    archived_at=None,
                     version=OrganizationDomain.version + 1,
                     updated_at=utc_now(),
                 )
