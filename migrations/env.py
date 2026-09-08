@@ -110,6 +110,13 @@ from apps.api.app.products.gbp.operations_models import (
     GBPSuspensionCase,
 )
 from apps.api.app.products.gbp.post_generation_models import GBPPostAsset
+from apps.api.app.products.growth.models import (
+    GrowthActionDependency,
+    GrowthActionItem,
+    GrowthActionPlan,
+    GrowthMeasurement,
+    GrowthOpportunity,
+)
 from apps.api.app.products.leads.models import (
     CRMLeadMapping,
     Lead,
@@ -307,6 +314,14 @@ for content_model in (
     ContentPublication,
 ):
     assert content_model.metadata is target_metadata
+for growth_model in (
+    GrowthOpportunity,
+    GrowthActionPlan,
+    GrowthActionItem,
+    GrowthActionDependency,
+    GrowthMeasurement,
+):
+    assert growth_model.metadata is target_metadata
 assert OnboardingStepAssignmentRecord.metadata is target_metadata
 
 
