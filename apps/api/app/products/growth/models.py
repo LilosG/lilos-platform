@@ -167,9 +167,7 @@ class GrowthActionItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     status: Mapped[str] = mapped_column(String(24), nullable=False, default="planned")
     idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
     workflow_run_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
-    verification_status: Mapped[str] = mapped_column(
-        String(24), nullable=False, default="pending"
-    )
+    verification_status: Mapped[str] = mapped_column(String(24), nullable=False, default="pending")
     verification_evidence: Mapped[dict[str, object]] = mapped_column(
         JSONB, nullable=False, default=dict
     )
