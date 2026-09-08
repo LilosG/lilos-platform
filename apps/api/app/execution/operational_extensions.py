@@ -330,5 +330,6 @@ for _agent_workflow_key in (
     "agent.content",
     "agent.reviews",
     "agent.insights",
+    "agent.growth",
 ):
     register_workflow_handler(_agent_workflow_key, _handle_agent_workflow)
