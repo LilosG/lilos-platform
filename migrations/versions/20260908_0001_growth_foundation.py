@@ -40,8 +40,12 @@ def upgrade() -> None:
         sa.Column("detected_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("last_evaluated_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.CheckConstraint(
             "status IN ('detected','planning','planned','executing','measuring','succeeded',"
             "'no_material_change','negative','dismissed','archived')",
@@ -59,18 +63,14 @@ def upgrade() -> None:
             "priority_score >= 0 AND priority_score <= 100",
             name=op.f("ck_growth_opportunities_priority_score_range"),
         ),
-        sa.ForeignKeyConstraint(
-            ["organization_id"], ["organizations.id"], ondelete="RESTRICT"
-        ),
+        sa.ForeignKeyConstraint(["organization_id"], ["organizations.id"], ondelete="RESTRICT"),
         sa.ForeignKeyConstraint(
             ["organization_id", "location_id"],
             ["locations.organization_id", "locations.id"],
             ondelete="RESTRICT",
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_growth_opportunities")),
-        sa.UniqueConstraint(
-            "organization_id", "id", name="uq_growth_opportunities_org_id"
-        ),
+        sa.UniqueConstraint("organization_id", "id", name="uq_growth_opportunities_org_id"),
         sa.UniqueConstraint(
             "organization_id",
             "deduplication_key",
@@ -95,15 +95,17 @@ def upgrade() -> None:
         sa.Column("source_references", _jsonb(), nullable=False),
         sa.Column("planner_metadata", _jsonb(), nullable=False),
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.CheckConstraint(
             "status IN ('draft','ready','executing','blocked','completed','cancelled')",
             name=op.f("ck_growth_action_plans_status"),
         ),
-        sa.ForeignKeyConstraint(
-            ["organization_id"], ["organizations.id"], ondelete="RESTRICT"
-        ),
+        sa.ForeignKeyConstraint(["organization_id"], ["organizations.id"], ondelete="RESTRICT"),
         sa.ForeignKeyConstraint(
             ["organization_id", "location_id"],
             ["locations.organization_id", "locations.id"],
@@ -115,9 +117,7 @@ def upgrade() -> None:
             ondelete="RESTRICT",
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_growth_action_plans")),
-        sa.UniqueConstraint(
-            "organization_id", "id", name="uq_growth_action_plans_org_id"
-        ),
+        sa.UniqueConstraint("organization_id", "id", name="uq_growth_action_plans_org_id"),
         sa.UniqueConstraint(
             "organization_id",
             "opportunity_id",
@@ -145,8 +145,12 @@ def upgrade() -> None:
         sa.Column("started_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("completed_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.CheckConstraint(
             "risk_level IN ('low','medium','high','restricted')",
             name=op.f("ck_growth_action_items_risk_level"),
@@ -164,9 +168,7 @@ def upgrade() -> None:
             "verification_status IN ('pending','not_required','verified','failed')",
             name=op.f("ck_growth_action_items_verification_status"),
         ),
-        sa.ForeignKeyConstraint(
-            ["organization_id"], ["organizations.id"], ondelete="RESTRICT"
-        ),
+        sa.ForeignKeyConstraint(["organization_id"], ["organizations.id"], ondelete="RESTRICT"),
         sa.ForeignKeyConstraint(
             ["organization_id", "plan_id"],
             ["growth_action_plans.organization_id", "growth_action_plans.id"],
@@ -178,9 +180,7 @@ def upgrade() -> None:
             ondelete="RESTRICT",
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_growth_action_items")),
-        sa.UniqueConstraint(
-            "organization_id", "id", name="uq_growth_action_items_org_id"
-        ),
+        sa.UniqueConstraint("organization_id", "id", name="uq_growth_action_items_org_id"),
         sa.UniqueConstraint(
             "organization_id",
             "idempotency_key",
@@ -199,15 +199,17 @@ def upgrade() -> None:
         sa.Column("action_item_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("depends_on_action_item_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.CheckConstraint(
             "action_item_id <> depends_on_action_item_id",
             name=op.f("ck_growth_action_dependencies_not_self_dependency"),
         ),
-        sa.ForeignKeyConstraint(
-            ["organization_id"], ["organizations.id"], ondelete="RESTRICT"
-        ),
+        sa.ForeignKeyConstraint(["organization_id"], ["organizations.id"], ondelete="RESTRICT"),
         sa.ForeignKeyConstraint(
             ["organization_id", "action_item_id"],
             ["growth_action_items.organization_id", "growth_action_items.id"],
@@ -239,8 +241,12 @@ def upgrade() -> None:
         sa.Column("comparison", _jsonb(), nullable=False),
         sa.Column("source_references", _jsonb(), nullable=False),
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.CheckConstraint(
             "window_days IN (0,7,14,28,56)",
             name=op.f("ck_growth_measurements_window_days"),
@@ -250,9 +256,7 @@ def upgrade() -> None:
             "'negative','insufficient_evidence')",
             name=op.f("ck_growth_measurements_outcome_classification"),
         ),
-        sa.ForeignKeyConstraint(
-            ["organization_id"], ["organizations.id"], ondelete="RESTRICT"
-        ),
+        sa.ForeignKeyConstraint(["organization_id"], ["organizations.id"], ondelete="RESTRICT"),
         sa.ForeignKeyConstraint(
             ["organization_id", "opportunity_id"],
             ["growth_opportunities.organization_id", "growth_opportunities.id"],
@@ -264,9 +268,7 @@ def upgrade() -> None:
             ondelete="RESTRICT",
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_growth_measurements")),
-        sa.UniqueConstraint(
-            "organization_id", "id", name="uq_growth_measurements_org_id"
-        ),
+        sa.UniqueConstraint("organization_id", "id", name="uq_growth_measurements_org_id"),
         sa.UniqueConstraint(
             "organization_id",
             "opportunity_id",
@@ -282,7 +284,5 @@ def downgrade() -> None:
     op.drop_index("ix_growth_action_items_org_status", table_name="growth_action_items")
     op.drop_table("growth_action_items")
     op.drop_table("growth_action_plans")
-    op.drop_index(
-        "ix_growth_opportunities_org_status_priority", table_name="growth_opportunities"
-    )
+    op.drop_index("ix_growth_opportunities_org_status_priority", table_name="growth_opportunities")
     op.drop_table("growth_opportunities")
