@@ -39,8 +39,8 @@ class GrowthMeasurementService:
         )
         if action is None:
             raise GrowthStateError("growth action not found")
-        if action.status not in {"completed", "failed", "cancelled", "waiting_approval"}:
-            raise GrowthStateError("growth action is not ready for outcome measurement")
+        if action.status != "completed":
+            raise GrowthStateError("only completed growth actions may be measured")
 
         outcome = GrowthOutcome(
             organization_id=organization_id,
