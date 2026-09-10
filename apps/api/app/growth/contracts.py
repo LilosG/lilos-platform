@@ -14,6 +14,7 @@ class GrowthActionCreate(BaseModel):
     product_key: str = Field(min_length=1, max_length=64)
     action_type: str = Field(min_length=1, max_length=64)
     target_reference: str = Field(min_length=1, max_length=1000)
+    execution_mode: Literal["workflow", "manual", "monitor"]
     executor_workflow_key: str | None = Field(default=None, min_length=1, max_length=128)
     dependency_keys: list[str] = Field(default_factory=list, max_length=20)
     evidence_references: list[str] = Field(min_length=1, max_length=100)
@@ -22,6 +23,14 @@ class GrowthActionCreate(BaseModel):
     risk: Literal["low", "medium", "high"]
     effort: Literal["low", "medium", "high"]
     approval_required: bool = True
+
+    @model_validator(mode="after")
+    def validate_execution_binding(self) -> GrowthActionCreate:
+        if self.execution_mode == "workflow" and self.executor_workflow_key is None:
+            raise ValueError("workflow growth actions require executor_workflow_key")
+        if self.execution_mode != "workflow" and self.executor_workflow_key is not None:
+            raise ValueError("manual and monitor growth actions cannot bind an executor workflow")
+        return self
 
 
 class GrowthPlanCreate(BaseModel):
