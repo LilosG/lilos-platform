@@ -26,11 +26,7 @@ export type GrowthAction = {
 export type GrowthOutcome = {
   id: string;
   action_id: string;
-  classification:
-    | "improved"
-    | "unchanged"
-    | "regressed"
-    | "inconclusive";
+  classification: "improved" | "unchanged" | "regressed" | "inconclusive";
   baseline: Record<string, unknown>;
   measurement: Record<string, unknown>;
   limitations: string[];
