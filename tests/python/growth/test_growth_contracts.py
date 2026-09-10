@@ -133,3 +133,21 @@ def test_growth_service_forbids_direct_product_lifecycle_workflows(
         match="not a growth-delegatable product agent",
     ):
         GrowthService._validate_executor_bindings(plan)
+
+
+@pytest.mark.parametrize(
+    ("product", "workflow"),
+    [
+        ("seo", "agent.seo"),
+        ("content", "agent.content"),
+        ("gbp", "agent.gbp"),
+        ("reviews", "agent.reviews"),
+    ],
+)
+def test_growth_service_accepts_only_governed_product_agent_delegation(
+    product: str,
+    workflow: str,
+) -> None:
+    plan = _plan([_action("governed.delegate", product=product, workflow=workflow)])
+
+    GrowthService._validate_executor_bindings(plan)
