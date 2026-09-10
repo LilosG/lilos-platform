@@ -34,8 +34,6 @@
     "@astrojs/check": "^0.9.10",
     "@axe-core/playwright": "^4.12.1",
     "@eslint/js": "^10.0.1",
-    "@playwright/test": "^1.62.1",
-    "axe-core": "^4.12.1",
     "eslint": "^10.8.0",
     "eslint-plugin-astro": "^1.7.0",
     "happy-dom": "^20.11.2",
