@@ -43,13 +43,6 @@ jobs:
           node-version: '22'
           cache: npm
 
-      - name: Use repository-pinned npm
-        shell: bash
-        run: |
-          set -euo pipefail
-          npm install --global npm@10.9.2
-          test "$(npm --version)" = "10.9.2"
-
       - name: Resolve patched supported dependency versions
         id: versions
         shell: bash
@@ -57,8 +50,9 @@ jobs:
           set -euo pipefail
           astro_version="$(npm view 'astro@7' version --json | node -e 'let s=""; process.stdin.on("data",d=>s+=d).on("end",()=>{const v=JSON.parse(s); process.stdout.write(String(Array.isArray(v)?v.at(-1):v));})')"
           vitest_version="$(npm view 'vitest@4' version --json | node -e 'let s=""; process.stdin.on("data",d=>s+=d).on("end",()=>{const v=JSON.parse(s); process.stdout.write(String(Array.isArray(v)?v.at(-1):v));})')"
-          node - "$astro_version" "$vitest_version" <<'NODE'
-          const [astro, vitest] = process.argv.slice(2);
+          npm11_version="$(npm view 'npm@11' version --json | node -e 'let s=""; process.stdin.on("data",d=>s+=d).on("end",()=>{const v=JSON.parse(s); process.stdout.write(String(Array.isArray(v)?v.at(-1):v));})')"
+          node - "$astro_version" "$vitest_version" "$npm11_version" <<'NODE'
+          const [astro, vitest, npm11] = process.argv.slice(2);
           const tuple = (v) => v.replace(/^v/, '').split('.').map(Number);
           const greaterThan = (left, right) => {
             const a = tuple(left), b = tuple(right);
@@ -74,10 +68,14 @@ jobs:
           if (!vitest.startsWith('4.')) {
             throw new Error(`No supported Vitest 4 release resolved: ${vitest}`);
           }
-          console.log(`Resolved Astro ${astro} and Vitest ${vitest}`);
+          if (!npm11.startsWith('11.')) {
+            throw new Error(`No npm 11 release resolved: ${npm11}`);
+          }
+          console.log(`Resolved Astro ${astro}, Vitest ${vitest}, npm ${npm11}`);
           NODE
           echo "astro=$astro_version" >> "$GITHUB_OUTPUT"
           echo "vitest=$vitest_version" >> "$GITHUB_OUTPUT"
+          echo "npm11=$npm11_version" >> "$GITHUB_OUTPUT"
 
       - name: Update manifests to patched supported ranges
         env:
@@ -93,16 +91,26 @@ jobs:
           fs.writeFileSync(path, `${JSON.stringify(manifest, null, 2)}\n`);
           NODE
 
-      - name: Rebuild dependency lock from authoritative manifests
+      - name: Rebuild dependency lock with current npm workspace resolver
+        env:
+          NPM11_VERSION: ${{ steps.versions.outputs.npm11 }}
         shell: bash
         run: |
           set -euo pipefail
+          npm install --global "npm@${NPM11_VERSION}"
+          test "$(npm --version)" = "$NPM11_VERSION"
           rm -rf node_modules apps/web/node_modules packages/*/node_modules
           rm -f package-lock.json
           npm install --package-lock-only --ignore-scripts
 
-      - name: Verify reproducible frontend install
-        run: npm ci
+      - name: Verify lock with repository-pinned npm and clean install
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --global npm@10.9.2
+          test "$(npm --version)" = "10.9.2"
+          rm -rf node_modules apps/web/node_modules packages/*/node_modules
+          npm ci
 
       - name: Verify high/critical dependency audit is clean
         run: npm audit --audit-level=high
