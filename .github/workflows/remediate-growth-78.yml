@@ -46,8 +46,11 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
-      - name: Apply non-breaking dependency security fixes
-        run: npm audit fix --package-lock-only
+      - name: Upgrade Astro beyond affected security range
+        run: npm install --package-lock-only --workspace @lilos/web 'astro@^7.2.8'
+
+      - name: Upgrade Vitest beyond affected mocker range
+        run: npm install --package-lock-only --workspace @lilos/web --save-dev 'vitest@^4.1.11'
 
       - name: Verify reproducible frontend install
         run: npm ci
@@ -59,7 +62,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          allowed='^(apps/api/app/agents/hermes_client\.py|apps/api/app/agents/tools\.py|apps/api/app/growth/service\.py|migrations/versions/20260910_0001_growth_orchestration\.py|tests/python/agents/test_agent_safety_and_skills\.py|tests/python/growth/test_growth_contracts\.py|package-lock\.json)$'
+          allowed='^(apps/api/app/agents/hermes_client\.py|apps/api/app/agents/tools\.py|apps/api/app/growth/service\.py|migrations/versions/20260910_0001_growth_orchestration\.py|tests/python/agents/test_agent_safety_and_skills\.py|tests/python/growth/test_growth_contracts\.py|apps/web/package\.json|package-lock\.json)$'
           unexpected="$(git diff --name-only | grep -Ev "$allowed" || true)"
           if [[ -n "$unexpected" ]]; then
             echo "Unexpected remediation changes:"
@@ -83,6 +86,7 @@ jobs:
                   migrations/versions/20260910_0001_growth_orchestration.py \
                   tests/python/agents/test_agent_safety_and_skills.py \
                   tests/python/growth/test_growth_contracts.py \
+                  apps/web/package.json \
                   package-lock.json
           git diff --cached --check
           git commit -m 'Fix PR 78 CI formatting and dependency audit'
