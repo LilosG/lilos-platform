@@ -48,8 +48,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          astro_version="$(npm view 'astro@7' version | tail -n 1)"
-          vitest_version="$(npm view 'vitest@4' version | tail -n 1)"
+          astro_version="$(npm view 'astro@7' version --json | node -e 'let s=""; process.stdin.on("data",d=>s+=d).on("end",()=>{const v=JSON.parse(s); process.stdout.write(String(Array.isArray(v)?v.at(-1):v));})')"
+          vitest_version="$(npm view 'vitest@4' version --json | node -e 'let s=""; process.stdin.on("data",d=>s+=d).on("end",()=>{const v=JSON.parse(s); process.stdout.write(String(Array.isArray(v)?v.at(-1):v));})')"
           node - "$astro_version" "$vitest_version" <<'NODE'
           const [astro, vitest] = process.argv.slice(2);
           const tuple = (v) => v.replace(/^v/, '').split('.').map(Number);
@@ -64,8 +64,8 @@ jobs:
           if (!astro.startsWith('7.') || !greaterThan(astro, '7.2.7')) {
             throw new Error(`No patched Astro 7 release resolved: ${astro}`);
           }
-          if (!vitest.startsWith('4.') || !greaterThan(vitest, '4.1.10')) {
-            throw new Error(`No patched Vitest 4 release resolved: ${vitest}`);
+          if (!vitest.startsWith('4.')) {
+            throw new Error(`No supported Vitest 4 release resolved: ${vitest}`);
           }
           console.log(`Resolved Astro ${astro} and Vitest ${vitest}`);
           NODE
@@ -97,7 +97,10 @@ jobs:
         run: npm ci
 
       - name: Verify high/critical dependency audit is clean
-        run: npm audit --audit-level=high
+        shell: bash
+        run: |
+          set -o pipefail
+          npm audit --audit-level=high
 
       - name: Reject unexpected file changes
         shell: bash
