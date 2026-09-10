@@ -43,6 +43,13 @@ jobs:
           node-version: '22'
           cache: npm
 
+      - name: Use repository-pinned npm
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --global npm@10.9.2
+          test "$(npm --version)" = "10.9.2"
+
       - name: Resolve patched supported dependency versions
         id: versions
         shell: bash
@@ -97,10 +104,7 @@ jobs:
         run: npm ci
 
       - name: Verify high/critical dependency audit is clean
-        shell: bash
-        run: |
-          set -o pipefail
-          npm audit --audit-level=high
+        run: npm audit --audit-level=high
 
       - name: Reject unexpected file changes
         shell: bash
