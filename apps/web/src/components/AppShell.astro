@@ -428,7 +428,10 @@ const productKeys = [
             },
           }),
         );
-        if (workflow === "agent.growth" && window.location.pathname === "/growth") {
+        if (
+          workflow === "agent.growth" &&
+          window.location.pathname === "/growth"
+        ) {
           window.setTimeout(() => window.location.reload(), 600);
         }
         return;
