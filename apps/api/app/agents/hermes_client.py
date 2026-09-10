@@ -51,6 +51,7 @@ REQUIRED_LILOS_TOOLS = frozenset(
         "generate_gbp_post_proposal",
         "create_gbp_optimization_proposal",
         "draft_review_response_proposal",
+        "create_growth_plan",
         "inspect_workflow",
         "submit_for_approval",
     }
