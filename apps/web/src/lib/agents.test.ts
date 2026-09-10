@@ -38,6 +38,10 @@ describe("Hermes capability-gated controls", () => {
 });
 
 describe("governed workflow skill mapping", () => {
+  it("maps Growth to its dedicated planner skill", () => {
+    expect(agentSkillForWorkflow("agent.growth")).toBe("growth.planner");
+  });
+
   it("keeps SEO and Content on distinct governed skills", () => {
     expect(agentSkillForWorkflow("agent.seo")).toBe("seo.operator");
     expect(agentSkillForWorkflow("agent.content")).toBe("content.operator");
