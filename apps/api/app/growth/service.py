@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import builtins
 from datetime import UTC, datetime
 from decimal import Decimal
+from typing import cast
 from uuid import UUID
 
 from sqlalchemy import select
@@ -164,7 +166,7 @@ class GrowthService:
         )
         if lock:
             statement = statement.with_for_update()
-        return await session.scalar(statement)
+        return cast(GrowthInitiative | None, await session.scalar(statement))
 
     async def list(
         self,
@@ -174,7 +176,7 @@ class GrowthService:
         location_id: UUID | None = None,
         status: str | None = None,
         limit: int = 50,
-    ) -> list[GrowthInitiative]:
+    ) -> builtins.list[GrowthInitiative]:
         statement = select(GrowthInitiative).where(
             GrowthInitiative.organization_id == organization_id
         )
@@ -195,7 +197,7 @@ class GrowthService:
         session: AsyncSession,
         organization_id: UUID,
         initiative_id: UUID,
-    ) -> list[GrowthAction]:
+    ) -> builtins.list[GrowthAction]:
         return list(
             await session.scalars(
                 select(GrowthAction)
@@ -280,7 +282,7 @@ class GrowthService:
         *,
         actor_id: UUID,
         correlation_id: str,
-    ) -> list[GrowthAction]:
+    ) -> builtins.list[GrowthAction]:
         """Delegate dependency-ready workflow actions through the durable executor.
 
         Manual and monitor actions remain explicit queue items; they are never
@@ -294,7 +296,7 @@ class GrowthService:
 
         actions = await self.actions(session, organization_id, initiative.id)
         by_key = {action.action_key: action for action in actions}
-        dispatched: list[GrowthAction] = []
+        dispatched: builtins.list[GrowthAction] = []
         for action in actions:
             if (
                 action.status != "approved"

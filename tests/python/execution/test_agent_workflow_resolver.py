@@ -6,7 +6,7 @@ def test_every_registered_agent_workflow_has_a_durable_handler() -> None:
     for workflow_key in WORKFLOW_SKILLS:
         handler = resolve_workflow_handler(workflow_key)
         assert handler is not None, workflow_key
-        assert handler.__name__ == f"handle_{workflow_key.replace('.', '_')}"
+        assert getattr(handler, "__name__", None) == f"handle_{workflow_key.replace('.', '_')}"
 
 
 def test_agent_handler_resolution_is_stable() -> None:
