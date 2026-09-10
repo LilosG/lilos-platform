@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from functools import lru_cache
+from functools import cache
 from typing import Any
 from uuid import UUID
 
@@ -15,7 +15,7 @@ from apps.api.app.execution.contracts import JobOutcome
 from apps.api.app.execution.handlers import WorkflowStepHandler
 
 
-@lru_cache(maxsize=None)
+@cache
 def agent_workflow_handler(workflow_key: str) -> WorkflowStepHandler:
     """Return a stable handler bound to one registered Hermes workflow key.
 

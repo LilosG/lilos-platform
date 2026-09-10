@@ -1,5 +1,5 @@
-from pydantic import ValidationError
 import pytest
+from pydantic import ValidationError
 
 from apps.api.app.growth.contracts import GrowthActionCreate, GrowthPlanCreate
 from apps.api.app.growth.service import GrowthPlanValidationError, GrowthService

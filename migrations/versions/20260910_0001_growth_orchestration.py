@@ -115,7 +115,8 @@ def upgrade() -> None:
         sa.CheckConstraint("risk IN ('low','medium','high')", name="ck_growth_actions_risk"),
         sa.CheckConstraint("effort IN ('low','medium','high')", name="ck_growth_actions_effort"),
         sa.CheckConstraint(
-            "status IN ('proposed','approved','queued','running','waiting_approval','completed','failed','skipped','cancelled')",
+            "status IN ('proposed','approved','queued','running',"
+            "'waiting_approval','completed','failed','skipped','cancelled')",
             name="ck_growth_actions_status",
         ),
         sa.ForeignKeyConstraint(["organization_id"], ["organizations.id"], ondelete="RESTRICT"),

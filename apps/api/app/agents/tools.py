@@ -1263,7 +1263,9 @@ class AgentToolService:
             )
             if not set(action_refs) <= plan_ref_set:
                 raise AgentToolDeniedError(
-                    f"Growth action {action.action_key} cites evidence absent from plan source_references"
+                    "Growth action "
+                    f"{action.action_key} cites evidence absent from "
+                    "plan source_references"
                 )
             canonical_actions.append(action.model_copy(update={"evidence_references": action_refs}))
         command = command.model_copy(
