@@ -1,3 +1,5 @@
+import { productAgentWorkflowFromHref } from "../product-agent-action";
+
 export function errorAlert(
   message: string,
   recoveryLabel = "Try again",
@@ -52,11 +54,21 @@ export function emptyState(
   content.append(title, body);
   wrap.append(content);
   if (actionLabel && actionHref) {
-    const link = document.createElement("a");
-    link.className = "ui-button ui-button--secondary ui-button--sm";
-    link.href = actionHref;
-    link.textContent = actionLabel;
-    wrap.append(link);
+    const workflow = productAgentWorkflowFromHref(actionHref);
+    if (workflow) {
+      const action = document.createElement("button");
+      action.type = "button";
+      action.className = "ui-button ui-button--secondary ui-button--sm";
+      action.dataset.productAgentWorkflow = workflow;
+      action.textContent = actionLabel;
+      wrap.append(action);
+    } else {
+      const link = document.createElement("a");
+      link.className = "ui-button ui-button--secondary ui-button--sm";
+      link.href = actionHref;
+      link.textContent = actionLabel;
+      wrap.append(link);
+    }
   }
   return wrap;
 }
