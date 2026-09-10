@@ -66,6 +66,14 @@ PRODUCT_CATALOG: dict[str, dict[str, object]] = {
         "required_integrations": [],
         "requires_location_profile": False,
     },
+    "growth": {
+        "name": "LILOs Growth",
+        "description": "Governed cross-product planning, prioritization, and orchestration.",
+        "required_configuration_keys": ["growth.general"],
+        "required_business_fact_keys": ["business.name"],
+        "required_integrations": [],
+        "requires_location_profile": False,
+    },
     "leads": {
         "name": "LILOs Leads",
         "description": "Lead intake and follow-up coordination.",
@@ -111,6 +119,7 @@ CONFIGURATION_CATALOG: dict[str, dict[str, object]] = {
         "reviews.general",
         "content.general",
         "insights.general",
+        "growth.general",
         "leads.general",
         "automations.general",
     )
