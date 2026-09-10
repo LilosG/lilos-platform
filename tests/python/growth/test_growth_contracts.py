@@ -2,7 +2,11 @@ import pytest
 from pydantic import ValidationError
 
 from apps.api.app.growth.contracts import GrowthActionCreate, GrowthPlanCreate
-from apps.api.app.growth.service import GrowthPlanValidationError, GrowthService
+from apps.api.app.growth.service import (
+    GROWTH_EXECUTOR_WORKFLOWS,
+    GrowthPlanValidationError,
+    GrowthService,
+)
 
 
 def _action(
@@ -133,6 +137,15 @@ def test_growth_service_forbids_direct_product_lifecycle_workflows(
         match="not a growth-delegatable product agent",
     ):
         GrowthService._validate_executor_bindings(plan)
+
+
+def test_growth_executor_catalog_is_limited_to_governed_product_agents() -> None:
+    assert GROWTH_EXECUTOR_WORKFLOWS == {
+        "agent.seo": "seo",
+        "agent.content": "content",
+        "agent.gbp": "gbp",
+        "agent.reviews": "reviews",
+    }
 
 
 @pytest.mark.parametrize(
