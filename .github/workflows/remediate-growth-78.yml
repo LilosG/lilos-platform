@@ -60,19 +60,24 @@ jobs:
               '== (7, 7)',
               '== (8, 8)',
           )
-          for path in (
+          replace_once(
               'tests/python/audit/test_migration.py',
+              '            "gbp_suspension_cases",\n            "incident_timeline_entries",',
+              '            "gbp_suspension_cases",\n'
+              '            "growth_actions",\n'
+              '            "growth_initiatives",\n'
+              '            "growth_outcomes",\n'
+              '            "incident_timeline_entries",',
+          )
+          replace_once(
               'tests/python/database/test_migrations.py',
-          ):
-              replace_once(
-                  path,
-                  '            "gbp_suspension_cases",\n            "incident_timeline_entries",',
-                  '            "gbp_suspension_cases",\n'
-                  '            "growth_actions",\n'
-                  '            "growth_initiatives",\n'
-                  '            "growth_outcomes",\n'
-                  '            "incident_timeline_entries",',
-              )
+              '        "gbp_suspension_cases",\n        "incident_timeline_entries",',
+              '        "gbp_suspension_cases",\n'
+              '        "growth_actions",\n'
+              '        "growth_initiatives",\n'
+              '        "growth_outcomes",\n'
+              '        "incident_timeline_entries",',
+          )
 
           product_test = Path('tests/python/workflows/test_automation_product.py')
           text = product_test.read_text()
