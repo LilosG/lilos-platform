@@ -87,9 +87,6 @@ export function resolveAgentLocation(
   }
   if (active.length === 0) return { kind: "none" };
   if (active.length === 1) return { kind: "selected", location: active[0] };
-
-  const primary = active.filter((location) => location.is_primary);
-  if (primary.length === 1) return { kind: "selected", location: primary[0] };
   return { kind: "ambiguous", locations: active };
 }
 
@@ -142,6 +139,7 @@ export function workflowRunIsTerminal(run: WorkflowRunDetail): boolean {
     "cancelled",
     "canceled",
     "dead_letter",
+    "waiting_approval",
   ].includes(run.status);
 }
 
