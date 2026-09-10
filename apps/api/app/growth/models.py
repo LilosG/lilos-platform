@@ -98,6 +98,12 @@ class GrowthAction(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         UniqueConstraint("organization_id", "id", name="uq_growth_actions_org_id"),
         UniqueConstraint("initiative_id", "action_key", name="uq_growth_actions_plan_key"),
         CheckConstraint("position >= 0", name="position_nonnegative"),
+        CheckConstraint("execution_mode IN ('workflow','manual','monitor')", name="execution_mode"),
+        CheckConstraint(
+            "(execution_mode = 'workflow' AND executor_workflow_key IS NOT NULL) OR "
+            "(execution_mode <> 'workflow' AND executor_workflow_key IS NULL)",
+            name="executor_binding",
+        ),
         CheckConstraint("risk IN ('low','medium','high')", name="risk"),
         CheckConstraint("effort IN ('low','medium','high')", name="effort"),
         CheckConstraint(
@@ -116,6 +122,7 @@ class GrowthAction(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     product_key: Mapped[str] = mapped_column(String(64), nullable=False)
     action_type: Mapped[str] = mapped_column(String(64), nullable=False)
     target_reference: Mapped[str] = mapped_column(String(1000), nullable=False)
+    execution_mode: Mapped[str] = mapped_column(String(16), nullable=False)
     executor_workflow_key: Mapped[str | None] = mapped_column(String(128))
     dependency_keys: Mapped[list[object]] = mapped_column(JSONB, nullable=False)
     evidence_references: Mapped[list[object]] = mapped_column(JSONB, nullable=False)
