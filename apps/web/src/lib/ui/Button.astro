@@ -60,7 +60,11 @@ let productAgentWorkflow: string | null = null;
 if (href) {
   const target = new URL(href, "https://lilos.local");
   const workflow = target.searchParams.get("agent");
-  if (target.pathname === "/automations" && workflow && productAgentWorkflows.has(workflow)) {
+  if (
+    target.pathname === "/automations" &&
+    workflow &&
+    productAgentWorkflows.has(workflow)
+  ) {
     productAgentWorkflow = workflow;
   }
 }
