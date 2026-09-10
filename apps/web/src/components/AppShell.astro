@@ -154,6 +154,17 @@ const productKeys = [
 </div>
 
 <script>
+  import { describeFailure } from "../lib/ui/errors";
+  import {
+    fetchAgentLocationResolution,
+    isProductAgentWorkflow,
+    PRODUCT_AGENT_LABELS,
+    startProductAgent,
+    waitForProductAgentRun,
+    type ProductAgentWorkflow,
+  } from "../lib/product-agent-action";
+  import type { LocationSummary } from "../lib/workspace";
+
   const sidebar = document.getElementById("workspace-navigation");
   const toggle = document.getElementById(
     "mobile-navigation-toggle",
@@ -181,5 +192,274 @@ const productKeys = [
 
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") closeNavigation();
+  });
+
+  function selectedPageLocationId(): string | null {
+    const explicit = document.querySelector<HTMLElement>(
+      "[data-agent-location-id]",
+    )?.dataset.agentLocationId;
+    if (explicit) return explicit;
+
+    for (const id of ["location-select", "automation-location-select"]) {
+      const control = document.getElementById(id) as
+        HTMLInputElement | HTMLSelectElement | null;
+      if (control?.value) return control.value;
+    }
+    return null;
+  }
+
+  function setProductAgentStatus(
+    message: string,
+    tone: "info" | "success" | "warning" | "danger" = "info",
+  ): void {
+    const main = document.getElementById("main-content");
+    if (!main) return;
+    let region = document.getElementById("product-agent-action-status");
+    if (!region) {
+      region = document.createElement("div");
+      region.id = "product-agent-action-status";
+      region.setAttribute("aria-live", "polite");
+      main.prepend(region);
+    }
+    const notice = document.createElement("div");
+    notice.className = `ui-notice ui-notice--${tone}`;
+    const text = document.createElement("p");
+    text.textContent = message;
+    notice.append(text);
+    region.replaceChildren(notice);
+  }
+
+  function setAgentActionBusy(action: HTMLElement, busy: boolean): void {
+    action.setAttribute("aria-busy", String(busy));
+    if (action instanceof HTMLButtonElement) action.disabled = busy;
+    if (busy) action.dataset.agentActionBusy = "true";
+    else delete action.dataset.agentActionBusy;
+  }
+
+  function activeOrganizationId(): string | null {
+    const fromUrl = new URL(window.location.href).searchParams.get("org");
+    return fromUrl || localStorage.getItem("selected_org_id");
+  }
+
+  function chooseLocation(
+    workflow: ProductAgentWorkflow,
+    locations: LocationSummary[],
+  ): Promise<string | null> {
+    return new Promise((resolve) => {
+      const dialog = document.createElement("dialog");
+      dialog.className = "ui-modal ui-modal--sm";
+      dialog.setAttribute("aria-labelledby", "agent-location-title");
+
+      const surface = document.createElement("div");
+      surface.className = "ui-modal__surface";
+      const header = document.createElement("header");
+      header.className = "ui-modal__header";
+      const heading = document.createElement("h2");
+      heading.id = "agent-location-title";
+      heading.textContent = `Run ${PRODUCT_AGENT_LABELS[workflow]}`;
+      header.append(heading);
+
+      const body = document.createElement("div");
+      body.className = "ui-modal__body";
+      const field = document.createElement("div");
+      field.className = "ui-field";
+      const label = document.createElement("label");
+      label.className = "ui-field__label";
+      label.htmlFor = "agent-location-choice";
+      label.textContent = "Location";
+      const description = document.createElement("p");
+      description.className = "ui-field__description";
+      description.textContent =
+        "Choose the exact location this agent should analyze. No location is selected automatically when multiple active locations exist.";
+      const select = document.createElement("select");
+      select.id = "agent-location-choice";
+      select.className = "ui-input";
+      for (const location of locations) {
+        const option = document.createElement("option");
+        option.value = location.id;
+        option.textContent = location.is_primary
+          ? `${location.name} · Primary`
+          : location.name;
+        select.append(option);
+      }
+      const primary = locations.find((location) => location.is_primary);
+      if (primary) select.value = primary.id;
+      field.append(label, description, select);
+      body.append(field);
+
+      const footer = document.createElement("footer");
+      footer.className = "ui-modal__footer";
+      const cancel = document.createElement("button");
+      cancel.type = "button";
+      cancel.className = "ui-button ui-button--secondary ui-button--sm";
+      cancel.textContent = "Cancel";
+      const run = document.createElement("button");
+      run.type = "button";
+      run.className = "ui-button ui-button--primary ui-button--sm";
+      run.textContent = `Run ${PRODUCT_AGENT_LABELS[workflow]}`;
+      footer.append(cancel, run);
+      surface.append(header, body, footer);
+      dialog.append(surface);
+      document.body.append(dialog);
+
+      let settled = false;
+      const finish = (locationId: string | null): void => {
+        if (settled) return;
+        settled = true;
+        if (dialog.open) dialog.close();
+        dialog.remove();
+        resolve(locationId);
+      };
+      cancel.addEventListener("click", () => finish(null));
+      run.addEventListener("click", () => finish(select.value || null));
+      dialog.addEventListener("cancel", (event) => {
+        event.preventDefault();
+        finish(null);
+      });
+      dialog.showModal();
+    });
+  }
+
+  async function runProductAgentAction(
+    workflow: ProductAgentWorkflow,
+    action: HTMLElement,
+  ): Promise<void> {
+    if (action.dataset.agentActionBusy === "true") return;
+    const organizationId = activeOrganizationId();
+    if (!organizationId) {
+      setProductAgentStatus(
+        "Choose an organization before starting agent work.",
+        "danger",
+      );
+      return;
+    }
+
+    setAgentActionBusy(action, true);
+    setProductAgentStatus(`Preparing ${PRODUCT_AGENT_LABELS[workflow]}…`);
+
+    try {
+      const locationResult = await fetchAgentLocationResolution(
+        organizationId,
+        selectedPageLocationId(),
+      );
+      if (locationResult.kind === "error") {
+        setProductAgentStatus(
+          describeFailure(locationResult.outcome, "Locations"),
+          "danger",
+        );
+        return;
+      }
+
+      const resolution = locationResult.resolution;
+      if (resolution.kind === "none") {
+        setProductAgentStatus(
+          "No active location is available for this organization.",
+          "danger",
+        );
+        return;
+      }
+
+      const locationId =
+        resolution.kind === "selected"
+          ? resolution.location.id
+          : await chooseLocation(workflow, resolution.locations);
+      if (!locationId) {
+        setProductAgentStatus("Agent run cancelled.", "info");
+        return;
+      }
+
+      setProductAgentStatus(`Starting ${PRODUCT_AGENT_LABELS[workflow]}…`);
+      const started = await startProductAgent(
+        organizationId,
+        workflow,
+        locationId,
+      );
+      if (started.kind === "runtime") {
+        if (started.outcome.kind === "ok") {
+          setProductAgentStatus(
+            `Agent runtime unavailable · ${started.outcome.data.reason_code ?? "CAPABILITY_UNAVAILABLE"}`,
+            "danger",
+          );
+        } else {
+          setProductAgentStatus(
+            describeFailure(started.outcome, PRODUCT_AGENT_LABELS[workflow]),
+            "danger",
+          );
+        }
+        return;
+      }
+      if (started.kind === "start") {
+        setProductAgentStatus(
+          describeFailure(started.outcome, PRODUCT_AGENT_LABELS[workflow]),
+          "danger",
+        );
+        return;
+      }
+
+      setProductAgentStatus(
+        `${PRODUCT_AGENT_LABELS[workflow]} queued. Waiting for execution…`,
+        "info",
+      );
+      const completed = await waitForProductAgentRun(
+        organizationId,
+        started.workflowRunId,
+      );
+      if (completed.kind !== "ok") {
+        setProductAgentStatus(
+          describeFailure(completed, PRODUCT_AGENT_LABELS[workflow]),
+          "danger",
+        );
+        return;
+      }
+
+      if (completed.data.status === "completed") {
+        setProductAgentStatus(
+          `${PRODUCT_AGENT_LABELS[workflow]} completed successfully.`,
+          "success",
+        );
+        window.dispatchEvent(
+          new CustomEvent("product-agent-run-completed", {
+            detail: {
+              workflow,
+              workflowRunId: started.workflowRunId,
+              locationId,
+            },
+          }),
+        );
+        if (
+          workflow === "agent.growth" &&
+          window.location.pathname === "/growth"
+        ) {
+          window.setTimeout(() => window.location.reload(), 600);
+        }
+        return;
+      }
+
+      if (completed.data.status === "waiting_approval") {
+        setProductAgentStatus(
+          `${PRODUCT_AGENT_LABELS[workflow]} is waiting for approval. Open Automations if you need the run controls.`,
+          "warning",
+        );
+        return;
+      }
+
+      setProductAgentStatus(
+        `${PRODUCT_AGENT_LABELS[workflow]} ended with ${completed.data.status}${completed.data.failure_code ? ` · ${completed.data.failure_code}` : ""}.`,
+        "danger",
+      );
+    } finally {
+      setAgentActionBusy(action, false);
+    }
+  }
+
+  document.addEventListener("click", (event) => {
+    const source = event.target;
+    if (!(source instanceof Element)) return;
+    const action = source.closest<HTMLElement>("[data-product-agent-workflow]");
+    if (!action) return;
+    const workflow = action.dataset.productAgentWorkflow;
+    if (!isProductAgentWorkflow(workflow)) return;
+    event.preventDefault();
+    void runProductAgentAction(workflow, action);
   });
 </script>
