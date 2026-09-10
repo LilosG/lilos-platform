@@ -111,3 +111,13 @@ def test_growth_service_forbids_recursive_planner_execution() -> None:
 
     with pytest.raises(GrowthPlanValidationError, match="recursively"):
         GrowthService._validate_executor_bindings(plan)
+
+
+def test_growth_service_forbids_direct_product_publish_workflows() -> None:
+    plan = _plan([_action("gbp.publish", product="gbp", workflow="gbp.publish_post")])
+
+    with pytest.raises(
+        GrowthPlanValidationError,
+        match="not a growth-delegatable product agent",
+    ):
+        GrowthService._validate_executor_bindings(plan)
