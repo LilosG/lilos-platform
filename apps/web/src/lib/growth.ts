@@ -84,10 +84,7 @@ export function dispatchGrowthInitiative(
   organizationId: string,
   initiativeId: string,
 ): Promise<
-  ApiOutcome<{
-    dispatched_action_ids: string[];
-    initiative: GrowthInitiative;
-  }>
+  ApiOutcome<{ dispatched_action_ids: string[]; initiative: GrowthInitiative }>
 > {
   return apiRequest(
     `/api/v1/organizations/${organizationId}/growth/${initiativeId}/dispatch`,
