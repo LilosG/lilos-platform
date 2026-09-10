@@ -1,7 +1,9 @@
 name: Format AppShell exact output
 
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - fix/growth-planner-run-flow
 
 permissions:
   contents: read
