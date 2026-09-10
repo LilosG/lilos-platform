@@ -43,14 +43,55 @@ jobs:
           node-version: '22'
           cache: npm
 
-      - name: Install frontend dependencies
-        run: npm ci
+      - name: Resolve patched supported dependency versions
+        id: versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          astro_version="$(npm view 'astro@7' version | tail -n 1)"
+          vitest_version="$(npm view 'vitest@4' version | tail -n 1)"
+          node - "$astro_version" "$vitest_version" <<'NODE'
+          const [astro, vitest] = process.argv.slice(2);
+          const tuple = (v) => v.replace(/^v/, '').split('.').map(Number);
+          const greaterThan = (left, right) => {
+            const a = tuple(left), b = tuple(right);
+            for (let i = 0; i < Math.max(a.length, b.length); i++) {
+              const av = a[i] || 0, bv = b[i] || 0;
+              if (av !== bv) return av > bv;
+            }
+            return false;
+          };
+          if (!astro.startsWith('7.') || !greaterThan(astro, '7.2.7')) {
+            throw new Error(`No patched Astro 7 release resolved: ${astro}`);
+          }
+          if (!vitest.startsWith('4.') || !greaterThan(vitest, '4.1.10')) {
+            throw new Error(`No patched Vitest 4 release resolved: ${vitest}`);
+          }
+          console.log(`Resolved Astro ${astro} and Vitest ${vitest}`);
+          NODE
+          echo "astro=$astro_version" >> "$GITHUB_OUTPUT"
+          echo "vitest=$vitest_version" >> "$GITHUB_OUTPUT"
 
-      - name: Upgrade Astro beyond affected security range
-        run: npm install --package-lock-only --workspace @lilos/web 'astro@^7.2.8'
+      - name: Update manifests to patched supported ranges
+        env:
+          ASTRO_VERSION: ${{ steps.versions.outputs.astro }}
+          VITEST_VERSION: ${{ steps.versions.outputs.vitest }}
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const path = 'apps/web/package.json';
+          const manifest = JSON.parse(fs.readFileSync(path, 'utf8'));
+          manifest.dependencies.astro = `^${process.env.ASTRO_VERSION}`;
+          manifest.devDependencies.vitest = `^${process.env.VITEST_VERSION}`;
+          fs.writeFileSync(path, `${JSON.stringify(manifest, null, 2)}\n`);
+          NODE
 
-      - name: Upgrade Vitest beyond affected mocker range
-        run: npm install --package-lock-only --workspace @lilos/web --save-dev 'vitest@^4.1.11'
+      - name: Regenerate dependency lock from manifests
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf node_modules apps/web/node_modules packages/*/node_modules
+          npm install --package-lock-only --ignore-scripts
 
       - name: Verify reproducible frontend install
         run: npm ci
