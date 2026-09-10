@@ -113,8 +113,20 @@ def test_growth_service_forbids_recursive_planner_execution() -> None:
         GrowthService._validate_executor_bindings(plan)
 
 
-def test_growth_service_forbids_direct_product_publish_workflows() -> None:
-    plan = _plan([_action("gbp.publish", product="gbp", workflow="gbp.publish_post")])
+@pytest.mark.parametrize(
+    ("product", "workflow"),
+    [
+        ("content", "content.publish"),
+        ("gbp", "gbp.publish_change"),
+        ("gbp", "gbp.publish_post"),
+        ("reviews", "reviews.publish_response"),
+    ],
+)
+def test_growth_service_forbids_direct_product_lifecycle_workflows(
+    product: str,
+    workflow: str,
+) -> None:
+    plan = _plan([_action("direct.publish", product=product, workflow=workflow)])
 
     with pytest.raises(
         GrowthPlanValidationError,
