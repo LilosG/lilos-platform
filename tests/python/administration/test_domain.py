@@ -400,7 +400,7 @@ async def _exercise(factory: async_sessionmaker[AsyncSession]) -> None:
             select(BusinessFactRevision).where(BusinessFactRevision.id == fact.id)
         )
         assert stored and stored.value == "Example A"
-        assert await session.scalar(select(func.count()).select_from(Product)) == 7
+        assert await session.scalar(select(func.count()).select_from(Product)) == 8
         assert (
             await session.scalar(
                 select(func.count())
