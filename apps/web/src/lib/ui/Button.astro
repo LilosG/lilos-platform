@@ -48,10 +48,26 @@ const classes = [
   className,
 ];
 const unavailable = disabled || state === "loading";
+const productAgentWorkflows = new Set([
+  "agent.growth",
+  "agent.gbp",
+  "agent.seo",
+  "agent.content",
+  "agent.reviews",
+  "agent.insights",
+]);
+let productAgentWorkflow: string | null = null;
+if (href) {
+  const target = new URL(href, "https://lilos.local");
+  const workflow = target.searchParams.get("agent");
+  if (target.pathname === "/automations" && workflow && productAgentWorkflows.has(workflow)) {
+    productAgentWorkflow = workflow;
+  }
+}
 ---
 
 {
-  href ? (
+  href && !productAgentWorkflow ? (
     <a
       id={id}
       class:list={classes}
@@ -83,6 +99,7 @@ const unavailable = disabled || state === "loading";
       aria-busy={state === "loading" ? "true" : undefined}
       data-active={active ? "true" : undefined}
       data-state={state}
+      data-product-agent-workflow={productAgentWorkflow ?? undefined}
       data-modal-close={modalClose ? "" : undefined}
       hidden={hidden}
       data-domain={dataDomain}
