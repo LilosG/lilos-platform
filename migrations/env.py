@@ -47,6 +47,7 @@ from apps.api.app.execution.models import (
     WorkflowStep,
     WorkflowVersion,
 )
+from apps.api.app.growth.models import GrowthAction, GrowthInitiative, GrowthOutcome
 from apps.api.app.industries.models import Industry
 from apps.api.app.insights.models import (
     InsightAnnotation,
@@ -201,6 +202,12 @@ for execution_model in (
     IdempotencyRecord,
 ):
     assert execution_model.metadata is target_metadata
+for growth_model in (
+    GrowthInitiative,
+    GrowthAction,
+    GrowthOutcome,
+):
+    assert growth_model.metadata is target_metadata
 for notification_model in (
     NotificationTemplate,
     NotificationEvent,
