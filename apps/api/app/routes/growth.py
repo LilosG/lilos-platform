@@ -15,6 +15,7 @@ from apps.api.app.database.session import get_database_session
 from apps.api.app.errors import request_correlation_id
 from apps.api.app.growth.contracts import GrowthActionOutcomeRecord, GrowthInitiativeDecision
 from apps.api.app.growth.measurement import GrowthMeasurementService
+from apps.api.app.growth.models import GrowthInitiative
 from apps.api.app.growth.service import GrowthService, GrowthStateError
 
 router = APIRouter(
@@ -45,8 +46,7 @@ def meta(request: Request) -> dict[str, object]:
     return {"correlation_id": request_correlation_id(request)}
 
 
-def summary_row(item: object) -> dict[str, object]:
-    initiative = item
+def summary_row(initiative: GrowthInitiative) -> dict[str, object]:
     return {
         "id": str(initiative.id),
         "location_id": str(initiative.location_id) if initiative.location_id else None,
@@ -131,8 +131,10 @@ async def decide_growth_initiative(
         )
     except GrowthStateError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from None
-    detail = await service.detail(session, organization_id, initiative_id)
-    return {"data": detail, "meta": meta(request)}
+    return {
+        "data": await service.detail(session, organization_id, initiative_id),
+        "meta": meta(request),
+    }
 
 
 @router.post("/{initiative_id}/dispatch", dependencies=[Depends(no_store)])
