@@ -88,6 +88,7 @@ def test_canonical_workflow_types_registered() -> None:
     assert set(WORKFLOW_TYPES) == {
         "agent.content",
         "agent.gbp",
+        "agent.growth",
         "agent.insights",
         "agent.reviews",
         "agent.seo",
