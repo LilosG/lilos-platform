@@ -31,43 +31,48 @@ jobs:
       - name: Install Python dependencies
         run: uv sync --locked
 
-      - name: Apply deterministic lint corrections
+      - name: Apply deterministic mypy corrections
         shell: bash
         run: |
           set -euo pipefail
           python - <<'PY'
           from pathlib import Path
 
-          handler = Path('apps/api/app/agents/execution_handler.py')
-          text = handler.read_text()
-          text = text.replace('from functools import lru_cache', 'from functools import cache')
-          text = text.replace('@lru_cache(maxsize=None)', '@cache')
-          handler.write_text(text)
-
-          tools = Path('apps/api/app/agents/tools.py')
-          text = tools.read_text()
-          old = '                    f"Growth action {action.action_key} cites evidence absent from plan source_references"\n'
+          service = Path('apps/api/app/growth/service.py')
+          text = service.read_text()
+          if 'import builtins\n' not in text:
+              text = text.replace(
+                  'from __future__ import annotations\n\n',
+                  'from __future__ import annotations\n\nimport builtins\n',
+                  1,
+              )
+          if 'from typing import cast\n' not in text:
+              text = text.replace('from decimal import Decimal\n', 'from decimal import Decimal\nfrom typing import cast\n', 1)
+          text = text.replace(') -> list[GrowthInitiative]:', ') -> builtins.list[GrowthInitiative]:')
+          text = text.replace(') -> list[GrowthAction]:', ') -> builtins.list[GrowthAction]:')
+          text = text.replace('dispatched: list[GrowthAction] = []', 'dispatched: builtins.list[GrowthAction] = []')
+          old = '        return await session.scalar(statement)\n\n    async def list('
           new = (
-              '                    "Growth action "\n'
-              '                    f"{action.action_key} cites evidence absent from "\n'
-              '                    "plan source_references"\n'
+              '        return cast(GrowthInitiative | None, await session.scalar(statement))\n\n'
+              '    async def list('
           )
           if old not in text:
-              raise SystemExit('Expected Growth evidence lint target was not found')
-          tools.write_text(text.replace(old, new, 1))
+              raise SystemExit('Expected Growth get() return target was not found')
+          service.write_text(text.replace(old, new, 1))
 
-          migration = Path('migrations/versions/20260910_0001_growth_orchestration.py')
-          text = migration.read_text()
-          old = '            "status IN (\'proposed\',\'approved\',\'queued\',\'running\',\'waiting_approval\',\'completed\',\'failed\',\'skipped\',\'cancelled\')",\n'
+          resolver_test = Path('tests/python/execution/test_agent_workflow_resolver.py')
+          text = resolver_test.read_text()
+          old = '        assert handler.__name__ == f"handle_{workflow_key.replace(\'.\', \'_\')}"\n'
           new = (
-              '            "status IN (\'proposed\',\'approved\',\'queued\',\'running\',"\n'
-              '            "\'waiting_approval\',\'completed\',\'failed\',\'skipped\',\'cancelled\')",\n'
+              '        assert getattr(handler, "__name__", None) == '
+              'f"handle_{workflow_key.replace(\'.\', \'_\')}"\n'
           )
           if old not in text:
-              raise SystemExit('Expected Growth status lint target was not found')
-          migration.write_text(text.replace(old, new, 1))
+              raise SystemExit('Expected handler name assertion target was not found')
+          resolver_test.write_text(text.replace(old, new, 1))
           PY
-          uv run ruff check --fix tests/python/growth/test_growth_contracts.py
+          uv run ruff format apps tests scripts migrations
+          uv run ruff check --fix apps/api/app/growth/service.py tests/python/execution/test_agent_workflow_resolver.py
           uv run ruff format apps tests scripts migrations
 
       - name: Verify Python formatting and lint
@@ -75,11 +80,14 @@ jobs:
           uv run ruff format --check apps tests scripts migrations
           uv run ruff check apps tests scripts migrations
 
+      - name: Verify Python typecheck
+        run: uv run mypy apps tests scripts migrations
+
       - name: Reject unexpected file changes
         shell: bash
         run: |
           set -euo pipefail
-          allowed='^(apps/api/app/agents/execution_handler\.py|apps/api/app/agents/tools\.py|migrations/versions/20260910_0001_growth_orchestration\.py|tests/python/growth/test_growth_contracts\.py)$'
+          allowed='^(apps/api/app/growth/service\.py|tests/python/execution/test_agent_workflow_resolver\.py)$'
           unexpected="$(git diff --name-only | grep -Ev "$allowed" || true)"
           if [[ -n "$unexpected" ]]; then
             echo "Unexpected remediation changes:"
@@ -87,16 +95,17 @@ jobs:
             exit 1
           fi
 
-      - name: Commit verified lint remediation
+      - name: Commit verified mypy remediation
         shell: bash
         run: |
           set -euo pipefail
+          if git diff --quiet; then
+            echo 'No remediation changes required.'
+            exit 0
+          fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add apps/api/app/agents/execution_handler.py \
-                  apps/api/app/agents/tools.py \
-                  migrations/versions/20260910_0001_growth_orchestration.py \
-                  tests/python/growth/test_growth_contracts.py
+          git add apps/api/app/growth/service.py tests/python/execution/test_agent_workflow_resolver.py
           git diff --cached --check
-          git commit -m 'Fix Growth orchestration Python lint violations'
+          git commit -m 'Fix Growth orchestration Python type errors'
           git push origin HEAD:feat/growth-orchestration
