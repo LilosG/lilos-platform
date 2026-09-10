@@ -1274,9 +1274,7 @@ class AgentToolService:
         except GrowthPlanValidationError as exc:
             raise AgentToolDeniedError(str(exc)[:500]) from exc
 
-        actions = await self.growth.actions(
-            session, run.organization_id, initiative.id
-        )
+        actions = await self.growth.actions(session, run.organization_id, initiative.id)
         ref = f"growth-initiative:{initiative.id}"
         return {
             "data": {
@@ -1337,9 +1335,7 @@ class AgentToolService:
                         "GBP post proposal is missing its client-scoped Drive image"
                     )
         if ref.startswith("growth-initiative:"):
-            initiative_id = _uuid(
-                ref.removeprefix("growth-initiative:"), "Growth initiative"
-            )
+            initiative_id = _uuid(ref.removeprefix("growth-initiative:"), "Growth initiative")
             initiative = await session.scalar(
                 select(GrowthInitiative).where(
                     GrowthInitiative.organization_id == run.organization_id,

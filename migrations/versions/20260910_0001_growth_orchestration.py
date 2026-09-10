@@ -30,10 +30,18 @@ def upgrade() -> None:
         sa.Column("rejected_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("completed_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("version", sa.Integer(), server_default="1", nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.CheckConstraint("priority_score BETWEEN 0 AND 100", name="ck_growth_initiatives_priority_score"),
-        sa.CheckConstraint("confidence >= 0 AND confidence <= 1", name="ck_growth_initiatives_confidence"),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.CheckConstraint(
+            "priority_score BETWEEN 0 AND 100", name="ck_growth_initiatives_priority_score"
+        ),
+        sa.CheckConstraint(
+            "confidence >= 0 AND confidence <= 1", name="ck_growth_initiatives_confidence"
+        ),
         sa.CheckConstraint(
             "status IN ('proposed','approved','rejected','executing','completed','cancelled')",
             name="ck_growth_initiatives_status",
@@ -88,8 +96,12 @@ def upgrade() -> None:
         sa.Column("safe_error_code", sa.String(length=64), nullable=True),
         sa.Column("started_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("completed_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.CheckConstraint("position >= 0", name="ck_growth_actions_position_nonnegative"),
         sa.CheckConstraint(
             "execution_mode IN ('workflow','manual','monitor')",
@@ -143,9 +155,15 @@ def upgrade() -> None:
         sa.Column("baseline", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
         sa.Column("measurement", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
         sa.Column("limitations", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.Column("observed_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "observed_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.CheckConstraint(
             "classification IN ('improved','unchanged','regressed','inconclusive')",
             name="ck_growth_outcomes_classification",

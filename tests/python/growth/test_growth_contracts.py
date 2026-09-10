@@ -35,9 +35,7 @@ def _plan(actions: list[dict[str, object]]) -> GrowthPlanCreate:
         {
             "objective": "Increase qualified local organic demand.",
             "rationale": "Current persisted evidence indicates a prioritized opportunity.",
-            "source_references": [
-                "seo-opportunity:11111111-1111-4111-8111-111111111111"
-            ],
+            "source_references": ["seo-opportunity:11111111-1111-4111-8111-111111111111"],
             "priority_score": 82,
             "confidence": 0.84,
             "actions": actions,

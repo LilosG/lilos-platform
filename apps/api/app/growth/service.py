@@ -151,7 +151,12 @@ class GrowthService:
         return initiative
 
     async def get(
-        self, session: AsyncSession, organization_id: UUID, initiative_id: UUID, *, lock: bool = False
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        initiative_id: UUID,
+        *,
+        lock: bool = False,
     ) -> GrowthInitiative | None:
         statement = select(GrowthInitiative).where(
             GrowthInitiative.organization_id == organization_id,
@@ -298,7 +303,10 @@ class GrowthService:
             ):
                 continue
             workflow_key = action.executor_workflow_key
-            if workflow_key is None or GROWTH_EXECUTOR_WORKFLOWS.get(workflow_key) != action.product_key:
+            if (
+                workflow_key is None
+                or GROWTH_EXECUTOR_WORKFLOWS.get(workflow_key) != action.product_key
+            ):
                 raise GrowthStateError("growth action executor binding is no longer valid")
 
             objective = (
@@ -402,9 +410,7 @@ class GrowthService:
                 )
                 proposals = list(agent_run.output_references) if agent_run else []
                 product_proposals = [
-                    str(ref)
-                    for ref in proposals
-                    if not str(ref).startswith("growth-initiative:")
+                    str(ref) for ref in proposals if not str(ref).startswith("growth-initiative:")
                 ]
                 if product_proposals:
                     action.status = "waiting_approval"
@@ -447,7 +453,9 @@ class GrowthService:
             "confidence": float(initiative.confidence),
             "status": initiative.status,
             "approved_at": initiative.approved_at.isoformat() if initiative.approved_at else None,
-            "completed_at": initiative.completed_at.isoformat() if initiative.completed_at else None,
+            "completed_at": initiative.completed_at.isoformat()
+            if initiative.completed_at
+            else None,
             "created_at": initiative.created_at.isoformat(),
             "actions": [
                 {
@@ -466,11 +474,15 @@ class GrowthService:
                     "effort": action.effort,
                     "approval_required": action.approval_required,
                     "status": action.status,
-                    "workflow_run_id": str(action.workflow_run_id) if action.workflow_run_id else None,
+                    "workflow_run_id": str(action.workflow_run_id)
+                    if action.workflow_run_id
+                    else None,
                     "result_reference": action.result_reference,
                     "safe_error_code": action.safe_error_code,
                     "started_at": action.started_at.isoformat() if action.started_at else None,
-                    "completed_at": action.completed_at.isoformat() if action.completed_at else None,
+                    "completed_at": action.completed_at.isoformat()
+                    if action.completed_at
+                    else None,
                 }
                 for action in actions
             ],
