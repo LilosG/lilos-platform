@@ -1,0 +1,358 @@
+---
+import AppShell from "../components/AppShell.astro";
+import Button from "../lib/ui/Button.astro";
+import EmptyState from "../lib/ui/EmptyState.astro";
+import PageHeader from "../lib/ui/PageHeader.astro";
+import PageSection from "../lib/ui/PageSection.astro";
+import PageShell from "../lib/ui/PageShell.astro";
+import Region from "../lib/ui/Region.astro";
+import Skeleton from "../lib/ui/Skeleton.astro";
+import "../styles/global.css";
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="LILOs cross-product growth initiatives and governed action queue"
+    />
+    <title>Growth Queue · LILOs</title>
+  </head>
+  <body>
+    <AppShell>
+      <PageShell id="boot-not-configured">
+        <EmptyState
+          heading="This deployment is not configured"
+          description="Connect the platform runtime configuration to enable the Growth Queue."
+        />
+      </PageShell>
+      <PageShell id="boot-loading" hidden>
+        <Skeleton lines={4} label="Loading Growth Queue" />
+      </PageShell>
+      <PageShell id="boot-error" hidden><Region role="alert" /></PageShell>
+      <PageShell id="workspace-empty" hidden>
+        <EmptyState
+          heading="No organization access yet"
+          description="Ask an administrator to invite your account to an organization."
+        />
+      </PageShell>
+
+      <PageShell id="growth-content" hidden>
+        <PageHeader
+          eyebrow="Growth operations"
+          title="Growth Queue"
+          description="Evidence-backed initiatives planned by Hermes and executed through governed product workflows."
+        >
+          <Button
+            slot="actions"
+            href="/automations?agent=agent.growth"
+            variant="primary"
+            size="sm">Run Growth Planner</Button
+          >
+          <Button
+            slot="actions"
+            id="refresh-growth"
+            variant="secondary"
+            size="sm">Refresh</Button
+          >
+        </PageHeader>
+
+        <PageSection
+          eyebrow="Prioritized work"
+          title="Initiatives"
+          description="One initiative can coordinate SEO, Content, Business Profile, and Reviews without bypassing any product guardrail."
+        >
+          <Region id="growth-queue-panel">
+            <Skeleton lines={5} label="Loading initiatives" />
+          </Region>
+        </PageSection>
+      </PageShell>
+    </AppShell>
+
+    <script>
+      import {
+        decideGrowthInitiative,
+        dispatchGrowthInitiative,
+        fetchGrowthInitiative,
+        fetchGrowthQueue,
+        reconcileGrowthInitiative,
+        type GrowthAction,
+        type GrowthInitiative,
+        type GrowthInitiativeSummary,
+      } from "../lib/growth";
+      import {
+        applyBootResult,
+        bootWorkspace,
+        describeFailure,
+        emptyState,
+        errorAlert,
+        populateSwitcher,
+        setActiveOrganization,
+        type BootRegions,
+      } from "../lib/ui";
+
+      let organizationId = "";
+      let currentInitiativeId: string | null = null;
+
+      const regions: BootRegions = {
+        notConfigured: document.getElementById("boot-not-configured")!,
+        loading: document.getElementById("boot-loading")!,
+        error: document.getElementById("boot-error")!,
+        empty: document.getElementById("workspace-empty")!,
+        content: document.getElementById("growth-content")!,
+      };
+
+      function badge(text: string): HTMLSpanElement {
+        const item = document.createElement("span");
+        item.className = "ui-badge";
+        item.textContent = text.replaceAll("_", " ");
+        return item;
+      }
+
+      function button(
+        label: string,
+        onClick: () => Promise<void>,
+        variant: "primary" | "secondary" | "ghost" = "secondary",
+      ): HTMLButtonElement {
+        const item = document.createElement("button");
+        item.type = "button";
+        item.className = `ui-button ui-button--${variant} ui-button--sm`;
+        item.textContent = label;
+        item.addEventListener("click", () => {
+          item.disabled = true;
+          void onClick().finally(() => {
+            item.disabled = false;
+          });
+        });
+        return item;
+      }
+
+      function actionRow(action: GrowthAction): HTMLElement {
+        const row = document.createElement("article");
+        row.className = "ui-card ui-card--spaced";
+
+        const header = document.createElement("div");
+        header.className = "ui-card__header";
+        const titleWrap = document.createElement("div");
+        const title = document.createElement("h4");
+        title.className = "ui-card__heading";
+        title.textContent = `${action.product_key.toUpperCase()} · ${action.action_type.replaceAll("_", " ")}`;
+        const target = document.createElement("p");
+        target.className = "ui-text-secondary";
+        target.textContent = action.target_reference;
+        titleWrap.append(title, target);
+        const statuses = document.createElement("div");
+        statuses.className = "ui-inline";
+        statuses.append(badge(action.status), badge(action.execution_mode), badge(`${action.risk} risk`));
+        header.append(titleWrap, statuses);
+
+        const body = document.createElement("div");
+        body.className = "ui-card__body";
+        const hypothesis = document.createElement("p");
+        hypothesis.textContent = action.expected_result_hypothesis;
+        body.append(hypothesis);
+        if (action.dependency_keys.length > 0) {
+          const dependencies = document.createElement("p");
+          dependencies.className = "ui-text-secondary";
+          dependencies.textContent = `Depends on: ${action.dependency_keys.join(", ")}`;
+          body.append(dependencies);
+        }
+        if (action.result_reference) {
+          const result = document.createElement("p");
+          result.className = "ui-text-secondary";
+          result.textContent = `Result: ${action.result_reference}`;
+          body.append(result);
+        }
+        if (action.safe_error_code) {
+          const error = document.createElement("p");
+          error.className = "ui-text-secondary";
+          error.textContent = `Failure: ${action.safe_error_code}`;
+          body.append(error);
+        }
+        row.append(header, body);
+        return row;
+      }
+
+      function renderDetail(detail: GrowthInitiative): HTMLElement {
+        const wrapper = document.createElement("section");
+        wrapper.className = "ui-stack";
+
+        const summary = document.createElement("article");
+        summary.className = "ui-card ui-card--spaced ui-card--flush";
+        const header = document.createElement("div");
+        header.className = "ui-card__header";
+        const titleWrap = document.createElement("div");
+        const title = document.createElement("h3");
+        title.className = "ui-card__heading";
+        title.textContent = detail.objective;
+        const meta = document.createElement("p");
+        meta.className = "ui-text-secondary";
+        meta.textContent = `Priority ${detail.priority_score}/100 · Planner certainty ${(detail.confidence * 100).toFixed(0)}%`;
+        titleWrap.append(title, meta);
+        const status = badge(detail.status);
+        header.append(titleWrap, status);
+
+        const body = document.createElement("div");
+        body.className = "ui-card__body";
+        const rationale = document.createElement("p");
+        rationale.textContent = detail.rationale;
+        body.append(rationale);
+
+        const controls = document.createElement("div");
+        controls.className = "ui-inline";
+        if (detail.status === "proposed") {
+          controls.append(
+            button("Approve initiative", async () => {
+              const result = await decideGrowthInitiative(organizationId, detail.id, true);
+              if (result.kind === "ok") await loadInitiative(detail.id);
+              else renderFailure(result, "Approve initiative");
+            }, "primary"),
+            button("Reject", async () => {
+              const result = await decideGrowthInitiative(organizationId, detail.id, false);
+              if (result.kind === "ok") await loadQueue();
+              else renderFailure(result, "Reject initiative");
+            }, "ghost"),
+          );
+        }
+        if (detail.status === "approved" || detail.status === "executing") {
+          controls.append(
+            button("Dispatch ready actions", async () => {
+              const result = await dispatchGrowthInitiative(organizationId, detail.id);
+              if (result.kind === "ok") await loadInitiative(detail.id);
+              else renderFailure(result, "Dispatch actions");
+            }, "primary"),
+            button("Reconcile status", async () => {
+              const result = await reconcileGrowthInitiative(organizationId, detail.id);
+              if (result.kind === "ok") await loadInitiative(detail.id);
+              else renderFailure(result, "Reconcile initiative");
+            }),
+          );
+        }
+        if (controls.childElementCount > 0) body.append(controls);
+        summary.append(header, body);
+        wrapper.append(summary);
+
+        const actionsTitle = document.createElement("h3");
+        actionsTitle.className = "ui-section__heading";
+        actionsTitle.textContent = `Action plan (${detail.actions.length})`;
+        wrapper.append(actionsTitle);
+        detail.actions.forEach((action) => wrapper.append(actionRow(action)));
+
+        if (detail.outcomes.length > 0) {
+          const outcomeTitle = document.createElement("h3");
+          outcomeTitle.className = "ui-section__heading";
+          outcomeTitle.textContent = "Measured outcomes";
+          wrapper.append(outcomeTitle);
+          for (const outcome of detail.outcomes) {
+            const row = document.createElement("p");
+            row.className = "ui-text-secondary";
+            row.textContent = `${outcome.classification} · ${new Date(outcome.observed_at).toLocaleString()}`;
+            wrapper.append(row);
+          }
+        }
+        return wrapper;
+      }
+
+      function initiativeRow(item: GrowthInitiativeSummary): HTMLElement {
+        const card = document.createElement("article");
+        card.className = "ui-card ui-card--spaced";
+        const header = document.createElement("div");
+        header.className = "ui-card__header";
+        const titleWrap = document.createElement("div");
+        const title = document.createElement("h3");
+        title.className = "ui-card__heading";
+        title.textContent = item.objective;
+        const meta = document.createElement("p");
+        meta.className = "ui-text-secondary";
+        meta.textContent = `Priority ${item.priority_score}/100 · ${(item.confidence * 100).toFixed(0)}% planner certainty · ${new Date(item.created_at).toLocaleDateString()}`;
+        titleWrap.append(title, meta);
+        header.append(titleWrap, badge(item.status));
+        const body = document.createElement("div");
+        body.className = "ui-card__body";
+        body.append(
+          button("Open initiative", async () => {
+            await loadInitiative(item.id);
+          }),
+        );
+        card.append(header, body);
+        return card;
+      }
+
+      function renderFailure(result: Parameters<typeof describeFailure>[0], label: string): void {
+        const panel = document.getElementById("growth-queue-panel")!;
+        panel.replaceChildren(errorAlert(describeFailure(result, label)));
+      }
+
+      async function loadInitiative(id: string): Promise<void> {
+        currentInitiativeId = id;
+        const panel = document.getElementById("growth-queue-panel")!;
+        const result = await fetchGrowthInitiative(organizationId, id);
+        panel.replaceChildren();
+        if (result.kind !== "ok") {
+          renderFailure(result, "Growth initiative");
+          return;
+        }
+        const back = button("Back to queue", async () => {
+          currentInitiativeId = null;
+          await loadQueue();
+        }, "ghost");
+        panel.append(back, renderDetail(result.data));
+      }
+
+      async function loadQueue(): Promise<void> {
+        currentInitiativeId = null;
+        const panel = document.getElementById("growth-queue-panel")!;
+        const result = await fetchGrowthQueue(organizationId);
+        panel.replaceChildren();
+        if (result.kind !== "ok") {
+          renderFailure(result, "Growth Queue");
+          return;
+        }
+        if (result.data.length === 0) {
+          panel.append(
+            emptyState(
+              "No growth initiatives yet",
+              "Run the Growth Planner to synthesize current evidence into a governed cross-product action plan.",
+              "Run Growth Planner",
+              "/automations?agent=agent.growth",
+            ),
+          );
+          return;
+        }
+        const stack = document.createElement("div");
+        stack.className = "ui-stack";
+        result.data.forEach((item) => stack.append(initiativeRow(item)));
+        panel.append(stack);
+      }
+
+      async function loadOrganization(
+        org: import("../lib/workspace").MyOrganization,
+      ): Promise<void> {
+        setActiveOrganization(org);
+        organizationId = org.organization_id;
+        await loadQueue();
+      }
+
+      document.getElementById("refresh-growth")?.addEventListener("click", () => {
+        if (!organizationId) return;
+        void (currentInitiativeId ? loadInitiative(currentInitiativeId) : loadQueue());
+      });
+
+      async function boot(): Promise<void> {
+        const result = await bootWorkspace("Growth Queue");
+        if (!applyBootResult(regions, result)) return;
+        populateSwitcher(result.organizations, (org) => void loadOrganization(org));
+        const org =
+          result.organizations.find(
+            (item) => item.organization_id === result.context.organizationId,
+          ) ?? result.organizations[0];
+        await loadOrganization(org);
+      }
+
+      void boot();
+    </script>
+  </body>
+</html>
