@@ -201,8 +201,7 @@ const productKeys = [
     if (explicit) return explicit;
 
     for (const id of ["location-select", "automation-location-select"]) {
-      const control = document.getElementById(id) as
-        HTMLInputElement | HTMLSelectElement | null;
+      const control = document.getElementById(id) as HTMLInputElement | HTMLSelectElement | null;
       if (control?.value) return control.value;
     }
     return null;
@@ -455,9 +454,7 @@ const productKeys = [
   document.addEventListener("click", (event) => {
     const source = event.target;
     if (!(source instanceof Element)) return;
-    const action = source.closest<HTMLElement>(
-      "[data-product-agent-workflow]",
-    );
+    const action = source.closest<HTMLElement>("[data-product-agent-workflow]");
     if (!action) return;
     const workflow = action.dataset.productAgentWorkflow;
     if (!isProductAgentWorkflow(workflow)) return;
