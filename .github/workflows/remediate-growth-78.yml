@@ -93,11 +93,12 @@ jobs:
           fs.writeFileSync(path, `${JSON.stringify(manifest, null, 2)}\n`);
           NODE
 
-      - name: Regenerate dependency lock from manifests
+      - name: Rebuild dependency lock from authoritative manifests
         shell: bash
         run: |
           set -euo pipefail
           rm -rf node_modules apps/web/node_modules packages/*/node_modules
+          rm -f package-lock.json
           npm install --package-lock-only --ignore-scripts
 
       - name: Verify reproducible frontend install
