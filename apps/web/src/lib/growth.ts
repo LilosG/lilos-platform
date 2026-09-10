@@ -26,7 +26,11 @@ export type GrowthAction = {
 export type GrowthOutcome = {
   id: string;
   action_id: string;
-  classification: "improved" | "unchanged" | "regressed" | "inconclusive";
+  classification:
+    | "improved"
+    | "unchanged"
+    | "regressed"
+    | "inconclusive";
   baseline: Record<string, unknown>;
   measurement: Record<string, unknown>;
   limitations: string[];
@@ -63,7 +67,9 @@ export function fetchGrowthInitiative(
   organizationId: string,
   initiativeId: string,
 ): Promise<ApiOutcome<GrowthInitiative>> {
-  return apiGet(`/api/v1/organizations/${organizationId}/growth/${initiativeId}`);
+  return apiGet(
+    `/api/v1/organizations/${organizationId}/growth/${initiativeId}`,
+  );
 }
 
 export function decideGrowthInitiative(
