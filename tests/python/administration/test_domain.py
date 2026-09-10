@@ -127,7 +127,7 @@ async def _exercise(factory: async_sessionmaker[AsyncSession]) -> None:
         access_seed = await AccessCatalogSeeder().seed(session, correlation_id="phase4-test")
         admin_seed = await AdministrationCatalogSeeder().seed(session, correlation_id="phase4-test")
         assert access_seed.permissions_created >= 19
-        assert (admin_seed.products_created, admin_seed.configuration_definitions_created) == (7, 7)
+        assert (admin_seed.products_created, admin_seed.configuration_definitions_created) == (8, 8)
     async with factory() as session, session.begin():
         assert await AdministrationCatalogSeeder().seed(
             session, correlation_id="phase4-test"
@@ -400,7 +400,7 @@ async def _exercise(factory: async_sessionmaker[AsyncSession]) -> None:
             select(BusinessFactRevision).where(BusinessFactRevision.id == fact.id)
         )
         assert stored and stored.value == "Example A"
-        assert await session.scalar(select(func.count()).select_from(Product)) == 7
+        assert await session.scalar(select(func.count()).select_from(Product)) == 8
         assert (
             await session.scalar(
                 select(func.count())

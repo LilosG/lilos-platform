@@ -125,6 +125,86 @@ SCHEMAS = {
         {"review_id": STRING, "response_text": STRING, "approved_fact_revision_ids": STRINGS},
         ["review_id", "response_text", "approved_fact_revision_ids"],
     ),
+    "create_growth_plan": _object(
+        {
+            "objective": {"type": "string", "minLength": 1, "maxLength": 2000},
+            "rationale": {"type": "string", "minLength": 1, "maxLength": 5000},
+            "source_references": {
+                "type": "array",
+                "items": STRING,
+                "minItems": 1,
+                "maxItems": 200,
+            },
+            "priority_score": {"type": "integer", "minimum": 0, "maximum": 100},
+            "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+            "actions": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 20,
+                "items": _object(
+                    {
+                        "action_key": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 128,
+                            "pattern": "^[a-z][a-z0-9_.-]*$",
+                        },
+                        "product_key": {"type": "string", "minLength": 1, "maxLength": 64},
+                        "action_type": {"type": "string", "minLength": 1, "maxLength": 64},
+                        "target_reference": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 1000,
+                        },
+                        "execution_mode": {
+                            "type": "string",
+                            "enum": ["workflow", "manual", "monitor"],
+                        },
+                        "executor_workflow_key": {
+                            "type": ["string", "null"],
+                            "minLength": 1,
+                            "maxLength": 128,
+                        },
+                        "dependency_keys": {
+                            "type": "array",
+                            "items": STRING,
+                            "maxItems": 20,
+                        },
+                        "evidence_references": {
+                            "type": "array",
+                            "items": STRING,
+                            "minItems": 1,
+                            "maxItems": 100,
+                        },
+                        "expected_result_hypothesis": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 2000,
+                        },
+                        "verification_plan": OBJECT,
+                        "risk": {"type": "string", "enum": ["low", "medium", "high"]},
+                        "effort": {"type": "string", "enum": ["low", "medium", "high"]},
+                        "approval_required": {"type": "boolean"},
+                    },
+                    [
+                        "action_key",
+                        "product_key",
+                        "action_type",
+                        "target_reference",
+                        "execution_mode",
+                        "dependency_keys",
+                        "evidence_references",
+                        "expected_result_hypothesis",
+                        "verification_plan",
+                        "risk",
+                        "effort",
+                        "approval_required",
+                    ],
+                ),
+            },
+        },
+        ["objective", "rationale", "source_references", "priority_score", "confidence", "actions"],
+    ),
     "inspect_workflow": _object({}),
     "submit_for_approval": _object({"proposal_reference": STRING}, ["proposal_reference"]),
 }
@@ -159,6 +239,11 @@ DESCRIPTIONS = {
         "Create an approval-waiting GBP change-set; never edits Google."
     ),
     "draft_review_response_proposal": "Draft a review response when deterministic risk permits.",
+    "create_growth_plan": (
+        "Create one governed cross-product growth initiative from evidence this bound Hermes "
+        "run observed. Actions are typed, dependency-ordered, and delegated only to registered "
+        "product-owned workflows or explicit manual/monitor modes. Never executes provider writes."
+    ),
     "inspect_workflow": "Inspect the owning LILOs workflow.",
     "submit_for_approval": "Submit this run's proposal to the canonical LILOs approval queue.",
 }

@@ -5,6 +5,7 @@ describe("navigation", () => {
   it("is a static, always-rendered list independent of any client-held permission set", () => {
     expect(navigation.map((item) => item.key)).toEqual([
       "overview",
+      "growth",
       "gbp",
       "reviews",
       "leads",

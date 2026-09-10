@@ -54,6 +54,7 @@ def test_product_and_configuration_catalogs_are_exact() -> None:
     assert set(PRODUCT_CATALOG) == {
         "seo",
         "gbp",
+        "growth",
         "reviews",
         "content",
         "insights",

@@ -66,20 +66,17 @@ def test_complete_product_skill_and_sanctioned_tool_plane() -> None:
         "agent.content",
         "agent.reviews",
         "agent.insights",
+        "agent.growth",
     }
     expected_versions = {
-        # v4: the agent no longer writes post copy; generate_gbp_post_proposal
-        # routes through the single governed generator.
-        # v5 / v2 across the board: COMMON_POLICY gained the verbatim-citation
-        # rule. Every skill embeds it, so every prompt changed, and the AI task
-        # definition each run registers is keyed on this version -- leaving it
-        # unchanged would record a prompt version that no longer matches the
-        # text that ran.
+        # Prompt versions are immutable execution provenance: a changed prompt
+        # must receive a new version rather than rewriting what a prior run means.
         "gbp.operator": 5,
         "seo.operator": 2,
         "content.operator": 2,
         "reviews.operator": 2,
         "insights.cross_product": 2,
+        "growth.planner": 1,
     }
     for skill in SKILLS.values():
         assert skill.version == expected_versions[skill.key]
@@ -118,8 +115,38 @@ def test_bound_skill_limits_tools_and_scheduler_stays_lilos_owned() -> None:
         "generate_gbp_post_proposal",
         "create_gbp_optimization_proposal",
         "draft_review_response_proposal",
+        "create_growth_plan",
         "submit_for_approval",
     }
+
+
+def test_growth_planner_is_cross_product_but_cannot_execute_product_proposals() -> None:
+    run = cast(AgentRun, SimpleNamespace(skill_key="growth.planner"))
+
+    for read_tool in (
+        "read_client_business_facts",
+        "read_website_knowledge",
+        "read_gbp_state",
+        "read_gsc_evidence",
+        "read_ga4_evidence",
+        "read_reviews_state",
+        "read_content_inventory",
+        "read_cross_product_summary",
+        "analyze_seo_opportunities",
+    ):
+        AgentToolService._validate_skill_tool(run, read_tool)
+    AgentToolService._validate_skill_tool(run, "create_growth_plan")
+    AgentToolService._validate_skill_tool(run, "submit_for_approval")
+
+    for product_mutation in (
+        "create_seo_recommendation_proposal",
+        "create_content_proposal",
+        "generate_gbp_post_proposal",
+        "create_gbp_optimization_proposal",
+        "draft_review_response_proposal",
+    ):
+        with pytest.raises(AgentToolDeniedError, match="bound agent skill"):
+            AgentToolService._validate_skill_tool(run, product_mutation)
 
 
 def test_proposal_evidence_must_have_been_observed_by_the_bound_run() -> None:

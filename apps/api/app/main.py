@@ -23,6 +23,7 @@ from apps.api.app.routes.gbp_mapping import router as gbp_mapping_router
 from apps.api.app.routes.gbp_operations import router as gbp_operations_router
 from apps.api.app.routes.github_app import callback_router as github_app_callback_router
 from apps.api.app.routes.github_app import router as github_app_router
+from apps.api.app.routes.growth import router as growth_router
 from apps.api.app.routes.health import router as health_router
 from apps.api.app.routes.hermes_tools import router as hermes_tools_router
 from apps.api.app.routes.insights import router as insights_router
@@ -106,6 +107,7 @@ def create_app(
     application.include_router(content_router)
     application.include_router(seo_router)
     application.include_router(insights_router)
+    application.include_router(growth_router)
     application.include_router(platform_administration_router)
     application.include_router(client_onboarding_router)
     application.include_router(integrations_router)

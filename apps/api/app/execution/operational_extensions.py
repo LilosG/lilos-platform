@@ -326,6 +326,7 @@ register_workflow_handler("seo.analyze", _handle_seo_analysis)
 register_workflow_handler("gbp.generate_post", _handle_gbp_generate_post)
 for _agent_workflow_key in (
     "agent.gbp",
+    "agent.growth",
     "agent.seo",
     "agent.content",
     "agent.reviews",

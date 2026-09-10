@@ -30,6 +30,9 @@ from apps.api.app.audit.metadata import JsonValue
 from apps.api.app.audit.service import AuditEventService
 from apps.api.app.config import Settings
 from apps.api.app.execution.service import ExecutionService
+from apps.api.app.growth.contracts import GrowthPlanCreate
+from apps.api.app.growth.models import GrowthInitiative
+from apps.api.app.growth.service import GrowthPlanValidationError, GrowthService
 from apps.api.app.insights.aggregation_service import InsightsService
 from apps.api.app.products.analytics.service import AnalyticsService
 from apps.api.app.products.content.contracts import BriefCreate, ItemCreate, RevisionCreate
@@ -126,6 +129,19 @@ TOOL_SPECS: dict[str, ToolSpec] = {
     "draft_review_response_proposal": ToolSpec(
         frozenset({"review_id", "response_text", "approved_fact_revision_ids"}), mutating=True
     ),
+    "create_growth_plan": ToolSpec(
+        frozenset(
+            {
+                "objective",
+                "rationale",
+                "source_references",
+                "priority_score",
+                "confidence",
+                "actions",
+            }
+        ),
+        mutating=True,
+    ),
     "inspect_workflow": ToolSpec(frozenset()),
     "submit_for_approval": ToolSpec(frozenset({"proposal_reference"}), mutating=True),
 }
@@ -176,6 +192,7 @@ class AgentToolService:
         self.seo = SEOService()
         self.insights = InsightsService()
         self.execution = ExecutionService()
+        self.growth = GrowthService()
 
     async def bound_run(self, session: AsyncSession, hermes_session_id: str) -> AgentRun:
         run = await session.scalar(
@@ -1224,6 +1241,64 @@ class AgentToolService:
             "proposal_references": [ref],
         }
 
+    async def _tool_create_growth_plan(
+        self, session: AsyncSession, run: AgentRun, arguments: dict[str, Any]
+    ) -> dict[str, object]:
+        """Persist one typed cross-product plan from evidence this run observed."""
+        try:
+            command = GrowthPlanCreate.model_validate(arguments)
+        except ValueError as exc:
+            raise AgentToolDeniedError(f"growth plan contract invalid: {str(exc)[:500]}") from exc
+
+        plan_refs = self._observed_source_references(
+            run, command.source_references, label="Growth plan evidence"
+        )
+        canonical_actions = []
+        plan_ref_set = set(plan_refs)
+        for action in command.actions:
+            action_refs = self._observed_source_references(
+                run,
+                action.evidence_references,
+                label=f"Growth action {action.action_key} evidence",
+            )
+            if not set(action_refs) <= plan_ref_set:
+                raise AgentToolDeniedError(
+                    "Growth action "
+                    f"{action.action_key} cites evidence absent from "
+                    "plan source_references"
+                )
+            canonical_actions.append(action.model_copy(update={"evidence_references": action_refs}))
+        command = command.model_copy(
+            update={"source_references": plan_refs, "actions": canonical_actions}
+        )
+        try:
+            initiative = await self.growth.create_from_agent(session, run, command)
+        except GrowthPlanValidationError as exc:
+            raise AgentToolDeniedError(str(exc)[:500]) from exc
+
+        actions = await self.growth.actions(session, run.organization_id, initiative.id)
+        ref = f"growth-initiative:{initiative.id}"
+        return {
+            "data": {
+                "status": initiative.status,
+                "priority_score": initiative.priority_score,
+                "confidence": float(initiative.confidence),
+                "actions": [
+                    {
+                        "action_key": action.action_key,
+                        "product_key": action.product_key,
+                        "action_type": action.action_type,
+                        "execution_mode": action.execution_mode,
+                        "executor_workflow_key": action.executor_workflow_key,
+                        "status": action.status,
+                    }
+                    for action in actions
+                ],
+            },
+            "source_references": plan_refs,
+            "proposal_references": [ref],
+        }
+
     async def _tool_inspect_workflow(
         self, session: AsyncSession, run: AgentRun, arguments: dict[str, Any]
     ) -> dict[str, object]:
@@ -1261,6 +1336,20 @@ class AgentToolService:
                     raise AgentToolDeniedError(
                         "GBP post proposal is missing its client-scoped Drive image"
                     )
+        if ref.startswith("growth-initiative:"):
+            initiative_id = _uuid(ref.removeprefix("growth-initiative:"), "Growth initiative")
+            initiative = await session.scalar(
+                select(GrowthInitiative).where(
+                    GrowthInitiative.organization_id == run.organization_id,
+                    GrowthInitiative.id == initiative_id,
+                    GrowthInitiative.planner_agent_run_id == run.id,
+                    GrowthInitiative.status == "proposed",
+                )
+            )
+            if initiative is None:
+                raise AgentToolDeniedError(
+                    "Growth initiative is outside the bound planner run or no longer proposed"
+                )
         await self.audit.record(
             session,
             AuditEventCreate(
