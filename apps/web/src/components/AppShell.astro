@@ -201,7 +201,8 @@ const productKeys = [
     if (explicit) return explicit;
 
     for (const id of ["location-select", "automation-location-select"]) {
-      const control = document.getElementById(id) as HTMLInputElement | HTMLSelectElement | null;
+      const control = document.getElementById(id) as
+        HTMLInputElement | HTMLSelectElement | null;
       if (control?.value) return control.value;
     }
     return null;
