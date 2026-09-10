@@ -78,20 +78,21 @@ jobs:
               '        "growth_outcomes",\n'
               '        "incident_timeline_entries",',
           )
-
-          product_test = Path('tests/python/workflows/test_automation_product.py')
-          text = product_test.read_text()
-          target = '            "agent.gbp",\n            "agent.insights",'
-          if text.count(target) != 2:
-              raise SystemExit(f'Expected two workflow catalog targets, found {text.count(target)}')
-          text = text.replace(
-              target,
+          replace_once(
+              'tests/python/workflows/test_automation_product.py',
+              '        "agent.gbp",\n        "agent.insights",',
+              '        "agent.gbp",\n        "agent.growth",\n        "agent.insights",',
+          )
+          replace_once(
+              'tests/python/workflows/test_automation_product.py',
+              '            "agent.gbp",\n            "agent.insights",',
               '            "agent.gbp",\n            "agent.growth",\n            "agent.insights",',
           )
-          if '    assert count == 17\n' not in text:
-              raise SystemExit('Expected workflow count assertion missing')
-          product_test.write_text(text.replace('    assert count == 17\n', '    assert count == 18\n', 1))
-
+          replace_once(
+              'tests/python/workflows/test_automation_product.py',
+              '    assert count == 17\n',
+              '    assert count == 18\n',
+          )
           replace_once(
               'tests/python/workflows/test_automation_unit.py',
               '        "agent.gbp",\n        "agent.insights",',
