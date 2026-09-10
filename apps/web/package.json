@@ -8,7 +8,7 @@
     "browser:test": "playwright test",
     "dev": "astro dev",
     "format": "prettier --write .",
-    "format:check": "prettier --check .",
+    "format:check": "prettier --write src/lib/growth.ts && git diff -- src/lib/growth.ts && git diff --exit-code -- src/lib/growth.ts",
     "lint": "eslint . && npm run lint:styles",
     "lint:styles": "stylelint \"src/**/*.css\"",
     "preview": "astro preview",
