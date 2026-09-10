@@ -71,26 +71,40 @@ export function decideGrowthInitiative(
   initiativeId: string,
   approve: boolean,
 ): Promise<ApiOutcome<GrowthInitiative>> {
-  return apiRequest(`/api/v1/organizations/${organizationId}/growth/${initiativeId}/decision`, {
-    method: "POST",
-    body: { approve },
-  });
+  return apiRequest(
+    `/api/v1/organizations/${organizationId}/growth/${initiativeId}/decision`,
+    {
+      method: "POST",
+      body: { approve },
+    },
+  );
 }
 
 export function dispatchGrowthInitiative(
   organizationId: string,
   initiativeId: string,
-): Promise<ApiOutcome<{ dispatched_action_ids: string[]; initiative: GrowthInitiative }>> {
-  return apiRequest(`/api/v1/organizations/${organizationId}/growth/${initiativeId}/dispatch`, {
-    method: "POST",
-  });
+): Promise<
+  ApiOutcome<{
+    dispatched_action_ids: string[];
+    initiative: GrowthInitiative;
+  }>
+> {
+  return apiRequest(
+    `/api/v1/organizations/${organizationId}/growth/${initiativeId}/dispatch`,
+    {
+      method: "POST",
+    },
+  );
 }
 
 export function reconcileGrowthInitiative(
   organizationId: string,
   initiativeId: string,
 ): Promise<ApiOutcome<GrowthInitiative>> {
-  return apiRequest(`/api/v1/organizations/${organizationId}/growth/${initiativeId}/reconcile`, {
-    method: "POST",
-  });
+  return apiRequest(
+    `/api/v1/organizations/${organizationId}/growth/${initiativeId}/reconcile`,
+    {
+      method: "POST",
+    },
+  );
 }
