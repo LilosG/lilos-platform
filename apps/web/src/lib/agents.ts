@@ -54,6 +54,7 @@ export type AgentRunDetail = AgentRunSummary & {
 };
 
 export const AGENT_WORKFLOWS = [
+  ["agent.growth", "Growth planner"],
   ["agent.gbp", "GBP agent"],
   ["agent.seo", "SEO agent"],
   ["agent.content", "Content agent"],
@@ -62,6 +63,7 @@ export const AGENT_WORKFLOWS = [
 ] as const;
 
 export const AGENT_SKILL_BY_WORKFLOW = {
+  "agent.growth": "growth.planner",
   "agent.gbp": "gbp.operator",
   "agent.seo": "seo.operator",
   "agent.content": "content.operator",
