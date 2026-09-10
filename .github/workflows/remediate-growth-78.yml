@@ -31,95 +31,55 @@ jobs:
       - name: Install Python dependencies
         run: uv sync --locked
 
-      - name: Apply canonical Python formatting
-        run: uv run ruff format apps tests scripts migrations
-
-      - name: Verify Python formatting
-        run: uv run ruff format --check apps tests scripts migrations
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v7
-        with:
-          node-version: '22'
-          cache: npm
-
-      - name: Resolve patched supported dependency versions
-        id: versions
+      - name: Apply deterministic lint corrections
         shell: bash
         run: |
           set -euo pipefail
-          astro_version="$(npm view 'astro@7' version --json | node -e 'let s=""; process.stdin.on("data",d=>s+=d).on("end",()=>{const v=JSON.parse(s); process.stdout.write(String(Array.isArray(v)?v.at(-1):v));})')"
-          vitest_version="$(npm view 'vitest@4' version --json | node -e 'let s=""; process.stdin.on("data",d=>s+=d).on("end",()=>{const v=JSON.parse(s); process.stdout.write(String(Array.isArray(v)?v.at(-1):v));})')"
-          npm11_version="$(npm view 'npm@11' version --json | node -e 'let s=""; process.stdin.on("data",d=>s+=d).on("end",()=>{const v=JSON.parse(s); process.stdout.write(String(Array.isArray(v)?v.at(-1):v));})')"
-          node - "$astro_version" "$vitest_version" "$npm11_version" <<'NODE'
-          const [astro, vitest, npm11] = process.argv.slice(2);
-          const tuple = (v) => v.replace(/^v/, '').split('.').map(Number);
-          const greaterThan = (left, right) => {
-            const a = tuple(left), b = tuple(right);
-            for (let i = 0; i < Math.max(a.length, b.length); i++) {
-              const av = a[i] || 0, bv = b[i] || 0;
-              if (av !== bv) return av > bv;
-            }
-            return false;
-          };
-          if (!astro.startsWith('7.') || !greaterThan(astro, '7.2.7')) {
-            throw new Error(`No patched Astro 7 release resolved: ${astro}`);
-          }
-          if (!vitest.startsWith('4.')) {
-            throw new Error(`No supported Vitest 4 release resolved: ${vitest}`);
-          }
-          if (!npm11.startsWith('11.')) {
-            throw new Error(`No npm 11 release resolved: ${npm11}`);
-          }
-          console.log(`Resolved Astro ${astro}, Vitest ${vitest}, npm ${npm11}`);
-          NODE
-          echo "astro=$astro_version" >> "$GITHUB_OUTPUT"
-          echo "vitest=$vitest_version" >> "$GITHUB_OUTPUT"
-          echo "npm11=$npm11_version" >> "$GITHUB_OUTPUT"
+          python - <<'PY'
+          from pathlib import Path
 
-      - name: Update manifests to patched supported ranges
-        env:
-          ASTRO_VERSION: ${{ steps.versions.outputs.astro }}
-          VITEST_VERSION: ${{ steps.versions.outputs.vitest }}
+          handler = Path('apps/api/app/agents/execution_handler.py')
+          text = handler.read_text()
+          text = text.replace('from functools import lru_cache', 'from functools import cache')
+          text = text.replace('@lru_cache(maxsize=None)', '@cache')
+          handler.write_text(text)
+
+          tools = Path('apps/api/app/agents/tools.py')
+          text = tools.read_text()
+          old = '                    f"Growth action {action.action_key} cites evidence absent from plan source_references"\n'
+          new = (
+              '                    "Growth action "\n'
+              '                    f"{action.action_key} cites evidence absent from "\n'
+              '                    "plan source_references"\n'
+          )
+          if old not in text:
+              raise SystemExit('Expected Growth evidence lint target was not found')
+          tools.write_text(text.replace(old, new, 1))
+
+          migration = Path('migrations/versions/20260910_0001_growth_orchestration.py')
+          text = migration.read_text()
+          old = '            "status IN (\'proposed\',\'approved\',\'queued\',\'running\',\'waiting_approval\',\'completed\',\'failed\',\'skipped\',\'cancelled\')",\n'
+          new = (
+              '            "status IN (\'proposed\',\'approved\',\'queued\',\'running\',"\n'
+              '            "\'waiting_approval\',\'completed\',\'failed\',\'skipped\',\'cancelled\')",\n'
+          )
+          if old not in text:
+              raise SystemExit('Expected Growth status lint target was not found')
+          migration.write_text(text.replace(old, new, 1))
+          PY
+          uv run ruff check --fix tests/python/growth/test_growth_contracts.py
+          uv run ruff format apps tests scripts migrations
+
+      - name: Verify Python formatting and lint
         run: |
-          node <<'NODE'
-          const fs = require('fs');
-          const path = 'apps/web/package.json';
-          const manifest = JSON.parse(fs.readFileSync(path, 'utf8'));
-          manifest.dependencies.astro = `^${process.env.ASTRO_VERSION}`;
-          manifest.devDependencies.vitest = `^${process.env.VITEST_VERSION}`;
-          fs.writeFileSync(path, `${JSON.stringify(manifest, null, 2)}\n`);
-          NODE
-
-      - name: Rebuild dependency lock with current npm workspace resolver
-        env:
-          NPM11_VERSION: ${{ steps.versions.outputs.npm11 }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          npm install --global "npm@${NPM11_VERSION}"
-          test "$(npm --version)" = "$NPM11_VERSION"
-          rm -rf node_modules apps/web/node_modules packages/*/node_modules
-          rm -f package-lock.json
-          npm install --package-lock-only --ignore-scripts
-
-      - name: Verify lock with repository-pinned npm and clean install
-        shell: bash
-        run: |
-          set -euo pipefail
-          npm install --global npm@10.9.2
-          test "$(npm --version)" = "10.9.2"
-          rm -rf node_modules apps/web/node_modules packages/*/node_modules
-          npm ci
-
-      - name: Verify high/critical dependency audit is clean
-        run: npm audit --audit-level=high
+          uv run ruff format --check apps tests scripts migrations
+          uv run ruff check apps tests scripts migrations
 
       - name: Reject unexpected file changes
         shell: bash
         run: |
           set -euo pipefail
-          allowed='^(apps/api/app/agents/hermes_client\.py|apps/api/app/agents/tools\.py|apps/api/app/growth/service\.py|migrations/versions/20260910_0001_growth_orchestration\.py|tests/python/agents/test_agent_safety_and_skills\.py|tests/python/growth/test_growth_contracts\.py|apps/web/package\.json|package-lock\.json)$'
+          allowed='^(apps/api/app/agents/execution_handler\.py|apps/api/app/agents/tools\.py|migrations/versions/20260910_0001_growth_orchestration\.py|tests/python/growth/test_growth_contracts\.py)$'
           unexpected="$(git diff --name-only | grep -Ev "$allowed" || true)"
           if [[ -n "$unexpected" ]]; then
             echo "Unexpected remediation changes:"
@@ -127,24 +87,16 @@ jobs:
             exit 1
           fi
 
-      - name: Commit verified remediation
+      - name: Commit verified lint remediation
         shell: bash
         run: |
           set -euo pipefail
-          if git diff --quiet; then
-            echo 'No remediation changes required.'
-            exit 0
-          fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add apps/api/app/agents/hermes_client.py \
+          git add apps/api/app/agents/execution_handler.py \
                   apps/api/app/agents/tools.py \
-                  apps/api/app/growth/service.py \
                   migrations/versions/20260910_0001_growth_orchestration.py \
-                  tests/python/agents/test_agent_safety_and_skills.py \
-                  tests/python/growth/test_growth_contracts.py \
-                  apps/web/package.json \
-                  package-lock.json
+                  tests/python/growth/test_growth_contracts.py
           git diff --cached --check
-          git commit -m 'Fix PR 78 CI formatting and dependency audit'
+          git commit -m 'Fix Growth orchestration Python lint violations'
           git push origin HEAD:feat/growth-orchestration
