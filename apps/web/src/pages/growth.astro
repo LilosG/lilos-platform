@@ -214,7 +214,8 @@ import "../styles/global.css";
       function safeTarget(targetReference: string): string | null {
         const value = targetReference.trim();
         if (!value) return null;
-        if (value.startsWith("https://") || value.startsWith("http://")) return value;
+        if (value.startsWith("https://") || value.startsWith("http://"))
+          return value;
         if (value.startsWith("/")) return value;
         return null;
       }
@@ -305,7 +306,8 @@ import "../styles/global.css";
         }
         if (action.safe_error_code) {
           const error = document.createElement("p");
-          error.className = "growth-supporting-text growth-supporting-text--error";
+          error.className =
+            "growth-supporting-text growth-supporting-text--error";
           error.textContent = `Needs attention: ${humanize(action.safe_error_code)}`;
           body.append(error);
         }
@@ -338,7 +340,10 @@ import "../styles/global.css";
         metrics.className = "growth-metrics";
         metrics.append(
           metric("Priority", `${detail.priority_score}/100`),
-          metric("Planner certainty", `${(detail.confidence * 100).toFixed(0)}%`),
+          metric(
+            "Planner certainty",
+            `${(detail.confidence * 100).toFixed(0)}%`,
+          ),
           metric("Recommended actions", String(detail.actions.length)),
           metric("Created", new Date(detail.created_at).toLocaleDateString()),
         );
@@ -469,7 +474,9 @@ import "../styles/global.css";
             row.className = "growth-outcome-row";
             row.append(
               badge(outcome.classification, "status"),
-              document.createTextNode(new Date(outcome.observed_at).toLocaleString()),
+              document.createTextNode(
+                new Date(outcome.observed_at).toLocaleString(),
+              ),
             );
             outcomes.append(row);
           }
