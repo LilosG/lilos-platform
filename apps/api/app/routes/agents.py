@@ -31,6 +31,7 @@ runtime = AgentRuntimeService()
 execution = ExecutionService()
 administration = AdministrationService()
 NOT_EFFECTIVE_ENTITLEMENT_STATUSES = frozenset({"not_enabled", "archived", "suspended"})
+GROWTH_SOURCE_PRODUCT_KEYS = ("seo", "content", "gbp", "reviews")
 
 
 def no_store(response: Response) -> None:
@@ -65,6 +66,28 @@ class SessionResetCommand(BaseModel):
     skill_key: str = Field(min_length=3, max_length=128)
 
 
+async def entitlement_allows_location(
+    session: AsyncSession,
+    organization_id: UUID,
+    location_id: UUID,
+    product_key: str,
+) -> bool:
+    product = await administration.catalog.get_product_by_key(session, product_key)
+    if product is None:
+        return False
+    entitlement = await administration.entitlements.get_by_product(
+        session, organization_id, product.id
+    )
+    if entitlement is None or entitlement.status in NOT_EFFECTIVE_ENTITLEMENT_STATUSES:
+        return False
+    selected_locations = await administration.entitlements.locations(
+        session, organization_id, entitlement.id
+    )
+    return not selected_locations or location_id in {
+        item.location_id for item in selected_locations
+    }
+
+
 async def require_product_entitlement(
     session: AsyncSession,
     organization_id: UUID,
@@ -77,6 +100,34 @@ async def require_product_entitlement(
         if product is not None
         else None
     )
+
+    if product_key == "growth":
+        if entitlement is not None and entitlement.status not in NOT_EFFECTIVE_ENTITLEMENT_STATUSES:
+            selected_locations = await administration.entitlements.locations(
+                session, organization_id, entitlement.id
+            )
+            if selected_locations and location_id not in {
+                item.location_id for item in selected_locations
+            }:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Location is outside the Growth product entitlement",
+                )
+            return
+
+        for source_product_key in GROWTH_SOURCE_PRODUCT_KEYS:
+            if await entitlement_allows_location(
+                session, organization_id, location_id, source_product_key
+            ):
+                return
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Growth planner requires an effective Growth entitlement or at least one "
+                "effective SEO, Content, GBP, or Reviews entitlement for this location"
+            ),
+        )
+
     if entitlement is None or entitlement.status in NOT_EFFECTIVE_ENTITLEMENT_STATUSES:
         raise HTTPException(status_code=409, detail="Product entitlement is not effective")
     selected_locations = await administration.entitlements.locations(
