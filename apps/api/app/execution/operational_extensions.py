@@ -14,7 +14,7 @@ from apps.api.app.execution.handlers import (
     _handle_seo_crawl,
     register_workflow_handler,
 )
-from apps.api.app.products.gbp.post_generation import GBPPostGenerationService
+from apps.api.app.products.gbp.post_strategy import StrategicGBPPostGenerationService
 from apps.api.app.products.gbp.proposal_enrichment import GBPProposalEnrichmentError
 from apps.api.app.products.seo.orchestration import SEOOrchestrationService
 
@@ -240,7 +240,7 @@ async def _handle_gbp_generate_post(
             return JobOutcome(result="permanent_failure", safe_error="GBP_REVIEW_SOURCE_INVALID")
 
     try:
-        revision, _execution, asset = await GBPPostGenerationService().generate(
+        revision, _execution, asset = await StrategicGBPPostGenerationService().generate(
             session,
             Settings(),
             organization_id,
