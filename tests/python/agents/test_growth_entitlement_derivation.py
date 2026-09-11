@@ -47,7 +47,9 @@ def entitlement(status: str = "active") -> object:
 
 
 @pytest.mark.asyncio
-async def test_growth_allows_explicit_effective_entitlement(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_growth_allows_explicit_effective_entitlement(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     organization_id = uuid4()
     location_id = uuid4()
     growth = product()
