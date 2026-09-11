@@ -379,9 +379,7 @@ def _build_prompt(task_key: str, input_document: dict[str, Any]) -> str:
         review_body = str(review_document.get("body") or "").strip()
         review_rating = review_document.get("rating", rating)
         rating_text = (
-            f"Rating: {review_rating}/5"
-            if review_rating is not None
-            else "Rating: not provided"
+            f"Rating: {review_rating}/5" if review_rating is not None else "Rating: not provided"
         )
         facts_section = _format_governed_facts(governed_facts) if governed_facts else ""
         parts = [
@@ -406,7 +404,9 @@ def _build_prompt(task_key: str, input_document: dict[str, Any]) -> str:
         if review_body:
             parts.append(f"\nREVIEW BODY:\n{review_body}")
         if not review_title and not review_body:
-            parts.append("\nREVIEW TEXT: No written review text was provided; respond to the rating only.")
+            parts.append(
+                "\nREVIEW TEXT: No written review text was provided; respond to the rating only."
+            )
         if facts_section:
             parts.append(
                 "\nOPTIONAL APPROVED BUSINESS FACTS "
