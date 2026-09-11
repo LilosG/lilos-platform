@@ -373,26 +373,50 @@ def _build_prompt(task_key: str, input_document: dict[str, Any]) -> str:
         )
         return "\n".join(parts)
     if task_key == "reviews.response_draft":
-        rating_text = f"Rating: {rating}/5" if rating is not None else "Rating: not provided"
+        review = input_document.get("review")
+        review_document = review if isinstance(review, dict) else {}
+        review_title = str(review_document.get("title") or "").strip()
+        review_body = str(review_document.get("body") or "").strip()
+        review_rating = review_document.get("rating", rating)
+        rating_text = (
+            f"Rating: {review_rating}/5"
+            if review_rating is not None
+            else "Rating: not provided"
+        )
         facts_section = _format_governed_facts(governed_facts) if governed_facts else ""
         parts = [
-            "Draft a professional, grounded review response.",
-            "",
+            "Write a public response to the customer's actual review.",
+            "The review text is the primary source. Respond to what the customer actually said, "
+            "not to a generic business profile or SEO description.",
+            "Keep the response natural, specific, concise, and human. Two to four sentences is "
+            "usually enough unless the review genuinely requires more context.",
+            "Vary the opening naturally. Do not default to canned phrases such as 'Thank you for "
+            "sharing your experience' or 'We take all feedback seriously' when a more direct "
+            "response fits the review.",
+            "Do not recite business categories, service lists, positioning language, or keyword "
+            "phrases merely because they appear in approved facts. Use an approved fact only when "
+            "it materially helps answer a point raised in the review.",
+            "Never invent facts, offers, compensation, contact details, policies, outcomes, or "
+            "promises. For a negative review, acknowledge the concern without admitting unverified "
+            "wrongdoing or promising a remedy that is not supported by the supplied facts.",
             rating_text,
-            f"Fallback tone: {manual_fallback}",
         ]
+        if review_title:
+            parts.append(f"\nREVIEW TITLE:\n{review_title}")
+        if review_body:
+            parts.append(f"\nREVIEW BODY:\n{review_body}")
+        if not review_title and not review_body:
+            parts.append("\nREVIEW TEXT: No written review text was provided; respond to the rating only.")
         if facts_section:
             parts.append(
-                "\nAPPROVED BUSINESS FACTS "
-                "(authoritative — do not invent anything not listed here):"
+                "\nOPTIONAL APPROVED BUSINESS FACTS "
+                "(use only when directly relevant to the customer's feedback; do not force them "
+                "into the response):"
                 f"\n{facts_section}"
             )
-        parts.append(
-            "\nWrite a response that is empathetic, professional, and appropriate "
-            "for the rating level. Use the approved business facts above to ground "
-            "your response in real business context. "
-            "Return ONLY a JSON object with the key 'draft'."
-        )
+        if manual_fallback:
+            parts.append(f"\nFALLBACK TONE REFERENCE ONLY:\n{manual_fallback}")
+        parts.append("\nReturn ONLY a JSON object with the key 'draft'.")
         return "\n".join(parts)
     # Generic fallback for any task
     return (
