@@ -50,14 +50,18 @@ import "../styles/global.css";
             slot="actions"
             href="/automations?agent=agent.growth"
             variant="primary"
-            size="sm">Run Growth Planner</Button
+            size="sm"
           >
+            Run Growth Planner
+          </Button>
           <Button
             slot="actions"
             id="refresh-growth"
             variant="secondary"
-            size="sm">Refresh</Button
+            size="sm"
           >
+            Refresh
+          </Button>
         </PageHeader>
 
         <PageSection
@@ -220,7 +224,9 @@ import "../styles/global.css";
         allActions: GrowthAction[],
       ): string[] {
         return action.dependency_keys.map((key) => {
-          const dependency = allActions.find((candidate) => candidate.action_key === key);
+          const dependency = allActions.find(
+            (candidate) => candidate.action_key === key,
+          );
           return dependency ? actionLabel(dependency) : humanize(key);
         });
       }
@@ -271,7 +277,9 @@ import "../styles/global.css";
           badge(`${action.effort} effort`),
           badge(action.execution_mode),
         );
-        if (action.approval_required) attributes.append(badge("Approval required", "approval"));
+        if (action.approval_required) {
+          attributes.append(badge("Approval required", "approval"));
+        }
         body.append(attributes);
 
         const target = safeTarget(action.target_reference);
@@ -428,7 +436,9 @@ import "../styles/global.css";
         planEyebrow.textContent = "Recommended plan";
         const actionsTitle = document.createElement("h3");
         actionsTitle.className = "growth-plan-header__title";
-        actionsTitle.textContent = `${detail.actions.length} coordinated ${detail.actions.length === 1 ? "action" : "actions"}`;
+        actionsTitle.textContent = `${detail.actions.length} coordinated ${
+          detail.actions.length === 1 ? "action" : "actions"
+        }`;
         const planDescription = document.createElement("p");
         planDescription.className = "growth-supporting-text";
         planDescription.textContent =
