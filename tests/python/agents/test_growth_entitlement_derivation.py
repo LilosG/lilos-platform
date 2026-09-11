@@ -1,6 +1,7 @@
+import asyncio
 from types import SimpleNamespace
 from typing import cast
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from fastapi import HTTPException
@@ -52,8 +53,19 @@ def fake_session() -> AsyncSession:
     return cast(AsyncSession, object())
 
 
-@pytest.mark.asyncio
-async def test_growth_allows_explicit_effective_entitlement(
+def require_entitlement(
+    organization_id: UUID,
+    location_id: UUID,
+    product_key: str,
+) -> None:
+    asyncio.run(
+        agents_routes.require_product_entitlement(
+            fake_session(), organization_id, location_id, product_key
+        )
+    )
+
+
+def test_growth_allows_explicit_effective_entitlement(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     organization_id = uuid4()
@@ -66,13 +78,10 @@ async def test_growth_allows_explicit_effective_entitlement(
     )
     monkeypatch.setattr(agents_routes, "administration", fake)
 
-    await agents_routes.require_product_entitlement(
-        fake_session(), organization_id, location_id, "growth"
-    )
+    require_entitlement(organization_id, location_id, "growth")
 
 
-@pytest.mark.asyncio
-async def test_growth_explicit_location_scope_overrides_derived_access(
+def test_growth_explicit_location_scope_overrides_derived_access(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     organization_id = uuid4()
@@ -95,16 +104,13 @@ async def test_growth_explicit_location_scope_overrides_derived_access(
     monkeypatch.setattr(agents_routes, "administration", fake)
 
     with pytest.raises(HTTPException) as exc:
-        await agents_routes.require_product_entitlement(
-            fake_session(), organization_id, location_id, "growth"
-        )
+        require_entitlement(organization_id, location_id, "growth")
 
     assert exc.value.status_code == 403
     assert exc.value.detail == "Location is outside the Growth product entitlement"
 
 
-@pytest.mark.asyncio
-async def test_growth_derives_access_from_effective_source_product(
+def test_growth_derives_access_from_effective_source_product(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     organization_id = uuid4()
@@ -118,13 +124,10 @@ async def test_growth_derives_access_from_effective_source_product(
     )
     monkeypatch.setattr(agents_routes, "administration", fake)
 
-    await agents_routes.require_product_entitlement(
-        fake_session(), organization_id, location_id, "growth"
-    )
+    require_entitlement(organization_id, location_id, "growth")
 
 
-@pytest.mark.asyncio
-async def test_growth_derivation_respects_location_scope(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_growth_derivation_respects_location_scope(monkeypatch: pytest.MonkeyPatch) -> None:
     organization_id = uuid4()
     location_id = uuid4()
     other_location_id = uuid4()
@@ -141,16 +144,13 @@ async def test_growth_derivation_respects_location_scope(monkeypatch: pytest.Mon
     monkeypatch.setattr(agents_routes, "administration", fake)
 
     with pytest.raises(HTTPException) as exc:
-        await agents_routes.require_product_entitlement(
-            fake_session(), organization_id, location_id, "growth"
-        )
+        require_entitlement(organization_id, location_id, "growth")
 
     assert exc.value.status_code == 409
     assert "effective SEO, Content, GBP, or Reviews entitlement" in exc.value.detail
 
 
-@pytest.mark.asyncio
-async def test_growth_rejects_when_no_effective_source_product(
+def test_growth_rejects_when_no_effective_source_product(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     organization_id = uuid4()
@@ -165,15 +165,12 @@ async def test_growth_rejects_when_no_effective_source_product(
     monkeypatch.setattr(agents_routes, "administration", fake)
 
     with pytest.raises(HTTPException) as exc:
-        await agents_routes.require_product_entitlement(
-            fake_session(), organization_id, location_id, "growth"
-        )
+        require_entitlement(organization_id, location_id, "growth")
 
     assert exc.value.status_code == 409
 
 
-@pytest.mark.asyncio
-async def test_non_growth_agent_still_requires_its_own_entitlement(
+def test_non_growth_agent_still_requires_its_own_entitlement(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     organization_id = uuid4()
@@ -186,9 +183,7 @@ async def test_non_growth_agent_still_requires_its_own_entitlement(
     monkeypatch.setattr(agents_routes, "administration", fake)
 
     with pytest.raises(HTTPException) as exc:
-        await agents_routes.require_product_entitlement(
-            fake_session(), organization_id, location_id, "seo"
-        )
+        require_entitlement(organization_id, location_id, "seo")
 
     assert exc.value.status_code == 409
     assert exc.value.detail == "Product entitlement is not effective"
