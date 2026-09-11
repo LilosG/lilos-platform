@@ -8,9 +8,7 @@ from apps.api.app.products.gbp.post_strategy import (
 
 def test_automated_source_starts_with_business_topic() -> None:
     assert (
-        StrategicGBPPostGenerationService.select_automated_source_type(
-            [], review_available=True
-        )
+        StrategicGBPPostGenerationService.select_automated_source_type([], review_available=True)
         == SERVICE_KNOWLEDGE_SOURCE
     )
 
@@ -66,15 +64,11 @@ def test_automated_source_uses_business_topic_when_no_review_is_available() -> N
 
 def test_legacy_execution_provenance_is_classified() -> None:
     assert (
-        StrategicGBPPostGenerationService.infer_source_type(
-            {"source_review_id": "review-id"}
-        )
+        StrategicGBPPostGenerationService.infer_source_type({"source_review_id": "review-id"})
         == GOOGLE_REVIEW_SOURCE
     )
     assert (
-        StrategicGBPPostGenerationService.infer_source_type(
-            {"source_service_topic": "Brunch"}
-        )
+        StrategicGBPPostGenerationService.infer_source_type({"source_service_topic": "Brunch"})
         == SERVICE_KNOWLEDGE_SOURCE
     )
     assert StrategicGBPPostGenerationService.infer_source_type({}) is None
