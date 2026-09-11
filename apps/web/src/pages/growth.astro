@@ -44,7 +44,7 @@ import "../styles/global.css";
         <PageHeader
           eyebrow="Growth operations"
           title="Growth Queue"
-          description="Evidence-backed initiatives planned by Hermes and executed through governed product workflows."
+          description="Prioritized opportunities planned by Hermes and executed through governed product workflows."
         >
           <Button
             slot="actions"
@@ -63,7 +63,7 @@ import "../styles/global.css";
         <PageSection
           eyebrow="Prioritized work"
           title="Initiatives"
-          description="One initiative can coordinate SEO, Content, Business Profile, and Reviews without bypassing any product guardrail."
+          description="Review the opportunity, evidence, recommended actions, dependencies, and execution state in one place."
         >
           <Region id="growth-queue-panel">
             <Skeleton lines={5} label="Loading initiatives" />
@@ -105,10 +105,59 @@ import "../styles/global.css";
         content: document.getElementById("growth-content")!,
       };
 
-      function badge(text: string): HTMLSpanElement {
+      const actionLabels: Record<string, string> = {
+        onpage_ctr_optimization: "Improve page click-through rate",
+        content_expansion: "Expand supporting content",
+        gbp_post: "Reinforce demand with a Business Profile post",
+        review_response: "Address review feedback",
+        optimize_existing_page: "Optimize the existing page",
+        create_service_page: "Create a service page",
+        create_location_page: "Create a location page",
+        create_supporting_content: "Create supporting content",
+        update_metadata: "Improve search metadata",
+        add_internal_links: "Strengthen internal links",
+        technical_fix: "Resolve a technical issue",
+      };
+
+      const productLabels: Record<string, string> = {
+        content: "Content",
+        gbp: "Business Profile",
+        reviews: "Reviews",
+        seo: "SEO",
+        growth: "Growth",
+      };
+
+      function humanize(value: string): string {
+        const normalized = value.replaceAll("_", " ").trim();
+        return normalized.length > 0
+          ? `${normalized.charAt(0).toUpperCase()}${normalized.slice(1)}`
+          : value;
+      }
+
+      function shortObjective(objective: string): string {
+        const normalized = objective.replace(/\s+/g, " ").trim();
+        const byIndex = normalized.toLocaleLowerCase().indexOf(" by ");
+        if (byIndex > 24 && byIndex <= 110) {
+          return normalized.slice(0, byIndex).replace(/[,:;\s]+$/, "");
+        }
+        if (normalized.length <= 120) return normalized;
+        const boundary = normalized.lastIndexOf(" ", 117);
+        return `${normalized.slice(0, boundary > 70 ? boundary : 117).trim()}…`;
+      }
+
+      function actionLabel(action: GrowthAction): string {
+        return actionLabels[action.action_type] ?? humanize(action.action_type);
+      }
+
+      function productLabel(productKey: string): string {
+        return productLabels[productKey] ?? humanize(productKey);
+      }
+
+      function badge(text: string, tone?: string): HTMLSpanElement {
         const item = document.createElement("span");
-        item.className = "ui-badge";
-        item.textContent = text.replaceAll("_", " ");
+        item.className = "ui-badge growth-badge";
+        if (tone) item.dataset.tone = tone;
+        item.textContent = humanize(text);
         return item;
       }
 
@@ -123,57 +172,133 @@ import "../styles/global.css";
         item.textContent = label;
         item.addEventListener("click", () => {
           item.disabled = true;
+          item.setAttribute("aria-busy", "true");
           void onClick().finally(() => {
             item.disabled = false;
+            item.removeAttribute("aria-busy");
           });
         });
         return item;
       }
 
-      function actionRow(action: GrowthAction): HTMLElement {
+      function metric(label: string, value: string): HTMLElement {
+        const item = document.createElement("div");
+        item.className = "growth-metric";
+        const valueNode = document.createElement("strong");
+        valueNode.className = "growth-metric__value";
+        valueNode.textContent = value;
+        const labelNode = document.createElement("span");
+        labelNode.className = "growth-metric__label";
+        labelNode.textContent = label;
+        item.append(valueNode, labelNode);
+        return item;
+      }
+
+      function contentBlock(label: string, text: string): HTMLElement {
+        const section = document.createElement("section");
+        section.className = "growth-content-block";
+        const eyebrow = document.createElement("p");
+        eyebrow.className = "growth-eyebrow";
+        eyebrow.textContent = label;
+        const copy = document.createElement("p");
+        copy.className = "growth-content-block__copy";
+        copy.textContent = text;
+        section.append(eyebrow, copy);
+        return section;
+      }
+
+      function safeTarget(targetReference: string): string | null {
+        const value = targetReference.trim();
+        if (!value) return null;
+        if (value.startsWith("https://") || value.startsWith("http://")) return value;
+        if (value.startsWith("/")) return value;
+        return null;
+      }
+
+      function dependencyNames(
+        action: GrowthAction,
+        allActions: GrowthAction[],
+      ): string[] {
+        return action.dependency_keys.map((key) => {
+          const dependency = allActions.find((candidate) => candidate.action_key === key);
+          return dependency ? actionLabel(dependency) : humanize(key);
+        });
+      }
+
+      function actionRow(
+        action: GrowthAction,
+        allActions: GrowthAction[],
+        index: number,
+      ): HTMLElement {
         const row = document.createElement("article");
-        row.className = "ui-card ui-card--spaced";
+        row.className = "growth-action-card";
 
         const header = document.createElement("div");
-        header.className = "ui-card__header";
+        header.className = "growth-action-card__header";
+
+        const identity = document.createElement("div");
+        identity.className = "growth-action-card__identity";
+        const sequence = document.createElement("span");
+        sequence.className = "growth-action-card__sequence";
+        sequence.setAttribute("aria-hidden", "true");
+        sequence.textContent = String(index + 1);
         const titleWrap = document.createElement("div");
+        const product = document.createElement("p");
+        product.className = "growth-eyebrow";
+        product.textContent = productLabel(action.product_key);
         const title = document.createElement("h4");
-        title.className = "ui-card__heading";
-        title.textContent = `${action.product_key.toUpperCase()} · ${action.action_type.replaceAll("_", " ")}`;
-        const target = document.createElement("p");
-        target.className = "ui-text-secondary";
-        target.textContent = action.target_reference;
-        titleWrap.append(title, target);
-        const statuses = document.createElement("div");
-        statuses.className = "ui-inline";
-        statuses.append(
-          badge(action.status),
-          badge(action.execution_mode),
-          badge(`${action.risk} risk`),
-        );
-        header.append(titleWrap, statuses);
+        title.className = "growth-action-card__title";
+        title.textContent = actionLabel(action);
+        titleWrap.append(product, title);
+        identity.append(sequence, titleWrap);
+
+        const state = document.createElement("div");
+        state.className = "growth-badge-row";
+        state.append(badge(action.status, "status"));
+        header.append(identity, state);
 
         const body = document.createElement("div");
-        body.className = "ui-card__body";
+        body.className = "growth-action-card__body";
         const hypothesis = document.createElement("p");
+        hypothesis.className = "growth-action-card__description";
         hypothesis.textContent = action.expected_result_hypothesis;
         body.append(hypothesis);
-        if (action.dependency_keys.length > 0) {
-          const dependencies = document.createElement("p");
-          dependencies.className = "ui-text-secondary";
-          dependencies.textContent = `Depends on: ${action.dependency_keys.join(", ")}`;
-          body.append(dependencies);
+
+        const attributes = document.createElement("div");
+        attributes.className = "growth-badge-row";
+        attributes.append(
+          badge(`${action.risk} risk`, action.risk),
+          badge(`${action.effort} effort`),
+          badge(action.execution_mode),
+        );
+        if (action.approval_required) attributes.append(badge("Approval required", "approval"));
+        body.append(attributes);
+
+        const target = safeTarget(action.target_reference);
+        if (target) {
+          const targetRow = document.createElement("p");
+          targetRow.className = "growth-supporting-text";
+          targetRow.textContent = `Target: ${target}`;
+          body.append(targetRow);
+        }
+
+        const dependencies = dependencyNames(action, allActions);
+        if (dependencies.length > 0) {
+          const dependencyRow = document.createElement("p");
+          dependencyRow.className = "growth-supporting-text";
+          dependencyRow.textContent = `Runs after: ${dependencies.join(", ")}`;
+          body.append(dependencyRow);
         }
         if (action.result_reference) {
           const result = document.createElement("p");
-          result.className = "ui-text-secondary";
-          result.textContent = `Result: ${action.result_reference}`;
+          result.className = "growth-supporting-text";
+          result.textContent = `Result available: ${action.result_reference}`;
           body.append(result);
         }
         if (action.safe_error_code) {
           const error = document.createElement("p");
-          error.className = "ui-text-secondary";
-          error.textContent = `Failure: ${action.safe_error_code}`;
+          error.className = "growth-supporting-text growth-supporting-text--error";
+          error.textContent = `Needs attention: ${humanize(action.safe_error_code)}`;
           body.append(error);
         }
         row.append(header, body);
@@ -182,33 +307,60 @@ import "../styles/global.css";
 
       function renderDetail(detail: GrowthInitiative): HTMLElement {
         const wrapper = document.createElement("section");
-        wrapper.className = "ui-stack";
+        wrapper.className = "growth-detail";
 
         const summary = document.createElement("article");
-        summary.className = "ui-card ui-card--spaced ui-card--flush";
-        const header = document.createElement("div");
-        header.className = "ui-card__header";
-        const titleWrap = document.createElement("div");
-        const title = document.createElement("h3");
-        title.className = "ui-card__heading";
-        title.textContent = detail.objective;
-        const meta = document.createElement("p");
-        meta.className = "ui-text-secondary";
-        meta.textContent = `Priority ${detail.priority_score}/100 · Planner certainty ${(detail.confidence * 100).toFixed(0)}%`;
-        titleWrap.append(title, meta);
-        const status = badge(detail.status);
-        header.append(titleWrap, status);
+        summary.className = "growth-initiative-hero";
 
-        const body = document.createElement("div");
-        body.className = "ui-card__body";
-        const rationale = document.createElement("p");
-        rationale.textContent = detail.rationale;
-        body.append(rationale);
+        const header = document.createElement("div");
+        header.className = "growth-initiative-hero__header";
+        const titleWrap = document.createElement("div");
+        titleWrap.className = "growth-initiative-hero__title-wrap";
+        const eyebrow = document.createElement("p");
+        eyebrow.className = "growth-eyebrow";
+        eyebrow.textContent = "Growth opportunity";
+        const title = document.createElement("h3");
+        title.className = "growth-initiative-hero__title";
+        title.textContent = shortObjective(detail.objective);
+        title.title = detail.objective;
+        titleWrap.append(eyebrow, title);
+        header.append(titleWrap, badge(detail.status, "status"));
+
+        const metrics = document.createElement("div");
+        metrics.className = "growth-metrics";
+        metrics.append(
+          metric("Priority", `${detail.priority_score}/100`),
+          metric("Planner certainty", `${(detail.confidence * 100).toFixed(0)}%`),
+          metric("Recommended actions", String(detail.actions.length)),
+          metric("Created", new Date(detail.created_at).toLocaleDateString()),
+        );
+
+        const narrative = document.createElement("div");
+        narrative.className = "growth-narrative";
+        narrative.append(
+          contentBlock("Opportunity", detail.objective),
+          contentBlock("Why this matters", detail.rationale),
+        );
+
+        summary.append(header, metrics, narrative);
 
         const controls = document.createElement("div");
-        controls.className = "ui-inline";
+        controls.className = "growth-decision-bar";
+        const controlCopy = document.createElement("div");
+        const controlEyebrow = document.createElement("p");
+        controlEyebrow.className = "growth-eyebrow";
+        controlEyebrow.textContent = "Initiative controls";
+        const controlDescription = document.createElement("p");
+        controlDescription.className = "growth-supporting-text";
+        controlDescription.textContent =
+          detail.status === "proposed"
+            ? "Approve the plan before any governed downstream action can be dispatched."
+            : "Dispatch eligible actions or reconcile their latest downstream state.";
+        controlCopy.append(controlEyebrow, controlDescription);
+        const controlActions = document.createElement("div");
+        controlActions.className = "growth-decision-bar__actions";
         if (detail.status === "proposed") {
-          controls.append(
+          controlActions.append(
             button(
               "Approve initiative",
               async () => {
@@ -223,7 +375,7 @@ import "../styles/global.css";
               "primary",
             ),
             button(
-              "Reject",
+              "Reject initiative",
               async () => {
                 const result = await decideGrowthInitiative(
                   organizationId,
@@ -238,7 +390,7 @@ import "../styles/global.css";
           );
         }
         if (detail.status === "approved" || detail.status === "executing") {
-          controls.append(
+          controlActions.append(
             button(
               "Dispatch ready actions",
               async () => {
@@ -261,53 +413,100 @@ import "../styles/global.css";
             }),
           );
         }
-        if (controls.childElementCount > 0) body.append(controls);
-        summary.append(header, body);
-        wrapper.append(summary);
+        if (controlActions.childElementCount > 0) {
+          controls.append(controlCopy, controlActions);
+        }
 
+        wrapper.append(summary);
+        if (controls.childElementCount > 0) wrapper.append(controls);
+
+        const planHeader = document.createElement("div");
+        planHeader.className = "growth-plan-header";
+        const planHeaderCopy = document.createElement("div");
+        const planEyebrow = document.createElement("p");
+        planEyebrow.className = "growth-eyebrow";
+        planEyebrow.textContent = "Recommended plan";
         const actionsTitle = document.createElement("h3");
-        actionsTitle.className = "ui-section__heading";
-        actionsTitle.textContent = `Action plan (${detail.actions.length})`;
-        wrapper.append(actionsTitle);
-        detail.actions.forEach((action) => wrapper.append(actionRow(action)));
+        actionsTitle.className = "growth-plan-header__title";
+        actionsTitle.textContent = `${detail.actions.length} coordinated ${detail.actions.length === 1 ? "action" : "actions"}`;
+        const planDescription = document.createElement("p");
+        planDescription.className = "growth-supporting-text";
+        planDescription.textContent =
+          "Dependencies and approvals are enforced by the governed product workflows below.";
+        planHeaderCopy.append(planEyebrow, actionsTitle, planDescription);
+        planHeader.append(planHeaderCopy);
+        wrapper.append(planHeader);
+
+        const actions = document.createElement("div");
+        actions.className = "growth-action-list";
+        detail.actions.forEach((action, index) =>
+          actions.append(actionRow(action, detail.actions, index)),
+        );
+        wrapper.append(actions);
 
         if (detail.outcomes.length > 0) {
+          const outcomes = document.createElement("section");
+          outcomes.className = "growth-outcomes";
+          const outcomeEyebrow = document.createElement("p");
+          outcomeEyebrow.className = "growth-eyebrow";
+          outcomeEyebrow.textContent = "Measurement";
           const outcomeTitle = document.createElement("h3");
-          outcomeTitle.className = "ui-section__heading";
+          outcomeTitle.className = "growth-plan-header__title";
           outcomeTitle.textContent = "Measured outcomes";
-          wrapper.append(outcomeTitle);
+          outcomes.append(outcomeEyebrow, outcomeTitle);
           for (const outcome of detail.outcomes) {
-            const row = document.createElement("p");
-            row.className = "ui-text-secondary";
-            row.textContent = `${outcome.classification} · ${new Date(outcome.observed_at).toLocaleString()}`;
-            wrapper.append(row);
+            const row = document.createElement("div");
+            row.className = "growth-outcome-row";
+            row.append(
+              badge(outcome.classification, "status"),
+              document.createTextNode(new Date(outcome.observed_at).toLocaleString()),
+            );
+            outcomes.append(row);
           }
+          wrapper.append(outcomes);
         }
         return wrapper;
       }
 
       function initiativeRow(item: GrowthInitiativeSummary): HTMLElement {
         const card = document.createElement("article");
-        card.className = "ui-card ui-card--spaced";
+        card.className = "growth-queue-card";
+
+        const main = document.createElement("div");
+        main.className = "growth-queue-card__main";
         const header = document.createElement("div");
-        header.className = "ui-card__header";
-        const titleWrap = document.createElement("div");
+        header.className = "growth-queue-card__header";
+        const eyebrow = document.createElement("p");
+        eyebrow.className = "growth-eyebrow";
+        eyebrow.textContent = "Growth opportunity";
+        header.append(eyebrow, badge(item.status, "status"));
+
         const title = document.createElement("h3");
-        title.className = "ui-card__heading";
-        title.textContent = item.objective;
-        const meta = document.createElement("p");
-        meta.className = "ui-text-secondary";
-        meta.textContent = `Priority ${item.priority_score}/100 · ${(item.confidence * 100).toFixed(0)}% planner certainty · ${new Date(item.created_at).toLocaleDateString()}`;
-        titleWrap.append(title, meta);
-        header.append(titleWrap, badge(item.status));
-        const body = document.createElement("div");
-        body.className = "ui-card__body";
-        body.append(
-          button("Open initiative", async () => {
-            await loadInitiative(item.id);
-          }),
+        title.className = "growth-queue-card__title";
+        title.textContent = shortObjective(item.objective);
+        title.title = item.objective;
+
+        const metrics = document.createElement("div");
+        metrics.className = "growth-queue-card__metrics";
+        metrics.append(
+          metric("Priority", `${item.priority_score}/100`),
+          metric("Planner certainty", `${(item.confidence * 100).toFixed(0)}%`),
+          metric("Created", new Date(item.created_at).toLocaleDateString()),
         );
-        card.append(header, body);
+        main.append(header, title, metrics);
+
+        const actions = document.createElement("div");
+        actions.className = "growth-queue-card__actions";
+        actions.append(
+          button(
+            "Review initiative",
+            async () => {
+              await loadInitiative(item.id);
+            },
+            "secondary",
+          ),
+        );
+        card.append(main, actions);
         return card;
       }
 
@@ -328,15 +527,18 @@ import "../styles/global.css";
           renderFailure(result, "Growth initiative");
           return;
         }
+        const navigation = document.createElement("div");
+        navigation.className = "growth-detail-navigation";
         const back = button(
-          "Back to queue",
+          "← Back to queue",
           async () => {
             currentInitiativeId = null;
             await loadQueue();
           },
           "ghost",
         );
-        panel.append(back, renderDetail(result.data));
+        navigation.append(back);
+        panel.append(navigation, renderDetail(result.data));
       }
 
       async function loadQueue(): Promise<void> {
@@ -360,7 +562,7 @@ import "../styles/global.css";
           return;
         }
         const stack = document.createElement("div");
-        stack.className = "ui-stack";
+        stack.className = "growth-queue-list";
         result.data.forEach((item) => stack.append(initiativeRow(item)));
         panel.append(stack);
       }
@@ -398,5 +600,351 @@ import "../styles/global.css";
 
       void boot();
     </script>
+
+    <style is:global>
+      #growth-queue-panel {
+        max-width: var(--content-wide);
+      }
+
+      .growth-eyebrow {
+        margin: 0;
+        color: var(--color-text-secondary);
+        font-size: var(--type-caption-size);
+        font-weight: 700;
+        line-height: var(--type-caption-line);
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .growth-badge-row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: var(--space-2);
+      }
+
+      .growth-badge {
+        white-space: nowrap;
+      }
+
+      .growth-badge[data-tone="low"] {
+        border-color: var(--color-success-border);
+        background: var(--color-success-background);
+      }
+
+      .growth-badge[data-tone="medium"],
+      .growth-badge[data-tone="approval"] {
+        border-color: var(--color-warning-border);
+        background: var(--color-warning-background);
+      }
+
+      .growth-badge[data-tone="high"] {
+        border-color: var(--color-danger-border);
+        background: var(--color-danger-background);
+      }
+
+      .growth-queue-list,
+      .growth-detail,
+      .growth-action-list {
+        display: grid;
+        gap: var(--space-4);
+      }
+
+      .growth-queue-card {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: var(--space-6);
+        align-items: center;
+        padding: var(--space-6);
+        border: var(--border-width) solid var(--color-border-subtle);
+        border-radius: var(--radius-md);
+        background: var(--color-surface-raised);
+        box-shadow: var(--shadow-sm);
+      }
+
+      .growth-queue-card__main {
+        min-width: 0;
+        display: grid;
+        gap: var(--space-3);
+      }
+
+      .growth-queue-card__header,
+      .growth-action-card__header,
+      .growth-initiative-hero__header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: var(--space-4);
+      }
+
+      .growth-queue-card__title {
+        max-width: 58rem;
+        font-size: var(--type-h3-size);
+        line-height: var(--type-h3-line);
+        letter-spacing: var(--type-h3-tracking);
+      }
+
+      .growth-queue-card__metrics {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--space-6);
+      }
+
+      .growth-queue-card__actions {
+        display: flex;
+        align-items: center;
+      }
+
+      .growth-metric {
+        display: grid;
+        gap: var(--space-1);
+        min-width: 7rem;
+      }
+
+      .growth-metric__value {
+        color: var(--color-text-primary);
+        font-size: var(--type-body-size);
+        font-weight: 700;
+        line-height: var(--type-body-line);
+      }
+
+      .growth-metric__label {
+        color: var(--color-text-secondary);
+        font-size: var(--type-caption-size);
+        line-height: var(--type-caption-line);
+      }
+
+      .growth-detail-navigation {
+        margin-bottom: var(--space-4);
+      }
+
+      .growth-initiative-hero {
+        overflow: hidden;
+        border: var(--border-width) solid var(--color-border-subtle);
+        border-radius: var(--radius-md);
+        background: var(--color-surface-raised);
+        box-shadow: var(--shadow-sm);
+      }
+
+      .growth-initiative-hero__header {
+        padding: var(--space-6) var(--space-6) var(--space-5);
+      }
+
+      .growth-initiative-hero__title-wrap {
+        display: grid;
+        gap: var(--space-2);
+        min-width: 0;
+      }
+
+      .growth-initiative-hero__title {
+        max-width: 58rem;
+        font-size: clamp(1.35rem, 2vw, 1.75rem);
+        line-height: 1.18;
+        letter-spacing: -0.025em;
+      }
+
+      .growth-metrics {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: var(--border-width);
+        border-block: var(--border-width) solid var(--color-border-subtle);
+        background: var(--color-border-subtle);
+      }
+
+      .growth-metrics .growth-metric {
+        min-width: 0;
+        padding: var(--space-4) var(--space-6);
+        background: var(--color-surface-sunken);
+      }
+
+      .growth-narrative {
+        display: grid;
+        grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+        gap: var(--space-8);
+        padding: var(--space-6);
+      }
+
+      .growth-content-block {
+        display: grid;
+        align-content: start;
+        gap: var(--space-2);
+        min-width: 0;
+      }
+
+      .growth-content-block__copy,
+      .growth-action-card__description {
+        color: var(--color-text-primary);
+        line-height: 1.6;
+      }
+
+      .growth-decision-bar {
+        position: sticky;
+        bottom: var(--space-4);
+        z-index: 5;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--space-6);
+        padding: var(--space-4) var(--space-5);
+        border: var(--border-width) solid var(--color-border-strong);
+        border-radius: var(--radius-md);
+        background: var(--color-surface-raised);
+        box-shadow: var(--shadow-md);
+      }
+
+      .growth-decision-bar__actions {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: var(--space-2);
+        flex: 0 0 auto;
+      }
+
+      .growth-plan-header {
+        display: flex;
+        align-items: end;
+        justify-content: space-between;
+        gap: var(--space-4);
+        padding-top: var(--space-4);
+      }
+
+      .growth-plan-header__title {
+        margin-top: var(--space-1);
+        font-size: var(--type-h3-size);
+        line-height: var(--type-h3-line);
+      }
+
+      .growth-action-card {
+        overflow: hidden;
+        border: var(--border-width) solid var(--color-border-subtle);
+        border-radius: var(--radius-md);
+        background: var(--color-surface-raised);
+      }
+
+      .growth-action-card__header {
+        padding: var(--space-5) var(--space-6);
+        border-bottom: var(--border-width) solid var(--color-border-subtle);
+      }
+
+      .growth-action-card__identity {
+        display: flex;
+        align-items: flex-start;
+        gap: var(--space-3);
+        min-width: 0;
+      }
+
+      .growth-action-card__sequence {
+        display: grid;
+        place-items: center;
+        flex: 0 0 auto;
+        width: 2rem;
+        height: 2rem;
+        border-radius: var(--radius-full);
+        background: var(--color-surface-sunken);
+        color: var(--color-text-secondary);
+        font-size: var(--type-body-sm-size);
+        font-weight: 700;
+      }
+
+      .growth-action-card__title {
+        margin-top: var(--space-1);
+        font-size: var(--type-body-size);
+        font-weight: 700;
+        line-height: 1.35;
+      }
+
+      .growth-action-card__body {
+        display: grid;
+        gap: var(--space-4);
+        padding: var(--space-5) var(--space-6);
+      }
+
+      .growth-supporting-text {
+        margin: 0;
+        color: var(--color-text-secondary);
+        font-size: var(--type-body-sm-size);
+        line-height: var(--type-body-sm-line);
+      }
+
+      .growth-supporting-text--error {
+        color: var(--color-danger-foreground);
+        font-weight: 600;
+      }
+
+      .growth-outcomes {
+        display: grid;
+        gap: var(--space-3);
+        padding: var(--space-5) var(--space-6);
+        border: var(--border-width) solid var(--color-border-subtle);
+        border-radius: var(--radius-md);
+        background: var(--color-surface-raised);
+      }
+
+      .growth-outcome-row {
+        display: flex;
+        align-items: center;
+        gap: var(--space-3);
+        color: var(--color-text-secondary);
+        font-size: var(--type-body-sm-size);
+      }
+
+      @media (max-width: 900px) {
+        .growth-queue-card,
+        .growth-narrative {
+          grid-template-columns: 1fr;
+        }
+
+        .growth-queue-card__actions {
+          justify-content: stretch;
+        }
+
+        .growth-queue-card__actions .ui-button {
+          width: 100%;
+        }
+
+        .growth-metrics {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .growth-decision-bar {
+          position: static;
+          align-items: stretch;
+          flex-direction: column;
+        }
+
+        .growth-decision-bar__actions {
+          justify-content: flex-start;
+        }
+      }
+
+      @media (max-width: 560px) {
+        .growth-queue-card,
+        .growth-initiative-hero__header,
+        .growth-narrative,
+        .growth-action-card__header,
+        .growth-action-card__body {
+          padding: var(--space-4);
+        }
+
+        .growth-queue-card__header,
+        .growth-action-card__header,
+        .growth-initiative-hero__header {
+          flex-direction: column;
+        }
+
+        .growth-metrics {
+          grid-template-columns: 1fr;
+        }
+
+        .growth-metrics .growth-metric {
+          padding: var(--space-3) var(--space-4);
+        }
+
+        .growth-decision-bar__actions,
+        .growth-decision-bar__actions .ui-button {
+          width: 100%;
+        }
+      }
+    </style>
   </body>
 </html>
