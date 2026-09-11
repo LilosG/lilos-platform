@@ -1,8 +1,10 @@
 from types import SimpleNamespace
+from typing import cast
 from uuid import uuid4
 
 import pytest
 from fastapi import HTTPException
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.app.routes import agents as agents_routes
 
@@ -38,12 +40,16 @@ class FakeEntitlements:
         return self.location_rows.get(entitlement_id, [])
 
 
-def product() -> object:
+def product() -> SimpleNamespace:
     return SimpleNamespace(id=uuid4())
 
 
-def entitlement(status: str = "active") -> object:
+def entitlement(status: str = "active") -> SimpleNamespace:
     return SimpleNamespace(id=uuid4(), status=status)
+
+
+def fake_session() -> AsyncSession:
+    return cast(AsyncSession, object())
 
 
 @pytest.mark.asyncio
@@ -61,7 +67,7 @@ async def test_growth_allows_explicit_effective_entitlement(
     monkeypatch.setattr(agents_routes, "administration", fake)
 
     await agents_routes.require_product_entitlement(
-        object(), organization_id, location_id, "growth"
+        fake_session(), organization_id, location_id, "growth"
     )
 
 
@@ -90,7 +96,7 @@ async def test_growth_explicit_location_scope_overrides_derived_access(
 
     with pytest.raises(HTTPException) as exc:
         await agents_routes.require_product_entitlement(
-            object(), organization_id, location_id, "growth"
+            fake_session(), organization_id, location_id, "growth"
         )
 
     assert exc.value.status_code == 403
@@ -113,7 +119,7 @@ async def test_growth_derives_access_from_effective_source_product(
     monkeypatch.setattr(agents_routes, "administration", fake)
 
     await agents_routes.require_product_entitlement(
-        object(), organization_id, location_id, "growth"
+        fake_session(), organization_id, location_id, "growth"
     )
 
 
@@ -136,7 +142,7 @@ async def test_growth_derivation_respects_location_scope(monkeypatch: pytest.Mon
 
     with pytest.raises(HTTPException) as exc:
         await agents_routes.require_product_entitlement(
-            object(), organization_id, location_id, "growth"
+            fake_session(), organization_id, location_id, "growth"
         )
 
     assert exc.value.status_code == 409
@@ -160,7 +166,7 @@ async def test_growth_rejects_when_no_effective_source_product(
 
     with pytest.raises(HTTPException) as exc:
         await agents_routes.require_product_entitlement(
-            object(), organization_id, location_id, "growth"
+            fake_session(), organization_id, location_id, "growth"
         )
 
     assert exc.value.status_code == 409
@@ -181,7 +187,7 @@ async def test_non_growth_agent_still_requires_its_own_entitlement(
 
     with pytest.raises(HTTPException) as exc:
         await agents_routes.require_product_entitlement(
-            object(), organization_id, location_id, "seo"
+            fake_session(), organization_id, location_id, "seo"
         )
 
     assert exc.value.status_code == 409
