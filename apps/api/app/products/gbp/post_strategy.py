@@ -79,7 +79,7 @@ class StrategicGBPPostGenerationService(GBPPostGenerationService):
 
     async def generate(self, *args: Any, **kwargs: Any) -> Any:
         revision, execution, asset = await super().generate(*args, **kwargs)
-        output_document = dict(execution.output_document or {})
+        output_document = dict(getattr(execution, "output_document", {}) or {})
         source_type = str(output_document.get("source_type") or "").strip()
         output_document["post_archetype"] = (
             REVIEW_ARCHETYPE if source_type == GOOGLE_REVIEW_SOURCE else TOPIC_ARCHETYPE
