@@ -64,6 +64,38 @@ async def test_growth_allows_explicit_effective_entitlement(monkeypatch: pytest.
 
 
 @pytest.mark.asyncio
+async def test_growth_explicit_location_scope_overrides_derived_access(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    organization_id = uuid4()
+    location_id = uuid4()
+    other_location_id = uuid4()
+    growth = product()
+    seo = product()
+    growth_entitlement = entitlement()
+    seo_entitlement = entitlement()
+    fake = SimpleNamespace(
+        catalog=FakeCatalog({"growth": growth, "seo": seo}),
+        entitlements=FakeEntitlements(
+            {growth.id: growth_entitlement, seo.id: seo_entitlement},
+            {
+                growth_entitlement.id: [SimpleNamespace(location_id=other_location_id)],
+                seo_entitlement.id: [],
+            },
+        ),
+    )
+    monkeypatch.setattr(agents_routes, "administration", fake)
+
+    with pytest.raises(HTTPException) as exc:
+        await agents_routes.require_product_entitlement(
+            object(), organization_id, location_id, "growth"
+        )
+
+    assert exc.value.status_code == 403
+    assert exc.value.detail == "Location is outside the Growth product entitlement"
+
+
+@pytest.mark.asyncio
 async def test_growth_derives_access_from_effective_source_product(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
