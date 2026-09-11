@@ -818,7 +818,7 @@ class ReviewService:
                 version=1,
                 owning_product="reviews",
                 purpose="Draft a grounded, policy-compliant review response for human approval.",
-                input_schema={"rating": "number", "body": "string"},
+                input_schema={"review": "object", "governed_facts": "array"},
                 output_schema={"draft": "string"},
                 risk_level="medium",
                 maximum_cost_microunits=0,
@@ -838,24 +838,32 @@ class ReviewService:
         )
         if existing_execution is None:
             fallback = (
-                "Thank you for sharing your experience. We take all feedback seriously and "
-                "would like to make this right."
+                "Thank you for taking the time to leave feedback. We appreciate the opportunity "
+                "to listen and respond."
             )
 
-            # Resolve approved business facts for grounded AI input
+            # Facts remain a governed claim boundary, but the customer's actual review
+            # is the primary semantic source for the reply. The model should only use a
+            # business fact when it directly helps answer something the reviewer raised.
             governed_facts = await resolve_governed_facts(
                 session,
                 organization_id,
                 fact_ids,
                 location_id=location_id,
             )
+            effective_rating = float(revision.rating) if revision.rating is not None else None
 
             request = AIGatewayRequest(
                 organization_id=organization_id,
                 location_id=location_id,
                 task_key=AI_TASK_KEY,
                 input_document={
-                    "rating": float(revision.rating) if revision.rating is not None else None,
+                    "rating": effective_rating,
+                    "review": {
+                        "title": revision.title,
+                        "body": revision.body,
+                        "rating": effective_rating,
+                    },
                     "manual_fallback": fallback,
                     "governed_facts": governed_facts,
                 },
