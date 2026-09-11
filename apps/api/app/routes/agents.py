@@ -94,11 +94,27 @@ async def require_product_entitlement(
     location_id: UUID,
     product_key: str,
 ) -> None:
+    product = await administration.catalog.get_product_by_key(session, product_key)
+    entitlement = (
+        await administration.entitlements.get_by_product(session, organization_id, product.id)
+        if product is not None
+        else None
+    )
+
     if product_key == "growth":
-        if await entitlement_allows_location(
-            session, organization_id, location_id, product_key
-        ):
+        if entitlement is not None and entitlement.status not in NOT_EFFECTIVE_ENTITLEMENT_STATUSES:
+            selected_locations = await administration.entitlements.locations(
+                session, organization_id, entitlement.id
+            )
+            if selected_locations and location_id not in {
+                item.location_id for item in selected_locations
+            }:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Location is outside the Growth product entitlement",
+                )
             return
+
         for source_product_key in GROWTH_SOURCE_PRODUCT_KEYS:
             if await entitlement_allows_location(
                 session, organization_id, location_id, source_product_key
@@ -112,12 +128,6 @@ async def require_product_entitlement(
             ),
         )
 
-    product = await administration.catalog.get_product_by_key(session, product_key)
-    entitlement = (
-        await administration.entitlements.get_by_product(session, organization_id, product.id)
-        if product is not None
-        else None
-    )
     if entitlement is None or entitlement.status in NOT_EFFECTIVE_ENTITLEMENT_STATUSES:
         raise HTTPException(status_code=409, detail="Product entitlement is not effective")
     selected_locations = await administration.entitlements.locations(
