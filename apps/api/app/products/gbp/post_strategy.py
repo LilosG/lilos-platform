@@ -32,9 +32,7 @@ class GBPPostDiversityGateway(AIGateway):
 
         input_document = dict(request.input_document)
         source_type = str(input_document.get("source_type") or "").strip()
-        archetype = (
-            REVIEW_ARCHETYPE if source_type == GOOGLE_REVIEW_SOURCE else TOPIC_ARCHETYPE
-        )
+        archetype = REVIEW_ARCHETYPE if source_type == GOOGLE_REVIEW_SOURCE else TOPIC_ARCHETYPE
         base_instructions = str(input_document.get("instructions") or "").strip()
         strategy_instructions = self.strategy_instructions(source_type)
         input_document["post_archetype"] = archetype
@@ -101,9 +99,7 @@ class StrategicGBPPostGenerationService(GBPPostGenerationService):
         if candidate is None:
             return None
 
-        recent_source_types = await self._recent_source_types(
-            session, organization_id, location_id
-        )
+        recent_source_types = await self._recent_source_types(session, organization_id, location_id)
         selected_source_type = self.select_automated_source_type(
             recent_source_types,
             review_available=True,
