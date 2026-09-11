@@ -78,8 +78,9 @@ def test_reviews_prompt_includes_governed_facts() -> None:
     )
     assert "Wheyland Electric" in prompt
     assert "EV charger installation" in prompt
-    assert "APPROVED BUSINESS FACTS" in prompt
-    assert "authoritative" in prompt.lower()
+    assert "OPTIONAL APPROVED BUSINESS FACTS" in prompt
+    assert "use only when directly relevant" in prompt.lower()
+    assert "do not force them into the response" in prompt.lower()
 
 
 def test_reviews_prompt_without_facts_still_works() -> None:

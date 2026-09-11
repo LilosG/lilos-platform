@@ -509,7 +509,10 @@ import "../styles/global.css";
         panel.append(table);
       }
 
-      async function openReview(review: ReviewSummary): Promise<void> {
+      async function openReview(
+        review: ReviewSummary,
+        highlightedResponseId?: string,
+      ): Promise<void> {
         document.getElementById("review-detail")!.hidden = false;
         document.getElementById("review-detail-title")!.textContent =
           `Review ${review.rating ? `${review.rating}★` : "—"}`;
@@ -586,8 +589,14 @@ import "../styles/global.css";
         const textarea = document.createElement("textarea");
         textarea.className = "ui-textarea";
         textarea.id = "review-response-draft";
-        textarea.rows = 4;
+        textarea.rows = 5;
         textarea.placeholder = "Write a response…";
+        if (highlightedResponseId && responsesResult.kind === "ok") {
+          const highlighted = responsesResult.data.find(
+            (response) => response.id === highlightedResponseId,
+          );
+          if (highlighted) textarea.value = highlighted.response_text;
+        }
         const textareaLabel = document.createElement("label");
         textareaLabel.htmlFor = textarea.id;
         textareaLabel.className = "ui-field__label";
@@ -607,6 +616,10 @@ import "../styles/global.css";
         status.className = "ui-text-secondary";
         status.setAttribute("role", "status");
         status.setAttribute("aria-live", "polite");
+        if (highlightedResponseId) {
+          status.textContent =
+            "New AI draft generated and shown below. Review it carefully before approving.";
+        }
 
         async function approvedFactRevisionIds(): Promise<string[]> {
           const factKeys = [
@@ -657,7 +670,7 @@ import "../styles/global.css";
             result.kind === "ok"
               ? "Draft saved."
               : describeFailure(result, "Save");
-          if (result.kind === "ok") await openReview(review);
+          if (result.kind === "ok") await openReview(review, result.data.id);
         });
         aiBtn.addEventListener("click", async () => {
           aiBtn.disabled = true;
@@ -665,6 +678,8 @@ import "../styles/global.css";
           const latestRev = detailResult.data.revisions[0];
           if (!latestRev) {
             status.textContent = "No revision to respond to.";
+            aiBtn.disabled = false;
+            aiBtn.textContent = "Generate AI draft";
             return;
           }
           const approvedFactIds = await approvedFactRevisionIds();
@@ -686,12 +701,10 @@ import "../styles/global.css";
             },
           );
           if (result.kind === "ok") {
-            textarea.value = result.data.response_text;
-            status.textContent =
-              "AI draft generated. Review it carefully before approving.";
-          } else {
-            status.textContent = describeFailure(result, "AI draft");
+            await openReview(review, result.data.id);
+            return;
           }
+          status.textContent = describeFailure(result, "AI draft");
           aiBtn.disabled = false;
           aiBtn.textContent = "Generate AI draft";
         });
@@ -737,21 +750,27 @@ import "../styles/global.css";
           }
           const list = document.createElement("ul");
           list.className = "ui-record-list";
-          for (const resp of responsesResult.data) {
+          responsesResult.data.forEach((resp, index) => {
             const item = document.createElement("li");
             const info = document.createElement("div");
             const name = document.createElement("h3");
-            name.textContent = `${reviewResponseSourceLabel(resp.generated_by_type)} · ${statusLabel(resp.status)}`;
+            name.textContent = `${reviewResponseSourceLabel(resp.generated_by_type)} · Draft #${resp.revision_number} · ${statusLabel(resp.status)}`;
             const detail = document.createElement("p");
-            detail.textContent =
-              resp.response_text.length > 100
-                ? resp.response_text.slice(0, 100) + "…"
-                : resp.response_text;
+            detail.className = "ui-text-secondary";
+            detail.textContent = resp.response_text;
             info.append(name, detail);
-            item.append(
-              info,
-              statusBadge(statusTone(resp.status), statusLabel(resp.status)),
-            );
+            item.append(info);
+
+            if (resp.id === highlightedResponseId) {
+              item.append(statusBadge("ready", "Newly generated"));
+            } else if (index === 0) {
+              item.append(statusBadge("ready", "Newest"));
+            } else {
+              item.append(
+                statusBadge(statusTone(resp.status), statusLabel(resp.status)),
+              );
+            }
+
             if (resp.status === "awaiting_approval") {
               const approveBtn = document.createElement("button");
               approveBtn.type = "button";
@@ -802,7 +821,7 @@ import "../styles/global.css";
               item.append(publishBtn);
             }
             list.append(item);
-          }
+          });
           historyBody.append(list);
           historyCard.append(historyBody);
           content.append(historyCard);
