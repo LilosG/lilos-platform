@@ -93,9 +93,7 @@ async def test_reconciles_preexisting_installation_owned_by_github_app_owner(
     async with integrations_session_factory.begin() as session:
         await ProviderCatalogSeeder().run(session)
         organization = await make_organization(session)
-        github = GitHubAppService(
-            http_client_factory=client_factory(owner_installation_handler())
-        )
+        github = GitHubAppService(http_client_factory=client_factory(owner_installation_handler()))
         reconciler = GitHubOwnerInstallationReconciler(github=github)
 
         result = await reconciler.reconcile(
