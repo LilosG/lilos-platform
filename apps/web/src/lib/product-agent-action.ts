@@ -132,7 +132,8 @@ export async function fetchAgentLocationResolution(
     gbpLocationsOutcome.data
       .filter(
         (location) =>
-          location.mapping_status === "confirmed" && Boolean(location.location_id),
+          location.mapping_status === "confirmed" &&
+          Boolean(location.location_id),
       )
       .map((location) => location.location_id as string),
   );
