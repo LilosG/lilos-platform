@@ -12,6 +12,7 @@ import {
   beginGitHubInstall,
   disconnectGitHub,
   fetchGitHubRepositories,
+  githubInstallCallbackUrl,
 } from "./github-app";
 
 describe("github-app lib routes", () => {
@@ -43,5 +44,42 @@ describe("github-app lib routes", () => {
       "/api/v1/organizations/org-1/integrations/github/disconnect",
       { method: "POST" },
     );
+  });
+
+  it("forwards a GitHub App installation return to the canonical API callback", () => {
+    expect(
+      githubInstallCallbackUrl(
+        "?state=tenant-state&installation_id=12345&setup_action=install",
+        "https://api.example.com/",
+      ),
+    ).toBe(
+      "https://api.example.com/api/v1/integrations/github/callback?state=tenant-state&installation_id=12345&setup_action=install",
+    );
+  });
+
+  it("forwards provider errors so the backend can fail the one-time intent", () => {
+    expect(
+      githubInstallCallbackUrl(
+        "?state=tenant-state&error=access_denied",
+        "https://api.example.com",
+      ),
+    ).toBe(
+      "https://api.example.com/api/v1/integrations/github/callback?state=tenant-state&error=access_denied",
+    );
+  });
+
+  it("ignores ordinary Integrations navigation and incomplete provider returns", () => {
+    expect(
+      githubInstallCallbackUrl("?installed=1", "https://api.example.com"),
+    ).toBeNull();
+    expect(
+      githubInstallCallbackUrl(
+        "?installation_id=12345",
+        "https://api.example.com",
+      ),
+    ).toBeNull();
+    expect(
+      githubInstallCallbackUrl("?state=tenant-state", "https://api.example.com"),
+    ).toBeNull();
   });
 });
