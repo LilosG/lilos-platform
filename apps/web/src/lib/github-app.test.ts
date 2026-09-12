@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const apiGet = vi.fn();
 const apiRequest = vi.fn();
+const apiBase = "https://api.example.com";
+const callbackBase = `${apiBase}/api/v1/integrations/github/callback`;
 
 vi.mock("./api-client", () => ({
   apiGet: (...args: unknown[]) => apiGet(...args),
@@ -47,39 +49,25 @@ describe("github-app lib routes", () => {
   });
 
   it("forwards a GitHub App installation return to the canonical API callback", () => {
-    expect(
-      githubInstallCallbackUrl(
-        "?state=tenant-state&installation_id=12345&setup_action=install",
-        "https://api.example.com/",
-      ),
-    ).toBe(
-      "https://api.example.com/api/v1/integrations/github/callback?state=tenant-state&installation_id=12345&setup_action=install",
-    );
+    const search =
+      "?state=tenant-state&installation_id=12345&setup_action=install";
+    const expected =
+      `${callbackBase}?state=tenant-state` +
+      "&installation_id=12345&setup_action=install";
+
+    expect(githubInstallCallbackUrl(search, `${apiBase}/`)).toBe(expected);
   });
 
   it("forwards provider errors so the backend can fail the one-time intent", () => {
-    expect(
-      githubInstallCallbackUrl(
-        "?state=tenant-state&error=access_denied",
-        "https://api.example.com",
-      ),
-    ).toBe(
-      "https://api.example.com/api/v1/integrations/github/callback?state=tenant-state&error=access_denied",
-    );
+    const search = "?state=tenant-state&error=access_denied";
+    const expected = `${callbackBase}?state=tenant-state&error=access_denied`;
+
+    expect(githubInstallCallbackUrl(search, apiBase)).toBe(expected);
   });
 
   it("ignores ordinary Integrations navigation and incomplete provider returns", () => {
-    expect(
-      githubInstallCallbackUrl("?installed=1", "https://api.example.com"),
-    ).toBeNull();
-    expect(
-      githubInstallCallbackUrl(
-        "?installation_id=12345",
-        "https://api.example.com",
-      ),
-    ).toBeNull();
-    expect(
-      githubInstallCallbackUrl("?state=tenant-state", "https://api.example.com"),
-    ).toBeNull();
+    expect(githubInstallCallbackUrl("?installed=1", apiBase)).toBeNull();
+    expect(githubInstallCallbackUrl("?installation_id=12345", apiBase)).toBeNull();
+    expect(githubInstallCallbackUrl("?state=tenant-state", apiBase)).toBeNull();
   });
 });
