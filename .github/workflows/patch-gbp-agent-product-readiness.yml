@@ -63,7 +63,7 @@ jobs:
           npm run format:check:web
           npm run lint:web
           npm run typecheck:web
-          npm run test:web -- --run apps/web/src/lib/product-agent-action.test.ts
+          npm run test:web -- src/lib/product-agent-action.test.ts
       - name: Commit exact patch and remove temporary workflow
         run: |
           git config user.name "github-actions[bot]"
