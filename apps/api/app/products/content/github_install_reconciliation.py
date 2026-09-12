@@ -78,9 +78,7 @@ class GitHubOwnerInstallationReconciler:
             session.add(connection)
             await session.flush()
 
-        connection.external_account_reference = (
-            f"{GITHUB_INSTALLATION_PREFIX}{installation_id}"
-        )
+        connection.external_account_reference = f"{GITHUB_INSTALLATION_PREFIX}{installation_id}"
         connection.credential_reference = None
         connection.status = "connected"
         await session.flush()
@@ -131,8 +129,7 @@ class GitHubOwnerInstallationReconciler:
             )
         if app_response.status_code != 200:
             raise RuntimeError(
-                "GitHub App lookup returned "
-                f"{app_response.status_code}: {app_response.text[:200]}"
+                f"GitHub App lookup returned {app_response.status_code}: {app_response.text[:200]}"
             )
         app_payload = app_response.json()
         if not isinstance(app_payload, dict):
@@ -157,9 +154,7 @@ class GitHubOwnerInstallationReconciler:
                     f"{response.status_code}: {response.text[:200]}"
                 )
             payload = response.json()
-            if not isinstance(payload, list) or not all(
-                isinstance(item, dict) for item in payload
-            ):
+            if not isinstance(payload, list) or not all(isinstance(item, dict) for item in payload):
                 raise RuntimeError("invalid GitHub App installations response")
             installations = cast(list[dict[str, Any]], payload)
             for installation in installations:
