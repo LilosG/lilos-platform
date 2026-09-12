@@ -57,6 +57,28 @@ describe("product agent actions", () => {
     });
   });
 
+  it("allows a product-governed mapped location even before global activation", () => {
+    const setupLocation: LocationSummary = {
+      id: "loc-setup",
+      name: "Mapped GBP location",
+      status: "setup_required",
+      is_primary: true,
+    };
+    expect(
+      resolveAgentLocation(
+        [setupLocation],
+        "loc-setup",
+        new Set(["loc-setup"]),
+      ),
+    ).toEqual({ kind: "selected", location: setupLocation });
+  });
+
+  it("does not treat an active but unmapped location as GBP-eligible", () => {
+    expect(resolveAgentLocation(locations, null, new Set())).toEqual({
+      kind: "none",
+    });
+  });
+
   it("treats approval waits as a polling handoff instead of spinning forever", () => {
     const run = {
       status: "waiting_approval",
