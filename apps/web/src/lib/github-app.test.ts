@@ -65,9 +65,16 @@ describe("github-app lib routes", () => {
     expect(githubInstallCallbackUrl(search, apiBase)).toBe(expected);
   });
 
-  it("ignores ordinary Integrations navigation and incomplete provider returns", () => {
-    expect(githubInstallCallbackUrl("?installed=1", apiBase)).toBeNull();
-    expect(githubInstallCallbackUrl("?installation_id=12345", apiBase)).toBeNull();
-    expect(githubInstallCallbackUrl("?state=tenant-state", apiBase)).toBeNull();
-  });
+  it(
+    "ignores ordinary Integrations navigation and incomplete provider returns",
+    () => {
+      expect(githubInstallCallbackUrl("?installed=1", apiBase)).toBeNull();
+      expect(
+        githubInstallCallbackUrl("?installation_id=12345", apiBase),
+      ).toBeNull();
+      expect(
+        githubInstallCallbackUrl("?state=tenant-state", apiBase),
+      ).toBeNull();
+    },
+  );
 });
