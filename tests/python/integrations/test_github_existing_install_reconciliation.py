@@ -5,6 +5,8 @@ from uuid import uuid4
 
 import httpx
 import pytest
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from apps.api.app.config import EnvironmentName, Settings
@@ -15,7 +17,15 @@ from apps.api.app.products.content.github_app_service import GitHubAppService
 from apps.api.app.products.content.github_install_reconciliation import (
     GitHubOwnerInstallationReconciler,
 )
-from tests.python.integrations.test_github_app import make_test_private_key
+
+
+def make_test_private_key() -> str:
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    return key.private_bytes(
+        serialization.Encoding.PEM,
+        serialization.PrivateFormat.PKCS8,
+        serialization.NoEncryption(),
+    ).decode("utf-8")
 
 
 def make_settings() -> Settings:
