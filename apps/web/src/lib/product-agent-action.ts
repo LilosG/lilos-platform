@@ -4,6 +4,7 @@ import {
   type AgentCapabilities,
 } from "./agents";
 import type { ApiOutcome } from "./api-client";
+import { fetchGBPLocations } from "./gbp";
 import { fetchLocations, type LocationSummary } from "./workspace";
 import { getWorkflowRun, type WorkflowRunDetail } from "./workflows";
 
@@ -77,31 +78,73 @@ export function productAgentWorkflowFromHref(
 export function resolveAgentLocation(
   locations: LocationSummary[],
   requestedLocationId?: string | null,
+  eligibleLocationIds?: ReadonlySet<string>,
 ): AgentLocationResolution {
-  const active = locations.filter((location) => location.status === "active");
+  const eligible = eligibleLocationIds
+    ? locations.filter((location) => eligibleLocationIds.has(location.id))
+    : locations.filter((location) => location.status === "active");
+
   if (requestedLocationId) {
-    const requested = active.find(
+    const requested = eligible.find(
       (location) => location.id === requestedLocationId,
     );
     if (requested) return { kind: "selected", location: requested };
   }
-  if (active.length === 0) return { kind: "none" };
-  if (active.length === 1) return { kind: "selected", location: active[0] };
-  return { kind: "ambiguous", locations: active };
+  if (eligible.length === 0) return { kind: "none" };
+  if (eligible.length === 1) return { kind: "selected", location: eligible[0] };
+  return { kind: "ambiguous", locations: eligible };
 }
 
 export async function fetchAgentLocationResolution(
   organizationId: string,
+  workflow: ProductAgentWorkflow,
   requestedLocationId?: string | null,
 ): Promise<
   | { kind: "resolved"; resolution: AgentLocationResolution }
-  | { kind: "error"; outcome: Awaited<ReturnType<typeof fetchLocations>> }
+  | {
+      kind: "error";
+      outcome:
+        | Awaited<ReturnType<typeof fetchLocations>>
+        | Awaited<ReturnType<typeof fetchGBPLocations>>;
+    }
 > {
-  const outcome = await fetchLocations(organizationId);
-  if (outcome.kind !== "ok") return { kind: "error", outcome };
+  const locationsOutcome = await fetchLocations(organizationId);
+  if (locationsOutcome.kind !== "ok") {
+    return { kind: "error", outcome: locationsOutcome };
+  }
+
+  if (workflow !== "agent.gbp") {
+    return {
+      kind: "resolved",
+      resolution: resolveAgentLocation(
+        locationsOutcome.data,
+        requestedLocationId,
+      ),
+    };
+  }
+
+  const gbpLocationsOutcome = await fetchGBPLocations(organizationId);
+  if (gbpLocationsOutcome.kind !== "ok") {
+    return { kind: "error", outcome: gbpLocationsOutcome };
+  }
+
+  const confirmedMappedLocationIds = new Set(
+    gbpLocationsOutcome.data
+      .filter(
+        (location) =>
+          location.mapping_status === "confirmed" &&
+          Boolean(location.location_id),
+      )
+      .map((location) => location.location_id as string),
+  );
+
   return {
     kind: "resolved",
-    resolution: resolveAgentLocation(outcome.data, requestedLocationId),
+    resolution: resolveAgentLocation(
+      locationsOutcome.data,
+      requestedLocationId,
+      confirmedMappedLocationIds,
+    ),
   };
 }
 
