@@ -15,7 +15,6 @@ from dataclasses import dataclass, field
 from typing import Any, cast
 from uuid import UUID
 
-import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.app.audit.contracts import AuditEventCreate
