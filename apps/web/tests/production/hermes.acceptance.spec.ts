@@ -66,6 +66,33 @@ type AgentRun = {
   status?: string;
 };
 
+type AgentDetail = {
+  status?: string;
+  model?: string | null;
+  provider?: string | null;
+  safe_error_code?: string | null;
+  hermes_run_id?: string | null;
+  hermes_session_id?: string | null;
+  capabilities?: {
+    runtime_release?: string | null;
+    model?: string | null;
+  };
+  source_references?: string[];
+  final_output?: { text?: string } | null;
+  usage?: {
+    input_tokens?: number | null;
+    output_tokens?: number | null;
+    latency_ms?: number | null;
+  };
+  events?: Array<{
+    event_type?: string;
+    event_document?: {
+      tool?: string;
+      error?: boolean;
+    };
+  }>;
+};
+
 function normalizeOrganizationName(value: string): string {
   return value.trim().replace(/\s+/g, " ").toLowerCase();
 }
@@ -502,34 +529,11 @@ test.describe.serial("Native Hermes production acceptance", () => {
     const agentRunId = createdRuns[0].id;
 
     const detailPath = orgPath(context.orgId, `/agents/runs/${agentRunId}`);
-    const detailResult = await apiCall<{
-      data?: {
-        status?: string;
-        model?: string | null;
-        provider?: string | null;
-        safe_error_code?: string | null;
-        hermes_run_id?: string | null;
-        hermes_session_id?: string | null;
-        capabilities?: {
-          runtime_release?: string | null;
-          model?: string | null;
-        };
-        source_references?: string[];
-        final_output?: { text?: string } | null;
-        usage?: {
-          input_tokens?: number | null;
-          output_tokens?: number | null;
-          latency_ms?: number | null;
-        };
-        events?: Array<{
-          event_type?: string;
-          event_document?: {
-            tool?: string;
-            error?: boolean;
-          };
-        }>;
-      };
-    }>(page, "GET", detailPath);
+    const detailResult = await apiCall<{ data?: AgentDetail }>(
+      page,
+      "GET",
+      detailPath,
+    );
     expect(detailResult.status, detailResult.error).toBe(200);
 
     const detail = detailResult.data?.data;
@@ -568,5 +572,230 @@ test.describe.serial("Native Hermes production acceptance", () => {
     expect(detail?.usage?.input_tokens ?? 0).toBeGreaterThan(0);
     expect(detail?.usage?.output_tokens ?? 0).toBeGreaterThan(0);
     expect(detail?.usage?.latency_ms ?? 0).toBeGreaterThan(0);
+  });
+
+  test("steer and stop control a live Hermes run", async ({ page }) => {
+    test.setTimeout(180_000);
+    const context = await resolveContext(page);
+    const listPath = orgPath(
+      context.orgId,
+      `/agents/runs?location_id=${context.locationId}&limit=100`,
+    );
+    const before = await apiCall<{ data?: AgentRun[] }>(page, "GET", listPath);
+    expect(before.status, before.error).toBe(200);
+    const beforeRuns = before.data?.data ?? [];
+    const active = beforeRuns.filter(
+      (run) =>
+        run.skill_key === "gbp.operator" && ACTIVE_AGENTS.has(run.status ?? ""),
+    );
+    expect(
+      active,
+      "A prior active GBP agent run would make control acceptance ambiguous",
+    ).toEqual([]);
+    const previousIds = new Set(beforeRuns.map((run) => run.id));
+
+    const started = await apiCall<{
+      data?: { workflow_run_id?: string; skill_key?: string };
+    }>(page, "POST", orgPath(context.orgId, "/agents/agent.gbp/runs"), {
+      location_id: context.locationId,
+      idempotency_key: `prod-hermes-control-${Date.now()}`,
+      objective:
+        "Production acceptance control canary, strictly read-only. Read approved business facts, website knowledge, current GBP state, and recent GBP posts in that order. Do not create proposals, do not submit anything for approval, and do not request provider writes. Continue through the full read sequence unless an operator steer changes the read-only emphasis.",
+      context_reference: "production-acceptance:hermes-control-v1",
+    });
+    expect(started.status, started.body ?? started.error).toBe(201);
+    expect(started.data?.data?.skill_key).toBe("gbp.operator");
+
+    let run: AgentRun | undefined;
+    for (let attempt = 0; attempt < 120; attempt += 1) {
+      const listed = await apiCall<{ data?: AgentRun[] }>(
+        page,
+        "GET",
+        listPath,
+      );
+      expect(listed.status, listed.error).toBe(200);
+      const created = (listed.data?.data ?? []).filter(
+        (candidate) =>
+          candidate.skill_key === "gbp.operator" &&
+          !previousIds.has(candidate.id),
+      );
+      expect(
+        created.length,
+        "Control canary must create at most one native GBP agent run",
+      ).toBeLessThanOrEqual(1);
+      const candidate = created[0];
+      if (candidate?.status === "running") {
+        run = candidate;
+        break;
+      }
+      if (
+        candidate?.status &&
+        !new Set(["queued", "running"]).has(candidate.status)
+      ) {
+        throw new Error(
+          `Control canary became ${candidate.status} before steer could be exercised`,
+        );
+      }
+      await page.waitForTimeout(250);
+    }
+    expect(run?.id, "Control canary never reached running state").toBeTruthy();
+    const agentRunId = run?.id ?? "";
+
+    const steer = await apiCall<{ data?: { id?: string; status?: string } }>(
+      page,
+      "POST",
+      orgPath(context.orgId, `/agents/runs/${agentRunId}/steer`),
+      {
+        text: "Remain read-only. Give current GBP profile state priority in the final evidence summary and do not create any proposal.",
+      },
+    );
+    expect(steer.status, steer.body ?? steer.error).toBe(200);
+    expect(steer.data?.data?.id).toBe(agentRunId);
+    expect(steer.data?.data?.status).toBe("running");
+
+    const stopped = await apiCall<{
+      data?: { id?: string; status?: string };
+    }>(page, "POST", orgPath(context.orgId, `/agents/runs/${agentRunId}/stop`));
+    expect(stopped.status, stopped.body ?? stopped.error).toBe(200);
+    expect(stopped.data?.data?.id).toBe(agentRunId);
+    expect(stopped.data?.data?.status).toBe("stopping");
+
+    let finalDetail: AgentDetail | undefined;
+    for (let attempt = 0; attempt < 160; attempt += 1) {
+      const detail = await apiCall<{ data?: AgentDetail }>(
+        page,
+        "GET",
+        orgPath(context.orgId, `/agents/runs/${agentRunId}`),
+      );
+      expect(detail.status, detail.error).toBe(200);
+      const candidate = detail.data?.data;
+      if (candidate?.status === "cancelled") {
+        finalDetail = candidate;
+        break;
+      }
+      if (
+        candidate?.status &&
+        ["completed", "failed"].includes(candidate.status)
+      ) {
+        throw new Error(
+          `Control canary became ${candidate.status} after stop instead of cancelled`,
+        );
+      }
+      await page.waitForTimeout(250);
+    }
+
+    expect(
+      finalDetail?.status,
+      "Stopped Hermes run did not become cancelled",
+    ).toBe("cancelled");
+    expect(finalDetail?.provider).toBe("hermes");
+    expect(finalDetail?.model).toBe(GBP_MODEL);
+    expect(finalDetail?.hermes_run_id).toBeTruthy();
+    const events = finalDetail?.events ?? [];
+    expect(events.some((event) => event.event_type === "run.cancelled")).toBe(
+      true,
+    );
+    const completedTools = events
+      .filter(
+        (event) =>
+          event.event_type === "tool.completed" &&
+          event.event_document?.error !== true,
+      )
+      .map((event) => String(event.event_document?.tool ?? ""));
+    for (const tool of completedTools) {
+      expect(
+        MUTATING_TOOLS.has(tool),
+        `Control canary invoked mutating tool before cancellation: ${tool}`,
+      ).toBe(false);
+    }
+  });
+
+  test("agent run and location reads remain tenant-scoped", async ({
+    page,
+  }) => {
+    const context = await resolveContext(page);
+    const targetRuns = await apiCall<{ data?: AgentRun[] }>(
+      page,
+      "GET",
+      orgPath(
+        context.orgId,
+        `/agents/runs?location_id=${context.locationId}&limit=100`,
+      ),
+    );
+    expect(targetRuns.status, targetRuns.error).toBe(200);
+    const targetRun = (targetRuns.data?.data ?? []).find(
+      (run) => run.skill_key === "gbp.operator",
+    );
+    expect(
+      targetRun?.id,
+      "Expected a target-tenant GBP run for isolation proof",
+    ).toBeTruthy();
+
+    const memberships = await apiCall<{
+      data?: Array<{
+        id: string;
+        organization_id: string;
+        organization_name: string;
+      }>;
+    }>(page, "GET", "/api/v1/me/organizations");
+    expect(memberships.status, memberships.body ?? memberships.error).toBe(200);
+    const otherOrganization = (memberships.data?.data ?? []).find((row) => {
+      const id = row.organization_id ?? row.id;
+      return Boolean(id) && id !== context.orgId;
+    });
+    expect(
+      otherOrganization,
+      "Production isolation acceptance requires a second accessible organization",
+    ).toBeTruthy();
+    const otherOrgId =
+      otherOrganization?.organization_id ?? otherOrganization?.id ?? "";
+
+    const crossTenantDetail = await apiCall(
+      page,
+      "GET",
+      orgPath(otherOrgId, `/agents/runs/${targetRun?.id ?? ""}`),
+    );
+    expect(
+      crossTenantDetail.status,
+      "A run from the target tenant must be invisible through another organization",
+    ).toBe(404);
+
+    const otherLocations = await apiCall<{
+      data?: Array<{ id: string }>;
+    }>(page, "GET", orgPath(otherOrgId, "/locations?limit=100"));
+    expect(
+      otherLocations.status,
+      otherLocations.body ?? otherLocations.error,
+    ).toBe(200);
+    const otherLocationId = otherLocations.data?.data?.[0]?.id ?? "";
+    expect(otherLocationId).toBeTruthy();
+
+    const foreignLocationInTarget = await apiCall<{ data?: AgentRun[] }>(
+      page,
+      "GET",
+      orgPath(
+        context.orgId,
+        `/agents/runs?location_id=${otherLocationId}&limit=100`,
+      ),
+    );
+    expect(
+      foreignLocationInTarget.status,
+      foreignLocationInTarget.body ?? foreignLocationInTarget.error,
+    ).toBe(200);
+    expect(foreignLocationInTarget.data?.data ?? []).toEqual([]);
+
+    const targetLocationInOther = await apiCall<{ data?: AgentRun[] }>(
+      page,
+      "GET",
+      orgPath(
+        otherOrgId,
+        `/agents/runs?location_id=${context.locationId}&limit=100`,
+      ),
+    );
+    expect(
+      targetLocationInOther.status,
+      targetLocationInOther.body ?? targetLocationInOther.error,
+    ).toBe(200);
+    expect(targetLocationInOther.data?.data ?? []).toEqual([]);
   });
 });
