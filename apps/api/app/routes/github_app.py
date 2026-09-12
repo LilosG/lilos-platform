@@ -33,6 +33,9 @@ from apps.api.app.products.content.github_app_service import (
     GitHubAppService,
     installation_id_from_reference,
 )
+from apps.api.app.products.content.github_install_reconciliation import (
+    GitHubOwnerInstallationReconciler,
+)
 from apps.api.app.products.content.service import ContentService
 from apps.api.app.routes.health import settings_from_request
 from apps.api.app.schemas import ResponseMeta
@@ -44,6 +47,7 @@ router = APIRouter(
 )
 callback_router = APIRouter(prefix="/api/v1/integrations/github", tags=["integrations"])
 service = GitHubAppService()
+owner_installation_reconciler = GitHubOwnerInstallationReconciler(github=service)
 directory_service = IntegrationDirectoryService()
 content_service = ContentService()
 Session = Annotated[AsyncSession, Depends(get_database_session)]
@@ -107,7 +111,7 @@ async def _ensure_default_publishing_target(
     "/install",
     status_code=status.HTTP_200_OK,
     dependencies=[Depends(no_store)],
-    summary="Begin the GitHub App installation flow",
+    summary="Begin or reconcile the GitHub App installation flow",
 )
 async def begin_install(
     request: Request,
@@ -117,16 +121,45 @@ async def begin_install(
     _: GitHubManage,
 ) -> dict[str, object]:
     settings = settings_from_request(request)
+    correlation_id = request_correlation_id(request)
+
+    reconciled = await owner_installation_reconciler.reconcile(
+        session,
+        settings,
+        organization_id,
+        actor_id=principal.platform_user_id,
+        correlation_id=correlation_id,
+    )
+    if reconciled is not None:
+        repositories = await service.list_installation_repositories(
+            settings, reconciled.installation_id
+        )
+        await _ensure_default_publishing_target(
+            session,
+            organization_id,
+            reconciled.connection.id,
+            repositories,
+            actor_id=principal.platform_user_id,
+            correlation_id=correlation_id,
+        )
+        return {
+            "data": {
+                "authorization_url": _frontend_return_url(settings, installed=True),
+                "reconciled": True,
+            },
+            "meta": ResponseMeta(correlation_id=correlation_id).model_dump(),
+        }
+
     url = await service.begin_install(
         session,
         settings,
         organization_id,
         actor_id=principal.platform_user_id,
-        correlation_id=request_correlation_id(request),
+        correlation_id=correlation_id,
     )
     return {
-        "data": {"authorization_url": url},
-        "meta": ResponseMeta(correlation_id=request_correlation_id(request)).model_dump(),
+        "data": {"authorization_url": url, "reconciled": False},
+        "meta": ResponseMeta(correlation_id=correlation_id).model_dump(),
     }
 
 
