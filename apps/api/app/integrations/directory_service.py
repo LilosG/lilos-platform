@@ -371,6 +371,7 @@ class IntegrationDirectoryService:
                 ).where(
                     GBPLocation.organization_id == organization_id,
                     GBPLocation.connection_id == connection_id,
+                    GBPLocation.mapping_status != "archived",
                 )
             )
         ).all()
