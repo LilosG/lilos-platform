@@ -63,6 +63,52 @@ async def _lock_platform_location(
         raise GBPLocationNotFoundError
 
 
+async def _detach_mapping(
+    session: AsyncSession,
+    *,
+    organization_id: UUID,
+    location_id: UUID,
+    gbp_location_id: UUID,
+    archive: bool,
+) -> tuple[GBPLocation, bool]:
+    """Detach a confirmed GBP mapping and optionally archive it from the workspace."""
+    await _lock_platform_location(session, organization_id, location_id)
+    item = await session.scalar(
+        select(GBPLocation)
+        .where(
+            GBPLocation.organization_id == organization_id,
+            GBPLocation.id == gbp_location_id,
+            GBPLocation.location_id == location_id,
+            GBPLocation.mapping_status == "confirmed",
+        )
+        .with_for_update()
+    )
+    if item is None:
+        raise GBPLocationNotFoundError
+
+    prior_write_enabled = item.write_enabled
+    if item.integration_resource_id is not None:
+        mapping = await session.scalar(
+            select(ProviderResourceMapping)
+            .where(
+                ProviderResourceMapping.organization_id == organization_id,
+                ProviderResourceMapping.id == item.integration_resource_id,
+            )
+            .with_for_update()
+        )
+        if mapping is not None:
+            mapping.platform_resource_id = None
+            mapping.status = "stale"
+
+    item.location_id = None
+    item.mapping_status = "archived" if archive else "unmapped"
+    item.write_enabled = False
+    item.confirmed_by_user_id = None
+    item.confirmed_at = None
+    await session.flush()
+    return item, prior_write_enabled
+
+
 @router.post("/{gbp_location_id}/confirm", dependencies=[Depends(no_store)])
 async def confirm_mapping(
     request: Request,
@@ -117,41 +163,14 @@ async def remove_mapping(
     principal: Authenticated,
     _: Annotated[AuthorizationDecision, policy("gbp.connect")],
 ) -> dict[str, object]:
-    """Detach one provider resource without deleting anything at Google."""
-    await _lock_platform_location(session, organization_id, location_id)
-    item = await session.scalar(
-        select(GBPLocation)
-        .where(
-            GBPLocation.organization_id == organization_id,
-            GBPLocation.id == gbp_location_id,
-            GBPLocation.location_id == location_id,
-            GBPLocation.mapping_status == "confirmed",
-        )
-        .with_for_update()
+    """Detach one provider resource while keeping it available for remapping."""
+    item, prior_write_enabled = await _detach_mapping(
+        session,
+        organization_id=organization_id,
+        location_id=location_id,
+        gbp_location_id=gbp_location_id,
+        archive=False,
     )
-    if item is None:
-        raise GBPLocationNotFoundError
-
-    prior_write_enabled = item.write_enabled
-    if item.integration_resource_id is not None:
-        mapping = await session.scalar(
-            select(ProviderResourceMapping)
-            .where(
-                ProviderResourceMapping.organization_id == organization_id,
-                ProviderResourceMapping.id == item.integration_resource_id,
-            )
-            .with_for_update()
-        )
-        if mapping is not None:
-            mapping.platform_resource_id = None
-            mapping.status = "stale"
-
-    item.location_id = None
-    item.mapping_status = "unmapped"
-    item.write_enabled = False
-    item.confirmed_by_user_id = None
-    item.confirmed_at = None
-    await session.flush()
 
     await service._audit(
         session,
@@ -163,6 +182,47 @@ async def remove_mapping(
         resource_id=item.id,
         correlation_id=request_correlation_id(request),
         summary="GBP location mapping removed.",
+        metadata={"provider_writes_were_enabled": prior_write_enabled},
+    )
+    return {
+        "data": {
+            "id": str(item.id),
+            "mapping_status": item.mapping_status,
+            "write_enabled": item.write_enabled,
+        },
+        "meta": {"correlation_id": request_correlation_id(request)},
+    }
+
+
+@router.post("/{gbp_location_id}/archive", dependencies=[Depends(no_store)])
+async def archive_mapping(
+    request: Request,
+    organization_id: UUID,
+    location_id: UUID,
+    gbp_location_id: UUID,
+    session: Session,
+    principal: Authenticated,
+    _: Annotated[AuthorizationDecision, policy("gbp.connect")],
+) -> dict[str, object]:
+    """Remove a confirmed GBP from the client workspace without changing Google."""
+    item, prior_write_enabled = await _detach_mapping(
+        session,
+        organization_id=organization_id,
+        location_id=location_id,
+        gbp_location_id=gbp_location_id,
+        archive=True,
+    )
+
+    await service._audit(
+        session,
+        event="gbp.location.archived",
+        organization_id=organization_id,
+        location_id=location_id,
+        actor_id=principal.platform_user_id,
+        resource_type="gbp_location",
+        resource_id=item.id,
+        correlation_id=request_correlation_id(request),
+        summary="GBP location removed from the client workspace.",
         metadata={"provider_writes_were_enabled": prior_write_enabled},
     )
     return {
