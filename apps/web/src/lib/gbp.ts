@@ -104,3 +104,14 @@ export function removeLocationMapping(
     { method: "DELETE" },
   );
 }
+
+export function archiveLocationMapping(
+  organizationId: string,
+  platformLocationId: string,
+  gbpLocationId: string,
+): Promise<ApiOutcome<GBPMappingMutation>> {
+  return apiRequest(
+    `/api/v1/organizations/${organizationId}/locations/${platformLocationId}/gbp-mapping/${gbpLocationId}/archive`,
+    { method: "POST" },
+  );
+}
