@@ -4,6 +4,7 @@ import {
   confirmGbpMappingAndReconcile,
   discoverGoogleResourcesAndReconcile,
   gbpWriteGovernanceFor,
+  removeGbpMappingAndReconcile,
 } from "./google-workspace-governance";
 import type { MappedResource } from "./integrations";
 
@@ -108,6 +109,51 @@ describe("Google workspace mutation reconciliation", () => {
       false,
       reconcile,
       confirm,
+    );
+
+    expect(result.kind).toBe("forbidden");
+    expect(reconcile).not.toHaveBeenCalled();
+  });
+
+  it("archives a removed GBP and reconciles the client workspace after success", async () => {
+    const reconcile = vi.fn(async () => undefined);
+    const archive = vi.fn(async () => ({
+      kind: "ok" as const,
+      data: {
+        id: "gbp-location-id",
+        mapping_status: "archived",
+        write_enabled: false,
+      },
+    }));
+
+    const result = await removeGbpMappingAndReconcile(
+      "organization-id",
+      "platform-location-id",
+      "gbp-location-id",
+      reconcile,
+      archive,
+    );
+
+    expect(archive).toHaveBeenCalledWith(
+      "organization-id",
+      "platform-location-id",
+      "gbp-location-id",
+    );
+    expect(result.kind).toBe("ok");
+    expect(result.kind === "ok" && result.data.mapping_status).toBe("archived");
+    expect(reconcile).toHaveBeenCalledOnce();
+  });
+
+  it("does not reconcile when removing a GBP fails", async () => {
+    const reconcile = vi.fn(async () => undefined);
+    const archive = vi.fn(async () => ({ kind: "forbidden" as const }));
+
+    const result = await removeGbpMappingAndReconcile(
+      "organization-id",
+      "platform-location-id",
+      "gbp-location-id",
+      reconcile,
+      archive,
     );
 
     expect(result.kind).toBe("forbidden");
