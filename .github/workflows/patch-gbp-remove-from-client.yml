@@ -1,0 +1,73 @@
+name: Patch GBP removal read models
+
+on:
+  push:
+    branches:
+      - fix/gbp-remove-from-client
+    paths:
+      - .github/workflows/patch-gbp-remove-from-client.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v7
+        with:
+          ref: fix/gbp-remove-from-client
+
+      - name: Exclude archived GBP locations from unmapped read models
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          integrations = Path("apps/api/app/routes/integrations.py")
+          text = integrations.read_text()
+          old = '''                select(GBPLocation).where(
+                    GBPLocation.organization_id == organization_id,
+                    GBPLocation.connection_id == connection.id,
+                )'''
+          new = '''                select(GBPLocation).where(
+                    GBPLocation.organization_id == organization_id,
+                    GBPLocation.connection_id == connection.id,
+                    GBPLocation.mapping_status != "archived",
+                )'''
+          if text.count(old) != 1:
+              raise SystemExit(f"expected exactly one integrations.py match, found {text.count(old)}")
+          integrations.write_text(text.replace(old, new, 1))
+
+          directory = Path("apps/api/app/integrations/directory_service.py")
+          text = directory.read_text()
+          old = '''                select(
+                    GBPLocation.integration_resource_id,
+                    GBPLocation.location_id,
+                ).where(
+                    GBPLocation.organization_id == organization_id,
+                    GBPLocation.connection_id == connection_id,
+                )'''
+          new = '''                select(
+                    GBPLocation.integration_resource_id,
+                    GBPLocation.location_id,
+                ).where(
+                    GBPLocation.organization_id == organization_id,
+                    GBPLocation.connection_id == connection_id,
+                    GBPLocation.mapping_status != "archived",
+                )'''
+          if text.count(old) != 1:
+              raise SystemExit(f"expected exactly one directory_service.py match, found {text.count(old)}")
+          directory.write_text(text.replace(old, new, 1))
+          PY
+
+      - name: Remove one-time patch workflow
+        run: rm .github/workflows/patch-gbp-remove-from-client.yml
+
+      - name: Commit exact patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/api/app/routes/integrations.py apps/api/app/integrations/directory_service.py .github/workflows/patch-gbp-remove-from-client.yml
+          git commit -m "Exclude archived GBP profiles from active mapping queues"
+          git push origin HEAD:fix/gbp-remove-from-client
