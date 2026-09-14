@@ -1,8 +1,8 @@
 import type { ApiOutcome } from "./api-client";
 import { discoverResources, type DiscoveryResult } from "./gbp-connection";
 import {
+  archiveLocationMapping,
   confirmLocationMapping,
-  removeLocationMapping,
   type GBPMappingMutation,
 } from "./gbp";
 import type { MappedResource } from "./integrations";
@@ -14,7 +14,7 @@ export const DISABLE_PROVIDER_WRITES_CONFIRMATION =
   "Disable provider writes for this Business Profile location? Existing Google data remains unchanged, but new LILOs provider-write operations will be blocked until writes are enabled again.";
 
 export const REMOVE_GBP_MAPPING_CONFIRMATION =
-  "Remove this Business Profile mapping from the LILOs location? Provider writes will be disabled and the Google profile will return to the unmapped queue. Nothing is deleted or changed in Google.";
+  "Remove this Business Profile from this LILOs client? Provider writes will be disabled, the mapping will be archived, and the profile will no longer appear in the client's managed Business Profile workspace. Nothing is deleted or changed in Google.";
 
 export type GbpWriteGovernance = {
   stateLabel: "Read only" | "Provider writes enabled";
@@ -57,7 +57,7 @@ export function gbpWriteGovernanceFor(
 }
 
 type ConfirmLocationMapping = typeof confirmLocationMapping;
-type RemoveLocationMapping = typeof removeLocationMapping;
+type ArchiveLocationMapping = typeof archiveLocationMapping;
 type DiscoverResources = typeof discoverResources;
 type ReconcileWorkspace = () => Promise<void>;
 
@@ -86,9 +86,9 @@ export async function removeGbpMappingAndReconcile(
   platformLocationId: string,
   gbpLocationId: string,
   reconcileWorkspace: ReconcileWorkspace,
-  removeMapping: RemoveLocationMapping = removeLocationMapping,
+  archiveMapping: ArchiveLocationMapping = archiveLocationMapping,
 ): Promise<ApiOutcome<GBPMappingMutation>> {
-  const result = await removeMapping(
+  const result = await archiveMapping(
     organizationId,
     platformLocationId,
     gbpLocationId,

@@ -427,6 +427,7 @@ async def google_unmapped(
                 select(GBPLocation).where(
                     GBPLocation.organization_id == organization_id,
                     GBPLocation.connection_id == connection.id,
+                    GBPLocation.mapping_status != "archived",
                 )
             )
         )

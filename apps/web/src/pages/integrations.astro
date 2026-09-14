@@ -762,7 +762,7 @@ import "../styles/global.css";
             removeButton.type = "button";
             removeButton.className =
               "ui-button ui-button--secondary ui-button--sm";
-            removeButton.textContent = "Remove mapping";
+            removeButton.textContent = "Remove from client";
             removeButton.addEventListener("click", () => {
               removeButton.disabled = true;
               feedback.replaceChildren(
@@ -787,7 +787,7 @@ import "../styles/global.css";
                   () => {
                     removeButton.disabled = false;
                   },
-                  "Remove mapping",
+                  "Remove from client",
                 ),
               );
             });
