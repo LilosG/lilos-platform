@@ -5,6 +5,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from apps.api.app.administration.service import AdministrationService
 from apps.api.app.agents.access import AgentAccessService
 
 
@@ -57,7 +58,7 @@ def entitlement_decision(
     location_id: UUID,
     product_key: str,
 ):
-    service = AgentAccessService(cast(object, administration))
+    service = AgentAccessService(cast(AdministrationService, administration))
     return asyncio.run(
         service._entitlement_decision(
             fake_session(), organization_id, location_id, product_key
