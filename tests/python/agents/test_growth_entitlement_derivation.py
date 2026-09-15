@@ -3,11 +3,9 @@ from types import SimpleNamespace
 from typing import cast
 from uuid import UUID, uuid4
 
-import pytest
-from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from apps.api.app.routes import agents as agents_routes
+from apps.api.app.agents.access import AgentAccessService
 
 
 class FakeCatalog:
@@ -53,21 +51,21 @@ def fake_session() -> AsyncSession:
     return cast(AsyncSession, object())
 
 
-def require_entitlement(
+def entitlement_decision(
+    administration: object,
     organization_id: UUID,
     location_id: UUID,
     product_key: str,
-) -> None:
-    asyncio.run(
-        agents_routes.require_product_entitlement(
+):
+    service = AgentAccessService(cast(object, administration))
+    return asyncio.run(
+        service._entitlement_decision(
             fake_session(), organization_id, location_id, product_key
         )
     )
 
 
-def test_growth_allows_explicit_effective_entitlement(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_growth_allows_explicit_effective_entitlement() -> None:
     organization_id = uuid4()
     location_id = uuid4()
     growth = product()
@@ -76,14 +74,14 @@ def test_growth_allows_explicit_effective_entitlement(
         catalog=FakeCatalog({"growth": growth}),
         entitlements=FakeEntitlements({growth.id: growth_entitlement}, {}),
     )
-    monkeypatch.setattr(agents_routes, "administration", fake)
 
-    require_entitlement(organization_id, location_id, "growth")
+    decision = entitlement_decision(fake, organization_id, location_id, "growth")
+
+    assert decision.eligible is True
+    assert decision.reason_code is None
 
 
-def test_growth_explicit_location_scope_overrides_derived_access(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_growth_explicit_location_scope_overrides_derived_access() -> None:
     organization_id = uuid4()
     location_id = uuid4()
     other_location_id = uuid4()
@@ -101,18 +99,15 @@ def test_growth_explicit_location_scope_overrides_derived_access(
             },
         ),
     )
-    monkeypatch.setattr(agents_routes, "administration", fake)
 
-    with pytest.raises(HTTPException) as exc:
-        require_entitlement(organization_id, location_id, "growth")
+    decision = entitlement_decision(fake, organization_id, location_id, "growth")
 
-    assert exc.value.status_code == 403
-    assert exc.value.detail == "Location is outside the Growth product entitlement"
+    assert decision.eligible is False
+    assert decision.status_code == 403
+    assert decision.reason_code == "LOCATION_OUTSIDE_GROWTH_ENTITLEMENT"
 
 
-def test_growth_derives_access_from_effective_source_product(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_growth_derives_access_from_effective_source_product() -> None:
     organization_id = uuid4()
     location_id = uuid4()
     growth = product()
@@ -122,12 +117,13 @@ def test_growth_derives_access_from_effective_source_product(
         catalog=FakeCatalog({"growth": growth, "seo": seo}),
         entitlements=FakeEntitlements({seo.id: seo_entitlement}, {}),
     )
-    monkeypatch.setattr(agents_routes, "administration", fake)
 
-    require_entitlement(organization_id, location_id, "growth")
+    decision = entitlement_decision(fake, organization_id, location_id, "growth")
+
+    assert decision.eligible is True
 
 
-def test_growth_derivation_respects_location_scope(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_growth_derivation_respects_location_scope() -> None:
     organization_id = uuid4()
     location_id = uuid4()
     other_location_id = uuid4()
@@ -141,18 +137,15 @@ def test_growth_derivation_respects_location_scope(monkeypatch: pytest.MonkeyPat
             {seo_entitlement.id: [SimpleNamespace(location_id=other_location_id)]},
         ),
     )
-    monkeypatch.setattr(agents_routes, "administration", fake)
 
-    with pytest.raises(HTTPException) as exc:
-        require_entitlement(organization_id, location_id, "growth")
+    decision = entitlement_decision(fake, organization_id, location_id, "growth")
 
-    assert exc.value.status_code == 409
-    assert "effective SEO, Content, GBP, or Reviews entitlement" in exc.value.detail
+    assert decision.eligible is False
+    assert decision.status_code == 409
+    assert decision.reason_code == "GROWTH_ENTITLEMENT_NOT_EFFECTIVE"
 
 
-def test_growth_rejects_when_no_effective_source_product(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_growth_rejects_when_no_effective_source_product() -> None:
     organization_id = uuid4()
     location_id = uuid4()
     growth = product()
@@ -162,17 +155,14 @@ def test_growth_rejects_when_no_effective_source_product(
         catalog=FakeCatalog({"growth": growth, "seo": seo}),
         entitlements=FakeEntitlements({seo.id: seo_entitlement}, {}),
     )
-    monkeypatch.setattr(agents_routes, "administration", fake)
 
-    with pytest.raises(HTTPException) as exc:
-        require_entitlement(organization_id, location_id, "growth")
+    decision = entitlement_decision(fake, organization_id, location_id, "growth")
 
-    assert exc.value.status_code == 409
+    assert decision.eligible is False
+    assert decision.status_code == 409
 
 
-def test_non_growth_agent_still_requires_its_own_entitlement(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_non_growth_agent_still_requires_its_own_entitlement() -> None:
     organization_id = uuid4()
     location_id = uuid4()
     seo = product()
@@ -180,10 +170,9 @@ def test_non_growth_agent_still_requires_its_own_entitlement(
         catalog=FakeCatalog({"seo": seo}),
         entitlements=FakeEntitlements({}, {}),
     )
-    monkeypatch.setattr(agents_routes, "administration", fake)
 
-    with pytest.raises(HTTPException) as exc:
-        require_entitlement(organization_id, location_id, "seo")
+    decision = entitlement_decision(fake, organization_id, location_id, "seo")
 
-    assert exc.value.status_code == 409
-    assert exc.value.detail == "Product entitlement is not effective"
+    assert decision.eligible is False
+    assert decision.status_code == 409
+    assert decision.reason_code == "PRODUCT_ENTITLEMENT_NOT_EFFECTIVE"
