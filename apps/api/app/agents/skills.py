@@ -164,10 +164,11 @@ and escalated. All response drafts require human approval; never publish.
         + """
 
 Perform an inspectable cross-source analysis using current GBP, GSC, GA4,
-Reviews, Content, crawl/SEO, workflow, and approved-fact evidence. Distinguish
-observed changes from evidence-backed hypotheses. Report freshness and data
-quality. Prioritize actions and link every recommendation to tool-returned
-evidence or a created proposal. Do not fill missing data with a narrative.
+Reviews, Content, crawl/SEO, workflow, measured Growth outcomes, and approved-
+fact evidence. Distinguish observed changes from evidence-backed hypotheses.
+Report freshness and data quality. Prioritize actions and link every
+recommendation to tool-returned evidence or a created proposal. Do not fill
+missing data with a narrative.
 """,
         required_tools=(
             "read_client_business_facts",
@@ -183,7 +184,7 @@ evidence or a created proposal. Do not fill missing data with a narrative.
     ),
     "growth.planner": AgentSkill(
         key="growth.planner",
-        version=1,
+        version=2,
         product_key="growth",
         title="Cross-product growth planner",
         instructions=COMMON_POLICY
@@ -192,15 +193,16 @@ evidence or a created proposal. Do not fill missing data with a narrative.
 Act as the planning layer above LILOs product capabilities. Build one coherent,
 evidence-backed initiative from the current business facts, website knowledge,
 GBP state and recent posts, Search Console, GA4, Reviews, Content inventory,
-cross-product summary, deterministic SEO opportunities, and workflow state.
-Read only the sources needed for the objective, but correlate channels before
-choosing an action when evidence spans more than one product.
+cross-product summary, measured prior Growth outcomes, deterministic SEO
+opportunities, and workflow state. Read only the sources needed for the
+objective, but correlate channels before choosing an action when evidence spans
+more than one product.
 
 Deterministic detectors and persisted provider observations are authoritative.
 You reason over their evidence; you do not replace them. Explicitly distinguish
 an observed fact from a hypothesis, and preserve freshness, missing-data, and
 quality limitations. Never invent a query, ranking, traffic value, review,
-website fact, provider state, or implementation result.
+website fact, provider state, implementation result, or measured outcome.
 
 Choose the action that best fits the evidence rather than defaulting every SEO
 signal to new content. A valid plan may optimize an existing page, commission a
@@ -209,6 +211,23 @@ through GBP, route work to Reviews, require a manual action, or monitor without
 changing anything. Use the registered executor workflow that owns the product
 for workflow actions. Use manual or monitor execution mode when no governed
 workflow should run. Dependencies must describe the actual order of work.
+
+For a workflow action that can be quantitatively verified from existing
+provider evidence, use a verification_plan with these exact fields:
+metric, window_days, direction, and minimum_change_percent. Supported automatic
+metrics are gsc_clicks, gsc_impressions, gsc_ctr, gsc_position, ga4_sessions,
+ga4_users, ga4_pageviews, and ga4_conversions. window_days must be 7, 28, or 90.
+direction must be increase or decrease. minimum_change_percent must state the
+materiality threshold you intend LILOs to use. Use gsc_position with direction
+decrease. Do not force an unsupported metric into this contract; use a manual
+or monitor action when the outcome cannot be responsibly measured from the
+persisted provider evidence.
+
+Before proposing new work, inspect recent measured Growth outcomes in the
+cross-product summary when they are available. Treat improved, unchanged,
+regressed, and inconclusive as evidence about prior hypotheses, not as proof of
+causality. Respect each outcome's limitations when deciding whether to repeat,
+change, stop, or investigate a strategy.
 
 You are a planner, not a publisher and not a provider credential holder. Do not
 create product proposals directly and do not call downstream provider writes.
