@@ -1,5 +1,6 @@
 """Fail-closed repository acceptance-package and production-release gate."""
 
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -18,9 +19,8 @@ RELEASE_IDENTITY_SCRIPTS = (
     "scripts/render_start_scheduler.sh",
     "scripts/render_start_hermes.sh",
 )
-RELEASE_IDENTITY_SNIPPETS = (
-    "RENDER_GIT_COMMIT",
-    'export LILOS_RELEASE="${RENDER_GIT_COMMIT}"',
+RELEASE_IDENTITY_EXPORT = re.compile(
+    r'export\s+LILOS_RELEASE="\$\{RENDER_GIT_COMMIT(?::\?[^}]*)?\}"'
 )
 PRODUCTION_RENDER_SERVICES = (
     "lilos-hermes",
@@ -34,6 +34,11 @@ def missing_release_documents(root: Path = ROOT) -> list[str]:
     return [item for item in REQUIRED if not (root / item).is_file()]
 
 
+def has_fail_closed_release_identity(content: str) -> bool:
+    """Return true when LILOS_RELEASE is derived directly from Render's git SHA."""
+    return RELEASE_IDENTITY_EXPORT.search(content) is not None
+
+
 def release_identity_violations(root: Path = ROOT) -> list[str]:
     violations: list[str] = []
     for relative_path in RELEASE_IDENTITY_SCRIPTS:
@@ -42,9 +47,10 @@ def release_identity_violations(root: Path = ROOT) -> list[str]:
             violations.append(f"{relative_path}: missing")
             continue
         content = path.read_text(encoding="utf-8")
-        for snippet in RELEASE_IDENTITY_SNIPPETS:
-            if snippet not in content:
-                violations.append(f"{relative_path}: missing {snippet}")
+        if not has_fail_closed_release_identity(content):
+            violations.append(
+                f"{relative_path}: LILOS_RELEASE must derive directly from RENDER_GIT_COMMIT"
+            )
     return violations
 
 
