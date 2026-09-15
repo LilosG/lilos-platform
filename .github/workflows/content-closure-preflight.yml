@@ -1,0 +1,77 @@
+name: Content closure preflight
+
+on:
+  push:
+    branches:
+      - release/content-workflow-closure
+
+permissions:
+  contents: write
+
+jobs:
+  preflight:
+    runs-on: ubuntu-24.04
+    if: github.actor != 'github-actions[bot]'
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v7
+        with:
+          ref: release/content-workflow-closure
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
+        with:
+          version: '0.9.28'
+          enable-cache: true
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          uv sync --locked
+
+      - name: Remove confirmed dead imports
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          web = Path('apps/web/src/pages/content.astro')
+          text = web.read_text()
+          old = '        type ContentOperatorTarget,\n'
+          if old not in text:
+              raise SystemExit('Expected ContentOperatorTarget import not found')
+          web.write_text(text.replace(old, '', 1))
+
+          py = Path('apps/api/app/products/content/operator_service.py')
+          text = py.read_text()
+          old = 'from typing import Any\n'
+          if old not in text:
+              raise SystemExit('Expected typing.Any import not found')
+          py.write_text(text.replace(old, '', 1))
+          PY
+
+      - name: Validate before commit
+        run: |
+          npm run format:check:web
+          uv run ruff format --check apps tests scripts migrations
+          npm run lint:web
+          uv run ruff check apps tests scripts migrations
+          npm run typecheck:web
+          uv run mypy apps tests scripts migrations
+
+      - name: Commit only validated fixes
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add apps/web/src/pages/content.astro apps/api/app/products/content/operator_service.py
+          git commit -m 'Fix Content closure lint errors'
+          git push origin HEAD:release/content-workflow-closure
