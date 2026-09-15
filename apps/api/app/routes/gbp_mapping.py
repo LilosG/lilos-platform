@@ -63,30 +63,22 @@ async def _lock_platform_location(
         raise GBPLocationNotFoundError
 
 
-async def _detach_mapping(
+async def _provider_mapping_for_location(
     session: AsyncSession,
     *,
     organization_id: UUID,
     location_id: UUID,
-    gbp_location_id: UUID,
-    archive: bool,
-) -> tuple[GBPLocation, bool]:
-    """Detach a confirmed GBP mapping and optionally archive it from the workspace."""
-    await _lock_platform_location(session, organization_id, location_id)
-    item = await session.scalar(
-        select(GBPLocation)
-        .where(
-            GBPLocation.organization_id == organization_id,
-            GBPLocation.id == gbp_location_id,
-            GBPLocation.location_id == location_id,
-            GBPLocation.mapping_status == "confirmed",
-        )
-        .with_for_update()
-    )
-    if item is None:
-        raise GBPLocationNotFoundError
+    item: GBPLocation,
+) -> ProviderResourceMapping | None:
+    """Resolve the canonical provider mapping, including legacy rows.
 
-    prior_write_enabled = item.write_enabled
+    Older discovery/mapping states can leave the denormalized GBPLocation
+    fields out of sync while ProviderResourceMapping still owns the active
+    client association. Cleanup must follow that canonical mapping identity so
+    operators can remove stale/duplicate profiles without weakening tenant or
+    location scoping.
+    """
+    mapping: ProviderResourceMapping | None = None
     if item.integration_resource_id is not None:
         mapping = await session.scalar(
             select(ProviderResourceMapping)
@@ -96,9 +88,60 @@ async def _detach_mapping(
             )
             .with_for_update()
         )
-        if mapping is not None:
-            mapping.platform_resource_id = None
-            mapping.status = "stale"
+
+    if mapping is None:
+        mapping = await session.scalar(
+            select(ProviderResourceMapping)
+            .where(
+                ProviderResourceMapping.organization_id == organization_id,
+                ProviderResourceMapping.connection_id == item.connection_id,
+                ProviderResourceMapping.resource_type == "location",
+                ProviderResourceMapping.external_resource_id == item.external_location_id,
+                ProviderResourceMapping.platform_resource_id == location_id,
+            )
+            .with_for_update()
+        )
+    return mapping
+
+
+async def _detach_mapping(
+    session: AsyncSession,
+    *,
+    organization_id: UUID,
+    location_id: UUID,
+    gbp_location_id: UUID,
+    archive: bool,
+) -> tuple[GBPLocation, bool]:
+    """Detach a GBP provider mapping and optionally archive it from the workspace."""
+    await _lock_platform_location(session, organization_id, location_id)
+    item = await session.scalar(
+        select(GBPLocation)
+        .where(
+            GBPLocation.organization_id == organization_id,
+            GBPLocation.id == gbp_location_id,
+        )
+        .with_for_update()
+    )
+    if item is None:
+        raise GBPLocationNotFoundError
+
+    mapping = await _provider_mapping_for_location(
+        session,
+        organization_id=organization_id,
+        location_id=location_id,
+        item=item,
+    )
+
+    if mapping is not None:
+        if mapping.platform_resource_id != location_id:
+            raise GBPLocationNotFoundError
+    elif item.location_id != location_id:
+        raise GBPLocationNotFoundError
+
+    prior_write_enabled = item.write_enabled
+    if mapping is not None:
+        mapping.platform_resource_id = None
+        mapping.status = "stale"
 
     item.location_id = None
     item.mapping_status = "archived" if archive else "unmapped"
@@ -204,7 +247,7 @@ async def archive_mapping(
     principal: Authenticated,
     _: Annotated[AuthorizationDecision, policy("gbp.connect")],
 ) -> dict[str, object]:
-    """Remove a confirmed GBP from the client workspace without changing Google."""
+    """Remove a GBP from the client workspace without changing Google."""
     item, prior_write_enabled = await _detach_mapping(
         session,
         organization_id=organization_id,
