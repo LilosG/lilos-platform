@@ -196,8 +196,7 @@ class InsightsService:
                     "action_key": action.action_key,
                     "product_key": action.product_key,
                     "classification": outcome.classification,
-                    "metric": outcome.measurement.get("metric")
-                    or outcome.baseline.get("metric"),
+                    "metric": outcome.measurement.get("metric") or outcome.baseline.get("metric"),
                     "baseline": outcome.baseline,
                     "measurement": outcome.measurement,
                     "limitations": outcome.limitations,
