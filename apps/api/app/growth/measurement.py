@@ -300,20 +300,20 @@ class GrowthMeasurementService:
             )
 
             limitations = [
-                "Observed association only; external factors may contribute to the measured change.",
-                "Measurement uses persisted provider observations and does not infer provider data that is missing.",
+                "Observed association; external factors may contribute to the measured change.",
+                "Uses persisted provider observations; missing provider data is never inferred.",
             ]
             if plan.minimum_change_percent == 0:
                 limitations.append(
-                    "No materiality threshold was declared; any non-zero directional change may affect classification."
+                    "No materiality threshold was declared; any directional change may classify."
                 )
             if baseline.source_count > 1 or measurement.source_count > 1:
                 limitations.append(
-                    "Multiple mapped properties were aggregated; cross-property audiences are not deduplicated."
+                    "Multiple properties were aggregated; audiences are not deduplicated."
                 )
             if action.target_reference:
                 limitations.append(
-                    "The declared metric is provider/property scoped and may not isolate the action target by itself."
+                    "The provider metric may not isolate the action target by itself."
                 )
 
             if not baseline.complete or not measurement.complete:
