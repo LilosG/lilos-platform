@@ -6,7 +6,7 @@ from uuid import UUID, uuid4
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.app.administration.service import AdministrationService
-from apps.api.app.agents.access import AgentAccessService
+from apps.api.app.agents.access import AgentAccessDecision, AgentAccessService
 
 
 class FakeCatalog:
@@ -57,7 +57,7 @@ def entitlement_decision(
     organization_id: UUID,
     location_id: UUID,
     product_key: str,
-):
+) -> AgentAccessDecision:
     service = AgentAccessService(cast(AdministrationService, administration))
     return asyncio.run(
         service._entitlement_decision(
