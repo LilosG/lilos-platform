@@ -79,6 +79,11 @@ jobs:
           py.write_text(text)
           PY
 
+      - name: Format modified files
+        run: |
+          npm exec --workspace @lilos/web -- prettier --write src/pages/content.astro
+          uv run ruff format apps/api/app/products/content/operator_service.py
+
       - name: Validate formatting
         run: |
           npm run format:check:web
