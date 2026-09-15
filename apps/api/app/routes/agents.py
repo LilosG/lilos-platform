@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.app.access_control.enums import ScopeType
-from apps.api.app.administration.service import AdministrationService
+from apps.api.app.agents.access import AgentAccessService
 from apps.api.app.agents.hermes_client import HermesRuntimeError
 from apps.api.app.agents.service import AgentRuntimeService, build_hermes_runs_client
 from apps.api.app.agents.skills import SKILLS, WORKFLOW_SKILLS
@@ -29,9 +29,7 @@ router = APIRouter(
 Session = Annotated[AsyncSession, Depends(get_database_session)]
 runtime = AgentRuntimeService()
 execution = ExecutionService()
-administration = AdministrationService()
-NOT_EFFECTIVE_ENTITLEMENT_STATUSES = frozenset({"not_enabled", "archived", "suspended"})
-GROWTH_SOURCE_PRODUCT_KEYS = ("seo", "content", "gbp", "reviews")
+access = AgentAccessService()
 
 
 def no_store(response: Response) -> None:
@@ -66,75 +64,23 @@ class SessionResetCommand(BaseModel):
     skill_key: str = Field(min_length=3, max_length=128)
 
 
-async def entitlement_allows_location(
-    session: AsyncSession,
-    organization_id: UUID,
-    location_id: UUID,
-    product_key: str,
-) -> bool:
-    product = await administration.catalog.get_product_by_key(session, product_key)
-    if product is None:
-        return False
-    entitlement = await administration.entitlements.get_by_product(
-        session, organization_id, product.id
-    )
-    if entitlement is None or entitlement.status in NOT_EFFECTIVE_ENTITLEMENT_STATUSES:
-        return False
-    selected_locations = await administration.entitlements.locations(
-        session, organization_id, entitlement.id
-    )
-    return not selected_locations or location_id in {
-        item.location_id for item in selected_locations
-    }
-
-
-async def require_product_entitlement(
+async def require_agent_access(
     session: AsyncSession,
     organization_id: UUID,
     location_id: UUID,
     product_key: str,
 ) -> None:
-    product = await administration.catalog.get_product_by_key(session, product_key)
-    entitlement = (
-        await administration.entitlements.get_by_product(session, organization_id, product.id)
-        if product is not None
-        else None
+    decision = await access.decision(
+        session,
+        organization_id=organization_id,
+        location_id=location_id,
+        product_key=product_key,
     )
-
-    if product_key == "growth":
-        if entitlement is not None and entitlement.status not in NOT_EFFECTIVE_ENTITLEMENT_STATUSES:
-            selected_locations = await administration.entitlements.locations(
-                session, organization_id, entitlement.id
-            )
-            if selected_locations and location_id not in {
-                item.location_id for item in selected_locations
-            }:
-                raise HTTPException(
-                    status_code=403,
-                    detail="Location is outside the Growth product entitlement",
-                )
-            return
-
-        for source_product_key in GROWTH_SOURCE_PRODUCT_KEYS:
-            if await entitlement_allows_location(
-                session, organization_id, location_id, source_product_key
-            ):
-                return
+    if not decision.eligible:
         raise HTTPException(
-            status_code=409,
-            detail=(
-                "Growth planner requires an effective Growth entitlement or at least one "
-                "effective SEO, Content, GBP, or Reviews entitlement for this location"
-            ),
+            status_code=decision.status_code,
+            detail=decision.detail or "Product agent is not available for this location",
         )
-
-    if entitlement is None or entitlement.status in NOT_EFFECTIVE_ENTITLEMENT_STATUSES:
-        raise HTTPException(status_code=409, detail="Product entitlement is not effective")
-    selected_locations = await administration.entitlements.locations(
-        session, organization_id, entitlement.id
-    )
-    if selected_locations and location_id not in {item.location_id for item in selected_locations}:
-        raise HTTPException(status_code=403, detail="Location is outside the product entitlement")
 
 
 @router.get("/capabilities", dependencies=[Depends(no_store)])
@@ -170,6 +116,35 @@ async def agent_capabilities(
     return {"data": data, "meta": {"correlation_id": request_correlation_id(request)}}
 
 
+@router.get("/{workflow_key}/eligibility", dependencies=[Depends(no_store)])
+async def agent_eligibility(
+    request: Request,
+    organization_id: UUID,
+    workflow_key: str,
+    session: Session,
+    _: Annotated[AuthorizationDecision, policy("workflows.read")],
+    location_id: UUID = Query(),  # noqa: B008
+) -> dict[str, object]:
+    if workflow_key not in WORKFLOW_SKILLS:
+        raise HTTPException(status_code=404, detail="Agent workflow not found")
+    product_key = SKILLS[WORKFLOW_SKILLS[workflow_key]].product_key
+    decision = await access.decision(
+        session,
+        organization_id=organization_id,
+        location_id=location_id,
+        product_key=product_key,
+    )
+    return {
+        "data": {
+            "eligible": decision.eligible,
+            "reason_code": decision.reason_code,
+            "product_key": product_key,
+            "location_id": str(location_id),
+        },
+        "meta": {"correlation_id": request_correlation_id(request)},
+    }
+
+
 @router.post(
     "/{workflow_key}/runs", status_code=status.HTTP_201_CREATED, dependencies=[Depends(no_store)]
 )
@@ -184,7 +159,7 @@ async def start_agent_run(
 ) -> dict[str, object]:
     if workflow_key not in WORKFLOW_SKILLS:
         raise HTTPException(status_code=404, detail="Agent workflow not found")
-    await require_product_entitlement(
+    await require_agent_access(
         session,
         organization_id,
         command.location_id,
@@ -341,7 +316,7 @@ async def reset_agent_session(
 ) -> dict[str, object]:
     if command.skill_key not in SKILLS:
         raise HTTPException(status_code=404, detail="Agent skill not found")
-    await require_product_entitlement(
+    await require_agent_access(
         session,
         organization_id,
         command.location_id,
