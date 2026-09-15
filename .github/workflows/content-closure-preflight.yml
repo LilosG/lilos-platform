@@ -12,6 +12,24 @@ jobs:
   preflight:
     runs-on: ubuntu-24.04
     if: github.actor != 'github-actions[bot]'
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: lilos_test
+          POSTGRES_USER: lilos_test
+          POSTGRES_PASSWORD: lilos_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U lilos_test -d lilos_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      LILOS_MIGRATION_DATABASE_URL: postgresql+asyncpg://lilos_test:lilos_test@127.0.0.1:5432/lilos_test
+      LILOS_TEST_DATABASE_URL: postgresql+asyncpg://lilos_test:lilos_test@127.0.0.1:5432/lilos_test
+      LILOS_RESTORE_DATABASE_URL: postgresql+asyncpg://lilos_test:lilos_test@127.0.0.1:5432/lilos_restore_test
     steps:
       - name: Check out branch
         uses: actions/checkout@v7
@@ -40,49 +58,55 @@ jobs:
           npm ci
           uv sync --locked
 
-      - name: Apply confirmed static fixes
+      - name: Apply confirmed Content fixes
         run: |
           python - <<'PY'
           from pathlib import Path
 
           web = Path('apps/web/src/pages/content.astro')
           text = web.read_text()
-
-          unused_type = '        type ContentOperatorTarget,\n'
-          if unused_type not in text:
-              raise SystemExit('Expected ContentOperatorTarget import not found')
-          text = text.replace(unused_type, '', 1)
-
-          nullable_call = 'resolveBusinessFact(organizationId, key, detail.location_id),'
-          normalized_call = 'resolveBusinessFact(organizationId, key, detail.location_id ?? undefined),'
-          if nullable_call not in text:
-              raise SystemExit('Expected resolveBusinessFact call not found')
-          text = text.replace(nullable_call, normalized_call, 1)
+          text = text.replace('        type ContentOperatorTarget,\n', '', 1)
+          text = text.replace(
+              'resolveBusinessFact(organizationId, key, detail.location_id)',
+              'resolveBusinessFact(organizationId, key, detail.location_id ?? undefined)',
+              1,
+          )
           web.write_text(text)
 
           py = Path('apps/api/app/products/content/operator_service.py')
           text = py.read_text()
-          unused_any = 'from typing import Any\n'
-          if unused_any not in text:
-              raise SystemExit('Expected typing.Any import not found')
-          py.write_text(text.replace(unused_any, '', 1))
+          text = text.replace('from typing import Any\n', '', 1)
+          py.write_text(text)
           PY
 
-      - name: Validate before commit
+      - name: Validate formatting
         run: |
           npm run format:check:web
           uv run ruff format --check apps tests scripts migrations
+
+      - name: Validate lint
+        run: |
           npm run lint:web
           uv run ruff check apps tests scripts migrations
+
+      - name: Validate types
+        run: |
           npm run typecheck:web
           uv run mypy apps tests scripts migrations
-          npm run test:web
-          npm run build:web
 
-      - name: Commit only validated fixes
+      - name: Validate tests
+        run: |
+          npm run test:web
+          uv run pytest
+
+      - name: Validate frontend build
+        run: npm run build:web
+
+      - name: Commit only fully validated fixes
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add apps/web/src/pages/content.astro apps/api/app/products/content/operator_service.py
-          git commit -m 'Fix Content closure static validation errors'
+          git diff --cached --quiet && { echo 'No Content fixes to commit'; exit 1; }
+          git commit -m 'Fix Content closure validation errors'
           git push origin HEAD:release/content-workflow-closure
