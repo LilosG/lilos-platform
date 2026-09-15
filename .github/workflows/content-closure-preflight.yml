@@ -93,6 +93,11 @@ jobs:
               '*, expected_status: int = 200, **kwargs: Any',
               '*, expected_status: int | tuple[int, ...] = 200, **kwargs: Any',
           )
+          text = text.replace(
+              '            [{"id": 100, "state": "success"}],\n        ],',
+              '            [{"id": 100, "state": "success"}],\n            [{"state": "success", "target_url": "0"}],\n        ],',
+              1,
+          )
           adapter_test.write_text(text)
 
           workflow_test = Path('tests/python/content/test_content_operator_workflow.py')
