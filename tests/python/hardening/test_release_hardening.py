@@ -3,11 +3,23 @@ from pathlib import Path
 import pytest
 
 from apps.api.app.observability.telemetry import MetricPoint, redact
-from scripts.release_gate import missing_release_documents
+from scripts.release_gate import has_fail_closed_release_identity, missing_release_documents
 
 
 def test_release_gate_reports_missing_documents(tmp_path: Path) -> None:
     assert "docs/PHASE-17-ACCEPTANCE.md" in missing_release_documents(tmp_path)
+
+
+def test_release_identity_accepts_required_render_sha_expansion() -> None:
+    assert has_fail_closed_release_identity(
+        'export LILOS_RELEASE="${RENDER_GIT_COMMIT:?RENDER_GIT_COMMIT is required}"'
+    )
+
+
+def test_release_identity_rejects_fallback_release_values() -> None:
+    assert not has_fail_closed_release_identity(
+        'export LILOS_RELEASE="${RENDER_GIT_COMMIT:-unknown}"'
+    )
 
 
 @pytest.mark.parametrize(
