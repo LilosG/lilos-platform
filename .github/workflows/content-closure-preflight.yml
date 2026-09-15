@@ -40,23 +40,32 @@ jobs:
           npm ci
           uv sync --locked
 
-      - name: Remove confirmed dead imports
+      - name: Apply confirmed static fixes
         run: |
           python - <<'PY'
           from pathlib import Path
+
           web = Path('apps/web/src/pages/content.astro')
           text = web.read_text()
-          old = '        type ContentOperatorTarget,\n'
-          if old not in text:
+
+          unused_type = '        type ContentOperatorTarget,\n'
+          if unused_type not in text:
               raise SystemExit('Expected ContentOperatorTarget import not found')
-          web.write_text(text.replace(old, '', 1))
+          text = text.replace(unused_type, '', 1)
+
+          nullable_call = 'resolveBusinessFact(organizationId, key, detail.location_id),'
+          normalized_call = 'resolveBusinessFact(organizationId, key, detail.location_id ?? undefined),'
+          if nullable_call not in text:
+              raise SystemExit('Expected resolveBusinessFact call not found')
+          text = text.replace(nullable_call, normalized_call, 1)
+          web.write_text(text)
 
           py = Path('apps/api/app/products/content/operator_service.py')
           text = py.read_text()
-          old = 'from typing import Any\n'
-          if old not in text:
+          unused_any = 'from typing import Any\n'
+          if unused_any not in text:
               raise SystemExit('Expected typing.Any import not found')
-          py.write_text(text.replace(old, '', 1))
+          py.write_text(text.replace(unused_any, '', 1))
           PY
 
       - name: Validate before commit
@@ -67,11 +76,13 @@ jobs:
           uv run ruff check apps tests scripts migrations
           npm run typecheck:web
           uv run mypy apps tests scripts migrations
+          npm run test:web
+          npm run build:web
 
       - name: Commit only validated fixes
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add apps/web/src/pages/content.astro apps/api/app/products/content/operator_service.py
-          git commit -m 'Fix Content closure lint errors'
+          git commit -m 'Fix Content closure static validation errors'
           git push origin HEAD:release/content-workflow-closure
