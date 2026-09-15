@@ -1,8 +1,9 @@
 """Durable scheduler-owned advancement for approved Growth initiatives.
 
 This service does not create a second execution plane. It projects durable child
-workflow state back into Growth and delegates newly dependency-ready product
-agent actions through the existing ExecutionService-backed GrowthService.
+workflow and product-artifact state back into Growth and delegates newly
+ dependency-ready product agent actions through the existing
+ExecutionService-backed GrowthService.
 """
 
 from __future__ import annotations
@@ -12,6 +13,7 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from apps.api.app.growth.artifacts import GrowthArtifactLifecycleService
 from apps.api.app.growth.models import GrowthInitiative
 from apps.api.app.growth.service import GrowthService
 
@@ -20,14 +22,20 @@ from apps.api.app.growth.service import GrowthService
 class GrowthLifecycleSweepResult:
     scanned: int = 0
     reconciled: int = 0
+    artifact_transitions: int = 0
     dispatched: int = 0
 
 
 class GrowthLifecycleService:
-    """Advance approved initiatives without requiring an operator reconcile click."""
+    """Advance approved initiatives without requiring operator lifecycle clicks."""
 
-    def __init__(self, growth: GrowthService | None = None) -> None:
+    def __init__(
+        self,
+        growth: GrowthService | None = None,
+        artifacts: GrowthArtifactLifecycleService | None = None,
+    ) -> None:
         self.growth = growth or GrowthService()
+        self.artifacts = artifacts or GrowthArtifactLifecycleService()
 
     async def advance_batch(
         self,
@@ -46,6 +54,7 @@ class GrowthLifecycleService:
         )
 
         reconciled = 0
+        artifact_transitions = 0
         dispatched = 0
         for candidate in initiatives:
             initiative = await self.growth.reconcile(
@@ -54,6 +63,23 @@ class GrowthLifecycleService:
                 candidate.id,
             )
             reconciled += 1
+
+            transitioned = await self.artifacts.reconcile_waiting_actions(
+                session,
+                candidate.organization_id,
+                candidate.id,
+            )
+            artifact_transitions += transitioned
+            if transitioned:
+                # Re-project initiative terminal state after canonical downstream
+                # product execution changed one or more Growth actions.
+                initiative = await self.growth.reconcile(
+                    session,
+                    candidate.organization_id,
+                    candidate.id,
+                )
+                reconciled += 1
+
             if initiative.status not in {"approved", "executing"}:
                 continue
 
@@ -74,5 +100,6 @@ class GrowthLifecycleService:
         return GrowthLifecycleSweepResult(
             scanned=len(initiatives),
             reconciled=reconciled,
+            artifact_transitions=artifact_transitions,
             dispatched=dispatched,
         )
