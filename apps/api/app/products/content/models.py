@@ -231,6 +231,7 @@ class ContentPublication(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     base_commit: Mapped[str | None] = mapped_column(String(64))
     branch_name: Mapped[str | None] = mapped_column(String(255))
     external_pull_request_id: Mapped[str | None] = mapped_column(String(255))
+    approved_head_sha: Mapped[str | None] = mapped_column(String(64))
     external_revision_id: Mapped[str | None] = mapped_column(String(255))
     build_status: Mapped[str | None] = mapped_column(String(32))
     deployment_status: Mapped[str | None] = mapped_column(String(32))

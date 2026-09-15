@@ -46,6 +46,7 @@ from apps.api.app.products.content.errors import (
     ContentItemNotFoundError,
     ContentOpportunityNotDecidableError,
     ContentOpportunityNotFoundError,
+    ContentPublicationIdempotencyConflictError,
     ContentPublicationRequiresApprovedRevisionError,
     ContentQueryInvalidError,
     ContentRevisionNotFoundError,
@@ -1133,16 +1134,41 @@ class ContentService:
         user_id: UUID,
         *,
         correlation_id: str,
+        expected_item_id: UUID | None = None,
     ) -> ContentRevision:
         revision = await session.scalar(
-            select(ContentRevision)
-            .where(
+            select(ContentRevision).where(
                 ContentRevision.organization_id == organization_id,
                 ContentRevision.id == revision_id,
             )
-            .with_for_update()
         )
         if not revision:
+            raise ContentRevisionNotFoundError
+        if expected_item_id is not None and revision.content_item_id != expected_item_id:
+            raise ContentRevisionNotFoundError
+        item = await session.scalar(
+            select(ContentItem)
+            .where(
+                ContentItem.organization_id == organization_id,
+                ContentItem.id == revision.content_item_id,
+            )
+            .with_for_update()
+        )
+        if item is None:
+            raise ContentItemNotFoundError
+        revision = cast(
+            ContentRevision | None,
+            await session.scalar(
+                select(ContentRevision)
+                .where(
+                    ContentRevision.organization_id == organization_id,
+                    ContentRevision.id == revision_id,
+                    ContentRevision.content_item_id == item.id,
+                )
+                .with_for_update()
+            ),
+        )
+        if revision is None:
             raise ContentRevisionNotFoundError
         if not command.approve:
             revision.status = "rejected"
@@ -1163,6 +1189,21 @@ class ContentService:
             revision.approved_at = datetime.now(UTC)
         else:
             raise ContentApprovalStageConflictError
+        if revision.status == "approved":
+            prior = await session.scalars(
+                select(ContentRevision).where(
+                    ContentRevision.organization_id == organization_id,
+                    ContentRevision.content_item_id == item.id,
+                    ContentRevision.status == "approved",
+                    ContentRevision.id != revision.id,
+                )
+            )
+            for previous in prior:
+                previous.status = "superseded"
+            item.approved_revision_id = revision.id
+            item.status = "approved"
+        elif revision.status == "rejected":
+            item.status = "revision_requested"
         await session.flush()
         await self._audit(
             session,
@@ -1210,6 +1251,14 @@ class ContentService:
             )
         )
         if existing:
+            if (
+                existing.content_item_id != item_id
+                or existing.content_revision_id != revision_id
+                or existing.publishing_target_id != command.publishing_target_id
+                or existing.workflow_run_id != command.workflow_run_id
+                or existing.target_path != command.target_path
+            ):
+                raise ContentPublicationIdempotencyConflictError
             return existing
         revision = await session.scalar(
             select(ContentRevision).where(
@@ -1279,7 +1328,10 @@ class ContentService:
             idempotency_key=f"content.publication.reserved.{publication.id}",
             context={"publication_id": str(publication.id)},
         )
-        await self.execution.enqueue_consumed_run(session, workflow_run)
+        job = await self.execution.enqueue_consumed_run(session, workflow_run)
+        # Publishing waits for independent repository checks and a production
+        # deployment; the generic three-attempt job budget is not sufficient.
+        job.max_attempts = 30
         return publication
 
     async def list_publications(

@@ -8,6 +8,7 @@ from uuid import UUID, uuid4
 import pytest
 from authorization.fixtures import add_effective_product_entitlement
 from cryptography.fernet import Fernet
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from starlette.testclient import TestClient
 
@@ -20,14 +21,141 @@ from apps.api.app.authentication.contracts import VerifiedProviderClaims
 from apps.api.app.authentication.enums import AssuranceLevel, UserStatus
 from apps.api.app.authentication.models import UserProfile
 from apps.api.app.config import EnvironmentName, Settings
-from apps.api.app.execution.models import WorkflowDefinition, WorkflowRun, WorkflowVersion
+from apps.api.app.execution.models import Job, WorkflowDefinition, WorkflowRun, WorkflowVersion
 from apps.api.app.integrations.models import IntegrationConnection, Provider
 from apps.api.app.locations.enums import LocationStatus, LocationType
 from apps.api.app.locations.models import Location
 from apps.api.app.main import create_app
 from apps.api.app.organizations.enums import OrganizationStatus, OrganizationType
 from apps.api.app.organizations.models import Organization
-from apps.api.app.products.content.models import PublishingTarget
+from apps.api.app.products.content.models import ContentPublication, PublishingTarget
+
+
+@pytest.mark.integration
+def test_content_operations_keep_revision_and_publication_bound_to_item(
+    content_client: tuple[TestClient, dict[str, UUID]],
+    content_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    client, ids = content_client
+    organization_id = ids["organization"]
+    fact_id = ids["approved_fact"]
+    base = f"/api/v1/organizations/{organization_id}/content"
+    operations = f"/api/v1/organizations/{organization_id}/content-operations"
+
+    def create_approved_item(suffix: str) -> tuple[str, str]:
+        item = client.post(
+            base,
+            headers=HEADERS,
+            json={
+                "content_type": "blog",
+                "title": f"Example {suffix}",
+                "slug": f"example-{suffix}",
+            },
+        )
+        assert item.status_code == 201, item.text
+        item_id = item.json()["data"]["id"]
+        brief = client.post(
+            f"{base}/{item_id}/briefs",
+            headers=HEADERS,
+            json={
+                "audience": "Local visitors",
+                "intent": "inform",
+                "target_reference": f"/blog/example-{suffix}",
+                "approved_fact_revision_ids": [str(fact_id)],
+            },
+        )
+        assert brief.status_code == 201, brief.text
+        revision = client.post(
+            f"{base}/{item_id}/revisions",
+            headers=HEADERS,
+            json={
+                "body": f"# Example {suffix}\n\nUseful local information.",
+                "frontmatter": {"title": f"Example {suffix}"},
+                "created_by_type": "user",
+                "approved_fact_revision_ids": [str(fact_id)],
+            },
+        )
+        assert revision.status_code == 201, revision.text
+        revision_id = revision.json()["data"]["id"]
+        return item_id, revision_id
+
+    first_item, first_revision = create_approved_item("first")
+    second_item, second_revision = create_approved_item("second")
+
+    mismatch = client.post(
+        f"{operations}/{second_item}/revisions/{first_revision}/decision",
+        headers=HEADERS,
+        json={"stage": "editorial", "approve": True},
+    )
+    assert mismatch.status_code == 404, mismatch.text
+    first_detail = client.get(f"{operations}/{first_item}", headers=HEADERS)
+    assert first_detail.json()["data"]["revisions"][0]["status"] == "awaiting_editorial"
+
+    for item_id, revision_id in ((first_item, first_revision), (second_item, second_revision)):
+        for stage in ("editorial", "client"):
+            approval = client.post(
+                f"{base}/{item_id}/revisions/{revision_id}/decision",
+                headers=HEADERS,
+                json={"stage": stage, "approve": True},
+            )
+            assert approval.status_code == 200, approval.text
+        item = client.get(f"{base}/{item_id}", headers=HEADERS)
+        assert item.json()["data"]["status"] == "approved"
+
+    publish_key = "one-publish-action-001"
+    started = client.post(
+        f"{operations}/{first_item}/publish",
+        headers=HEADERS,
+        json={"idempotency_key": publish_key, "publishing_target_id": str(ids["target"])},
+    )
+    assert started.status_code == 202, started.text
+    repeat = client.post(
+        f"{operations}/{first_item}/publish",
+        headers=HEADERS,
+        json={"idempotency_key": publish_key, "publishing_target_id": str(ids["target"])},
+    )
+    assert repeat.status_code == 202, repeat.text
+    assert repeat.json()["data"]["id"] == started.json()["data"]["id"]
+
+    wrong_item = client.post(
+        f"{operations}/{second_item}/publish",
+        headers=HEADERS,
+        json={"idempotency_key": publish_key, "publishing_target_id": str(ids["target"])},
+    )
+    assert wrong_item.status_code == 409, wrong_item.text
+    assert wrong_item.json()["error"]["code"] == "CONTENT_PUBLICATION_IDEMPOTENCY_CONFLICT"
+
+    wrong_recovery = client.post(
+        f"{operations}/{second_item}/publications/{started.json()['data']['id']}/recover",
+        headers=HEADERS,
+    )
+    assert wrong_recovery.status_code == 404
+
+    async def exhaust_job() -> UUID:
+        async with content_session_factory.begin() as session:
+            publication = await session.scalar(
+                select(ContentPublication).where(
+                    ContentPublication.id == UUID(started.json()["data"]["id"])
+                )
+            )
+            assert publication is not None
+            job = await session.scalar(
+                select(Job).where(Job.workflow_run_id == publication.workflow_run_id)
+            )
+            assert job is not None
+            job.status = "dead_lettered"
+            return job.id
+
+    old_job_id = asyncio.run(exhaust_job())
+    stalled = client.get(f"{operations}/{first_item}", headers=HEADERS)
+    assert stalled.json()["data"]["stage"] == "needs_attention"
+    resumed = client.post(
+        f"{operations}/{first_item}/publications/{started.json()['data']['id']}/recover",
+        headers=HEADERS,
+    )
+    assert resumed.status_code == 202, resumed.text
+    assert resumed.json()["data"]["status"] == "queued"
+    assert resumed.json()["data"]["id"] != str(old_job_id)
 
 
 class FakeVerifier:

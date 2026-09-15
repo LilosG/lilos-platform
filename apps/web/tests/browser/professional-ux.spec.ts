@@ -174,13 +174,18 @@ test.describe("SEO workspace tabs", () => {
   });
 });
 
-test.describe("Content workspace tabs", () => {
-  test("Content workspace has tab navigation", async ({ page }) => {
+test.describe("Content workspace filters", () => {
+  test("Content pipeline exposes its work states", async ({ page }) => {
     await page.goto("/content");
-    const tabs = page.locator("#content-tabs .ui-tabs__tab");
-    await expect(tabs).toHaveCount(3);
-    const tabLabels = await tabs.allTextContents();
-    expect(tabLabels).toEqual(["Pipeline", "Opportunities", "Publishing"]);
+    const filters = page.locator(".content-filters button");
+    await expect(filters).toHaveCount(4);
+    await expect(filters).toHaveText([
+      "Active",
+      "Publishing",
+      "Published",
+      "All",
+    ]);
+    await expect(filters.first()).toHaveAttribute("aria-pressed", "true");
   });
 });
 
@@ -201,31 +206,27 @@ test.describe("Onboarding stepper", () => {
 });
 
 test.describe("Keyboard interaction", () => {
-  test("tabs support arrow-key selection and complete ARIA relationships", async ({
-    page,
-  }) => {
+  test("Content filters can be selected by keyboard", async ({ page }) => {
     await page.goto("/content");
     await expect(
       page.getByRole("heading", { name: "This deployment is not configured" }),
     ).toBeVisible();
     // The browser suite intentionally runs without deployment credentials, so
     // configured workspace regions stay hidden. Reveal this region only to
-    // exercise the attached tab interaction as it behaves after a real boot.
+    // exercise the attached filter interaction as it behaves after a real boot.
     await page.locator("#content-workspace").evaluate((element) => {
       (element as HTMLElement).hidden = false;
     });
-    const first = page.locator('#content-tabs [role="tab"]').first();
-    await first.focus();
-    await page.keyboard.press("ArrowRight");
-    const second = page.locator('#content-tabs [role="tab"]').nth(1);
-    await expect(second).toBeFocused();
-    await expect(second).toHaveAttribute("aria-selected", "true");
-    const panelId = await second.getAttribute("aria-controls");
-    expect(panelId).toBe("tab-opportunities");
-    await expect(page.locator(`#${panelId}`)).toHaveAttribute(
-      "role",
-      "tabpanel",
+    const publishing = page.locator(
+      '.content-filters button[data-filter="publishing"]',
     );
+    await publishing.focus();
+    await page.keyboard.press("Space");
+    await expect(publishing).toBeFocused();
+    await expect(publishing).toHaveAttribute("aria-pressed", "true");
+    await expect(
+      page.locator('.content-filters button[data-filter="active"]'),
+    ).toHaveAttribute("aria-pressed", "false");
   });
 
   test("mobile navigation opens, closes with Escape, and exposes its state", async ({

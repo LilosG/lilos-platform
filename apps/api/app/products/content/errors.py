@@ -56,6 +56,16 @@ class ContentPublicationNotAdvanceableError(ConflictError):
     public_message = "This publication is not in a state that allows this transition."
 
 
+class ContentPublicationNotFoundError(NotFoundError):
+    code = "CONTENT_PUBLICATION_NOT_FOUND"
+    public_message = "The requested publication was not found for this content item."
+
+
+class ContentPublicationIdempotencyConflictError(ConflictError):
+    code = "CONTENT_PUBLICATION_IDEMPOTENCY_CONFLICT"
+    public_message = "This publication request key belongs to a different content action."
+
+
 class ContentQueryInvalidError(ConflictError):
     code = "CONTENT_QUERY_INVALID"
     public_message = "The content query parameters are invalid."

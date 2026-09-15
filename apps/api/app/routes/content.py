@@ -653,7 +653,6 @@ async def decide(
     principal: Authenticated,
     _: Annotated[AuthorizationDecision, policy("content.approve", True)],
 ) -> dict[str, object]:
-    del item_id
     item = await service.decide(
         session,
         organization_id,
@@ -661,6 +660,7 @@ async def decide(
         command,
         principal.platform_user_id,
         correlation_id=request_correlation_id(request),
+        expected_item_id=item_id,
     )
     return {"data": revision_row(item), "meta": meta(request)}
 
