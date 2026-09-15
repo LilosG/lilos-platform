@@ -15,6 +15,20 @@ def _artifacts(transitions: int = 0) -> MagicMock:
     return artifacts
 
 
+def _measurement() -> MagicMock:
+    measurement = MagicMock()
+    measurement.measure_ready_batch = AsyncMock(
+        return_value=SimpleNamespace(
+            scanned=0,
+            measured=0,
+            pending=0,
+            manual=0,
+            inconclusive=0,
+        )
+    )
+    return measurement
+
+
 def test_advance_batch_reconciles_and_dispatches_dependency_ready_work() -> None:
     organization_id = uuid4()
     initiative_id = uuid4()
@@ -31,9 +45,14 @@ def test_advance_batch_reconciles_and_dispatches_dependency_ready_work() -> None
     growth.reconcile = AsyncMock(return_value=initiative)
     growth.dispatch_ready = AsyncMock(return_value=[object(), object()])
     artifacts = _artifacts()
+    measurement = _measurement()
 
     result = asyncio.run(
-        GrowthLifecycleService(cast(Any, growth), cast(Any, artifacts)).advance_batch(
+        GrowthLifecycleService(
+            cast(Any, growth),
+            cast(Any, artifacts),
+            cast(Any, measurement),
+        ).advance_batch(
             cast(Any, session),
             limit=100,
         )
@@ -43,6 +62,7 @@ def test_advance_batch_reconciles_and_dispatches_dependency_ready_work() -> None
     assert result.reconciled == 1
     assert result.artifact_transitions == 0
     assert result.dispatched == 2
+    assert result.measurement_scanned == 0
     growth.reconcile.assert_awaited_once_with(session, organization_id, initiative_id)
     artifacts.reconcile_waiting_actions.assert_awaited_once_with(
         session, organization_id, initiative_id
@@ -54,6 +74,7 @@ def test_advance_batch_reconciles_and_dispatches_dependency_ready_work() -> None
         actor_id=approving_user_id,
         correlation_id=f"growth-lifecycle-{initiative_id}"[:64],
     )
+    measurement.measure_ready_batch.assert_awaited_once_with(session, limit=100)
 
 
 def test_advance_batch_reprojects_after_downstream_artifact_transition() -> None:
@@ -78,11 +99,14 @@ def test_advance_batch_reprojects_after_downstream_artifact_transition() -> None
     growth.reconcile = AsyncMock(side_effect=[executing, completed])
     growth.dispatch_ready = AsyncMock()
     artifacts = _artifacts(transitions=1)
+    measurement = _measurement()
 
     result = asyncio.run(
-        GrowthLifecycleService(cast(Any, growth), cast(Any, artifacts)).advance_batch(
-            cast(Any, session)
-        )
+        GrowthLifecycleService(
+            cast(Any, growth),
+            cast(Any, artifacts),
+            cast(Any, measurement),
+        ).advance_batch(cast(Any, session))
     )
 
     assert result.reconciled == 2
@@ -90,6 +114,7 @@ def test_advance_batch_reprojects_after_downstream_artifact_transition() -> None
     assert result.dispatched == 0
     assert growth.reconcile.await_count == 2
     growth.dispatch_ready.assert_not_awaited()
+    measurement.measure_ready_batch.assert_awaited_once_with(session, limit=100)
 
 
 def test_advance_batch_does_not_dispatch_without_durable_human_authority() -> None:
@@ -105,9 +130,14 @@ def test_advance_batch_does_not_dispatch_without_durable_human_authority() -> No
     growth.reconcile = AsyncMock(return_value=initiative)
     growth.dispatch_ready = AsyncMock()
     artifacts = _artifacts()
+    measurement = _measurement()
 
     result = asyncio.run(
-        GrowthLifecycleService(cast(Any, growth), cast(Any, artifacts)).advance_batch(
+        GrowthLifecycleService(
+            cast(Any, growth),
+            cast(Any, artifacts),
+            cast(Any, measurement),
+        ).advance_batch(
             cast(Any, session),
         )
     )
@@ -115,6 +145,7 @@ def test_advance_batch_does_not_dispatch_without_durable_human_authority() -> No
     assert result.reconciled == 1
     assert result.dispatched == 0
     growth.dispatch_ready.assert_not_awaited()
+    measurement.measure_ready_batch.assert_awaited_once_with(session, limit=100)
 
 
 def test_advance_batch_stops_after_reconciliation_reaches_terminal_state() -> None:
@@ -136,9 +167,14 @@ def test_advance_batch_stops_after_reconciliation_reaches_terminal_state() -> No
     growth.reconcile = AsyncMock(return_value=completed)
     growth.dispatch_ready = AsyncMock()
     artifacts = _artifacts()
+    measurement = _measurement()
 
     result = asyncio.run(
-        GrowthLifecycleService(cast(Any, growth), cast(Any, artifacts)).advance_batch(
+        GrowthLifecycleService(
+            cast(Any, growth),
+            cast(Any, artifacts),
+            cast(Any, measurement),
+        ).advance_batch(
             cast(Any, session),
         )
     )
@@ -146,3 +182,4 @@ def test_advance_batch_stops_after_reconciliation_reaches_terminal_state() -> No
     assert result.reconciled == 1
     assert result.dispatched == 0
     growth.dispatch_ready.assert_not_awaited()
+    measurement.measure_ready_batch.assert_awaited_once_with(session, limit=100)

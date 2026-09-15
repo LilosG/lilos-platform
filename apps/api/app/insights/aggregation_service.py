@@ -1,10 +1,8 @@
 """Insights aggregation service wiring real product-history data.
 
 Computes a cross-product activity summary from REAL rows in the existing
-product tables — no simulated charts or fabricated metrics.  Every count is
-derived by querying the live tables (workflow runs, GBP snapshots, reviews,
-content publications, SEO opportunities/crawl runs, leads) so the Insights
-surface reflects genuine operational history.
+product tables — no simulated charts or fabricated metrics. Every count and
+Growth outcome is derived from persisted product/provider evidence.
 """
 
 from dataclasses import dataclass, field
@@ -15,6 +13,7 @@ from sqlalchemy import ColumnElement, and_, func, or_, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.app.execution.models import WorkflowRun
+from apps.api.app.growth.models import GrowthAction, GrowthInitiative, GrowthOutcome
 from apps.api.app.products.analytics.service import AnalyticsService
 from apps.api.app.products.content.models import ContentItem, ContentPublication
 from apps.api.app.products.gbp.models import GBPLocation, GBPProfileSnapshot, GBPPublication
@@ -116,9 +115,7 @@ class InsightsService:
             session, SEOOpportunity, seo_opportunity_scope
         )
         leads = await self._status_counts(session, Lead, scoped(Lead))
-        # GA4 metrics supplement the summary only when a property is mapped and
-        # synced; when GA4 is disconnected this returns a truthful empty state
-        # and never blocks the rest of the Insights surface.
+        growth = await self._growth_summary(session, organization_id, location_id=location_id)
         ga4 = await self.analytics.summary(session, organization_id, location_id=location_id)
         return {
             "workflow_runs": workflow_runs,
@@ -135,6 +132,79 @@ class InsightsService:
             },
             "leads": leads,
             "ga4": ga4,
+            "growth": growth,
+        }
+
+    async def _growth_summary(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        *,
+        location_id: UUID | None,
+    ) -> dict[str, object]:
+        scope = [GrowthOutcome.organization_id == organization_id]
+        if location_id is not None:
+            scope.append(
+                or_(
+                    GrowthInitiative.location_id == location_id,
+                    GrowthInitiative.location_id.is_(None),
+                )
+            )
+        classification_rows = (
+            await session.execute(
+                select(GrowthOutcome.classification, func.count())
+                .join(
+                    GrowthAction,
+                    (GrowthAction.organization_id == GrowthOutcome.organization_id)
+                    & (GrowthAction.id == GrowthOutcome.action_id),
+                )
+                .join(
+                    GrowthInitiative,
+                    (GrowthInitiative.organization_id == GrowthAction.organization_id)
+                    & (GrowthInitiative.id == GrowthAction.initiative_id),
+                )
+                .where(*scope)
+                .group_by(GrowthOutcome.classification)
+            )
+        ).all()
+        recent_rows = (
+            await session.execute(
+                select(GrowthOutcome, GrowthAction, GrowthInitiative)
+                .join(
+                    GrowthAction,
+                    (GrowthAction.organization_id == GrowthOutcome.organization_id)
+                    & (GrowthAction.id == GrowthOutcome.action_id),
+                )
+                .join(
+                    GrowthInitiative,
+                    (GrowthInitiative.organization_id == GrowthAction.organization_id)
+                    & (GrowthInitiative.id == GrowthAction.initiative_id),
+                )
+                .where(*scope)
+                .order_by(GrowthOutcome.observed_at.desc())
+                .limit(10)
+            )
+        ).all()
+        return {
+            "outcome_counts": {
+                str(classification): int(count) for classification, count in classification_rows
+            },
+            "recent_outcomes": [
+                {
+                    "source_reference": f"growth-outcome:{outcome.id}",
+                    "action_id": str(action.id),
+                    "action_key": action.action_key,
+                    "product_key": action.product_key,
+                    "classification": outcome.classification,
+                    "metric": outcome.measurement.get("metric") or outcome.baseline.get("metric"),
+                    "baseline": outcome.baseline,
+                    "measurement": outcome.measurement,
+                    "limitations": outcome.limitations,
+                    "observed_at": outcome.observed_at.isoformat(),
+                    "initiative_id": str(initiative.id),
+                }
+                for outcome, action, initiative in recent_rows
+            ],
         }
 
     async def _count(

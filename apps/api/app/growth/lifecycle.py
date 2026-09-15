@@ -1,9 +1,9 @@
 """Durable scheduler-owned advancement for approved Growth initiatives.
 
 This service does not create a second execution plane. It projects durable child
-workflow and product-artifact state back into Growth and delegates newly
- dependency-ready product agent actions through the existing
-ExecutionService-backed GrowthService.
+workflow and product-artifact state back into Growth, delegates newly dependency-
+ready product agent actions, and measures matured completed actions from persisted
+provider evidence.
 """
 
 from __future__ import annotations
@@ -14,6 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.app.growth.artifacts import GrowthArtifactLifecycleService
+from apps.api.app.growth.measurement import GrowthMeasurementService
 from apps.api.app.growth.models import GrowthInitiative
 from apps.api.app.growth.service import GrowthService
 
@@ -24,18 +25,25 @@ class GrowthLifecycleSweepResult:
     reconciled: int = 0
     artifact_transitions: int = 0
     dispatched: int = 0
+    measurement_scanned: int = 0
+    measured: int = 0
+    measurement_pending: int = 0
+    measurement_manual: int = 0
+    measurement_inconclusive: int = 0
 
 
 class GrowthLifecycleService:
-    """Advance approved initiatives without requiring operator lifecycle clicks."""
+    """Advance execution and outcome measurement without operator lifecycle clicks."""
 
     def __init__(
         self,
         growth: GrowthService | None = None,
         artifacts: GrowthArtifactLifecycleService | None = None,
+        measurement: GrowthMeasurementService | None = None,
     ) -> None:
         self.growth = growth or GrowthService()
         self.artifacts = artifacts or GrowthArtifactLifecycleService()
+        self.measurement = measurement or GrowthMeasurementService()
 
     async def advance_batch(
         self,
@@ -71,8 +79,6 @@ class GrowthLifecycleService:
             )
             artifact_transitions += transitioned
             if transitioned:
-                # Re-project initiative terminal state after canonical downstream
-                # product execution changed one or more Growth actions.
                 initiative = await self.growth.reconcile(
                     session,
                     candidate.organization_id,
@@ -82,10 +88,6 @@ class GrowthLifecycleService:
 
             if initiative.status not in {"approved", "executing"}:
                 continue
-
-            # The approving human is the durable authorization for delegation.
-            # The scheduler does not invent authority or bypass product approvals;
-            # downstream product workflows retain their own approval/write gates.
             if initiative.approved_by_user_id is None:
                 continue
             newly_dispatched = await self.growth.dispatch_ready(
@@ -97,9 +99,18 @@ class GrowthLifecycleService:
             )
             dispatched += len(newly_dispatched)
 
+        measurement = await self.measurement.measure_ready_batch(
+            session,
+            limit=bounded_limit,
+        )
         return GrowthLifecycleSweepResult(
             scanned=len(initiatives),
             reconciled=reconciled,
             artifact_transitions=artifact_transitions,
             dispatched=dispatched,
+            measurement_scanned=measurement.scanned,
+            measured=measurement.measured,
+            measurement_pending=measurement.pending,
+            measurement_manual=measurement.manual,
+            measurement_inconclusive=measurement.inconclusive,
         )
