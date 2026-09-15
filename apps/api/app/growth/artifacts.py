@@ -135,9 +135,7 @@ class GrowthArtifactLifecycleService:
         if item.status == "verified":
             return GrowthArtifactState("succeeded", item.status)
         if item.status == "rejected":
-            return GrowthArtifactState(
-                "rejected", item.status, "DOWNSTREAM_PROPOSAL_REJECTED"
-            )
+            return GrowthArtifactState("rejected", item.status, "DOWNSTREAM_PROPOSAL_REJECTED")
         if item.status == "failed":
             return GrowthArtifactState("failed", item.status, "DOWNSTREAM_EXECUTION_FAILED")
         code = (
@@ -159,9 +157,7 @@ class GrowthArtifactLifecycleService:
         if revision is None:
             return GrowthArtifactState("failed", "missing", "DOWNSTREAM_ARTIFACT_MISSING")
         if revision.status in {"rejected", "superseded"}:
-            return GrowthArtifactState(
-                "rejected", revision.status, "DOWNSTREAM_PROPOSAL_REJECTED"
-            )
+            return GrowthArtifactState("rejected", revision.status, "DOWNSTREAM_PROPOSAL_REJECTED")
         publication = await session.scalar(
             select(GBPPostPublication)
             .where(
@@ -202,9 +198,7 @@ class GrowthArtifactLifecycleService:
         if revision.status == "published":
             return GrowthArtifactState("succeeded", revision.status)
         if revision.status in {"rejected", "superseded"}:
-            return GrowthArtifactState(
-                "rejected", revision.status, "DOWNSTREAM_PROPOSAL_REJECTED"
-            )
+            return GrowthArtifactState("rejected", revision.status, "DOWNSTREAM_PROPOSAL_REJECTED")
         if revision.status == "failed":
             return GrowthArtifactState(
                 "failed",
@@ -269,9 +263,7 @@ class GrowthArtifactLifecycleService:
         if revision is None:
             return GrowthArtifactState("failed", "missing", "DOWNSTREAM_ARTIFACT_MISSING")
         if revision.status in {"rejected", "superseded"}:
-            return GrowthArtifactState(
-                "rejected", revision.status, "DOWNSTREAM_PROPOSAL_REJECTED"
-            )
+            return GrowthArtifactState("rejected", revision.status, "DOWNSTREAM_PROPOSAL_REJECTED")
         publication = await session.scalar(
             select(ContentPublication)
             .where(
@@ -310,9 +302,7 @@ class GrowthArtifactLifecycleService:
         if revision is None:
             return GrowthArtifactState("failed", "missing", "DOWNSTREAM_ARTIFACT_MISSING")
         if revision.status == "rejected":
-            return GrowthArtifactState(
-                "rejected", revision.status, "DOWNSTREAM_PROPOSAL_REJECTED"
-            )
+            return GrowthArtifactState("rejected", revision.status, "DOWNSTREAM_PROPOSAL_REJECTED")
         task = await session.scalar(
             select(SEOImplementationTask)
             .where(
