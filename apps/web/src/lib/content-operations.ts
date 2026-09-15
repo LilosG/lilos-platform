@@ -24,6 +24,7 @@ export type ContentOperatorSummary = {
   latest_revision_status: string | null;
   latest_revision_number: number | null;
   publication_status: string | null;
+  publication_job_status: string | null;
 };
 
 export type ContentOperatorBrief = {
@@ -84,6 +85,10 @@ export type ContentOperatorDetail = ContentOperatorSummary & {
   publications: ContentOperatorPublication[];
   publishing_targets: ContentOperatorTarget[];
   publishing_requirements: ContentPublishingRequirements;
+  publishing_requirements_by_target: Record<
+    string,
+    ContentPublishingRequirements
+  >;
 };
 
 export type ContentImageAsset = { path: string; name: string };
@@ -149,6 +154,17 @@ export function fetchContentPublishingAssets(
   const query = new URLSearchParams({ target_id: targetId });
   return apiGet<ContentImageAsset[]>(
     `${base(organizationId)}/${itemId}/publishing-assets?${query.toString()}`,
+  );
+}
+
+export function recoverContentPublication(
+  organizationId: string,
+  itemId: string,
+  publicationId: string,
+): Promise<ApiOutcome<{ id: string; status: string }>> {
+  return apiRequest(
+    `${base(organizationId)}/${itemId}/publications/${publicationId}/recover`,
+    { method: "POST" },
   );
 }
 

@@ -194,3 +194,31 @@ async def publishing_assets(
             "count": len(assets),
         },
     }
+
+
+@router.post(
+    "/{item_id}/publications/{publication_id}/recover",
+    status_code=status.HTTP_202_ACCEPTED,
+    dependencies=[Depends(no_store)],
+)
+async def recover_content_publication(
+    request: Request,
+    organization_id: UUID,
+    item_id: UUID,
+    publication_id: UUID,
+    session: Session,
+    principal: Authenticated,
+    _: Annotated[AuthorizationDecision, publish_policy()],
+) -> dict[str, object]:
+    job = await service.recover_publication(
+        session,
+        organization_id,
+        item_id,
+        publication_id,
+        actor_id=principal.platform_user_id,
+        correlation_id=request_correlation_id(request),
+    )
+    return {
+        "data": {"id": str(job.id), "status": job.status},
+        "meta": {"correlation_id": request_correlation_id(request)},
+    }

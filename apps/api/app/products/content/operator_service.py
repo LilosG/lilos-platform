@@ -11,11 +11,15 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.app.config import Settings
+from apps.api.app.execution.models import Job, WorkflowRun
 from apps.api.app.execution.service import ExecutionService
 from apps.api.app.integrations.models import IntegrationConnection
 from apps.api.app.products.content.contracts import ApprovalDecision, PublicationCreate
 from apps.api.app.products.content.errors import (
     ContentItemNotFoundError,
+    ContentPublicationIdempotencyConflictError,
+    ContentPublicationNotAdvanceableError,
+    ContentPublicationNotFoundError,
     ContentPublicationRequiresApprovedRevisionError,
     ContentTargetNotConfiguredError,
 )
@@ -108,11 +112,25 @@ class ContentOperatorService:
             latest_revision.setdefault(revision.content_item_id, revision)
         for publication in publications:
             latest_publication.setdefault(publication.content_item_id, publication)
+        run_ids = [publication.workflow_run_id for publication in latest_publication.values()]
+        jobs = list(
+            await session.scalars(
+                select(Job)
+                .where(Job.organization_id == organization_id, Job.workflow_run_id.in_(run_ids))
+                .order_by(Job.workflow_run_id, Job.created_at.desc())
+            )
+        )
+        latest_job_status: dict[UUID, str] = {}
+        for job in jobs:
+            latest_job_status.setdefault(job.workflow_run_id, job.status)
         return [
             self._summary(
                 item,
                 latest_revision.get(item.id),
                 latest_publication.get(item.id),
+                latest_job_status.get(latest_publication[item.id].workflow_run_id)
+                if item.id in latest_publication
+                else None,
             )
             for item in items
         ], has_more
@@ -134,15 +152,31 @@ class ContentOperatorService:
         ]
         latest_revision = revisions[0] if revisions else None
         latest_publication = publications[0] if publications else None
+        job_status = None
+        if latest_publication is not None:
+            job = await session.scalar(
+                select(Job)
+                .where(
+                    Job.organization_id == organization_id,
+                    Job.workflow_run_id == latest_publication.workflow_run_id,
+                )
+                .order_by(Job.created_at.desc())
+                .limit(1)
+            )
+            job_status = job.status if job else None
         selected_target = self._select_target_for_read(item, targets)
         requirements = self._requirements(selected_target, latest_revision)
+        requirements_by_target = {
+            str(target.id): self._requirements(target, latest_revision) for target in targets
+        }
         return {
-            **self._summary(item, latest_revision, latest_publication),
+            **self._summary(item, latest_revision, latest_publication, job_status),
             "briefs": [self._brief_row(brief) for brief in briefs],
             "revisions": [self._revision_row(revision) for revision in revisions],
             "publications": [self._publication_row(publication) for publication in publications],
             "publishing_targets": [self._target_row(target) for target in targets],
             "publishing_requirements": requirements,
+            "publishing_requirements_by_target": requirements_by_target,
         }
 
     async def decide_revision(
@@ -163,35 +197,8 @@ class ContentOperatorService:
             command,
             actor_id,
             correlation_id=correlation_id,
+            expected_item_id=item_id,
         )
-        item = await session.scalar(
-            select(ContentItem)
-            .where(
-                ContentItem.organization_id == organization_id,
-                ContentItem.id == item_id,
-            )
-            .with_for_update()
-        )
-        if item is None:
-            raise ContentItemNotFoundError
-        if revision.status == "approved":
-            previous = list(
-                await session.scalars(
-                    select(ContentRevision).where(
-                        ContentRevision.organization_id == organization_id,
-                        ContentRevision.content_item_id == item_id,
-                        ContentRevision.status == "approved",
-                        ContentRevision.id != revision.id,
-                    )
-                )
-            )
-            for superseded in previous:
-                superseded.status = "superseded"
-            item.approved_revision_id = revision.id
-            item.status = "approved"
-        elif revision.status == "rejected":
-            item.status = "revision_requested"
-        await session.flush()
         return revision
 
     async def publish(
@@ -214,6 +221,31 @@ class ContentOperatorService:
         )
         if item is None:
             raise ContentItemNotFoundError
+        existing = await session.scalar(
+            select(ContentPublication).where(
+                ContentPublication.organization_id == organization_id,
+                ContentPublication.idempotency_key == command.idempotency_key,
+            )
+        )
+        if existing is not None:
+            existing_run = await session.scalar(
+                select(WorkflowRun).where(
+                    WorkflowRun.organization_id == organization_id,
+                    WorkflowRun.id == existing.workflow_run_id,
+                )
+            )
+            if (
+                existing.content_item_id != item_id
+                or (
+                    command.publishing_target_id is not None
+                    and existing.publishing_target_id != command.publishing_target_id
+                )
+                or existing_run is None
+                or (existing_run.input_document or {}).get("frontmatter_overrides")
+                != self._frontmatter_overrides(command)
+            ):
+                raise ContentPublicationIdempotencyConflictError
+            return existing
         revision = await self._approved_revision(session, organization_id, item)
         if revision is None:
             raise ContentPublicationRequiresApprovedRevisionError
@@ -312,6 +344,40 @@ class ContentOperatorService:
             if len(assets) >= 250:
                 break
         return assets
+
+    async def recover_publication(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        item_id: UUID,
+        publication_id: UUID,
+        *,
+        actor_id: UUID,
+        correlation_id: str,
+    ) -> Job:
+        publication = await session.scalar(
+            select(ContentPublication)
+            .where(
+                ContentPublication.organization_id == organization_id,
+                ContentPublication.content_item_id == item_id,
+                ContentPublication.id == publication_id,
+            )
+            .with_for_update()
+        )
+        if publication is None:
+            raise ContentPublicationNotFoundError
+        if publication.status in {"verified", "failed", "checks_failed", "rolled_back"}:
+            raise ContentPublicationNotAdvanceableError
+        job = await self.execution.enqueue_recovery_run(
+            session,
+            organization_id,
+            publication.workflow_run_id,
+            recovery_reference=f"content-publication:{publication.id}",
+            actor_id=actor_id,
+            correlation_id=correlation_id,
+        )
+        job.max_attempts = 30
+        return job
 
     async def _approved_revision(
         self, session: AsyncSession, organization_id: UUID, item: ContentItem
@@ -421,8 +487,11 @@ class ContentOperatorService:
         item: ContentItem,
         revision: ContentRevision | None,
         publication: ContentPublication | None,
+        job_status: str | None = None,
     ) -> dict[str, object]:
-        stage, next_action = ContentOperatorService._operator_state(item, revision, publication)
+        stage, next_action = ContentOperatorService._operator_state(
+            item, revision, publication, job_status
+        )
         return {
             "id": str(item.id),
             "location_id": str(item.location_id) if item.location_id else None,
@@ -435,6 +504,7 @@ class ContentOperatorService:
             "latest_revision_status": revision.status if revision else None,
             "latest_revision_number": revision.revision_number if revision else None,
             "publication_status": publication.status if publication else None,
+            "publication_job_status": job_status,
         }
 
     @staticmethod
@@ -442,10 +512,23 @@ class ContentOperatorService:
         item: ContentItem,
         revision: ContentRevision | None,
         publication: ContentPublication | None,
+        job_status: str | None = None,
     ) -> tuple[str, dict[str, str]]:
         if publication is not None:
             if publication.status == "verified":
                 return "published", {"key": "view", "label": "View publication"}
+            if job_status in {"failed", "dead_lettered", "cancelled"}:
+                return "needs_attention", {
+                    "key": "review_publication",
+                    "label": "Review publishing",
+                }
+            if publication.status == "reconciliation_required" and job_status in {
+                "queued",
+                "claimed",
+                "running",
+                "retry_scheduled",
+            }:
+                return "publishing", {"key": "wait", "label": "Reconciling publication"}
             if publication.status in _ATTENTION_PUBLICATION_STATES:
                 return "needs_attention", {
                     "key": "review_publication",

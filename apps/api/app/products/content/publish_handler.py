@@ -131,6 +131,11 @@ async def handle_content_publish(
     repository_id = target.repository_id
     overrides = _safe_overrides(input_document.get("frontmatter_overrides"))
 
+    if publication.status == "reconciliation_required":
+        reconciliation = await _reconcile_phase(session, publication, publisher, repository_id)
+        if reconciliation is not None:
+            return reconciliation
+
     if publication.status in {"reserved", "branch_created"}:
         preparation = await _prepare_pull_request(
             session,
@@ -171,6 +176,55 @@ async def handle_content_publish(
     item.status = "reconciliation_required"
     await session.commit()
     return JobOutcome(result="retryable_failure", safe_error="PUBLICATION_STATE_UNRECOGNIZED")
+
+
+async def _reconcile_phase(
+    session: AsyncSession,
+    publication: ContentPublication,
+    publisher: RepositoryPublisher,
+    repository_id: str,
+) -> JobOutcome | None:
+    """Recover persisted phase from provider identity after an ambiguous outcome."""
+    try:
+        if publication.external_pull_request_id:
+            pr = await publisher.get_pull_request(
+                repository_id, publication.external_pull_request_id
+            )
+            head = pr.get("head")
+            head_sha = str(head.get("sha") or "") if isinstance(head, dict) else ""
+            if not publication.approved_head_sha:
+                publication.status = "failed"
+                publication.safe_error_code = "CONTENT_PR_HEAD_UNPINNED"
+                await session.commit()
+                return JobOutcome(result="permanent_failure", safe_error="CONTENT_PR_HEAD_UNPINNED")
+            if publication.approved_head_sha and head_sha != publication.approved_head_sha:
+                publication.status = "failed"
+                publication.safe_error_code = "CONTENT_PR_HEAD_CHANGED"
+                await session.commit()
+                return JobOutcome(result="permanent_failure", safe_error="CONTENT_PR_HEAD_CHANGED")
+            if pr.get("state") == "closed" and not bool(pr.get("merged")):
+                publication.status = "failed"
+                publication.safe_error_code = "CONTENT_PR_CLOSED"
+                await session.commit()
+                return JobOutcome(result="permanent_failure", safe_error="CONTENT_PR_CLOSED")
+            if bool(pr.get("merged")):
+                merge_sha = str(pr.get("merge_commit_sha") or "")
+                if not merge_sha:
+                    raise RuntimeError("merged pull request has no commit SHA")
+                publication.external_revision_id = merge_sha
+                publication.status = "merged"
+            else:
+                publication.status = "pull_request_created"
+        else:
+            publication.status = "branch_created" if publication.branch_name else "reserved"
+        publication.safe_error_code = None
+        await session.commit()
+        return None
+    except Exception as exc:
+        logger.warning("Content publication phase reconciliation failed", exc_info=exc)
+        publication.safe_error_code = "PUBLICATION_PHASE_REREAD_FAILED"
+        await session.commit()
+        return JobOutcome(result="retryable_failure", safe_error="PUBLICATION_PHASE_REREAD_FAILED")
 
 
 async def _prepare_pull_request(
@@ -241,8 +295,11 @@ async def _prepare_pull_request(
         pr = await publisher.get_pull_request(repository_id, pr_number)
         head = pr.get("head") if isinstance(pr, dict) else None
         head_sha = str(head.get("sha") or "") if isinstance(head, dict) else ""
+        if not head_sha:
+            raise RuntimeError("created pull request has no head commit SHA")
         publication.external_pull_request_id = pr_number
-        publication.external_revision_id = head_sha or publication.external_revision_id
+        publication.approved_head_sha = head_sha
+        publication.external_revision_id = head_sha
         publication.published_url = f"https://github.com/{repository_id}/pull/{pr_number}"
         publication.status = "pull_request_created"
         publication.safe_error_code = None
@@ -271,6 +328,13 @@ async def _wait_for_pull_request_checks(
         pr = await publisher.get_pull_request(repository_id, publication.external_pull_request_id)
         head = pr.get("head") if isinstance(pr, dict) else None
         head_sha = str(head.get("sha") or "") if isinstance(head, dict) else ""
+        if publication.approved_head_sha and head_sha != publication.approved_head_sha:
+            publication.status = "failed"
+            publication.safe_error_code = "CONTENT_PR_HEAD_CHANGED"
+            await session.commit()
+            return JobOutcome(result="permanent_failure", safe_error="CONTENT_PR_HEAD_CHANGED")
+        if head_sha and publication.approved_head_sha is None:
+            publication.approved_head_sha = head_sha
         if head_sha:
             publication.external_revision_id = head_sha
         if not publication.external_revision_id:
@@ -290,13 +354,16 @@ async def _wait_for_pull_request_checks(
         publication.safe_error_code = "CONTENT_CHECKS_FAILED"
         await session.commit()
         return JobOutcome(result="permanent_failure", safe_error="CONTENT_CHECKS_FAILED")
-    if state == "pending":
+    if state in {"pending", "none"}:
         publication.status = "checks_running"
-        publication.safe_error_code = None
+        publication.safe_error_code = "CONTENT_CHECKS_UNAVAILABLE" if state == "none" else None
         await session.commit()
-        return JobOutcome(result="retryable_failure", safe_error="CONTENT_CHECKS_PENDING")
-    # `none` means the repository does not require CI checks; the human publish
-    # approval remains the governing authorization, so merging may continue.
+        return JobOutcome(
+            result="retryable_failure",
+            safe_error="CONTENT_CHECKS_UNAVAILABLE"
+            if state == "none"
+            else "CONTENT_CHECKS_PENDING",
+        )
     publication.status = "pull_request_created"
     publication.safe_error_code = None
     await session.commit()
@@ -311,9 +378,11 @@ async def _merge_pull_request(
 ) -> JobOutcome | None:
     if not publication.external_pull_request_id:
         return JobOutcome(result="retryable_failure", safe_error="PULL_REQUEST_REFERENCE_MISSING")
+    if not publication.approved_head_sha:
+        return JobOutcome(result="retryable_failure", safe_error="PULL_REQUEST_HEAD_MISSING")
     try:
         merge_sha = await publisher.merge_pull_request(
-            repository_id, publication.external_pull_request_id
+            repository_id, publication.external_pull_request_id, publication.approved_head_sha
         )
         publication.external_revision_id = merge_sha
         publication.status = "merged"
@@ -358,19 +427,8 @@ async def _verify_deployment(
             await session.commit()
             return JobOutcome(result="permanent_failure", safe_error="CONTENT_DEPLOYMENT_FAILED")
 
-        # Vercel and similar GitHub Apps commonly report deployment as a check
-        # run instead of a GitHub Deployment. Re-read the merged commit checks as
-        # the second authoritative provider signal.
-        checks = await publisher.checks(repository_id, revision_id)
-        check_state = checks.get("state", "none")
-        if check_state == "success":
-            return await _mark_published(session, publication, revision, item, "")
-        if check_state == "failed":
-            publication.status = "failed"
-            publication.safe_error_code = "CONTENT_DEPLOYMENT_FAILED"
-            item.status = "failed"
-            await session.commit()
-            return JobOutcome(result="permanent_failure", safe_error="CONTENT_DEPLOYMENT_FAILED")
+        # A successful CI check can include a preview build or unrelated tests.
+        # Only a production deployment bound to this merged commit proves delivery.
         publication.status = "deployment_pending"
         publication.safe_error_code = None
         item.status = "publishing"

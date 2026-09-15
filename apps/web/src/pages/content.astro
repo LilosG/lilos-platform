@@ -231,9 +231,11 @@ import "../styles/global.css";
         fetchContentOperations,
         fetchContentPublishingAssets,
         publishContentOperation,
+        recoverContentPublication,
         type ContentImageAsset,
         type ContentOperatorDetail,
         type ContentOperatorSummary,
+        type ContentPublishingRequirements,
       } from "../lib/content-operations";
       import {
         businessFactLabel,
@@ -465,7 +467,7 @@ import "../styles/global.css";
           case "publishing":
             return "LILOs is creating the repository change, validating checks, merging, and verifying deployment.";
           case "published":
-            return "The approved content has been deployed and verified.";
+            return "The approved content has a verified production deployment.";
           case "needs_attention":
             return "Publishing needs attention before the item can continue.";
         }
@@ -532,7 +534,7 @@ import "../styles/global.css";
             link.href = publication.published_url;
             link.target = "_blank";
             link.rel = "noreferrer";
-            link.textContent = "View published page";
+            link.textContent = "View production deployment";
             container.append(link);
           }
           return;
@@ -543,9 +545,39 @@ import "../styles/global.css";
             errorAlert(
               publication?.safe_error_code
                 ? `Publishing stopped: ${publication.safe_error_code.replace(/_/g, " ").toLowerCase()}.`
-                : "Publishing stopped and needs review.",
+                : detail.publication_job_status
+                  ? `Publishing job ${detail.publication_job_status.replace(/_/g, " ")} and needs review.`
+                  : "Publishing stopped and needs review.",
             ),
           );
+          if (
+            publication &&
+            !["failed", "checks_failed", "rolled_back", "verified"].includes(
+              publication.status,
+            )
+          ) {
+            const retry = document.createElement("button");
+            retry.type = "button";
+            retry.className = "ui-button ui-button--primary ui-button--md";
+            retry.textContent = "Resume publishing";
+            retry.addEventListener("click", async () => {
+              retry.disabled = true;
+              const outcome = await recoverContentPublication(
+                organizationId,
+                detail.id,
+                publication.id,
+              );
+              if (outcome.kind === "ok") await openItem(detail.id);
+              else {
+                retry.disabled = false;
+                retry.insertAdjacentElement(
+                  "afterend",
+                  errorAlert(describeFailure(outcome, "Publishing recovery")),
+                );
+              }
+            });
+            container.append(retry);
+          }
         }
       }
 
@@ -771,14 +803,17 @@ import "../styles/global.css";
           }
           imageSelect.disabled = false;
         };
-        target.addEventListener("change", () => void loadAssets());
-
-        const requirements = detail.publishing_requirements;
-        if (requirements.requires_image || requirements.requires_image_alt) {
-          void loadAssets();
-        } else {
-          imageWrap.hidden = true;
-        }
+        const requirementsForTarget = (): ContentPublishingRequirements =>
+          detail.publishing_requirements_by_target[target.value] ??
+          detail.publishing_requirements;
+        const updateTarget = (): void => {
+          const requirements = requirementsForTarget();
+          imageWrap.hidden =
+            !requirements.requires_image && !requirements.requires_image_alt;
+          if (!imageWrap.hidden) void loadAssets();
+        };
+        target.addEventListener("change", updateTarget);
+        updateTarget();
 
         const submit = document.createElement("button");
         submit.type = "submit";
@@ -789,6 +824,7 @@ import "../styles/global.css";
         form.append(target, imageWrap, submit, status);
         form.addEventListener("submit", async (event) => {
           event.preventDefault();
+          const requirements = requirementsForTarget();
           if (requirements.requires_image && !imageSelect.value) {
             status.textContent = "Select an image before publishing.";
             return;

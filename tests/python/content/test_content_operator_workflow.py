@@ -71,3 +71,14 @@ def test_failed_publication_surfaces_operator_attention() -> None:
 
     assert summary["stage"] == "needs_attention"
     assert cast(dict[str, str], summary["next_action"])["key"] == "review_publication"
+
+
+def test_exhausted_publication_job_never_displays_as_publishing_forever() -> None:
+    summary = ContentOperatorService._summary(
+        _item(status="publishing"),
+        _revision(),
+        _publication("deployment_pending"),
+        "dead_lettered",
+    )
+    assert summary["stage"] == "needs_attention"
+    assert summary["publication_job_status"] == "dead_lettered"

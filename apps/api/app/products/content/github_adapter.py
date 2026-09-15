@@ -6,6 +6,7 @@ Publishing can therefore recover after an ambiguous network outcome without
 creating duplicate branches or pull requests.
 """
 
+import hashlib
 from dataclasses import dataclass
 from typing import Any
 
@@ -108,6 +109,9 @@ class GitHubRepositoryPublisher:
         current_sha = expected_blob_sha
         if isinstance(existing, dict):
             current_sha = str(existing.get("sha") or "") or current_sha
+            blob = f"blob {len(content.encode('utf-8'))}\0".encode() + content.encode("utf-8")
+            if current_sha == hashlib.sha1(blob).hexdigest():
+                return current_sha
         encoded = base64.b64encode(content.encode("utf-8")).decode("ascii")
         document: dict[str, object] = {
             "message": "Publish governed content",
@@ -197,8 +201,14 @@ class GitHubRepositoryPublisher:
             return {"state": "failed"}
         return {"state": "pending"}
 
-    async def merge_pull_request(self, repository_id: str, pr_number: str) -> str:
+    async def merge_pull_request(
+        self, repository_id: str, pr_number: str, expected_head_sha: str
+    ) -> str:
         current = await self.get_pull_request(repository_id, pr_number)
+        head = current.get("head")
+        head_sha = str(head.get("sha") or "") if isinstance(head, dict) else ""
+        if head_sha != expected_head_sha:
+            raise RuntimeError("approved content pull request head has changed")
         if bool(current.get("merged")):
             merge_sha = str(current.get("merge_commit_sha") or "")
             if merge_sha:
@@ -207,7 +217,7 @@ class GitHubRepositoryPublisher:
             "PUT",
             f"/repos/{repository_id}/pulls/{pr_number}/merge",
             expected_status=200,
-            json={"merge_method": "squash"},
+            json={"merge_method": "squash", "sha": expected_head_sha},
         )
         if not bool(payload.get("merged")):
             raise RuntimeError(str(payload.get("message") or "GitHub pull request was not merged"))
@@ -239,9 +249,14 @@ class GitHubRepositoryPublisher:
         else:
             raise RuntimeError("GitHub deployment pagination exceeded safety limit")
 
-        if not deployments:
+        production = [
+            deployment
+            for deployment in deployments
+            if str(deployment.get("environment") or "").lower() == "production"
+        ]
+        if not production:
             return {"state": "none", "url": ""}
-        deployment_id = deployments[0].get("id")
+        deployment_id = production[0].get("id")
         if deployment_id is None:
             raise RuntimeError("GitHub deployment did not contain an id")
         statuses = await self._request_json(
@@ -256,4 +271,6 @@ class GitHubRepositoryPublisher:
             raise RuntimeError("invalid GitHub deployment status")
         state = str(latest.get("state") or "pending").lower()
         url = str(latest.get("environment_url") or latest.get("target_url") or "")
+        if state in {"success", "active"} and not url.startswith("https://"):
+            return {"state": "pending", "url": ""}
         return {"state": state, "url": url}
