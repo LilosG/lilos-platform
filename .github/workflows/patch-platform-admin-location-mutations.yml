@@ -19,6 +19,17 @@ jobs:
         with:
           ref: fix/platform-admin-location-mutations
 
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
+        with:
+          version: "0.9.28"
+          enable-cache: true
+
       - name: Add missing platform-admin location routes
         run: |
           python - <<'PY'
@@ -115,7 +126,7 @@ jobs:
 
       - name: Format and validate backend contract
         run: |
-          uv sync --frozen
+          uv sync --locked
           uv run ruff format apps/api/app/routes/platform_administration.py
           uv run ruff check apps/api/app/routes/platform_administration.py
           uv run mypy apps/api/app/routes/platform_administration.py
