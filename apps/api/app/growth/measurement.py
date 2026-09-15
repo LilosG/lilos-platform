@@ -119,8 +119,8 @@ def parse_verification_plan(raw: dict[str, object]) -> VerificationPlan | None:
     if spec is None:
         return None
     try:
-        window_days = int(raw.get("window_days", 28))
-    except (TypeError, ValueError):
+        window_days = int(str(raw.get("window_days", 28)))
+    except ValueError:
         return None
     if window_days not in SUPPORTED_WINDOWS:
         return None
