@@ -65,9 +65,7 @@ def render_release_violations(root: Path = ROOT) -> list[str]:
         if "branch: main" not in service_block:
             violations.append(f"render.yaml: {service_name} must deploy from main")
         if "autoDeployTrigger: checksPass" not in service_block:
-            violations.append(
-                f"render.yaml: {service_name} must deploy only after checks pass"
-            )
+            violations.append(f"render.yaml: {service_name} must deploy only after checks pass")
     return violations
 
 

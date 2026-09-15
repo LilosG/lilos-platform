@@ -60,9 +60,7 @@ def entitlement_decision(
 ) -> AgentAccessDecision:
     service = AgentAccessService(cast(AdministrationService, administration))
     return asyncio.run(
-        service._entitlement_decision(
-            fake_session(), organization_id, location_id, product_key
-        )
+        service._entitlement_decision(fake_session(), organization_id, location_id, product_key)
     )
 
 

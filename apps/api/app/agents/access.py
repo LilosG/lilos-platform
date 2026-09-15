@@ -21,9 +21,7 @@ from apps.api.app.products.gbp.models import GBPLocation
 
 NOT_EFFECTIVE_ENTITLEMENT_STATUSES = frozenset({"not_enabled", "archived", "suspended"})
 GROWTH_SOURCE_PRODUCT_KEYS = ("seo", "content", "gbp", "reviews")
-GBP_OPERABLE_LOCATION_STATUSES = frozenset(
-    {LocationStatus.SETUP_REQUIRED, LocationStatus.ACTIVE}
-)
+GBP_OPERABLE_LOCATION_STATUSES = frozenset({LocationStatus.SETUP_REQUIRED, LocationStatus.ACTIVE})
 
 
 @dataclass(frozen=True, slots=True)

@@ -126,9 +126,7 @@ export async function fetchAgentLocationResolution(
 
   const eligibleLocationIds = new Set(
     decisions
-      .filter(
-        ({ outcome }) => outcome.kind === "ok" && outcome.data.eligible,
-      )
+      .filter(({ outcome }) => outcome.kind === "ok" && outcome.data.eligible)
       .map(({ location }) => location.id),
   );
 
