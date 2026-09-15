@@ -45,7 +45,12 @@ from apps.api.app.industries.contracts import IndustryData
 from apps.api.app.industries.enums import IndustryStatus
 from apps.api.app.industries.repository import MAX_INDUSTRY_LIST_LIMIT
 from apps.api.app.industries.service import IndustryService
-from apps.api.app.locations.contracts import LocationCreate, LocationData, LocationTransition
+from apps.api.app.locations.contracts import (
+    LocationCreate,
+    LocationData,
+    LocationTransition,
+    LocationUpdate,
+)
 from apps.api.app.locations.enums import LocationLifecycleAction
 from apps.api.app.locations.service import LocationService
 from apps.api.app.onboarding.contracts import (
@@ -548,6 +553,73 @@ async def activate_location(
         organization_id,
         location_id,
         action=LocationLifecycleAction.ACTIVATE,
+        expected_version=command.expected_version,
+        correlation_id=request_correlation_id(request),
+    )
+    return response(request, LocationData.model_validate(location))
+
+
+@router.patch(
+    "/organizations/{organization_id}/locations/{location_id}",
+    response_model=DataResponse,
+    summary="Update a location during onboarding",
+)
+async def update_location(
+    request: Request,
+    organization_id: UUID,
+    location_id: UUID,
+    command: LocationUpdate,
+    session: DatabaseSession,
+) -> DataResponse:
+    location = await locations.update(
+        session,
+        organization_id,
+        location_id,
+        command,
+        correlation_id=request_correlation_id(request),
+    )
+    return response(request, LocationData.model_validate(location))
+
+
+@router.post(
+    "/organizations/{organization_id}/locations/{location_id}/set-primary",
+    response_model=DataResponse,
+    summary="Set the primary location during onboarding",
+)
+async def set_primary_location(
+    request: Request,
+    organization_id: UUID,
+    location_id: UUID,
+    command: LocationTransition,
+    session: DatabaseSession,
+) -> DataResponse:
+    location = await locations.set_primary(
+        session,
+        organization_id,
+        location_id,
+        expected_version=command.expected_version,
+        correlation_id=request_correlation_id(request),
+    )
+    return response(request, LocationData.model_validate(location))
+
+
+@router.post(
+    "/organizations/{organization_id}/locations/{location_id}/archive",
+    response_model=DataResponse,
+    summary="Archive a location during onboarding",
+)
+async def archive_location(
+    request: Request,
+    organization_id: UUID,
+    location_id: UUID,
+    command: LocationTransition,
+    session: DatabaseSession,
+) -> DataResponse:
+    location = await locations.transition(
+        session,
+        organization_id,
+        location_id,
+        action=LocationLifecycleAction.ARCHIVE,
         expected_version=command.expected_version,
         correlation_id=request_correlation_id(request),
     )
