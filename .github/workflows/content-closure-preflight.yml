@@ -73,16 +73,41 @@ jobs:
           )
           web.write_text(text)
 
-          py = Path('apps/api/app/products/content/operator_service.py')
-          text = py.read_text()
+          service = Path('apps/api/app/products/content/operator_service.py')
+          text = service.read_text()
           text = text.replace('from typing import Any\n', '', 1)
-          py.write_text(text)
+          old = '''        revision = await self.content.decide(\n            session,\n            organization_id,\n            item_id,\n            revision_id,\n            command,\n            actor_id=actor_id,\n            correlation_id=correlation_id,\n        )'''
+          new = '''        revision = await self.content.decide(\n            session,\n            organization_id,\n            revision_id,\n            command,\n            actor_id,\n            correlation_id=correlation_id,\n        )'''
+          if old not in text:
+              raise SystemExit('Expected ContentService.decide call not found')
+          text = text.replace(old, new, 1)
+          old = '''        return await session.scalar(\n            select(ContentRevision)\n            .where(\n                ContentRevision.organization_id == organization_id,\n                ContentRevision.content_item_id == item.id,\n                ContentRevision.status == "approved",\n            )\n            .order_by(ContentRevision.revision_number.desc())\n            .limit(1)\n        )'''
+          new = '''        revision: ContentRevision | None = await session.scalar(\n            select(ContentRevision)\n            .where(\n                ContentRevision.organization_id == organization_id,\n                ContentRevision.content_item_id == item.id,\n                ContentRevision.status == "approved",\n            )\n            .order_by(ContentRevision.revision_number.desc())\n            .limit(1)\n        )\n        return revision'''
+          if old not in text:
+              raise SystemExit('Expected approved-revision scalar return not found')
+          service.write_text(text.replace(old, new, 1))
+
+          adapter_test = Path('tests/python/content/test_github_adapter.py')
+          text = adapter_test.read_text()
+          text = text.replace(
+              '*, expected_status: int = 200, **kwargs: Any',
+              '*, expected_status: int | tuple[int, ...] = 200, **kwargs: Any',
+          )
+          adapter_test.write_text(text)
+
+          workflow_test = Path('tests/python/content/test_content_operator_workflow.py')
+          text = workflow_test.read_text()
+          text = text.replace(
+              'summary["next_action"]["key"]',
+              'cast(dict[str, str], summary["next_action"])["key"]',
+          )
+          workflow_test.write_text(text)
           PY
 
       - name: Format modified files
         run: |
           npm exec --workspace @lilos/web -- prettier --write src/pages/content.astro
-          uv run ruff format apps/api/app/products/content/operator_service.py
+          uv run ruff format apps/api/app/products/content/operator_service.py tests/python/content/test_github_adapter.py tests/python/content/test_content_operator_workflow.py
 
       - name: Validate formatting
         run: |
@@ -111,7 +136,7 @@ jobs:
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add apps/web/src/pages/content.astro apps/api/app/products/content/operator_service.py
+          git add apps/web/src/pages/content.astro apps/api/app/products/content/operator_service.py tests/python/content/test_github_adapter.py tests/python/content/test_content_operator_workflow.py
           git diff --cached --quiet && { echo 'No Content fixes to commit'; exit 1; }
           git commit -m 'Fix Content closure validation errors'
           git push origin HEAD:release/content-workflow-closure
