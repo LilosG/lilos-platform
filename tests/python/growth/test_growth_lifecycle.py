@@ -1,17 +1,15 @@
 from __future__ import annotations
 
+import asyncio
 from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
-import pytest
-
 from apps.api.app.growth.lifecycle import GrowthLifecycleService
 
 
-@pytest.mark.asyncio
-async def test_advance_batch_reconciles_and_dispatches_dependency_ready_work() -> None:
+def test_advance_batch_reconciles_and_dispatches_dependency_ready_work() -> None:
     organization_id = uuid4()
     initiative_id = uuid4()
     approving_user_id = uuid4()
@@ -27,9 +25,11 @@ async def test_advance_batch_reconciles_and_dispatches_dependency_ready_work() -
     growth.reconcile = AsyncMock(return_value=initiative)
     growth.dispatch_ready = AsyncMock(return_value=[object(), object()])
 
-    result = await GrowthLifecycleService(cast(Any, growth)).advance_batch(
-        cast(Any, session),
-        limit=100,
+    result = asyncio.run(
+        GrowthLifecycleService(cast(Any, growth)).advance_batch(
+            cast(Any, session),
+            limit=100,
+        )
     )
 
     assert result.scanned == 1
@@ -45,8 +45,7 @@ async def test_advance_batch_reconciles_and_dispatches_dependency_ready_work() -
     )
 
 
-@pytest.mark.asyncio
-async def test_advance_batch_does_not_dispatch_without_durable_human_authority() -> None:
+def test_advance_batch_does_not_dispatch_without_durable_human_authority() -> None:
     initiative = SimpleNamespace(
         organization_id=uuid4(),
         id=uuid4(),
@@ -59,8 +58,10 @@ async def test_advance_batch_does_not_dispatch_without_durable_human_authority()
     growth.reconcile = AsyncMock(return_value=initiative)
     growth.dispatch_ready = AsyncMock()
 
-    result = await GrowthLifecycleService(cast(Any, growth)).advance_batch(
-        cast(Any, session),
+    result = asyncio.run(
+        GrowthLifecycleService(cast(Any, growth)).advance_batch(
+            cast(Any, session),
+        )
     )
 
     assert result.reconciled == 1
@@ -68,8 +69,7 @@ async def test_advance_batch_does_not_dispatch_without_durable_human_authority()
     growth.dispatch_ready.assert_not_awaited()
 
 
-@pytest.mark.asyncio
-async def test_advance_batch_stops_after_reconciliation_reaches_terminal_state() -> None:
+def test_advance_batch_stops_after_reconciliation_reaches_terminal_state() -> None:
     candidate = SimpleNamespace(
         organization_id=uuid4(),
         id=uuid4(),
@@ -88,8 +88,10 @@ async def test_advance_batch_stops_after_reconciliation_reaches_terminal_state()
     growth.reconcile = AsyncMock(return_value=completed)
     growth.dispatch_ready = AsyncMock()
 
-    result = await GrowthLifecycleService(cast(Any, growth)).advance_batch(
-        cast(Any, session),
+    result = asyncio.run(
+        GrowthLifecycleService(cast(Any, growth)).advance_batch(
+            cast(Any, session),
+        )
     )
 
     assert result.reconciled == 1
