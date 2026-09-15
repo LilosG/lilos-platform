@@ -82,7 +82,7 @@ jobs:
               raise SystemExit('Expected ContentService.decide call not found')
           text = text.replace(old, new, 1)
           old = '''        return await session.scalar(\n            select(ContentRevision)\n            .where(\n                ContentRevision.organization_id == organization_id,\n                ContentRevision.content_item_id == item.id,\n                ContentRevision.status == "approved",\n            )\n            .order_by(ContentRevision.revision_number.desc())\n            .limit(1)\n        )'''
-          new = '''        revision: ContentRevision | None = await session.scalar(\n            select(ContentRevision)\n            .where(\n                ContentRevision.organization_id == organization_id,\n                ContentRevision.content_item_id == item.id,\n                ContentRevision.status == "approved",\n            )\n            .order_by(ContentRevision.revision_number.desc())\n            .limit(1)\n        )\n        return revision'''
+          new = '''        fallback_revision: ContentRevision | None = await session.scalar(\n            select(ContentRevision)\n            .where(\n                ContentRevision.organization_id == organization_id,\n                ContentRevision.content_item_id == item.id,\n                ContentRevision.status == "approved",\n            )\n            .order_by(ContentRevision.revision_number.desc())\n            .limit(1)\n        )\n        return fallback_revision'''
           if old not in text:
               raise SystemExit('Expected approved-revision scalar return not found')
           service.write_text(text.replace(old, new, 1))
