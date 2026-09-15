@@ -48,7 +48,7 @@ def test_publication_truth_overrides_revision_state() -> None:
     )
 
     assert summary["stage"] == "publishing"
-    assert summary["next_action"]["key"] == "wait"
+    assert cast(dict[str, str], summary["next_action"])["key"] == "wait"
 
 
 def test_verified_publication_is_the_only_success_terminal_state() -> None:
@@ -59,7 +59,7 @@ def test_verified_publication_is_the_only_success_terminal_state() -> None:
     )
 
     assert summary["stage"] == "published"
-    assert summary["next_action"]["key"] == "view"
+    assert cast(dict[str, str], summary["next_action"])["key"] == "view"
 
 
 def test_failed_publication_surfaces_operator_attention() -> None:
@@ -70,4 +70,4 @@ def test_failed_publication_surfaces_operator_attention() -> None:
     )
 
     assert summary["stage"] == "needs_attention"
-    assert summary["next_action"]["key"] == "review_publication"
+    assert cast(dict[str, str], summary["next_action"])["key"] == "review_publication"

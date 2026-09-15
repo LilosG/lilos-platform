@@ -17,14 +17,14 @@ class StubGitHubPublisher(GitHubRepositoryPublisher):
         self.calls: list[tuple[str, str, dict[str, Any]]] = []
 
     async def _request(
-        self, method: str, path: str, *, expected_status: int = 200, **kwargs: Any
+        self, method: str, path: str, *, expected_status: int | tuple[int, ...] = 200, **kwargs: Any
     ) -> dict[str, Any]:
         del expected_status
         self.calls.append((method, path, kwargs))
         return self.check_pages.pop(0)
 
     async def _request_json(
-        self, method: str, path: str, *, expected_status: int = 200, **kwargs: Any
+        self, method: str, path: str, *, expected_status: int | tuple[int, ...] = 200, **kwargs: Any
     ) -> Any:
         del expected_status
         self.calls.append((method, path, kwargs))
@@ -41,6 +41,7 @@ async def test_checks_and_deployments_read_all_github_pages() -> None:
         deployment_pages=[
             [{"id": index, "state": "success"} for index in range(100)],
             [{"id": 100, "state": "success"}],
+            [{"state": "success", "target_url": "0"}],
         ],
     )
 

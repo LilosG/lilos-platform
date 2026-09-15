@@ -234,7 +234,6 @@ import "../styles/global.css";
         type ContentImageAsset,
         type ContentOperatorDetail,
         type ContentOperatorSummary,
-        type ContentOperatorTarget,
       } from "../lib/content-operations";
       import {
         businessFactLabel,
@@ -556,7 +555,11 @@ import "../styles/global.css";
       ): Promise<void> {
         const facts = await Promise.all(
           CONTENT_REQUIRED_FACT_KEYS.map((key) =>
-            resolveBusinessFact(organizationId, key, detail.location_id),
+            resolveBusinessFact(
+              organizationId,
+              key,
+              detail.location_id ?? undefined,
+            ),
           ),
         );
         const approvedIds = facts.flatMap((result) =>

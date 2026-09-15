@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import PurePosixPath
-from typing import Any
 from uuid import UUID
 
 import httpx
@@ -160,10 +159,9 @@ class ContentOperatorService:
         revision = await self.content.decide(
             session,
             organization_id,
-            item_id,
             revision_id,
             command,
-            actor_id=actor_id,
+            actor_id,
             correlation_id=correlation_id,
         )
         item = await session.scalar(
@@ -329,7 +327,7 @@ class ContentOperatorService:
             )
             if revision is not None:
                 return revision
-        return await session.scalar(
+        fallback_revision: ContentRevision | None = await session.scalar(
             select(ContentRevision)
             .where(
                 ContentRevision.organization_id == organization_id,
@@ -339,6 +337,7 @@ class ContentOperatorService:
             .order_by(ContentRevision.revision_number.desc())
             .limit(1)
         )
+        return fallback_revision
 
     @staticmethod
     def _select_target_for_read(
