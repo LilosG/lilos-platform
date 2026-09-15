@@ -94,7 +94,9 @@ class MetricWindow:
 
     @property
     def complete(self) -> bool:
-        return self.value is not None and self.expected_rows > 0 and self.coverage >= Decimal("0.95")
+        return (
+            self.value is not None and self.expected_rows > 0 and self.coverage >= Decimal("0.95")
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -438,9 +440,7 @@ class GrowthMeasurementService:
         )
         observed_keys = {(item.search_property_id, item.date_start.date()) for item in observations}
         coverage = (
-            Decimal(len(observed_keys)) / Decimal(expected_rows)
-            if expected_rows
-            else Decimal("0")
+            Decimal(len(observed_keys)) / Decimal(expected_rows) if expected_rows else Decimal("0")
         )
         value: Decimal | None
         if field == "clicks":
@@ -555,9 +555,7 @@ class GrowthMeasurementService:
         )
         observed_keys = {(item.source_id, item.period_start.date()) for item in observations}
         coverage = (
-            Decimal(len(observed_keys)) / Decimal(expected_rows)
-            if expected_rows
-            else Decimal("0")
+            Decimal(len(observed_keys)) / Decimal(expected_rows) if expected_rows else Decimal("0")
         )
         value = sum((Decimal(item.value or 0) for item in observations), Decimal("0"))
         return MetricWindow(
