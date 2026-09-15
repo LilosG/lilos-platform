@@ -21,6 +21,9 @@ from apps.api.app.products.gbp.models import GBPLocation
 
 NOT_EFFECTIVE_ENTITLEMENT_STATUSES = frozenset({"not_enabled", "archived", "suspended"})
 GROWTH_SOURCE_PRODUCT_KEYS = ("seo", "content", "gbp", "reviews")
+GBP_OPERABLE_LOCATION_STATUSES = frozenset(
+    {LocationStatus.SETUP_REQUIRED, LocationStatus.ACTIVE}
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -187,6 +190,13 @@ class AgentAccessService:
             return entitlement
 
         if product_key == "gbp":
+            if location.status not in GBP_OPERABLE_LOCATION_STATUSES:
+                return AgentAccessDecision(
+                    False,
+                    "LOCATION_NOT_OPERABLE",
+                    409,
+                    "Location is not operable for the Business Profile agent",
+                )
             if await self._has_canonical_gbp_mapping(session, organization_id, location_id):
                 return AgentAccessDecision(True)
             return AgentAccessDecision(
