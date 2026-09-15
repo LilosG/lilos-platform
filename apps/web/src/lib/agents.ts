@@ -12,6 +12,13 @@ export type AgentCapabilities = {
   missing_required?: string[];
 };
 
+export type AgentEligibility = {
+  eligible: boolean;
+  reason_code: string | null;
+  product_key: string;
+  location_id: string;
+};
+
 export type AgentRunSummary = {
   id: string;
   location_id: string | null;
@@ -99,6 +106,17 @@ export function agentCapabilities(
 ): Promise<ApiOutcome<AgentCapabilities>> {
   return apiRequest(
     `/api/v1/organizations/${organizationId}/agents/capabilities`,
+  );
+}
+
+export function agentEligibility(
+  organizationId: string,
+  workflowKey: string,
+  locationId: string,
+): Promise<ApiOutcome<AgentEligibility>> {
+  const params = new URLSearchParams({ location_id: locationId });
+  return apiRequest(
+    `/api/v1/organizations/${organizationId}/agents/${encodeURIComponent(workflowKey)}/eligibility?${params.toString()}`,
   );
 }
 
