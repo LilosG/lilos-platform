@@ -17,6 +17,7 @@ from apps.api.app.routes.agents import router as agents_router
 from apps.api.app.routes.api_v1 import router as api_v1_router
 from apps.api.app.routes.client_onboarding import router as client_onboarding_router
 from apps.api.app.routes.content import router as content_router
+from apps.api.app.routes.content_operations import router as content_operations_router
 from apps.api.app.routes.gbp import organization_router as gbp_organization_router
 from apps.api.app.routes.gbp import router as gbp_router
 from apps.api.app.routes.gbp_mapping import router as gbp_mapping_router
@@ -81,11 +82,6 @@ def create_app(
             CORSMiddleware,
             allow_origins=list(origins),
             allow_credentials=False,
-            # Must cover every method the router actually serves. PATCH was
-            # missing, so the browser preflight for PATCH /workflows/schedules
-            # /{id} failed and schedule pause, resume, cadence and cancel all
-            # silently did nothing: the request never left the browser.
-            # tests/python/test_cors_methods.py keeps this in step with the routes.
             allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
             allow_headers=["Authorization", "Content-Type"],
         )
@@ -105,6 +101,7 @@ def create_app(
     application.include_router(leads_router)
     application.include_router(machine_intake_router)
     application.include_router(content_router)
+    application.include_router(content_operations_router)
     application.include_router(seo_router)
     application.include_router(insights_router)
     application.include_router(growth_router)
