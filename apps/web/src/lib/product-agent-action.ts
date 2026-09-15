@@ -1,10 +1,10 @@
 import {
   agentCapabilities,
+  agentEligibility,
   startAgentRun,
   type AgentCapabilities,
 } from "./agents";
 import type { ApiOutcome } from "./api-client";
-import { fetchGBPLocations } from "./gbp";
 import { fetchLocations, type LocationSummary } from "./workspace";
 import { getWorkflowRun, type WorkflowRunDetail } from "./workflows";
 
@@ -105,7 +105,7 @@ export async function fetchAgentLocationResolution(
       kind: "error";
       outcome:
         | Awaited<ReturnType<typeof fetchLocations>>
-        | Awaited<ReturnType<typeof fetchGBPLocations>>;
+        | Awaited<ReturnType<typeof agentEligibility>>;
     }
 > {
   const locationsOutcome = await fetchLocations(organizationId);
@@ -113,29 +113,23 @@ export async function fetchAgentLocationResolution(
     return { kind: "error", outcome: locationsOutcome };
   }
 
-  if (workflow !== "agent.gbp") {
-    return {
-      kind: "resolved",
-      resolution: resolveAgentLocation(
-        locationsOutcome.data,
-        requestedLocationId,
-      ),
-    };
+  const decisions = await Promise.all(
+    locationsOutcome.data.map(async (location) => ({
+      location,
+      outcome: await agentEligibility(organizationId, workflow, location.id),
+    })),
+  );
+  const failed = decisions.find(({ outcome }) => outcome.kind !== "ok");
+  if (failed && failed.outcome.kind !== "ok") {
+    return { kind: "error", outcome: failed.outcome };
   }
 
-  const gbpLocationsOutcome = await fetchGBPLocations(organizationId);
-  if (gbpLocationsOutcome.kind !== "ok") {
-    return { kind: "error", outcome: gbpLocationsOutcome };
-  }
-
-  const confirmedMappedLocationIds = new Set(
-    gbpLocationsOutcome.data
+  const eligibleLocationIds = new Set(
+    decisions
       .filter(
-        (location) =>
-          location.mapping_status === "confirmed" &&
-          Boolean(location.location_id),
+        ({ outcome }) => outcome.kind === "ok" && outcome.data.eligible,
       )
-      .map((location) => location.location_id as string),
+      .map(({ location }) => location.id),
   );
 
   return {
@@ -143,7 +137,7 @@ export async function fetchAgentLocationResolution(
     resolution: resolveAgentLocation(
       locationsOutcome.data,
       requestedLocationId,
-      confirmedMappedLocationIds,
+      eligibleLocationIds,
     ),
   };
 }
