@@ -111,7 +111,9 @@ export function decideContentOperationRevision(
   revisionId: string,
   stage: "editorial" | "client",
   approve: boolean,
-): Promise<ApiOutcome<{ id: string; status: string; revision_number: number }>> {
+): Promise<
+  ApiOutcome<{ id: string; status: string; revision_number: number }>
+> {
   return apiRequest(
     `${base(organizationId)}/${itemId}/revisions/${revisionId}/decision`,
     { method: "POST", body: { stage, approve } },
@@ -177,6 +179,7 @@ export function contentStageLabel(stage: ContentOperatorStage): string {
 
 export function contentStageTone(stage: ContentOperatorStage): string {
   if (stage === "published" || stage === "ready_to_publish") return "ready";
-  if (stage === "needs_attention" || stage === "revision_needed") return "blocked";
+  if (stage === "needs_attention" || stage === "revision_needed")
+    return "blocked";
   return "setup";
 }

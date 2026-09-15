@@ -76,11 +76,27 @@ import "../styles/global.css";
                 <h2>What needs to happen next</h2>
                 <p>Each item shows one current stage and one next action.</p>
               </div>
-              <div class="content-filters" role="group" aria-label="Filter content">
-                <button type="button" data-filter="active" aria-pressed="true">Active</button>
-                <button type="button" data-filter="publishing" aria-pressed="false">Publishing</button>
-                <button type="button" data-filter="published" aria-pressed="false">Published</button>
-                <button type="button" data-filter="all" aria-pressed="false">All</button>
+              <div
+                class="content-filters"
+                role="group"
+                aria-label="Filter content"
+              >
+                <button type="button" data-filter="active" aria-pressed="true"
+                  >Active</button
+                >
+                <button
+                  type="button"
+                  data-filter="publishing"
+                  aria-pressed="false">Publishing</button
+                >
+                <button
+                  type="button"
+                  data-filter="published"
+                  aria-pressed="false">Published</button
+                >
+                <button type="button" data-filter="all" aria-pressed="false"
+                  >All</button
+                >
               </div>
             </div>
             <Region id="content-list" live="polite" />
@@ -90,7 +106,8 @@ import "../styles/global.css";
             <details>
               <summary>Content opportunities</summary>
               <p class="content-secondary">
-                Evidence-backed opportunities stay separate from the working pipeline until you accept them.
+                Evidence-backed opportunities stay separate from the working
+                pipeline until you accept them.
               </p>
               <Region id="opportunity-list" live="polite" />
             </details>
@@ -99,7 +116,11 @@ import "../styles/global.css";
 
         <div id="content-detail-view" hidden>
           <div class="content-back-row">
-            <button type="button" class="ui-button ui-button--secondary ui-button--sm" id="back-to-list">
+            <button
+              type="button"
+              class="ui-button ui-button--secondary ui-button--sm"
+              id="back-to-list"
+            >
               ← Back to content
             </button>
           </div>
@@ -108,18 +129,32 @@ import "../styles/global.css";
       </PageShell>
     </AppShell>
 
-    <dialog id="new-item-modal" class="ui-modal ui-modal--md" aria-labelledby="new-item-title">
+    <dialog
+      id="new-item-modal"
+      class="ui-modal ui-modal--md"
+      aria-labelledby="new-item-title"
+    >
       <div class="ui-modal__surface">
         <header class="ui-modal__header">
           <div>
             <h2 id="new-item-title">New content item</h2>
-            <p>Start with the page you want to create. LILOs will guide the remaining steps.</p>
+            <p>
+              Start with the page you want to create. LILOs will guide the
+              remaining steps.
+            </p>
           </div>
-          <button type="button" class="ui-button ui-button--ghost" id="close-new-item" aria-label="Close">✕</button>
+          <button
+            type="button"
+            class="ui-button ui-button--ghost"
+            id="close-new-item"
+            aria-label="Close">✕</button
+          >
         </header>
         <form id="new-item-form" class="ui-modal__body ui-form-grid">
           <div class="ui-field">
-            <label class="ui-field__label" for="content-type">Content type</label>
+            <label class="ui-field__label" for="content-type"
+              >Content type</label
+            >
             <select id="content-type" class="ui-input" required>
               <option value="blog">Blog post</option>
               <option value="page">Page</option>
@@ -128,24 +163,45 @@ import "../styles/global.css";
             </select>
           </div>
           <div class="ui-field">
-            <label class="ui-field__label" for="content-location">Location</label>
+            <label class="ui-field__label" for="content-location"
+              >Location</label
+            >
             <select id="content-location" class="ui-input">
               <option value="">Organization-wide</option>
             </select>
           </div>
           <div class="ui-field ui-field--full">
             <label class="ui-field__label" for="content-title">Title</label>
-            <input id="content-title" class="ui-input" maxlength="300" required />
+            <input
+              id="content-title"
+              class="ui-input"
+              maxlength="300"
+              required
+            />
           </div>
           <div class="ui-field ui-field--full">
             <label class="ui-field__label" for="content-slug">URL slug</label>
-            <input id="content-slug" class="ui-input" maxlength="200" required />
+            <input
+              id="content-slug"
+              class="ui-input"
+              maxlength="200"
+              required
+            />
           </div>
           <p id="new-item-status" class="ui-text-secondary" role="status"></p>
         </form>
         <footer class="ui-modal__footer">
-          <button type="button" class="ui-button ui-button--secondary ui-button--md" id="cancel-new-item">Cancel</button>
-          <button type="submit" form="new-item-form" class="ui-button ui-button--primary ui-button--md" id="create-new-item">Create item</button>
+          <button
+            type="button"
+            class="ui-button ui-button--secondary ui-button--md"
+            id="cancel-new-item">Cancel</button
+          >
+          <button
+            type="submit"
+            form="new-item-form"
+            class="ui-button ui-button--primary ui-button--md"
+            id="create-new-item">Create item</button
+          >
         </footer>
       </div>
     </dialog>
@@ -236,23 +292,41 @@ import "../styles/global.css";
 
       function renderMetrics(): void {
         const action = items.filter(
-          (item) => !["published", "publishing", "ready_to_publish"].includes(item.stage),
+          (item) =>
+            !["published", "publishing", "ready_to_publish"].includes(
+              item.stage,
+            ),
         ).length;
-        const ready = items.filter((item) => item.stage === "ready_to_publish").length;
-        const publishing = items.filter((item) => item.stage === "publishing").length;
-        const published = items.filter((item) => item.stage === "published").length;
+        const ready = items.filter(
+          (item) => item.stage === "ready_to_publish",
+        ).length;
+        const publishing = items.filter(
+          (item) => item.stage === "publishing",
+        ).length;
+        const published = items.filter(
+          (item) => item.stage === "published",
+        ).length;
         document.getElementById("metric-action")!.textContent = String(action);
         document.getElementById("metric-ready")!.textContent = String(ready);
-        document.getElementById("metric-publishing")!.textContent = String(publishing);
-        document.getElementById("metric-published")!.textContent = String(published);
+        document.getElementById("metric-publishing")!.textContent =
+          String(publishing);
+        document.getElementById("metric-published")!.textContent =
+          String(published);
       }
 
       function renderList(): void {
         const region = document.getElementById("content-list")!;
         region.replaceChildren();
-        const visible = items.filter(stageMatches).sort((a, b) => stageRank(b.stage) - stageRank(a.stage));
+        const visible = items
+          .filter(stageMatches)
+          .sort((a, b) => stageRank(b.stage) - stageRank(a.stage));
         if (!visible.length) {
-          region.append(emptyState("Nothing in this view", "Choose another filter or create a content item."));
+          region.append(
+            emptyState(
+              "Nothing in this view",
+              "Choose another filter or create a content item.",
+            ),
+          );
           return;
         }
         const table = document.createElement("div");
@@ -273,7 +347,12 @@ import "../styles/global.css";
           main.append(title, meta);
           const stage = document.createElement("div");
           stage.className = "content-row__stage";
-          stage.append(statusBadge(contentStageTone(item.stage), contentStageLabel(item.stage)));
+          stage.append(
+            statusBadge(
+              contentStageTone(item.stage),
+              contentStageLabel(item.stage),
+            ),
+          );
           const next = document.createElement("div");
           next.className = "content-row__next";
           const nextLabel = document.createElement("span");
@@ -290,9 +369,9 @@ import "../styles/global.css";
       async function refreshList(): Promise<void> {
         const result = await fetchContentOperations(organizationId);
         if (result.kind !== "ok") {
-          document.getElementById("content-list")!.replaceChildren(
-            errorAlert(describeFailure(result, "Content")),
-          );
+          document
+            .getElementById("content-list")!
+            .replaceChildren(errorAlert(describeFailure(result, "Content")));
           return;
         }
         items = result.data;
@@ -301,7 +380,14 @@ import "../styles/global.css";
       }
 
       function progress(detail: ContentOperatorDetail): HTMLElement {
-        const labels = ["Brief", "Draft", "Review", "Approve", "Publish", "Verify"];
+        const labels = [
+          "Brief",
+          "Draft",
+          "Review",
+          "Approve",
+          "Publish",
+          "Verify",
+        ];
         const map: Record<ContentOperatorDetail["stage"], number> = {
           brief_needed: 0,
           draft_needed: 1,
@@ -346,7 +432,13 @@ import "../styles/global.css";
         const message = document.createElement("p");
         message.textContent = stageDescription(detail);
         text.append(eyebrow, heading, message);
-        top.append(text, statusBadge(contentStageTone(detail.stage), contentStageLabel(detail.stage)));
+        top.append(
+          text,
+          statusBadge(
+            contentStageTone(detail.stage),
+            contentStageLabel(detail.stage),
+          ),
+        );
         card.append(top, progress(detail));
         const action = document.createElement("div");
         action.className = "content-primary-action";
@@ -380,27 +472,43 @@ import "../styles/global.css";
         }
       }
 
-      function renderPrimaryAction(container: HTMLElement, detail: ContentOperatorDetail): void {
+      function renderPrimaryAction(
+        container: HTMLElement,
+        detail: ContentOperatorDetail,
+      ): void {
         const latestRevision = detail.revisions[0];
         const latestBrief = detail.briefs[0];
         if (detail.stage === "brief_needed") {
           void renderBriefAction(container, detail);
           return;
         }
-        if (detail.stage === "draft_needed" || detail.stage === "revision_needed") {
+        if (
+          detail.stage === "draft_needed" ||
+          detail.stage === "revision_needed"
+        ) {
           if (!latestBrief) return;
           renderDraftAction(container, detail, latestBrief.id);
           return;
         }
         if (detail.stage === "editorial_review" && latestRevision) {
           container.append(
-            decisionButton(detail, latestRevision.id, "editorial", "Approve editorial review"),
+            decisionButton(
+              detail,
+              latestRevision.id,
+              "editorial",
+              "Approve editorial review",
+            ),
           );
           return;
         }
         if (detail.stage === "client_review" && latestRevision) {
           container.append(
-            decisionButton(detail, latestRevision.id, "client", "Approve for publishing"),
+            decisionButton(
+              detail,
+              latestRevision.id,
+              "client",
+              "Approve for publishing",
+            ),
           );
           return;
         }
@@ -447,19 +555,26 @@ import "../styles/global.css";
         detail: ContentOperatorDetail,
       ): Promise<void> {
         const facts = await Promise.all(
-          CONTENT_REQUIRED_FACT_KEYS.map((key) => resolveBusinessFact(organizationId, key, detail.location_id)),
+          CONTENT_REQUIRED_FACT_KEYS.map((key) =>
+            resolveBusinessFact(organizationId, key, detail.location_id),
+          ),
         );
         const approvedIds = facts.flatMap((result) =>
-          result.kind === "ok" && result.data.state === "resolved" && result.data.selected_revision_id
+          result.kind === "ok" &&
+          result.data.state === "resolved" &&
+          result.data.selected_revision_id
             ? [result.data.selected_revision_id]
             : [],
         );
         if (approvedIds.length !== CONTENT_REQUIRED_FACT_KEYS.length) {
-          const missing = CONTENT_REQUIRED_FACT_KEYS.filter((_, index) => !(
-            facts[index].kind === "ok" &&
-            facts[index].data.state === "resolved" &&
-            facts[index].data.selected_revision_id
-          ));
+          const missing = CONTENT_REQUIRED_FACT_KEYS.filter(
+            (_, index) =>
+              !(
+                facts[index].kind === "ok" &&
+                facts[index].data.state === "resolved" &&
+                facts[index].data.selected_revision_id
+              ),
+          );
           container.append(
             emptyState(
               "Business details need approval",
@@ -507,13 +622,20 @@ import "../styles/global.css";
         container.append(form);
       }
 
-      function renderDraftAction(container: HTMLElement, detail: ContentOperatorDetail, briefId: string): void {
+      function renderDraftAction(
+        container: HTMLElement,
+        detail: ContentOperatorDetail,
+        briefId: string,
+      ): void {
         const row = document.createElement("div");
         row.className = "content-action-buttons";
         const generate = document.createElement("button");
         generate.type = "button";
         generate.className = "ui-button ui-button--primary ui-button--md";
-        generate.textContent = detail.stage === "revision_needed" ? "Generate revised draft" : "Generate assisted draft";
+        generate.textContent =
+          detail.stage === "revision_needed"
+            ? "Generate revised draft"
+            : "Generate assisted draft";
         const status = document.createElement("p");
         status.className = "ui-text-secondary";
         generate.addEventListener("click", async () => {
@@ -527,15 +649,22 @@ import "../styles/global.css";
           );
           if (result.kind !== "ok") {
             generate.disabled = false;
-            status.textContent = describeContentFailure(result, "Draft generation");
+            status.textContent = describeContentFailure(
+              result,
+              "Draft generation",
+            );
             return;
           }
           status.textContent = describeAIDraftStatus("queued");
           while (true) {
             await new Promise((resolve) => window.setTimeout(resolve, 2000));
-            const poll = await pollAIDraftRun(organizationId, result.data.workflow_run_id);
+            const poll = await pollAIDraftRun(
+              organizationId,
+              result.data.workflow_run_id,
+            );
             if (!poll) {
-              status.textContent = "Draft status could not be refreshed. Reload to check progress.";
+              status.textContent =
+                "Draft status could not be refreshed. Reload to check progress.";
               break;
             }
             status.textContent = describeAIDraftStatus(poll.status);
@@ -572,7 +701,10 @@ import "../styles/global.css";
           if (result.kind === "ok") await openItem(detail.id);
           else {
             button.disabled = false;
-            button.insertAdjacentElement("afterend", errorAlert(describeFailure(result, "Approval")));
+            button.insertAdjacentElement(
+              "afterend",
+              errorAlert(describeFailure(result, "Approval")),
+            );
           }
         });
         return button;
@@ -619,7 +751,8 @@ import "../styles/global.css";
         alt.placeholder = "Describe the image for accessibility";
         const helper = document.createElement("p");
         helper.className = "ui-text-secondary";
-        helper.textContent = "The site schema requires an approved image before this page can publish.";
+        helper.textContent =
+          "The site schema requires an approved image before this page can publish.";
         imageWrap.append(imageSelect, alt, helper);
 
         const loadAssets = async (): Promise<void> => {
@@ -663,12 +796,16 @@ import "../styles/global.css";
           }
           submit.disabled = true;
           status.textContent = "Starting governed publication…";
-          const result = await publishContentOperation(organizationId, detail.id, {
-            idempotencyKey: crypto.randomUUID(),
-            publishingTargetId: target.value,
-            image: imageSelect.value || undefined,
-            imageAlt: alt.value.trim() || undefined,
-          });
+          const result = await publishContentOperation(
+            organizationId,
+            detail.id,
+            {
+              idempotencyKey: crypto.randomUUID(),
+              publishingTargetId: target.value,
+              image: imageSelect.value || undefined,
+              imageAlt: alt.value.trim() || undefined,
+            },
+          );
           if (result.kind === "ok") await openItem(detail.id);
           else {
             submit.disabled = false;
@@ -678,7 +815,10 @@ import "../styles/global.css";
         container.append(form);
       }
 
-      function appendAsset(select: HTMLSelectElement, asset: ContentImageAsset): void {
+      function appendAsset(
+        select: HTMLSelectElement,
+        asset: ContentImageAsset,
+      ): void {
         const option = document.createElement("option");
         option.value = asset.path;
         option.textContent = asset.path;
@@ -710,7 +850,13 @@ import "../styles/global.css";
           const h2 = document.createElement("h2");
           h2.textContent = "Current content";
           label.append(eyebrow, h2);
-          heading.append(label, statusBadge(latest.status === "approved" ? "ready" : "setup", latest.status.replace(/_/g, " ")));
+          heading.append(
+            label,
+            statusBadge(
+              latest.status === "approved" ? "ready" : "setup",
+              latest.status.replace(/_/g, " "),
+            ),
+          );
           documentCard.append(heading, renderDocumentBody(latest.body));
           region.append(documentCard);
         }
@@ -722,7 +868,10 @@ import "../styles/global.css";
           context.innerHTML = `<p class="content-eyebrow">Brief</p><h2>Content direction</h2>`;
           const facts = document.createElement("dl");
           facts.className = "content-detail-facts";
-          facts.append(fact("Audience", brief.audience), fact("Goal", brief.intent));
+          facts.append(
+            fact("Audience", brief.audience),
+            fact("Goal", brief.intent),
+          );
           context.append(facts);
           region.append(context);
         }
@@ -734,7 +883,8 @@ import "../styles/global.css";
           summary.textContent = "Revise this content";
           const explanation = document.createElement("p");
           explanation.className = "content-secondary";
-          explanation.textContent = "Creating a new revision intentionally sends the item back through review.";
+          explanation.textContent =
+            "Creating a new revision intentionally sends the item back through review.";
           const form = document.createElement("form");
           form.className = "content-action-form";
           const copy = document.createElement("textarea");
@@ -753,7 +903,8 @@ import "../styles/global.css";
             const result = await createRevision(organizationId, detail.id, {
               body: copy.value,
               frontmatter: latest?.frontmatter ?? { title: detail.title },
-              approvedFactRevisionIds: detail.briefs[0].approved_fact_revision_ids,
+              approvedFactRevisionIds:
+                detail.briefs[0].approved_fact_revision_ids,
             });
             if (result.kind === "ok") await openItem(detail.id);
             else {
@@ -804,10 +955,17 @@ import "../styles/global.css";
         document.getElementById("content-detail-view")!.hidden = false;
         const region = document.getElementById("content-detail")!;
         region.replaceChildren();
-        region.append(emptyState("Loading content…", "Refreshing the latest workflow state."));
+        region.append(
+          emptyState(
+            "Loading content…",
+            "Refreshing the latest workflow state.",
+          ),
+        );
         const result = await fetchContentOperation(organizationId, itemId);
         if (result.kind !== "ok") {
-          region.replaceChildren(errorAlert(describeFailure(result, "Content item")));
+          region.replaceChildren(
+            errorAlert(describeFailure(result, "Content item")),
+          );
           return;
         }
         renderDetail(result.data);
@@ -831,15 +989,25 @@ import "../styles/global.css";
         const result = await fetchOpportunities(organizationId);
         region.replaceChildren();
         if (result.kind !== "ok") {
-          region.append(errorAlert(describeFailure(result, "Content opportunities")));
+          region.append(
+            errorAlert(describeFailure(result, "Content opportunities")),
+          );
           return;
         }
-        const open = result.data.filter((item) => ["identified", "validated"].includes(item.status));
+        const open = result.data.filter((item) =>
+          ["identified", "validated"].includes(item.status),
+        );
         if (!open.length) {
-          region.append(emptyState("No open opportunities", "New evidence-backed opportunities will appear here."));
+          region.append(
+            emptyState(
+              "No open opportunities",
+              "New evidence-backed opportunities will appear here.",
+            ),
+          );
           return;
         }
-        for (const opportunity of open) region.append(opportunityRow(opportunity));
+        for (const opportunity of open)
+          region.append(opportunityRow(opportunity));
       }
 
       function opportunityRow(opportunity: ContentOpportunity): HTMLElement {
@@ -857,7 +1025,11 @@ import "../styles/global.css";
         accept.textContent = "Accept opportunity";
         accept.addEventListener("click", async () => {
           accept.disabled = true;
-          const result = await decideOpportunity(organizationId, opportunity.id, true);
+          const result = await decideOpportunity(
+            organizationId,
+            opportunity.id,
+            true,
+          );
           if (result.kind === "ok") await renderOpportunities();
           else accept.disabled = false;
         });
@@ -866,19 +1038,33 @@ import "../styles/global.css";
       }
 
       function setupModal(): void {
-        const modal = document.getElementById("new-item-modal") as HTMLDialogElement;
-        const form = document.getElementById("new-item-form") as HTMLFormElement;
-        const title = document.getElementById("content-title") as HTMLInputElement;
-        const slug = document.getElementById("content-slug") as HTMLInputElement;
-        const submit = document.getElementById("create-new-item") as HTMLButtonElement;
+        const modal = document.getElementById(
+          "new-item-modal",
+        ) as HTMLDialogElement;
+        const form = document.getElementById(
+          "new-item-form",
+        ) as HTMLFormElement;
+        const title = document.getElementById(
+          "content-title",
+        ) as HTMLInputElement;
+        const slug = document.getElementById(
+          "content-slug",
+        ) as HTMLInputElement;
+        const submit = document.getElementById(
+          "create-new-item",
+        ) as HTMLButtonElement;
         const status = document.getElementById("new-item-status")!;
         const close = (): void => modal.close();
         document.getElementById("new-item")!.addEventListener("click", () => {
           form.reset();
           modal.showModal();
         });
-        document.getElementById("close-new-item")!.addEventListener("click", close);
-        document.getElementById("cancel-new-item")!.addEventListener("click", close);
+        document
+          .getElementById("close-new-item")!
+          .addEventListener("click", close);
+        document
+          .getElementById("cancel-new-item")!
+          .addEventListener("click", close);
         title.addEventListener("input", () => {
           slug.value = deriveSlug(title.value);
         });
@@ -886,8 +1072,12 @@ import "../styles/global.css";
           event.preventDefault();
           submit.disabled = true;
           status.textContent = "Creating item…";
-          const location = document.getElementById("content-location") as HTMLSelectElement;
-          const type = document.getElementById("content-type") as HTMLSelectElement;
+          const location = document.getElementById(
+            "content-location",
+          ) as HTMLSelectElement;
+          const type = document.getElementById(
+            "content-type",
+          ) as HTMLSelectElement;
           const result = await createContentItem(organizationId, {
             contentType: type.value,
             title: title.value.trim(),
@@ -906,7 +1096,9 @@ import "../styles/global.css";
       }
 
       async function loadLocations(): Promise<void> {
-        const select = document.getElementById("content-location") as HTMLSelectElement;
+        const select = document.getElementById(
+          "content-location",
+        ) as HTMLSelectElement;
         const result = await fetchLocations(organizationId);
         if (result.kind !== "ok") return;
         for (const location of result.data) {
@@ -917,31 +1109,51 @@ import "../styles/global.css";
         }
       }
 
-      async function loadOrganization(org: import("../lib/workspace").MyOrganization): Promise<void> {
+      async function loadOrganization(
+        org: import("../lib/workspace").MyOrganization,
+      ): Promise<void> {
         setActiveOrganization(org);
         organizationId = org.organization_id;
-        await Promise.all([refreshList(), renderOpportunities(), loadLocations()]);
+        await Promise.all([
+          refreshList(),
+          renderOpportunities(),
+          loadLocations(),
+        ]);
       }
 
-      document.getElementById("back-to-list")!.addEventListener("click", showList);
-      document.querySelectorAll<HTMLButtonElement>("[data-filter]").forEach((button) => {
-        button.addEventListener("click", () => {
-          activeFilter = button.dataset.filter ?? "active";
-          document.querySelectorAll<HTMLButtonElement>("[data-filter]").forEach((candidate) => {
-            candidate.setAttribute("aria-pressed", String(candidate === button));
+      document
+        .getElementById("back-to-list")!
+        .addEventListener("click", showList);
+      document
+        .querySelectorAll<HTMLButtonElement>("[data-filter]")
+        .forEach((button) => {
+          button.addEventListener("click", () => {
+            activeFilter = button.dataset.filter ?? "active";
+            document
+              .querySelectorAll<HTMLButtonElement>("[data-filter]")
+              .forEach((candidate) => {
+                candidate.setAttribute(
+                  "aria-pressed",
+                  String(candidate === button),
+                );
+              });
+            renderList();
           });
-          renderList();
         });
-      });
       setupModal();
 
       async function boot(): Promise<void> {
         const result = await bootWorkspace("Content");
         if (!applyBootResult(regions, result)) return;
-        populateSwitcher(result.organizations, (org) => void loadOrganization(org));
-        const org = result.organizations.find(
-          (candidate) => candidate.organization_id === result.context.organizationId,
-        ) ?? result.organizations[0];
+        populateSwitcher(
+          result.organizations,
+          (org) => void loadOrganization(org),
+        );
+        const org =
+          result.organizations.find(
+            (candidate) =>
+              candidate.organization_id === result.context.organizationId,
+          ) ?? result.organizations[0];
         await loadOrganization(org);
       }
 

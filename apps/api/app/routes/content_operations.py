@@ -35,15 +35,21 @@ def no_store(response: Response) -> None:
 
 
 def read_policy() -> object:
-    return Depends(require_authorization("content.read", ScopeType.ORGANIZATION, AssuranceLevel.AAL1))
+    return Depends(
+        require_authorization("content.read", ScopeType.ORGANIZATION, AssuranceLevel.AAL1)
+    )
 
 
 def review_policy() -> object:
-    return Depends(require_authorization("content.approve", ScopeType.ORGANIZATION, AssuranceLevel.AAL2))
+    return Depends(
+        require_authorization("content.approve", ScopeType.ORGANIZATION, AssuranceLevel.AAL2)
+    )
 
 
 def publish_policy() -> object:
-    return Depends(require_authorization("content.publish", ScopeType.ORGANIZATION, AssuranceLevel.AAL2))
+    return Depends(
+        require_authorization("content.publish", ScopeType.ORGANIZATION, AssuranceLevel.AAL2)
+    )
 
 
 class PublishRequest(BaseModel):

@@ -345,7 +345,9 @@ class ContentOperatorService:
         item: ContentItem, targets: list[PublishingTarget]
     ) -> PublishingTarget | None:
         if item.publishing_target_id is not None:
-            matched = next((target for target in targets if target.id == item.publishing_target_id), None)
+            matched = next(
+                (target for target in targets if target.id == item.publishing_target_id), None
+            )
             if matched is not None:
                 return matched
         return targets[0] if len(targets) == 1 else None
@@ -362,7 +364,9 @@ class ContentOperatorService:
                 raise ContentTargetNotConfiguredError
             return matched
         if item.publishing_target_id is not None:
-            matched = next((target for target in targets if target.id == item.publishing_target_id), None)
+            matched = next(
+                (target for target in targets if target.id == item.publishing_target_id), None
+            )
             if matched is not None:
                 return matched
         if len(targets) != 1:
@@ -379,9 +383,7 @@ class ContentOperatorService:
         return overrides
 
     @staticmethod
-    def _target_path(
-        target: PublishingTarget, slug: str, contract: FrontmatterContract
-    ) -> str:
+    def _target_path(target: PublishingTarget, slug: str, contract: FrontmatterContract) -> str:
         extensions = contract.file_extensions or (".mdx",)
         extension = ".mdx" if ".mdx" in extensions else extensions[0]
         prefix = target.allowed_path_prefix.rstrip("/")
@@ -446,7 +448,10 @@ class ContentOperatorService:
             if publication.status == "verified":
                 return "published", {"key": "view", "label": "View publication"}
             if publication.status in _ATTENTION_PUBLICATION_STATES:
-                return "needs_attention", {"key": "review_publication", "label": "Review publishing"}
+                return "needs_attention", {
+                    "key": "review_publication",
+                    "label": "Review publishing",
+                }
             if publication.status in _ACTIVE_PUBLICATION_STATES:
                 return "publishing", {"key": "wait", "label": "Publishing in progress"}
         if revision is not None:
@@ -455,7 +460,10 @@ class ContentOperatorService:
             if revision.status == "awaiting_client":
                 return "client_review", {"key": "approve_client", "label": "Approve for publishing"}
             if revision.status == "awaiting_editorial":
-                return "editorial_review", {"key": "approve_editorial", "label": "Approve editorial review"}
+                return "editorial_review", {
+                    "key": "approve_editorial",
+                    "label": "Approve editorial review",
+                }
             if revision.status in {"rejected", "validation_failed"}:
                 return "revision_needed", {"key": "revise", "label": "Revise content"}
             return "drafting", {"key": "review", "label": "Review draft"}

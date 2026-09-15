@@ -90,9 +90,7 @@ async def handle_content_publish(
     )
     if target is None:
         await _fail(session, publication, "PUBLISHING_TARGET_NOT_CONFIGURED")
-        return JobOutcome(
-            result="permanent_failure", safe_error="PUBLISHING_TARGET_NOT_CONFIGURED"
-        )
+        return JobOutcome(result="permanent_failure", safe_error="PUBLISHING_TARGET_NOT_CONFIGURED")
     connection = await session.scalar(
         select(IntegrationConnection).where(
             IntegrationConnection.organization_id == organization_id,
@@ -154,9 +152,7 @@ async def handle_content_publish(
             return checks_result
 
     if publication.status in {"pull_request_created", "checks_running"}:
-        merge_result = await _merge_pull_request(
-            session, publication, publisher, repository_id
-        )
+        merge_result = await _merge_pull_request(session, publication, publisher, repository_id)
         if merge_result is not None:
             return merge_result
 
@@ -174,9 +170,7 @@ async def handle_content_publish(
     publication.safe_error_code = "PUBLICATION_STATE_UNRECOGNIZED"
     item.status = "reconciliation_required"
     await session.commit()
-    return JobOutcome(
-        result="retryable_failure", safe_error="PUBLICATION_STATE_UNRECOGNIZED"
-    )
+    return JobOutcome(result="retryable_failure", safe_error="PUBLICATION_STATE_UNRECOGNIZED")
 
 
 async def _prepare_pull_request(
@@ -259,9 +253,7 @@ async def _prepare_pull_request(
         publication.status = "reconciliation_required"
         publication.safe_error_code = "PROVIDER_WRITE_AMBIGUOUS"
         await session.commit()
-        return JobOutcome(
-            result="retryable_failure", safe_error="PROVIDER_WRITE_AMBIGUOUS"
-        )
+        return JobOutcome(result="retryable_failure", safe_error="PROVIDER_WRITE_AMBIGUOUS")
 
 
 async def _wait_for_pull_request_checks(
@@ -274,13 +266,9 @@ async def _wait_for_pull_request_checks(
         publication.status = "reconciliation_required"
         publication.safe_error_code = "PULL_REQUEST_REFERENCE_MISSING"
         await session.commit()
-        return JobOutcome(
-            result="retryable_failure", safe_error="PULL_REQUEST_REFERENCE_MISSING"
-        )
+        return JobOutcome(result="retryable_failure", safe_error="PULL_REQUEST_REFERENCE_MISSING")
     try:
-        pr = await publisher.get_pull_request(
-            repository_id, publication.external_pull_request_id
-        )
+        pr = await publisher.get_pull_request(repository_id, publication.external_pull_request_id)
         head = pr.get("head") if isinstance(pr, dict) else None
         head_sha = str(head.get("sha") or "") if isinstance(head, dict) else ""
         if head_sha:
@@ -322,9 +310,7 @@ async def _merge_pull_request(
     repository_id: str,
 ) -> JobOutcome | None:
     if not publication.external_pull_request_id:
-        return JobOutcome(
-            result="retryable_failure", safe_error="PULL_REQUEST_REFERENCE_MISSING"
-        )
+        return JobOutcome(result="retryable_failure", safe_error="PULL_REQUEST_REFERENCE_MISSING")
     try:
         merge_sha = await publisher.merge_pull_request(
             repository_id, publication.external_pull_request_id
@@ -339,9 +325,7 @@ async def _merge_pull_request(
         publication.status = "reconciliation_required"
         publication.safe_error_code = "PULL_REQUEST_MERGE_FAILED"
         await session.commit()
-        return JobOutcome(
-            result="retryable_failure", safe_error="PULL_REQUEST_MERGE_FAILED"
-        )
+        return JobOutcome(result="retryable_failure", safe_error="PULL_REQUEST_MERGE_FAILED")
 
 
 async def _verify_deployment(
@@ -364,15 +348,15 @@ async def _verify_deployment(
         state = deployment.get("state", "none").lower()
         publication.deployment_status = state
         if state in {"success", "active"}:
-            return await _mark_published(session, publication, revision, item, deployment.get("url"))
+            return await _mark_published(
+                session, publication, revision, item, deployment.get("url")
+            )
         if state in {"error", "failure", "inactive"}:
             publication.status = "failed"
             publication.safe_error_code = "CONTENT_DEPLOYMENT_FAILED"
             item.status = "failed"
             await session.commit()
-            return JobOutcome(
-                result="permanent_failure", safe_error="CONTENT_DEPLOYMENT_FAILED"
-            )
+            return JobOutcome(result="permanent_failure", safe_error="CONTENT_DEPLOYMENT_FAILED")
 
         # Vercel and similar GitHub Apps commonly report deployment as a check
         # run instead of a GitHub Deployment. Re-read the merged commit checks as
@@ -386,16 +370,12 @@ async def _verify_deployment(
             publication.safe_error_code = "CONTENT_DEPLOYMENT_FAILED"
             item.status = "failed"
             await session.commit()
-            return JobOutcome(
-                result="permanent_failure", safe_error="CONTENT_DEPLOYMENT_FAILED"
-            )
+            return JobOutcome(result="permanent_failure", safe_error="CONTENT_DEPLOYMENT_FAILED")
         publication.status = "deployment_pending"
         publication.safe_error_code = None
         item.status = "publishing"
         await session.commit()
-        return JobOutcome(
-            result="retryable_failure", safe_error="CONTENT_DEPLOYMENT_PENDING"
-        )
+        return JobOutcome(result="retryable_failure", safe_error="CONTENT_DEPLOYMENT_PENDING")
     except Exception as exc:
         logger.warning("Content deployment verification failed", exc_info=exc)
         publication.status = "reconciliation_required"

@@ -47,8 +47,7 @@ class GitHubRepositoryPublisher:
             )
         if response.status_code not in accepted:
             raise RuntimeError(
-                f"GitHub API {method} {path} returned {response.status_code}: "
-                f"{response.text[:200]}"
+                f"GitHub API {method} {path} returned {response.status_code}: {response.text[:200]}"
             )
         if response.status_code == 404 or not response.content:
             return None if response.status_code == 404 else {}
@@ -62,17 +61,13 @@ class GitHubRepositoryPublisher:
         expected_status: int | tuple[int, ...] = 200,
         **kwargs: Any,
     ) -> dict[str, Any]:
-        payload = await self._request_json(
-            method, path, expected_status=expected_status, **kwargs
-        )
+        payload = await self._request_json(method, path, expected_status=expected_status, **kwargs)
         if not isinstance(payload, dict):
             raise RuntimeError("invalid GitHub response")
         return payload
 
     async def get_base_commit(self, repository_id: str, base_branch: str) -> str:
-        payload = await self._request(
-            "GET", f"/repos/{repository_id}/git/refs/heads/{base_branch}"
-        )
+        payload = await self._request("GET", f"/repos/{repository_id}/git/refs/heads/{base_branch}")
         return str(payload["object"]["sha"])
 
     async def create_branch(
@@ -173,9 +168,7 @@ class GitHubRepositoryPublisher:
                 params={"page": page_number, "per_page": GITHUB_PAGE_SIZE},
             )
             raw_runs = payload.get("check_runs", [])
-            if not isinstance(raw_runs, list) or not all(
-                isinstance(run, dict) for run in raw_runs
-            ):
+            if not isinstance(raw_runs, list) or not all(isinstance(run, dict) for run in raw_runs):
                 raise RuntimeError("invalid GitHub check-runs page")
             page_runs = list(raw_runs)
             runs.extend(page_runs)
@@ -197,10 +190,7 @@ class GitHubRepositoryPublisher:
 
         if not runs:
             return {"state": "none"}
-        states = {
-            str(run.get("conclusion") or run.get("status", "")).lower()
-            for run in runs
-        }
+        states = {str(run.get("conclusion") or run.get("status", "")).lower() for run in runs}
         if states == {"success"}:
             return {"state": "success"}
         if "failure" in states or "cancelled" in states or "timed_out" in states:
