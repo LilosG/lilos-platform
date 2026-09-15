@@ -8,12 +8,14 @@ agent run and projects them into a small cross-product lifecycle contract.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Literal
 from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from apps.api.app.growth.models import GrowthAction
 from apps.api.app.products.content.models import (
     ContentBrief,
     ContentItem,
@@ -44,6 +46,48 @@ class GrowthArtifactState:
 
 class GrowthArtifactLifecycleService:
     """Read canonical product state without duplicating product lifecycle rules."""
+
+    async def reconcile_waiting_actions(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        initiative_id: UUID,
+    ) -> int:
+        """Project canonical downstream lifecycle state into waiting Growth actions."""
+        actions = list(
+            await session.scalars(
+                select(GrowthAction).where(
+                    GrowthAction.organization_id == organization_id,
+                    GrowthAction.initiative_id == initiative_id,
+                    GrowthAction.status == "waiting_approval",
+                    GrowthAction.result_reference.is_not(None),
+                )
+            )
+        )
+        terminal_transitions = 0
+        now = datetime.now(UTC)
+        for action in actions:
+            reference = action.result_reference
+            if reference is None:
+                continue
+            state = await self.resolve(session, organization_id, reference)
+            action.safe_error_code = state.safe_code
+            if state.state == "succeeded":
+                action.status = "completed"
+                action.completed_at = now
+                action.safe_error_code = None
+                terminal_transitions += 1
+            elif state.state == "rejected":
+                action.status = "skipped"
+                action.completed_at = now
+                terminal_transitions += 1
+            elif state.state == "failed":
+                action.status = "failed"
+                action.completed_at = now
+                terminal_transitions += 1
+        if actions:
+            await session.flush()
+        return terminal_transitions
 
     async def resolve(
         self,
@@ -91,10 +135,16 @@ class GrowthArtifactLifecycleService:
         if item.status == "verified":
             return GrowthArtifactState("succeeded", item.status)
         if item.status == "rejected":
-            return GrowthArtifactState("rejected", item.status, "DOWNSTREAM_PROPOSAL_REJECTED")
+            return GrowthArtifactState(
+                "rejected", item.status, "DOWNSTREAM_PROPOSAL_REJECTED"
+            )
         if item.status == "failed":
             return GrowthArtifactState("failed", item.status, "DOWNSTREAM_EXECUTION_FAILED")
-        code = "DOWNSTREAM_RECONCILIATION_REQUIRED" if item.status == "reconciliation_required" else None
+        code = (
+            "DOWNSTREAM_RECONCILIATION_REQUIRED"
+            if item.status == "reconciliation_required"
+            else None
+        )
         return GrowthArtifactState("pending", item.status, code)
 
     async def _gbp_post(
@@ -109,7 +159,9 @@ class GrowthArtifactLifecycleService:
         if revision is None:
             return GrowthArtifactState("failed", "missing", "DOWNSTREAM_ARTIFACT_MISSING")
         if revision.status in {"rejected", "superseded"}:
-            return GrowthArtifactState("rejected", revision.status, "DOWNSTREAM_PROPOSAL_REJECTED")
+            return GrowthArtifactState(
+                "rejected", revision.status, "DOWNSTREAM_PROPOSAL_REJECTED"
+            )
         publication = await session.scalar(
             select(GBPPostPublication)
             .where(
@@ -150,7 +202,9 @@ class GrowthArtifactLifecycleService:
         if revision.status == "published":
             return GrowthArtifactState("succeeded", revision.status)
         if revision.status in {"rejected", "superseded"}:
-            return GrowthArtifactState("rejected", revision.status, "DOWNSTREAM_PROPOSAL_REJECTED")
+            return GrowthArtifactState(
+                "rejected", revision.status, "DOWNSTREAM_PROPOSAL_REJECTED"
+            )
         if revision.status == "failed":
             return GrowthArtifactState(
                 "failed",
@@ -179,7 +233,11 @@ class GrowthArtifactLifecycleService:
             return GrowthArtifactState("succeeded", item.status)
         if item.status in {"failed", "archived"}:
             return GrowthArtifactState("failed", item.status, "DOWNSTREAM_EXECUTION_FAILED")
-        code = "DOWNSTREAM_RECONCILIATION_REQUIRED" if item.status == "reconciliation_required" else None
+        code = (
+            "DOWNSTREAM_RECONCILIATION_REQUIRED"
+            if item.status == "reconciliation_required"
+            else None
+        )
         return GrowthArtifactState("pending", item.status, code)
 
     async def _content_brief(
@@ -211,7 +269,9 @@ class GrowthArtifactLifecycleService:
         if revision is None:
             return GrowthArtifactState("failed", "missing", "DOWNSTREAM_ARTIFACT_MISSING")
         if revision.status in {"rejected", "superseded"}:
-            return GrowthArtifactState("rejected", revision.status, "DOWNSTREAM_PROPOSAL_REJECTED")
+            return GrowthArtifactState(
+                "rejected", revision.status, "DOWNSTREAM_PROPOSAL_REJECTED"
+            )
         publication = await session.scalar(
             select(ContentPublication)
             .where(
@@ -250,7 +310,9 @@ class GrowthArtifactLifecycleService:
         if revision is None:
             return GrowthArtifactState("failed", "missing", "DOWNSTREAM_ARTIFACT_MISSING")
         if revision.status == "rejected":
-            return GrowthArtifactState("rejected", revision.status, "DOWNSTREAM_PROPOSAL_REJECTED")
+            return GrowthArtifactState(
+                "rejected", revision.status, "DOWNSTREAM_PROPOSAL_REJECTED"
+            )
         task = await session.scalar(
             select(SEOImplementationTask)
             .where(
