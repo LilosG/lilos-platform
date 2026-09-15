@@ -76,7 +76,7 @@ def test_complete_product_skill_and_sanctioned_tool_plane() -> None:
         "content.operator": 2,
         "reviews.operator": 2,
         "insights.cross_product": 2,
-        "growth.planner": 1,
+        "growth.planner": 2,
     }
     for skill in SKILLS.values():
         assert skill.version == expected_versions[skill.key]
@@ -419,7 +419,6 @@ def test_run_site_crawl_binds_a_crawl_run_to_the_workflow() -> None:
             {},
         )
 
-        # The job must be enqueued by enqueue_crawl, not by start_named.
         assert recorded["enqueue_job"] is False
         assert recorded["workflow_run_id"] == workflow_id
         assert recorded["website_id"] == website_id
@@ -487,10 +486,7 @@ def test_review_and_post_excerpt_budgets_fit_the_bounded_policy() -> None:
     )
 
     max_page = 50
-    # Text must not consume the whole budget: keys, references, timestamps and the
-    # summary object share it. Cap free text at 60% so a full page still fits.
     headroom = MAX_TOOL_RESULT_BYTES * 0.6
-    # Reviews carry one excerpt each; posts carry a provider summary and a draft body.
     assert max_page * REVIEW_BODY_EXCERPT_CHARACTERS <= headroom
     assert max_page * 2 * POST_TEXT_EXCERPT_CHARACTERS <= headroom
 
@@ -549,13 +545,10 @@ def test_gbp_post_tool_names_its_failure_causes() -> None:
 
     source = inspect.getsource(AgentToolService._tool_generate_gbp_post_proposal)
 
-    # Each failure mode the generator can raise becomes a named code.
     assert "AIProviderError" in source
     assert "AI_PROVIDER_" in source
     assert "GBP_LOCATION_NOT_FOUND" in source
     assert "GBP_POST_GROUNDING_REQUIRED" in source
-    # Translated into a denial, which the route reports with its safe message,
-    # rather than falling through to the generic failure handler.
     assert "AgentToolDeniedError" in source
 
 
@@ -566,7 +559,6 @@ def test_ai_provider_failures_are_reported_as_denials_not_generic_failures() -> 
     source = inspect.getsource(AgentToolService._tool_generate_gbp_post_proposal)
     provider_block = source[source.index("except AIProviderError") :]
 
-    # The category and safe message both survive into the reported code.
     assert "exc.category" in provider_block
     assert "exc.safe_message" in provider_block
 
@@ -586,16 +578,12 @@ def test_a_refused_tool_names_what_the_run_may_call_instead() -> None:
 
     message = str(denial.value)
     assert "this run may call only:" in message
-    # The sanctioned set is named in full, in a stable order.
     for sanctioned in SKILLS["gbp.operator"].required_tools:
         assert sanctioned in message
-    # And the refused tool is not presented as if it were allowed.
     assert "read_reviews_state" not in message.split("this run may call only:")[1]
 
 
 def test_the_named_set_is_exactly_the_skill_contract_not_the_whole_tool_plane() -> None:
-    # Disclosing the full tool plane here would hand the model a menu of calls
-    # that are refused for this run — the very probing this is meant to stop.
     run = cast(AgentRun, SimpleNamespace(skill_key="gbp.operator"))
     with pytest.raises(AgentToolDeniedError) as denial:
         AgentToolService._validate_skill_tool(run, "inspect_workflow")
@@ -607,7 +595,6 @@ def test_the_named_set_is_exactly_the_skill_contract_not_the_whole_tool_plane() 
 
 
 def test_an_unknown_skill_is_refused_without_naming_anything() -> None:
-    # No skill means no contract to quote; the refusal must not invent one.
     run = cast(AgentRun, SimpleNamespace(skill_key="not.a.skill"))
     with pytest.raises(AgentToolDeniedError) as denial:
         AgentToolService._validate_skill_tool(run, "read_gbp_state")
