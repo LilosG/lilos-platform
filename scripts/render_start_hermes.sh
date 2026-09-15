@@ -1,11 +1,14 @@
 #!/bin/sh
 set -eu
 
+: "${RENDER_GIT_COMMIT:?RENDER_GIT_COMMIT must be provided by Render}"
+export LILOS_RELEASE="${RENDER_GIT_COMMIT}"
 export HERMES_HOME="${HERMES_HOME:-/opt/data}"
 export HOME="/opt/data"
 export PATH="/command:/package/admin/s6/command:/opt/hermes/bin:/opt/hermes/.venv/bin:/opt/data/.local/bin:${PATH}"
 
 echo "[lilos-hermes] Render bootstrap starting"
+echo "[lilos-hermes] Platform release: ${LILOS_RELEASE}"
 /opt/hermes/docker/stage2-hook.sh
 
 if [ -z "${API_SERVER_KEY:-}" ]; then
