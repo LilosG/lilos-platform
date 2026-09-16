@@ -35,7 +35,12 @@ class ContentApprovalStageConflictError(ConflictError):
 
 class ContentPublicationRequiresApprovedRevisionError(ConflictError):
     code = "CONTENT_PUBLICATION_REQUIRES_APPROVED_REVISION"
-    public_message = "An approved revision and an active publishing target are required."
+    public_message = "An approved revision is required before publishing."
+
+
+class ContentPublicationFrontmatterIncompleteError(ConflictError):
+    code = "CONTENT_PUBLICATION_FRONTMATTER_INCOMPLETE"
+    public_message = "The approved revision is missing required fields for this website."
 
 
 class ContentTargetNotConfiguredError(ConflictError):
