@@ -9,7 +9,9 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
-from scripts.seed_publishing_target_contracts import CONTRACTS
+from scripts.seed_publishing_target_contracts import CONTRACTS as CONTRACTS
+
+__all__ = ["CONTRACTS", "contract_for_repository"]
 
 
 def contract_for_repository(repository_id: str) -> dict[str, Any]:
