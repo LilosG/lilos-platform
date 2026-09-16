@@ -36,7 +36,7 @@ from apps.api.app.products.content.models import (
     ContentRevision,
     PublishingTarget,
 )
-from apps.api.app.products.content.service import SEO_TITLE_MAXIMUM, ContentService
+from apps.api.app.products.content.service import ContentService, build_publishable_frontmatter
 
 _IMAGE_EXTENSIONS = {".avif", ".gif", ".jpeg", ".jpg", ".png", ".webp"}
 _ACTIVE_PUBLICATION_STATES = {
@@ -446,19 +446,25 @@ class ContentOperatorService:
     ) -> dict[str, object]:
         """Complete deterministic canonical metadata for legacy approved revisions.
 
-        Revisions created before canonical publish metadata was introduced can be
-        fully approved while lacking ``seo_title`` and ``publish_date``. Both are
-        recoverable without changing approved body copy: the SEO title has always
-        fallen back to the page title, and the revision creation date is the stable
-        date the current generator would have recorded. Target-specific required
+        Older approved revisions may predate canonical publish metadata. Rebuild
+        only the deterministic metadata that current draft generation would have
+        produced, using the same generator helper so legacy and current revisions
+        follow one contract. Approved body copy is not changed. Target-specific
         fields such as images remain explicit operator inputs.
         """
         canonical = dict(revision.frontmatter or {}) if revision is not None else {}
         title = str(canonical.get("title") or "").strip()
-        if title and not str(canonical.get("seo_title") or "").strip():
-            canonical["seo_title"] = title[:SEO_TITLE_MAXIMUM]
-        if revision is not None and not canonical.get("publish_date"):
-            canonical["publish_date"] = revision.created_at.date().isoformat()
+        if revision is not None and title:
+            generated = build_publishable_frontmatter(
+                title=title,
+                ai_output=None,
+                body=revision.body,
+                publish_date=revision.created_at.date(),
+            )
+            for key in ("description", "publish_date", "seo_title"):
+                existing = canonical.get(key)
+                if existing is None or (isinstance(existing, str) and not existing.strip()):
+                    canonical[key] = generated[key]
         if overrides:
             canonical.update(overrides)
         return canonical
