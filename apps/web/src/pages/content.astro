@@ -577,6 +577,13 @@ import "../styles/global.css";
               }
             });
             container.append(retry);
+          } else if (publication) {
+            const retryNote = document.createElement("p");
+            retryNote.className = "ui-text-secondary";
+            retryNote.textContent =
+              "The previous attempt is closed. Correct the publishing details below to start a new governed attempt.";
+            container.append(retryNote);
+            void renderPublishAction(container, detail);
           }
         }
       }
