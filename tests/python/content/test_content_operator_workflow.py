@@ -1,7 +1,9 @@
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any, cast
 from uuid import uuid4
 
+from apps.api.app.products.content.frontmatter_contract import FrontmatterContract
 from apps.api.app.products.content.operator_service import ContentOperatorService
 
 
@@ -82,3 +84,83 @@ def test_exhausted_publication_job_never_displays_as_publishing_forever() -> Non
     )
     assert summary["stage"] == "needs_attention"
     assert summary["publication_job_status"] == "dead_lettered"
+
+
+def test_legacy_approved_revision_gets_deterministic_publish_metadata() -> None:
+    revision = cast(
+        Any,
+        SimpleNamespace(
+            frontmatter={
+                "title": "Happy Hour in Little Italy, San Diego | Coco Maya",
+                "description": "A guide to Coco Maya happy hour in Little Italy.",
+            },
+            created_at=datetime(2026, 9, 16, 17, 45, tzinfo=UTC),
+        ),
+    )
+    contract = FrontmatterContract.from_document(
+        {
+            "field_names": {
+                "publish_date": "date",
+                "image_alt": "imageAlt",
+                "seo_title": "seoTitle",
+            },
+            "required": ["title", "seoTitle", "description", "date", "image", "imageAlt"],
+            "file_extensions": [".mdx"],
+        }
+    )
+
+    canonical = ContentOperatorService._canonical_for_publish(
+        revision,
+        {
+            "image": "/images/hh-chefs-wim-pizza.webp",
+            "image_alt": "happy hour at Coco Maya in Little Italy",
+        },
+    )
+    rendered = contract.render(canonical)
+
+    assert contract.missing_required(rendered) == ()
+    assert rendered["seoTitle"] == "Happy Hour in Little Italy, San Diego | Coco Maya"
+    assert rendered["date"] == "2026-09-16"
+    assert rendered["image"] == "/images/hh-chefs-wim-pizza.webp"
+    assert rendered["imageAlt"] == "happy hour at Coco Maya in Little Italy"
+
+
+def test_legacy_coco_maya_requirements_only_request_operator_image_fields() -> None:
+    revision = cast(
+        Any,
+        SimpleNamespace(
+            frontmatter={
+                "title": "Happy Hour in Little Italy, San Diego | Coco Maya",
+                "description": "A guide to Coco Maya happy hour in Little Italy.",
+            },
+            created_at=datetime(2026, 9, 16, 17, 45, tzinfo=UTC),
+        ),
+    )
+    target = cast(
+        Any,
+        SimpleNamespace(
+            id=uuid4(),
+            frontmatter_contract={
+                "field_names": {
+                    "publish_date": "date",
+                    "image_alt": "imageAlt",
+                    "seo_title": "seoTitle",
+                },
+                "required": [
+                    "title",
+                    "seoTitle",
+                    "description",
+                    "date",
+                    "image",
+                    "imageAlt",
+                ],
+                "file_extensions": [".mdx"],
+            },
+        ),
+    )
+
+    requirements = ContentOperatorService._requirements(target, revision)
+
+    assert requirements["missing"] == ["image", "imageAlt"]
+    assert requirements["requires_image"] is True
+    assert requirements["requires_image_alt"] is True
