@@ -73,9 +73,7 @@ async def test_vercel_preview_comment_cannot_authorize_a_merge() -> None:
     publisher = StubGitHubPublisher(
         check_pages=[
             {
-                "check_runs": [
-                    {"name": "Vercel Preview Comments", "conclusion": "success"}
-                ],
+                "check_runs": [{"name": "Vercel Preview Comments", "conclusion": "success"}],
                 "total_count": 1,
             }
         ],
@@ -91,9 +89,7 @@ async def test_failed_vercel_commit_status_blocks_merge() -> None:
     publisher = StubGitHubPublisher(
         check_pages=[
             {
-                "check_runs": [
-                    {"name": "Vercel Preview Comments", "conclusion": "success"}
-                ],
+                "check_runs": [{"name": "Vercel Preview Comments", "conclusion": "success"}],
                 "total_count": 1,
             }
         ],
