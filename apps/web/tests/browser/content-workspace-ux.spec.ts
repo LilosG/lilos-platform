@@ -139,7 +139,8 @@ test.describe("Content operator workflow", () => {
         rowDisplay: rowStyle.display,
         rowRadius: rowStyle.borderRadius,
         rowColumns: rowStyle.gridTemplateColumns,
-        nextBorder: nextStyle.borderLeftWidth,
+        nextBorderLeft: nextStyle.borderLeftWidth,
+        nextBorderTop: nextStyle.borderTopWidth,
       };
     });
 
@@ -148,6 +149,6 @@ test.describe("Content operator workflow", () => {
     expect(styles.rowDisplay).toBe("grid");
     expect(styles.rowRadius).not.toBe("0px");
     expect(styles.rowColumns).not.toBe("none");
-    expect(styles.nextBorder).not.toBe("0px");
+    expect([styles.nextBorderLeft, styles.nextBorderTop]).toContain("1px");
   });
 });
