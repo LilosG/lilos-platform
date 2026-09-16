@@ -211,8 +211,7 @@ class GitHubRepositoryPublisher:
         if not meaningful_runs and not raw_statuses:
             return {"state": "none"}
         states = {
-            str(run.get("conclusion") or run.get("status", "")).lower()
-            for run in meaningful_runs
+            str(run.get("conclusion") or run.get("status", "")).lower() for run in meaningful_runs
         }
         states.update(str(status.get("state") or "").lower() for status in raw_statuses)
         if states and states <= {"success", "neutral", "skipped"}:
