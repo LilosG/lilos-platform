@@ -7,6 +7,12 @@ from apps.api.app.products.content.frontmatter_contract import FrontmatterContra
 from apps.api.app.products.content.operator_service import ContentOperatorService
 
 
+LEGACY_BODY = (
+    "# Happy Hour\n\n"
+    "Enjoy rooftop happy hour in Little Italy with cocktails and shareable plates."
+)
+
+
 def _item(**overrides: object) -> Any:
     values: dict[str, object] = {
         "id": uuid4(),
@@ -93,7 +99,7 @@ def test_legacy_approved_revision_gets_all_deterministic_publish_metadata() -> N
             frontmatter={
                 "title": "Happy Hour in Little Italy, San Diego | Coco Maya",
             },
-            body="# Happy Hour\n\nEnjoy rooftop happy hour in Little Italy with cocktails and shareable plates.",
+            body=LEGACY_BODY,
             created_at=datetime(2026, 9, 16, 17, 45, tzinfo=UTC),
         ),
     )
@@ -135,7 +141,7 @@ def test_legacy_coco_maya_requirements_only_request_operator_image_fields() -> N
             frontmatter={
                 "title": "Happy Hour in Little Italy, San Diego | Coco Maya",
             },
-            body="# Happy Hour\n\nEnjoy rooftop happy hour in Little Italy with cocktails and shareable plates.",
+            body=LEGACY_BODY,
             created_at=datetime(2026, 9, 16, 17, 45, tzinfo=UTC),
         ),
     )
