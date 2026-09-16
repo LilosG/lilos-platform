@@ -17,6 +17,7 @@ from apps.api.app.integrations.models import IntegrationConnection
 from apps.api.app.products.content.contracts import ApprovalDecision, PublicationCreate
 from apps.api.app.products.content.errors import (
     ContentItemNotFoundError,
+    ContentPublicationFrontmatterIncompleteError,
     ContentPublicationIdempotencyConflictError,
     ContentPublicationNotAdvanceableError,
     ContentPublicationNotFoundError,
@@ -35,7 +36,7 @@ from apps.api.app.products.content.models import (
     ContentRevision,
     PublishingTarget,
 )
-from apps.api.app.products.content.service import ContentService
+from apps.api.app.products.content.service import SEO_TITLE_MAXIMUM, ContentService
 
 _IMAGE_EXTENSIONS = {".avif", ".gif", ".jpeg", ".jpg", ".png", ".webp"}
 _ACTIVE_PUBLICATION_STATES = {
@@ -257,10 +258,10 @@ class ContentOperatorService:
         target = self._select_target(item, targets, command.publishing_target_id)
         overrides = self._frontmatter_overrides(command)
         contract = FrontmatterContract.from_document(target.frontmatter_contract)
-        canonical = {**(revision.frontmatter or {}), **overrides}
+        canonical = self._canonical_for_publish(revision, overrides)
         rendered = contract.render(canonical)
         if contract.missing_required(rendered):
-            raise ContentPublicationRequiresApprovedRevisionError
+            raise ContentPublicationFrontmatterIncompleteError
         target_path = self._target_path(target, item.slug, contract)
         run_key = f"content-publish-{command.idempotency_key}"[:128]
         run = await self.execution.start_named(
@@ -439,6 +440,30 @@ class ContentOperatorService:
         return targets[0]
 
     @staticmethod
+    def _canonical_for_publish(
+        revision: ContentRevision | None,
+        overrides: dict[str, object] | None = None,
+    ) -> dict[str, object]:
+        """Complete deterministic canonical metadata for legacy approved revisions.
+
+        Revisions created before canonical publish metadata was introduced can be
+        fully approved while lacking ``seo_title`` and ``publish_date``. Both are
+        recoverable without changing approved body copy: the SEO title has always
+        fallen back to the page title, and the revision creation date is the stable
+        date the current generator would have recorded. Target-specific required
+        fields such as images remain explicit operator inputs.
+        """
+        canonical = dict(revision.frontmatter or {}) if revision is not None else {}
+        title = str(canonical.get("title") or "").strip()
+        if title and not str(canonical.get("seo_title") or "").strip():
+            canonical["seo_title"] = title[:SEO_TITLE_MAXIMUM]
+        if revision is not None and not canonical.get("publish_date"):
+            canonical["publish_date"] = revision.created_at.date().isoformat()
+        if overrides:
+            canonical.update(overrides)
+        return canonical
+
+    @staticmethod
     def _frontmatter_overrides(command: OperatorPublishRequest) -> dict[str, object]:
         overrides: dict[str, object] = {}
         if command.image and command.image.strip():
@@ -468,8 +493,8 @@ class ContentOperatorService:
                 "file_extensions": [],
             }
         contract = FrontmatterContract.from_document(target.frontmatter_contract)
-        canonical = revision.frontmatter if revision is not None else {}
-        rendered = contract.render(canonical or {})
+        canonical = ContentOperatorService._canonical_for_publish(revision)
+        rendered = contract.render(canonical)
         missing = list(contract.missing_required(rendered))
         image_key = contract.target_key("image")
         image_alt_key = contract.target_key("image_alt")
