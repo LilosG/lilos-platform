@@ -114,12 +114,18 @@ test.describe("Content operator workflow", () => {
       row.className = "content-row";
       const main = document.createElement("div");
       main.className = "content-row__main";
-      main.append(document.createElement("strong"), document.createElement("span"));
+      main.append(
+        document.createElement("strong"),
+        document.createElement("span"),
+      );
       const stage = document.createElement("div");
       stage.className = "content-row__stage";
       const next = document.createElement("div");
       next.className = "content-row__next";
-      next.append(document.createElement("span"), document.createElement("strong"));
+      next.append(
+        document.createElement("span"),
+        document.createElement("strong"),
+      );
       row.append(main, stage, next);
       list.append(row);
       region.append(list);
@@ -144,5 +150,4 @@ test.describe("Content operator workflow", () => {
     expect(styles.rowColumns).not.toBe("none");
     expect(styles.nextBorder).not.toBe("0px");
   });
-
 });
