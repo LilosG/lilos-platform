@@ -3,9 +3,8 @@ from types import SimpleNamespace
 from typing import Any, cast
 from uuid import uuid4
 
-from apps.api.app.products.content.frontmatter_contract import FrontmatterContract
 from apps.api.app.products.content.operator_service import ContentOperatorService
-
+from apps.api.app.products.content.frontmatter_contract import FrontmatterContract
 
 LEGACY_BODY = (
     "# Happy Hour\n\nEnjoy rooftop happy hour in Little Italy with cocktails and shareable plates."
