@@ -5,6 +5,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request, Response, status
 from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.app.access_control.enums import ScopeType
@@ -14,6 +15,7 @@ from apps.api.app.authorization.contracts import AuthorizationDecision
 from apps.api.app.authorization.dependencies import require_authorization
 from apps.api.app.database.session import get_database_session
 from apps.api.app.errors import request_correlation_id
+from apps.api.app.execution.models import Job, WorkflowRun
 from apps.api.app.products.content.contracts import ApprovalDecision
 from apps.api.app.products.content.operator_service import (
     ContentOperatorService,
@@ -161,6 +163,36 @@ async def publish_content_item(
         actor_id=principal.platform_user_id,
         correlation_id=request_correlation_id(request),
     )
+
+    # The publication row must exist before the worker can see the run. Attach
+    # its authoritative identifier, then expose the same run to the durable
+    # queue. enqueue_run_job is idempotent, so replaying the publish request
+    # cannot create a second worker job.
+    run = await session.scalar(
+        select(WorkflowRun).where(
+            WorkflowRun.organization_id == organization_id,
+            WorkflowRun.id == publication.workflow_run_id,
+        )
+    )
+    if run is None:
+        raise RuntimeError("Content publication workflow run is missing")
+    run.input_document = {
+        **(run.input_document or {}),
+        "publication_id": str(publication.id),
+    }
+    await service.execution.enqueue_run_job(session, run)
+    job = await session.scalar(
+        select(Job).where(
+            Job.organization_id == organization_id,
+            Job.workflow_run_id == run.id,
+            Job.idempotency_key == f"run:{run.id}",
+        )
+    )
+    if job is None:
+        raise RuntimeError("Content publication worker job was not created")
+    job.max_attempts = 30
+    await session.flush()
+
     return {
         "data": {
             "id": str(publication.id),

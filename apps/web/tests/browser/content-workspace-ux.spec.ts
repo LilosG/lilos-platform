@@ -83,26 +83,20 @@ test.describe("Content operator workflow", () => {
     }
   });
 
-  test("editorial document styles remain readable on a narrow viewport", async ({
+  test("the actual Content workspace remains usable on a narrow viewport", async ({
     page,
   }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/content");
-    const styles = await page.evaluate(() => {
-      const workspace = document.createElement("div");
-      workspace.className = "content-editorial-workspace";
-      const documentBody = document.createElement("article");
-      documentBody.className = "content-document";
-      document.body.append(workspace, documentBody);
-      const display = getComputedStyle(workspace).display;
-      const columns = getComputedStyle(workspace).gridTemplateColumns;
-      const maxWidth = getComputedStyle(documentBody).maxWidth;
-      workspace.remove();
-      documentBody.remove();
-      return { display, columns, maxWidth };
+    await page.locator("#content-workspace").evaluate((element) => {
+      (element as HTMLElement).hidden = false;
     });
-    expect(styles.display).toBe("grid");
-    expect(styles.columns.split(" ")).toHaveLength(1);
-    expect(styles.maxWidth).not.toBe("none");
+    await expect(page.locator(".content-summary")).toBeVisible();
+    await expect(page.locator(".content-filters")).toBeVisible();
+    const widths = await page.evaluate(() => ({
+      client: document.documentElement.clientWidth,
+      scroll: document.documentElement.scrollWidth,
+    }));
+    expect(widths.scroll).toBeLessThanOrEqual(widths.client + 1);
   });
 });
