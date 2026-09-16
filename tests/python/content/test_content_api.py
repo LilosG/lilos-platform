@@ -70,7 +70,10 @@ def test_content_operations_keep_revision_and_publication_bound_to_item(
             headers=HEADERS,
             json={
                 "body": f"# Example {suffix}\n\nUseful local information.",
-                "frontmatter": {"title": f"Example {suffix}"},
+                "frontmatter": {
+                    "title": f"Example {suffix}",
+                    "description": f"Useful local information for Example {suffix}",
+                },
                 "created_by_type": "user",
                 "approved_fact_revision_ids": [str(fact_id)],
             },
