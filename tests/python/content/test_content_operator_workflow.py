@@ -8,8 +8,7 @@ from apps.api.app.products.content.operator_service import ContentOperatorServic
 
 
 LEGACY_BODY = (
-    "# Happy Hour\n\n"
-    "Enjoy rooftop happy hour in Little Italy with cocktails and shareable plates."
+    "# Happy Hour\n\nEnjoy rooftop happy hour in Little Italy with cocktails and shareable plates."
 )
 
 
