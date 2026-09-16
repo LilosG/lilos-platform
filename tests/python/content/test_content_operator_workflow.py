@@ -86,14 +86,14 @@ def test_exhausted_publication_job_never_displays_as_publishing_forever() -> Non
     assert summary["publication_job_status"] == "dead_lettered"
 
 
-def test_legacy_approved_revision_gets_deterministic_publish_metadata() -> None:
+def test_legacy_approved_revision_gets_all_deterministic_publish_metadata() -> None:
     revision = cast(
         Any,
         SimpleNamespace(
             frontmatter={
                 "title": "Happy Hour in Little Italy, San Diego | Coco Maya",
-                "description": "A guide to Coco Maya happy hour in Little Italy.",
             },
+            body="# Happy Hour\n\nEnjoy rooftop happy hour in Little Italy with cocktails and shareable plates.",
             created_at=datetime(2026, 9, 16, 17, 45, tzinfo=UTC),
         ),
     )
@@ -120,6 +120,9 @@ def test_legacy_approved_revision_gets_deterministic_publish_metadata() -> None:
 
     assert contract.missing_required(rendered) == ()
     assert rendered["seoTitle"] == "Happy Hour in Little Italy, San Diego | Coco Maya"
+    assert rendered["description"] == (
+        "Enjoy rooftop happy hour in Little Italy with cocktails and shareable plates."
+    )
     assert rendered["date"] == "2026-09-16"
     assert rendered["image"] == "/images/hh-chefs-wim-pizza.webp"
     assert rendered["imageAlt"] == "happy hour at Coco Maya in Little Italy"
@@ -131,8 +134,8 @@ def test_legacy_coco_maya_requirements_only_request_operator_image_fields() -> N
         SimpleNamespace(
             frontmatter={
                 "title": "Happy Hour in Little Italy, San Diego | Coco Maya",
-                "description": "A guide to Coco Maya happy hour in Little Italy.",
             },
+            body="# Happy Hour\n\nEnjoy rooftop happy hour in Little Italy with cocktails and shareable plates.",
             created_at=datetime(2026, 9, 16, 17, 45, tzinfo=UTC),
         ),
     )
