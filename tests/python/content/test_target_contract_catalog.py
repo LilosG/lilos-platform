@@ -10,7 +10,10 @@ import pytest
 
 from apps.api.app.products.content.frontmatter_contract import FrontmatterContract
 from apps.api.app.products.content.service import build_publishable_frontmatter
-from scripts.seed_publishing_target_contracts import CONTRACTS
+from apps.api.app.products.content.target_contract_catalog import (
+    CONTRACTS,
+    contract_for_repository,
+)
 
 GENERATED = build_publishable_frontmatter(
     title="Panel Upgrades in Carlsbad",
@@ -147,3 +150,20 @@ def test_seo_title_is_emitted_only_where_the_schema_declares_it() -> None:
     rendered = wheyland.render(GENERATED)
     assert "seo_title" not in rendered
     assert "seoTitle" not in rendered
+
+
+def test_runtime_catalog_returns_an_isolated_verified_contract() -> None:
+    contract = contract_for_repository("LilosG/coco-maya")
+
+    assert contract["required"] == [
+        "title",
+        "seoTitle",
+        "description",
+        "date",
+        "image",
+        "imageAlt",
+    ]
+    contract["required"].append("mutated")
+
+    assert "mutated" not in contract_for_repository("LilosG/coco-maya")["required"]
+    assert contract_for_repository("unknown/repository") == {}
