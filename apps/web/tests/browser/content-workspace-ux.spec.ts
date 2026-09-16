@@ -49,9 +49,13 @@ test.describe("Content operator workflow", () => {
   }) => {
     await page.goto("/content");
     await expect(page.locator("#new-item")).toHaveText("New content item");
+    const agentAction = page.locator(
+      'button[data-product-agent-workflow="agent.content"]',
+    );
+    await expect(agentAction).toHaveText("Run Content agent");
     await expect(
       page.locator('a[href="/automations?agent=agent.content"]'),
-    ).toHaveText("Run Content agent");
+    ).toHaveCount(0);
     await expect(page.locator(".content-filters button")).toHaveText([
       "Active",
       "Publishing",
