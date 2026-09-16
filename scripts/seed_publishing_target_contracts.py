@@ -23,7 +23,22 @@ from sqlalchemy import select
 
 from apps.api.app.config import Settings
 from apps.api.app.database.runtime import create_database_runtime
+from apps.api.app.integrations.models import IntegrationConnection, Provider
+from apps.api.app.locations.models import Location
+from apps.api.app.organizations.models import Organization
 from apps.api.app.products.content.models import PublishingTarget
+
+# Standalone seed processes do not import the application model graph. Register the
+# tables referenced by PublishingTarget's composite foreign key before SQLAlchemy
+# sorts mapper dependencies during a flush. This mirrors the explicit model
+# registration used by the other production seed entrypoints.
+assert (
+    PublishingTarget.metadata
+    is IntegrationConnection.metadata
+    is Provider.metadata
+    is Location.metadata
+    is Organization.metadata
+)
 
 # canonical name -> the key that client's schema declares.
 # Verified against src/content/config.ts in each repository on 2026-08-27.
