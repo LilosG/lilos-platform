@@ -1441,6 +1441,10 @@ class ContentService:
         )
         if connection is None or connection.status != "connected":
             raise ContentTargetNotConfiguredError
+        from apps.api.app.products.content.target_contract_catalog import (
+            contract_for_repository,
+        )
+
         target = PublishingTarget(
             organization_id=organization_id,
             connection_id=connection.id,
@@ -1450,6 +1454,7 @@ class ContentService:
             base_branch=command.base_branch,
             allowed_path_prefix=command.allowed_path_prefix,
             deployment_target_reference=command.deployment_target_reference,
+            frontmatter_contract=contract_for_repository(command.repository_id),
             status="active",
             version=1,
         )

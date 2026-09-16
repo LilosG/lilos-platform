@@ -103,4 +103,52 @@ test.describe("Content operator workflow", () => {
     }));
     expect(widths.scroll).toBeLessThanOrEqual(widths.client + 1);
   });
+  test("client-rendered pipeline rows receive their card layout", async ({
+    page,
+  }) => {
+    await page.goto("/content");
+    const styles = await page.locator("#content-list").evaluate((region) => {
+      const list = document.createElement("div");
+      list.className = "content-list";
+      const row = document.createElement("button");
+      row.className = "content-row";
+      const main = document.createElement("div");
+      main.className = "content-row__main";
+      main.append(
+        document.createElement("strong"),
+        document.createElement("span"),
+      );
+      const stage = document.createElement("div");
+      stage.className = "content-row__stage";
+      const next = document.createElement("div");
+      next.className = "content-row__next";
+      next.append(
+        document.createElement("span"),
+        document.createElement("strong"),
+      );
+      row.append(main, stage, next);
+      list.append(row);
+      region.append(list);
+
+      const listStyle = getComputedStyle(list);
+      const rowStyle = getComputedStyle(row);
+      const nextStyle = getComputedStyle(next);
+      return {
+        listDisplay: listStyle.display,
+        listGap: listStyle.gap,
+        rowDisplay: rowStyle.display,
+        rowRadius: rowStyle.borderRadius,
+        rowColumns: rowStyle.gridTemplateColumns,
+        nextBorderLeft: nextStyle.borderLeftWidth,
+        nextBorderTop: nextStyle.borderTopWidth,
+      };
+    });
+
+    expect(styles.listDisplay).toBe("grid");
+    expect(styles.listGap).not.toBe("normal");
+    expect(styles.rowDisplay).toBe("grid");
+    expect(styles.rowRadius).not.toBe("0px");
+    expect(styles.rowColumns).not.toBe("none");
+    expect([styles.nextBorderLeft, styles.nextBorderTop]).toContain("1px");
+  });
 });

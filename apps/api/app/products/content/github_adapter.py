@@ -192,12 +192,31 @@ class GitHubRepositoryPublisher:
         else:
             raise RuntimeError("GitHub check-runs pagination exceeded safety limit")
 
-        if not runs:
+        status_payload = await self._request(
+            "GET", f"/repos/{repository_id}/commits/{revision_id}/status"
+        )
+        raw_statuses = status_payload.get("statuses", [])
+        if not isinstance(raw_statuses, list) or not all(
+            isinstance(status, dict) for status in raw_statuses
+        ):
+            raise RuntimeError("invalid GitHub commit statuses response")
+
+        # Vercel's Preview Comments check confirms only that a PR comment was
+        # updated. The actual deployment result is a GitHub commit status.
+        meaningful_runs = [
+            run
+            for run in runs
+            if str(run.get("name") or "").strip().lower() != "vercel preview comments"
+        ]
+        if not meaningful_runs and not raw_statuses:
             return {"state": "none"}
-        states = {str(run.get("conclusion") or run.get("status", "")).lower() for run in runs}
-        if states == {"success"}:
+        states = {
+            str(run.get("conclusion") or run.get("status", "")).lower() for run in meaningful_runs
+        }
+        states.update(str(status.get("state") or "").lower() for status in raw_statuses)
+        if states and states <= {"success", "neutral", "skipped"}:
             return {"state": "success"}
-        if "failure" in states or "cancelled" in states or "timed_out" in states:
+        if states & {"failure", "error", "cancelled", "timed_out", "action_required"}:
             return {"state": "failed"}
         return {"state": "pending"}
 

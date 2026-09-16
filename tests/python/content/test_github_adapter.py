@@ -10,11 +10,15 @@ from apps.api.app.products.content.github_adapter import GitHubRepositoryPublish
 
 class StubGitHubPublisher(GitHubRepositoryPublisher):
     def __init__(
-        self, check_pages: list[dict[str, Any]], deployment_pages: list[list[dict[str, Any]]]
+        self,
+        check_pages: list[dict[str, Any]],
+        deployment_pages: list[list[dict[str, Any]]],
+        commit_status: dict[str, Any] | None = None,
     ) -> None:
         super().__init__(access_token="token")
         self.check_pages = list(check_pages)
         self.deployment_pages = list(deployment_pages)
+        self.commit_status = commit_status or {"statuses": [{"state": "success"}]}
         self.calls: list[tuple[str, str, dict[str, Any]]] = []
 
     async def _request(
@@ -22,6 +26,8 @@ class StubGitHubPublisher(GitHubRepositoryPublisher):
     ) -> dict[str, Any]:
         del expected_status
         self.calls.append((method, path, kwargs))
+        if path.endswith("/status"):
+            return self.commit_status
         return self.check_pages.pop(0)
 
     async def _request_json(
@@ -53,12 +59,45 @@ async def test_checks_and_deployments_read_all_github_pages() -> None:
     }
     assert publisher.calls[0][2]["params"] == {"page": 1, "per_page": 100}
     assert publisher.calls[1][2]["params"] == {"page": 2, "per_page": 100}
-    assert publisher.calls[2][2]["params"] == {
+    assert publisher.calls[2][1].endswith("/status")
+    assert publisher.calls[3][2]["params"] == {
         "sha": "revision",
         "page": 1,
         "per_page": 100,
     }
-    assert publisher.calls[3][2]["params"]["page"] == 2
+    assert publisher.calls[4][2]["params"]["page"] == 2
+
+
+@pytest.mark.anyio
+async def test_vercel_preview_comment_cannot_authorize_a_merge() -> None:
+    publisher = StubGitHubPublisher(
+        check_pages=[
+            {
+                "check_runs": [{"name": "Vercel Preview Comments", "conclusion": "success"}],
+                "total_count": 1,
+            }
+        ],
+        deployment_pages=[],
+        commit_status={"statuses": []},
+    )
+
+    assert await publisher.checks("owner/repo", "revision") == {"state": "none"}
+
+
+@pytest.mark.anyio
+async def test_failed_vercel_commit_status_blocks_merge() -> None:
+    publisher = StubGitHubPublisher(
+        check_pages=[
+            {
+                "check_runs": [{"name": "Vercel Preview Comments", "conclusion": "success"}],
+                "total_count": 1,
+            }
+        ],
+        deployment_pages=[],
+        commit_status={"statuses": [{"context": "Vercel", "state": "failure"}]},
+    )
+
+    assert await publisher.checks("owner/repo", "revision") == {"state": "failed"}
 
 
 @pytest.mark.anyio
