@@ -37,6 +37,7 @@ from apps.api.app.products.content.models import (
     ContentRevision,
     PublishingTarget,
 )
+from apps.api.app.products.content.service import build_publishable_frontmatter
 
 logger = logging.getLogger(__name__)
 
@@ -227,6 +228,34 @@ async def _reconcile_phase(
         return JobOutcome(result="retryable_failure", safe_error="PUBLICATION_PHASE_REREAD_FAILED")
 
 
+def _canonical_frontmatter(
+    revision: ContentRevision,
+    overrides: dict[str, object],
+) -> dict[str, object]:
+    """Rebuild deterministic metadata for legacy revisions before worker validation.
+
+    The operator preflight accepts legacy approved revisions by deriving the same
+    metadata that modern draft generation stores. The worker must reconstruct
+    those values identically or it can accept a publication at the API boundary
+    and then reject it as incomplete during execution.
+    """
+    canonical = dict(revision.frontmatter or {})
+    title = str(canonical.get("title") or "").strip()
+    if title:
+        generated = build_publishable_frontmatter(
+            title=title,
+            ai_output=None,
+            body=revision.body,
+            publish_date=revision.created_at.date(),
+        )
+        for key in ("description", "publish_date", "seo_title"):
+            existing = canonical.get(key)
+            if existing is None or (isinstance(existing, str) and not existing.strip()):
+                canonical[key] = generated[key]
+    canonical.update(overrides)
+    return canonical
+
+
 async def _prepare_pull_request(
     session: AsyncSession,
     publication: ContentPublication,
@@ -246,7 +275,7 @@ async def _prepare_pull_request(
                 "CONTENT_TARGET_PATH_UNSUPPORTED",
                 path_rejection,
             )
-        canonical = {**(revision.frontmatter or {}), **overrides}
+        canonical = _canonical_frontmatter(revision, overrides)
         rendered = contract.render(canonical)
         missing = contract.missing_required(rendered)
         if missing:
