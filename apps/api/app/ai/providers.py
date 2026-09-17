@@ -162,9 +162,7 @@ def _extract_content_payload(content_text: str) -> dict[str, Any]:
     return parsed
 
 
-def _validate_article_payload(
-    payload: dict[str, Any], input_document: dict[str, Any]
-) -> list[str]:
+def _validate_article_payload(payload: dict[str, Any], input_document: dict[str, Any]) -> list[str]:
     """Deterministic minimum bar for AI-generated local SEO articles."""
     if not _is_article_content_type(input_document.get("content_type")):
         return []
@@ -186,11 +184,17 @@ def _validate_article_payload(
         errors.append("article_internal_links_missing")
 
     faqs = payload.get("faqs")
-    valid_faqs = [
-        faq
-        for faq in faqs
-        if isinstance(faq, dict) and str(faq.get("question") or "").strip() and str(faq.get("answer") or "").strip()
-    ] if isinstance(faqs, list) else []
+    valid_faqs = (
+        [
+            faq
+            for faq in faqs
+            if isinstance(faq, dict)
+            and str(faq.get("question") or "").strip()
+            and str(faq.get("answer") or "").strip()
+        ]
+        if isinstance(faqs, list)
+        else []
+    )
     if len(valid_faqs) < _ARTICLE_MINIMUM_FAQS:
         errors.append("article_faq_depth_missing")
 
