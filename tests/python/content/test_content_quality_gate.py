@@ -59,7 +59,10 @@ def _input_document() -> dict[str, object]:
                     "url": "/happy-hour/",
                     "title": "Happy Hour in Little Italy San Diego",
                     "h1": "Rooftop Happy Hour",
-                    "body_text": "Weekday happy hour details and current first-party menu information.",
+                    "body_text": (
+                        "Weekday happy hour details and current first-party "
+                        "menu information."
+                    ),
                 }
             ]
         },
