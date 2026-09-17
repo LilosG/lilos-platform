@@ -34,7 +34,19 @@ _HTTP_ERROR_CATEGORIES: dict[int, tuple[str, str]] = {
 }
 
 _ARTICLE_CONTENT_TYPES = frozenset(
-    {"article", "blog", "blog_post", "blog-post", "guide", "local_guide", "local-guide"}
+    {
+        "article",
+        "blog",
+        "blog_post",
+        "blog-post",
+        "guide",
+        "local_guide",
+        "local-guide",
+        "page",
+        "landing",
+        "landing_page",
+        "landing-page",
+    }
 )
 _ARTICLE_MINIMUM_WORDS = 850
 _ARTICLE_MINIMUM_H2S = 6
@@ -272,8 +284,6 @@ class OpenRouterProvider:
         prompt = _build_prompt(task_key, input_document)
         max_tokens = min(maximum_tokens, self._max_output_tokens)
 
-        # Enforce the task's maximum latency bound (when provided) against the
-        # provider's configured ceiling.
         if maximum_latency_ms is not None and maximum_latency_ms > 0:
             timeout_seconds = min(self._timeout, maximum_latency_ms / 1000)
         else:
@@ -299,9 +309,6 @@ class OpenRouterProvider:
                         "max_tokens": max_tokens,
                         "temperature": 0.7,
                         "response_format": {"type": "json_object"},
-                        # Ask OpenRouter to include provider-accounted usage and
-                        # USD cost in the response. This avoids maintaining a
-                        # stale pricing table inside LILOs.
                         "usage": {"include": True},
                     },
                 )
@@ -375,11 +382,6 @@ class OpenRouterProvider:
             raise AIProviderError("provider", error.reason) from None
 
         if task_key == "gbp.generate_post" and _looks_like_review_response(draft):
-            # A customer review may ground a Local Post, but the Local Post is
-            # public marketing content for prospective customers — never a reply
-            # addressed back to the reviewer. If the model drifts into review-
-            # response voice, use the already-governed manual fallback rather
-            # than persist a bad proposal for an operator to discover later.
             fallback = " ".join(str(input_document.get("manual_fallback") or "").split())
             if not fallback:
                 raise AIProviderError(
@@ -394,7 +396,6 @@ class OpenRouterProvider:
             )
             draft = fallback[:1200].rstrip()
 
-        # Usage metadata. OpenRouter returns request cost in USD as usage.cost.
         usage = body.get("usage", {}) or {}
         input_tokens = usage.get("prompt_tokens")
         output_tokens = usage.get("completion_tokens")
@@ -402,7 +403,6 @@ class OpenRouterProvider:
         provider_cost_usd = usage.get("cost")
         cost_microunits: int | None = None
         if isinstance(provider_cost_usd, (int, float)) and provider_cost_usd >= 0:
-            # LILOs monetary microunits are millionths of one USD.
             cost_microunits = int(round(float(provider_cost_usd) * 1_000_000))
 
         provider_model = str(body.get("model", model))
@@ -443,7 +443,6 @@ _SYSTEM_PROMPT = (
 
 
 def _format_governed_facts(facts: list[dict[str, object]]) -> str:
-    """Format resolved governed facts for inclusion in the AI prompt."""
     if not facts:
         return ""
     lines: list[str] = []
@@ -456,7 +455,6 @@ def _format_governed_facts(facts: list[dict[str, object]]) -> str:
 
 
 def _looks_like_review_response(draft: str) -> bool:
-    """Detect direct-to-reviewer reply language that is invalid for a Local Post."""
     normalized = " ".join(draft.casefold().split())
     if not normalized:
         return False
@@ -491,7 +489,6 @@ def _looks_like_review_response(draft: str) -> bool:
 
 
 def _build_prompt(task_key: str, input_document: dict[str, Any]) -> str:
-    """Build a task-specific prompt from the input document."""
     audience = str(input_document.get("audience", "general"))
     intent = str(input_document.get("intent", "inform"))
     rating = input_document.get("rating")
@@ -696,7 +693,6 @@ def _build_prompt(task_key: str, input_document: dict[str, Any]) -> str:
         parts.append("\nReturn ONLY a JSON object with the key 'draft'.")
         return "\n".join(parts)
 
-    # Generic fallback for any task
     return (
         f"Task: {task_key}\n\n"
         f"Input: {json.dumps(input_document, default=str)}\n\n"
