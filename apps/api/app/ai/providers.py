@@ -556,8 +556,14 @@ def _build_prompt(task_key: str, input_document: dict[str, Any]) -> str:
         facts_section = _format_governed_facts(governed_facts) if governed_facts else ""
         knowledge = _content_knowledge_for_prompt(input_document.get("knowledge"))
         parts = [
-            "Write a source-backed website content draft for the supplied audience and search intent.",
-            "The goal is a useful, authoritative page for a real local customer, not generic SEO filler.",
+            (
+                "Write a source-backed website content draft for the supplied audience "
+                "and search intent."
+            ),
+            (
+                "The goal is a useful, authoritative page for a real local customer, "
+                "not generic SEO filler."
+            ),
         ]
         if content_title:
             parts.append(f"\nTitle: {content_title}")
@@ -582,24 +588,64 @@ def _build_prompt(task_key: str, input_document: dict[str, Any]) -> str:
             parts.extend(
                 [
                     "\nARTICLE QUALITY CONTRACT:",
-                    "- Write roughly 1,000–1,300 substantive words. Do not pad with generic filler.",
-                    "- Do NOT put an H1 in the markdown body. The site template renders the frontmatter title as the single H1.",
-                    "- Use at least six descriptive H2 sections, with H3s only where they improve scanability.",
-                    "- Make section headings specific to the search intent and local context; avoid generic headings such as 'About Us', 'Overview', or 'Conclusion'.",
-                    "- Answer the primary search intent near the beginning, then add decision-useful depth, comparisons, planning details, and first-party expertise supported by the supplied sources.",
-                    "- Include at least three natural internal markdown links to relevant first-party URLs present in SOURCE-BACKED WEBSITE AND LOCAL KNOWLEDGE.",
-                    "- Use neighborhood, city, street, landmark, menu, service, hours, and other local details only when they are present in approved facts or source-backed knowledge.",
-                    "- Do not keyword-stuff. Local/service terms should appear naturally in useful headings and explanatory copy.",
-                    "- Do not create a generic business-description section when a query-specific section can provide more value.",
-                    "- FAQs must answer actual local customer questions and add information beyond repeating the article body.",
-                    "\nReturn ONLY one JSON object with these keys: `draft`, `meta_description`, `seo_title`, `faqs`, `related_services`, `service_areas`, `tags`, and `category`. `faqs` must contain three to six objects with `question` and `answer`. `meta_description` must be one useful sentence under 155 characters. `seo_title` must be under 60 characters. Do not include frontmatter inside `draft`.",
+                    (
+                        "- Write roughly 1,000–1,300 substantive words. Do not pad with "
+                        "generic filler."
+                    ),
+                    (
+                        "- Do NOT put an H1 in the markdown body. The site template renders "
+                        "the frontmatter title as the single H1."
+                    ),
+                    (
+                        "- Use at least six descriptive H2 sections, with H3s only where "
+                        "they improve scanability."
+                    ),
+                    (
+                        "- Make section headings specific to the search intent and local context; "
+                        "avoid generic headings such as 'About Us', 'Overview', or 'Conclusion'."
+                    ),
+                    (
+                        "- Answer the primary search intent near the beginning, then add "
+                        "decision-useful depth, comparisons, planning details, and first-party "
+                        "expertise supported by the supplied sources."
+                    ),
+                    (
+                        "- Include at least three natural internal markdown links to relevant "
+                        "first-party URLs present in SOURCE-BACKED WEBSITE AND LOCAL KNOWLEDGE."
+                    ),
+                    (
+                        "- Use neighborhood, city, street, landmark, menu, service, hours, and "
+                        "other local details only when they are present in approved facts or "
+                        "source-backed knowledge."
+                    ),
+                    (
+                        "- Do not keyword-stuff. Local/service terms should appear naturally in "
+                        "useful headings and explanatory copy."
+                    ),
+                    (
+                        "- Do not create a generic business-description section when a "
+                        "query-specific section can provide more value."
+                    ),
+                    (
+                        "- FAQs must answer actual local customer questions and add information "
+                        "beyond repeating the article body."
+                    ),
+                    (
+                        "\nReturn ONLY one JSON object with these keys: `draft`, "
+                        "`meta_description`, `seo_title`, `faqs`, `related_services`, "
+                        "`service_areas`, `tags`, and `category`. `faqs` must contain three to "
+                        "six objects with `question` and `answer`. `meta_description` must be one "
+                        "useful sentence under 155 characters. `seo_title` must be under 60 "
+                        "characters. Do not include frontmatter inside `draft`."
+                    ),
                 ]
             )
         else:
             parts.append(
-                "\nProduce a well-structured professional draft using only the supplied facts and knowledge. "
-                "Return ONLY one JSON object with the keys `draft`, `meta_description`, `seo_title`, "
-                "`faqs`, `related_services`, `service_areas`, `tags`, and `category`."
+                "\nProduce a well-structured professional draft using only the supplied facts "
+                "and knowledge. Return ONLY one JSON object with the keys `draft`, "
+                "`meta_description`, `seo_title`, `faqs`, `related_services`, `service_areas`, "
+                "`tags`, and `category`."
             )
         return "\n".join(parts)
 
