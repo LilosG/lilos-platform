@@ -274,6 +274,23 @@ class GitHubRepositoryPublisher:
             if str(deployment.get("environment") or "").lower() == "production"
         ]
         if not production:
+            status_payload = await self._request(
+                "GET", f"/repos/{repository_id}/commits/{revision_id}/status"
+            )
+            raw_statuses = status_payload.get("statuses", [])
+            if not isinstance(raw_statuses, list) or not all(
+                isinstance(status, dict) for status in raw_statuses
+            ):
+                raise RuntimeError("invalid GitHub commit statuses response")
+            vercel_failures = [
+                status
+                for status in raw_statuses
+                if str(status.get("context") or "").strip().lower() == "vercel"
+                and str(status.get("state") or "").lower() in {"failure", "error"}
+            ]
+            if vercel_failures:
+                target_url = str(vercel_failures[0].get("target_url") or "")
+                return {"state": "failure", "url": target_url}
             return {"state": "none", "url": ""}
         deployment_id = production[0].get("id")
         if deployment_id is None:
