@@ -198,6 +198,8 @@ function responseFor(pathname) {
   if (pathname.endsWith("/audit")) return [];
   if (pathname.endsWith("/reviews/summary")) return fixtures.reviewSummary;
   if (pathname.endsWith("/reviews")) return fixtures.reviews;
+  if (pathname === `${organizationBase}/content-operations`)
+    return fixtures.contentOperations;
   if (pathname === `${organizationBase}/content/summary`) {
     return fixtures.contentSummary;
   }

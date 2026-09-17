@@ -20,12 +20,12 @@ export const PRODUCT_AGENT_WORKFLOWS = [
 export type ProductAgentWorkflow = (typeof PRODUCT_AGENT_WORKFLOWS)[number];
 
 export const PRODUCT_AGENT_LABELS: Record<ProductAgentWorkflow, string> = {
-  "agent.growth": "Growth Planner",
-  "agent.gbp": "GBP agent",
-  "agent.seo": "SEO agent",
-  "agent.content": "Content agent",
-  "agent.reviews": "Reviews agent",
-  "agent.insights": "Insights agent",
+  "agent.growth": "Growth planning",
+  "agent.gbp": "Business Profile optimization",
+  "agent.seo": "SEO analysis",
+  "agent.content": "Content planning",
+  "agent.reviews": "Review analysis",
+  "agent.insights": "Performance analysis",
 };
 
 export const PRODUCT_AGENT_OBJECTIVES: Record<ProductAgentWorkflow, string> = {

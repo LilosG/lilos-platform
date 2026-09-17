@@ -44,15 +44,13 @@ test.describe("Content operator workflow", () => {
     await expect(page.locator("#content-location option")).toHaveCount(1);
   });
 
-  test("header offers creation and the governed Content agent", async ({
-    page,
-  }) => {
+  test("header offers content creation and planning", async ({ page }) => {
     await page.goto("/content");
     await expect(page.locator("#new-item")).toHaveText("New content item");
     const agentAction = page.locator(
       'button[data-product-agent-workflow="agent.content"]',
     );
-    await expect(agentAction).toHaveText("Run Content agent");
+    await expect(agentAction).toHaveText("Generate ideas");
     await expect(
       page.locator('a[href="/automations?agent=agent.content"]'),
     ).toHaveCount(0);

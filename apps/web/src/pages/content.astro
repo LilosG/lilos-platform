@@ -1,5 +1,6 @@
 ---
 import AppShell from "../components/AppShell.astro";
+import ProductAutomations from "../lib/ui/ProductAutomations.astro";
 import Button from "../lib/ui/Button.astro";
 import EmptyState from "../lib/ui/EmptyState.astro";
 import PageHeader from "../lib/ui/PageHeader.astro";
@@ -37,16 +38,12 @@ import "../styles/global.css";
       </PageShell>
 
       <PageShell id="content-workspace" hidden>
-        <PageHeader
-          eyebrow="Operations"
-          title="Content"
-          description="Move each idea through one clear path: brief, draft, review, approval, publishing, verification."
-        >
+        <PageHeader title="Content">
           <Button
             slot="actions"
             href="/automations?agent=agent.content"
             variant="secondary"
-            size="sm">Run Content agent</Button
+            size="sm">Generate ideas</Button
           >
           <Button slot="actions" id="new-item" variant="primary" size="sm">
             New content item
@@ -54,27 +51,76 @@ import "../styles/global.css";
         </PageHeader>
 
         <div id="content-list-view">
-          <section class="content-summary" aria-label="Content summary">
-            <div class="content-summary__card">
-              <span>Needs action</span><strong id="metric-action">0</strong>
+          <section
+            class="content-summary ui-metric-strip ui-metric-strip--six"
+            aria-label="Content pipeline"
+          >
+            <div class="ui-card ui-metric-card">
+              <div class="ui-card__body">
+                <p class="ui-metric-card__label">Ideas</p><p
+                  class="ui-metric-card__value"
+                  id="metric-ideas"
+                >
+                  0
+                </p>
+              </div>
             </div>
-            <div class="content-summary__card">
-              <span>Ready to publish</span><strong id="metric-ready">0</strong>
+            <div class="ui-card ui-metric-card">
+              <div class="ui-card__body">
+                <p class="ui-metric-card__label">Drafts</p><p
+                  class="ui-metric-card__value"
+                  id="metric-drafts"
+                >
+                  0
+                </p>
+              </div>
             </div>
-            <div class="content-summary__card">
-              <span>Publishing</span><strong id="metric-publishing">0</strong>
+            <div class="ui-card ui-metric-card">
+              <div class="ui-card__body">
+                <p class="ui-metric-card__label">Awaiting approval</p><p
+                  class="ui-metric-card__value"
+                  id="metric-approval"
+                >
+                  0
+                </p>
+              </div>
             </div>
-            <div class="content-summary__card">
-              <span>Published</span><strong id="metric-published">0</strong>
+            <div class="ui-card ui-metric-card">
+              <div class="ui-card__body">
+                <p class="ui-metric-card__label">Ready</p><p
+                  class="ui-metric-card__value"
+                  id="metric-ready"
+                >
+                  0
+                </p>
+              </div>
+            </div>
+            <div class="ui-card ui-metric-card">
+              <div class="ui-card__body">
+                <p class="ui-metric-card__label">Published</p><p
+                  class="ui-metric-card__value"
+                  id="metric-published"
+                >
+                  0
+                </p>
+              </div>
+            </div>
+            <div class="ui-card ui-metric-card">
+              <div class="ui-card__body">
+                <p class="ui-metric-card__label">Needs attention</p><p
+                  class="ui-metric-card__value"
+                  id="metric-failed"
+                >
+                  0
+                </p>
+              </div>
             </div>
           </section>
 
           <section class="content-panel">
             <div class="content-panel__header">
               <div>
-                <p class="content-eyebrow">Pipeline</p>
                 <h2>What needs to happen next</h2>
-                <p>Each item shows one current stage and one next action.</p>
               </div>
               <div
                 class="content-filters"
@@ -101,6 +147,8 @@ import "../styles/global.css";
             </div>
             <Region id="content-list" live="polite" />
           </section>
+
+          <ProductAutomations product="content" title="Content automations" />
 
           <section class="content-panel">
             <details>
@@ -207,6 +255,7 @@ import "../styles/global.css";
     </dialog>
 
     <script>
+      import { mountProductAutomations } from "../lib/ui/product-automations";
       import {
         CONTENT_REQUIRED_FACT_KEYS,
         createBrief,
@@ -292,27 +341,30 @@ import "../styles/global.css";
       }
 
       function renderMetrics(): void {
-        const action = items.filter(
-          (item) =>
-            !["published", "publishing", "ready_to_publish"].includes(
-              item.stage,
-            ),
-        ).length;
-        const ready = items.filter(
-          (item) => item.stage === "ready_to_publish",
-        ).length;
-        const publishing = items.filter(
-          (item) => item.stage === "publishing",
-        ).length;
-        const published = items.filter(
-          (item) => item.stage === "published",
-        ).length;
-        document.getElementById("metric-action")!.textContent = String(action);
-        document.getElementById("metric-ready")!.textContent = String(ready);
-        document.getElementById("metric-publishing")!.textContent =
-          String(publishing);
-        document.getElementById("metric-published")!.textContent =
-          String(published);
+        const counts = {
+          ideas: items.filter((item) => item.stage === "brief_needed").length,
+          drafts: items.filter((item) =>
+            [
+              "draft_needed",
+              "drafting",
+              "editorial_review",
+              "revision_needed",
+            ].includes(item.stage),
+          ).length,
+          approval: items.filter((item) => item.stage === "client_review")
+            .length,
+          ready: items.filter((item) => item.stage === "ready_to_publish")
+            .length,
+          published: items.filter((item) => item.stage === "published").length,
+          failed: items.filter(
+            (item) =>
+              item.stage === "needs_attention" ||
+              item.publication_status === "failed",
+          ).length,
+        };
+        for (const [key, count] of Object.entries(counts)) {
+          document.getElementById(`metric-${key}`)!.textContent = String(count);
+        }
       }
 
       function renderList(): void {
@@ -1160,6 +1212,11 @@ import "../styles/global.css";
       ): Promise<void> {
         setActiveOrganization(org);
         organizationId = org.organization_id;
+        void mountProductAutomations(
+          "content",
+          organizationId,
+          ["internal", "partner", "support"].includes(org.membership_type),
+        );
         await Promise.all([
           refreshList(),
           renderOpportunities(),
@@ -1211,12 +1268,20 @@ import "../styles/global.css";
 <!-- Client-rendered pipeline nodes need global selectors; Astro scoped styles cannot match them. -->
 <style is:global>
   .content-summary {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 0.75rem;
-    margin: 1.5rem 0;
+    margin: var(--space-5) 0;
   }
-  .content-summary__card,
+  .content-panel,
+  .content-action-card {
+    border: 1px solid var(--color-border, #d8d3c6);
+    border-radius: 0.75rem;
+    background: var(--color-surface, #f7f4eb);
+  }
+  .content-secondary,
+  .content-row__main span,
+  .content-row__next span,
+  .content-detail-header p {
+    color: var(--color-text-secondary, #666157);
+  }
   .content-panel,
   .content-action-card {
     border: 1px solid var(--color-border, #d8d3c6);
@@ -1422,9 +1487,6 @@ import "../styles/global.css";
     font-weight: 700;
   }
   @media (max-width: 850px) {
-    .content-summary {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
     .content-row {
       grid-template-columns: 1fr;
       gap: 0.75rem;

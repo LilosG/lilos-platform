@@ -8,6 +8,7 @@ export default defineConfig({
   retries: 0,
   expect: { timeout: 20_000 },
   use: {
+    channel: "chrome",
     baseURL: "http://127.0.0.1:4322",
     viewport: { width: 1440, height: 900 },
     deviceScaleFactor: 1,

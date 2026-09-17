@@ -998,8 +998,43 @@ export const leadDetails = [
 
 export const workflowCatalog = [
   {
-    key: "reviews.sync",
-    display_name: "Sync Google reviews",
+    key: "gbp.sync",
+    display_name: "Profile sync",
+    product_key: "gbp",
+    definition_status: "active",
+    latest_version: 1,
+  },
+  {
+    key: "gbp.generate_post",
+    display_name: "Local posting",
+    product_key: "gbp",
+    definition_status: "active",
+    latest_version: 1,
+  },
+  {
+    key: "agent.gbp",
+    display_name: "Profile optimization",
+    product_key: "gbp",
+    definition_status: "active",
+    latest_version: 1,
+  },
+  {
+    key: "agent.seo",
+    display_name: "SEO analysis",
+    product_key: "seo",
+    definition_status: "active",
+    latest_version: 1,
+  },
+  {
+    key: "agent.reviews",
+    display_name: "Review analysis",
+    product_key: "reviews",
+    definition_status: "active",
+    latest_version: 1,
+  },
+  {
+    key: "reviews.ingest",
+    display_name: "Review sync",
     product_key: "reviews",
     definition_status: "active",
     latest_version: 3,
@@ -1012,8 +1047,8 @@ export const workflowCatalog = [
     latest_version: 2,
   },
   {
-    key: "seo.search_console_sync",
-    display_name: "Sync Search Console",
+    key: "agent.content",
+    display_name: "Content planning",
     product_key: "seo",
     definition_status: "active",
     latest_version: 4,
@@ -1024,8 +1059,8 @@ export const workflowSchedules = [
   {
     id: "schedule-1",
     key: "review-sync",
-    workflow_key: "reviews.sync",
-    workflow_name: "Sync Google reviews",
+    workflow_key: "reviews.ingest",
+    workflow_name: "Review sync",
     cron_expression: "0 * * * *",
     timezone: "America/Los_Angeles",
     status: "active",
@@ -1037,8 +1072,8 @@ export const workflowSchedules = [
   {
     id: "schedule-2",
     key: "search-sync",
-    workflow_key: "seo.search_console_sync",
-    workflow_name: "Sync Search Console",
+    workflow_key: "agent.content",
+    workflow_name: "Content planning",
     cron_expression: "0 0 * * *",
     timezone: "America/Los_Angeles",
     status: "active",
@@ -1052,8 +1087,8 @@ export const workflowSchedules = [
 export const workflowRuns = [
   {
     id: "run-1",
-    workflow_key: "reviews.sync",
-    workflow_name: "Sync Google reviews",
+    workflow_key: "reviews.ingest",
+    workflow_name: "Review sync",
     product_key: "reviews",
     status: "completed",
     trigger_type: "schedule",

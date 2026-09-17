@@ -1,5 +1,6 @@
 ---
 import AppShell from "../components/AppShell.astro";
+import ProductAutomations from "../lib/ui/ProductAutomations.astro";
 import Button from "../lib/ui/Button.astro";
 import Card from "../lib/ui/Card.astro";
 import CardGrid from "../lib/ui/CardGrid.astro";
@@ -45,16 +46,12 @@ import "../styles/global.css";
       >
 
       <PageShell id="reviews-content" hidden>
-        <PageHeader
-          eyebrow="Operations"
-          title="Reviews"
-          description="Triage customer reviews, prepare governed responses, and verify publication outcomes."
-        >
+        <PageHeader title="Reviews">
           <Button
             slot="actions"
             href="/automations?agent=agent.reviews"
             variant="secondary"
-            size="sm">Run Reviews agent</Button
+            size="sm">Analyze reviews</Button
           >
           <Select
             slot="actions"
@@ -70,16 +67,6 @@ import "../styles/global.css";
           >
         </PageHeader>
 
-        <Notice title="Google reviews"
-          ><p>
-            Connection health and location mapping are managed centrally.
-          </p><Button
-            slot="action"
-            href="/integrations"
-            variant="secondary"
-            size="sm">Manage integrations</Button
-          ></Notice
-        >
         <Region id="no-locations" hidden
           ><Notice tone="warning" title="Location setup required"
             ><p>
@@ -146,6 +133,8 @@ import "../styles/global.css";
             <Region id="reviews-list-panel" />
           </PageSection>
 
+          <ProductAutomations product="reviews" title="Review automations" />
+
           <PageSection
             id="review-detail"
             eyebrow="Review detail"
@@ -165,6 +154,7 @@ import "../styles/global.css";
       </PageShell>
     </AppShell>
     <script>
+      import { mountProductAutomations } from "../lib/ui/product-automations";
       import {
         fetchReviews,
         fetchReviewSummary,
@@ -260,6 +250,11 @@ import "../styles/global.css";
       ): Promise<void> {
         setActiveOrganization(org);
         organizationId = org.organization_id;
+        void mountProductAutomations(
+          "reviews",
+          organizationId,
+          ["internal", "partner", "support"].includes(org.membership_type),
+        );
 
         const locationsResult = await fetchLocations(organizationId);
         if (

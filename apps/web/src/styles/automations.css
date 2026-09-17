@@ -16,32 +16,6 @@
   box-shadow: var(--shadow-raised);
 }
 
-#agent-runtime-status .ui-alert--success {
-  padding: var(--space-4) var(--space-5);
-  border-color: var(--color-success-border);
-  background: var(--color-success-background);
-  color: transparent;
-  font-size: 0;
-}
-
-#agent-runtime-status .ui-alert--success::before {
-  content: "Hermes runtime ready";
-  display: block;
-  margin-bottom: var(--space-1);
-  color: var(--color-success-foreground);
-  font-size: var(--type-body-sm-size);
-  font-weight: 700;
-  line-height: var(--type-body-sm-line);
-}
-
-#agent-runtime-status .ui-alert--success::after {
-  content: "Secure connection · governed tools and controls available";
-  display: block;
-  color: var(--color-text-secondary);
-  font-size: var(--type-body-sm-size);
-  line-height: var(--type-body-sm-line);
-}
-
 #agent-start-actions {
   margin-top: var(--space-5);
 }
@@ -80,33 +54,6 @@
   font-weight: 700;
   text-align: left;
   white-space: normal;
-}
-
-#agent-start-actions .ui-button::after {
-  color: var(--color-text-secondary);
-  font-size: var(--type-caption-size);
-  font-weight: 500;
-  line-height: var(--type-caption-line);
-}
-
-#agent-start-actions .ui-button:nth-child(1)::after {
-  content: "Profile analysis & proposals";
-}
-
-#agent-start-actions .ui-button:nth-child(2)::after {
-  content: "Search visibility & opportunities";
-}
-
-#agent-start-actions .ui-button:nth-child(3)::after {
-  content: "Briefs, drafts & optimization";
-}
-
-#agent-start-actions .ui-button:nth-child(4)::after {
-  content: "Review analysis & responses";
-}
-
-#agent-start-actions .ui-button:nth-child(5)::after {
-  content: "Cross-channel performance";
 }
 
 #agent-start-actions .ui-button:hover:not(:disabled) {

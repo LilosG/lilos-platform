@@ -4,3 +4,6 @@ dist/
 .playwright-output/
 playwright-report/
 .playwright-visual-output/
+.auth/
+.playwright-production-output/
+playwright-production-report/

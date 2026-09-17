@@ -34,13 +34,13 @@ const surfaces = [
     route: "/",
     ready: "#workspace-content",
     settled: "#kpi-grid .ui-metric-card__label",
-    settledText: "Managed locations",
+    settledText: "Reviews",
   },
   {
     name: "business-profile",
     route: "/gbp",
     ready: "#gbp-content",
-    settled: "#location-picker-panel .ui-table",
+    settled: "#gbp-workspace #gbp-tabs",
   },
   {
     name: "reviews",
@@ -59,8 +59,7 @@ const surfaces = [
     name: "content",
     route: "/content",
     ready: "#content-workspace",
-    settled: "#content-stages-all-count",
-    settledText: "3",
+    settled: "#content-list",
   },
   {
     name: "seo",
@@ -72,7 +71,7 @@ const surfaces = [
     name: "automations",
     route: "/automations",
     ready: "#workspace-content",
-    settled: "#workflow-catalog .ui-table",
+    settled: "#product-domain-overview .ui-product-activity",
   },
   {
     name: "insights",
@@ -105,7 +104,7 @@ for (const surface of surfaces) {
       await expect(settled).toHaveText(surface.settledText);
     }
     if (surface.name === "seo") {
-      await page.getByRole("tab", { name: "Search Console" }).click();
+      await page.getByRole("tab", { name: "Search performance" }).click();
       const chart = page.locator("#tab-search-console canvas");
       await expect(chart).toBeVisible();
       await chart.scrollIntoViewIfNeeded();

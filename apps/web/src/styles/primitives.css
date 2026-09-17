@@ -1599,3 +1599,193 @@
   background: transparent;
   color: var(--color-text-tertiary);
 }
+
+/* Product workspace composition */
+.ui-product-automations__cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
+  gap: var(--space-3);
+}
+
+.ui-product-automations__location {
+  max-width: 20rem;
+  margin-bottom: var(--space-3);
+}
+
+.ui-product-automations__status:empty {
+  display: none;
+}
+
+.ui-automation-card {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  border: var(--border-width) solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-raised);
+}
+
+.ui-automation-card__identity h3 {
+  margin: 0 0 var(--space-1);
+  font-size: var(--type-body-size);
+}
+
+.ui-automation-card__identity p {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--type-body-sm-size);
+}
+
+.ui-automation-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.ui-metric-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr));
+  gap: 0;
+  overflow: hidden;
+  border: var(--border-width) solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-raised);
+}
+
+.ui-metric-strip > .ui-card {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+}
+
+.ui-metric-strip > .ui-card + .ui-card {
+  border-left: var(--border-width) solid var(--color-border-subtle);
+}
+
+.ui-work-queue,
+.ui-product-activity {
+  overflow: hidden;
+  border: var(--border-width) solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-raised);
+}
+
+.ui-work-queue__row,
+.ui-product-activity__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  min-width: 0;
+  padding: var(--space-3) var(--space-4);
+}
+
+.ui-work-queue__row + .ui-work-queue__row,
+.ui-product-activity__row + .ui-product-activity__row {
+  border-top: var(--border-width) solid var(--color-border-subtle);
+}
+
+.ui-work-queue__row .ui-card__header,
+.ui-product-activity__row .ui-card__header {
+  padding: 0;
+  border: 0;
+}
+
+.ui-work-queue__row .ui-card__body {
+  padding: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--type-body-sm-size);
+}
+
+.ui-work-queue__row .ui-card__footer {
+  padding: 0;
+  border: 0;
+}
+
+.ui-product-activity__facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+
+.ui-product-activity__fact {
+  display: flex;
+  gap: var(--space-2);
+  font-size: var(--type-body-sm-size);
+}
+
+.ui-advanced-workspace {
+  margin-top: var(--space-6);
+}
+
+.ui-advanced-workspace > summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.ui-advanced-workspace[open] > summary {
+  margin-bottom: var(--space-5);
+}
+
+@media (max-width: 48rem) {
+  .ui-metric-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .ui-metric-strip > .ui-card + .ui-card {
+    border-left: 0;
+    border-top: var(--border-width) solid var(--color-border-subtle);
+  }
+  .ui-work-queue__row,
+  .ui-product-activity__row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 30rem) {
+  .ui-metric-strip {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.ui-product-domain + .ui-product-domain {
+  border-top: var(--border-width) solid var(--color-border-subtle);
+}
+
+.ui-product-domain > summary {
+  cursor: pointer;
+}
+
+.ui-product-domain__cards {
+  padding: 0 var(--space-4) var(--space-3);
+}
+
+.ui-product-domain > .ui-button {
+  margin: 0 var(--space-4) var(--space-4);
+}
+
+.ui-metric-strip--six {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+@media (max-width: 64rem) {
+  .ui-metric-strip--six {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 48rem) {
+  .ui-metric-strip--six {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 30rem) {
+  .ui-metric-strip--six {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

@@ -1,0 +1,20 @@
+---
+interface Props {
+  product: "gbp" | "seo" | "content" | "reviews";
+  title?: string;
+}
+const { product, title = "Automations" } = Astro.props;
+---
+
+<section
+  class="ui-page-section ui-product-automations"
+  data-product-automations={product}
+  aria-label={`${title} for ${product}`}
+>
+  <header class="ui-page-section__header">
+    <h2>{title}</h2>
+  </header>
+  <div class="ui-product-automations__location" hidden></div>
+  <div class="ui-product-automations__cards" aria-live="polite"></div>
+  <p class="ui-product-automations__status" role="status"></p>
+</section>

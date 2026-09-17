@@ -1,5 +1,6 @@
 ---
 import AppShell from "../components/AppShell.astro";
+import ProductAutomations from "../lib/ui/ProductAutomations.astro";
 import Button from "../lib/ui/Button.astro";
 import EmptyState from "../lib/ui/EmptyState.astro";
 import PageHeader from "../lib/ui/PageHeader.astro";
@@ -39,17 +40,19 @@ import "../styles/global.css";
       >
 
       <PageShell id="gbp-content" hidden>
-        <PageHeader
-          eyebrow="Operations"
-          title="Business Profile"
-          titleId="gbp-page-title"
-          description="Review confirmed mappings and operate the Business Profile records available to this workspace."
-        >
+        <PageHeader title="Business Profile" titleId="gbp-page-title">
+          <Button
+            slot="actions"
+            id="create-gbp-post"
+            variant="primary"
+            size="sm"
+            hidden>Create GBP post</Button
+          >
           <Button
             slot="actions"
             href="/automations?agent=agent.gbp"
-            variant="secondary"
-            size="sm">Run GBP operator</Button
+            variant="primary"
+            size="sm">Run optimization</Button
           >
           <Button
             slot="actions"
@@ -57,12 +60,6 @@ import "../styles/global.css";
             variant="secondary"
             size="sm"
             hidden>Change location</Button
-          >
-          <Button
-            slot="actions"
-            href="/integrations"
-            variant="secondary"
-            size="sm">Manage connection</Button
           >
         </PageHeader>
 
@@ -97,10 +94,15 @@ import "../styles/global.css";
             <Region id="tab-posts" tabPanel="posts" hidden />
             <Region id="tab-media" tabPanel="media" hidden />
           </Tabs>
+          <ProductAutomations
+            product="gbp"
+            title="Business Profile automations"
+          />
         </Region>
       </PageShell>
     </AppShell>
     <script>
+      import { mountProductAutomations } from "../lib/ui/product-automations";
       import {
         fetchGBPLocations,
         workspaceContextFor,
@@ -149,6 +151,7 @@ import "../styles/global.css";
       import { statusLabel, statusTone } from "../lib/status-language";
 
       let organizationId = "";
+      let canManageAutomations = false;
       let selectedPlatformLocationId: string | null = null;
       let selectedGbpLocationId: string | null = null;
       let googleConnectionReady = false;
@@ -175,11 +178,21 @@ import "../styles/global.css";
         .getElementById("change-gbp-location")!
         .addEventListener("click", showLocationPicker);
 
+      document
+        .getElementById("create-gbp-post")!
+        .addEventListener("click", () => {
+          document.getElementById("gbp-tabs-tab-posts")?.click();
+          document.getElementById("post-content")?.focus();
+        });
+
       async function loadOrganization(
         org: import("../lib/workspace").MyOrganization,
       ): Promise<void> {
         setActiveOrganization(org);
         organizationId = org.organization_id;
+        canManageAutomations = ["internal", "partner", "support"].includes(
+          org.membership_type,
+        );
         selectedPlatformLocationId = null;
         selectedGbpLocationId = null;
         showLocationPicker();
@@ -271,22 +284,6 @@ import "../styles/global.css";
         }
 
         googleConnectionReady = true;
-        const info = document.createElement("div");
-        info.className = "ui-notice ui-notice--success";
-        const detail = document.createElement("div");
-        const label = document.createElement("strong");
-        label.textContent = "Google Business Profile";
-        const text = document.createElement("p");
-        text.className = "ui-card__description";
-        text.textContent = state.last_verified_at
-          ? `Connected · verified ${formatTimestamp(state.last_verified_at)}`
-          : "Connected";
-        detail.append(label, text);
-        const link = document.createElement("a");
-        link.href = "/integrations";
-        link.textContent = "Manage integrations";
-        info.append(detail, link);
-        panel.append(info);
       }
 
       async function renderLocationPicker(
@@ -305,6 +302,14 @@ import "../styles/global.css";
               "/integrations",
             ),
           );
+          return;
+        }
+
+        const available = locations.filter((location) =>
+          workspaceContextFor(location),
+        );
+        if (connectionReady && available.length === 1) {
+          await openWorkspace(available[0]);
           return;
         }
 
@@ -468,10 +473,19 @@ import "../styles/global.css";
         const context = workspaceContextFor(loc);
         if (!context) return;
         selectedPlatformLocationId = context.platformLocationId;
+        document.querySelector<HTMLElement>(
+          "[data-product-automations=gbp]",
+        )!.dataset.agentLocationId = context.platformLocationId;
+        void mountProductAutomations(
+          "gbp",
+          organizationId,
+          canManageAutomations,
+        );
         selectedGbpLocationId = context.gbpLocationId;
         document.getElementById("gbp-workspace")!.hidden = false;
         document.getElementById("location-picker-section")!.hidden = true;
         document.getElementById("change-gbp-location")!.hidden = false;
+        document.getElementById("create-gbp-post")!.hidden = false;
 
         // Update page title to show selected location
         const titleEl = document.getElementById("gbp-page-title");
@@ -492,6 +506,7 @@ import "../styles/global.css";
         document.getElementById("gbp-workspace")!.hidden = true;
         document.getElementById("location-picker-section")!.hidden = false;
         document.getElementById("change-gbp-location")!.hidden = true;
+        document.getElementById("create-gbp-post")!.hidden = true;
         const title = document.getElementById("gbp-page-title");
         if (title) title.textContent = "Business Profile";
       }
@@ -502,7 +517,7 @@ import "../styles/global.css";
         panel.replaceChildren();
         if (!selectedPlatformLocationId || !selectedGbpLocationId) return;
 
-        const [completenessResult, auditResult, suspensionResult] =
+        const [completenessResult, auditResult, suspensionResult, postsResult] =
           await Promise.all([
             fetchCompleteness(
               organizationId,
@@ -515,6 +530,11 @@ import "../styles/global.css";
               selectedGbpLocationId,
             ),
             fetchSuspensionCases(
+              organizationId,
+              selectedPlatformLocationId,
+              selectedGbpLocationId,
+            ),
+            fetchPostRevisions(
               organizationId,
               selectedPlatformLocationId,
               selectedGbpLocationId,
@@ -554,81 +574,81 @@ import "../styles/global.css";
           );
         }
         compCard.append(compBody);
-        panel.append(compCard);
+        if (
+          completenessResult.kind === "ok" &&
+          completenessResult.data.complete
+        ) {
+          const healthy = document.createElement("p");
+          healthy.className = "ui-text-secondary";
+          healthy.textContent = "Profile details complete";
+          panel.append(healthy);
+        } else {
+          panel.append(compCard);
+        }
 
-        // Items needing attention
-        const attentionCard = document.createElement("div");
-        attentionCard.className = "ui-card";
-        const attentionHeader = document.createElement("div");
-        attentionHeader.className = "ui-card__header";
-        attentionHeader.append(
-          Object.assign(document.createElement("h3"), {
-            className: "ui-card__heading",
-            textContent: "Needs attention",
-          }),
-        );
-        attentionCard.append(attentionHeader);
-        const attentionBody = document.createElement("div");
-        attentionBody.className = "ui-card__body";
-        const pending = [];
+        // Only surface work that needs an operator.
         if (
           suspensionResult.kind === "ok" &&
           suspensionResult.data.length > 0
         ) {
-          pending.push(`${suspensionResult.data.length} suspension case(s)`);
-        }
-        if (pending.length === 0) {
-          attentionBody.append(
-            emptyState("All clear", "No items need immediate attention."),
+          const attention = document.createElement("div");
+          attention.className = "ui-work-queue";
+          const row = document.createElement("div");
+          row.className = "ui-work-queue__row";
+          const text = document.createElement("strong");
+          text.textContent = `${suspensionResult.data.length} Business Profile issue${suspensionResult.data.length === 1 ? "" : "s"} need attention`;
+          const action = document.createElement("button");
+          action.type = "button";
+          action.className = "ui-button ui-button--secondary ui-button--sm";
+          action.textContent = "Review profile changes";
+          action.addEventListener("click", () =>
+            document.getElementById("gbp-tabs-tab-profile")?.click(),
           );
-        } else {
-          for (const item of pending) {
-            const p = document.createElement("p");
-            p.className = "ui-text-secondary";
-            p.textContent = `• ${item}`;
-            attentionBody.append(p);
-          }
+          row.append(text, action);
+          attention.append(row);
+          panel.append(attention);
         }
-        attentionCard.append(attentionBody);
-        panel.append(attentionCard);
 
-        // Recent activity
-        const activityCard = document.createElement("div");
-        activityCard.className = "ui-card";
-        const activityHeader = document.createElement("div");
-        activityHeader.className = "ui-card__header";
-        activityHeader.append(
-          Object.assign(document.createElement("h3"), {
-            className: "ui-card__heading",
-            textContent: "Recent activity",
-          }),
-        );
-        activityCard.append(activityHeader);
-        const activityBody = document.createElement("div");
-        activityBody.className = "ui-card__body";
-        if (auditResult.kind === "ok" && auditResult.data.length > 0) {
-          const list = document.createElement("ol");
+        if (postsResult.kind === "ok" && postsResult.data.length > 0) {
+          const heading = document.createElement("h3");
+          heading.textContent = "Recent posts";
+          const list = document.createElement("ul");
           list.className = "ui-record-list";
-          for (const event of auditResult.data.slice(0, 10)) {
+          for (const post of postsResult.data.slice(0, 3)) {
             const item = document.createElement("li");
-            const strong = document.createElement("strong");
-            strong.textContent = event.summary;
-            const span = document.createElement("span");
-            span.textContent = formatTimestamp(event.occurred_at);
-            item.append(strong, span);
+            const preview = document.createElement("strong");
+            preview.textContent =
+              post.content.length > 100
+                ? `${post.content.slice(0, 100)}…`
+                : post.content;
+            const state = document.createElement("span");
+            state.textContent = postPresentation(post).label;
+            item.append(preview, state);
             list.append(item);
           }
-          activityBody.append(list);
-        } else {
-          activityBody.append(
-            emptyState(
-              "No activity yet",
-              "Operations and changes will appear here.",
-            ),
-          );
+          panel.append(heading, list);
         }
-        activityCard.append(activityBody);
-        panel.append(activityCard);
+
+        // Full operational history remains available for inspection.
+        if (auditResult.kind === "ok" && auditResult.data.length > 0) {
+          const history = document.createElement("details");
+          history.className = "ui-advanced-workspace";
+          const summary = document.createElement("summary");
+          summary.textContent = "Activity history";
+          const list = document.createElement("ol");
+          list.className = "ui-record-list";
+          for (const event of auditResult.data.slice(0, 5)) {
+            const item = document.createElement("li");
+            const label = document.createElement("strong");
+            label.textContent = event.summary;
+            const time = document.createElement("span");
+            time.textContent = formatTimestamp(event.occurred_at);
+            item.append(label, time);
+            list.append(item);
+          }
+          history.append(summary, list);
+          panel.append(history);
+        }
       }
 
       // ---- Profile tab ----

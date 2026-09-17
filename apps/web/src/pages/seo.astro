@@ -1,9 +1,9 @@
 ---
 import AppShell from "../components/AppShell.astro";
+import ProductAutomations from "../lib/ui/ProductAutomations.astro";
 import Button from "../lib/ui/Button.astro";
 import CardGrid from "../lib/ui/CardGrid.astro";
 import EmptyState from "../lib/ui/EmptyState.astro";
-import Notice from "../lib/ui/Notice.astro";
 import PageHeader from "../lib/ui/PageHeader.astro";
 import PageSection from "../lib/ui/PageSection.astro";
 import PageShell from "../lib/ui/PageShell.astro";
@@ -41,46 +41,26 @@ import "../styles/global.css";
       >
 
       <PageShell id="seo-content" hidden>
-        <PageHeader
-          eyebrow="Operations"
-          title="SEO"
-          description="Inspect crawl health, prioritize governed opportunities, and track observed search performance."
-        >
+        <PageHeader title="SEO">
+          <Button slot="actions" id="open-seo-crawl" variant="primary" size="sm"
+            >Run crawl</Button
+          >
           <Button
             slot="actions"
             href="/automations?agent=agent.seo"
             variant="secondary"
-            size="sm">Run SEO agent</Button
-          >
-          <Button
-            slot="actions"
-            href="/integrations"
-            variant="secondary"
-            size="sm">Manage integrations</Button
+            size="sm">Run SEO analysis</Button
           >
         </PageHeader>
-        <Notice title="Search data"
-          ><p>
-            Search Console and Analytics connection health are managed
-            centrally.
-          </p><Button
-            slot="action"
-            href="/integrations"
-            variant="secondary"
-            size="sm">Manage integrations</Button
-          ></Notice
-        >
-        <PageSection eyebrow="Performance" title="SEO outcomes"
-          ><CardGrid id="seo-metrics" minimum="sm" /></PageSection
-        >
         <Tabs
           id="seo-tabs"
           label="SEO workspace"
+          activeId="search-console"
           items={[
-            { id: "overview", label: "Overview" },
+            { id: "search-console", label: "Search performance" },
+            { id: "overview", label: "Website health" },
             { id: "crawl", label: "Crawl" },
             { id: "opportunities", label: "Opportunities" },
-            { id: "search-console", label: "Search Console" },
           ]}
         >
           <Region id="tab-overview" tabPanel="overview" />
@@ -88,9 +68,14 @@ import "../styles/global.css";
           <Region id="tab-opportunities" tabPanel="opportunities" hidden />
           <Region id="tab-search-console" tabPanel="search-console" hidden />
         </Tabs>
+        <PageSection title="SEO work" density="compact"
+          ><CardGrid id="seo-metrics" minimum="sm" /></PageSection
+        >
+        <ProductAutomations product="seo" title="SEO automations" />
       </PageShell>
     </AppShell>
     <script>
+      import { mountProductAutomations } from "../lib/ui/product-automations";
       import {
         MAX_CRAWL_PAGES,
         MAX_CRAWL_DEPTH,
@@ -160,11 +145,22 @@ import "../styles/global.css";
         content: document.getElementById("seo-content")!,
       };
 
+      document
+        .getElementById("open-seo-crawl")!
+        .addEventListener("click", () => {
+          document.getElementById("seo-tabs-tab-crawl")?.click();
+        });
+
       async function loadOrganization(
         org: import("../lib/workspace").MyOrganization,
       ): Promise<void> {
         setActiveOrganization(org);
         organizationId = org.organization_id;
+        void mountProductAutomations(
+          "seo",
+          organizationId,
+          ["internal", "partner", "support"].includes(org.membership_type),
+        );
 
         const [summaryResult, websitesResult, oppsResult] = await Promise.all([
           fetchSEOSummary(organizationId),
@@ -723,6 +719,33 @@ import "../styles/global.css";
         }
       }
 
+      function opportunityHeadline(
+        opportunity: import("../lib/seo").SEOOpportunity,
+      ): string {
+        const query =
+          typeof opportunity.evidence.query === "string"
+            ? opportunity.evidence.query
+            : null;
+        const url =
+          typeof opportunity.evidence.url === "string"
+            ? opportunity.evidence.url
+            : null;
+        if (query && opportunity.opportunity_type === "gsc_striking_distance")
+          return `Move “${query}” onto page one`;
+        if (query && opportunity.opportunity_type === "gsc_low_ctr")
+          return `Improve clicks for “${query}”`;
+        if (query && opportunity.opportunity_type === "gsc_unmapped_demand")
+          return `Answer searches for “${query}”`;
+        if (url) {
+          try {
+            return `Improve ${new URL(url).pathname || "/"}`;
+          } catch {
+            return `Improve ${url}`;
+          }
+        }
+        return statusLabel(opportunity.opportunity_type);
+      }
+
       function renderOpportunities(
         opps: Awaited<ReturnType<typeof fetchOpportunities>>,
       ): void {
@@ -747,10 +770,10 @@ import "../styles/global.css";
           buildDataTable(
             [
               {
-                key: "type",
-                header: "Type",
+                key: "opportunity",
+                header: "Opportunity",
                 render: (opportunity: (typeof opps.data)[number]) =>
-                  statusLabel(opportunity.opportunity_type),
+                  opportunityHeadline(opportunity),
               },
               {
                 key: "priority",

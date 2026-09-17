@@ -162,3 +162,26 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+.ui-card-grid--sm.ui-metric-strip {
+  width: 100%;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+@media (max-width: 64rem) {
+  .ui-card-grid--sm.ui-metric-strip {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 48rem) {
+  .ui-card-grid--sm.ui-metric-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 30rem) {
+  .ui-card-grid--sm.ui-metric-strip {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

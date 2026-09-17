@@ -4,7 +4,6 @@ import Button from "../lib/ui/Button.astro";
 import CardGrid from "../lib/ui/CardGrid.astro";
 import EmptyState from "../lib/ui/EmptyState.astro";
 import MetricCard from "../lib/ui/MetricCard.astro";
-import Notice from "../lib/ui/Notice.astro";
 import PageHeader from "../lib/ui/PageHeader.astro";
 import PageSection from "../lib/ui/PageSection.astro";
 import PageShell from "../lib/ui/PageShell.astro";
@@ -42,11 +41,9 @@ import "../styles/global.css";
 
       <PageShell id="workspace-content" hidden>
         <PageHeader
-          eyebrow="Workspace"
-          eyebrowId="active-organization-status"
-          title="Operating overview"
+          title="Account overview"
           titleId="overview-title"
-          description="Current performance, urgent work, and recent results for this organization."
+          description="Performance, current work, and recent results."
           descriptionId="overview-description"
         >
           <Button slot="actions" href="/insights" variant="secondary" size="sm"
@@ -54,30 +51,19 @@ import "../styles/global.css";
           >
         </PageHeader>
 
-        <PageSection
-          id="kpi-section"
-          eyebrow="Results"
-          title="Recorded outcomes"
-          description="Every result recorded for this client to date."
-        >
-          <CardGrid id="kpi-grid" minimum="sm"
+        <PageSection id="kpi-section" title="Performance">
+          <CardGrid id="kpi-grid" minimum="sm" class="ui-metric-strip"
             ><MetricCard label="Loading" value="—" missing /></CardGrid
           >
         </PageSection>
 
-        <PageSection
-          id="attention-section"
-          eyebrow="Actionable work"
-          title="Needs attention"
-        >
+        <PageSection id="attention-section" title="Needs attention">
           <Region id="attention-panel"
             ><Skeleton lines={2} label="Loading work queue" /></Region
           >
         </PageSection>
 
         <PageSection
-          eyebrow="Priority queue"
-          eyebrowId="work-eyebrow"
           title="Today’s work"
           titleId="work-title"
           id="work-section"
@@ -87,31 +73,21 @@ import "../styles/global.css";
           >
         </PageSection>
 
-        <PageSection
-          id="activity-section"
-          eyebrow="Across products"
-          title="Operational activity"
-        >
+        <PageSection id="activity-section" title="Current LILOs activity">
           <Region id="activity-panel"
             ><Skeleton lines={2} label="Loading activity" /></Region
           >
         </PageSection>
 
-        <PageSection eyebrow="Workspace scope" title="Locations">
+        <PageSection id="results-section" title="Recent results" hidden>
+          <Region id="results-panel" />
+        </PageSection>
+
+        <PageSection title="Locations" density="compact">
           <Region id="locations-panel"
             ><Skeleton lines={2} label="Loading locations" /></Region
           >
         </PageSection>
-
-        <Notice title="Connections and provider health">
-          <p>Managed centrally for this organization.</p>
-          <Button
-            slot="action"
-            href="/integrations"
-            variant="secondary"
-            size="sm">Manage integrations</Button
-          >
-        </Notice>
       </PageShell>
     </AppShell>
     <script>
@@ -135,6 +111,7 @@ import "../styles/global.css";
         type BootRegions,
       } from "../lib/ui";
       import { statusLabel, statusTone } from "../lib/status-language";
+      import { listWorkflowRuns } from "../lib/workflows";
 
       let organizationId = "";
 
@@ -150,29 +127,27 @@ import "../styles/global.css";
         organization: import("../lib/workspace").MyOrganization,
       ): Promise<void> {
         setActiveOrganization(organization);
-        document.getElementById("active-organization-status")!.textContent =
-          statusLabel(organization.organization_status);
         const isAgency = ["internal", "partner", "support"].includes(
           organization.membership_type,
         );
         document.getElementById("overview-title")!.textContent = isAgency
-          ? "Operating overview"
-          : "Your account overview";
+          ? "Account overview"
+          : "Your account";
         document.getElementById("overview-description")!.textContent = isAgency
           ? "Current performance, urgent work, and today’s priorities for this client."
           : "Account status, current results, and anything that needs your attention.";
-        document.getElementById("work-eyebrow")!.textContent = isAgency
-          ? "Priority queue"
-          : "Upcoming";
         document.getElementById("work-title")!.textContent = isAgency
           ? "Today’s work"
           : "Work in progress";
         organizationId = organization.organization_id;
 
-        const [locationsResult, insightsResult] = await Promise.all([
-          fetchLocations(organizationId),
-          fetchInsightsSummary(organizationId),
-        ]);
+        const [locationsResult, insightsResult, runsResult] = await Promise.all(
+          [
+            fetchLocations(organizationId),
+            fetchInsightsSummary(organizationId),
+            listWorkflowRuns(organizationId, { limit: 12 }),
+          ],
+        );
 
         const insightData =
           insightsResult.kind === "ok" ? insightsResult.data : null;
@@ -186,6 +161,7 @@ import "../styles/global.css";
         renderWork(insightData, isAgency);
         renderLocations(locationsResult);
         renderActivity(insightsResult);
+        renderRecentResults(runsResult);
       }
 
       function renderKPIs(
@@ -193,7 +169,9 @@ import "../styles/global.css";
       ): void {
         const grid = document.getElementById("kpi-grid")!;
         grid.replaceChildren();
-        const metrics = dashboardMetrics(summary);
+        const metrics = dashboardMetrics(summary)
+          .filter((item) => item.key !== "gbp")
+          .slice(0, 5);
         if (metrics.length === 0) {
           const hasActivity = hasRecordedActivity(summary);
           grid.append(
@@ -242,6 +220,7 @@ import "../styles/global.css";
         const panel = document.getElementById("attention-panel")!;
         panel.replaceChildren();
         if (!insightData) {
+          document.getElementById("attention-section")!.hidden = true;
           panel.append(
             overviewEmptyState(
               "Nothing needs attention yet",
@@ -253,6 +232,7 @@ import "../styles/global.css";
           return;
         }
         if (!hasRecordedActivity(insightData)) {
+          document.getElementById("attention-section")!.hidden = true;
           panel.append(
             overviewEmptyState(
               "Nothing needs attention yet",
@@ -264,7 +244,9 @@ import "../styles/global.css";
           return;
         }
         const operational = requiresAttention(insightData).filter(
-          (item) => isAgency || item.href !== "/administration",
+          (item) =>
+            isAgency ||
+            (item.href !== "/administration" && item.key !== "workflows"),
         );
         const items = operational.filter(
           (item, index, all) =>
@@ -273,14 +255,10 @@ import "../styles/global.css";
         );
 
         if (items.length === 0) {
-          panel.append(
-            overviewEmptyState(
-              "Everything is on track",
-              "No failures, unresolved provider actions, or blocking product issues are recorded.",
-            ),
-          );
+          document.getElementById("attention-section")!.hidden = true;
           return;
         }
+        document.getElementById("attention-section")!.hidden = false;
         panel.append(renderWorkItems(items, isAgency ? "Resolve" : "Review"));
       }
 
@@ -334,10 +312,10 @@ import "../styles/global.css";
         actionLabel: string,
       ): HTMLDivElement {
         const grid = document.createElement("div");
-        grid.className = "ui-card-grid ui-card-grid--sm";
+        grid.className = "ui-work-queue";
         for (const item of items) {
           const card = document.createElement("article");
-          card.className = "ui-card";
+          card.className = "ui-work-queue__row";
           card.dataset.state = item.severity === "urgent" ? "error" : "default";
           const header = document.createElement("header");
           header.className = "ui-card__header";
@@ -450,10 +428,10 @@ import "../styles/global.css";
             items: [
               { label: "Locations", value: data.gbp?.locations ?? 0 },
               {
-                label: "Profile snapshots",
+                label: "Profile checks",
                 value: data.gbp?.profile_snapshots ?? 0,
               },
-              { label: "Publications", value: gbpPubs },
+              { label: "Post activity", value: gbpPubs },
             ],
           });
         }
@@ -504,10 +482,10 @@ import "../styles/global.css";
         }
 
         const grid = document.createElement("div");
-        grid.className = "ui-card-grid ui-card-grid--lg";
+        grid.className = "ui-product-activity";
         for (const group of groups) {
           const card = document.createElement("article");
-          card.className = "ui-card";
+          card.className = "ui-product-activity__row";
           const header = document.createElement("div");
           header.className = "ui-card__header";
           const title = document.createElement("h3");
@@ -516,11 +494,10 @@ import "../styles/global.css";
           header.append(title);
           card.append(header);
           const body = document.createElement("div");
-          body.className = "ui-card__body";
-          for (const item of group.items) {
+          body.className = "ui-product-activity__facts";
+          for (const item of group.items.slice(0, 2)) {
             const row = document.createElement("div");
-            row.className = "ui-inline ui-inline--center";
-            row.classList.add("ui-inline--spread");
+            row.className = "ui-product-activity__fact";
             const label = document.createElement("span");
             label.className = "ui-text-secondary";
             label.textContent = item.label.replace(/\b\w/g, (c) =>
@@ -535,6 +512,56 @@ import "../styles/global.css";
           grid.append(card);
         }
         panel.append(grid);
+      }
+
+      function renderRecentResults(
+        outcome: Awaited<ReturnType<typeof listWorkflowRuns>>,
+      ): void {
+        const section = document.getElementById("results-section")!;
+        const panel = document.getElementById("results-panel")!;
+        panel.replaceChildren();
+        if (outcome.kind !== "ok") {
+          section.hidden = true;
+          return;
+        }
+        const completed = outcome.data
+          .filter((run) => run.status === "completed")
+          .slice(0, 5);
+        section.hidden = completed.length === 0;
+        if (!completed.length) return;
+        const list = document.createElement("ul");
+        list.className = "ui-record-list";
+        const labels: Record<string, string> = {
+          "gbp.sync": "Business Profile checked",
+          "gbp.generate_post": "Business Profile post proposal prepared",
+          "reviews.ingest": "Reviews checked",
+          "content.publish": "Content publishing completed",
+          "seo.crawl_or_analysis": "Website crawl completed",
+          "agent.gbp": "Business Profile recommendations prepared",
+          "agent.seo": "SEO recommendations prepared",
+          "agent.content": "Content ideas prepared",
+          "agent.reviews": "Review recommendations prepared",
+        };
+        for (const run of completed) {
+          const item = document.createElement("li");
+          const title = document.createElement("strong");
+          title.textContent =
+            labels[run.workflow_key ?? ""] ?? "Work completed";
+          const date = document.createElement("span");
+          const completedAt = run.completed_at
+            ? new Date(run.completed_at)
+            : null;
+          date.textContent =
+            completedAt && !Number.isNaN(completedAt.getTime())
+              ? completedAt.toLocaleDateString(undefined, {
+                  month: "short",
+                  day: "numeric",
+                })
+              : "";
+          item.append(title, date);
+          list.append(item);
+        }
+        panel.append(list);
       }
 
       function overviewEmptyState(

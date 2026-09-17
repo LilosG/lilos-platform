@@ -39,75 +39,80 @@ import "../styles/automations.css";
       </PageShell>
 
       <PageShell id="workspace-content" hidden>
-        <PageHeader
-          eyebrow="Operations"
-          title="Automations"
-          description="See what is running, what is queued, what runs on a schedule, and what needs attention."
-        />
+        <PageHeader title="Automations" />
 
         <Region id="automation-action-status" live="polite" />
 
-        <PageSection eyebrow="Health" title="Automation summary">
-          <Region id="automation-metrics">
-            <Skeleton lines={2} label="Loading automation health" />
+        <PageSection title="Across your products">
+          <Region id="product-domain-overview">
+            <Skeleton lines={3} label="Loading product automations" />
           </Region>
         </PageSection>
 
-        <Notice title="Location">
-          <div class="ui-field">
-            <label class="ui-field__label" for="automation-location-select"
-              >Operate on</label
-            >
-            <select id="automation-location-select" class="ui-input">
-              <option value="">Choose a location</option>
-            </select>
-            <p class="ui-field__description">
-              Run-now actions and new schedules use this LILOs location.
-            </p>
-          </div>
-        </Notice>
+        <details class="ui-advanced-workspace" id="automation-advanced">
+          <summary>Schedules and advanced controls</summary>
+          <PageSection title="Automation summary">
+            <Region id="automation-metrics">
+              <Skeleton lines={2} label="Loading automation health" />
+            </Region>
+          </PageSection>
 
-        <PageSection
-          eyebrow="Agents"
-          title="AI agents"
-          description="Start an agent, see its current state immediately, stop an active run, and inspect details only when needed."
-        >
-          <Region id="agent-runtime-status">
-            <Skeleton lines={2} label="Checking agent runtime" />
-          </Region>
-          <Region id="agent-start-actions" />
-          <Region id="agent-run-history">
-            <Skeleton lines={3} label="Loading agent runs" />
-          </Region>
-          <Region id="agent-run-detail" live="polite" />
-        </PageSection>
+          <Notice title="Location">
+            <div class="ui-field">
+              <label class="ui-field__label" for="automation-location-select"
+                >Operate on</label
+              >
+              <select id="automation-location-select" class="ui-input">
+                <option value="">Choose a location</option>
+              </select>
+              <p class="ui-field__description">
+                Run-now actions and new schedules use this LILOs location.
+              </p>
+            </div>
+          </Notice>
 
-        <PageSection
-          eyebrow="Workflows"
-          title="Other automations"
-          description="Run or schedule recurring product workflows from the selected location."
-        >
-          <Region id="workflow-catalog">
-            <Skeleton lines={4} label="Loading automation catalog" />
-          </Region>
-        </PageSection>
+          <PageSection
+            eyebrow="Advanced"
+            title="AI agents"
+            description="Start an agent, see its current state immediately, stop an active run, and inspect details only when needed."
+          >
+            <Region id="agent-runtime-status">
+              <Skeleton lines={2} label="Checking agent runtime" />
+            </Region>
+            <Region id="agent-start-actions" />
+            <Region id="agent-run-history">
+              <Skeleton lines={3} label="Loading agent runs" />
+            </Region>
+            <Region id="agent-run-detail" live="polite" />
+          </PageSection>
 
-        <PageSection
-          eyebrow="Recurring"
-          title="Schedules"
-          description="Pause, resume, change cadence, or cancel recurring work."
-        >
-          <Region id="schedule-list">
-            <Skeleton lines={3} label="Loading schedules" />
-          </Region>
-        </PageSection>
+          <PageSection
+            eyebrow="Workflows"
+            title="Other automations"
+            description="Run or schedule recurring product workflows from the selected location."
+          >
+            <Region id="workflow-catalog">
+              <Skeleton lines={4} label="Loading automation catalog" />
+            </Region>
+          </PageSection>
 
-        <PageSection eyebrow="Activity" title="Recent runs">
-          <Region id="run-history">
-            <Skeleton lines={4} label="Loading run history" />
-          </Region>
-          <Region id="workflow-run-detail" live="polite" />
-        </PageSection>
+          <PageSection
+            eyebrow="Recurring"
+            title="Schedules"
+            description="Pause, resume, change cadence, or cancel recurring work."
+          >
+            <Region id="schedule-list">
+              <Skeleton lines={3} label="Loading schedules" />
+            </Region>
+          </PageSection>
+
+          <PageSection title="Recent runs">
+            <Region id="run-history">
+              <Skeleton lines={4} label="Loading run history" />
+            </Region>
+            <Region id="workflow-run-detail" live="polite" />
+          </PageSection>
+        </details>
       </PageShell>
     </AppShell>
 
@@ -127,6 +132,7 @@ import "../styles/automations.css";
         confirmInline,
       } from "../lib/ui";
       import { statusLabel, statusTone } from "../lib/status-language";
+      import { createAutomationCard } from "../lib/ui/product-automations";
       import {
         listWorkflowTypes,
         listSchedules,
@@ -228,6 +234,7 @@ import "../styles/automations.css";
 
       let activeOrgId = "";
       let locations: LocationSummary[] = [];
+      let canManageAutomations = false;
       let hermesCapabilities: AgentCapabilities | null = null;
       let selectedAgentRunId: string | null = null;
       let selectedWorkflowRunId: string | null = null;
@@ -1132,6 +1139,94 @@ import "../styles/automations.css";
         );
       }
 
+      function renderProductDomains(
+        workflows: WorkflowTypeEntry[],
+        schedules: WorkflowScheduleEntry[],
+        runs: WorkflowRunSummary[],
+      ): void {
+        const panel = document.getElementById("product-domain-overview")!;
+        panel.replaceChildren();
+        const domains = [
+          { key: "gbp", title: "Business Profile", href: "/gbp" },
+          { key: "reviews", title: "Reviews", href: "/reviews" },
+          { key: "content", title: "Content", href: "/content" },
+          { key: "seo", title: "SEO & Website", href: "/seo" },
+          { key: "leads", title: "Leads", href: "/leads" },
+          { key: "insights", title: "Growth Intelligence", href: "/insights" },
+        ];
+        const list = document.createElement("div");
+        list.className = "ui-product-activity";
+        for (const domain of domains) {
+          const owned = workflows.filter(
+            (item) =>
+              item.product_key === domain.key ||
+              item.key.startsWith(`${domain.key}.`) ||
+              (domain.key === "insights" && item.key === "agent.growth"),
+          );
+          if (!owned.length) continue;
+          const latest = runs.find((item) =>
+            owned.some((workflow) => workflow.key === item.workflow_key),
+          );
+          const active = schedules.filter(
+            (schedule) =>
+              schedule.status === "active" &&
+              owned.some((workflow) => workflow.key === schedule.workflow_key),
+          ).length;
+          const domainGroup = document.createElement("details");
+          domainGroup.className = "ui-product-domain";
+          const row = document.createElement("summary");
+          row.className = "ui-product-activity__row";
+          const heading = document.createElement("h3");
+          heading.textContent = domain.title;
+          const state = document.createElement("span");
+          state.className = "ui-text-secondary";
+          state.textContent = `${active} active schedule${active === 1 ? "" : "s"} · ${latest ? `Latest: ${statusLabel(latest.status)}` : "No recent result"}`;
+          row.append(heading, state);
+          const cards = document.createElement("div");
+          cards.className =
+            "ui-product-automations__cards ui-product-domain__cards";
+          for (const workflow of owned) {
+            const schedule = schedules.find(
+              (item) =>
+                item.workflow_key === workflow.key &&
+                item.location_id === selectedLocationId() &&
+                item.status !== "cancelled",
+            );
+            const lastRun = runs.find(
+              (item) =>
+                item.workflow_key === workflow.key &&
+                item.location_id === selectedLocationId(),
+            );
+            cards.append(
+              createAutomationCard(
+                workflow,
+                schedule,
+                lastRun,
+                activeOrgId,
+                () => selectedLocationId() ?? null,
+                loadAutomationData,
+                (message) => setActionMessage(message),
+                canManageAutomations,
+              ),
+            );
+          }
+          const link = document.createElement("a");
+          link.className = "ui-button ui-button--secondary ui-button--sm";
+          link.href = domain.href;
+          link.textContent = `Open ${domain.title}`;
+          domainGroup.append(row, cards, link);
+          list.append(domainGroup);
+        }
+        if (list.childElementCount) panel.append(list);
+        else
+          panel.append(
+            emptyState(
+              "No automations available",
+              "Product automations appear here when enabled.",
+            ),
+          );
+      }
+
       function renderCatalog(
         items: WorkflowTypeEntry[],
         schedules: WorkflowScheduleEntry[],
@@ -1558,6 +1653,12 @@ import "../styles/automations.css";
           listWorkflowRuns(activeOrgId, { limit: 40 }),
         ]);
         catalogCache = catalog.kind === "ok" ? catalog.data : null;
+        if (catalog.kind === "ok")
+          renderProductDomains(
+            catalog.data,
+            schedules.kind === "ok" ? schedules.data : [],
+            runs.kind === "ok" ? runs.data : [],
+          );
         schedulesCache = schedules.kind === "ok" ? schedules.data : null;
 
         if (catalog.kind === "ok") {
@@ -1613,6 +1714,11 @@ import "../styles/automations.css";
         organization: import("../lib/workspace").MyOrganization,
       ): Promise<void> {
         setActiveOrganization(organization);
+        canManageAutomations = ["internal", "partner", "support"].includes(
+          organization.membership_type,
+        );
+        document.getElementById("automation-advanced")!.hidden =
+          !canManageAutomations;
         activeOrgId = organization.organization_id;
         selectedAgentRunId = null;
         selectedWorkflowRunId = null;

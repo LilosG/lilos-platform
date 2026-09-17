@@ -270,8 +270,7 @@ const productKeys = [
       label.textContent = "Location";
       const description = document.createElement("p");
       description.className = "ui-field__description";
-      description.textContent =
-        "Choose the exact location this agent should analyze. No location is selected automatically when multiple active locations exist.";
+      description.textContent = "Choose the location for this work.";
       const select = document.createElement("select");
       select.id = "agent-location-choice";
       select.className = "ui-input";
@@ -368,7 +367,7 @@ const productKeys = [
           ? resolution.location.id
           : await chooseLocation(workflow, resolution.locations);
       if (!locationId) {
-        setProductAgentStatus("Agent run cancelled.", "info");
+        setProductAgentStatus("Cancelled.", "info");
         return;
       }
 
@@ -381,7 +380,7 @@ const productKeys = [
       if (started.kind === "runtime") {
         if (started.outcome.kind === "ok") {
           setProductAgentStatus(
-            `Agent runtime unavailable · ${started.outcome.data.reason_code ?? "CAPABILITY_UNAVAILABLE"}`,
+            "This action is unavailable right now.",
             "danger",
           );
         } else {
@@ -401,7 +400,7 @@ const productKeys = [
       }
 
       setProductAgentStatus(
-        `${PRODUCT_AGENT_LABELS[workflow]} queued. Waiting for execution…`,
+        `${PRODUCT_AGENT_LABELS[workflow]} started.`,
         "info",
       );
       const completed = await waitForProductAgentRun(
@@ -441,14 +440,14 @@ const productKeys = [
 
       if (completed.data.status === "waiting_approval") {
         setProductAgentStatus(
-          `${PRODUCT_AGENT_LABELS[workflow]} is waiting for approval. Open Automations if you need the run controls.`,
+          `${PRODUCT_AGENT_LABELS[workflow]} is waiting for approval. Review it in this product workspace.`,
           "warning",
         );
         return;
       }
 
       setProductAgentStatus(
-        `${PRODUCT_AGENT_LABELS[workflow]} ended with ${completed.data.status}${completed.data.failure_code ? ` · ${completed.data.failure_code}` : ""}.`,
+        `${PRODUCT_AGENT_LABELS[workflow]} could not finish. Try again or contact your account team.`,
         "danger",
       );
     } finally {

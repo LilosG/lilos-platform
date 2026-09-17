@@ -63,9 +63,7 @@ test.describe("Professional UX shell", () => {
     await expect(page.locator(".topbar__org-name")).toBeVisible();
   });
 
-  test("every page has a page-head with eyebrow and title", async ({
-    page,
-  }) => {
+  test("every page has a clear page title", async ({ page }) => {
     const routes = [
       "/",
       "/gbp",
@@ -80,19 +78,9 @@ test.describe("Professional UX shell", () => {
     ];
     for (const route of routes) {
       await page.goto(route);
-      const eyebrow = page.locator(
-        ".ui-page-header .ui-page-header__identity > .ui-overline",
-      );
-      const title = page.locator(".ui-page-header h1");
-      const eyebrowCount = await eyebrow.count();
-      const titleCount = await title.count();
       expect(
-        eyebrowCount,
-        `${route} should have an eyebrow`,
+        await page.locator(".ui-page-header h1").count(),
       ).toBeGreaterThanOrEqual(1);
-      expect(titleCount, `${route} should have a title`).toBeGreaterThanOrEqual(
-        1,
-      );
     }
   });
 });
@@ -166,10 +154,10 @@ test.describe("SEO workspace tabs", () => {
     await expect(tabs).toHaveCount(4);
     const tabLabels = await tabs.allTextContents();
     expect(tabLabels).toEqual([
-      "Overview",
+      "Search performance",
+      "Website health",
       "Crawl",
       "Opportunities",
-      "Search Console",
     ]);
   });
 });
