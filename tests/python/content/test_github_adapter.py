@@ -122,9 +122,7 @@ async def test_failed_vercel_status_without_production_deployment_is_terminal() 
         check_pages=[],
         deployment_pages=[[{"id": 9, "environment": "Preview"}]],
         commit_status={
-            "statuses": [
-                {"context": "Vercel", "state": "failure", "target_url": target_url}
-            ]
+            "statuses": [{"context": "Vercel", "state": "failure", "target_url": target_url}]
         },
     )
 
