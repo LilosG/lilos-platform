@@ -111,7 +111,27 @@ async def test_preview_only_deployment_does_not_satisfy_production_publish() -> 
         "state": "none",
         "url": "",
     }
-    assert len(publisher.calls) == 1
+    assert len(publisher.calls) == 2
+    assert publisher.calls[1][1].endswith("/status")
+
+
+@pytest.mark.anyio
+async def test_failed_vercel_status_without_production_deployment_is_terminal() -> None:
+    target_url = "https://vercel.com/team?upgradeToPro=build-rate-limit"
+    publisher = StubGitHubPublisher(
+        check_pages=[],
+        deployment_pages=[[{"id": 9, "environment": "Preview"}]],
+        commit_status={
+            "statuses": [
+                {"context": "Vercel", "state": "failure", "target_url": target_url}
+            ]
+        },
+    )
+
+    assert await publisher.deployment("owner/repo", "revision") == {
+        "state": "failure",
+        "url": target_url,
+    }
 
 
 @pytest.mark.anyio
