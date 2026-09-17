@@ -4,13 +4,18 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from time import monotonic
 from typing import Any
 from uuid import UUID
 
 import httpx
 
-from apps.api.app.ai.completion_text import DraftExtractionError, extract_draft
+from apps.api.app.ai.completion_text import (
+    DraftExtractionError,
+    extract_draft,
+    strip_code_fence,
+)
 from apps.api.app.ai.errors import AIProviderConfigurationError, AIProviderError
 
 logger = logging.getLogger(__name__)
@@ -28,6 +33,37 @@ _HTTP_ERROR_CATEGORIES: dict[int, tuple[str, str]] = {
     504: ("provider", "AI provider request timed out"),
 }
 
+_ARTICLE_CONTENT_TYPES = frozenset(
+    {"article", "blog", "blog_post", "blog-post", "guide", "local_guide", "local-guide"}
+)
+_ARTICLE_MINIMUM_WORDS = 850
+_ARTICLE_MINIMUM_H2S = 6
+_ARTICLE_MINIMUM_INTERNAL_LINKS = 3
+_ARTICLE_MINIMUM_FAQS = 3
+_ARTICLE_MINIMUM_RELEVANT_H2S = 3
+_TOPIC_OVERLAP_THRESHOLD = 0.75
+_TOPIC_STOPWORDS = frozenset(
+    {
+        "a",
+        "an",
+        "and",
+        "at",
+        "best",
+        "by",
+        "for",
+        "from",
+        "guide",
+        "how",
+        "in",
+        "near",
+        "of",
+        "on",
+        "the",
+        "to",
+        "with",
+    }
+)
+
 
 def _classify_http_error(status_code: int) -> tuple[str, str]:
     """Return (category, safe_message) for an HTTP status code."""
@@ -38,6 +74,141 @@ def _classify_http_error(status_code: int) -> tuple[str, str]:
     if 500 <= status_code < 600:
         return ("provider", f"AI provider encountered an error (HTTP {status_code})")
     return ("provider", f"AI provider returned unexpected status {status_code}")
+
+
+def _is_article_content_type(content_type: object) -> bool:
+    return str(content_type or "").strip().casefold() in _ARTICLE_CONTENT_TYPES
+
+
+def _topic_tokens(value: object) -> set[str]:
+    tokens = re.findall(r"[a-z0-9]+", str(value or "").casefold())
+    return {token for token in tokens if len(token) > 2 and token not in _TOPIC_STOPWORDS}
+
+
+def _find_existing_topic_overlap(input_document: dict[str, Any]) -> str | None:
+    """Return the URL of a strongly overlapping indexed page, when one exists."""
+    if not _is_article_content_type(input_document.get("content_type")):
+        return None
+    target_tokens = _topic_tokens(input_document.get("content_title"))
+    if len(target_tokens) < 3:
+        return None
+    knowledge = input_document.get("knowledge")
+    if not isinstance(knowledge, dict):
+        return None
+    pages = knowledge.get("website_knowledge")
+    if not isinstance(pages, list):
+        return None
+    for page in pages:
+        if not isinstance(page, dict):
+            continue
+        page_title = page.get("title") or page.get("h1")
+        page_tokens = _topic_tokens(page_title)
+        if len(page_tokens) < 3:
+            continue
+        shared = target_tokens & page_tokens
+        containment = len(shared) / min(len(target_tokens), len(page_tokens))
+        if len(shared) >= 4 and containment >= _TOPIC_OVERLAP_THRESHOLD:
+            return str(page.get("url") or page_title or "existing website page")
+    return None
+
+
+def _content_knowledge_for_prompt(raw: object) -> dict[str, object]:
+    """Bound website grounding so article prompts stay useful instead of enormous."""
+    if not isinstance(raw, dict):
+        return {}
+    result: dict[str, object] = {}
+    for key in ("identity", "gbp_knowledge"):
+        value = raw.get(key)
+        if isinstance(value, list) and value:
+            result[key] = value[:10]
+    website = raw.get("website_knowledge")
+    if isinstance(website, list):
+        pages: list[dict[str, object]] = []
+        for raw_page in website[:10]:
+            if not isinstance(raw_page, dict):
+                continue
+            page: dict[str, object] = {}
+            for key in ("url", "title", "h1", "meta_description"):
+                value = raw_page.get(key)
+                if value:
+                    page[key] = value
+            body_text = raw_page.get("body_text")
+            if body_text:
+                page["body_excerpt"] = str(body_text)[:1800]
+            if page:
+                pages.append(page)
+        if pages:
+            result["website_knowledge"] = pages
+    return result
+
+
+def _extract_content_payload(content_text: str) -> dict[str, Any]:
+    """Parse the full structured Content response instead of discarding SEO fields."""
+    text = strip_code_fence(content_text)
+    if not text:
+        raise DraftExtractionError("AI provider returned empty content")
+    try:
+        parsed = json.loads(text)
+    except (json.JSONDecodeError, ValueError):
+        raise DraftExtractionError(
+            "AI provider returned Content output that is not valid JSON"
+        ) from None
+    if not isinstance(parsed, dict):
+        raise DraftExtractionError("AI provider returned Content output that is not a JSON object")
+    draft = str(parsed.get("draft") or "").strip()
+    if not draft:
+        raise DraftExtractionError("AI provider returned no draft field")
+    parsed["draft"] = draft
+    return parsed
+
+
+def _validate_article_payload(payload: dict[str, Any], input_document: dict[str, Any]) -> list[str]:
+    """Deterministic minimum bar for AI-generated local SEO articles."""
+    if not _is_article_content_type(input_document.get("content_type")):
+        return []
+    draft = str(payload.get("draft") or "")
+    errors: list[str] = []
+    words = re.findall(r"\b[\w'-]+\b", draft)
+    if len(words) < _ARTICLE_MINIMUM_WORDS:
+        errors.append("article_too_thin")
+
+    if re.search(r"(?m)^#\s+\S", draft):
+        errors.append("article_body_h1_not_allowed")
+
+    h2s = re.findall(r"(?m)^##\s+(.+?)\s*$", draft)
+    if len(h2s) < _ARTICLE_MINIMUM_H2S:
+        errors.append("article_heading_depth_missing")
+
+    internal_links = re.findall(r"\[[^\]]+\]\((/[^)\s]+)\)", draft)
+    if len(set(internal_links)) < _ARTICLE_MINIMUM_INTERNAL_LINKS:
+        errors.append("article_internal_links_missing")
+
+    faqs = payload.get("faqs")
+    valid_faqs = (
+        [
+            faq
+            for faq in faqs
+            if isinstance(faq, dict)
+            and str(faq.get("question") or "").strip()
+            and str(faq.get("answer") or "").strip()
+        ]
+        if isinstance(faqs, list)
+        else []
+    )
+    if len(valid_faqs) < _ARTICLE_MINIMUM_FAQS:
+        errors.append("article_faq_depth_missing")
+
+    if not str(payload.get("meta_description") or "").strip():
+        errors.append("article_meta_description_missing")
+    if not str(payload.get("seo_title") or "").strip():
+        errors.append("article_seo_title_missing")
+
+    title_tokens = _topic_tokens(input_document.get("content_title"))
+    if title_tokens and h2s:
+        relevant_h2s = sum(bool(title_tokens & _topic_tokens(heading)) for heading in h2s)
+        if relevant_h2s < min(_ARTICLE_MINIMUM_RELEVANT_H2S, len(h2s)):
+            errors.append("article_search_intent_headings_missing")
+    return sorted(set(errors))
 
 
 # ---------------------------------------------------------------------------
@@ -89,6 +260,14 @@ class OpenRouterProvider:
         ``cost_microunits`` (actual provider-reported USD cost when available).
         """
         del organization_id, location_id
+        if task_key == "content.draft_revision":
+            overlap = _find_existing_topic_overlap(input_document)
+            if overlap:
+                raise AIProviderError(
+                    "permanent",
+                    f"Content topic substantially overlaps an existing website page: {overlap}",
+                )
+
         model = self._default_model
         prompt = _build_prompt(task_key, input_document)
         max_tokens = min(maximum_tokens, self._max_output_tokens)
@@ -161,17 +340,37 @@ class OpenRouterProvider:
                 "provider", "AI provider returned an unparseable response"
             ) from None
 
-        # Extract the assistant message content
         choices = body.get("choices", [])
         if not choices:
             raise AIProviderError("provider", "AI provider returned no completion choices")
         message = choices[0].get("message", {})
         content_text = str(message.get("content", ""))
-        # response_format=json_object makes structured output the norm here, but
-        # a model that answers in prose anyway has still answered. Shared with
-        # the agent-runtime provider so one rule governs both.
+
+        content_fields: dict[str, Any] = {}
         try:
-            draft = extract_draft(content_text, subject="AI provider")
+            if task_key == "content.draft_revision":
+                content_payload = _extract_content_payload(content_text)
+                draft = str(content_payload["draft"])
+                quality_errors = _validate_article_payload(content_payload, input_document)
+                if quality_errors:
+                    raise AIProviderError(
+                        "permanent",
+                        "AI provider returned Content output below the publishing quality floor: "
+                        + ", ".join(quality_errors),
+                    )
+                for key in (
+                    "meta_description",
+                    "seo_title",
+                    "faqs",
+                    "related_services",
+                    "service_areas",
+                    "tags",
+                    "category",
+                ):
+                    if key in content_payload:
+                        content_fields[key] = content_payload[key]
+            else:
+                draft = extract_draft(content_text, subject="AI provider")
         except DraftExtractionError as error:
             raise AIProviderError("provider", error.reason) from None
 
@@ -209,7 +408,7 @@ class OpenRouterProvider:
         provider_model = str(body.get("model", model))
         request_id = str(body.get("id", ""))
 
-        return {
+        result: dict[str, Any] = {
             "provider": "openrouter",
             "model": provider_model,
             "draft": draft,
@@ -223,6 +422,8 @@ class OpenRouterProvider:
             "cost_microunits": cost_microunits,
             "request_id": request_id,
         }
+        result.update(content_fields)
+        return result
 
 
 # ---------------------------------------------------------------------------
@@ -232,12 +433,12 @@ class OpenRouterProvider:
 _SYSTEM_PROMPT = (
     "You are a governed content assistant for the LILOs platform. "
     "You produce grounded, policy-compliant content for human review. "
-    "Always return a JSON object with a single key 'draft' containing the "
-    "generated text. Never include secrets, credentials, or personally "
+    "Always return a JSON object that follows the task-specific output contract "
+    "and includes a 'draft' key. Never include secrets, credentials, or personally "
     "identifiable information in your output. "
-    "Only use approved business facts provided in the prompt. "
-    "Never invent claims, capabilities, guarantees, or business details "
-    "that are not present in the approved facts."
+    "Only use approved business facts and source-backed knowledge provided in the prompt. "
+    "Never invent claims, capabilities, guarantees, business details, locations, pricing, "
+    "hours, menu items, credentials, or service areas that are not present in the supplied sources."
 )
 
 
@@ -350,10 +551,19 @@ def _build_prompt(task_key: str, input_document: dict[str, Any]) -> str:
             parts.append(f"\nTASK-SPECIFIC INSTRUCTIONS:\n{instructions}")
         parts.append("\nReturn ONLY a JSON object with the key 'draft'.")
         return "\n".join(parts)
+
     if task_key == "content.draft_revision":
         facts_section = _format_governed_facts(governed_facts) if governed_facts else ""
+        knowledge = _content_knowledge_for_prompt(input_document.get("knowledge"))
         parts = [
-            "Write a content draft for the following audience, intent, and approved business facts."
+            (
+                "Write a source-backed website content draft for the supplied audience "
+                "and search intent."
+            ),
+            (
+                "The goal is a useful, authoritative page for a real local customer, "
+                "not generic SEO filler."
+            ),
         ]
         if content_title:
             parts.append(f"\nTitle: {content_title}")
@@ -367,11 +577,78 @@ def _build_prompt(task_key: str, input_document: dict[str, Any]) -> str:
                 "(authoritative — do not invent anything not listed here):"
                 f"\n{facts_section}"
             )
-        parts.append(
-            "\nProduce a well-structured, professional draft. "
-            "Return ONLY a JSON object with the key 'draft'."
-        )
+        if knowledge:
+            parts.append(
+                "\nSOURCE-BACKED WEBSITE AND LOCAL KNOWLEDGE. Use these pages for factual context "
+                "and for natural internal links. Never invent a URL that is not present here:\n"
+                + json.dumps(knowledge, default=str)
+            )
+
+        if _is_article_content_type(content_type):
+            parts.extend(
+                [
+                    "\nARTICLE QUALITY CONTRACT:",
+                    (
+                        "- Write roughly 1,000–1,300 substantive words. Do not pad with "
+                        "generic filler."
+                    ),
+                    (
+                        "- Do NOT put an H1 in the markdown body. The site template renders "
+                        "the frontmatter title as the single H1."
+                    ),
+                    (
+                        "- Use at least six descriptive H2 sections, with H3s only where "
+                        "they improve scanability."
+                    ),
+                    (
+                        "- Make section headings specific to the search intent and local context; "
+                        "avoid generic headings such as 'About Us', 'Overview', or 'Conclusion'."
+                    ),
+                    (
+                        "- Answer the primary search intent near the beginning, then add "
+                        "decision-useful depth, comparisons, planning details, and first-party "
+                        "expertise supported by the supplied sources."
+                    ),
+                    (
+                        "- Include at least three natural internal markdown links to relevant "
+                        "first-party URLs present in SOURCE-BACKED WEBSITE AND LOCAL KNOWLEDGE."
+                    ),
+                    (
+                        "- Use neighborhood, city, street, landmark, menu, service, hours, and "
+                        "other local details only when they are present in approved facts or "
+                        "source-backed knowledge."
+                    ),
+                    (
+                        "- Do not keyword-stuff. Local/service terms should appear naturally in "
+                        "useful headings and explanatory copy."
+                    ),
+                    (
+                        "- Do not create a generic business-description section when a "
+                        "query-specific section can provide more value."
+                    ),
+                    (
+                        "- FAQs must answer actual local customer questions and add information "
+                        "beyond repeating the article body."
+                    ),
+                    (
+                        "\nReturn ONLY one JSON object with these keys: `draft`, "
+                        "`meta_description`, `seo_title`, `faqs`, `related_services`, "
+                        "`service_areas`, `tags`, and `category`. `faqs` must contain three to "
+                        "six objects with `question` and `answer`. `meta_description` must be one "
+                        "useful sentence under 155 characters. `seo_title` must be under 60 "
+                        "characters. Do not include frontmatter inside `draft`."
+                    ),
+                ]
+            )
+        else:
+            parts.append(
+                "\nProduce a well-structured professional draft using only the supplied facts "
+                "and knowledge. Return ONLY one JSON object with the keys `draft`, "
+                "`meta_description`, `seo_title`, `faqs`, `related_services`, `service_areas`, "
+                "`tags`, and `category`."
+            )
         return "\n".join(parts)
+
     if task_key == "reviews.response_draft":
         review = input_document.get("review")
         review_document = review if isinstance(review, dict) else {}
@@ -418,6 +695,7 @@ def _build_prompt(task_key: str, input_document: dict[str, Any]) -> str:
             parts.append(f"\nFALLBACK TONE REFERENCE ONLY:\n{manual_fallback}")
         parts.append("\nReturn ONLY a JSON object with the key 'draft'.")
         return "\n".join(parts)
+
     # Generic fallback for any task
     return (
         f"Task: {task_key}\n\n"
