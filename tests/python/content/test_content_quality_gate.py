@@ -31,7 +31,10 @@ def _payload(body: str) -> dict[str, object]:
         "seo_title": "Happy Hour in Little Italy San Diego",
         "faqs": [
             {"question": "When is happy hour?", "answer": "Check the current first-party hours."},
-            {"question": "Should I reserve?", "answer": "Use the first-party reservation guidance."},
+            {
+                "question": "Should I reserve?",
+                "answer": "Use the first-party reservation guidance.",
+            },
             {"question": "Where is it?", "answer": "Use the source-backed location details."},
         ],
     }
