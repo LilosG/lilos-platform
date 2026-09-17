@@ -196,13 +196,13 @@ async def test_openrouter_provider_malformed_response(
 
 
 @pytest.mark.anyio
-async def test_openrouter_provider_accepts_prose_content(
+async def test_openrouter_provider_accepts_prose_for_unstructured_generation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A draft is prose; the JSON envelope is our convenience, not the answer.
+    """Unstructured generation tasks may salvage a usable prose completion.
 
-    This previously raised, so a usable reply was discarded and the operator
-    was shown "returned content that is not valid JSON".
+    Content drafting intentionally requires the structured JSON contract so its
+    SEO metadata and article-quality gates cannot be bypassed by raw prose.
     """
     _fake_http(
         monkeypatch,
@@ -215,7 +215,7 @@ async def test_openrouter_provider_accepts_prose_content(
         ),
     )
     output = await _provider().generate(
-        task_key="content.draft_revision", input_document={}, maximum_tokens=100
+        task_key="reviews.response_draft", input_document={}, maximum_tokens=100
     )
     assert output["draft"] == "Thank you for the kind words."
     # Salvaged or structured, a draft is never publishable without review.
