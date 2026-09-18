@@ -26,8 +26,6 @@ class GrowthActionCreate(BaseModel):
 
     @model_validator(mode="after")
     def validate_execution_binding(self) -> GrowthActionCreate:
-        if self.execution_mode == "workflow" and self.executor_workflow_key is None:
-            raise ValueError("workflow growth actions require executor_workflow_key")
         if self.execution_mode != "workflow" and self.executor_workflow_key is not None:
             raise ValueError("manual and monitor growth actions cannot bind an executor workflow")
         return self
