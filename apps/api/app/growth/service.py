@@ -20,6 +20,8 @@ from apps.api.app.execution.service import ExecutionService
 from apps.api.app.execution.workflow_catalog import WORKFLOW_TYPES
 from apps.api.app.growth.contracts import GrowthPlanCreate
 from apps.api.app.growth.models import GrowthAction, GrowthInitiative
+from apps.api.app.products.content.contracts import OpportunityCreate
+from apps.api.app.products.content.service import ContentService
 
 # The planner coordinates product agents; it never jumps directly into a
 # publication/provider-write workflow. Product agents translate the plan into
@@ -47,6 +49,7 @@ class GrowthService:
     def __init__(self) -> None:
         self.audit = AuditEventService()
         self.execution = ExecutionService()
+        self.content = ContentService()
 
     @staticmethod
     def _validate_executor_bindings(command: GrowthPlanCreate) -> None:
@@ -270,10 +273,22 @@ class GrowthService:
 
     @staticmethod
     def _dependencies_complete(action: GrowthAction, by_key: dict[str, GrowthAction]) -> bool:
-        return all(
-            dependency in by_key and by_key[dependency].status == "completed"
-            for dependency in (str(value) for value in action.dependency_keys)
-        )
+        """Only executable workflow dependencies block another workflow action.
+
+        Older plans could put monitor/manual actions ahead of executable work,
+        but those action types have no completion control and therefore created
+        permanent deadlocks. They remain visible as planning/verification
+        context, but never gate a product workflow.
+        """
+        for dependency in (str(value) for value in action.dependency_keys):
+            dependency_action = by_key.get(dependency)
+            if dependency_action is None:
+                return False
+            if dependency_action.execution_mode != "workflow":
+                continue
+            if dependency_action.status != "completed":
+                return False
+        return True
 
     async def dispatch_ready(
         self,
@@ -320,20 +335,63 @@ class GrowthService:
                 "the parent Growth evidence references are provenance, not a substitute for "
                 "this agent run observing its own evidence."
             )
-            workflow = await self.execution.start_named(
-                session,
-                organization_id,
-                workflow_key,
-                f"growth-action-{action.id}",
-                location_id=initiative.location_id,
-                input_document={
-                    "objective": objective[:4_000],
-                    "context_reference": f"growth-action:{action.id}",
-                },
-                correlation_id=correlation_id,
-                actor_id=actor_id,
-                enqueue_job=True,
-            )
+            if action.product_key == "content" and workflow_key == "agent.content":
+                source_reference = f"growth-action:{action.id}"
+                content_opportunity = await self.content.get_opportunity_by_source_reference(
+                    session,
+                    organization_id,
+                    source_reference,
+                )
+                if content_opportunity is None:
+                    content_opportunity = await self.content.create_opportunity(
+                        session,
+                        organization_id,
+                        OpportunityCreate(
+                            location_id=initiative.location_id,
+                            product_key="growth",
+                            target_reference=action.target_reference[:500],
+                            opportunity_type=action.action_type[:64],
+                            source_type="growth_plan",
+                            source_reference=source_reference,
+                            evidence_document={
+                                "growth_initiative_id": str(initiative.id),
+                                "growth_action_id": str(action.id),
+                                "evidence_references": list(action.evidence_references),
+                                "expected_result_hypothesis": action.expected_result_hypothesis,
+                                "verification_plan": action.verification_plan,
+                            },
+                            priority_score=initiative.priority_score,
+                        ),
+                        correlation_id=correlation_id,
+                    )
+                _, workflow = await self.content.accept_opportunity_and_dispatch_agent(
+                    session,
+                    organization_id,
+                    content_opportunity.id,
+                    actor_id=actor_id,
+                    correlation_id=correlation_id,
+                    objective=(
+                        objective
+                        + " This approved Growth action authorizes the Content opportunity. "
+                        "Carry it through research, item creation, evidence-backed brief, and "
+                        "quality-validated draft so it appears in Content for human review."
+                    ),
+                )
+            else:
+                workflow = await self.execution.start_named(
+                    session,
+                    organization_id,
+                    workflow_key,
+                    f"growth-action-{action.id}",
+                    location_id=initiative.location_id,
+                    input_document={
+                        "objective": objective[:4_000],
+                        "context_reference": f"growth-action:{action.id}",
+                    },
+                    correlation_id=correlation_id,
+                    actor_id=actor_id,
+                    enqueue_job=True,
+                )
             action.workflow_run_id = workflow.id
             action.status = "queued"
             dispatched.append(action)
