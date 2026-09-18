@@ -32,7 +32,6 @@ WORKER_SCHEDULER_SECRETS = {
     "LILOS_GITHUB_APP_CLIENT_ID",
     "LILOS_GITHUB_APP_PRIVATE_KEY",
     "LILOS_GITHUB_APP_INSTALLATION_REDIRECT_URI",
-    "LILOS_OPENROUTER_API_KEY",
 }
 WORKER_SECRETS = WORKER_SCHEDULER_SECRETS | {
     "LILOS_GOOGLE_PAGESPEED_API_KEY",
@@ -61,7 +60,6 @@ SECRET_POLICY = {
         "LILOS_GITHUB_APP_CLIENT_ID",
         "LILOS_GITHUB_APP_PRIVATE_KEY",
         "LILOS_GITHUB_APP_INSTALLATION_REDIRECT_URI",
-        "LILOS_OPENROUTER_API_KEY",
     },
     "lilos-worker": WORKER_SECRETS,
     "lilos-scheduler": WORKER_SCHEDULER_SECRETS,
@@ -297,6 +295,14 @@ def validate_blueprint(path: Path = BLUEPRINT) -> tuple[str, ...]:
             "envVarKey": "HERMES_RUNTIME_VERSION",
         },
     }
+    expected_openrouter_key = {
+        "key": "LILOS_OPENROUTER_API_KEY",
+        "fromService": {
+            "name": HERMES_SERVICE,
+            "type": "pserv",
+            "envVarKey": "OPENROUTER_API_KEY",
+        },
+    }
     for consumer in ("lilos-api", "lilos-worker"):
         consumer_env = {
             item.get("key"): item
@@ -309,6 +315,8 @@ def validate_blueprint(path: Path = BLUEPRINT) -> tuple[str, ...]:
             errors.append(f"{consumer}:hermes-api-key")
         if consumer_env.get("LILOS_HERMES_RUNTIME_RELEASE") != expected_runtime_release:
             errors.append(f"{consumer}:hermes-runtime-release")
+        if consumer_env.get("LILOS_OPENROUTER_API_KEY") != expected_openrouter_key:
+            errors.append(f"{consumer}:openrouter-shared-secret")
         if consumer == "lilos-api":
             if consumer_env.get("LILOS_HERMES_TOOL_API_KEY") != expected_tool_key:
                 errors.append("lilos-api:hermes-tool-key")
@@ -324,6 +332,7 @@ def validate_blueprint(path: Path = BLUEPRINT) -> tuple[str, ...]:
         "LILOS_HERMES_BASE_URL",
         "LILOS_HERMES_API_KEY",
         "LILOS_HERMES_TOOL_API_KEY",
+        "LILOS_OPENROUTER_API_KEY",
     }:
         errors.append("lilos-scheduler:hermes-least-privilege")
 
