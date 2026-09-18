@@ -90,6 +90,7 @@ def test_canonical_workflow_types_registered() -> None:
         "agent.gbp",
         "agent.growth",
         "agent.insights",
+        "agent.leads",
         "agent.reviews",
         "agent.seo",
         "content.draft_revision",
