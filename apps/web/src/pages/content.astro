@@ -154,8 +154,8 @@ import "../styles/global.css";
             <details>
               <summary>Content opportunities</summary>
               <p class="content-secondary">
-                Evidence-backed opportunities stay separate until accepted,
-                then remain visible while LILOs creates the working content.
+                Evidence-backed opportunities stay separate from the working
+                pipeline until you accept them.
               </p>
               <Region id="opportunity-list" live="polite" />
             </details>
@@ -309,7 +309,6 @@ import "../styles/global.css";
       let activeFilter = "active";
       let activeItemId: string | null = null;
       let pollTimer: number | null = null;
-      let opportunityPollTimer: number | null = null;
 
       const regions: BootRegions = {
         notConfigured: document.getElementById("boot-not-configured")!,
@@ -1094,12 +1093,8 @@ import "../styles/global.css";
           return;
         }
         const open = result.data.filter((item) =>
-          ["identified", "validated", "accepted"].includes(item.status),
+          ["identified", "validated"].includes(item.status),
         );
-        if (opportunityPollTimer !== null) {
-          window.clearTimeout(opportunityPollTimer);
-          opportunityPollTimer = null;
-        }
         if (!open.length) {
           region.append(
             emptyState(
@@ -1111,14 +1106,6 @@ import "../styles/global.css";
         }
         for (const opportunity of open)
           region.append(opportunityRow(opportunity));
-
-        if (
-          open.some((opportunity) => opportunity.status === "accepted")
-        ) {
-          opportunityPollTimer = window.setTimeout(() => {
-            void Promise.all([renderOpportunities(), refreshList()]);
-          }, 5000);
-        }
       }
 
       function opportunityRow(opportunity: ContentOpportunity): HTMLElement {
@@ -1130,29 +1117,21 @@ import "../styles/global.css";
         const meta = document.createElement("span");
         meta.textContent = `${opportunity.opportunity_type.replace(/_/g, " ")} · priority ${opportunity.priority_score}`;
         text.append(title, meta);
-        const action = document.createElement("div");
-        if (opportunity.status === "accepted") {
-          action.className = "content-opportunity__progress";
-          action.textContent = "Creating content";
-          action.setAttribute("aria-label", "Creating content");
-        } else {
-          const accept = document.createElement("button");
-          accept.type = "button";
-          accept.className = "ui-button ui-button--secondary ui-button--sm";
-          accept.textContent = "Accept opportunity";
-          accept.addEventListener("click", async () => {
-            accept.disabled = true;
-            const result = await decideOpportunity(
-              organizationId,
-              opportunity.id,
-              true,
-            );
-            if (result.kind === "ok") await renderOpportunities();
-            else accept.disabled = false;
-          });
-          action.append(accept);
-        }
-        row.append(text, action);
+        const accept = document.createElement("button");
+        accept.type = "button";
+        accept.className = "ui-button ui-button--secondary ui-button--sm";
+        accept.textContent = "Accept opportunity";
+        accept.addEventListener("click", async () => {
+          accept.disabled = true;
+          const result = await decideOpportunity(
+            organizationId,
+            opportunity.id,
+            true,
+          );
+          if (result.kind === "ok") await renderOpportunities();
+          else accept.disabled = false;
+        });
+        row.append(text, accept);
         return row;
       }
 
@@ -1499,12 +1478,6 @@ import "../styles/global.css";
     align-items: center;
     padding: 0.8rem 0;
     border-bottom: 1px solid var(--color-border, #d8d3c6);
-  }
-  .content-opportunity__progress {
-    color: var(--color-text-secondary, #666157);
-    font-size: 0.875rem;
-    font-weight: 650;
-    white-space: nowrap;
   }
   .content-history {
     margin-top: 1rem;
