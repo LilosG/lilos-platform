@@ -143,8 +143,16 @@ def _find_existing_topic_overlap(input_document: dict[str, Any]) -> str | None:
     pages = knowledge.get("website_knowledge")
     if not isinstance(pages, list):
         return None
+    target_reference = str(input_document.get("target_reference") or "").strip().rstrip("/")
     for page in pages:
         if not isinstance(page, dict):
+            continue
+        page_url = str(page.get("url") or "").strip().rstrip("/")
+        if target_reference and page_url and target_reference == page_url:
+            # This is an intentional optimization of the canonical target page,
+            # not a duplicate-content proposal. The overlap guard exists to
+            # prevent a second competing page, not to block improving the page
+            # the brief explicitly targets.
             continue
         page_title = page.get("title") or page.get("h1")
         page_tokens = _topic_tokens(page_title)
