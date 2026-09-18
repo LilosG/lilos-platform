@@ -33,19 +33,33 @@ def _payload(body: str) -> dict[str, object]:
         "faqs": [
             {
                 "question": "When is happy hour?",
-                "answer": "Current happy hour timing should be confirmed from the first-party hours and menu before visiting because operating details can change.",
+                "answer": (
+                    "Current happy hour timing should be confirmed from the first-party hours "
+                    "and menu before visiting because operating details can change."
+                ),
             },
             {
                 "question": "Should I reserve?",
-                "answer": "Use the first-party reservation guidance for the current booking process. Larger groups should review the venue's published planning information before arriving.",
+                "answer": (
+                    "Use the first-party reservation guidance for the current booking process. "
+                    "Larger groups should review the venue's published planning information "
+                    "before arriving."
+                ),
             },
             {
                 "question": "Where is it?",
-                "answer": "Use the source-backed address and location details when planning the visit. Confirm directions from the first-party site before traveling.",
+                "answer": (
+                    "Use the source-backed address and location details when planning the visit. "
+                    "Confirm directions from the first-party site before traveling."
+                ),
             },
             {
                 "question": "What should a group plan for?",
-                "answer": "Review the current menu, hours, and group guidance together so the visit matches the occasion. Use only the venue's published details for final planning.",
+                "answer": (
+                    "Review the current menu, hours, and group guidance together so the visit "
+                    "matches the occasion. Use only the venue's published details for final "
+                    "planning."
+                ),
             },
         ],
     }
