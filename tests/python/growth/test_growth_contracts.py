@@ -145,6 +145,7 @@ def test_growth_executor_catalog_is_limited_to_governed_product_agents() -> None
         "agent.content": "content",
         "agent.gbp": "gbp",
         "agent.reviews": "reviews",
+        "agent.leads": "leads",
     }
 
 
@@ -155,6 +156,7 @@ def test_growth_executor_catalog_is_limited_to_governed_product_agents() -> None
         ("content", "agent.content"),
         ("gbp", "agent.gbp"),
         ("reviews", "agent.reviews"),
+        ("leads", "agent.leads"),
     ],
 )
 def test_growth_service_accepts_only_governed_product_agent_delegation(
