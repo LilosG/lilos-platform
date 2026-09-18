@@ -29,6 +29,7 @@ GROWTH_EXECUTOR_WORKFLOWS: dict[str, str] = {
     "agent.content": "content",
     "agent.gbp": "gbp",
     "agent.reviews": "reviews",
+    "agent.leads": "leads",
 }
 
 
