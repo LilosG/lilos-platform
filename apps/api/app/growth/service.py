@@ -474,8 +474,29 @@ class GrowthService:
                     str(ref) for ref in proposals if not str(ref).startswith("growth-initiative:")
                 ]
                 if product_proposals:
+                    preferred_prefixes = (
+                        "content-revision:",
+                        "gbp-post-revision:",
+                        "review-response-revision:",
+                        "seo-recommendation:",
+                        "gbp-change-set:",
+                        "seo-crawl-run:",
+                        "content-brief:",
+                        "content-item:",
+                        "lead-task:",
+                        "workflow-run:",
+                    )
+                    selected = next(
+                        (
+                            ref
+                            for prefix in preferred_prefixes
+                            for ref in reversed(product_proposals)
+                            if ref.startswith(prefix)
+                        ),
+                        product_proposals[-1],
+                    )
                     action.status = "waiting_approval"
-                    action.result_reference = product_proposals[0][:500]
+                    action.result_reference = selected[:500]
                 else:
                     action.status = "completed"
                     action.result_reference = workflow.output_reference
