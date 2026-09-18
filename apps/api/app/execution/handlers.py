@@ -600,9 +600,7 @@ async def _handle_content_draft_revision(
         return JobOutcome(
             result="retryable_failure" if retryable else "permanent_failure",
             safe_error=(
-                "AI_PROVIDER_TEMPORARY_FAILURE"
-                if retryable
-                else "CONTENT_GENERATION_REJECTED"
+                "AI_PROVIDER_TEMPORARY_FAILURE" if retryable else "CONTENT_GENERATION_REJECTED"
             ),
         )
     except Exception as exc:
