@@ -624,16 +624,22 @@ def test_review_reference_arguments_accept_canonical_tool_references() -> None:
     review_id = uuid4()
     fact_id = uuid4()
 
-    assert _uuid_reference(
-        f"review:{review_id}",
-        "review_id",
-        accepted_prefixes=("review:",),
-    ) == review_id
-    assert _uuid_reference(
-        f"business-fact:{fact_id}",
-        "approved_fact_revision_ids",
-        accepted_prefixes=("business-fact:",),
-    ) == fact_id
+    assert (
+        _uuid_reference(
+            f"review:{review_id}",
+            "review_id",
+            accepted_prefixes=("review:",),
+        )
+        == review_id
+    )
+    assert (
+        _uuid_reference(
+            f"business-fact:{fact_id}",
+            "approved_fact_revision_ids",
+            accepted_prefixes=("business-fact:",),
+        )
+        == fact_id
+    )
 
 
 def test_cross_product_summary_avoids_hermes_false_failed_key() -> None:
@@ -673,4 +679,3 @@ def test_cross_product_summary_avoids_hermes_false_failed_key() -> None:
         assert '"failed"' not in __import__("json").dumps(result)[:500].lower()
 
     asyncio.run(scenario())
-
