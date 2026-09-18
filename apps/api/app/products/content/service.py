@@ -856,7 +856,7 @@ class ContentService:
 
         # --- build AI input with resolved fact values and knowledge ---
         fallback = (
-            f"# {item.title}\n\nContent for {brief.audience} addressing {brief.intent}. "
+            f"Content for {brief.audience} addressing {brief.intent}. "
             "This draft requires human review before publication."
         )
         request = AIGatewayRequest(
@@ -874,8 +874,9 @@ class ContentService:
                     "site template renders the title, plus descriptive H2/H3 sections and no "
                     "frontmatter block; `meta_description`, "
                     "one sentence under 155 characters for search results; `seo_title`, "
-                    "under 60 characters for the search-result headline; `faqs`, three "
-                    "to six {question, answer} pairs a real local customer would ask, "
+                    "under 60 characters for the search-result headline; `faqs`, the "
+                    "content-type-appropriate set of {question, answer} pairs a real local "
+                    "customer would ask, "
                     "each answer two or three sentences; `related_services` and "
                     "`service_areas`, slugs drawn only from the approved facts and "
                     "website knowledge provided; `tags`; and `category`. Every claim must "
