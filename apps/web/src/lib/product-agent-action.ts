@@ -14,6 +14,7 @@ export const PRODUCT_AGENT_WORKFLOWS = [
   "agent.seo",
   "agent.content",
   "agent.reviews",
+  "agent.leads",
   "agent.insights",
 ] as const;
 
@@ -25,6 +26,7 @@ export const PRODUCT_AGENT_LABELS: Record<ProductAgentWorkflow, string> = {
   "agent.seo": "SEO analysis",
   "agent.content": "Content planning",
   "agent.reviews": "Review analysis",
+  "agent.leads": "Lead analysis",
   "agent.insights": "Performance analysis",
 };
 
@@ -39,6 +41,8 @@ export const PRODUCT_AGENT_OBJECTIVES: Record<ProductAgentWorkflow, string> = {
     "Analyze current governed content opportunities for the selected location and prepare justified content or optimization proposals.",
   "agent.reviews":
     "Analyze current review evidence for the selected location and prepare governed response or review-strategy proposals.",
+  "agent.leads":
+    "Analyze current lead lifecycle, urgency, response timing, source performance, and conversion evidence; prioritize follow-up and create internal tasks when warranted without contacting leads.",
   "agent.insights":
     "Analyze current cross-product performance evidence for the selected location and surface the most decision-relevant insights.",
 };
