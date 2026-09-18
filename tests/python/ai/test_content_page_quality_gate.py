@@ -106,4 +106,3 @@ def test_competing_page_with_same_topic_is_still_rejected() -> None:
         _find_existing_topic_overlap(document)
         == "https://inlovewiththecoco.com/restaurants-little-italy"
     )
-
