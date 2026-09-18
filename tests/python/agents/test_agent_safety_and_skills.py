@@ -65,6 +65,7 @@ def test_complete_product_skill_and_sanctioned_tool_plane() -> None:
         "agent.seo",
         "agent.content",
         "agent.reviews",
+        "agent.leads",
         "agent.insights",
         "agent.growth",
     }
@@ -116,6 +117,7 @@ def test_bound_skill_limits_tools_and_scheduler_stays_lilos_owned() -> None:
         "generate_gbp_post_proposal",
         "create_gbp_optimization_proposal",
         "draft_review_response_proposal",
+        "create_lead_followup_task",
         "create_growth_plan",
         "submit_for_approval",
     }
@@ -131,6 +133,7 @@ def test_growth_planner_is_cross_product_but_cannot_execute_product_proposals() 
         "read_gsc_evidence",
         "read_ga4_evidence",
         "read_reviews_state",
+        "read_leads_state",
         "read_content_inventory",
         "read_cross_product_summary",
         "analyze_seo_opportunities",
