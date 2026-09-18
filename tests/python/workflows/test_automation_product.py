@@ -1115,6 +1115,7 @@ def test_service_list_workflow_types(
             "agent.gbp",
             "agent.growth",
             "agent.insights",
+            "agent.leads",
             "agent.reviews",
             "agent.seo",
             "content.draft_revision",
