@@ -75,3 +75,40 @@ async def test_injected_database_keeps_worker_single_slot(
     )
 
     assert observed == [("render-instance:1", injected)]
+
+
+@pytest.mark.anyio
+async def test_operational_worker_slot_restarts_after_unexpected_crash(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = {"count": 0}
+    stop = asyncio.Event()
+
+    async def flaky_run_process(
+        _backend: FakeOperationalBackend,
+        _stop: asyncio.Event,
+    ) -> None:
+        calls["count"] += 1
+        if calls["count"] == 1:
+            raise RuntimeError("synthetic worker-slot crash")
+        stop.set()
+
+    monkeypatch.setattr(worker_runtime, "OperationalWorkerBackend", FakeOperationalBackend)
+    monkeypatch.setattr(worker_runtime, "run_process", flaky_run_process)
+
+    settings = Settings(environment=EnvironmentName.TEST, worker_concurrency=1)
+    await worker_runtime._run_operational_worker_slot(
+        settings,
+        stop,
+        RuntimeOptions(
+            minimum_poll_seconds=0.001,
+            maximum_poll_seconds=0.001,
+            shutdown_seconds=1,
+            cycle_seconds=1,
+        ),
+        slot=1,
+        database=None,
+    )
+
+    assert calls["count"] == 2
+
