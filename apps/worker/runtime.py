@@ -189,17 +189,7 @@ async def _run_operational_worker_slot(
         backend.instance_key = f"{base_instance_key}:{slot}"
         try:
             await run_process(backend, stop)
-            if stop.is_set():
-                return
-            logger.error(
-                "Durable worker slot exited unexpectedly",
-                extra={
-                    "event_name": "worker.slot.exited",
-                    "slot": slot,
-                    "operation": "supervise",
-                    "outcome": "failure",
-                },
-            )
+            return
         except asyncio.CancelledError:
             raise
         except Exception as exc:
