@@ -116,3 +116,17 @@ def test_schemas_forbid_unknown_properties(plugin: Any) -> None:
     """additionalProperties must stay closed so the agent cannot invent fields."""
     for name, schema in plugin.SCHEMAS.items():
         assert schema.get("additionalProperties") is False, name
+
+
+def test_content_draft_proposal_selects_evidence_not_agent_authored_copy(plugin: Any) -> None:
+    """Content copy must go through LILOs' canonical generator and quality gate."""
+    schema = plugin.SCHEMAS["generate_content_draft_proposal"]
+
+    assert set(schema["properties"]) == {
+        "content_item_id",
+        "content_brief_id",
+        "approved_fact_revision_ids",
+        "source_evidence_references",
+    }
+    for rejected in ("body", "frontmatter"):
+        assert rejected not in schema["properties"]
