@@ -52,6 +52,7 @@ class GrowthPlanCreate(BaseModel):
             raise ValueError("growth action keys must be unique within a plan")
 
         known = set(keys)
+        by_key = {action.action_key: action for action in self.actions}
         graph: dict[str, set[str]] = {}
         for action in self.actions:
             dependencies = set(action.dependency_keys)
@@ -63,6 +64,17 @@ class GrowthPlanCreate(BaseModel):
                     "growth action dependencies must reference actions in the same plan: "
                     + ", ".join(sorted(missing))
                 )
+            if action.execution_mode == "workflow":
+                non_executable = sorted(
+                    dependency
+                    for dependency in dependencies
+                    if by_key[dependency].execution_mode != "workflow"
+                )
+                if non_executable:
+                    raise ValueError(
+                        "workflow growth actions cannot depend on manual or monitor actions: "
+                        + ", ".join(non_executable)
+                    )
             graph[action.action_key] = dependencies
 
         visiting: set[str] = set()

@@ -36,6 +36,7 @@ from apps.api.app.products.seo.models import (
     SEOSearchProperty,
     SEOWebsite,
 )
+from apps.api.app.products.seo.orchestration import SEOOrchestrationService
 from apps.api.app.products.seo.search_console_service import SearchConsoleService
 from apps.api.app.products.seo.service import SEOService
 from apps.api.app.routes.health import settings_from_request
@@ -46,6 +47,7 @@ router = APIRouter(
     dependencies=[Depends(get_authenticated_principal)],
 )
 service = SEOService()
+orchestration = SEOOrchestrationService(seo=service)
 search_console = SearchConsoleService()
 Session = Annotated[AsyncSession, Depends(get_database_session)]
 
@@ -614,15 +616,32 @@ async def decide_recommendation(
     principal: Authenticated,
     _: Annotated[AuthorizationDecision, policy("seo.approve", True)],
 ) -> dict[str, object]:
+    correlation_id = request_correlation_id(request)
     item = await service.decide_recommendation(
         session,
         organization_id,
         revision_id,
         command,
         principal.platform_user_id,
-        correlation_id=request_correlation_id(request),
+        correlation_id=correlation_id,
     )
-    return {"data": recommendation_row(item), "meta": meta(request)}
+    workflow_run_id = None
+    if command.approve:
+        workflow_run_id = await orchestration.handoff_approved_recommendation(
+            session,
+            organization_id,
+            item,
+            actor_id=principal.platform_user_id,
+            correlation_id=correlation_id,
+        )
+    response_meta = meta(request)
+    if workflow_run_id is not None:
+        response_meta = {
+            **response_meta,
+            "workflow_run_id": workflow_run_id,
+            "workflow_key": "agent.content",
+        }
+    return {"data": recommendation_row(item), "meta": response_meta}
 
 
 @router.get("/recommendations/{revision_id}/tasks", dependencies=[Depends(no_store)])

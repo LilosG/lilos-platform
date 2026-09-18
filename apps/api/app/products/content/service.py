@@ -21,6 +21,7 @@ from apps.api.app.audit.metadata import JsonValue
 from apps.api.app.audit.repository import AuditEventRepository
 from apps.api.app.audit.service import AuditEventService
 from apps.api.app.config import Settings
+from apps.api.app.execution.models import WorkflowRun
 from apps.api.app.execution.service import ExecutionService
 from apps.api.app.integrations.models import IntegrationConnection, Provider
 from apps.api.app.integrations.secrets import FernetSecretStore
@@ -509,6 +510,77 @@ class ContentService:
             metadata={"accept": command.accept},
         )
         return opportunity
+
+    async def accept_opportunity_and_dispatch_agent(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        opportunity_id: UUID,
+        *,
+        actor_id: UUID | None,
+        correlation_id: str,
+        objective: str | None = None,
+    ) -> tuple[ContentOpportunity, WorkflowRun]:
+        """Accept one governed opportunity and start the canonical Content agent.
+
+        Acceptance is the authorization boundary for content creation. From this
+        point Hermes owns research/brief orchestration while the canonical
+        Content generator owns final copy generation and quality validation.
+        Repeated calls resolve the same durable agent workflow.
+        """
+        opportunity = await session.scalar(
+            select(ContentOpportunity)
+            .where(
+                ContentOpportunity.organization_id == organization_id,
+                ContentOpportunity.id == opportunity_id,
+            )
+            .with_for_update()
+        )
+        if opportunity is None:
+            raise ContentOpportunityNotFoundError
+        if opportunity.status in {"identified", "validated"}:
+            opportunity.status = "accepted"
+            await session.flush()
+            await self._audit(
+                session,
+                event="content.opportunity.decided",
+                organization_id=organization_id,
+                location_id=opportunity.location_id,
+                actor_id=actor_id,
+                resource_type="content_opportunity",
+                resource_id=opportunity.id,
+                correlation_id=correlation_id,
+                summary="Content opportunity accepted and queued for governed creation.",
+                metadata={"accept": True, "dispatch_agent": True},
+            )
+        elif opportunity.status != "accepted":
+            raise ContentOpportunityNotDecidableError
+
+        context_reference = f"content-opportunity:{opportunity.id}"
+        agent_objective = objective or (
+            "Convert the accepted Content opportunity into a complete, review-ready "
+            "content artifact. Read current approved business facts, website knowledge, "
+            "SEO evidence, and Content inventory first. Decide whether the opportunity "
+            "should improve an existing page or create a new page/article. Then create "
+            "the canonical Content item, a detailed evidence-backed brief, and a "
+            "quality-validated draft through generate_content_draft_proposal. Do not "
+            "stop after creating only an idea or brief."
+        )
+        workflow = await self.execution.start_named(
+            session,
+            organization_id,
+            "agent.content",
+            f"content-opportunity-{opportunity.id}",
+            location_id=opportunity.location_id,
+            input_document={
+                "objective": agent_objective[:4_000],
+                "context_reference": context_reference,
+            },
+            correlation_id=correlation_id,
+            actor_id=actor_id,
+            enqueue_job=True,
+        )
+        return opportunity, workflow
 
     async def create_item(
         self,

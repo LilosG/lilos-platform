@@ -347,15 +347,31 @@ async def decide_opportunity(
     principal: Authenticated,
     _: Annotated[AuthorizationDecision, policy("content.create")],
 ) -> dict[str, object]:
-    item = await service.decide_opportunity(
-        session,
-        organization_id,
-        opportunity_id,
-        command,
-        actor_id=principal.platform_user_id,
-        correlation_id=request_correlation_id(request),
-    )
-    return {"data": opportunity_row(item), "meta": meta(request)}
+    correlation_id = request_correlation_id(request)
+    if command.accept:
+        item, workflow = await service.accept_opportunity_and_dispatch_agent(
+            session,
+            organization_id,
+            opportunity_id,
+            actor_id=principal.platform_user_id,
+            correlation_id=correlation_id,
+        )
+        response_meta = {
+            **meta(request),
+            "workflow_run_id": str(workflow.id),
+            "workflow_key": "agent.content",
+        }
+    else:
+        item = await service.decide_opportunity(
+            session,
+            organization_id,
+            opportunity_id,
+            command,
+            actor_id=principal.platform_user_id,
+            correlation_id=correlation_id,
+        )
+        response_meta = meta(request)
+    return {"data": opportunity_row(item), "meta": response_meta}
 
 
 @router.get("/summary", dependencies=[Depends(no_store)])

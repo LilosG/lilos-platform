@@ -359,6 +359,69 @@ class SEOOrchestrationService:
             "pagespeed": pagespeed_result,
         }
 
+    async def handoff_approved_recommendation(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        revision: SEORecommendationRevision,
+        *,
+        actor_id: UUID,
+        correlation_id: str,
+    ) -> str | None:
+        """Route an approved content-addressable SEO recommendation into Content.
+
+        SEO owns evidence and recommendation approval. Content owns research,
+        drafting, review, and publication. The mirrored Content opportunity is
+        the durable handoff record between those domains.
+        """
+        opportunity = await self.seo.get_opportunity(
+            session, organization_id, revision.opportunity_id
+        )
+        if opportunity.opportunity_type not in CONTENT_ADDRESSABLE_OPPORTUNITY_TYPES:
+            return None
+
+        content_opportunity = await self.content.get_opportunity_by_source_reference(
+            session,
+            organization_id,
+            f"seo-opportunity:{opportunity.id}",
+        )
+        if content_opportunity is None:
+            await self._mirror_to_content(
+                session,
+                organization_id,
+                opportunity,
+                correlation_id=correlation_id,
+            )
+            content_opportunity = await self.content.get_opportunity_by_source_reference(
+                session,
+                organization_id,
+                f"seo-opportunity:{opportunity.id}",
+            )
+        if content_opportunity is None:
+            return None
+        if content_opportunity.status in {"rejected", "converted"}:
+            return None
+
+        objective = (
+            "Implement the approved SEO recommendation through the governed Content "
+            "workflow. Use the deterministic SEO opportunity and recommendation as "
+            "evidence, inspect current website content and approved business facts, "
+            "then decide whether to optimize the existing target or create a new "
+            "content asset. Produce a complete brief and quality-validated draft for "
+            "human review; do not stop after recommendation or planning. Approved SEO "
+            f"action: {revision.proposed_action}. Expected result: "
+            f"{revision.expected_result_hypothesis}."
+        )
+        _, workflow = await self.content.accept_opportunity_and_dispatch_agent(
+            session,
+            organization_id,
+            content_opportunity.id,
+            actor_id=actor_id,
+            correlation_id=correlation_id,
+            objective=objective,
+        )
+        return str(workflow.id)
+
     async def _canonical_gsc_observations(
         self,
         session: AsyncSession,
