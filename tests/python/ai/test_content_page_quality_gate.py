@@ -63,3 +63,46 @@ def test_page_quality_floor_rejects_sub_thousand_word_marketing_copy() -> None:
         },
     )
     assert "article_too_thin" in errors
+
+
+def test_existing_canonical_target_is_not_rejected_as_duplicate_content() -> None:
+    from apps.api.app.ai.providers import _find_existing_topic_overlap
+
+    document = {
+        "content_type": "page",
+        "content_title": "Restaurants in Little Italy San Diego",
+        "target_reference": "https://inlovewiththecoco.com/restaurants-little-italy",
+        "knowledge": {
+            "website_knowledge": [
+                {
+                    "url": "https://inlovewiththecoco.com/restaurants-little-italy/",
+                    "title": "Restaurants in Little Italy San Diego",
+                }
+            ]
+        },
+    }
+
+    assert _find_existing_topic_overlap(document) is None
+
+
+def test_competing_page_with_same_topic_is_still_rejected() -> None:
+    from apps.api.app.ai.providers import _find_existing_topic_overlap
+
+    document = {
+        "content_type": "page",
+        "content_title": "Restaurants in Little Italy San Diego",
+        "target_reference": "https://inlovewiththecoco.com/new-restaurants-page",
+        "knowledge": {
+            "website_knowledge": [
+                {
+                    "url": "https://inlovewiththecoco.com/restaurants-little-italy",
+                    "title": "Restaurants in Little Italy San Diego",
+                }
+            ]
+        },
+    }
+
+    assert (
+        _find_existing_topic_overlap(document)
+        == "https://inlovewiththecoco.com/restaurants-little-italy"
+    )
