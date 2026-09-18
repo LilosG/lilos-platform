@@ -111,4 +111,3 @@ async def test_operational_worker_slot_restarts_after_unexpected_crash(
     )
 
     assert calls["count"] == 2
-
