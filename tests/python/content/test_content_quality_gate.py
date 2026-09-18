@@ -83,7 +83,7 @@ def test_content_prompt_uses_source_knowledge_and_article_contract() -> None:
     prompt = _build_prompt("content.draft_revision", _input_document())
 
     assert "SOURCE-BACKED WEBSITE AND LOCAL KNOWLEDGE" in prompt
-    assert '"url": "/happy-hour/"' in prompt
+    assert '"url": "/resource-0/"' in prompt
     assert "Do NOT put an H1 in the markdown body" in prompt
     assert "1,700–2,300 substantive words" in prompt
     assert "at least 7 descriptive H2 sections" in prompt
