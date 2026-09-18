@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from typing import cast
 from uuid import UUID, uuid4
 
-from sqlalchemy import Select, func, or_, select, text, update
+from sqlalchemy import Select, and_, func, or_, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -876,18 +876,25 @@ class LeadService:
             )
         )
 
-    async def summary(self, session: AsyncSession, organization_id: UUID) -> dict[str, object]:
+    async def summary(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        *,
+        location_id: UUID | None = None,
+    ) -> dict[str, object]:
         await set_tenant(session, organization_id)
+        scope = [Lead.organization_id == organization_id]
+        if location_id is not None:
+            scope.append(Lead.location_id == location_id)
         rows = (
             await session.execute(
-                select(Lead.status, func.count())
-                .where(Lead.organization_id == organization_id)
-                .group_by(Lead.status)
+                select(Lead.status, func.count()).where(*scope).group_by(Lead.status)
             )
         ).all()
         open_urgent = await session.scalar(
             select(func.count()).where(
-                Lead.organization_id == organization_id,
+                *scope,
                 Lead.urgency.in_(("urgent", "emergency")),
                 Lead.status.notin_(tuple(TERMINAL_STATUSES)),
             )
@@ -896,7 +903,7 @@ class LeadService:
             select(
                 func.avg(func.extract("epoch", Lead.first_human_contact_at - Lead.received_at))
             ).where(
-                Lead.organization_id == organization_id,
+                *scope,
                 Lead.first_human_contact_at.is_not(None),
             )
         )
@@ -909,9 +916,16 @@ class LeadService:
         }
 
     async def source_performance(
-        self, session: AsyncSession, organization_id: UUID
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        *,
+        location_id: UUID | None = None,
     ) -> list[dict[str, object]]:
         await set_tenant(session, organization_id)
+        join_condition = Lead.source_id == LeadSource.id
+        if location_id is not None:
+            join_condition = and_(join_condition, Lead.location_id == location_id)
         rows = (
             await session.execute(
                 select(
@@ -921,7 +935,7 @@ class LeadService:
                     func.count(Lead.id).filter(Lead.status == "converted"),
                 )
                 .select_from(LeadSource)
-                .join(Lead, Lead.source_id == LeadSource.id, isouter=True)
+                .join(Lead, join_condition, isouter=True)
                 .where(LeadSource.organization_id == organization_id)
                 .group_by(LeadSource.id, LeadSource.name)
             )

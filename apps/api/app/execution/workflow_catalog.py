@@ -23,6 +23,7 @@ WORKFLOW_TYPES: dict[str, tuple[str, str]] = {
     "agent.seo": ("Hermes SEO evidence agent", "seo"),
     "agent.content": ("Hermes grounded Content agent", "content"),
     "agent.reviews": ("Hermes governed Reviews agent", "reviews"),
+    "agent.leads": ("Hermes governed Leads agent", "leads"),
     "agent.insights": ("Hermes cross-product Insights agent", "insights"),
     "agent.growth": ("Hermes cross-product Growth planner", "growth"),
 }

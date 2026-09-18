@@ -330,6 +330,7 @@ for _agent_workflow_key in (
     "agent.seo",
     "agent.content",
     "agent.reviews",
+    "agent.leads",
     "agent.insights",
 ):
     register_workflow_handler(_agent_workflow_key, _handle_agent_workflow)

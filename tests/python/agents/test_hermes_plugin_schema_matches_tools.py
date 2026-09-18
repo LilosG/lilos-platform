@@ -130,3 +130,22 @@ def test_content_draft_proposal_selects_evidence_not_agent_authored_copy(plugin:
     }
     for rejected in ("body", "frontmatter"):
         assert rejected not in schema["properties"]
+
+
+def test_review_agent_selects_evidence_not_response_copy(plugin: Any) -> None:
+    schema = plugin.SCHEMAS["draft_review_response_proposal"]
+    assert set(schema["properties"]) == {
+        "review_id",
+        "approved_fact_revision_ids",
+    }
+    assert "response_text" not in schema["properties"]
+
+
+def test_lead_tools_are_exposed_to_hermes_with_bounded_contracts(plugin: Any) -> None:
+    assert "read_leads_state" in plugin.SCHEMAS
+    assert set(plugin.SCHEMAS["create_lead_followup_task"]["properties"]) == {
+        "lead_id",
+        "title",
+        "description",
+        "due_at",
+    }
