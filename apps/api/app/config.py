@@ -59,6 +59,8 @@ class Settings(BaseSettings):
     migration_database_url: PostgresDsn | None = None
     test_database_url: PostgresDsn | None = None
     database_connect_timeout_seconds: Annotated[float, Field(gt=0, le=30)] = 5.0
+    database_pool_size: Annotated[int, Field(ge=1, le=10)] = 2
+    database_max_overflow: Annotated[int, Field(ge=0, le=10)] = 0
     internal_admin_routes_enabled: bool = False
     provider_writes_enabled: bool = False
     web_origins: Annotated[str, Field(max_length=2_048)] = ""
