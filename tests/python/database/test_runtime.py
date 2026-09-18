@@ -54,3 +54,25 @@ def test_readiness_reports_postgresql_healthy(postgresql_test_url: str) -> None:
         "status": "ready",
         "dependencies": [{"name": "postgresql", "status": "healthy"}],
     }
+
+
+def test_database_runtime_uses_bounded_connection_pool() -> None:
+    settings = Settings(
+        environment=EnvironmentName.TEST,
+        database_url=POSTGRES_DSN_ADAPTER.validate_python(
+            "postgresql://user:pass@localhost:5432/lilos"
+        ),
+        database_pool_size=2,
+        database_max_overflow=0,
+    )
+
+    runtime = create_database_runtime(settings)
+    try:
+        pool = runtime.require_engine().pool
+        assert pool.size() == 2
+        assert getattr(pool, "_max_overflow") == 0
+    finally:
+        import asyncio
+
+        asyncio.run(runtime.dispose())
+
