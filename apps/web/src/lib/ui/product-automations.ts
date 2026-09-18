@@ -13,11 +13,7 @@ import {
 } from "../workflows";
 
 export type ProductAutomationDomain =
-  | "gbp"
-  | "seo"
-  | "content"
-  | "reviews"
-  | "leads";
+  "gbp" | "seo" | "content" | "reviews" | "leads";
 
 const definitions: Record<
   string,
