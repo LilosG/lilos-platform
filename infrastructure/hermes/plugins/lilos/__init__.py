@@ -33,6 +33,7 @@ SCHEMAS = {
     "read_gsc_evidence": _object({"days": {"type": "integer", "enum": [7, 28, 90]}}),
     "read_ga4_evidence": _object({"days": {"type": "integer", "enum": [7, 28, 90]}}),
     "read_reviews_state": _object({"limit": {"type": "integer", "minimum": 1, "maximum": 50}}),
+    "read_leads_state": _object({"limit": {"type": "integer", "minimum": 1, "maximum": 50}}),
     "read_content_inventory": _object({"limit": {"type": "integer", "minimum": 1, "maximum": 50}}),
     "read_cross_product_summary": _object({}),
     "run_site_crawl": _object({}),
@@ -120,8 +121,17 @@ SCHEMAS = {
         ["capability_key", "field_changes", "evidence_references", "risk"],
     ),
     "draft_review_response_proposal": _object(
-        {"review_id": STRING, "response_text": STRING, "approved_fact_revision_ids": STRINGS},
-        ["review_id", "response_text", "approved_fact_revision_ids"],
+        {"review_id": STRING, "approved_fact_revision_ids": STRINGS},
+        ["review_id", "approved_fact_revision_ids"],
+    ),
+    "create_lead_followup_task": _object(
+        {
+            "lead_id": STRING,
+            "title": {"type": "string", "minLength": 1, "maxLength": 200},
+            "description": {"type": ["string", "null"], "maxLength": 5000},
+            "due_at": {"type": ["string", "null"]},
+        },
+        ["lead_id", "title"],
     ),
     "create_growth_plan": _object(
         {
@@ -217,6 +227,9 @@ DESCRIPTIONS = {
     "read_gsc_evidence": "Read persisted Search Console evidence with period and quality state.",
     "read_ga4_evidence": "Read persisted GA4 evidence with period and quality state.",
     "read_reviews_state": "Read reviews, deterministic risk state, and latest text.",
+    "read_leads_state": (
+        "Read bounded lead lifecycle, urgency, response timing, conversion, and source evidence."
+    ),
     "read_content_inventory": "Read content items and evidence-backed opportunities.",
     "read_cross_product_summary": "Read the persisted cross-product operational summary.",
     "run_site_crawl": "Request the canonical LILOs crawl workflow.",
@@ -237,7 +250,14 @@ DESCRIPTIONS = {
     "create_gbp_optimization_proposal": (
         "Create an approval-waiting GBP change-set; never edits Google."
     ),
-    "draft_review_response_proposal": "Draft a review response when deterministic risk permits.",
+    "draft_review_response_proposal": (
+        "Ask LILOs' canonical Reviews generator to create an approval-waiting response "
+        "for an eligible review. Hermes selects the review and evidence; it does not write copy."
+    ),
+    "create_lead_followup_task": (
+        "Create an internal follow-up task for a lead this run already read. Never contacts "
+        "the lead or changes lifecycle, consent, ownership, conversion, or loss state."
+    ),
     "create_growth_plan": (
         "Create one governed cross-product growth initiative from evidence this bound Hermes "
         "run observed. Actions are typed, dependency-ordered, and delegated only to registered "
