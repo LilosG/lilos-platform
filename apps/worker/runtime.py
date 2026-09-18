@@ -173,9 +173,29 @@ async def run_operational_worker(
     options: RuntimeOptions | None = None,
     database: DatabaseRuntime | None = None,
 ) -> None:
+    """Run a bounded pool so long Hermes jobs cannot block the entire queue.
+
+    Agent workflows regularly spend minutes waiting on external model/tool I/O.
+    A single serial worker creates head-of-line blocking for Content, SEO, GBP,
+    publishing, and recovery jobs. Each production slot owns an independent
+    database runtime and lease identity, while tests that inject a shared
+    database remain single-slot and deterministic.
+    """
     worker_options = options or RuntimeOptions(
         shutdown_seconds=270.0,
         cycle_seconds=960.0,
     )
-    backend = OperationalWorkerBackend(settings, worker_options, database)
-    await run_process(backend, stop)
+    concurrency = 1 if database is not None else settings.worker_concurrency
+
+    async with asyncio.TaskGroup() as group:
+        for slot in range(concurrency):
+            backend = OperationalWorkerBackend(
+                settings,
+                worker_options,
+                database if concurrency == 1 else None,
+            )
+            backend.instance_key = f"{backend.instance_key}:{slot + 1}"[:128]
+            group.create_task(
+                run_process(backend, stop),
+                name=f"lilos-worker-{slot + 1}",
+            )
