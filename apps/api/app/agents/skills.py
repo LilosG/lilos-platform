@@ -244,7 +244,7 @@ missing data with a narrative.
     ),
     "growth.planner": AgentSkill(
         key="growth.planner",
-        version=4,
+        version=5,
         product_key="growth",
         title="Cross-product growth planner",
         instructions=COMMON_POLICY
