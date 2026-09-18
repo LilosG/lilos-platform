@@ -12,7 +12,12 @@ import {
   type WorkflowTypeEntry,
 } from "../workflows";
 
-export type ProductAutomationDomain = "gbp" | "seo" | "content" | "reviews" | "leads";
+export type ProductAutomationDomain =
+  | "gbp"
+  | "seo"
+  | "content"
+  | "reviews"
+  | "leads";
 
 const definitions: Record<
   string,
