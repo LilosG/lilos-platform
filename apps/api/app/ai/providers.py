@@ -236,9 +236,7 @@ def _validate_article_payload(payload: dict[str, Any], input_document: dict[str,
             end = h2_matches[index + 1].start() if index + 1 < len(h2_matches) else len(draft)
             section = draft[start:end]
             section_word_counts.append(len(re.findall(r"\b[\w'-]+\b", section)))
-        thin_sections = sum(
-            count < _ARTICLE_MINIMUM_SECTION_WORDS for count in section_word_counts
-        )
+        thin_sections = sum(count < _ARTICLE_MINIMUM_SECTION_WORDS for count in section_word_counts)
         if thin_sections > _ARTICLE_MAXIMUM_THIN_SECTIONS:
             errors.append("article_sections_too_thin")
 
