@@ -24,6 +24,13 @@ def test_thin_generated_page_fails_before_editorial_review() -> None:
         {
             "content_type": "page",
             "content_title": "Best Brunch in San Diego, Mission Beach",
+            "knowledge": {
+                "website_knowledge": [
+                    {"url": "/menu/"},
+                    {"url": "/brunch/"},
+                    {"url": "/reservations/"},
+                ]
+            },
         },
     )
 
