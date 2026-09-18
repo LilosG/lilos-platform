@@ -553,6 +553,8 @@ async def _handle_content_draft_revision(
     except (ValueError, TypeError):
         return JobOutcome(result="permanent_failure", safe_error="INVALID_UUID")
 
+    from apps.api.app.ai.errors import AIProviderConfigurationError, AIProviderError
+
     content_service = ContentService()
     try:
         revision, execution = await content_service.execute_ai_draft_workflow(
@@ -565,7 +567,24 @@ async def _handle_content_draft_revision(
             user_id=user_id,
             correlation_id=correlation_id,
         )
-    except Exception as exc:
+    except AIProviderConfigurationError as exc:
+        logger.error(
+            "Content AI provider configuration is invalid",
+            extra={
+                "event_name": "content.draft_revision.provider_configuration_failed",
+                "organization_id": str(organization_id),
+                "item_id": str(item_id),
+                "brief_id": str(brief_id),
+                "error_type": type(exc).__name__,
+                "safe_error": exc.safe_message[:200],
+            },
+        )
+        return JobOutcome(
+            result="permanent_failure",
+            safe_error="AI_PROVIDER_CONFIGURATION_ERROR",
+        )
+    except AIProviderError as exc:
+        retryable = exc.category == "provider"
         logger.warning(
             "Content AI draft generation failed",
             extra={
@@ -573,12 +592,33 @@ async def _handle_content_draft_revision(
                 "organization_id": str(organization_id),
                 "item_id": str(item_id),
                 "brief_id": str(brief_id),
-                "error": str(exc)[:200],
+                "error_type": type(exc).__name__,
+                "provider_error_category": exc.category,
+                "safe_error": exc.safe_message[:200],
             },
         )
         return JobOutcome(
-            result="retryable_failure",
-            safe_error="AI_DRAFT_FAILED",
+            result="retryable_failure" if retryable else "permanent_failure",
+            safe_error=(
+                "AI_PROVIDER_TEMPORARY_FAILURE"
+                if retryable
+                else "CONTENT_GENERATION_REJECTED"
+            ),
+        )
+    except Exception as exc:
+        logger.exception(
+            "Content AI draft generation raised an unexpected exception",
+            extra={
+                "event_name": "content.draft_revision.exception",
+                "organization_id": str(organization_id),
+                "item_id": str(item_id),
+                "brief_id": str(brief_id),
+                "error_type": type(exc).__name__,
+            },
+        )
+        return JobOutcome(
+            result="permanent_failure",
+            safe_error="CONTENT_GENERATION_EXCEPTION",
         )
 
     return JobOutcome(
