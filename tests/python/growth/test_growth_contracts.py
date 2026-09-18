@@ -104,7 +104,9 @@ def test_workflow_executor_is_server_owned_and_manual_monitor_forbid_one() -> No
 
 
 def test_growth_service_canonicalizes_model_supplied_executor_from_product() -> None:
-    plan = _plan([_action("seo.optimize_mobile_speed", product="seo", workflow="seo.optimize_mobile_speed")])
+    plan = _plan(
+        [_action("seo.optimize_mobile_speed", product="seo", workflow="seo.optimize_mobile_speed")]
+    )
 
     canonical = GrowthService._canonicalize_executor_bindings(plan)
 
