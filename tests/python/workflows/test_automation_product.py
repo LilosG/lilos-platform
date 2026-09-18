@@ -197,6 +197,7 @@ def test_list_workflow_types_returns_canonical_catalog(p5_client: P5Context) -> 
         "agent.gbp",
         "agent.growth",
         "agent.insights",
+        "agent.leads",
         "agent.reviews",
         "agent.seo",
         "content.draft_revision",
