@@ -116,3 +116,13 @@ def test_backend_image_is_portable_nonroot_and_signal_aware() -> None:
     assert "USER lilos" in dockerfile
     assert 'ENTRYPOINT ["/usr/bin/tini", "--"]' in dockerfile
     assert "render" not in dockerfile.lower()
+
+
+def test_hermes_bootstrap_repairs_config_before_stage2_and_pins_api_tools() -> None:
+    source = Path("scripts/render_start_hermes.sh").read_text(encoding="utf-8")
+
+    assert source.index('HERMES_CONFIG_FILE="${HERMES_HOME}/config.yaml"') < source.index(
+        "/opt/hermes/docker/stage2-hook.sh"
+    )
+    assert "config set platform_toolsets.api_server" not in source
+    assert 'platform_toolsets["api_server"] = ["lilos", "no_mcp"]' in source

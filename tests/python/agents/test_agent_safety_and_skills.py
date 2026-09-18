@@ -78,7 +78,7 @@ def test_complete_product_skill_and_sanctioned_tool_plane() -> None:
         "leads.operator": 1,
         "reviews.operator": 3,
         "insights.cross_product": 3,
-        "growth.planner": 4,
+        "growth.planner": 5,
     }
     for skill in SKILLS.values():
         assert skill.version == expected_versions[skill.key]

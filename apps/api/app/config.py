@@ -136,6 +136,7 @@ class Settings(BaseSettings):
     hermes_agent_event_limit: Annotated[int, Field(ge=25, le=2_000)] = 500
     hermes_agent_event_retention_days: Annotated[int, Field(ge=1, le=365)] = 30
     hermes_agent_session_retention_days: Annotated[int, Field(ge=1, le=365)] = 30
+    worker_concurrency: Annotated[int, Field(ge=1, le=8)] = 3
     ai_openrouter_api_key: Annotated[
         str | None,
         Field(

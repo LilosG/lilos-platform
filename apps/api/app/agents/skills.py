@@ -244,7 +244,7 @@ missing data with a narrative.
     ),
     "growth.planner": AgentSkill(
         key="growth.planner",
-        version=4,
+        version=5,
         product_key="growth",
         title="Cross-product growth planner",
         instructions=COMMON_POLICY
@@ -269,9 +269,11 @@ Choose the action that best fits the evidence rather than defaulting every SEO
 signal to new content. A valid plan may optimize an existing page, commission a
 new content asset, request a fresh SEO analysis/crawl, support an opportunity
 through GBP, route work to Reviews, require a manual action, or monitor without
-changing anything. Use the registered executor workflow that owns the product
-for workflow actions. Use manual or monitor execution mode only for genuine
-human/measurement work that cannot be performed by a product workflow.
+changing anything. For workflow actions, choose the owning product only. LILOs assigns the
+registered product-agent executor server-side; never invent or supply a
+workflow key. Supported workflow products are seo, content, gbp, reviews, and
+leads. Use manual or monitor execution mode only for genuine human/measurement
+work that cannot be performed by a product workflow.
 Dependencies must describe a real executable prerequisite. A workflow action
 must never depend on a manual or monitor action, because those are advisory or
 verification records rather than executable gates. Put monitoring after the

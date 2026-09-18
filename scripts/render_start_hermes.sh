@@ -9,6 +9,22 @@ export PATH="/command:/package/admin/s6/command:/opt/hermes/bin:/opt/hermes/.ven
 
 echo "[lilos-hermes] Render bootstrap starting"
 echo "[lilos-hermes] Platform release: ${LILOS_RELEASE}"
+
+# Inspect the persisted schema directly before Hermes reads it. Calling
+# `hermes config get` here loads the stale file and emits the same migration
+# warning we are trying to prevent. The persistent disk is runtime state only;
+# this script is the authoritative source of its generated settings.
+HERMES_CONFIG_FILE="${HERMES_HOME}/config.yaml"
+if [ -f "$HERMES_CONFIG_FILE" ]; then
+    HERMES_CONFIG_VERSION="$(sed -n 's/^[[:space:]]*_config_version:[[:space:]]*["'\'' ]*\([0-9][0-9]*\).*/\1/p' "$HERMES_CONFIG_FILE" | head -n 1)"
+    if [ -z "$HERMES_CONFIG_VERSION" ] || [ "$HERMES_CONFIG_VERSION" -lt 12 ]; then
+        HERMES_CONFIG_BACKUP="${HERMES_CONFIG_FILE}.below-floor-$(date -u +%Y%m%dT%H%M%SZ).bak"
+        cp "$HERMES_CONFIG_FILE" "$HERMES_CONFIG_BACKUP"
+        rm -f "$HERMES_CONFIG_FILE"
+        echo "[lilos-hermes] Config schema '${HERMES_CONFIG_VERSION:-unreadable}' is below the v12 support floor; backed up to ${HERMES_CONFIG_BACKUP} and regenerating before Hermes bootstrap"
+    fi
+fi
+
 /opt/hermes/docker/stage2-hook.sh
 
 if [ -z "${API_SERVER_KEY:-}" ]; then
@@ -48,29 +64,6 @@ if [ -z "${LILOS_TOOL_BASE_URL:-}" ] || [ -z "${LILOS_TOOL_API_KEY:-}" ]; then
     exit 1
 fi
 
-# Hermes stopped auto-migrating configs older than schema v12 (its support
-# floor). A below-floor config is left byte-for-byte untouched and the runtime
-# continues with defaults deep-merged at read time -- so every setting written
-# here lands in the file, is read back under obsolete v11-era key semantics, and
-# the current-schema keys silently fall back to their defaults. That is why
-# `platform_toolsets.api_server` did not restrict the model to the LILOs
-# toolset: it kept Hermes' own bridge tools, and runs wasted iterations calling
-# tool_search and tool_call before failing.
-#
-# The config on this disk was only ever written by this script, so rotating it
-# loses nothing: the settings below rebuild it on the current schema. The old
-# file is kept beside it rather than deleted, so a hand edit is recoverable.
-HERMES_CONFIG_FILE="${HERMES_HOME}/config.yaml"
-if [ -f "$HERMES_CONFIG_FILE" ]; then
-    HERMES_CONFIG_VERSION="$(/command/s6-setuidgid hermes /opt/hermes/.venv/bin/hermes config get _config_version 2>/dev/null | tr -dc '0-9')"
-    if [ -z "$HERMES_CONFIG_VERSION" ] || [ "$HERMES_CONFIG_VERSION" -lt 12 ]; then
-        HERMES_CONFIG_BACKUP="${HERMES_CONFIG_FILE}.below-floor-$(date -u +%Y%m%dT%H%M%SZ).bak"
-        cp "$HERMES_CONFIG_FILE" "$HERMES_CONFIG_BACKUP"
-        rm -f "$HERMES_CONFIG_FILE"
-        echo "[lilos-hermes] Config schema '${HERMES_CONFIG_VERSION:-unreadable}' is below the v12 support floor; backed up to ${HERMES_CONFIG_BACKUP} and regenerating on the current schema"
-    fi
-fi
-
 # The OpenAI-compatible gateway reads its default inference route from the
 # persisted Hermes config, not from the one-shot HERMES_INFERENCE_MODEL flag.
 # Enforce the governed LILOs production route on every boot so a stale model
@@ -79,7 +72,28 @@ if [ -n "${HERMES_INFERENCE_MODEL:-}" ]; then
     /command/s6-setuidgid hermes /opt/hermes/.venv/bin/hermes config set model.default "$HERMES_INFERENCE_MODEL"
     /command/s6-setuidgid hermes /opt/hermes/.venv/bin/hermes config set model.provider "$HERMES_INFERENCE_PROVIDER"
     /command/s6-setuidgid hermes /opt/hermes/.venv/bin/hermes config set model.base_url https://openrouter.ai/api/v1
-    /command/s6-setuidgid hermes /opt/hermes/.venv/bin/hermes config set platform_toolsets.api_server '["lilos","no_mcp"]'
+
+    # `platform_toolsets` is consumed by Hermes' platform resolver but is not a
+    # recognized `hermes config set` schema key in the pinned runtime, so the
+    # CLI warns and does not give us a reliable fail-closed contract. Write the
+    # exact API-server selection into YAML instead. The `no_mcp` sentinel is
+    # intentionally preserved to prevent default MCP discovery.
+    /command/s6-setuidgid hermes /opt/hermes/.venv/bin/python - <<'PY'
+from pathlib import Path
+import yaml
+
+path = Path("/opt/data/config.yaml")
+config = yaml.safe_load(path.read_text(encoding="utf-8")) if path.exists() else {}
+if not isinstance(config, dict):
+    config = {}
+platform_toolsets = config.get("platform_toolsets")
+if not isinstance(platform_toolsets, dict):
+    platform_toolsets = {}
+platform_toolsets["api_server"] = ["lilos", "no_mcp"]
+config["platform_toolsets"] = platform_toolsets
+path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+PY
+
     /command/s6-setuidgid hermes /opt/hermes/.venv/bin/hermes config set agent.disabled_toolsets '["bfl"]'
     /command/s6-setuidgid hermes /opt/hermes/.venv/bin/hermes config set sessions.auto_prune true
     /command/s6-setuidgid hermes /opt/hermes/.venv/bin/hermes config set sessions.retention_days 30

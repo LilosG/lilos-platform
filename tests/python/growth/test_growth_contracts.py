@@ -88,9 +88,9 @@ def test_growth_plan_rejects_dependency_cycle() -> None:
         )
 
 
-def test_workflow_mode_requires_executor_and_manual_monitor_forbid_one() -> None:
-    with pytest.raises(ValidationError, match="require executor_workflow_key"):
-        GrowthActionCreate.model_validate(_action("seo.assess", workflow=None))
+def test_workflow_executor_is_server_owned_and_manual_monitor_forbid_one() -> None:
+    workflow = GrowthActionCreate.model_validate(_action("seo.assess", workflow=None))
+    assert workflow.executor_workflow_key is None
 
     manual = GrowthActionCreate.model_validate(
         _action("manual.verify", product="growth", mode="manual", workflow=None)
@@ -103,18 +103,31 @@ def test_workflow_mode_requires_executor_and_manual_monitor_forbid_one() -> None
         )
 
 
-def test_growth_service_rejects_executor_product_mismatch() -> None:
+def test_growth_service_canonicalizes_model_supplied_executor_from_product() -> None:
+    plan = _plan(
+        [_action("seo.optimize_mobile_speed", product="seo", workflow="seo.optimize_mobile_speed")]
+    )
+
+    canonical = GrowthService._canonicalize_executor_bindings(plan)
+
+    assert canonical.actions[0].executor_workflow_key == "agent.seo"
+    GrowthService._validate_executor_bindings(canonical)
+
+
+def test_growth_service_canonicalizes_executor_product_mismatch() -> None:
     plan = _plan([_action("wrong.owner", product="content", workflow="agent.seo")])
 
-    with pytest.raises(GrowthPlanValidationError, match="belongs to seo, not content"):
-        GrowthService._validate_executor_bindings(plan)
+    canonical = GrowthService._canonicalize_executor_bindings(plan)
+
+    assert canonical.actions[0].executor_workflow_key == "agent.content"
+    GrowthService._validate_executor_bindings(canonical)
 
 
-def test_growth_service_forbids_recursive_planner_execution() -> None:
+def test_growth_service_rejects_non_delegatable_workflow_product() -> None:
     plan = _plan([_action("recursive", product="growth", workflow="agent.growth")])
 
-    with pytest.raises(GrowthPlanValidationError, match="recursively"):
-        GrowthService._validate_executor_bindings(plan)
+    with pytest.raises(GrowthPlanValidationError, match="has no growth-delegatable executor"):
+        GrowthService._canonicalize_executor_bindings(plan)
 
 
 @pytest.mark.parametrize(
