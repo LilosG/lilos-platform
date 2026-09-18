@@ -166,3 +166,36 @@ def test_growth_service_accepts_only_governed_product_agent_delegation(
     plan = _plan([_action("governed.delegate", product=product, workflow=workflow)])
 
     GrowthService._validate_executor_bindings(plan)
+
+
+def test_growth_plan_rejects_manual_or_monitor_dependency_for_workflow_action() -> None:
+    monitor = _action("monitor.baseline", product="growth", mode="monitor", workflow=None)
+    workflow = _action("content.execute", product="content", workflow="agent.content")
+    workflow["dependency_keys"] = ["monitor.baseline"]
+
+    with pytest.raises(ValidationError, match="cannot depend on manual or monitor"):
+        _plan([monitor, workflow])
+
+
+def test_runtime_dependency_check_ignores_legacy_non_workflow_gate() -> None:
+    from types import SimpleNamespace
+    from typing import Any, cast
+
+    monitor = SimpleNamespace(
+        action_key="monitor.baseline",
+        execution_mode="monitor",
+        status="approved",
+    )
+    workflow = SimpleNamespace(
+        action_key="content.execute",
+        execution_mode="workflow",
+        status="approved",
+        dependency_keys=["monitor.baseline"],
+    )
+    assert GrowthService._dependencies_complete(
+        cast(Any, workflow),
+        {
+            "monitor.baseline": cast(Any, monitor),
+            "content.execute": cast(Any, workflow),
+        },
+    )
