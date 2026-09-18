@@ -12,7 +12,7 @@ import {
   type WorkflowTypeEntry,
 } from "../workflows";
 
-export type ProductAutomationDomain = "gbp" | "seo" | "content" | "reviews";
+export type ProductAutomationDomain = "gbp" | "seo" | "content" | "reviews" | "leads";
 
 const definitions: Record<
   string,
@@ -45,6 +45,7 @@ const definitions: Record<
     cadence: "0 17 * * 2",
   },
   "agent.seo": { label: "SEO analysis", domain: "seo" },
+  "agent.leads": { label: "Lead analysis", domain: "leads" },
   "gbp.publish_change": { label: "Profile changes", domain: "gbp" },
   "gbp.publish_post": { label: "Post publishing", domain: "gbp" },
   "gbp.upload_media": { label: "Media publishing", domain: "gbp" },
@@ -72,6 +73,8 @@ const purposes: Record<string, string> = {
   "agent.content": "Builds the next set of content ideas and priorities.",
   "agent.seo":
     "Reviews search performance and prepares prioritized SEO recommendations.",
+  "agent.leads":
+    "Reviews lead lifecycle, urgency, response timing, and conversion evidence to prioritize follow-up.",
   "gbp.publish_change":
     "Publishes approved profile changes when product work is completed.",
   "gbp.publish_post": "Publishes approved Business Profile posts.",
