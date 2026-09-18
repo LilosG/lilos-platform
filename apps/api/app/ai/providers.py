@@ -705,8 +705,8 @@ def _build_prompt(task_key: str, input_document: dict[str, Any]) -> str:
                     (
                         "- Answer the primary intent near the beginning, then cover the practical "
                         "follow-up questions a customer would need before acting: what to expect, "
-                        "options or tradeoffs, timing/planning, location/context, fit, and the next "
-                        "step when those details are supported by the supplied evidence."
+                        "options or tradeoffs, timing/planning, location/context, fit, and the "
+                        "next step when those details are supported by the supplied evidence."
                     ),
                     (
                         "- Synthesize the supplied first-party sources instead of paraphrasing one "
