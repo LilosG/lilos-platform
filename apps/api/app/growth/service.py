@@ -33,6 +33,9 @@ GROWTH_EXECUTOR_WORKFLOWS: dict[str, str] = {
     "agent.reviews": "reviews",
     "agent.leads": "leads",
 }
+GROWTH_EXECUTOR_BY_PRODUCT: dict[str, str] = {
+    product_key: workflow_key for workflow_key, product_key in GROWTH_EXECUTOR_WORKFLOWS.items()
+}
 
 
 class GrowthPlanValidationError(ValueError):
@@ -52,6 +55,28 @@ class GrowthService:
         self.content = ContentService()
 
     @staticmethod
+    def _canonicalize_executor_bindings(command: GrowthPlanCreate) -> GrowthPlanCreate:
+        """Derive workflow executors from authoritative product ownership.
+
+        Hermes chooses the product and action semantics. It does not choose an
+        arbitrary workflow key. This removes failures caused by model-generated
+        action-like executor strings when LILOs only delegates through a
+        registered product agent.
+        """
+        actions = []
+        for action in command.actions:
+            if action.execution_mode != "workflow":
+                actions.append(action)
+                continue
+            workflow_key = GROWTH_EXECUTOR_BY_PRODUCT.get(action.product_key)
+            if workflow_key is None:
+                raise GrowthPlanValidationError(
+                    f"product {action.product_key} has no growth-delegatable executor"
+                )
+            actions.append(action.model_copy(update={"executor_workflow_key": workflow_key}))
+        return command.model_copy(update={"actions": actions})
+
+    @staticmethod
     def _validate_executor_bindings(command: GrowthPlanCreate) -> None:
         """Allow delegation only to registered, product-owned agent executors."""
         for action in command.actions:
@@ -62,8 +87,6 @@ class GrowthService:
                 raise GrowthPlanValidationError(
                     f"unknown executor workflow for action {action.action_key}"
                 )
-            if workflow_key == "agent.growth":
-                raise GrowthPlanValidationError("growth planner cannot recursively execute itself")
             owner = GROWTH_EXECUTOR_WORKFLOWS.get(workflow_key)
             if owner is None:
                 raise GrowthPlanValidationError(
@@ -82,6 +105,7 @@ class GrowthService:
         command: GrowthPlanCreate,
     ) -> GrowthInitiative:
         """Persist one idempotent plan produced by a bound Hermes planner run."""
+        command = self._canonicalize_executor_bindings(command)
         self._validate_executor_bindings(command)
         idempotency_key = f"growth-plan:{run.id}"
         existing = await session.scalar(
