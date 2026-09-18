@@ -23,7 +23,6 @@ from apps.api.app.agents.safety import (
 )
 from apps.api.app.agents.skills import SKILLS
 from apps.api.app.ai.errors import AIProviderError
-from apps.api.app.ai.models import AIExecution
 from apps.api.app.audit.contracts import AuditEventCreate
 from apps.api.app.audit.enums import AuditActorType, AuditResult
 from apps.api.app.audit.metadata import JsonValue
@@ -35,7 +34,7 @@ from apps.api.app.growth.models import GrowthInitiative
 from apps.api.app.growth.service import GrowthPlanValidationError, GrowthService
 from apps.api.app.insights.aggregation_service import InsightsService
 from apps.api.app.products.analytics.service import AnalyticsService
-from apps.api.app.products.content.contracts import BriefCreate, ItemCreate, RevisionCreate
+from apps.api.app.products.content.contracts import BriefCreate, ItemCreate
 from apps.api.app.products.content.models import ContentBrief, ContentOpportunity
 from apps.api.app.products.content.service import ContentService
 from apps.api.app.products.gbp.models import GBPLocation, GBPProfileSnapshot
