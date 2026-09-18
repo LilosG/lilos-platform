@@ -167,20 +167,73 @@ class OperationalWorkerBackend(WorkerBackend):
             raise
 
 
+async def _run_operational_worker_slot(
+    settings: Settings,
+    stop: asyncio.Event,
+    options: RuntimeOptions,
+    *,
+    slot: int,
+    database: DatabaseRuntime | None,
+) -> None:
+    """Supervise one durable worker slot without taking sibling slots down.
+
+    A single unexpected runtime exception must not cancel every worker in the
+    process. Each slot is restarted with bounded backoff and a fresh database
+    runtime. Job leases and the normal sweeper make the interrupted work safe to
+    reclaim.
+    """
+    restart_delay = max(0.25, options.minimum_poll_seconds)
+    while not stop.is_set():
+        backend = OperationalWorkerBackend(settings, options, database)
+        base_instance_key = backend.instance_key[:120]
+        backend.instance_key = f"{base_instance_key}:{slot}"
+        try:
+            await run_process(backend, stop)
+            if stop.is_set():
+                return
+            logger.error(
+                "Durable worker slot exited unexpectedly",
+                extra={
+                    "event_name": "worker.slot.exited",
+                    "slot": slot,
+                    "operation": "supervise",
+                    "outcome": "failure",
+                },
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.exception(
+                "Durable worker slot crashed; restarting",
+                extra={
+                    "event_name": "worker.slot.restarting",
+                    "slot": slot,
+                    "operation": "supervise",
+                    "outcome": "failure",
+                    "exception_type": type(exc).__name__,
+                },
+            )
+
+        if database is not None:
+            # An injected/shared runtime is used only by deterministic tests and
+            # callers that explicitly own its lifecycle. Do not spin a restart
+            # loop against a shared object after an unexpected exit.
+            return
+
+        try:
+            await asyncio.wait_for(stop.wait(), timeout=restart_delay)
+            return
+        except TimeoutError:
+            restart_delay = min(30.0, restart_delay * 2)
+
+
 async def run_operational_worker(
     settings: Settings,
     stop: asyncio.Event,
     options: RuntimeOptions | None = None,
     database: DatabaseRuntime | None = None,
 ) -> None:
-    """Run a bounded pool so long Hermes jobs cannot block the entire queue.
-
-    Agent workflows regularly spend minutes waiting on external model/tool I/O.
-    A single serial worker creates head-of-line blocking for Content, SEO, GBP,
-    publishing, and recovery jobs. Each production slot owns an independent
-    database runtime and lease identity, while tests that inject a shared
-    database remain single-slot and deterministic.
-    """
+    """Run a bounded, self-healing pool of independent durable worker slots."""
     worker_options = options or RuntimeOptions(
         shutdown_seconds=270.0,
         cycle_seconds=960.0,
@@ -188,15 +241,14 @@ async def run_operational_worker(
     concurrency = 1 if database is not None else settings.worker_concurrency
 
     async with asyncio.TaskGroup() as group:
-        for slot in range(concurrency):
-            backend = OperationalWorkerBackend(
-                settings,
-                worker_options,
-                database if concurrency == 1 else None,
-            )
-            base_instance_key = backend.instance_key[:120]
-            backend.instance_key = f"{base_instance_key}:{slot + 1}"
+        for slot in range(1, concurrency + 1):
             group.create_task(
-                run_process(backend, stop),
-                name=f"lilos-worker-{slot + 1}",
+                _run_operational_worker_slot(
+                    settings,
+                    stop,
+                    worker_options,
+                    slot=slot,
+                    database=database if concurrency == 1 else None,
+                ),
+                name=f"lilos-worker-{slot}",
             )
