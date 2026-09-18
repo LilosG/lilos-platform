@@ -154,8 +154,8 @@ import "../styles/global.css";
             <details>
               <summary>Content opportunities</summary>
               <p class="content-secondary">
-                Evidence-backed opportunities stay separate from the working
-                pipeline until you accept them.
+                Evidence-backed opportunities stay separate until accepted,
+                then remain visible while LILOs creates the working content.
               </p>
               <Region id="opportunity-list" live="polite" />
             </details>
@@ -309,6 +309,7 @@ import "../styles/global.css";
       let activeFilter = "active";
       let activeItemId: string | null = null;
       let pollTimer: number | null = null;
+      let opportunityPollTimer: number | null = null;
 
       const regions: BootRegions = {
         notConfigured: document.getElementById("boot-not-configured")!,
@@ -1095,6 +1096,10 @@ import "../styles/global.css";
         const open = result.data.filter((item) =>
           ["identified", "validated", "accepted"].includes(item.status),
         );
+        if (opportunityPollTimer !== null) {
+          window.clearTimeout(opportunityPollTimer);
+          opportunityPollTimer = null;
+        }
         if (!open.length) {
           region.append(
             emptyState(
@@ -1106,6 +1111,12 @@ import "../styles/global.css";
         }
         for (const opportunity of open)
           region.append(opportunityRow(opportunity));
+
+        if (open.some((opportunity) => opportunity.status === "accepted")) {
+          opportunityPollTimer = window.setTimeout(() => {
+            void Promise.all([renderOpportunities(), refreshList()]);
+          }, 5000);
+        }
       }
 
       function opportunityRow(opportunity: ContentOpportunity): HTMLElement {
