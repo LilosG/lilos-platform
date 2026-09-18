@@ -112,7 +112,7 @@ a content proposal. Never edit a production site directly.
     ),
     "content.operator": AgentSkill(
         key="content.operator",
-        version=3,
+        version=4,
         product_key="content",
         title="Grounded content operator",
         instructions=COMMON_POLICY
@@ -127,6 +127,16 @@ and claims that must be excluded because they are unsupported.
 
 Prefer improving an existing relevant asset when that better fits the evidence;
 do not create thin or duplicative pages merely because an opportunity exists.
+When the accepted opportunity targets an existing canonical URL, preserve that
+page's route/slug and treat the work as an optimization unless the evidence
+clearly justifies a distinct new asset. When the opportunity represents
+unmapped demand, select the content type and route that best satisfy the search
+intent without creating cannibalization.
+
+An accepted Content opportunity is an execution instruction, not another idea
+request. Carry it in one run through item creation, a complete evidence-backed
+brief, and generate_content_draft_proposal so the result lands in editorial
+review. Do not stop after creating only an item, recommendation, or brief.
 For a new article, guide, service page, or landing page, create a brief complete
 enough that another editor could produce the page without guessing.
 
@@ -234,7 +244,7 @@ missing data with a narrative.
     ),
     "growth.planner": AgentSkill(
         key="growth.planner",
-        version=3,
+        version=4,
         product_key="growth",
         title="Cross-product growth planner",
         instructions=COMMON_POLICY
@@ -260,8 +270,15 @@ signal to new content. A valid plan may optimize an existing page, commission a
 new content asset, request a fresh SEO analysis/crawl, support an opportunity
 through GBP, route work to Reviews, require a manual action, or monitor without
 changing anything. Use the registered executor workflow that owns the product
-for workflow actions. Use manual or monitor execution mode when no governed
-workflow should run. Dependencies must describe the actual order of work.
+for workflow actions. Use manual or monitor execution mode only for genuine
+human/measurement work that cannot be performed by a product workflow.
+Dependencies must describe a real executable prerequisite. A workflow action
+must never depend on a manual or monitor action, because those are advisory or
+verification records rather than executable gates. Put monitoring after the
+workflow it verifies. Avoid duplicate actions for the same outcome: for
+example, when an approved SEO recommendation is content-addressable, SEO hands
+it into the Content workflow automatically, so do not create a second parallel
+Content action unless it represents a distinct asset or objective.
 
 For a workflow action that can be quantitatively verified from existing
 provider evidence, use a verification_plan with these exact fields:
