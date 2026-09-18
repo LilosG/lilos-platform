@@ -1112,7 +1112,9 @@ import "../styles/global.css";
         for (const opportunity of open)
           region.append(opportunityRow(opportunity));
 
-        if (open.some((opportunity) => opportunity.status === "accepted")) {
+        if (
+          open.some((opportunity) => opportunity.status === "accepted")
+        ) {
           opportunityPollTimer = window.setTimeout(() => {
             void Promise.all([renderOpportunities(), refreshList()]);
           }, 5000);
