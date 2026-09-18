@@ -168,11 +168,6 @@ SCHEMAS = {
                             "type": "string",
                             "enum": ["workflow", "manual", "monitor"],
                         },
-                        "executor_workflow_key": {
-                            "type": ["string", "null"],
-                            "minLength": 1,
-                            "maxLength": 128,
-                        },
                         "dependency_keys": {
                             "type": "array",
                             "items": STRING,
