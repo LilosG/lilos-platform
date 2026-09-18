@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from hashlib import sha256
+from datetime import datetime
 from time import monotonic
 from typing import Any, cast
 from uuid import UUID
@@ -44,6 +45,7 @@ from apps.api.app.products.gbp.operations_service import GBPOperationsService
 from apps.api.app.products.gbp.post_generation import GBPPostGenerationService
 from apps.api.app.products.gbp.post_generation_models import GBPPostAsset
 from apps.api.app.products.gbp.service import GBPService
+from apps.api.app.products.leads.service import LeadService
 from apps.api.app.products.reviews.service import ReviewService
 from apps.api.app.products.seo.contracts import CrawlRequest, RecommendationCreate
 from apps.api.app.products.seo.search_console_service import SearchConsoleService
@@ -68,6 +70,7 @@ TOOL_SPECS: dict[str, ToolSpec] = {
     "read_gsc_evidence": ToolSpec(frozenset({"days"})),
     "read_ga4_evidence": ToolSpec(frozenset({"days"})),
     "read_reviews_state": ToolSpec(frozenset({"limit"})),
+    "read_leads_state": ToolSpec(frozenset({"limit"})),
     "read_content_inventory": ToolSpec(frozenset({"limit"})),
     "read_cross_product_summary": ToolSpec(frozenset()),
     "run_site_crawl": ToolSpec(frozenset(), mutating=True),
@@ -124,7 +127,10 @@ TOOL_SPECS: dict[str, ToolSpec] = {
         mutating=True,
     ),
     "draft_review_response_proposal": ToolSpec(
-        frozenset({"review_id", "response_text", "approved_fact_revision_ids"}), mutating=True
+        frozenset({"review_id", "approved_fact_revision_ids"}), mutating=True
+    ),
+    "create_lead_followup_task": ToolSpec(
+        frozenset({"lead_id", "title", "description", "due_at"}), mutating=True
     ),
     "create_growth_plan": ToolSpec(
         frozenset(
@@ -185,6 +191,7 @@ class AgentToolService:
         self.search_console = SearchConsoleService()
         self.analytics = AnalyticsService()
         self.reviews = ReviewService()
+        self.leads = LeadService()
         self.content = ContentService()
         self.seo = SEOService()
         self.insights = InsightsService()
@@ -1071,8 +1078,6 @@ class AgentToolService:
                 ]
             )
         )[:200]
-        run.ai_execution_id = execution.id
-
         ref = f"content-revision:{revision.id}"
         return {
             "data": {"status": revision.status, "validation": revision.validation_document},
@@ -1189,6 +1194,57 @@ class AgentToolService:
             "proposal_references": [ref],
         }
 
+    async def _tool_read_leads_state(
+        self, session: AsyncSession, run: AgentRun, arguments: dict[str, Any]
+    ) -> dict[str, object]:
+        limit = max(1, min(int(arguments.get("limit") or 20), 50))
+        summary = await self.leads.summary(session, run.organization_id)
+        sources = await self.leads.source_performance(session, run.organization_id)
+        leads, has_more = await self.leads.list_leads(
+            session,
+            run.organization_id,
+            location_id=run.location_id,
+            limit=limit,
+        )
+        rows = [
+            {
+                "id": str(lead.id),
+                "status": lead.status,
+                "urgency": lead.urgency,
+                "received_at": lead.received_at.isoformat(),
+                "first_outbound_attempt_at": (
+                    lead.first_outbound_attempt_at.isoformat()
+                    if lead.first_outbound_attempt_at
+                    else None
+                ),
+                "first_human_contact_at": (
+                    lead.first_human_contact_at.isoformat()
+                    if lead.first_human_contact_at
+                    else None
+                ),
+                "converted_at": lead.converted_at.isoformat() if lead.converted_at else None,
+                "converted_value_cents": lead.converted_value_cents,
+                "message_excerpt": _excerpt(lead.message, 300),
+            }
+            for lead in leads
+        ]
+        references = [f"lead:{lead.id}" for lead in leads]
+        references.extend(
+            f"lead-source:{item['source_id']}"
+            for item in sources
+            if item.get("source_id")
+        )
+        references.append(f"leads-summary:{run.location_id or 'organization'}")
+        return {
+            "data": {
+                "summary": summary,
+                "source_performance": sources,
+                "recent_leads": rows,
+                "has_more": has_more,
+            },
+            "source_references": references,
+        }
+
     async def _tool_draft_review_response_proposal(
         self, session: AsyncSession, run: AgentRun, arguments: dict[str, Any]
     ) -> dict[str, object]:
@@ -1219,25 +1275,77 @@ class AgentToolService:
                 "review response evidence must be observed by this bound agent run; "
                 f"not yet read: {', '.join(missing[:10])}"
             )
-        response = await self.reviews.draft(
+
+        response, execution = await self.reviews.generate_ai_draft(
             session,
             organization_id=run.organization_id,
             location_id=run.location_id,
             review_id=review.id,
             review_revision_id=revisions[0].id,
-            text=str(arguments.get("response_text") or "")[:5_000],
-            generated_by_type="ai",
             fact_ids=requested,
+            idempotency_key=f"agent-review-draft:{run.id}:{review.id}:{revisions[0].id}",
             actor_id=None,
             correlation_id=run.correlation_id,
-            ai_execution_id=run.ai_execution_id,
         )
         ref = f"review-response-revision:{response.id}"
         return {
-            "data": {"status": response.status},
+            "data": {
+                "status": response.status,
+                "provider": execution.provider_key,
+                "model": execution.model_key,
+            },
             "source_references": [f"review-revision:{revisions[0].id}"]
             + [f"business-fact:{item}" for item in requested],
             "proposal_references": [ref],
+        }
+
+    async def _tool_create_lead_followup_task(
+        self, session: AsyncSession, run: AgentRun, arguments: dict[str, Any]
+    ) -> dict[str, object]:
+        lead_id = _uuid(arguments.get("lead_id"), "lead_id")
+        lead_reference = f"lead:{lead_id}"
+        if lead_reference not in {str(value) for value in run.source_references}:
+            raise AgentToolDeniedError(
+                "lead follow-up task requires this run to read the lead first"
+            )
+        lead = await self.leads.get(session, run.organization_id, lead_id)
+        if run.location_id is not None and lead.location_id != run.location_id:
+            raise AgentToolDeniedError("lead is outside the bound location")
+
+        title = str(arguments.get("title") or "").strip()[:200]
+        if not title:
+            raise AgentToolDeniedError("lead follow-up task title is required")
+        description_value = arguments.get("description")
+        description = (
+            str(description_value).strip()[:5_000] if description_value is not None else None
+        )
+        due_at_value = arguments.get("due_at")
+        due_at: datetime | None = None
+        if due_at_value:
+            try:
+                due_at = datetime.fromisoformat(str(due_at_value).replace("Z", "+00:00"))
+            except ValueError as exc:
+                raise AgentToolDeniedError("lead follow-up due_at must be ISO-8601") from exc
+
+        task = await self.leads.create_task(
+            session,
+            run.organization_id,
+            lead_id,
+            title=title,
+            description=description,
+            due_at=due_at,
+            assigned_to_user_id=None,
+            actor_id=None,
+            correlation_id=run.correlation_id,
+        )
+        return {
+            "data": {
+                "task_id": str(task.id),
+                "lead_id": str(lead_id),
+                "status": task.status,
+                "due_at": task.due_at.isoformat() if task.due_at else None,
+            },
+            "source_references": [lead_reference],
         }
 
     async def _tool_create_growth_plan(
