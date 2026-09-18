@@ -9,7 +9,7 @@ const routes = [
   ["/automations", "#workspace-content"],
 ] as const;
 
-for (const width of [1024, 420, 390]) {
+for (const width of [1440, 1024, 420, 390]) {
   test(`product workspaces fit ${width}px`, async ({ page }) => {
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));

@@ -59,21 +59,30 @@ const definitions: Record<
 };
 
 const purposes: Record<string, string> = {
-  "gbp.sync": "Keeps profile details aligned with the latest connected business data.",
-  "gbp.generate_post": "Prepares recurring local post work for review and publishing.",
-  "agent.gbp": "Reviews the profile and prepares prioritized optimization recommendations.",
-  "reviews.ingest": "Checks connected review sources for new customer feedback.",
-  "agent.reviews": "Analyzes review activity and prepares response recommendations.",
+  "gbp.sync":
+    "Keeps profile details aligned with the latest connected business data.",
+  "gbp.generate_post":
+    "Prepares recurring local post work for review and publishing.",
+  "agent.gbp":
+    "Reviews the profile and prepares prioritized optimization recommendations.",
+  "reviews.ingest":
+    "Checks connected review sources for new customer feedback.",
+  "agent.reviews":
+    "Analyzes review activity and prepares response recommendations.",
   "agent.content": "Builds the next set of content ideas and priorities.",
-  "agent.seo": "Reviews search performance and prepares prioritized SEO recommendations.",
-  "gbp.publish_change": "Publishes approved profile changes when product work is completed.",
+  "agent.seo":
+    "Reviews search performance and prepares prioritized SEO recommendations.",
+  "gbp.publish_change":
+    "Publishes approved profile changes when product work is completed.",
   "gbp.publish_post": "Publishes approved Business Profile posts.",
   "gbp.upload_media": "Publishes approved profile media.",
-  "content.draft_revision": "Creates governed draft revisions from approved content work.",
+  "content.draft_revision":
+    "Creates governed draft revisions from approved content work.",
   "content.publish": "Publishes approved content to the connected website.",
   "reviews.publish_response": "Publishes approved customer review responses.",
   "seo.crawl_or_analysis": "Checks website health and crawl signals.",
-  "seo.analyze": "Turns search and crawl signals into prioritized opportunities.",
+  "seo.analyze":
+    "Turns search and crawl signals into prioritized opportunities.",
 };
 
 function button(

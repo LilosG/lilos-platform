@@ -594,12 +594,29 @@ import "../styles/global.css";
           "agent.seo": "SEO recommendations prepared",
           "agent.content": "Content ideas prepared",
           "agent.reviews": "Review recommendations prepared",
+          "agent.insights": "Growth analysis completed",
+          "agent.growth": "Growth analysis completed",
+          "seo.analyze": "SEO opportunities analyzed",
+          "content.draft_revision": "Content draft prepared",
+          "reviews.publish_response": "Review response published",
+          "gbp.publish_change": "Business Profile changes published",
+          "gbp.publish_post": "Business Profile post published",
+          "gbp.upload_media": "Business Profile media published",
         };
         for (const run of completed) {
           const item = document.createElement("li");
           const title = document.createElement("strong");
-          title.textContent =
-            labels[run.workflow_key ?? ""] ?? "Work completed";
+          const workflowKey = run.workflow_key ?? "";
+          const productFallback = workflowKey.startsWith("gbp.")
+            ? "Business Profile work completed"
+            : workflowKey.startsWith("reviews.")
+              ? "Review work completed"
+              : workflowKey.startsWith("content.")
+                ? "Content work completed"
+                : workflowKey.startsWith("seo.")
+                  ? "SEO work completed"
+                  : "Automation completed";
+          title.textContent = labels[workflowKey] ?? productFallback;
           const date = document.createElement("span");
           const completedAt = run.completed_at
             ? new Date(run.completed_at)

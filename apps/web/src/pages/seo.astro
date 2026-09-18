@@ -1100,9 +1100,12 @@ import "../styles/global.css";
       ): Promise<void> {
         const panel = document.getElementById("tab-search-console")!;
         panel.replaceChildren();
+        const workspace = document.createElement("div");
+        workspace.className = "seo-search-console-workspace";
+        panel.append(workspace);
 
         if (websites.kind !== "ok" || websites.data.length === 0) {
-          panel.append(
+          workspace.append(
             emptyState(
               "No websites configured",
               "Add a website to enable Search Console integration.",
@@ -1139,7 +1142,7 @@ import "../styles/global.css";
           whRow.append(selector);
           whBody.append(whRow);
           websiteHeader.append(whBody);
-          panel.append(websiteHeader);
+          workspace.append(websiteHeader);
 
           // Fetch performance data
           const propsResult = await fetchSearchProperties(
@@ -1147,7 +1150,7 @@ import "../styles/global.css";
             website.id,
           );
           if (propsResult.kind !== "ok" || propsResult.data.length === 0) {
-            panel.append(
+            workspace.append(
               emptyState(
                 "No Search Console properties",
                 "Map a Search Console property in Integrations to see performance data.",
@@ -1165,7 +1168,7 @@ import "../styles/global.css";
           );
 
           if (perfResult.kind !== "ok" || !perfResult.data.connected) {
-            panel.append(
+            workspace.append(
               emptyState(
                 "No Search Console data available",
                 "Sync Search Console to see performance data.",
@@ -1191,7 +1194,7 @@ import "../styles/global.css";
                 data.freshness.status,
               ),
             );
-            panel.append(freshnessRow);
+            workspace.append(freshnessRow);
           }
 
           // KPI cards
@@ -1233,7 +1236,7 @@ import "../styles/global.css";
               gscGrid.append(card);
             }
           }
-          panel.append(gscGrid);
+          workspace.append(gscGrid);
 
           // Daily chart
           if (data.series && data.series.length > 0) {
@@ -1291,7 +1294,7 @@ import "../styles/global.css";
               ),
             );
             chartSection.append(chartBody);
-            panel.append(chartSection);
+            workspace.append(chartSection);
           }
 
           // Top queries
@@ -1327,7 +1330,7 @@ import "../styles/global.css";
               ),
             );
             queriesSection.append(qBody);
-            panel.append(queriesSection);
+            workspace.append(queriesSection);
           }
 
           // Top pages
@@ -1357,7 +1360,7 @@ import "../styles/global.css";
               ),
             );
             pagesSection.append(pBody);
-            panel.append(pagesSection);
+            workspace.append(pagesSection);
           }
 
           // Property info (compact)
@@ -1367,7 +1370,7 @@ import "../styles/global.css";
             propsResult.data.length === 1
               ? `Property: ${propsResult.data[0].external_property_id}`
               : `${propsResult.data.length} properties connected`;
-          panel.append(propSection);
+          workspace.append(propSection);
         }
       }
 
