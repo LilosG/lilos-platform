@@ -135,7 +135,9 @@ def resolve_ai_provider(
             api_key=api_key,
             base_url=settings.ai_openrouter_base_url,
             timeout_seconds=settings.ai_timeout_seconds,
-            max_output_tokens=settings.ai_max_output_tokens,
+            max_output_tokens=max(
+                settings.ai_max_output_tokens, settings.ai_content_max_output_tokens
+            ),
             default_model=model,
         )
 
@@ -176,6 +178,9 @@ def build_ai_gateway(settings: Settings | None = None) -> AIGateway:
     return AIGateway(
         provider_resolver=lambda task_key: resolve_ai_provider(settings, task_key=task_key),
         task_model_overrides=settings.ai_task_model_map(),
+        task_max_output_tokens={
+            "content.draft_revision": settings.ai_content_max_output_tokens,
+        },
         default_model=settings.ai_default_model,
         global_max_output_tokens=settings.ai_max_output_tokens,
         global_max_cost_microunits=settings.ai_maximum_cost_microunits,
