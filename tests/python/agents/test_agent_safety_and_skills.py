@@ -74,9 +74,10 @@ def test_complete_product_skill_and_sanctioned_tool_plane() -> None:
         "gbp.operator": 5,
         "seo.operator": 2,
         "content.operator": 3,
-        "reviews.operator": 2,
-        "insights.cross_product": 2,
-        "growth.planner": 2,
+        "leads.operator": 1,
+        "reviews.operator": 3,
+        "insights.cross_product": 3,
+        "growth.planner": 3,
     }
     for skill in SKILLS.values():
         assert skill.version == expected_versions[skill.key]
@@ -599,3 +600,16 @@ def test_an_unknown_skill_is_refused_without_naming_anything() -> None:
     with pytest.raises(AgentToolDeniedError) as denial:
         AgentToolService._validate_skill_tool(run, "read_gbp_state")
     assert "may call only" not in str(denial.value)
+
+
+def test_reviews_agent_delegates_copy_to_canonical_generator() -> None:
+    instructions = SKILLS["reviews.operator"].instructions
+    assert "you do not write the final response text yourself" in instructions
+    assert "canonical Reviews generator" in instructions
+
+
+def test_leads_agent_is_operational_but_cannot_contact_leads() -> None:
+    skill = SKILLS["leads.operator"]
+    assert "read_leads_state" in skill.required_tools
+    assert "create_lead_followup_task" in skill.required_tools
+    assert "Never send email/SMS" in skill.instructions
