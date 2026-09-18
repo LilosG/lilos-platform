@@ -43,8 +43,7 @@ def test_thin_generated_page_fails_before_editorial_review() -> None:
 def test_page_quality_floor_rejects_sub_thousand_word_marketing_copy() -> None:
     section = " ".join(f"detail{index}" for index in range(150))
     draft = "\n\n".join(
-        f"## Bachelorette planning topic {heading}\n\n{section}"
-        for heading in range(6)
+        f"## Bachelorette planning topic {heading}\n\n{section}" for heading in range(6)
     )
     payload = {
         "draft": draft,
