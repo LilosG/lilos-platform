@@ -73,7 +73,11 @@ import "../styles/global.css";
           >
         </PageSection>
 
-        <PageSection id="activity-section" title="Current LILOs activity">
+        <PageSection
+          id="activity-section"
+          title="Current LILOs activity"
+          titleId="activity-title"
+        >
           <Region id="activity-panel"
             ><Skeleton lines={2} label="Loading activity" /></Region
           >
@@ -139,6 +143,9 @@ import "../styles/global.css";
         document.getElementById("work-title")!.textContent = isAgency
           ? "Today’s work"
           : "Work in progress";
+        document.getElementById("activity-title")!.textContent = isAgency
+          ? "Current LILOs activity"
+          : "What LILOs is working on";
         organizationId = organization.organization_id;
 
         const [locationsResult, insightsResult, runsResult] = await Promise.all(
@@ -394,6 +401,35 @@ import "../styles/global.css";
         panel.append(list);
       }
 
+      function activityLabel(product: string, key: string): string {
+        const labels: Record<string, Record<string, string>> = {
+          reviews: {
+            classified: "Reviews processed",
+            responded: "Responses published",
+            pending: "Awaiting response",
+            needs_response: "Awaiting response",
+          },
+          content: {
+            published: "Published",
+            deployed: "Published",
+            needs_attention: "Needs attention",
+            failed: "Needs attention",
+          },
+          seo: {
+            success: "Crawls completed",
+            completed: "Crawls completed",
+            approved: "Opportunities approved",
+            open: "Open opportunities",
+          },
+          leads: {
+            new: "New leads",
+            open: "Open leads",
+            won: "Won leads",
+          },
+        };
+        return labels[product]?.[key] ?? statusLabel(key);
+      }
+
       function renderActivity(
         insightsResult: Awaited<ReturnType<typeof fetchInsightsSummary>>,
       ): void {
@@ -426,9 +462,9 @@ import "../styles/global.css";
           groups.push({
             title: "Business Profile",
             items: [
-              { label: "Locations", value: data.gbp?.locations ?? 0 },
+              { label: "Locations managed", value: data.gbp?.locations ?? 0 },
               {
-                label: "Profile checks",
+                label: "Profile checks completed",
                 value: data.gbp?.profile_snapshots ?? 0,
               },
               { label: "Post activity", value: gbpPubs },
@@ -438,7 +474,7 @@ import "../styles/global.css";
 
         const reviewItems = Object.entries(data.reviews ?? {}).map(
           ([label, value]) => ({
-            label: statusLabel(label),
+            label: activityLabel("reviews", label),
             value,
           }),
         );
@@ -446,7 +482,10 @@ import "../styles/global.css";
           groups.push({ title: "Reviews", items: reviewItems });
 
         const leadItems = Object.entries(data.leads ?? {}).map(
-          ([label, value]) => ({ label: statusLabel(label), value }),
+          ([label, value]) => ({
+            label: activityLabel("leads", label),
+            value,
+          }),
         );
         if (leadItems.length > 0)
           groups.push({ title: "Leads", items: leadItems });
@@ -454,17 +493,23 @@ import "../styles/global.css";
         const contentItems = Object.entries(
           data.content_publications ?? {},
         ).map(([label, value]) => ({
-          label: statusLabel(label),
+          label: activityLabel("content", label),
           value,
         }));
         if (contentItems.length > 0)
           groups.push({ title: "Content", items: contentItems });
 
         const crawlItems = Object.entries(data.seo?.crawl_runs ?? {}).map(
-          ([label, value]) => ({ label: statusLabel(label), value }),
+          ([label, value]) => ({
+            label: activityLabel("seo", label),
+            value,
+          }),
         );
         const oppItems = Object.entries(data.seo?.opportunities ?? {}).map(
-          ([label, value]) => ({ label: statusLabel(label), value }),
+          ([label, value]) => ({
+            label: activityLabel("seo", label),
+            value,
+          }),
         );
         const seoItems = [...crawlItems, ...oppItems];
         if (seoItems.length > 0) groups.push({ title: "SEO", items: seoItems });
@@ -500,9 +545,7 @@ import "../styles/global.css";
             row.className = "ui-product-activity__fact";
             const label = document.createElement("span");
             label.className = "ui-text-secondary";
-            label.textContent = item.label.replace(/\b\w/g, (c) =>
-              c.toUpperCase(),
-            );
+            label.textContent = item.label;
             const value = document.createElement("strong");
             value.textContent = String(item.value);
             row.append(label, value);
@@ -524,18 +567,28 @@ import "../styles/global.css";
           section.hidden = true;
           return;
         }
+
+        const seen = new Set<string>();
         const completed = outcome.data
           .filter((run) => run.status === "completed")
+          .filter((run) => {
+            const key = run.workflow_key ?? run.id;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          })
           .slice(0, 5);
+
         section.hidden = completed.length === 0;
         if (!completed.length) return;
+
         const list = document.createElement("ul");
         list.className = "ui-record-list";
         const labels: Record<string, string> = {
           "gbp.sync": "Business Profile checked",
           "gbp.generate_post": "Business Profile post proposal prepared",
-          "reviews.ingest": "Reviews checked",
-          "content.publish": "Content publishing completed",
+          "reviews.ingest": "New reviews checked",
+          "content.publish": "Content published",
           "seo.crawl_or_analysis": "Website crawl completed",
           "agent.gbp": "Business Profile recommendations prepared",
           "agent.seo": "SEO recommendations prepared",

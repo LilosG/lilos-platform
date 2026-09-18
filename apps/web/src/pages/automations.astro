@@ -39,18 +39,21 @@ import "../styles/automations.css";
       </PageShell>
 
       <PageShell id="workspace-content" hidden>
-        <PageHeader title="Automations" />
+        <PageHeader
+          title="Automations"
+          description="Run, schedule, and review recurring work across every product."
+        />
 
         <Region id="automation-action-status" live="polite" />
 
-        <PageSection title="Across your products">
+        <PageSection title="Automation control center">
           <Region id="product-domain-overview">
             <Skeleton lines={3} label="Loading product automations" />
           </Region>
         </PageSection>
 
         <details class="ui-advanced-workspace" id="automation-advanced">
-          <summary>Schedules and advanced controls</summary>
+          <summary>Execution history and advanced controls</summary>
           <PageSection title="Automation summary">
             <Region id="automation-metrics">
               <Skeleton lines={2} label="Loading automation health" />
@@ -1154,8 +1157,10 @@ import "../styles/automations.css";
           { key: "leads", title: "Leads", href: "/leads" },
           { key: "insights", title: "Growth Intelligence", href: "/insights" },
         ];
+
         const list = document.createElement("div");
-        list.className = "ui-product-activity";
+        list.className = "ui-product-domain-list";
+
         for (const domain of domains) {
           const owned = workflows.filter(
             (item) =>
@@ -1164,24 +1169,58 @@ import "../styles/automations.css";
               (domain.key === "insights" && item.key === "agent.growth"),
           );
           if (!owned.length) continue;
-          const latest = runs.find((item) =>
+
+          const ownedRuns = runs.filter((item) =>
             owned.some((workflow) => workflow.key === item.workflow_key),
           );
+          const latest = ownedRuns[0];
           const active = schedules.filter(
             (schedule) =>
               schedule.status === "active" &&
               owned.some((workflow) => workflow.key === schedule.workflow_key),
           ).length;
+          const failures = actionableWorkflowFailureCount(ownedRuns);
+
           const domainGroup = document.createElement("details");
           domainGroup.className = "ui-product-domain";
+          domainGroup.dataset.state = failures
+            ? "attention"
+            : active
+              ? "active"
+              : "ready";
+          domainGroup.open = failures > 0 || active > 0;
+
           const row = document.createElement("summary");
-          row.className = "ui-product-activity__row";
+          row.className = "ui-product-domain__summary";
+
+          const copy = document.createElement("div");
+          copy.className = "ui-product-domain__summary-copy";
           const heading = document.createElement("h3");
           heading.textContent = domain.title;
-          const state = document.createElement("span");
-          state.className = "ui-text-secondary";
-          state.textContent = `${active} active schedule${active === 1 ? "" : "s"} · ${latest ? `Latest: ${statusLabel(latest.status)}` : "No recent result"}`;
-          row.append(heading, state);
+          const detail = document.createElement("p");
+          detail.textContent = `${owned.length} automation${owned.length === 1 ? "" : "s"} · ${
+            active
+              ? `${active} recurring schedule${active === 1 ? "" : "s"}`
+              : "No recurring schedule"
+          }`;
+          copy.append(heading, detail);
+
+          const status = document.createElement("div");
+          status.className = "ui-product-domain__summary-status";
+          const primary = document.createElement("strong");
+          primary.textContent = failures
+            ? `${failures} need${failures === 1 ? "s" : ""} attention`
+            : latest
+              ? statusLabel(latest.status)
+              : "Ready";
+          const secondary = document.createElement("span");
+          secondary.textContent = latest
+            ? `Latest · ${formatTime(latest.completed_at ?? latest.created_at)}`
+            : "No recent run";
+          status.append(primary, secondary);
+
+          row.append(copy, status);
+
           const cards = document.createElement("div");
           cards.className =
             "ui-product-automations__cards ui-product-domain__cards";
@@ -1210,13 +1249,19 @@ import "../styles/automations.css";
               ),
             );
           }
+
+          const footer = document.createElement("div");
+          footer.className = "ui-product-domain__footer";
           const link = document.createElement("a");
           link.className = "ui-button ui-button--secondary ui-button--sm";
           link.href = domain.href;
-          link.textContent = `Open ${domain.title}`;
-          domainGroup.append(row, cards, link);
+          link.textContent = "Open workspace";
+          footer.append(link);
+
+          domainGroup.append(row, cards, footer);
           list.append(domainGroup);
         }
+
         if (list.childElementCount) panel.append(list);
         else
           panel.append(

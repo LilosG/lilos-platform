@@ -58,6 +58,24 @@ const definitions: Record<
   "seo.analyze": { label: "Opportunity analysis", domain: "seo" },
 };
 
+const purposes: Record<string, string> = {
+  "gbp.sync": "Keeps profile details aligned with the latest connected business data.",
+  "gbp.generate_post": "Prepares recurring local post work for review and publishing.",
+  "agent.gbp": "Reviews the profile and prepares prioritized optimization recommendations.",
+  "reviews.ingest": "Checks connected review sources for new customer feedback.",
+  "agent.reviews": "Analyzes review activity and prepares response recommendations.",
+  "agent.content": "Builds the next set of content ideas and priorities.",
+  "agent.seo": "Reviews search performance and prepares prioritized SEO recommendations.",
+  "gbp.publish_change": "Publishes approved profile changes when product work is completed.",
+  "gbp.publish_post": "Publishes approved Business Profile posts.",
+  "gbp.upload_media": "Publishes approved profile media.",
+  "content.draft_revision": "Creates governed draft revisions from approved content work.",
+  "content.publish": "Publishes approved content to the connected website.",
+  "reviews.publish_response": "Publishes approved customer review responses.",
+  "seo.crawl_or_analysis": "Checks website health and crawl signals.",
+  "seo.analyze": "Turns search and crawl signals into prioritized opportunities.",
+};
+
 function button(
   label: string,
   variant: "primary" | "secondary" = "secondary",
@@ -77,6 +95,16 @@ function formatDate(value: string | null): string {
     : date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
+function cadenceLabel(cron: string | undefined): string {
+  if (!cron) return "As needed";
+  if (cron === "0 * * * *") return "Hourly";
+  if (cron === "0 16 * * *") return "Daily · 4 PM";
+  if (cron === "0 16 * * 2") return "Weekly · Tue 4 PM";
+  if (cron === "0 17 * * 2") return "Weekly · Tue 5 PM";
+  if (cron === "0 18 * * *") return "Daily · 6 PM";
+  return "Scheduled";
+}
+
 export function createAutomationCard(
   workflow: WorkflowTypeEntry,
   schedule: WorkflowScheduleEntry | undefined,
@@ -90,31 +118,60 @@ export function createAutomationCard(
   const definition = definitions[workflow.key];
   const article = document.createElement("article");
   article.className = "ui-automation-card";
+
   const identity = document.createElement("div");
   identity.className = "ui-automation-card__identity";
+
+  const headingRow = document.createElement("div");
+  headingRow.className = "ui-automation-card__heading-row";
   const heading = document.createElement("h3");
   heading.textContent = definition?.label ?? workflow.display_name;
+
   const runnable =
     workflow.key.startsWith("agent.") ||
     ["gbp.sync", "gbp.generate_post", "reviews.ingest"].includes(workflow.key);
-  const detail = document.createElement("p");
-  const state = schedule
+
+  const stateKey = schedule
     ? schedule.status === "active"
-      ? "Active"
-      : "Paused"
+      ? "active"
+      : "paused"
     : runnable
-      ? "On demand"
-      : "Runs with product work";
-  const cadence =
-    schedule?.cron_expression === "0 * * * *"
-      ? "Hourly"
-      : schedule
-        ? "Scheduled"
-        : definition?.cadence
-          ? "No schedule"
-          : "As needed";
-  detail.textContent = `${state} · ${cadence} · ${lastRun ? `Last result: ${lastRun.status.replaceAll("_", " ")} ${formatDate(lastRun.completed_at ?? lastRun.created_at)}` : "Not run yet"}`;
-  identity.append(heading, detail);
+      ? "on-demand"
+      : "managed";
+  const state = document.createElement("span");
+  state.className = "ui-automation-card__state";
+  state.dataset.state = stateKey;
+  state.textContent =
+    stateKey === "active"
+      ? "Active"
+      : stateKey === "paused"
+        ? "Paused"
+        : stateKey === "on-demand"
+          ? "On demand"
+          : "Product managed";
+  headingRow.append(heading, state);
+
+  const purpose = document.createElement("p");
+  purpose.className = "ui-automation-card__purpose";
+  purpose.textContent =
+    purposes[workflow.key] ?? "Runs as part of this product workflow.";
+
+  const meta = document.createElement("div");
+  meta.className = "ui-automation-card__meta";
+  const cadence = document.createElement("span");
+  cadence.textContent = schedule
+    ? cadenceLabel(schedule.cron_expression)
+    : definition?.cadence
+      ? "Schedule available"
+      : "Runs when needed";
+  const result = document.createElement("span");
+  result.textContent = lastRun
+    ? `Last ${lastRun.status.replaceAll("_", " ")} · ${formatDate(lastRun.completed_at ?? lastRun.created_at)}`
+    : "No recent run";
+  meta.append(cadence, result);
+
+  identity.append(headingRow, purpose, meta);
+
   const actions = document.createElement("div");
   actions.className = "ui-automation-card__actions";
   const run = button("Run now", "primary");
@@ -143,13 +200,14 @@ export function createAutomationCard(
     });
   }
   if (runnable) actions.append(run);
+
   if (definition?.cadence && canManageSchedules) {
     const manage = button(
       schedule
         ? schedule.status === "active"
-          ? "Pause"
-          : "Resume"
-        : "Schedule",
+          ? "Pause schedule"
+          : "Resume schedule"
+        : "Add schedule",
     );
     manage.addEventListener("click", async () => {
       const selected = locationId();
@@ -184,7 +242,9 @@ export function createAutomationCard(
     });
     actions.append(manage);
   }
-  article.append(identity, actions);
+
+  article.append(identity);
+  if (actions.childNodes.length) article.append(actions);
   return article;
 }
 
