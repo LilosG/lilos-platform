@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.app.administration.knowledge_service import BusinessKnowledgeService
 from apps.api.app.administration.models import BusinessFactRevision
+from apps.api.app.ai.errors import AIProviderError
 from apps.api.app.ai.factory import build_ai_gateway
 from apps.api.app.ai.gateway import AIGatewayRequest
 from apps.api.app.ai.models import AIExecution, AITaskDefinition
@@ -941,6 +942,7 @@ class ContentService:
                 "manual_fallback": fallback,
                 "content_title": item.title,
                 "content_type": item.content_type,
+                "target_reference": brief.target_reference,
                 "required_output": (
                     "Return: `draft`, the page body in markdown with no H1 because the "
                     "site template renders the title, plus descriptive H2/H3 sections and no "
@@ -967,7 +969,45 @@ class ContentService:
             maximum_cost_microunits=task.maximum_cost_microunits,
             maximum_latency_ms=task.maximum_latency_ms,
         )
-        output = await self.ai_gateway.execute(request)
+        try:
+            output = await self.ai_gateway.execute(request)
+        except AIProviderError as exc:
+            # Long-form generation gets one bounded repair attempt when the
+            # provider returned structurally valid content that missed our
+            # deterministic publishing-quality floor. This is not a blind
+            # provider retry: the second request receives the exact failed
+            # quality checks and must return a complete replacement artifact.
+            if (
+                exc.category == "permanent"
+                and "below the publishing quality floor" in exc.safe_message
+            ):
+                repair_document = dict(request.input_document)
+                repair_requirements = dict(
+                    cast(dict[str, object], repair_document.get("validation_requirements") or {})
+                )
+                repair_requirements["repair_required"] = True
+                repair_requirements["failed_quality_checks"] = exc.safe_message.removeprefix(
+                    "AI provider returned Content output below the publishing quality floor: "
+                )[:1_000]
+                repair_document["validation_requirements"] = repair_requirements
+                repair_document["quality_repair_instruction"] = (
+                    "Return a complete replacement draft, not a patch. Correct every failed "
+                    "quality check while preserving grounding, search intent, and the required "
+                    "output contract."
+                )
+                repair_request = AIGatewayRequest(
+                    organization_id=request.organization_id,
+                    location_id=request.location_id,
+                    task_key=request.task_key,
+                    input_document=repair_document,
+                    input_references=request.input_references,
+                    approved_fact_revision_ids=request.approved_fact_revision_ids,
+                    maximum_cost_microunits=request.maximum_cost_microunits,
+                    maximum_latency_ms=request.maximum_latency_ms,
+                )
+                output = await self.ai_gateway.execute(repair_request)
+            else:
+                raise
 
         # --- persist AI execution ---
         usage = output.get("usage", {}) or {}
