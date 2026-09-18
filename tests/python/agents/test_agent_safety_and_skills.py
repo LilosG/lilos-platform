@@ -73,7 +73,7 @@ def test_complete_product_skill_and_sanctioned_tool_plane() -> None:
         # must receive a new version rather than rewriting what a prior run means.
         "gbp.operator": 5,
         "seo.operator": 2,
-        "content.operator": 2,
+        "content.operator": 3,
         "reviews.operator": 2,
         "insights.cross_product": 2,
         "growth.planner": 2,
