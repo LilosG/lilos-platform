@@ -58,8 +58,9 @@ test("Review inbox and sync stay in Reviews", async ({ page }) => {
   ).not.toHaveCount(0);
 });
 
-
-test("SEO Search performance stays in flow ahead of SEO work", async ({ page }) => {
+test("SEO Search performance stays in flow ahead of SEO work", async ({
+  page,
+}) => {
   await open(page, "/seo");
   const workspace = page.locator(
     "#tab-search-console > .seo-search-console-workspace",
