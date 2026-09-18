@@ -31,3 +31,29 @@ def test_thin_generated_page_fails_before_editorial_review() -> None:
     assert "article_heading_depth_missing" in errors
     assert "article_internal_links_missing" in errors
     assert "article_faq_depth_missing" in errors
+
+
+def test_page_quality_floor_rejects_sub_thousand_word_marketing_copy() -> None:
+    section = " ".join(f"detail{index}" for index in range(150))
+    draft = "\n\n".join(
+        f"## Bachelorette planning topic {heading}\n\n{section}"
+        for heading in range(6)
+    )
+    payload = {
+        "draft": draft,
+        "meta_description": "Plan a bachelorette celebration in Little Italy, San Diego.",
+        "seo_title": "Bachelorette Party Venue in Little Italy",
+        "faqs": [
+            {"question": "One?", "answer": " ".join(["useful"] * 20)},
+            {"question": "Two?", "answer": " ".join(["useful"] * 20)},
+            {"question": "Three?", "answer": " ".join(["useful"] * 20)},
+        ],
+    }
+    errors = _validate_article_payload(
+        payload,
+        {
+            "content_type": "page",
+            "content_title": "Bachelorette Party Venue in Little Italy",
+        },
+    )
+    assert "article_too_thin" in errors
