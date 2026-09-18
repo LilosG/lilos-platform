@@ -1218,9 +1218,7 @@ class AgentToolService:
                     else None
                 ),
                 "first_human_contact_at": (
-                    lead.first_human_contact_at.isoformat()
-                    if lead.first_human_contact_at
-                    else None
+                    lead.first_human_contact_at.isoformat() if lead.first_human_contact_at else None
                 ),
                 "converted_at": lead.converted_at.isoformat() if lead.converted_at else None,
                 "converted_value_cents": lead.converted_value_cents,
@@ -1230,9 +1228,7 @@ class AgentToolService:
         ]
         references = [f"lead:{lead.id}" for lead in leads]
         references.extend(
-            f"lead-source:{item['source_id']}"
-            for item in sources
-            if item.get("source_id")
+            f"lead-source:{item['source_id']}" for item in sources if item.get("source_id")
         )
         references.append(f"leads-summary:{run.location_id or 'organization'}")
         return {
