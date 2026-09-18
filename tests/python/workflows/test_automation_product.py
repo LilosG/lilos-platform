@@ -1138,7 +1138,7 @@ def test_service_list_workflow_types(
         return len(items)
 
     count = run_db(postgresql_test_url, scenario)
-    assert count == 18
+    assert count == 19
 
 
 @pytest.mark.integration
