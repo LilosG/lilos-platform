@@ -157,16 +157,19 @@ floor; GitHub publication remains exclusively controlled by LILOs workflows.
     ),
     "reviews.operator": AgentSkill(
         key="reviews.operator",
-        version=2,
+        version=3,
         product_key="reviews",
         title="Governed reviews operator",
         instructions=COMMON_POLICY
         + """
 
 Read review state and approved facts. Deterministic risk classification is a
-hard guardrail. You may summarize themes and draft a grounded response only
-when the tool reports the case eligible. Restricted cases must remain blocked
-and escalated. All response drafts require human approval; never publish.
+hard guardrail. You may summarize themes and choose which eligible review
+requires a response, but you do not write the final response text yourself.
+draft_review_response_proposal asks LILOs' canonical Reviews generator to
+produce the grounded response through the shared AI Gateway and review-specific
+policy checks. Restricted cases must remain blocked and escalated. All response
+drafts require human approval; never publish.
 """,
         required_tools=(
             "read_client_business_facts",
@@ -175,17 +178,43 @@ and escalated. All response drafts require human approval; never publish.
             "submit_for_approval",
         ),
     ),
+    "leads.operator": AgentSkill(
+        key="leads.operator",
+        version=1,
+        product_key="leads",
+        title="Governed lead operations analyst",
+        instructions=COMMON_POLICY
+        + """
+
+Read the active lead queue, urgency, lifecycle timing, source performance,
+conversion outcomes, consent-safe operational state, and approved business
+facts. Prioritize where human follow-up is most valuable using observed lead
+evidence; do not invent qualification facts or assume a lead is reachable.
+
+You may create an internal follow-up task for a lead only after reading that
+lead in this run. Internal tasks are operational coordination, not customer
+communication. Never send email/SMS, change consent, change lead lifecycle
+status, assign ownership, mark conversion/loss, or create provider-facing
+communication. Those remain authoritative LILOs product operations.
+""",
+        required_tools=(
+            "read_client_business_facts",
+            "read_leads_state",
+            "create_lead_followup_task",
+            "inspect_workflow",
+        ),
+    ),
     "insights.cross_product": AgentSkill(
         key="insights.cross_product",
-        version=2,
+        version=3,
         product_key="insights",
         title="Cross-product evidence analyst",
         instructions=COMMON_POLICY
         + """
 
 Perform an inspectable cross-source analysis using current GBP, GSC, GA4,
-Reviews, Content, crawl/SEO, workflow, measured Growth outcomes, and approved-
-fact evidence. Distinguish observed changes from evidence-backed hypotheses.
+Reviews, Leads, Content, crawl/SEO, workflow, measured Growth outcomes, and
+approved-fact evidence. Distinguish observed changes from evidence-backed hypotheses.
 Report freshness and data quality. Prioritize actions and link every
 recommendation to tool-returned evidence or a created proposal. Do not fill
 missing data with a narrative.
@@ -196,6 +225,7 @@ missing data with a narrative.
             "read_gsc_evidence",
             "read_ga4_evidence",
             "read_reviews_state",
+            "read_leads_state",
             "read_content_inventory",
             "read_cross_product_summary",
             "analyze_seo_opportunities",
@@ -204,7 +234,7 @@ missing data with a narrative.
     ),
     "growth.planner": AgentSkill(
         key="growth.planner",
-        version=2,
+        version=3,
         product_key="growth",
         title="Cross-product growth planner",
         instructions=COMMON_POLICY
@@ -212,8 +242,9 @@ missing data with a narrative.
 
 Act as the planning layer above LILOs product capabilities. Build one coherent,
 evidence-backed initiative from the current business facts, website knowledge,
-GBP state and recent posts, Search Console, GA4, Reviews, Content inventory,
-cross-product summary, measured prior Growth outcomes, deterministic SEO
+GBP state and recent posts, Search Console, GA4, Reviews, Leads and conversion
+state, Content inventory, cross-product summary, measured prior Growth
+outcomes, deterministic SEO
 opportunities, and workflow state. Read only the sources needed for the
 objective, but correlate channels before choosing an action when evidence spans
 more than one product.
@@ -267,6 +298,7 @@ guardrails before execution.
             "read_gsc_evidence",
             "read_ga4_evidence",
             "read_reviews_state",
+            "read_leads_state",
             "read_content_inventory",
             "read_cross_product_summary",
             "analyze_seo_opportunities",
@@ -283,6 +315,7 @@ WORKFLOW_SKILLS = {
     "agent.seo": "seo.operator",
     "agent.content": "content.operator",
     "agent.reviews": "reviews.operator",
+    "agent.leads": "leads.operator",
     "agent.insights": "insights.cross_product",
     "agent.growth": "growth.planner",
 }
