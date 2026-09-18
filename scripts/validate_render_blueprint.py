@@ -245,7 +245,7 @@ def validate_blueprint(path: Path = BLUEPRINT) -> tuple[str, ...]:
         for fragment in (
             "/opt/hermes/docker/stage2-hook.sh",
             "/opt/hermes/docker/main-wrapper.sh",
-            "platform_toolsets.api_server",
+            'platform_toolsets["api_server"] = ["lilos", "no_mcp"]',
             "agent.disabled_toolsets",
             "sessions.auto_prune",
             "sessions.retention_days 30",
