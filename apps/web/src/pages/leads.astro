@@ -8,6 +8,7 @@ import Inline from "../lib/ui/Inline.astro";
 import Input from "../lib/ui/Input.astro";
 import Notice from "../lib/ui/Notice.astro";
 import PageHeader from "../lib/ui/PageHeader.astro";
+import ProductAutomations from "../lib/ui/ProductAutomations.astro";
 import PageSection from "../lib/ui/PageSection.astro";
 import PageShell from "../lib/ui/PageShell.astro";
 import Region from "../lib/ui/Region.astro";
@@ -52,7 +53,14 @@ import "../styles/global.css";
           eyebrow="Operations"
           title="Leads"
           description="Triage incoming demand, coordinate accountable follow-up, and track lifecycle outcomes."
-        />
+        >
+          <Button
+            slot="actions"
+            href="/automations?agent=agent.leads"
+            variant="secondary"
+            size="sm">Analyze leads</Button
+          >
+        </PageHeader>
         <Notice title="Lead delivery providers"
           ><p>Email and SMS availability are managed centrally.</p><Button
             slot="action"
@@ -132,6 +140,7 @@ import "../styles/global.css";
         <PageSection eyebrow="Sources" title="Source performance"
           ><Region as="ul" id="sources-list" /></PageSection
         >
+        <ProductAutomations product="leads" title="Lead automations" />
 
         <PageSection
           id="detail-section"
@@ -230,6 +239,7 @@ import "../styles/global.css";
       </PageShell>
     </AppShell>
     <script>
+      import { mountProductAutomations } from "../lib/ui/product-automations";
       import {
         fetchProductReadiness,
         type MyOrganization,
@@ -1183,6 +1193,13 @@ import "../styles/global.css";
           renderSources(),
           renderLeadsList(),
           renderAssignees(),
+          mountProductAutomations(
+            "leads",
+            organization.organization_id,
+            ["internal", "partner", "support"].includes(
+              organization.membership_type,
+            ),
+          ),
         ]);
       }
 
