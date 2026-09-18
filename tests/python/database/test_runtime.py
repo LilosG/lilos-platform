@@ -75,4 +75,3 @@ def test_database_runtime_uses_bounded_connection_pool() -> None:
         import asyncio
 
         asyncio.run(runtime.dispose())
-
