@@ -1198,8 +1198,12 @@ class AgentToolService:
         self, session: AsyncSession, run: AgentRun, arguments: dict[str, Any]
     ) -> dict[str, object]:
         limit = max(1, min(int(arguments.get("limit") or 20), 50))
-        summary = await self.leads.summary(session, run.organization_id)
-        sources = await self.leads.source_performance(session, run.organization_id)
+        summary = await self.leads.summary(
+            session, run.organization_id, location_id=run.location_id
+        )
+        sources = await self.leads.source_performance(
+            session, run.organization_id, location_id=run.location_id
+        )
         leads, has_more = await self.leads.list_leads(
             session,
             run.organization_id,
