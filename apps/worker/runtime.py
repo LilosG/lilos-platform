@@ -194,7 +194,8 @@ async def run_operational_worker(
                 worker_options,
                 database if concurrency == 1 else None,
             )
-            backend.instance_key = f"{backend.instance_key}:{slot + 1}"[:128]
+            base_instance_key = backend.instance_key[:120]
+            backend.instance_key = f"{base_instance_key}:{slot + 1}"
             group.create_task(
                 run_process(backend, stop),
                 name=f"lilos-worker-{slot + 1}",
