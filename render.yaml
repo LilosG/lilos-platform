@@ -151,7 +151,10 @@ services:
       - key: LILOS_GITHUB_APP_INSTALLATION_REDIRECT_URI
         sync: false
       - key: LILOS_OPENROUTER_API_KEY
-        sync: false
+        fromService:
+          name: lilos-hermes
+          type: pserv
+          envVarKey: OPENROUTER_API_KEY
       - key: LILOS_HERMES_BASE_URL
         fromService:
           name: lilos-hermes
@@ -219,7 +222,10 @@ services:
       - key: LILOS_GITHUB_APP_INSTALLATION_REDIRECT_URI
         sync: false
       - key: LILOS_OPENROUTER_API_KEY
-        sync: false
+        fromService:
+          name: lilos-hermes
+          type: pserv
+          envVarKey: OPENROUTER_API_KEY
       - key: LILOS_HERMES_BASE_URL
         fromService:
           name: lilos-hermes
@@ -273,5 +279,4 @@ services:
         sync: false
       - key: LILOS_GITHUB_APP_INSTALLATION_REDIRECT_URI
         sync: false
-      - key: LILOS_OPENROUTER_API_KEY
-        sync: false
+
