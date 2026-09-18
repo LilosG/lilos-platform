@@ -870,8 +870,9 @@ class ContentService:
                 "content_title": item.title,
                 "content_type": item.content_type,
                 "required_output": (
-                    "Return: `draft`, the page body in markdown with a single H1 and "
-                    "descriptive H2 sections, no frontmatter block; `meta_description`, "
+                    "Return: `draft`, the page body in markdown with no H1 because the "
+                    "site template renders the title, plus descriptive H2/H3 sections and no "
+                    "frontmatter block; `meta_description`, "
                     "one sentence under 155 characters for search results; `seo_title`, "
                     "under 60 characters for the search-result headline; `faqs`, three "
                     "to six {question, answer} pairs a real local customer would ask, "
@@ -883,6 +884,10 @@ class ContentService:
                 ),
                 "governed_facts": governed_facts,
                 "knowledge": knowledge,
+                "validation_requirements": brief.validation_requirements,
+                "required_claims": brief.required_claims,
+                "required_local_references": brief.required_local_references,
+                "source_evidence_references": brief.source_evidence_references,
             },
             input_references=(brief.id,),
             approved_fact_revision_ids=tuple(fact_ids),
