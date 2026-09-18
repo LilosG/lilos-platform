@@ -74,11 +74,11 @@ def test_complete_product_skill_and_sanctioned_tool_plane() -> None:
         # must receive a new version rather than rewriting what a prior run means.
         "gbp.operator": 5,
         "seo.operator": 2,
-        "content.operator": 3,
+        "content.operator": 4,
         "leads.operator": 1,
         "reviews.operator": 3,
         "insights.cross_product": 3,
-        "growth.planner": 3,
+        "growth.planner": 4,
     }
     for skill in SKILLS.values():
         assert skill.version == expected_versions[skill.key]
