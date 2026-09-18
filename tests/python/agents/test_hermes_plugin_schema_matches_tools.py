@@ -149,3 +149,8 @@ def test_lead_tools_are_exposed_to_hermes_with_bounded_contracts(plugin: Any) ->
         "description",
         "due_at",
     }
+
+
+def test_growth_planner_does_not_choose_executor_workflow_keys(plugin: Any) -> None:
+    action_schema = plugin.SCHEMAS["create_growth_plan"]["properties"]["actions"]["items"]
+    assert "executor_workflow_key" not in action_schema["properties"]
