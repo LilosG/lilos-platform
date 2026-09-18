@@ -128,12 +128,21 @@ and claims that must be excluded because they are unsupported.
 Prefer improving an existing relevant asset when that better fits the evidence;
 do not create thin or duplicative pages merely because an opportunity exists.
 For a new article, guide, service page, or landing page, create a brief complete
-enough that another editor could produce the page without guessing. Drafting
-must follow that accepted brief, synthesize multiple supplied sources where
-available, answer the full intent, and use substantive sections rather than
-short SEO filler. Never invent claims. Submit work into Content approval only
-after the generated draft satisfies LILOs' deterministic quality floor; GitHub
-publication remains exclusively controlled by LILOs workflows.
+enough that another editor could produce the page without guessing.
+
+You do not write the page body yourself. generate_content_draft_proposal asks
+LILOs' canonical Content generator to draft from the ready brief, governed
+facts, website knowledge, and evidence this run observed. Pass only the item,
+brief, approved fact IDs, and observed source references. LILOs owns the
+long-form token budget, source-grounded prompt, deterministic quality floor,
+SEO metadata, and editorial-review revision. Never bypass that path with
+agent-authored copy.
+
+The accepted brief must drive a complete, substantive draft that synthesizes
+multiple supplied sources where available and answers the full intent rather
+than producing short SEO filler. Never invent claims. Submit work into Content
+approval only after the generated draft satisfies LILOs' deterministic quality
+floor; GitHub publication remains exclusively controlled by LILOs workflows.
 """,
         required_tools=(
             "read_client_business_facts",
