@@ -1093,7 +1093,7 @@ import "../styles/global.css";
           return;
         }
         const open = result.data.filter((item) =>
-          ["identified", "validated"].includes(item.status),
+          ["identified", "validated", "accepted"].includes(item.status),
         );
         if (!open.length) {
           region.append(
@@ -1117,21 +1117,29 @@ import "../styles/global.css";
         const meta = document.createElement("span");
         meta.textContent = `${opportunity.opportunity_type.replace(/_/g, " ")} · priority ${opportunity.priority_score}`;
         text.append(title, meta);
-        const accept = document.createElement("button");
-        accept.type = "button";
-        accept.className = "ui-button ui-button--secondary ui-button--sm";
-        accept.textContent = "Accept opportunity";
-        accept.addEventListener("click", async () => {
-          accept.disabled = true;
-          const result = await decideOpportunity(
-            organizationId,
-            opportunity.id,
-            true,
-          );
-          if (result.kind === "ok") await renderOpportunities();
-          else accept.disabled = false;
-        });
-        row.append(text, accept);
+        const action = document.createElement("div");
+        if (opportunity.status === "accepted") {
+          action.className = "content-opportunity__progress";
+          action.textContent = "Creating content";
+          action.setAttribute("aria-label", "Creating content");
+        } else {
+          const accept = document.createElement("button");
+          accept.type = "button";
+          accept.className = "ui-button ui-button--secondary ui-button--sm";
+          accept.textContent = "Accept opportunity";
+          accept.addEventListener("click", async () => {
+            accept.disabled = true;
+            const result = await decideOpportunity(
+              organizationId,
+              opportunity.id,
+              true,
+            );
+            if (result.kind === "ok") await renderOpportunities();
+            else accept.disabled = false;
+          });
+          action.append(accept);
+        }
+        row.append(text, action);
         return row;
       }
 
@@ -1478,6 +1486,12 @@ import "../styles/global.css";
     align-items: center;
     padding: 0.8rem 0;
     border-bottom: 1px solid var(--color-border, #d8d3c6);
+  }
+  .content-opportunity__progress {
+    color: var(--color-text-secondary, #666157);
+    font-size: 0.875rem;
+    font-weight: 650;
+    white-space: nowrap;
   }
   .content-history {
     margin-top: 1rem;
