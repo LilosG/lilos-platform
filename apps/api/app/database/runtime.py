@@ -58,6 +58,8 @@ def create_database_runtime(settings: Settings) -> DatabaseRuntime:
         database_url,
         connect_args={"timeout": settings.database_connect_timeout_seconds},
         pool_pre_ping=True,
+        pool_size=settings.database_pool_size,
+        max_overflow=settings.database_max_overflow,
     )
     session_factory = async_sessionmaker(
         engine,
