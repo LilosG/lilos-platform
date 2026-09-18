@@ -48,11 +48,14 @@ _ARTICLE_CONTENT_TYPES = frozenset(
         "landing-page",
     }
 )
-_ARTICLE_MINIMUM_WORDS = 850
-_ARTICLE_MINIMUM_H2S = 6
-_ARTICLE_MINIMUM_INTERNAL_LINKS = 3
-_ARTICLE_MINIMUM_FAQS = 3
+_LONGFORM_CONTENT_TYPES = frozenset(
+    {"article", "blog", "blog_post", "blog-post", "guide", "local_guide", "local-guide"}
+)
+_PAGE_CONTENT_TYPES = frozenset({"page", "landing", "landing_page", "landing-page"})
 _ARTICLE_MINIMUM_RELEVANT_H2S = 3
+_ARTICLE_MINIMUM_FAQ_ANSWER_WORDS = 18
+_ARTICLE_MINIMUM_SECTION_WORDS = 90
+_ARTICLE_MAXIMUM_THIN_SECTIONS = 1
 _TOPIC_OVERLAP_THRESHOLD = 0.75
 _TOPIC_STOPWORDS = frozenset(
     {
@@ -90,6 +93,36 @@ def _classify_http_error(status_code: int) -> tuple[str, str]:
 
 def _is_article_content_type(content_type: object) -> bool:
     return str(content_type or "").strip().casefold() in _ARTICLE_CONTENT_TYPES
+
+
+def _article_quality_profile(content_type: object) -> dict[str, int]:
+    normalized = str(content_type or "").strip().casefold()
+    if normalized in _LONGFORM_CONTENT_TYPES:
+        return {
+            "minimum_words": 1_400,
+            "target_minimum_words": 1_700,
+            "target_maximum_words": 2_300,
+            "minimum_h2s": 7,
+            "minimum_internal_links": 4,
+            "minimum_faqs": 4,
+        }
+    if normalized in _PAGE_CONTENT_TYPES:
+        return {
+            "minimum_words": 1_100,
+            "target_minimum_words": 1_350,
+            "target_maximum_words": 1_800,
+            "minimum_h2s": 6,
+            "minimum_internal_links": 3,
+            "minimum_faqs": 3,
+        }
+    return {
+        "minimum_words": 900,
+        "target_minimum_words": 1_100,
+        "target_maximum_words": 1_500,
+        "minimum_h2s": 6,
+        "minimum_internal_links": 3,
+        "minimum_faqs": 3,
+    }
 
 
 def _topic_tokens(value: object) -> set[str]:
@@ -175,25 +208,65 @@ def _extract_content_payload(content_text: str) -> dict[str, Any]:
 
 
 def _validate_article_payload(payload: dict[str, Any], input_document: dict[str, Any]) -> list[str]:
-    """Deterministic minimum bar for AI-generated local SEO articles."""
+    """Deterministic quality floor for AI-generated local SEO content."""
     if not _is_article_content_type(input_document.get("content_type")):
         return []
+
+    profile = _article_quality_profile(input_document.get("content_type"))
     draft = str(payload.get("draft") or "")
     errors: list[str] = []
     words = re.findall(r"\b[\w'-]+\b", draft)
-    if len(words) < _ARTICLE_MINIMUM_WORDS:
+    if len(words) < profile["minimum_words"]:
         errors.append("article_too_thin")
 
     if re.search(r"(?m)^#\s+\S", draft):
         errors.append("article_body_h1_not_allowed")
 
-    h2s = re.findall(r"(?m)^##\s+(.+?)\s*$", draft)
-    if len(h2s) < _ARTICLE_MINIMUM_H2S:
+    h2_matches = list(re.finditer(r"(?m)^##\s+(.+?)\s*$", draft))
+    h2s = [match.group(1) for match in h2_matches]
+    if len(h2s) < profile["minimum_h2s"]:
         errors.append("article_heading_depth_missing")
+    if len({heading.casefold().strip() for heading in h2s}) != len(h2s):
+        errors.append("article_duplicate_headings")
+
+    if h2_matches:
+        section_word_counts: list[int] = []
+        for index, match in enumerate(h2_matches):
+            start = match.end()
+            end = h2_matches[index + 1].start() if index + 1 < len(h2_matches) else len(draft)
+            section = draft[start:end]
+            section_word_counts.append(len(re.findall(r"\b[\w'-]+\b", section)))
+        thin_sections = sum(count < _ARTICLE_MINIMUM_SECTION_WORDS for count in section_word_counts)
+        if thin_sections > _ARTICLE_MAXIMUM_THIN_SECTIONS:
+            errors.append("article_sections_too_thin")
 
     internal_links = re.findall(r"\[[^\]]+\]\((/[^)\s]+)\)", draft)
-    if len(set(internal_links)) < _ARTICLE_MINIMUM_INTERNAL_LINKS:
+    unique_links = set(internal_links)
+    knowledge = _content_knowledge_for_prompt(input_document.get("knowledge"))
+    website_pages = knowledge.get("website_knowledge")
+    allowed_urls = (
+        {
+            str(page.get("url"))
+            for page in website_pages
+            if isinstance(page, dict) and page.get("url")
+        }
+        if isinstance(website_pages, list)
+        else set()
+    )
+    required_links = min(profile["minimum_internal_links"], len(allowed_urls))
+    if required_links and len(unique_links & allowed_urls) < required_links:
         errors.append("article_internal_links_missing")
+    if allowed_urls and any(link not in allowed_urls for link in unique_links):
+        errors.append("article_internal_link_unverified")
+
+    paragraphs = [
+        " ".join(paragraph.split()).casefold()
+        for paragraph in re.split(r"\n\s*\n", draft)
+        if len(re.findall(r"\b[\w'-]+\b", paragraph)) >= 25
+        and not paragraph.lstrip().startswith("#")
+    ]
+    if len(paragraphs) != len(set(paragraphs)):
+        errors.append("article_repeated_paragraphs")
 
     faqs = payload.get("faqs")
     valid_faqs = (
@@ -202,12 +275,13 @@ def _validate_article_payload(payload: dict[str, Any], input_document: dict[str,
             for faq in faqs
             if isinstance(faq, dict)
             and str(faq.get("question") or "").strip()
-            and str(faq.get("answer") or "").strip()
+            and len(re.findall(r"\b[\w'-]+\b", str(faq.get("answer") or "")))
+            >= _ARTICLE_MINIMUM_FAQ_ANSWER_WORDS
         ]
         if isinstance(faqs, list)
         else []
     )
-    if len(valid_faqs) < _ARTICLE_MINIMUM_FAQS:
+    if len(valid_faqs) < profile["minimum_faqs"]:
         errors.append("article_faq_depth_missing")
 
     if not str(payload.get("meta_description") or "").strip():
@@ -496,6 +570,10 @@ def _build_prompt(task_key: str, input_document: dict[str, Any]) -> str:
     content_title = str(input_document.get("content_title", ""))
     content_type = str(input_document.get("content_type", ""))
     governed_facts = input_document.get("governed_facts", [])
+    validation_requirements = input_document.get("validation_requirements")
+    required_claims = input_document.get("required_claims")
+    required_local_references = input_document.get("required_local_references")
+    source_evidence_references = input_document.get("source_evidence_references")
 
     if task_key == "gbp.generate_post":
         facts_section = _format_governed_facts(governed_facts) if governed_facts else ""
@@ -582,33 +660,63 @@ def _build_prompt(task_key: str, input_document: dict[str, Any]) -> str:
             )
 
         if _is_article_content_type(content_type):
+            profile = _article_quality_profile(content_type)
+            if validation_requirements:
+                parts.append(
+                    "\nBRIEF VALIDATION REQUIREMENTS:\n"
+                    + json.dumps(validation_requirements, default=str)
+                )
+            if required_claims:
+                parts.append("\nREQUIRED CLAIMS:\n" + json.dumps(required_claims, default=str))
+            if required_local_references:
+                parts.append(
+                    "\nREQUIRED LOCAL REFERENCES:\n"
+                    + json.dumps(required_local_references, default=str)
+                )
+            if source_evidence_references:
+                parts.append(
+                    "\nSOURCE EVIDENCE REFERENCES:\n"
+                    + json.dumps(source_evidence_references, default=str)
+                )
             parts.extend(
                 [
                     "\nARTICLE QUALITY CONTRACT:",
                     (
-                        "- Write roughly 1,000–1,300 substantive words. Do not pad with "
-                        "generic filler."
+                        f"- Target {profile['target_minimum_words']:,}–"
+                        f"{profile['target_maximum_words']:,} substantive words when the supplied "
+                        "evidence supports that depth. Never pad to hit a number; every paragraph "
+                        "must answer a real question, support a decision, explain a distinction, "
+                        "or add source-backed local/business context."
                     ),
                     (
                         "- Do NOT put an H1 in the markdown body. The site template renders "
                         "the frontmatter title as the single H1."
                     ),
                     (
-                        "- Use at least six descriptive H2 sections, with H3s only where "
-                        "they improve scanability."
+                        f"- Use at least {profile['minimum_h2s']} descriptive H2 sections. Build "
+                        "a complete outline before drafting; each major section must cover a "
+                        "distinct subtopic and contain substantive explanatory copy, not a stub."
                     ),
                     (
-                        "- Make section headings specific to the search intent and local context; "
-                        "avoid generic headings such as 'About Us', 'Overview', or 'Conclusion'."
+                        "- Make headings specific to the primary search intent, secondary customer "
+                        "questions, and local/business context. Avoid generic headings such as "
+                        "'About Us', 'Overview', 'Why Choose Us', or 'Conclusion'."
                     ),
                     (
-                        "- Answer the primary search intent near the beginning, then add "
-                        "decision-useful depth, comparisons, planning details, and first-party "
-                        "expertise supported by the supplied sources."
+                        "- Answer the primary intent near the beginning, then cover the practical "
+                        "follow-up questions a customer would need before acting: what to expect, "
+                        "options or tradeoffs, timing/planning, location/context, fit, and the "
+                        "next step when those details are supported by the supplied evidence."
                     ),
                     (
-                        "- Include at least three natural internal markdown links to relevant "
-                        "first-party URLs present in SOURCE-BACKED WEBSITE AND LOCAL KNOWLEDGE."
+                        "- Synthesize the supplied first-party sources instead of paraphrasing one "
+                        "page repeatedly. Use specific details where supported and avoid claims "
+                        "that the evidence does not establish."
+                    ),
+                    (
+                        f"- Include natural internal markdown links to up to "
+                        f"{profile['minimum_internal_links']} relevant first-party URLs present in "
+                        "SOURCE-BACKED WEBSITE AND LOCAL KNOWLEDGE. Never invent an internal URL."
                     ),
                     (
                         "- Use neighborhood, city, street, landmark, menu, service, hours, and "
@@ -616,23 +724,25 @@ def _build_prompt(task_key: str, input_document: dict[str, Any]) -> str:
                         "source-backed knowledge."
                     ),
                     (
-                        "- Do not keyword-stuff. Local/service terms should appear naturally in "
-                        "useful headings and explanatory copy."
+                        "- Avoid keyword stuffing, repetitive business descriptions, templated "
+                        "filler, unsupported superlatives, and repeated conclusions. Vary sentence "
+                        "structure and make the prose read like an expert human editor wrote it."
                     ),
                     (
-                        "- Do not create a generic business-description section when a "
-                        "query-specific section can provide more value."
+                        "- End with a useful, source-supported next step when the intent is "
+                        "commercial or transactional. Do not invent offers, availability, pricing, "
+                        "capacity, guarantees, or reservation terms."
                     ),
                     (
-                        "- FAQs must answer actual local customer questions and add information "
-                        "beyond repeating the article body."
+                        f"- Return {profile['minimum_faqs']} to six FAQs that answer genuine "
+                        "customer questions not already answered verbatim in the article. Each "
+                        "answer should be at least two useful sentences when the evidence permits."
                     ),
                     (
                         "\nReturn ONLY one JSON object with these keys: `draft`, "
                         "`meta_description`, `seo_title`, `faqs`, `related_services`, "
-                        "`service_areas`, `tags`, and `category`. `faqs` must contain three to "
-                        "six objects with `question` and `answer`. `meta_description` must be one "
-                        "useful sentence under 155 characters. `seo_title` must be under 60 "
+                        "`service_areas`, `tags`, and `category`. `meta_description` must be "
+                        "one useful sentence under 155 characters. `seo_title` must be under 60 "
                         "characters. Do not include frontmatter inside `draft`."
                     ),
                 ]

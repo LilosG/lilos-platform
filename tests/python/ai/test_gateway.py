@@ -150,6 +150,22 @@ async def test_gateway_passes_max_tokens_to_provider() -> None:
 
 
 @pytest.mark.anyio
+async def test_gateway_supports_larger_content_specific_token_budget() -> None:
+    provider = FakeProvider({"draft": "x"})
+    gateway = AIGateway(
+        provider,
+        global_max_output_tokens=1_200,
+        task_max_output_tokens={"content.draft_revision": 7_000},
+    )
+    await gateway.execute(_request(task_key="content.draft_revision"))
+    assert provider.calls[0][2] == 7_000
+
+    provider.calls.clear()
+    await gateway.execute(_request(task_key="reviews.response_draft"))
+    assert provider.calls[0][2] == 1_200
+
+
+@pytest.mark.anyio
 async def test_gateway_passes_latency_bound_to_provider() -> None:
     provider = FakeProvider({"draft": "x"})
     gateway = AIGateway(provider)

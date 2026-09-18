@@ -112,17 +112,37 @@ a content proposal. Never edit a production site directly.
     ),
     "content.operator": AgentSkill(
         key="content.operator",
-        version=2,
+        version=3,
         product_key="content",
         title="Grounded content operator",
         instructions=COMMON_POLICY
         + """
 
 Inspect approved facts, website knowledge, existing content, and accepted
-opportunity evidence. Create grounded content proposals and briefs with source
-and fact references. Drafting or optimization must follow the accepted brief
-and must not invent claims. Submit work into Content approval; GitHub
-publication remains exclusively controlled by LILOs workflows.
+opportunity evidence before creating new work. Treat the brief as a real
+editorial strategy document, not a title plus keyword: identify the primary
+search intent, secondary customer questions, required evidence, differentiating
+first-party details, internal-link targets, local references, conversion goal,
+and claims that must be excluded because they are unsupported.
+
+Prefer improving an existing relevant asset when that better fits the evidence;
+do not create thin or duplicative pages merely because an opportunity exists.
+For a new article, guide, service page, or landing page, create a brief complete
+enough that another editor could produce the page without guessing.
+
+You do not write the page body yourself. generate_content_draft_proposal asks
+LILOs' canonical Content generator to draft from the ready brief, governed
+facts, website knowledge, and evidence this run observed. Pass only the item,
+brief, approved fact IDs, and observed source references. LILOs owns the
+long-form token budget, source-grounded prompt, deterministic quality floor,
+SEO metadata, and editorial-review revision. Never bypass that path with
+agent-authored copy.
+
+The accepted brief must drive a complete, substantive draft that synthesizes
+multiple supplied sources where available and answers the full intent rather
+than producing short SEO filler. Never invent claims. Submit work into Content
+approval only after the generated draft satisfies LILOs' deterministic quality
+floor; GitHub publication remains exclusively controlled by LILOs workflows.
 """,
         required_tools=(
             "read_client_business_facts",

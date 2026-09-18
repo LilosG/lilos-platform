@@ -82,20 +82,18 @@ SCHEMAS = {
             "source_evidence_references",
         ],
     ),
+    # The agent selects the brief and evidence; LILOs owns generation and
+    # quality validation. Raw page copy is intentionally not an argument.
     "generate_content_draft_proposal": _object(
         {
             "content_item_id": STRING,
             "content_brief_id": STRING,
-            "body": {"type": "string", "minLength": 1, "maxLength": 200000},
-            "frontmatter": OBJECT,
             "approved_fact_revision_ids": STRINGS,
             "source_evidence_references": STRINGS,
         },
         [
             "content_item_id",
             "content_brief_id",
-            "body",
-            "frontmatter",
             "approved_fact_revision_ids",
             "source_evidence_references",
         ],
@@ -227,7 +225,8 @@ DESCRIPTIONS = {
     "create_content_proposal": "Convert an accepted opportunity into a governed Content item.",
     "create_content_brief": "Create a grounded Content brief from approved facts and evidence.",
     "generate_content_draft_proposal": (
-        "Create an editorial-review Content revision grounded in a ready brief."
+        "Ask LILOs to generate and quality-check an editorial-review Content revision "
+        "from a ready brief and evidence observed by this run."
     ),
     "generate_gbp_post_proposal": (
         "Ask LILOs to generate an approval-waiting GBP post from evidence this run "

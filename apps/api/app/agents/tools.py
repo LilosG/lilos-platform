@@ -23,7 +23,6 @@ from apps.api.app.agents.safety import (
 )
 from apps.api.app.agents.skills import SKILLS
 from apps.api.app.ai.errors import AIProviderError
-from apps.api.app.ai.models import AIExecution
 from apps.api.app.audit.contracts import AuditEventCreate
 from apps.api.app.audit.enums import AuditActorType, AuditResult
 from apps.api.app.audit.metadata import JsonValue
@@ -35,7 +34,7 @@ from apps.api.app.growth.models import GrowthInitiative
 from apps.api.app.growth.service import GrowthPlanValidationError, GrowthService
 from apps.api.app.insights.aggregation_service import InsightsService
 from apps.api.app.products.analytics.service import AnalyticsService
-from apps.api.app.products.content.contracts import BriefCreate, ItemCreate, RevisionCreate
+from apps.api.app.products.content.contracts import BriefCreate, ItemCreate
 from apps.api.app.products.content.models import ContentBrief, ContentOpportunity
 from apps.api.app.products.content.service import ContentService
 from apps.api.app.products.gbp.models import GBPLocation, GBPProfileSnapshot
@@ -110,8 +109,6 @@ TOOL_SPECS: dict[str, ToolSpec] = {
             {
                 "content_item_id",
                 "content_brief_id",
-                "body",
-                "frontmatter",
                 "approved_fact_revision_ids",
                 "source_evidence_references",
             }
@@ -1008,6 +1005,13 @@ class AgentToolService:
     async def _tool_generate_content_draft_proposal(
         self, session: AsyncSession, run: AgentRun, arguments: dict[str, Any]
     ) -> dict[str, object]:
+        """Ask LILOs to generate the draft through the canonical Content AI path.
+
+        The Hermes agent chooses the grounded brief and evidence. It does not
+        write page copy itself. This keeps agent-triggered drafts on the same
+        source grounding, token budget, deterministic quality gate, metadata
+        contract, and editorial-review lifecycle as direct Content generation.
+        """
         item_id = _uuid(arguments.get("content_item_id"), "content_item_id")
         brief_id = _uuid(arguments.get("content_brief_id"), "content_brief_id")
         brief = await session.scalar(
@@ -1023,6 +1027,7 @@ class AgentToolService:
         item = await self.content.get_item(session, run.organization_id, item_id)
         if item.location_id is not None and item.location_id != run.location_id:
             raise AgentToolDeniedError("Content item is outside the bound location")
+
         requested_facts = [
             _uuid(value, "approved_fact_revision_ids")
             for value in arguments.get("approved_fact_revision_ids", [])
@@ -1033,6 +1038,7 @@ class AgentToolService:
             raise AgentToolDeniedError(
                 "draft facts must exactly match the ready brief and current approved scope"
             )
+
         brief_sources = {str(value)[:500] for value in brief.source_evidence_references}
         requested_sources = set(
             self._observed_source_references(
@@ -1045,35 +1051,28 @@ class AgentToolService:
             raise AgentToolDeniedError(
                 "draft sources must be non-empty references from the ready brief"
             )
-        frontmatter = arguments.get("frontmatter")
-        revision = await self.content.create_revision(
+
+        revision, execution = await self.content.execute_ai_draft_workflow(
             session,
-            run.organization_id,
-            item.id,
-            RevisionCreate(
-                body=str(arguments.get("body") or "")[:200_000],
-                frontmatter=frontmatter if isinstance(frontmatter, dict) else {},
-                created_by_type="ai",
-                approved_fact_revision_ids=requested_facts,
-                ai_execution_id=run.ai_execution_id,
-                prohibited_claims=[str(value) for value in brief.prohibited_claims],
-            ),
-            run.organization_id,
+            organization_id=run.organization_id,
+            item_id=item.id,
+            brief_id=brief.id,
+            idempotency_key=f"agent-content-draft:{run.id}:{brief.id}",
+            workflow_run_id=run.workflow_run_id,
+            user_id=None,
             correlation_id=run.correlation_id,
         )
-        if run.ai_execution_id is not None:
-            execution = await session.get(AIExecution, run.ai_execution_id)
-            if execution is not None:
-                execution.input_references = list(
-                    dict.fromkeys(
-                        [
-                            *execution.input_references,
-                            f"content-brief:{brief.id}",
-                            *sorted(requested_sources),
-                        ]
-                    )
-                )[:200]
-                execution.approved_fact_revision_ids = [str(value) for value in requested_facts]
+        execution.input_references = list(
+            dict.fromkeys(
+                [
+                    *execution.input_references,
+                    f"content-brief:{brief.id}",
+                    *sorted(requested_sources),
+                ]
+            )
+        )[:200]
+        run.ai_execution_id = execution.id
+
         ref = f"content-revision:{revision.id}"
         return {
             "data": {"status": revision.status, "validation": revision.validation_document},
