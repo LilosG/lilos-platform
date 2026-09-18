@@ -57,3 +57,37 @@ test("Review inbox and sync stay in Reviews", async ({ page }) => {
     page.locator("[data-product-automations='reviews'] .ui-automation-card"),
   ).not.toHaveCount(0);
 });
+
+
+test("SEO Search performance stays in flow ahead of SEO work", async ({ page }) => {
+  await open(page, "/seo");
+  const workspace = page.locator(
+    "#tab-search-console > .seo-search-console-workspace",
+  );
+  await expect(workspace).toBeVisible();
+  await expect(page.locator("#tab-overview")).toBeHidden();
+  await expect(page.locator("#tab-crawl")).toBeHidden();
+  await expect(page.locator("#tab-opportunities")).toBeHidden();
+
+  await expect
+    .poll(async () => {
+      const searchBox = await workspace.boundingBox();
+      const workBox = await page.locator("#seo-metrics").boundingBox();
+      if (!searchBox || !workBox) return false;
+      return searchBox.y + searchBox.height <= workBox.y + 1;
+    })
+    .toBe(true);
+});
+
+test("Automations domains are compact until the user expands one", async ({
+  page,
+}) => {
+  await open(page, "/automations");
+  const domains = page.locator(".ui-product-domain");
+  await expect(domains.first()).toBeVisible();
+  await expect(page.locator(".ui-product-domain[open]")).toHaveCount(0);
+  const first = domains.first();
+  await expect(first).not.toHaveAttribute("open", "");
+  await first.locator("summary").click();
+  await expect(first).toHaveAttribute("open", "");
+});

@@ -607,6 +607,9 @@
 .ui-tabs__panels {
   padding-top: var(--space-4);
 }
+.ui-tabs__panels > [data-tab-panel][hidden] {
+  display: none !important;
+}
 
 .ui-table-frame {
   overflow: hidden;
