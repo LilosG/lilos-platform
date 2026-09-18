@@ -120,20 +120,33 @@ async def decide_growth_initiative(
     principal: Authenticated,
     _: Annotated[AuthorizationDecision, policy("workflows.execute")],
 ) -> dict[str, object]:
+    correlation_id = request_correlation_id(request)
     try:
-        await service.decide(
+        initiative = await service.decide(
             session,
             organization_id,
             initiative_id,
             approve=command.approve,
             actor_id=principal.platform_user_id,
-            correlation_id=request_correlation_id(request),
+            correlation_id=correlation_id,
         )
+        dispatched = []
+        if command.approve:
+            dispatched = await service.dispatch_ready(
+                session,
+                organization_id,
+                initiative.id,
+                actor_id=principal.platform_user_id,
+                correlation_id=correlation_id,
+            )
     except GrowthStateError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from None
     return {
         "data": await service.detail(session, organization_id, initiative_id),
-        "meta": meta(request),
+        "meta": {
+            **meta(request),
+            "dispatched_action_ids": [str(action.id) for action in dispatched],
+        },
     }
 
 
@@ -173,13 +186,26 @@ async def reconcile_growth_initiative(
     session: Session,
     _: Annotated[AuthorizationDecision, policy("workflows.execute")],
 ) -> dict[str, object]:
+    correlation_id = request_correlation_id(request)
     try:
-        await service.reconcile(session, organization_id, initiative_id)
+        initiative = await service.reconcile(session, organization_id, initiative_id)
+        dispatched = []
+        if initiative.status in {"approved", "executing"} and initiative.approved_by_user_id:
+            dispatched = await service.dispatch_ready(
+                session,
+                organization_id,
+                initiative.id,
+                actor_id=initiative.approved_by_user_id,
+                correlation_id=correlation_id,
+            )
     except GrowthStateError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from None
     return {
         "data": await service.detail(session, organization_id, initiative_id),
-        "meta": meta(request),
+        "meta": {
+            **meta(request),
+            "dispatched_action_ids": [str(action.id) for action in dispatched],
+        },
     }
 
 
