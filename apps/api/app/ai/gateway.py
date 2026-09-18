@@ -64,6 +64,7 @@ class AIGateway:
         provider_factory: Callable[[], AIProvider] | None = None,
         provider_resolver: Callable[[str | None], AIProvider] | None = None,
         task_model_overrides: dict[str, str] | None = None,
+        task_max_output_tokens: dict[str, int] | None = None,
         default_model: str | None = None,
         global_max_output_tokens: int = 2_000,
         global_max_cost_microunits: int = 200_000,
@@ -79,6 +80,7 @@ class AIGateway:
         self._provider_resolver = provider_resolver
         self._task_providers: dict[str | None, AIProvider] = {}
         self._task_models = task_model_overrides or {}
+        self._task_max_output_tokens = task_max_output_tokens or {}
         self._default_model = default_model
         self._global_max_output_tokens = global_max_output_tokens
         self._global_max_cost_microunits = global_max_cost_microunits
@@ -156,8 +158,11 @@ class AIGateway:
         if effective_cost_bound <= 0:
             raise ValueError("AI task cost bound must be positive")
 
-        # Resolve maximum tokens: use the global bound as a ceiling.
-        maximum_tokens = self._global_max_output_tokens
+        # Short-form tasks keep the global ceiling; registered long-form tasks
+        # can receive a larger, explicit output budget.
+        maximum_tokens = self._task_max_output_tokens.get(
+            request.task_key, self._global_max_output_tokens
+        )
 
         try:
             output = await self._provider_for(request.task_key).generate(
