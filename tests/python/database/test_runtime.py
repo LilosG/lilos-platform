@@ -70,7 +70,7 @@ def test_database_runtime_uses_bounded_connection_pool() -> None:
     try:
         pool = runtime.require_engine().pool
         assert pool.size() == 2
-        assert getattr(pool, "_max_overflow") == 0
+        assert pool._max_overflow == 0
     finally:
         import asyncio
 
