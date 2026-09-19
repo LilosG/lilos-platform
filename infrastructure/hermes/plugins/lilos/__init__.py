@@ -121,7 +121,20 @@ SCHEMAS = {
         ["capability_key", "field_changes", "evidence_references", "risk"],
     ),
     "draft_review_response_proposal": _object(
-        {"review_id": STRING, "approved_fact_revision_ids": STRINGS},
+        {
+            "review_id": {
+                "type": "string",
+                "description": "Bare review UUID or review:<uuid> reference returned by read_reviews_state.",
+            },
+            "approved_fact_revision_ids": {
+                "type": "array",
+                "items": {
+                    "type": "string",
+                    "description": "Bare fact revision UUID or business-fact:<uuid> reference returned by read_client_business_facts.",
+                },
+                "maxItems": 100,
+            },
+        },
         ["review_id", "approved_fact_revision_ids"],
     ),
     "create_lead_followup_task": _object(

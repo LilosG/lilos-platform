@@ -157,6 +157,21 @@ def _uuid(value: object, name: str) -> UUID:
         raise AgentToolDeniedError(f"{name} must be a UUID") from exc
 
 
+def _uuid_reference(
+    value: object,
+    name: str,
+    *,
+    accepted_prefixes: tuple[str, ...],
+) -> UUID:
+    """Accept either a bare UUID or a canonical reference returned by a read tool."""
+    candidate = str(value or "").strip()
+    for prefix in accepted_prefixes:
+        if candidate.startswith(prefix):
+            candidate = candidate[len(prefix) :]
+            break
+    return _uuid(candidate, name)
+
+
 # Per-item text budgets. A full page of results must fit MAX_TOOL_RESULT_BYTES
 # with room left for keys, references and timestamps, so these are sized against
 # the maximum page (50) rather than a typical one. Excerpts only need to support
@@ -790,10 +805,23 @@ class AgentToolService:
         self, session: AsyncSession, run: AgentRun, arguments: dict[str, Any]
     ) -> dict[str, object]:
         del arguments
+        summary = await self.insights.summary(
+            session, run.organization_id, location_id=run.location_id
+        )
+        workflow_runs = summary.get("workflow_runs")
+        if isinstance(workflow_runs, dict):
+            # Hermes' current fallback tool-failure classifier scans the first
+            # result bytes for an exact JSON key/value token of "failed". A
+            # legitimate status-count map such as {"failed": 42} is therefore
+            # misclassified as a tool failure even though the call succeeded.
+            # Keep the same information but use count-oriented field names at
+            # this integration boundary so successful evidence remains usable.
+            summary = dict(summary)
+            summary["workflow_runs"] = {
+                f"{key}_count": value for key, value in workflow_runs.items()
+            }
         return {
-            "data": await self.insights.summary(
-                session, run.organization_id, location_id=run.location_id
-            ),
+            "data": summary,
             "source_references": [f"insights-summary:{run.id}"],
         }
 
@@ -965,7 +993,11 @@ class AgentToolService:
         if item.location_id is not None and item.location_id != run.location_id:
             raise AgentToolDeniedError("Content item is outside the bound location")
         requested = [
-            _uuid(value, "approved_fact_revision_ids")
+            _uuid_reference(
+                value,
+                "approved_fact_revision_ids",
+                accepted_prefixes=("business-fact:",),
+            )
             for value in arguments.get("approved_fact_revision_ids", [])
         ]
         allowed = await self._governed_fact_ids(session, run)
@@ -1250,7 +1282,11 @@ class AgentToolService:
     ) -> dict[str, object]:
         if run.location_id is None:
             raise AgentToolDeniedError("reviews require a location-scoped agent run")
-        review_id = _uuid(arguments.get("review_id"), "review_id")
+        review_id = _uuid_reference(
+            arguments.get("review_id"),
+            "review_id",
+            accepted_prefixes=("review:",),
+        )
         review, revisions = await self.reviews.get(session, run.organization_id, review_id)
         if review.location_id != run.location_id:
             raise AgentToolDeniedError("review is outside the bound location")

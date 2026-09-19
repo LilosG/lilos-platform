@@ -395,7 +395,7 @@ def test_tool_audit_records_safe_source_metadata_and_location_scoped_insights(
             assert run.source_references == [f"insights-summary:{run.id}"]
             data = result["data"]
             assert isinstance(data, dict)
-            assert data["workflow_runs"] == {"queued": 2}
+            assert data["workflow_runs"] == {"queued_count": 2}
             audit = await session.scalar(
                 select(AuditEvent).where(
                     AuditEvent.organization_id == org_id,

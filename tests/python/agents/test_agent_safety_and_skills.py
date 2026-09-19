@@ -616,3 +616,66 @@ def test_leads_agent_is_operational_but_cannot_contact_leads() -> None:
     assert "read_leads_state" in skill.required_tools
     assert "create_lead_followup_task" in skill.required_tools
     assert "Never send email/SMS" in skill.instructions
+
+
+def test_review_reference_arguments_accept_canonical_tool_references() -> None:
+    from apps.api.app.agents.tools import _uuid_reference
+
+    review_id = uuid4()
+    fact_id = uuid4()
+
+    assert (
+        _uuid_reference(
+            f"review:{review_id}",
+            "review_id",
+            accepted_prefixes=("review:",),
+        )
+        == review_id
+    )
+    assert (
+        _uuid_reference(
+            f"business-fact:{fact_id}",
+            "approved_fact_revision_ids",
+            accepted_prefixes=("business-fact:",),
+        )
+        == fact_id
+    )
+
+
+def test_cross_product_summary_avoids_hermes_false_failed_key() -> None:
+    async def scenario() -> None:
+        class FakeInsights:
+            async def summary(self, *_args: object, **_kwargs: object) -> dict[str, object]:
+                return {
+                    "workflow_runs": {
+                        "completed": 128,
+                        "failed": 42,
+                        "running": 1,
+                    },
+                    "reviews": {"responded": 19},
+                }
+
+        service = AgentToolService()
+        service.insights = cast(Any, FakeInsights())
+        run = cast(
+            AgentRun,
+            SimpleNamespace(
+                id=uuid4(),
+                organization_id=uuid4(),
+                location_id=uuid4(),
+            ),
+        )
+
+        result = await service._tool_read_cross_product_summary(
+            cast(Any, None),
+            run,
+            {},
+        )
+        data = cast(dict[str, object], result["data"])
+        workflow_runs = cast(dict[str, int], data["workflow_runs"])
+
+        assert workflow_runs["completed_count"] == 128
+        assert workflow_runs["failed_count"] == 42
+        assert '"failed"' not in __import__("json").dumps(result)[:500].lower()
+
+    asyncio.run(scenario())
