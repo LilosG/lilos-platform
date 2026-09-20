@@ -70,9 +70,7 @@ def select_repository_for_client(
     if not repositories:
         return None
 
-    expected_hosts = {
-        value for value in (_host(primary_domain), _host(website_url)) if value
-    }
+    expected_hosts = {value for value in (_host(primary_domain), _host(website_url)) if value}
     homepage_matches = [
         repository for repository in repositories if _host(repository.homepage) in expected_hosts
     ]
@@ -82,9 +80,7 @@ def select_repository_for_client(
         return None
 
     expected_names = {
-        value
-        for value in (_slug(organization_slug), _domain_stem(primary_domain))
-        if value
+        value for value in (_slug(organization_slug), _domain_stem(primary_domain)) if value
     }
     name_matches = [
         repository for repository in repositories if _slug(repository.name) in expected_names
