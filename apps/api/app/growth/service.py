@@ -22,6 +22,7 @@ from apps.api.app.growth.contracts import GrowthPlanCreate
 from apps.api.app.growth.models import GrowthAction, GrowthInitiative
 from apps.api.app.products.content.contracts import OpportunityCreate
 from apps.api.app.products.content.service import ContentService
+from apps.api.app.site_work.routing import is_technical_site_change
 
 # The planner coordinates product agents; it never jumps directly into a
 # publication/provider-write workflow. Product agents translate the plan into
@@ -36,33 +37,6 @@ GROWTH_EXECUTOR_WORKFLOWS: dict[str, str] = {
 GROWTH_EXECUTOR_BY_PRODUCT: dict[str, str] = {
     product_key: workflow_key for workflow_key, product_key in GROWTH_EXECUTOR_WORKFLOWS.items()
 }
-
-TECHNICAL_SITE_MARKERS = (
-    "technical",
-    "missing_h1",
-    " h1",
-    "title_tag",
-    "meta_tag",
-    "canonical",
-    "structured_data",
-    "schema_markup",
-    "robots",
-    "sitemap",
-    "redirect",
-    "template",
-    "core_web_vitals",
-    "pagespeed",
-    "page_speed",
-    " lcp",
-    " cls",
-    " inp",
-)
-
-
-def _technical_site_change(action_key: str, action_type: str, hypothesis: str) -> bool:
-    haystack = " ".join((action_key, action_type, hypothesis)).casefold().replace("-", "_")
-    return any(marker in haystack for marker in TECHNICAL_SITE_MARKERS)
-
 
 class GrowthPlanValidationError(ValueError):
     """A proposed plan violates a deterministic orchestration boundary."""
@@ -96,7 +70,7 @@ class GrowthService:
                 continue
             product_key = action.product_key
             action_type = action.action_type
-            if product_key == "content" and _technical_site_change(
+            if product_key == "content" and is_technical_site_change(
                 action.action_key,
                 action.action_type,
                 action.expected_result_hypothesis,
