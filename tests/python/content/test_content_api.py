@@ -814,3 +814,75 @@ def test_ai_draft_cross_tenant_isolation(
         f"Expected 403/404 for cross-tenant AI draft, "
         f"got {cross_resp.status_code}: {cross_resp.text}"
     )
+
+
+@pytest.mark.integration
+def test_approving_new_revision_supersedes_prior_approved_revision(
+    content_client: tuple[TestClient, dict[str, UUID]],
+) -> None:
+    client, ids = content_client
+    organization_id = ids["organization"]
+    fact_id = ids["approved_fact"]
+    base = f"/api/v1/organizations/{organization_id}/content"
+    operations = f"/api/v1/organizations/{organization_id}/content-operations"
+
+    item = client.post(
+        base,
+        headers=HEADERS,
+        json={
+            "content_type": "blog",
+            "title": "Revision Supersede Regression",
+            "slug": "revision-supersede-regression",
+        },
+    )
+    assert item.status_code == 201, item.text
+    item_id = item.json()["data"]["id"]
+
+    brief = client.post(
+        f"{base}/{item_id}/briefs",
+        headers=HEADERS,
+        json={
+            "audience": "Local visitors",
+            "intent": "inform",
+            "target_reference": "/blog/revision-supersede-regression",
+            "approved_fact_revision_ids": [str(fact_id)],
+        },
+    )
+    assert brief.status_code == 201, brief.text
+
+    revision_ids: list[str] = []
+    for number in (1, 2):
+        revision = client.post(
+            f"{base}/{item_id}/revisions",
+            headers=HEADERS,
+            json={
+                "body": f"# Revision {number}\n\nUseful local information version {number}.",
+                "frontmatter": {
+                    "title": f"Revision {number}",
+                    "description": f"Useful local information version {number}.",
+                },
+                "created_by_type": "user",
+                "approved_fact_revision_ids": [str(fact_id)],
+            },
+        )
+        assert revision.status_code == 201, revision.text
+        revision_id = revision.json()["data"]["id"]
+        revision_ids.append(revision_id)
+
+        for stage in ("editorial", "client"):
+            approval = client.post(
+                f"{operations}/{item_id}/revisions/{revision_id}/decision",
+                headers=HEADERS,
+                json={"stage": stage, "approve": True},
+            )
+            assert approval.status_code == 200, approval.text
+
+    detail = client.get(f"{operations}/{item_id}", headers=HEADERS)
+    assert detail.status_code == 200, detail.text
+    revisions = {
+        row["id"]: row["status"]
+        for row in detail.json()["data"]["revisions"]
+    }
+    assert revisions[revision_ids[0]] == "superseded"
+    assert revisions[revision_ids[1]] == "approved"
+

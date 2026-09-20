@@ -4,11 +4,11 @@ import logging
 from collections.abc import AsyncIterator
 
 from fastapi import Request
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.app.database.runtime import DatabaseRuntime
-from apps.api.app.errors import DatabaseUnavailableError
+from apps.api.app.errors import ConflictError, DatabaseUnavailableError
 
 logger = logging.getLogger("lilos.api.database")
 
@@ -28,6 +28,19 @@ async def get_database_session(request: Request) -> AsyncIterator[AsyncSession]:
         try:
             async with session.begin():
                 yield session
+        except IntegrityError as exc:
+            if session.in_transaction():
+                await session.rollback()
+            logger.error(
+                "Database integrity conflict",
+                extra={
+                    "event_name": "database.integrity_conflict",
+                    "outcome": "failure",
+                    "normalized_error_code": "DATABASE_INTEGRITY_CONFLICT",
+                    "exception_type": type(exc).__name__,
+                },
+            )
+            raise ConflictError from None
         except SQLAlchemyError as exc:
             if session.in_transaction():
                 await session.rollback()
