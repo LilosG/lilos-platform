@@ -12,7 +12,6 @@ def test_managed_astro_blog_path_convention() -> None:
     assert "src/content/blog".startswith("src/content/")
 
 
-
 def _repo(name: str, *, homepage: str | None = None) -> DiscoveredRepository:
     return DiscoveredRepository(
         repository_id=f"LilosG/{name}",
