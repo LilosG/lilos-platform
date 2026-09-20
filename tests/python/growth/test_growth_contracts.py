@@ -213,6 +213,7 @@ def test_runtime_dependency_check_ignores_legacy_non_workflow_gate() -> None:
         },
     )
 
+
 def test_growth_routes_technical_site_change_away_from_content() -> None:
     action = _action("content.add_missing_h1", product="content", workflow="agent.content")
     action["action_type"] = "publish_content_asset"
@@ -242,4 +243,3 @@ def test_growth_keeps_editorial_content_in_content_workflow() -> None:
 
     assert canonical.actions[0].product_key == "content"
     assert canonical.actions[0].executor_workflow_key == "agent.content"
-
