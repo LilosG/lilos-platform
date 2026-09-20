@@ -1,16 +1,16 @@
 """Small invariant test for the managed Astro publishing convention."""
 
+from apps.api.app.products.content.github_app_service import DiscoveredRepository
+from apps.api.app.products.content.publishing_target_reconciliation import (
+    select_repository_for_client,
+)
+
 
 def test_managed_astro_blog_path_convention() -> None:
     # Single-repository GitHub App installations are reconciled to this
     # repository-relative path by the integration callback/workspace.
     assert "src/content/blog".startswith("src/content/")
 
-
-from apps.api.app.products.content.github_app_service import DiscoveredRepository
-from apps.api.app.products.content.publishing_target_reconciliation import (
-    select_repository_for_client,
-)
 
 
 def _repo(name: str, *, homepage: str | None = None) -> DiscoveredRepository:
