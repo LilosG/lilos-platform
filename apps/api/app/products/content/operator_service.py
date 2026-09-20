@@ -23,6 +23,7 @@ from apps.api.app.products.content.errors import (
     ContentPublicationNotFoundError,
     ContentPublicationRequiresApprovedRevisionError,
     ContentTargetNotConfiguredError,
+    ContentTechnicalSiteChangeRequiresSeoWorkflowError,
 )
 from apps.api.app.products.content.frontmatter_contract import FrontmatterContract
 from apps.api.app.products.content.github_app_service import (
@@ -32,11 +33,13 @@ from apps.api.app.products.content.github_app_service import (
 from apps.api.app.products.content.models import (
     ContentBrief,
     ContentItem,
+    ContentOpportunity,
     ContentPublication,
     ContentRevision,
     PublishingTarget,
 )
 from apps.api.app.products.content.service import ContentService, build_publishable_frontmatter
+from apps.api.app.site_work.routing import is_technical_site_change
 
 _IMAGE_EXTENSIONS = {".avif", ".gif", ".jpeg", ".jpg", ".png", ".webp"}
 _ACTIVE_PUBLICATION_STATES = {
@@ -222,6 +225,23 @@ class ContentOperatorService:
         )
         if item is None:
             raise ContentItemNotFoundError
+
+        if item.opportunity_id is not None:
+            opportunity = await session.scalar(
+                select(ContentOpportunity).where(
+                    ContentOpportunity.organization_id == organization_id,
+                    ContentOpportunity.id == item.opportunity_id,
+                )
+            )
+            if opportunity is not None and is_technical_site_change(
+                opportunity.opportunity_type,
+                opportunity.target_reference,
+                opportunity.source_reference,
+                item.title,
+                item.slug,
+            ):
+                raise ContentTechnicalSiteChangeRequiresSeoWorkflowError
+
         existing = await session.scalar(
             select(ContentPublication).where(
                 ContentPublication.organization_id == organization_id,

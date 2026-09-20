@@ -43,6 +43,14 @@ class ContentPublicationFrontmatterIncompleteError(ConflictError):
     public_message = "The approved revision is missing required fields for this website."
 
 
+class ContentTechnicalSiteChangeRequiresSeoWorkflowError(ConflictError):
+    code = "CONTENT_TECHNICAL_SITE_CHANGE_REQUIRES_SEO_WORKFLOW"
+    public_message = (
+        "This task changes site code or templates and must run through the governed SEO/site "
+        "implementation workflow, not Content publishing."
+    )
+
+
 class ContentTargetNotConfiguredError(ConflictError):
     code = "CONTENT_TARGET_NOT_CONFIGURED"
     public_message = "No active, connected publishing target is configured."
