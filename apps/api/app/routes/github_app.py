@@ -27,7 +27,6 @@ from apps.api.app.integrations.errors import (
     IntegrationNotFoundError,
     IntegrationStateInvalidError,
 )
-from apps.api.app.products.content.contracts import TargetCreate
 from apps.api.app.products.content.github_app_service import (
     DiscoveredRepository,
     GitHubAppService,
@@ -35,6 +34,9 @@ from apps.api.app.products.content.github_app_service import (
 )
 from apps.api.app.products.content.github_install_reconciliation import (
     GitHubOwnerInstallationReconciler,
+)
+from apps.api.app.products.content.publishing_target_reconciliation import (
+    GitHubPublishingTargetReconciler,
 )
 from apps.api.app.products.content.service import ContentService
 from apps.api.app.routes.health import settings_from_request
@@ -50,6 +52,10 @@ service = GitHubAppService()
 owner_installation_reconciler = GitHubOwnerInstallationReconciler(github=service)
 directory_service = IntegrationDirectoryService()
 content_service = ContentService()
+publishing_target_reconciler = GitHubPublishingTargetReconciler(
+    github=service,
+    content=content_service,
+)
 Session = Annotated[AsyncSession, Depends(get_database_session)]
 GitHubManage = Annotated[
     AuthorizationDecision,
@@ -68,43 +74,6 @@ def _frontend_return_url(settings: Settings, *, installed: bool, reason: str | N
     base = origins[0] if origins else ""
     params = {"installed": "1"} if installed else {"installed": "0", "reason": reason or "error"}
     return f"{base}/integrations?{urlencode(params)}"
-
-
-async def _ensure_default_publishing_target(
-    session: AsyncSession,
-    organization_id: UUID,
-    connection_id: UUID,
-    repositories: list[DiscoveredRepository],
-    *,
-    actor_id: UUID | None,
-    correlation_id: str,
-) -> None:
-    """Create the conventional Astro publishing target when selection is unambiguous.
-
-    A GitHub App installation can expose many repositories. LILOs only auto-
-    reconciles a target when exactly one repository is authorized and the
-    organization has no publishing target yet. Multi-repository installations
-    remain explicit so the platform never guesses a client destination.
-    """
-    existing = await content_service.list_targets(session, organization_id)
-    if existing or len(repositories) != 1:
-        return
-    repository = repositories[0]
-    await content_service.create_target(
-        session,
-        organization_id,
-        TargetCreate(
-            key="primary-site",
-            connection_id=connection_id,
-            target_type="github_astro",
-            repository_id=repository.repository_id,
-            base_branch=repository.default_branch or "main",
-            allowed_path_prefix="src/content/blog",
-            deployment_target_reference=None,
-        ),
-        actor_id=actor_id,
-        correlation_id=correlation_id,
-    )
 
 
 @router.post(
@@ -134,11 +103,10 @@ async def begin_install(
         repositories = await service.list_installation_repositories(
             settings, reconciled.installation_id
         )
-        await _ensure_default_publishing_target(
+        await publishing_target_reconciler.reconcile(
             session,
+            settings,
             organization_id,
-            reconciled.connection.id,
-            repositories,
             actor_id=principal.platform_user_id,
             correlation_id=correlation_id,
         )
@@ -279,11 +247,10 @@ async def github_callback(
             correlation_id=correlation_id,
         )
         repositories = await service.list_installation_repositories(settings, installation_id)
-        await _ensure_default_publishing_target(
+        await publishing_target_reconciler.reconcile(
             session,
+            settings,
             organization_id,
-            connection.id,
-            repositories,
             actor_id=None,
             correlation_id=correlation_id,
         )
@@ -327,14 +294,14 @@ async def github_workspace(
                         "name": r.name,
                         "default_branch": r.default_branch,
                         "private": r.private,
+                        "homepage": r.homepage,
                     }
                     for r in discovered
                 ]
-                await _ensure_default_publishing_target(
+                await publishing_target_reconciler.reconcile(
                     session,
+                    settings,
                     organization_id,
-                    UUID(ws.connection_id),
-                    discovered,
                     actor_id=principal.platform_user_id,
                     correlation_id=request_correlation_id(request),
                 )
