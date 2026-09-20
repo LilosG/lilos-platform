@@ -331,9 +331,7 @@ class GitHubAppService:
                         default_branch=str(repo.get("default_branch", "main")),
                         private=bool(repo.get("private", False)),
                         homepage=(
-                            str(repo.get("homepage")).strip()
-                            if repo.get("homepage")
-                            else None
+                            str(repo.get("homepage")).strip() if repo.get("homepage") else None
                         ),
                     )
                 )
