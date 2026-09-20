@@ -57,6 +57,41 @@ def _domain_stem(domain: str | None) -> str:
     return _slug(host.split(".", 1)[0])
 
 
+def select_repository_for_client(
+    repositories: list[DiscoveredRepository],
+    *,
+    primary_domain: str | None,
+    website_url: str | None,
+    organization_slug: str | None,
+) -> DiscoveredRepository | None:
+    """Return one repository only when client identity makes the choice deterministic."""
+    if len(repositories) == 1:
+        return repositories[0]
+    if not repositories:
+        return None
+
+    expected_hosts = {
+        value for value in (_host(primary_domain), _host(website_url)) if value
+    }
+    homepage_matches = [
+        repository for repository in repositories if _host(repository.homepage) in expected_hosts
+    ]
+    if len(homepage_matches) == 1:
+        return homepage_matches[0]
+    if len(homepage_matches) > 1:
+        return None
+
+    expected_names = {
+        value
+        for value in (_slug(organization_slug), _domain_stem(primary_domain))
+        if value
+    }
+    name_matches = [
+        repository for repository in repositories if _slug(repository.name) in expected_names
+    ]
+    return name_matches[0] if len(name_matches) == 1 else None
+
+
 @dataclass(slots=True)
 class GitHubPublishingTargetReconciler:
     github: GitHubAppService = field(default_factory=GitHubAppService)
@@ -127,35 +162,9 @@ class GitHubPublishingTargetReconciler:
             )
         )
 
-        expected_hosts = {
-            value
-            for value in (
-                _host(primary_domain.domain if primary_domain else None),
-                _host(organization.website_url if organization else None),
-            )
-            if value
-        }
-        homepage_matches = [
-            repository
-            for repository in repositories
-            if _host(repository.homepage) in expected_hosts
-        ]
-        if len(homepage_matches) == 1:
-            return homepage_matches[0]
-        if len(homepage_matches) > 1:
-            return None
-
-        expected_names = {
-            value
-            for value in (
-                _slug(organization.slug if organization else None),
-                _domain_stem(primary_domain.domain if primary_domain else None),
-            )
-            if value
-        }
-        name_matches = [
-            repository
-            for repository in repositories
-            if _slug(repository.name) in expected_names
-        ]
-        return name_matches[0] if len(name_matches) == 1 else None
+        return select_repository_for_client(
+            repositories,
+            primary_domain=primary_domain.domain if primary_domain else None,
+            website_url=organization.website_url if organization else None,
+            organization_slug=organization.slug if organization else None,
+        )
