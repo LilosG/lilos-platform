@@ -37,6 +37,32 @@ GROWTH_EXECUTOR_BY_PRODUCT: dict[str, str] = {
     product_key: workflow_key for workflow_key, product_key in GROWTH_EXECUTOR_WORKFLOWS.items()
 }
 
+TECHNICAL_SITE_MARKERS = (
+    "technical",
+    "missing_h1",
+    " h1",
+    "title_tag",
+    "meta_tag",
+    "canonical",
+    "structured_data",
+    "schema_markup",
+    "robots",
+    "sitemap",
+    "redirect",
+    "template",
+    "core_web_vitals",
+    "pagespeed",
+    "page_speed",
+    " lcp",
+    " cls",
+    " inp",
+)
+
+
+def _technical_site_change(action_key: str, action_type: str, hypothesis: str) -> bool:
+    haystack = " ".join((action_key, action_type, hypothesis)).casefold().replace("-", "_")
+    return any(marker in haystack for marker in TECHNICAL_SITE_MARKERS)
+
 
 class GrowthPlanValidationError(ValueError):
     """A proposed plan violates a deterministic orchestration boundary."""
@@ -68,12 +94,33 @@ class GrowthService:
             if action.execution_mode != "workflow":
                 actions.append(action)
                 continue
-            workflow_key = GROWTH_EXECUTOR_BY_PRODUCT.get(action.product_key)
+            product_key = action.product_key
+            action_type = action.action_type
+            if product_key == "content" and _technical_site_change(
+                action.action_key,
+                action.action_type,
+                action.expected_result_hypothesis,
+            ):
+                # Technical/template/code changes are SEO implementation work,
+                # not publishable editorial assets. Canonicalize here so one
+                # planner classification mistake cannot send code remediation
+                # into Content and later present a misleading Publish button.
+                product_key = "seo"
+                action_type = "site_implementation"
+            workflow_key = GROWTH_EXECUTOR_BY_PRODUCT.get(product_key)
             if workflow_key is None:
                 raise GrowthPlanValidationError(
                     f"product {action.product_key} has no growth-delegatable executor"
                 )
-            actions.append(action.model_copy(update={"executor_workflow_key": workflow_key}))
+            actions.append(
+                action.model_copy(
+                    update={
+                        "product_key": product_key,
+                        "action_type": action_type,
+                        "executor_workflow_key": workflow_key,
+                    }
+                )
+            )
         return command.model_copy(update={"actions": actions})
 
     @staticmethod
