@@ -100,9 +100,6 @@ async def begin_install(
         correlation_id=correlation_id,
     )
     if reconciled is not None:
-        repositories = await service.list_installation_repositories(
-            settings, reconciled.installation_id
-        )
         await publishing_target_reconciler.reconcile(
             session,
             settings,
@@ -237,7 +234,7 @@ async def github_callback(
             status_code=status.HTTP_302_FOUND,
         )
     try:
-        connection = await service.complete_install(
+        await service.complete_install(
             session,
             settings,
             organization_id,
@@ -246,7 +243,6 @@ async def github_callback(
             setup_action=setup_action,
             correlation_id=correlation_id,
         )
-        repositories = await service.list_installation_repositories(settings, installation_id)
         await publishing_target_reconciler.reconcile(
             session,
             settings,
