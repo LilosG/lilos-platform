@@ -269,7 +269,12 @@ Choose the action that best fits the evidence rather than defaulting every SEO
 signal to new content. A valid plan may optimize an existing page, commission a
 new content asset, request a fresh SEO analysis/crawl, support an opportunity
 through GBP, route work to Reviews, require a manual action, or monitor without
-changing anything. For workflow actions, choose the owning product only. LILOs assigns the
+changing anything. Technical/site-code work -- including H1/template fixes,
+metadata mechanics, canonicals, schema markup, redirects, robots/sitemaps, and
+Core Web Vitals implementation -- belongs to the SEO product, never Content.
+Content is reserved for substantive editorial assets and on-page copy that can
+be reviewed and published as content. For workflow actions, choose the owning
+product only. LILOs assigns the
 registered product-agent executor server-side; never invent or supply a
 workflow key. Supported workflow products are seo, content, gbp, reviews, and
 leads. Use manual or monitor execution mode only for genuine human/measurement
