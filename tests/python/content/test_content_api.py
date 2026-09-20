@@ -32,6 +32,81 @@ from apps.api.app.products.content.models import ContentPublication, PublishingT
 
 
 @pytest.mark.integration
+def test_final_approval_supersedes_prior_approved_revision(
+    content_client: tuple[TestClient, dict[str, UUID]],
+) -> None:
+    client, ids = content_client
+    organization_id = ids["organization"]
+    fact_id = ids["approved_fact"]
+    base = f"/api/v1/organizations/{organization_id}/content"
+    operations = f"/api/v1/organizations/{organization_id}/content-operations"
+
+    item = client.post(
+        base,
+        headers=HEADERS,
+        json={
+            "content_type": "blog",
+            "title": "Revision lifecycle",
+            "slug": "revision-lifecycle",
+        },
+    )
+    assert item.status_code == 201, item.text
+    item_id = item.json()["data"]["id"]
+
+    brief = client.post(
+        f"{base}/{item_id}/briefs",
+        headers=HEADERS,
+        json={
+            "audience": "Local visitors",
+            "intent": "inform",
+            "target_reference": "/blog/revision-lifecycle",
+            "approved_fact_revision_ids": [str(fact_id)],
+        },
+    )
+    assert brief.status_code == 201, brief.text
+
+    revision_ids: list[str] = []
+    for revision_number in (1, 2):
+        revision = client.post(
+            f"{base}/{item_id}/revisions",
+            headers=HEADERS,
+            json={
+                "body": f"Revision {revision_number} body with approved business facts.",
+                "frontmatter": {
+                    "title": f"Revision lifecycle {revision_number}",
+                    "description": f"Revision lifecycle description {revision_number}",
+                },
+                "created_by_type": "user",
+                "approved_fact_revision_ids": [str(fact_id)],
+            },
+        )
+        assert revision.status_code == 201, revision.text
+        revision_id = revision.json()["data"]["id"]
+        revision_ids.append(revision_id)
+
+        editorial = client.post(
+            f"{operations}/{item_id}/revisions/{revision_id}/decision",
+            headers=HEADERS,
+            json={"stage": "editorial", "approve": True},
+        )
+        assert editorial.status_code == 200, editorial.text
+
+        final_approval = client.post(
+            f"{operations}/{item_id}/revisions/{revision_id}/decision",
+            headers=HEADERS,
+            json={"stage": "client", "approve": True},
+        )
+        assert final_approval.status_code == 200, final_approval.text
+        assert final_approval.json()["data"]["status"] == "approved"
+
+    detail = client.get(f"{operations}/{item_id}", headers=HEADERS)
+    assert detail.status_code == 200, detail.text
+    revisions = {row["id"]: row["status"] for row in detail.json()["data"]["revisions"]}
+    assert revisions[revision_ids[0]] == "superseded"
+    assert revisions[revision_ids[1]] == "approved"
+
+
+@pytest.mark.integration
 def test_content_operations_keep_revision_and_publication_bound_to_item(
     content_client: tuple[TestClient, dict[str, UUID]],
     content_session_factory: async_sessionmaker[AsyncSession],
