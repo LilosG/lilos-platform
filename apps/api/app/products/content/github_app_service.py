@@ -57,6 +57,7 @@ class DiscoveredRepository:
     name: str
     default_branch: str
     private: bool
+    homepage: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -329,6 +330,11 @@ class GitHubAppService:
                         name=str(repo.get("name", "")),
                         default_branch=str(repo.get("default_branch", "main")),
                         private=bool(repo.get("private", False)),
+                        homepage=(
+                            str(repo.get("homepage")).strip()
+                            if repo.get("homepage")
+                            else None
+                        ),
                     )
                 )
 
