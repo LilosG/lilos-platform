@@ -212,3 +212,34 @@ def test_runtime_dependency_check_ignores_legacy_non_workflow_gate() -> None:
             "content.execute": cast(Any, workflow),
         },
     )
+
+
+def test_growth_routes_technical_site_change_away_from_content() -> None:
+    action = _action("content.add_missing_h1", product="content", workflow="agent.content")
+    action["action_type"] = "publish_content_asset"
+    action["expected_result_hypothesis"] = (
+        "Add the missing H1 to the blog index template so search engines receive "
+        "a correct page-level heading."
+    )
+    plan = _plan([action])
+
+    canonical = GrowthService._canonicalize_executor_bindings(plan)
+
+    assert canonical.actions[0].product_key == "seo"
+    assert canonical.actions[0].action_type == "site_implementation"
+    assert canonical.actions[0].executor_workflow_key == "agent.seo"
+
+
+def test_growth_keeps_editorial_content_in_content_workflow() -> None:
+    action = _action("content.create_local_guide", product="content", workflow="agent.content")
+    action["action_type"] = "publish_content_asset"
+    action["expected_result_hypothesis"] = (
+        "Publish a substantive Little Italy dining guide that answers non-branded "
+        "search intent and earns qualified organic clicks."
+    )
+    plan = _plan([action])
+
+    canonical = GrowthService._canonicalize_executor_bindings(plan)
+
+    assert canonical.actions[0].product_key == "content"
+    assert canonical.actions[0].executor_workflow_key == "agent.content"

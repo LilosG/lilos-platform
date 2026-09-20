@@ -21,6 +21,9 @@ from apps.api.app.products.content.operator_service import (
     ContentOperatorService,
     OperatorPublishRequest,
 )
+from apps.api.app.products.content.publishing_target_reconciliation import (
+    GitHubPublishingTargetReconciler,
+)
 from apps.api.app.routes.health import settings_from_request
 
 router = APIRouter(
@@ -29,6 +32,7 @@ router = APIRouter(
     dependencies=[Depends(get_authenticated_principal)],
 )
 service = ContentOperatorService()
+publishing_target_reconciler = GitHubPublishingTargetReconciler(content=service.content)
 Session = Annotated[AsyncSession, Depends(get_database_session)]
 
 
@@ -95,8 +99,16 @@ async def content_operation_detail(
     organization_id: UUID,
     item_id: UUID,
     session: Session,
+    principal: Authenticated,
     _: Annotated[AuthorizationDecision, read_policy()],
 ) -> dict[str, object]:
+    await publishing_target_reconciler.reconcile(
+        session,
+        settings_from_request(request),
+        organization_id,
+        actor_id=principal.platform_user_id,
+        correlation_id=request_correlation_id(request),
+    )
     return {
         "data": await service.detail(session, organization_id, item_id),
         "meta": {"correlation_id": request_correlation_id(request)},
@@ -150,6 +162,13 @@ async def publish_content_item(
     principal: Authenticated,
     _: Annotated[AuthorizationDecision, publish_policy()],
 ) -> dict[str, object]:
+    await publishing_target_reconciler.reconcile(
+        session,
+        settings_from_request(request),
+        organization_id,
+        actor_id=principal.platform_user_id,
+        correlation_id=request_correlation_id(request),
+    )
     publication = await service.publish(
         session,
         organization_id,
