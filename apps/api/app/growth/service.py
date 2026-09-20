@@ -38,6 +38,7 @@ GROWTH_EXECUTOR_BY_PRODUCT: dict[str, str] = {
     product_key: workflow_key for workflow_key, product_key in GROWTH_EXECUTOR_WORKFLOWS.items()
 }
 
+
 class GrowthPlanValidationError(ValueError):
     """A proposed plan violates a deterministic orchestration boundary."""
 
