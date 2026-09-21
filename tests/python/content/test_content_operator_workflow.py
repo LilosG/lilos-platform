@@ -172,6 +172,7 @@ def test_legacy_coco_maya_requirements_only_request_operator_image_fields() -> N
     assert requirements["requires_image"] is True
     assert requirements["requires_image_alt"] is True
 
+
 def test_legacy_technical_site_item_is_routed_out_of_content_publish() -> None:
     revision = cast(
         Any,
@@ -226,4 +227,3 @@ def test_editorial_content_remains_in_content_publish_workflow() -> None:
         "key": "publish",
         "label": "Publish to website",
     }
-
