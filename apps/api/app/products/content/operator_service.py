@@ -23,6 +23,7 @@ from apps.api.app.products.content.errors import (
     ContentPublicationNotFoundError,
     ContentPublicationRequiresApprovedRevisionError,
     ContentTargetNotConfiguredError,
+    ContentTechnicalSiteChangeRequiresSEOError,
 )
 from apps.api.app.products.content.frontmatter_contract import FrontmatterContract
 from apps.api.app.products.content.github_app_service import (
@@ -37,6 +38,7 @@ from apps.api.app.products.content.models import (
     PublishingTarget,
 )
 from apps.api.app.products.content.service import ContentService, build_publishable_frontmatter
+from apps.api.app.site_change_policy import is_technical_site_change
 
 _IMAGE_EXTENSIONS = {".avif", ".gif", ".jpeg", ".jpg", ".png", ".webp"}
 _ACTIVE_PUBLICATION_STATES = {
@@ -250,6 +252,8 @@ class ContentOperatorService:
         revision = await self._approved_revision(session, organization_id, item)
         if revision is None:
             raise ContentPublicationRequiresApprovedRevisionError
+        if self._technical_site_change(item, revision):
+            raise ContentTechnicalSiteChangeRequiresSEOError
         targets = [
             target
             for target in await self.content.list_targets(session, organization_id)
@@ -523,6 +527,9 @@ class ContentOperatorService:
         stage, next_action = ContentOperatorService._operator_state(
             item, revision, publication, job_status
         )
+        technical_site_change = ContentOperatorService._technical_site_change(item, revision)
+        if technical_site_change:
+            next_action = {"key": "seo_implementation", "label": "Continue in SEO"}
         return {
             "id": str(item.id),
             "location_id": str(item.location_id) if item.location_id else None,
@@ -536,7 +543,19 @@ class ContentOperatorService:
             "latest_revision_number": revision.revision_number if revision else None,
             "publication_status": publication.status if publication else None,
             "publication_job_status": job_status,
+            "technical_site_change": technical_site_change,
         }
+
+    @staticmethod
+    def _technical_site_change(
+        item: ContentItem,
+        revision: ContentRevision | None,
+    ) -> bool:
+        return is_technical_site_change(
+            item.title,
+            item.slug,
+            revision.body if revision is not None else None,
+        )
 
     @staticmethod
     def _operator_state(

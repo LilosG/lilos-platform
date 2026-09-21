@@ -335,15 +335,18 @@ import "../styles/global.css";
 
       function stageMatches(item: ContentOperatorSummary): boolean {
         if (activeFilter === "all") return true;
+        if (item.technical_site_change) return false;
         if (activeFilter === "published") return item.stage === "published";
         if (activeFilter === "publishing") return item.stage === "publishing";
         return !["published", "publishing"].includes(item.stage);
       }
 
       function renderMetrics(): void {
+        const contentItems = items.filter((item) => !item.technical_site_change);
         const counts = {
-          ideas: items.filter((item) => item.stage === "brief_needed").length,
-          drafts: items.filter((item) =>
+          ideas: contentItems.filter((item) => item.stage === "brief_needed")
+            .length,
+          drafts: contentItems.filter((item) =>
             [
               "draft_needed",
               "drafting",
@@ -351,12 +354,13 @@ import "../styles/global.css";
               "revision_needed",
             ].includes(item.stage),
           ).length,
-          approval: items.filter((item) => item.stage === "client_review")
+          approval: contentItems.filter((item) => item.stage === "client_review")
             .length,
-          ready: items.filter((item) => item.stage === "ready_to_publish")
+          ready: contentItems.filter((item) => item.stage === "ready_to_publish")
             .length,
-          published: items.filter((item) => item.stage === "published").length,
-          failed: items.filter(
+          published: contentItems.filter((item) => item.stage === "published")
+            .length,
+          failed: contentItems.filter(
             (item) =>
               item.stage === "needs_attention" ||
               item.publication_status === "failed",
@@ -401,10 +405,12 @@ import "../styles/global.css";
           const stage = document.createElement("div");
           stage.className = "content-row__stage";
           stage.append(
-            statusBadge(
-              contentStageTone(item.stage),
-              contentStageLabel(item.stage),
-            ),
+            item.technical_site_change
+              ? statusBadge("ready", "Routed to SEO")
+              : statusBadge(
+                  contentStageTone(item.stage),
+                  contentStageLabel(item.stage),
+                ),
           );
           const next = document.createElement("div");
           next.className = "content-row__next";
@@ -479,20 +485,29 @@ import "../styles/global.css";
         const text = document.createElement("div");
         const eyebrow = document.createElement("p");
         eyebrow.className = "content-eyebrow";
-        eyebrow.textContent = "Current stage";
+        eyebrow.textContent = detail.technical_site_change
+          ? "Correct workflow"
+          : "Current stage";
         const heading = document.createElement("h2");
-        heading.textContent = contentStageLabel(detail.stage);
+        heading.textContent = detail.technical_site_change
+          ? "Technical SEO implementation"
+          : contentStageLabel(detail.stage);
         const message = document.createElement("p");
-        message.textContent = stageDescription(detail);
+        message.textContent = detail.technical_site_change
+          ? "This task changes site templates or code. It belongs in the governed SEO implementation workflow, not the Content publishing pipeline."
+          : stageDescription(detail);
         text.append(eyebrow, heading, message);
         top.append(
           text,
-          statusBadge(
-            contentStageTone(detail.stage),
-            contentStageLabel(detail.stage),
-          ),
+          detail.technical_site_change
+            ? statusBadge("ready", "Routed to SEO")
+            : statusBadge(
+                contentStageTone(detail.stage),
+                contentStageLabel(detail.stage),
+              ),
         );
-        card.append(top, progress(detail));
+        card.append(top);
+        if (!detail.technical_site_change) card.append(progress(detail));
         const action = document.createElement("div");
         action.className = "content-primary-action";
         renderPrimaryAction(action, detail);
@@ -529,6 +544,19 @@ import "../styles/global.css";
         container: HTMLElement,
         detail: ContentOperatorDetail,
       ): void {
+        if (detail.technical_site_change) {
+          const note = document.createElement("p");
+          note.className = "ui-text-secondary";
+          note.textContent = detail.publications.length
+            ? "The legacy Content publication attempt is closed and will not be retried. Continue this work in SEO."
+            : "Continue this work in SEO. Content publishing is disabled for technical site changes.";
+          const link = document.createElement("a");
+          link.className = "ui-button ui-button--primary ui-button--md";
+          link.href = "/seo?tab=opportunities";
+          link.textContent = "Open SEO";
+          container.append(note, link);
+          return;
+        }
         const latestRevision = detail.revisions[0];
         const latestBrief = detail.briefs[0];
         if (detail.stage === "brief_needed") {

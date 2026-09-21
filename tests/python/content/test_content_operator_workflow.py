@@ -171,3 +171,59 @@ def test_legacy_coco_maya_requirements_only_request_operator_image_fields() -> N
     assert requirements["missing"] == ["image", "imageAlt"]
     assert requirements["requires_image"] is True
     assert requirements["requires_image_alt"] is True
+
+def test_legacy_technical_site_item_is_routed_out_of_content_publish() -> None:
+    revision = cast(
+        Any,
+        SimpleNamespace(
+            status="approved",
+            revision_number=2,
+            body=(
+                "Add a single descriptive H1 to the /blog index, paginated archive, "
+                "and category templates that currently render without an H1."
+            ),
+        ),
+    )
+
+    summary = ContentOperatorService._summary(
+        _item(
+            title="Add missing H1 to blog index and category pages",
+            slug="blog",
+        ),
+        revision,
+        _publication("checks_failed"),
+        "failed",
+    )
+
+    assert summary["technical_site_change"] is True
+    assert summary["next_action"] == {
+        "key": "seo_implementation",
+        "label": "Continue in SEO",
+    }
+
+
+def test_editorial_content_remains_in_content_publish_workflow() -> None:
+    revision = cast(
+        Any,
+        SimpleNamespace(
+            status="approved",
+            revision_number=2,
+            body=(
+                "# Best Restaurants in Little Italy\n\n"
+                "A substantive local dining guide for visitors choosing where to eat."
+            ),
+        ),
+    )
+
+    summary = ContentOperatorService._summary(
+        _item(title="Best Restaurants in Little Italy", slug="restaurants-little-italy"),
+        revision,
+        None,
+    )
+
+    assert summary["technical_site_change"] is False
+    assert summary["next_action"] == {
+        "key": "publish",
+        "label": "Publish to website",
+    }
+

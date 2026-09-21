@@ -25,6 +25,7 @@ export type ContentOperatorSummary = {
   latest_revision_number: number | null;
   publication_status: string | null;
   publication_job_status: string | null;
+  technical_site_change: boolean;
 };
 
 export type ContentOperatorBrief = {
