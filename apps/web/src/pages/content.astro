@@ -342,7 +342,9 @@ import "../styles/global.css";
       }
 
       function renderMetrics(): void {
-        const contentItems = items.filter((item) => !item.technical_site_change);
+        const contentItems = items.filter(
+          (item) => !item.technical_site_change,
+        );
         const counts = {
           ideas: contentItems.filter((item) => item.stage === "brief_needed")
             .length,
