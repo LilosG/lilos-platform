@@ -10,7 +10,7 @@ from urllib.parse import quote, unquote, urlsplit, urlunsplit
 from uuid import UUID
 
 import httpx
-from sqlalchemy import Select, func, select
+from sqlalchemy import Select, func, or_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -775,6 +775,7 @@ class SEOService:
         *,
         website_id: UUID | None = None,
         status_filter: str | None = None,
+        location_scope: tuple[UUID | None, ...] | None = None,
         limit: int = 50,
         offset: int = 0,
     ) -> tuple[list[SEOOpportunity], bool]:
@@ -787,7 +788,19 @@ class SEOService:
             statement = statement.where(SEOOpportunity.website_id == website_id)
         if status_filter is not None:
             statement = statement.where(SEOOpportunity.status == status_filter)
-        statement = statement.order_by(SEOOpportunity.priority_score.desc())
+        if location_scope is not None:
+            location_ids = [item for item in location_scope if item is not None]
+            location_conditions = []
+            if location_ids:
+                location_conditions.append(SEOOpportunity.location_id.in_(location_ids))
+            if None in location_scope:
+                location_conditions.append(SEOOpportunity.location_id.is_(None))
+            if not location_conditions:
+                return [], False
+            statement = statement.where(or_(*location_conditions))
+        statement = statement.order_by(
+            SEOOpportunity.priority_score.desc(), SEOOpportunity.id.asc()
+        )
         rows = list(await session.scalars(statement.limit(limit + 1).offset(offset)))
         has_more = len(rows) > limit
         return rows[:limit], has_more

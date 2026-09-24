@@ -381,8 +381,15 @@ def test_run_site_crawl_binds_a_crawl_run_to_the_workflow() -> None:
         recorded: dict[str, Any] = {}
 
         class FakeSEO:
-            async def list_websites(self, *_args: object) -> list[object]:
-                return [SimpleNamespace(id=website_id)]
+            async def list_websites(self, _session: object, org: object) -> list[object]:
+                assert org == organization_id
+                return [
+                    SimpleNamespace(
+                        id=website_id,
+                        organization_id=organization_id,
+                        location_id=location_id,
+                    )
+                ]
 
             async def enqueue_crawl(
                 self,
@@ -434,6 +441,115 @@ def test_run_site_crawl_binds_a_crawl_run_to_the_workflow() -> None:
     asyncio.run(scenario())
 
 
+@pytest.mark.parametrize("use_organization_website", [False, True])
+def test_run_site_crawl_selects_only_the_bound_website(
+    use_organization_website: bool,
+) -> None:
+    async def scenario() -> None:
+        organization_id, other_organization_id = uuid4(), uuid4()
+        location_id, other_location_id = uuid4(), uuid4()
+        wrong_location_site = SimpleNamespace(
+            id=uuid4(), organization_id=organization_id, location_id=other_location_id
+        )
+        foreign_site = SimpleNamespace(
+            id=uuid4(), organization_id=other_organization_id, location_id=location_id
+        )
+        organization_site = SimpleNamespace(
+            id=uuid4(), organization_id=organization_id, location_id=None
+        )
+        exact_site = SimpleNamespace(
+            id=uuid4(), organization_id=organization_id, location_id=location_id
+        )
+        selected = organization_site if use_organization_website else exact_site
+        selected_ids: list[object] = []
+
+        class FakeSEO:
+            async def list_websites(self, _session: object, org: object) -> list[object]:
+                assert org == organization_id
+                return [wrong_location_site, foreign_site, organization_site, exact_site]
+
+            async def enqueue_crawl(
+                self, _session: object, org: object, site: object, *_args: object, **_kwargs: object
+            ) -> object:
+                assert org == organization_id
+                selected_ids.append(site)
+                return SimpleNamespace(id=uuid4(), status="queued")
+
+        class FakeExecution:
+            async def start_named(self, *_args: object, **kwargs: object) -> object:
+                assert kwargs["location_id"] == location_id
+                return SimpleNamespace(id=uuid4())
+
+        service = AgentToolService()
+        service.seo = cast(Any, FakeSEO())
+        service.execution = cast(Any, FakeExecution())
+        if use_organization_website:
+            exact_site.location_id = other_location_id
+        await service._tool_run_site_crawl(
+            cast(Any, None),
+            cast(
+                Any,
+                SimpleNamespace(
+                    id=uuid4(),
+                    organization_id=organization_id,
+                    location_id=location_id,
+                    correlation_id="corr",
+                ),
+            ),
+            {},
+        )
+        assert selected_ids == [selected.id]
+
+    asyncio.run(scenario())
+
+
+def test_run_site_crawl_fails_closed_without_a_unique_scoped_website() -> None:
+    async def scenario() -> None:
+        organization_id, location_id = uuid4(), uuid4()
+        websites: list[object] = [
+            SimpleNamespace(id=uuid4(), organization_id=organization_id, location_id=uuid4()),
+            SimpleNamespace(id=uuid4(), organization_id=uuid4(), location_id=location_id),
+        ]
+
+        class FakeSEO:
+            async def list_websites(self, _session: object, _org: object) -> list[object]:
+                return websites
+
+        class FakeExecution:
+            async def start_named(self, *_args: object, **_kwargs: object) -> object:
+                raise AssertionError("no workflow should start for an invalid website scope")
+
+        service = AgentToolService()
+        service.seo = cast(Any, FakeSEO())
+        service.execution = cast(Any, FakeExecution())
+        run = cast(
+            Any,
+            SimpleNamespace(
+                id=uuid4(),
+                organization_id=organization_id,
+                location_id=location_id,
+                correlation_id="corr",
+            ),
+        )
+        with pytest.raises(AgentToolDeniedError, match="no website"):
+            await service._tool_run_site_crawl(cast(Any, None), run, {})
+
+        websites.extend(
+            [
+                SimpleNamespace(
+                    id=uuid4(), organization_id=organization_id, location_id=location_id
+                ),
+                SimpleNamespace(
+                    id=uuid4(), organization_id=organization_id, location_id=location_id
+                ),
+            ]
+        )
+        with pytest.raises(AgentToolDeniedError, match="multiple websites"):
+            await service._tool_run_site_crawl(cast(Any, None), run, {})
+
+    asyncio.run(scenario())
+
+
 def test_run_site_crawl_denies_when_no_website_is_registered() -> None:
     async def scenario() -> None:
         class FakeSEO:
@@ -457,6 +573,41 @@ def test_run_site_crawl_denies_when_no_website_is_registered() -> None:
                 ),
                 {},
             )
+
+    asyncio.run(scenario())
+
+
+def test_seo_agent_opportunities_use_bound_scope_before_limiting() -> None:
+    async def scenario() -> None:
+        organization_id, location_id = uuid4(), uuid4()
+        scoped = SimpleNamespace(
+            id=uuid4(),
+            opportunity_type="missing_title",
+            status="identified",
+            priority_score=60,
+            score_explanation={},
+            evidence={},
+            source_versions=["crawl.v1"],
+        )
+
+        class FakeSEO:
+            async def list_opportunities(
+                self, _session: object, org: object, **kwargs: object
+            ) -> tuple[list[object], bool]:
+                assert org == organization_id
+                assert kwargs == {"location_scope": (location_id, None), "limit": 1}
+                return [scoped], True
+
+        service = AgentToolService()
+        service.seo = cast(Any, FakeSEO())
+        result = await service._tool_analyze_seo_opportunities(
+            cast(Any, None),
+            cast(Any, SimpleNamespace(organization_id=organization_id, location_id=location_id)),
+            {"limit": 1},
+        )
+        data = cast(dict[str, object], result["data"])
+        assert data["has_more"] is True
+        assert result["source_references"] == [f"seo-opportunity:{scoped.id}"]
 
     asyncio.run(scenario())
 

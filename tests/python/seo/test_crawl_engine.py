@@ -5,6 +5,7 @@ from collections.abc import Coroutine
 from typing import Any
 
 import httpx
+import pytest
 
 from apps.api.app.products.seo.crawl_engine import (
     CrawlConfig,
@@ -223,6 +224,113 @@ def test_sc4a_max_pages_binds() -> None:
         assert report.pages_fetched <= 25
         assert report.terminal_state == "success"
         assert "max_pages" in report.reason.lower()
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize(
+    ("max_pages", "concurrency"),
+    [(2, 5), (5, 4), (10, 4)],
+)
+def test_concurrent_crawl_never_exceeds_remaining_page_slots(
+    max_pages: int, concurrency: int
+) -> None:
+    async def run() -> None:
+        links = "".join(f'<a href="/page{i}">Page {i}</a>' for i in range(20))
+        responses = {
+            "https://example.test/robots.txt": robots_response("User-agent: *\n"),
+            "https://example.test/": ok_html(f"<html><body>{links}</body></html>"),
+            **{
+                f"https://example.test/page{i}": ok_html(
+                    f"<html><body>Page {i}</body></html>",
+                    f"https://example.test/page{i}",
+                )
+                for i in range(20)
+            },
+        }
+        collected, report = await _crawl_with_config(
+            base_config(max_pages=max_pages, concurrency=concurrency), responses
+        )
+        assert len(collected) == report.pages_fetched == max_pages
+        assert report.terminal_state == "success"
+        assert report.reason == f"Reached configured max_pages limit ({max_pages})"
+        assert len({page.url for page in collected}) == max_pages
+
+    asyncio.run(run())
+
+
+def test_sitemap_and_redirect_queue_respect_exact_page_limit() -> None:
+    async def run() -> None:
+        sitemap = (
+            '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+            + "".join(f"<url><loc>https://example.test/page{i}</loc></url>" for i in range(8))
+            + "</urlset>"
+        )
+        responses = {
+            "https://example.test/robots.txt": robots_response(
+                "User-agent: *\nSitemap: https://example.test/sitemap.xml\n"
+            ),
+            "https://example.test/sitemap.xml": sitemap_response(sitemap),
+            "https://example.test/": httpx.Response(
+                302,
+                headers={"location": "https://example.test/redirected"},
+                request=httpx.Request("GET", "https://example.test/"),
+            ),
+            "https://example.test/redirected": ok_html(
+                ROOT_ONLY_HTML, "https://example.test/redirected"
+            ),
+            **{
+                f"https://example.test/page{i}": ok_html(
+                    ROOT_ONLY_HTML, f"https://example.test/page{i}"
+                )
+                for i in range(8)
+            },
+        }
+        collected, report = await _crawl_with_config(
+            base_config(max_pages=3, concurrency=5), responses
+        )
+        assert report.pages_fetched == len(collected) == 3
+        assert report.pages_queued > report.pages_fetched
+        assert "max_pages" in report.reason
+
+    asyncio.run(run())
+
+
+def test_retried_fetch_failure_counts_as_one_page_slot() -> None:
+    async def run() -> None:
+        requests: list[str] = []
+
+        class FailingTransport(httpx.AsyncBaseTransport):
+            async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+                url = str(request.url)
+                requests.append(url)
+                if url.endswith("/robots.txt"):
+                    return httpx.Response(404, request=request)
+                if url.endswith("/page0"):
+                    raise httpx.ConnectError("simulated fetch failure", request=request)
+                if url.endswith("/"):
+                    links = "".join(f'<a href="/page{i}">Page {i}</a>' for i in range(8))
+                    return httpx.Response(
+                        200,
+                        text=f"<html><body>{links}</body></html>",
+                        headers={"content-type": "text/html"},
+                        request=request,
+                    )
+                return httpx.Response(200, request=request)
+
+        collected: list[CrawledPage] = []
+
+        async def on_page(page: CrawledPage) -> None:
+            collected.append(page)
+
+        async with httpx.AsyncClient(transport=FailingTransport()) as client:
+            report = await CrawlEngine(
+                base_config(max_pages=2, concurrency=5, retry_limit=2), client
+            ).crawl(on_page=on_page)
+        assert report.pages_fetched == len(collected) == 2
+        assert requests.count("https://example.test/page0") == 3
+        assert len({page.url for page in collected}) == 2
+        assert "max_pages" in report.reason
 
     asyncio.run(run())
 
