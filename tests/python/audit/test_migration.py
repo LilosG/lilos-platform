@@ -188,6 +188,7 @@ def test_audit_migration_upgrades_downgrades_and_restores_head(
             "role_permissions",
             "roles",
             "runtime_control_revisions",
+            "seo_crawl_page_observations",
             "seo_crawl_runs",
             "seo_implementation_tasks",
             "seo_opportunities",

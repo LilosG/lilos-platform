@@ -10,6 +10,7 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     ForeignKeyConstraint,
+    Index,
     Integer,
     Numeric,
     String,
@@ -177,6 +178,7 @@ class SEOCrawlPageObservation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         UniqueConstraint(
             "crawl_run_id", "normalized_url", name="uq_seo_crawl_page_observation_run_url"
         ),
+        Index("ix_seo_crawl_page_observations_org_run", "organization_id", "crawl_run_id"),
     )
     organization_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
