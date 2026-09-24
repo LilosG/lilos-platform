@@ -3,6 +3,8 @@
 import asyncio
 from collections.abc import Generator
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
+from typing import Any, cast
 from uuid import UUID, uuid4
 
 import httpx
@@ -93,6 +95,143 @@ def claims(
 
 
 HEADERS = {"Authorization": "Bearer fabricated.token"}
+
+
+def test_opportunity_scope_is_in_query_before_limit_without_database() -> None:
+    async def scenario() -> None:
+        organization_id, location_id, website_id = uuid4(), uuid4(), uuid4()
+        statement_sql: list[str] = []
+
+        class FakeSession:
+            async def scalars(self, statement: Any) -> list[object]:
+                statement_sql.append(str(statement))
+                return [SimpleNamespace(id=uuid4()) for _ in range(3)]
+
+        rows, has_more = await SEOService().list_opportunities(
+            cast(Any, FakeSession()),
+            organization_id,
+            website_id=website_id,
+            status_filter="identified",
+            location_scope=(location_id, None),
+            limit=2,
+            offset=1,
+        )
+        assert len(rows) == 2 and has_more is True
+        query = statement_sql[0]
+        assert "seo_opportunities.organization_id =" in query
+        assert "seo_opportunities.website_id =" in query
+        assert "seo_opportunities.status =" in query
+        assert "seo_opportunities.location_id IN" in query
+        assert "seo_opportunities.location_id IS NULL" in query
+        assert query.index("seo_opportunities.location_id IN") < query.index("LIMIT")
+        assert "ORDER BY seo_opportunities.priority_score DESC, seo_opportunities.id ASC" in query
+        assert "OFFSET" in query
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.integration
+def test_opportunity_location_scope_precedes_pagination_and_preserves_filters(
+    seo_client: tuple[TestClient, dict[str, UUID]],
+    seo_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    _, ids = seo_client
+
+    async def scenario() -> None:
+        organization_id = ids["organization"]
+        other_organization_id = ids["other_organization"]
+        location_id = ids["location"]
+        async with seo_session_factory.begin() as session:
+            other_location = Location(
+                organization_id=organization_id,
+                name="Uptown",
+                slug="uptown",
+                location_type=LocationType.VIRTUAL,
+                status=LocationStatus.ACTIVE,
+                timezone="UTC",
+                country_code="US",
+                website_url="https://uptown.example.invalid",
+                is_primary=False,
+                version=1,
+            )
+            session.add(other_location)
+            await session.flush()
+            websites = [
+                SEOWebsite(
+                    organization_id=org,
+                    location_id=loc,
+                    key=key,
+                    name=key,
+                    canonical_origin=f"https://{key}.example.invalid",
+                    status="active",
+                    ownership_status="verified",
+                    version=1,
+                )
+                for org, loc, key in (
+                    (organization_id, location_id, "downtown"),
+                    (organization_id, other_location.id, "uptown"),
+                    (organization_id, None, "organization"),
+                    (other_organization_id, None, "foreign"),
+                )
+            ]
+            session.add_all(websites)
+            await session.flush()
+            opportunities = [
+                SEOOpportunity(
+                    organization_id=org,
+                    location_id=loc,
+                    website_id=website.id,
+                    page_id=None,
+                    opportunity_type="test_issue",
+                    deduplication_key=f"packet-0a-{score}-{uuid4().hex}",
+                    active_marker="active",
+                    evidence={},
+                    source_versions=["crawl.v1"],
+                    score_version=1,
+                    priority_score=score,
+                    score_explanation={},
+                    status=status,
+                    version=1,
+                )
+                for org, loc, website, score, status in (
+                    (organization_id, other_location.id, websites[1], 99, "identified"),
+                    (organization_id, other_location.id, websites[1], 98, "identified"),
+                    (organization_id, location_id, websites[0], 70, "identified"),
+                    (organization_id, location_id, websites[0], 65, "rejected"),
+                    (organization_id, location_id, websites[0], 60, "identified"),
+                    (organization_id, None, websites[2], 50, "identified"),
+                    (other_organization_id, None, websites[3], 100, "identified"),
+                )
+            ]
+            session.add_all(opportunities)
+            await session.flush()
+
+            service = SEOService()
+            first, has_more = await service.list_opportunities(
+                session, organization_id, location_scope=(location_id, None), limit=2
+            )
+            assert [row.priority_score for row in first] == [70, 65]
+            assert has_more is True
+            second, has_more = await service.list_opportunities(
+                session, organization_id, location_scope=(location_id, None), limit=2, offset=2
+            )
+            assert [row.priority_score for row in second] == [60, 50]
+            assert has_more is False
+            website_rows, has_more = await service.list_opportunities(
+                session,
+                organization_id,
+                website_id=websites[0].id,
+                status_filter="identified",
+                location_scope=(location_id, None),
+                limit=2,
+            )
+            assert [row.priority_score for row in website_rows] == [70, 60]
+            assert has_more is False
+            unscoped, _ = await service.list_opportunities(session, organization_id, limit=10)
+            assert len(unscoped) == 6
+            assert all(row.organization_id == organization_id for row in unscoped)
+
+    asyncio.run(scenario())
 
 
 @pytest.fixture

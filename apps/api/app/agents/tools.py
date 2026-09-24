@@ -835,11 +835,31 @@ class AgentToolService:
         # supported path: it creates the crawl run, writes the full input document,
         # and enqueues the job itself, so the workflow must NOT be pre-enqueued.
         websites = await self.seo.list_websites(session, run.organization_id)
-        if not websites:
+        location_websites = (
+            [
+                website
+                for website in websites
+                if website.organization_id == run.organization_id
+                and website.location_id == run.location_id
+            ]
+            if run.location_id is not None
+            else []
+        )
+        organization_websites = [
+            website
+            for website in websites
+            if website.organization_id == run.organization_id and website.location_id is None
+        ]
+        candidates = location_websites or organization_websites
+        if not candidates:
             raise AgentToolDeniedError(
-                "a confirmed website must be registered before a crawl can be requested"
+                "no website is registered for the bound organization and location"
             )
-        website = websites[0]
+        if len(candidates) != 1:
+            raise AgentToolDeniedError(
+                "multiple websites match the bound location; select a unique website"
+            )
+        website = candidates[0]
         workflow = await self.execution.start_named(
             session,
             run.organization_id,
@@ -878,11 +898,11 @@ class AgentToolService:
     ) -> dict[str, object]:
         limit = min(max(int(arguments.get("limit") or 30), 1), 50)
         rows, has_more = await self.seo.list_opportunities(
-            session, run.organization_id, limit=limit
+            session,
+            run.organization_id,
+            location_scope=(run.location_id, None),
+            limit=limit,
         )
-        scoped = [
-            item for item in rows if item.location_id is None or item.location_id == run.location_id
-        ]
         return {
             "data": {
                 "opportunities": [
@@ -895,11 +915,11 @@ class AgentToolService:
                         "evidence": item.evidence,
                         "source_versions": item.source_versions,
                     }
-                    for item in scoped
+                    for item in rows
                 ],
                 "has_more": has_more,
             },
-            "source_references": [f"seo-opportunity:{item.id}" for item in scoped],
+            "source_references": [f"seo-opportunity:{item.id}" for item in rows],
         }
 
     async def _tool_create_seo_recommendation_proposal(

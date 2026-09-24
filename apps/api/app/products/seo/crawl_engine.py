@@ -812,16 +812,16 @@ class CrawlEngine:
                         enqueue(normalized, depth + 1)
 
         while queue:
+            if pages_fetched >= config.max_pages:
+                page_limit_reached = True
+                break
             elapsed = monotonic() - started_at
             if elapsed > config.total_timeout:
                 timed_out = True
                 break
-            if pages_fetched >= config.max_pages:
-                page_limit_reached = True
-                break
 
             batch: list[tuple[str, int]] = []
-            available = config.concurrency
+            available = min(config.concurrency, config.max_pages - pages_fetched)
             while queue and len(batch) < available:
                 url, depth = queue.popleft()
                 max_depth_reached = max(max_depth_reached, depth)
