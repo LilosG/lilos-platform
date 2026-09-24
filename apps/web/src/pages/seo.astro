@@ -521,7 +521,10 @@ import "../styles/global.css";
             const emptyCell = document.createElement("td");
             emptyCell.colSpan = 5;
             emptyCell.className = "muted";
-            emptyCell.textContent = "No pages recorded for this crawl.";
+            emptyCell.textContent =
+              run.safe_result.page_evidence_version === "crawl_page.v1"
+                ? "No pages recorded for this crawl."
+                : "Historical page evidence is unavailable for this legacy crawl.";
             emptyRow.append(emptyCell);
             tbody.append(emptyRow);
           }

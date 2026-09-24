@@ -29,7 +29,13 @@ from apps.api.app.locations.models import Location
 from apps.api.app.main import create_app
 from apps.api.app.organizations.enums import OrganizationStatus, OrganizationType
 from apps.api.app.organizations.models import Organization
-from apps.api.app.products.seo.models import SEOCrawlRun, SEOOpportunity, SEOPage, SEOWebsite
+from apps.api.app.products.seo.models import (
+    SEOCrawlPageObservation,
+    SEOCrawlRun,
+    SEOOpportunity,
+    SEOPage,
+    SEOWebsite,
+)
 from apps.api.app.products.seo.service import SEOService
 
 GOOD_PAGE_HTML = (
@@ -705,6 +711,152 @@ def test_idempotent_crawl_no_duplicate_rows(
     assert total_pages == unique_urls
     assert active_opps == 3
     assert active_opps == unique_opp_keys
+
+
+@pytest.mark.integration
+def test_crawl_run_pages_preserve_historical_evidence(
+    seo_client: tuple[TestClient, dict[str, UUID]],
+    seo_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    client, ids = seo_client
+    org, location = ids["organization"], ids["location"]
+    base = f"/api/v1/organizations/{org}/seo"
+    website_response = client.post(
+        f"{base}/websites",
+        headers=HEADERS,
+        json={
+            "location_id": str(location),
+            "key": "primary",
+            "name": "Historical site",
+            "canonical_origin": "https://example.test",
+        },
+    )
+    assert website_response.status_code == 201
+    website_id = website_response.json()["data"]["id"]
+
+    def queue(idempotency_key: str) -> UUID:
+        async def make_workflow() -> UUID:
+            async with seo_session_factory.begin() as session:
+                template = await session.get(WorkflowRun, ids["workflow_run"])
+                assert template is not None
+                workflow = WorkflowRun(
+                    organization_id=org,
+                    location_id=location,
+                    workflow_version_id=template.workflow_version_id,
+                    product_key="seo",
+                    trigger_type="manual",
+                    idempotency_key=f"workflow-{idempotency_key}",
+                    request_hash="history-test",
+                    input_document={},
+                    correlation_id="history-test",
+                )
+                session.add(workflow)
+                await session.flush()
+                return workflow.id
+
+        workflow_id = asyncio.run(make_workflow())
+        response = client.post(
+            f"{base}/websites/{website_id}/crawl",
+            headers=HEADERS,
+            json={
+                "workflow_run_id": str(workflow_id),
+                "max_pages": 1,
+                "idempotency_key": idempotency_key,
+            },
+        )
+        assert response.status_code == 202, response.text
+        return UUID(response.json()["data"]["id"])
+
+    def execute(run_id: UUID, title: str) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                200,
+                text=f"<html><head><title>{title}</title></head><body><h1>{title}</h1></body></html>",
+                headers={"content-type": "text/html"},
+            )
+
+        async def run() -> None:
+            seo_service = SEOService(
+                http_client_factory=lambda: httpx.AsyncClient(
+                    transport=httpx.MockTransport(handler)
+                )
+            )
+            async with seo_session_factory.begin() as session:
+                await seo_service.execute_crawl(session, org, run_id, correlation_id="history-test")
+                # Terminal retry must retain the one observation for this run.
+                await seo_service.execute_crawl(
+                    session, org, run_id, correlation_id="history-retry"
+                )
+
+        asyncio.run(run())
+
+    legacy_id = queue("legacy-history")
+
+    async def mark_legacy() -> None:
+        async with seo_session_factory.begin() as session:
+            legacy_run = await session.get(SEOCrawlRun, legacy_id)
+            assert legacy_run is not None
+            legacy_run.safe_result = {}
+
+    asyncio.run(mark_legacy())
+    # Pre-capability shape: no marker and no historical observations.
+    first_id = queue("history-a")
+    execute(first_id, "Historical A")
+    second_id = queue("history-b")
+    execute(second_id, "Historical B")
+
+    zero_id = queue("history-zero")
+
+    def disallow_all(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/robots.txt":
+            return httpx.Response(200, text="User-agent: *\nDisallow: /\n")
+        raise AssertionError("robots exclusion should prevent page fetches")
+
+    async def execute_zero() -> None:
+        seo_service = SEOService(
+            http_client_factory=lambda: httpx.AsyncClient(
+                transport=httpx.MockTransport(disallow_all)
+            )
+        )
+        async with seo_session_factory.begin() as session:
+            await seo_service.execute_crawl(session, org, zero_id, correlation_id="zero-test")
+
+    asyncio.run(execute_zero())
+
+    first = client.get(f"{base}/crawl-runs/{first_id}/pages", headers=HEADERS)
+    second = client.get(f"{base}/crawl-runs/{second_id}/pages", headers=HEADERS)
+    legacy = client.get(f"{base}/crawl-runs/{legacy_id}/pages", headers=HEADERS)
+    zero = client.get(f"{base}/crawl-runs/{zero_id}/pages", headers=HEADERS)
+    assert first.status_code == second.status_code == legacy.status_code == zero.status_code == 200
+    assert first.json()["meta"]["evidence_status"] == "available"
+    assert second.json()["meta"]["evidence_status"] == "available"
+    assert [row["title"] for row in first.json()["data"]] == ["Historical A"]
+    assert [row["title"] for row in second.json()["data"]] == ["Historical B"]
+    assert legacy.json()["data"] == []
+    assert legacy.json()["meta"]["evidence_status"] == "unavailable_legacy_run"
+    assert zero.json()["data"] == []
+    assert zero.json()["meta"]["evidence_status"] == "available"
+
+    async def verify_inventory() -> None:
+        async with seo_session_factory() as session:
+            page = await session.scalar(
+                select(SEOPage).where(
+                    SEOPage.organization_id == org, SEOPage.website_id == UUID(website_id)
+                )
+            )
+            assert page is not None and page.title == "Historical B"
+            for run_id in (first_id, second_id):
+                count = await session.scalar(
+                    select(func.count())
+                    .select_from(SEOCrawlPageObservation)
+                    .where(
+                        SEOCrawlPageObservation.organization_id == org,
+                        SEOCrawlPageObservation.crawl_run_id == run_id,
+                    )
+                )
+                assert count == 1
+
+    asyncio.run(verify_inventory())
 
 
 @pytest.mark.integration

@@ -94,6 +94,7 @@ class SEOPage(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             ondelete="RESTRICT",
         ),
         UniqueConstraint("organization_id", "id", name="uq_seo_pages_org_id"),
+        UniqueConstraint("organization_id", "website_id", "id", name="uq_seo_pages_org_website_id"),
         UniqueConstraint("website_id", "normalized_url", name="uq_seo_page_normalized_url"),
     )
     organization_id: Mapped[UUID] = mapped_column(
@@ -140,6 +141,9 @@ class SEOCrawlRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             ondelete="RESTRICT",
         ),
         UniqueConstraint("organization_id", "idempotency_key", name="uq_seo_crawl_idempotency"),
+        UniqueConstraint(
+            "organization_id", "website_id", "id", name="uq_seo_crawl_runs_org_website_id"
+        ),
     )
     organization_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
@@ -155,6 +159,52 @@ class SEOCrawlRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     safe_result: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class SEOCrawlPageObservation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "seo_crawl_page_observations"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["organization_id", "website_id", "crawl_run_id"],
+            ["seo_crawl_runs.organization_id", "seo_crawl_runs.website_id", "seo_crawl_runs.id"],
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "website_id", "page_id"],
+            ["seo_pages.organization_id", "seo_pages.website_id", "seo_pages.id"],
+            ondelete="RESTRICT",
+        ),
+        UniqueConstraint(
+            "crawl_run_id", "normalized_url", name="uq_seo_crawl_page_observation_run_url"
+        ),
+    )
+    organization_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    )
+    website_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    crawl_run_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False, index=True)
+    page_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    normalized_url: Mapped[str] = mapped_column(Text, nullable=False)
+    observed_url: Mapped[str] = mapped_column(Text, nullable=False)
+    canonical_url: Mapped[str | None] = mapped_column(Text)
+    normalization_reasons: Mapped[list[object]] = mapped_column(JSONB, nullable=False)
+    http_status: Mapped[int | None] = mapped_column(Integer)
+    content_type: Mapped[str | None] = mapped_column(String(255))
+    title: Mapped[str | None] = mapped_column(String(2000))
+    meta_description: Mapped[str | None] = mapped_column(String(2000))
+    h1: Mapped[str | None] = mapped_column(String(2000))
+    robots_directives: Mapped[list[object]] = mapped_column(JSONB, nullable=False)
+    internal_links: Mapped[list[object]] = mapped_column(JSONB, nullable=False)
+    external_links: Mapped[list[object]] = mapped_column(JSONB, nullable=False)
+    word_count: Mapped[int | None] = mapped_column(Integer)
+    structured_data_present: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    content_hash: Mapped[str | None] = mapped_column(String(64))
+    indexability: Mapped[str] = mapped_column(String(24), nullable=False)
+    technical_issues: Mapped[list[object]] = mapped_column(JSONB, nullable=False)
+    crawl_depth: Mapped[int | None] = mapped_column(Integer)
+    redirect_destination: Mapped[str | None] = mapped_column(Text)
+    quality_status: Mapped[str] = mapped_column(String(24), nullable=False)
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 class SEOSearchObservation(UUIDPrimaryKeyMixin, TimestampMixin, Base):

@@ -223,9 +223,7 @@ class SEOOrchestrationService:
                 )
                 touched[opportunity.id] = opportunity
 
-            # Top-query observations intentionally have no page_id. Only turn
-            # them into a new-page/content-gap opportunity when current ranking
-            # is weak enough that no existing landing page is performing well.
+            # Query-only observations establish demand, not landing-page absence.
             if (
                 impressions >= 50
                 and query
@@ -247,7 +245,7 @@ class SEOOrchestrationService:
                     website,
                     location_id=website.location_id,
                     page_id=None,
-                    opportunity_type="gsc_unmapped_demand",
+                    opportunity_type="gsc_query_demand",
                     target_reference=query,
                     evidence={
                         "source": "google_search_console",
@@ -256,6 +254,11 @@ class SEOOrchestrationService:
                         "clicks": observation.clicks,
                         "ctr": ctr,
                         "position": position,
+                        "page_mapping_state": "unknown",
+                        "evidence_limitation": (
+                            "Query-only GSC evidence cannot identify the ranking "
+                            "or suitable landing page."
+                        ),
                         "date_start": observation.date_start.isoformat(),
                         "date_end": observation.date_end.isoformat(),
                     },
@@ -723,6 +726,21 @@ class SEOOrchestrationService:
                     "CTR without requiring a ranking change."
                 ),
                 "low",
+            )
+
+        if opportunity_type == "gsc_query_demand":
+            return (
+                (
+                    f"Inspect page-level Search Console evidence for '{query}' and current "
+                    "site inventory; determine whether an appropriate existing landing "
+                    "page exists, identify it if one does, and only then decide what "
+                    "action is warranted."
+                ),
+                (
+                    "Query-level demand warrants investigation; landing-page mapping "
+                    "remains unknown."
+                ),
+                "medium",
             )
 
         if opportunity_type == "gsc_unmapped_demand":
