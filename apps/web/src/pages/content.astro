@@ -356,10 +356,12 @@ import "../styles/global.css";
               "revision_needed",
             ].includes(item.stage),
           ).length,
-          approval: contentItems.filter((item) => item.stage === "client_review")
-            .length,
-          ready: contentItems.filter((item) => item.stage === "ready_to_publish")
-            .length,
+          approval: contentItems.filter(
+            (item) => item.stage === "client_review",
+          ).length,
+          ready: contentItems.filter(
+            (item) => item.stage === "ready_to_publish",
+          ).length,
           published: contentItems.filter((item) => item.stage === "published")
             .length,
           failed: contentItems.filter(
