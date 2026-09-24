@@ -52,6 +52,24 @@ def dimension_hash(dimensions: dict[str, object]) -> str:
     ).hexdigest()
 
 
+def test_query_demand_recommendation_leaves_page_presence_unknown() -> None:
+    opportunity = SEOOpportunity(
+        opportunity_type="gsc_query_demand",
+        evidence={"query": "electric service", "page_mapping_state": "unknown"},
+    )
+    action, hypothesis, _ = SEOOrchestrationService._recommendation_text(opportunity)
+
+    assert "page-level Search Console evidence" in action
+    assert "current site inventory" in action
+    assert "determine whether an appropriate existing landing page exists" in action
+    assert "identify it if one does" in action
+    assert "only then decide what action is warranted" in action
+    assert "identify the appropriate existing landing page" not in action
+    assert "no suitable page" not in action
+    assert "create" not in action.lower()
+    assert "mapping remains unknown" in hypothesis
+
+
 @pytest.mark.integration
 @pytest.mark.anyio
 async def test_orchestration_uses_current_gsc_and_routes_only_content_work(
@@ -195,7 +213,7 @@ async def test_orchestration_uses_current_gsc_and_routes_only_content_work(
                     position=30,
                 ),
                 observation(
-                    query="genuine content gap",
+                    query="query demand to investigate",
                     date_end=current_end,
                     impressions=300,
                     position=31,
@@ -232,9 +250,21 @@ async def test_orchestration_uses_current_gsc_and_routes_only_content_work(
         assert striking.evidence["impressions"] == 123
         assert striking.evidence["date_end"] == current_end.isoformat()
         assert striking.score_explanation["final_score"] == striking.priority_score
-        unmapped = [row for row in opportunities if row.opportunity_type == "gsc_unmapped_demand"]
-        assert len(unmapped) == 1
-        assert unmapped[0].evidence["query"] == "genuine content gap"
+        query_demand = [row for row in opportunities if row.opportunity_type == "gsc_query_demand"]
+        assert len(query_demand) == 1
+        assert query_demand[0].evidence["query"] == "query demand to investigate"
+        assert query_demand[0].evidence["page_mapping_state"] == "unknown"
+        assert "cannot identify" in str(query_demand[0].evidence["evidence_limitation"])
+        assert not any(row.opportunity_type == "gsc_unmapped_demand" for row in opportunities)
+        action, _, _ = service._recommendation_text(query_demand[0])
+        assert "Inspect page-level" in action
+        assert "current site inventory" in action
+        assert "determine whether an appropriate existing landing page exists" in action
+        assert "identify it if one does" in action
+        assert "only then decide what action is warranted" in action
+        assert "identify the appropriate existing landing page" not in action
+        assert "no suitable page" not in action
+        assert "create" not in action.lower()
 
         content_rows = list(
             await session.scalars(
@@ -246,8 +276,8 @@ async def test_orchestration_uses_current_gsc_and_routes_only_content_work(
         )
         assert {row.opportunity_type for row in content_rows} == {
             "gsc_striking_distance",
-            "gsc_unmapped_demand",
         }
+        assert all(row.opportunity_type != "gsc_query_demand" for row in content_rows)
         assert all(not row.opportunity_type.startswith("pagespeed_") for row in content_rows)
         assert all(row.opportunity_type != "missing_meta_description" for row in content_rows)
 
@@ -300,8 +330,26 @@ async def test_orchestration_uses_current_gsc_and_routes_only_content_work(
             version=1,
         )
         session.add_all([stale, unrelated, decided])
+        obsolete_unmapped = SEOOpportunity(
+            organization_id=organization_id,
+            location_id=None,
+            website_id=website_id,
+            page_id=None,
+            opportunity_type="gsc_unmapped_demand",
+            deduplication_key=hashlib.sha256(b"obsolete-unmapped").hexdigest(),
+            active_marker="active",
+            evidence={"source": "google_search_console"},
+            source_versions=["gsc.v1"],
+            score_version=1,
+            priority_score=50,
+            score_explanation={"final_score": 50},
+            status="identified",
+            version=1,
+        )
+        session.add(obsolete_unmapped)
         await session.flush()
         stale_id, unrelated_id, decided_id = stale.id, unrelated.id, decided.id
+        obsolete_unmapped_id = obsolete_unmapped.id
 
         for index in range(101):
             session.add(
@@ -342,6 +390,8 @@ async def test_orchestration_uses_current_gsc_and_routes_only_content_work(
         refreshed_decided = await session.get(SEOOpportunity, decided_id)
         assert refreshed_stale is not None and refreshed_stale.status == "archived"
         assert refreshed_stale.active_marker != "active"
+        archived_unmapped = await session.get(SEOOpportunity, obsolete_unmapped_id)
+        assert archived_unmapped is not None and archived_unmapped.status == "archived"
         assert refreshed_unrelated is not None and refreshed_unrelated.status == "recommended"
         assert refreshed_unrelated.active_marker == "active"
         assert refreshed_decided is not None and refreshed_decided.status == "approved"

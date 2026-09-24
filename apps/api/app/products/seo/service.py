@@ -53,6 +53,7 @@ from apps.api.app.products.seo.errors import (
     SEOWebsiteNotFoundError,
 )
 from apps.api.app.products.seo.models import (
+    SEOCrawlPageObservation,
     SEOCrawlRun,
     SEOImplementationTask,
     SEOOpportunity,
@@ -418,7 +419,7 @@ class SEOService:
             max_pages=command.max_pages,
             max_depth=command.max_depth,
             crawl_delay_seconds=command.crawl_delay_seconds,
-            safe_result={},
+            safe_result={"page_evidence_version": "crawl_page.v1"},
         )
         session.add(crawl_run)
         await session.flush()
@@ -483,6 +484,7 @@ class SEOService:
         now = datetime.now(UTC)
         crawl_run.status = "running"
         crawl_run.started_at = now
+        crawl_run.safe_result = {**crawl_run.safe_result, "page_evidence_version": "crawl_page.v1"}
         await session.flush()
 
         allowed_host_raw = host_of(normalize_crawl_url(website.canonical_origin))
@@ -593,6 +595,18 @@ class SEOService:
                     )
                     result = await session.execute(stmt.returning(SEOPage))
                     page = result.scalar_one()
+                    observation_values = {
+                        key: value for key, value in upsert_values.items() if key != "body_text"
+                    }
+                    await session.execute(
+                        pg_insert(SEOCrawlPageObservation)
+                        .values(
+                            **observation_values,
+                            crawl_run_id=crawl_run.id,
+                            page_id=page.id,
+                        )
+                        .on_conflict_do_nothing(constraint="uq_seo_crawl_page_observation_run_url")
+                    )
 
                     digest = hashlib.sha256(cp.url.encode()).hexdigest()
                     for issue in cp.technical_issues:
@@ -681,6 +695,7 @@ class SEOService:
         crawl_run.stop_reason = report.reason
         crawl_run.completed_at = datetime.now(UTC)
         crawl_run.safe_result = {
+            "page_evidence_version": "crawl_page.v1",
             "pages_crawled": report.pages_fetched,
             "pages_queued": report.pages_queued,
             "pages_skipped": report.pages_skipped,
@@ -766,6 +781,28 @@ class SEOService:
         if website_id:
             stmt = stmt.where(SEOPage.website_id == website_id)
         stmt = stmt.order_by(SEOPage.crawl_depth, SEOPage.observed_at).limit(limit).offset(offset)
+        return list(await session.scalars(stmt))
+
+    async def list_crawl_page_observations(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        crawl_run_id: UUID,
+        *,
+        limit: int = 500,
+    ) -> list[SEOCrawlPageObservation]:
+        stmt = (
+            select(SEOCrawlPageObservation)
+            .where(
+                SEOCrawlPageObservation.organization_id == organization_id,
+                SEOCrawlPageObservation.crawl_run_id == crawl_run_id,
+            )
+            .order_by(
+                SEOCrawlPageObservation.crawl_depth.asc().nulls_last(),
+                SEOCrawlPageObservation.normalized_url.asc(),
+            )
+            .limit(limit)
+        )
         return list(await session.scalars(stmt))
 
     async def list_opportunities(

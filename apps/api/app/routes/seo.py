@@ -27,6 +27,7 @@ from apps.api.app.products.seo.contracts import (
 )
 from apps.api.app.products.seo.errors import SEOCrawlRunNotFoundError
 from apps.api.app.products.seo.models import (
+    SEOCrawlPageObservation,
     SEOCrawlRun,
     SEOImplementationTask,
     SEOOpportunity,
@@ -404,9 +405,9 @@ def crawl_run_row(item: SEOCrawlRun) -> dict[str, object]:
     }
 
 
-def page_row(item: SEOPage) -> dict[str, object]:
+def page_row(item: SEOPage | SEOCrawlPageObservation) -> dict[str, object]:
     return {
-        "id": str(item.id),
+        "id": str(item.page_id if isinstance(item, SEOCrawlPageObservation) else item.id),
         "website_id": str(item.website_id),
         "normalized_url": item.normalized_url,
         "observed_url": item.observed_url,
@@ -497,8 +498,16 @@ async def list_crawl_pages(
     crawl_run = await service.get_crawl_run(session, organization_id, crawl_run_id)
     if not crawl_run:
         raise SEOCrawlRunNotFoundError
-    items = await service.list_pages(session, organization_id, website_id=crawl_run.website_id)
-    return {"data": [page_row(item) for item in items], "meta": meta(request)}
+    items = await service.list_crawl_page_observations(session, organization_id, crawl_run_id)
+    evidence_status = (
+        "available"
+        if crawl_run.safe_result.get("page_evidence_version") == "crawl_page.v1"
+        else "unavailable_legacy_run"
+    )
+    return {
+        "data": [page_row(item) for item in items],
+        "meta": {**meta(request), "evidence_status": evidence_status},
+    }
 
 
 @router.get("/summary", dependencies=[Depends(no_store)])
