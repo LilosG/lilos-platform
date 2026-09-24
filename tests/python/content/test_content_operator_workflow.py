@@ -28,7 +28,7 @@ def _item(**overrides: object) -> Any:
 def _revision(status: str = "approved") -> Any:
     return cast(
         Any,
-        SimpleNamespace(status=status, revision_number=4),
+        SimpleNamespace(status=status, revision_number=4, body=LEGACY_BODY),
     )
 
 
