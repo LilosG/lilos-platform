@@ -4,6 +4,7 @@ deterministic fake and the Google connection is created directly with the
 Analytics scope granted.
 """
 
+import json
 from collections.abc import Callable, Sequence
 from datetime import UTC, date, datetime, timedelta, timezone
 from typing import cast
@@ -13,7 +14,8 @@ from uuid import UUID, uuid4
 import httpx
 import pytest
 from cryptography.fernet import Fernet
-from sqlalchemy import select
+from sqlalchemy import event, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from apps.api.app.config import EnvironmentName, Settings
@@ -26,6 +28,8 @@ from apps.api.app.integrations.connection_service import (
     GBPConnectionService,
 )
 from apps.api.app.integrations.provider_seed import ProviderCatalogSeeder
+from apps.api.app.locations.enums import LocationType
+from apps.api.app.locations.models import Location
 from apps.api.app.organizations.enums import OrganizationStatus, OrganizationType
 from apps.api.app.organizations.models import Organization
 from apps.api.app.products.analytics.adapter import (
@@ -39,7 +43,8 @@ from apps.api.app.products.analytics.service import (
     AnalyticsService,
     recommend_property,
 )
-from apps.api.app.products.seo.models import SEOWebsite
+from apps.api.app.products.seo.models import SEOPage, SEOWebsite
+from apps.api.app.products.seo.page_evidence import read_page_evidence
 from apps.api.app.reporting_periods import (
     GA4_SYNC_TAIL_EXCLUSION_DAYS,
     comparison_window,
@@ -178,6 +183,470 @@ class FakeAnalyticsAdapter(GoogleAnalyticsAdapter):
             return self._daily_rows
         return self._aggregate_by_start.get(start_date, self._aggregate_rows)
 
+    async def organic_page_report_compatible(
+        self, access_token: str, property_number: str, *, hostname: str
+    ) -> bool:
+        return False
+
+    async def run_organic_page_report(
+        self,
+        access_token: str,
+        property_number: str,
+        *,
+        start_date: str,
+        end_date: str,
+        hostname: str,
+    ) -> list[AnalyticsReportRow]:
+        return []
+
+
+class PageFakeAnalyticsAdapter(FakeAnalyticsAdapter):
+    def __init__(
+        self,
+        *,
+        compatible: bool = True,
+        landing_path: str = "/landing?source=organic",
+        host_name: str = "example.com",
+    ) -> None:
+        super().__init__(
+            properties=[],
+            aggregate_rows=[
+                AnalyticsReportRow(
+                    {
+                        "sessions": 10,
+                        "totalUsers": 8,
+                        "screenPageViews": 12,
+                        "conversions": 1,
+                    }
+                )
+            ],
+        )
+        self.compatible = compatible
+        self.landing_path = landing_path
+        self.host_name = host_name
+
+    async def organic_page_report_compatible(
+        self, access_token: str, property_number: str, *, hostname: str
+    ) -> bool:
+        return self.compatible
+
+    async def run_organic_page_report(
+        self,
+        access_token: str,
+        property_number: str,
+        *,
+        start_date: str,
+        end_date: str,
+        hostname: str,
+    ) -> list[AnalyticsReportRow]:
+        return [
+            AnalyticsReportRow(
+                {"sessions": 0, "totalUsers": 1, "keyEvents": 2},
+                {
+                    "landingPagePlusQueryString": self.landing_path,
+                    "hostName": self.host_name,
+                    "sessionDefaultChannelGroup": "Organic Search",
+                },
+            )
+        ]
+
+
+async def make_seo_page(session: AsyncSession, organization_id: UUID, website_id: UUID) -> SEOPage:
+    page = SEOPage(
+        organization_id=organization_id,
+        website_id=website_id,
+        normalized_url="https://example.com/landing?source=organic",
+        observed_url="https://example.com/landing?source=organic",
+        normalization_reasons=[],
+        robots_directives=[],
+        internal_links=[],
+        external_links=[],
+        structured_data_present=False,
+        indexability="indexable",
+        technical_issues=[],
+        quality_status="valid",
+    )
+    session.add(page)
+    await session.flush()
+    return page
+
+
+@pytest.mark.integration
+@pytest.mark.anyio
+async def test_organic_page_evidence_pins_website_and_location_through_remap(
+    insights_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with insights_session_factory.begin() as session:
+        org = await make_organization(session)
+        settings = make_settings()
+        await make_connected_connection(
+            session, settings, org.id, "https://www.googleapis.com/auth/analytics.readonly"
+        )
+        locations = []
+        for index in (1, 2):
+            location = Location(
+                organization_id=org.id,
+                name=f"Site {index}",
+                slug=f"site-{index}",
+                location_type=LocationType.VIRTUAL,
+                timezone="UTC",
+                country_code="US",
+                website_url="https://example.com/",
+            )
+            session.add(location)
+            await session.flush()
+            locations.append(location)
+        first = await make_website(session, org.id, "https://example.com/")
+        first.location_id = locations[0].id
+        second = SEOWebsite(
+            organization_id=org.id,
+            location_id=locations[1].id,
+            key="secondary",
+            name="Secondary",
+            canonical_origin="https://example.com/",
+            status="active",
+            ownership_status="verified",
+            version=1,
+        )
+        session.add(second)
+        await session.flush()
+        first_page = await make_seo_page(session, org.id, first.id)
+        second_page = await make_seo_page(session, org.id, second.id)
+        service = AnalyticsService(adapter=PageFakeAnalyticsAdapter())
+        prop = await service.map_property(
+            session,
+            settings,
+            org.id,
+            external_property_id="properties/123",
+            property_number="123",
+            display_name="Example",
+            website_id=first.id,
+            actor_id=None,
+            correlation_id="map-a",
+        )
+        page_upserts = 0
+        engine = insights_session_factory.kw["bind"].sync_engine
+
+        def count_page_upserts(
+            connection: object,
+            cursor: object,
+            statement: str,
+            parameters: object,
+            context: object,
+            executemany: bool,
+        ) -> None:
+            nonlocal page_upserts
+            if (
+                "insert into metric_observations" in statement.lower()
+                and "on conflict" in statement.lower()
+            ):
+                page_upserts += 1
+
+        event.listen(engine, "before_cursor_execute", count_page_upserts)
+        await service.sync_metrics(
+            session, settings, org.id, prop.id, actor_id=None, correlation_id="a"
+        )
+        prop = await service.map_property(
+            session,
+            settings,
+            org.id,
+            external_property_id="properties/123",
+            property_number="123",
+            display_name="Example",
+            website_id=second.id,
+            actor_id=None,
+            correlation_id="map-b",
+        )
+        assert prop.page_evidence_status == "unavailable"
+        await service.sync_metrics(
+            session, settings, org.id, prop.id, actor_id=None, correlation_id="b"
+        )
+        event.remove(engine, "before_cursor_execute", count_page_upserts)
+        assert page_upserts == 6  # one batch for each period and pinned website
+        rows = list(
+            await session.scalars(
+                select(MetricObservation).where(
+                    MetricObservation.organization_id == org.id,
+                    MetricObservation.dimensions["observation_type"].astext
+                    == "organic_landing_page",
+                )
+            )
+        )
+        assert len(rows) == 18
+        page_definition_ids = {row.metric_definition_id for row in rows}
+        page_definitions = list(
+            await session.scalars(
+                select(MetricDefinition).where(MetricDefinition.id.in_(page_definition_ids))
+            )
+        )
+        assert {item.key for item in page_definitions} == {
+            "ga4.organicLanding.sessions",
+            "ga4.organicLanding.totalUsers",
+            "ga4.organicLanding.keyEvents",
+        }
+        assert {item.key: item.aggregation_behavior for item in page_definitions} == {
+            "ga4.organicLanding.sessions": "sum",
+            "ga4.organicLanding.totalUsers": "non_additive",
+            "ga4.organicLanding.keyEvents": "sum",
+        }
+        assert all(
+            item.supported_dimensions
+            == ["landingPagePlusQueryString", "hostName", "sessionDefaultChannelGroup"]
+            for item in page_definitions
+        )
+        assert all(
+            "sessionDefaultChannelGroup=Organic Search" in item.required_filters
+            for item in page_definitions
+        )
+        aggregate_rows = list(
+            await session.scalars(
+                select(MetricObservation).where(
+                    MetricObservation.organization_id == org.id,
+                    MetricObservation.dimensions["observation_type"].astext == "aggregate",
+                )
+            )
+        )
+        aggregate_keys = {
+            item.key
+            for item in await session.scalars(
+                select(MetricDefinition).where(
+                    MetricDefinition.id.in_({row.metric_definition_id for row in aggregate_rows})
+                )
+            )
+        }
+        assert aggregate_keys == {
+            "ga4.sessions",
+            "ga4.totalUsers",
+            "ga4.screenPageViews",
+            "ga4.conversions",
+        }
+        assert {(row.website_id, row.page_id, row.location_id) for row in rows} == {
+            (first.id, first_page.id, locations[0].id),
+            (second.id, second_page.id, locations[1].id),
+        }
+        assert all(row.provenance["mapping_state"] == "mapped" for row in rows)
+        assert all(row.provenance["resolver_version"] == "page_identity.v1" for row in rows)
+        assert sum(row.value == 0 for row in rows) == 6
+        first_evidence = await read_page_evidence(session, org.id, first.id, first_page.id)
+        second_evidence = await read_page_evidence(session, org.id, second.id, second_page.id)
+        assert first_evidence is not None and len(first_evidence.ga4) == 9
+        assert second_evidence is not None and len(second_evidence.ga4) == 9
+        assert all(row.website_id == first.id for row in first_evidence.ga4)
+        assert all(row.website_id == second.id for row in second_evidence.ga4)
+        assert await read_page_evidence(session, org.id, first.id, second_page.id) is None
+        second_row = next(row for row in rows if row.website_id == second.id)
+        savepoint = await session.begin_nested()
+        with pytest.raises(IntegrityError):
+            await session.execute(
+                update(MetricObservation)
+                .where(MetricObservation.id == second_row.id)
+                .values(page_id=first_page.id)
+            )
+        await savepoint.rollback()
+
+        other_org = await make_organization(session)
+        other_site = await make_website(session, other_org.id, "https://example.com/")
+        other_page = await make_seo_page(session, other_org.id, other_site.id)
+        savepoint = await session.begin_nested()
+        with pytest.raises(IntegrityError):
+            await session.execute(
+                update(MetricObservation)
+                .where(MetricObservation.id == second_row.id)
+                .values(page_id=other_page.id)
+            )
+        await savepoint.rollback()
+
+
+@pytest.mark.integration
+@pytest.mark.anyio
+async def test_unsupported_page_report_preserves_aggregate_evidence(
+    insights_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with insights_session_factory.begin() as session:
+        org = await make_organization(session)
+        settings = make_settings()
+        await make_connected_connection(
+            session, settings, org.id, "https://www.googleapis.com/auth/analytics.readonly"
+        )
+        website = await make_website(session, org.id, "https://example.com/")
+        service = AnalyticsService(adapter=PageFakeAnalyticsAdapter(compatible=False))
+        prop = await service.map_property(
+            session,
+            settings,
+            org.id,
+            external_property_id="properties/123",
+            property_number="123",
+            display_name="Example",
+            website_id=website.id,
+            actor_id=None,
+            correlation_id="map",
+        )
+        result = await service.sync_metrics(
+            session, settings, org.id, prop.id, actor_id=None, correlation_id="sync"
+        )
+        assert result["freshness_status"] == "fresh"
+        assert prop.page_evidence_status == "unavailable"
+        assert "unsupported" in str(prop.page_evidence_limitation)
+        rows = list(
+            await session.scalars(
+                select(MetricObservation).where(MetricObservation.organization_id == org.id)
+            )
+        )
+        assert rows
+        assert all(row.dimensions.get("observation_type") != "organic_landing_page" for row in rows)
+
+
+@pytest.mark.integration
+@pytest.mark.anyio
+async def test_foreign_organic_hostname_fails_closed_without_location_evidence(
+    insights_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with insights_session_factory.begin() as session:
+        org = await make_organization(session)
+        settings = make_settings()
+        await make_connected_connection(
+            session, settings, org.id, "https://www.googleapis.com/auth/analytics.readonly"
+        )
+        location = Location(
+            organization_id=org.id,
+            name="Expected location",
+            slug="expected-location",
+            location_type=LocationType.VIRTUAL,
+            timezone="UTC",
+            country_code="US",
+            website_url="https://example.com/",
+        )
+        session.add(location)
+        await session.flush()
+        website = await make_website(session, org.id, "https://example.com/")
+        website.location_id = location.id
+        service = AnalyticsService(adapter=PageFakeAnalyticsAdapter(host_name="foreign.example"))
+        prop = await service.map_property(
+            session,
+            settings,
+            org.id,
+            external_property_id="properties/123",
+            property_number="123",
+            display_name="Example",
+            website_id=website.id,
+            actor_id=None,
+            correlation_id="map",
+        )
+        result = await service.sync_metrics(
+            session, settings, org.id, prop.id, actor_id=None, correlation_id="sync"
+        )
+        assert result["freshness_status"] == "fresh"
+        assert prop.page_evidence_status == "unavailable"
+        assert "foreign hostname" in str(prop.page_evidence_limitation)
+        rows = list(
+            await session.scalars(
+                select(MetricObservation).where(MetricObservation.organization_id == org.id)
+            )
+        )
+        assert rows
+        assert all(row.website_id is None and row.location_id is None for row in rows)
+        assert all(row.dimensions.get("observation_type") != "organic_landing_page" for row in rows)
+
+
+@pytest.mark.integration
+@pytest.mark.anyio
+async def test_unmapped_organic_landing_evidence_keeps_raw_reference(
+    insights_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with insights_session_factory.begin() as session:
+        org = await make_organization(session)
+        settings = make_settings()
+        await make_connected_connection(
+            session, settings, org.id, "https://www.googleapis.com/auth/analytics.readonly"
+        )
+        website = await make_website(session, org.id, "https://example.com/")
+        page = await make_seo_page(session, org.id, website.id)
+        service = AnalyticsService(adapter=PageFakeAnalyticsAdapter(landing_path="/unknown?x=1"))
+        prop = await service.map_property(
+            session,
+            settings,
+            org.id,
+            external_property_id="properties/123",
+            property_number="123",
+            display_name="Example",
+            website_id=website.id,
+            actor_id=None,
+            correlation_id="map",
+        )
+        await service.sync_metrics(
+            session, settings, org.id, prop.id, actor_id=None, correlation_id="sync"
+        )
+        evidence = await read_page_evidence(session, org.id, website.id, page.id)
+        assert evidence is not None
+        assert evidence.ga4 == ()
+        assert len(evidence.website_unresolved_ga4) == 9
+        assert all(row.page_id is None for row in evidence.website_unresolved_ga4)
+        assert all(
+            row.provenance["mapping_state"] == "unmapped" for row in evidence.website_unresolved_ga4
+        )
+        assert all(
+            row.provenance["raw_landing_path"] == "/unknown?x=1"
+            for row in evidence.website_unresolved_ga4
+        )
+
+
+@pytest.mark.integration
+@pytest.mark.anyio
+async def test_missing_page_metric_fails_closed_without_aggregate_regression(
+    insights_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    class MissingMetricAdapter(PageFakeAnalyticsAdapter):
+        async def run_organic_page_report(
+            self,
+            access_token: str,
+            property_number: str,
+            *,
+            start_date: str,
+            end_date: str,
+            hostname: str,
+        ) -> list[AnalyticsReportRow]:
+            rows = await super().run_organic_page_report(
+                access_token,
+                property_number,
+                start_date=start_date,
+                end_date=end_date,
+                hostname=hostname,
+            )
+            return [AnalyticsReportRow({"sessions": 0, "totalUsers": 1}, rows[0].dimension_values)]
+
+    async with insights_session_factory.begin() as session:
+        org = await make_organization(session)
+        settings = make_settings()
+        await make_connected_connection(
+            session, settings, org.id, "https://www.googleapis.com/auth/analytics.readonly"
+        )
+        website = await make_website(session, org.id, "https://example.com/")
+        service = AnalyticsService(adapter=MissingMetricAdapter())
+        prop = await service.map_property(
+            session,
+            settings,
+            org.id,
+            external_property_id="properties/123",
+            property_number="123",
+            display_name="Example",
+            website_id=website.id,
+            actor_id=None,
+            correlation_id="map",
+        )
+        result = await service.sync_metrics(
+            session, settings, org.id, prop.id, actor_id=None, correlation_id="sync"
+        )
+        assert result["freshness_status"] == "fresh"
+        assert prop.page_evidence_status == "unavailable"
+        assert "Missing" in str(prop.page_evidence_limitation)
+        rows = list(
+            await session.scalars(
+                select(MetricObservation).where(MetricObservation.organization_id == org.id)
+            )
+        )
+        assert rows
+        assert all(row.dimensions.get("observation_type") != "organic_landing_page" for row in rows)
+
 
 def test_recommend_property_matches_display_name_to_website_domain() -> None:
     properties = [
@@ -197,6 +666,166 @@ def test_recommend_property_matches_display_name_to_website_domain() -> None:
     recommended = recommend_property(properties, site)
     assert recommended is not None
     assert recommended.external_property_id == "properties/111"
+
+
+@pytest.mark.anyio
+async def test_organic_page_adapter_compatibility_pagination_and_zero() -> None:
+    requests: list[dict[str, object]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        requests.append(body)
+        if request.url.path.endswith(":checkCompatibility"):
+            return httpx.Response(
+                200,
+                json={
+                    "dimensionCompatibilities": [
+                        {"dimensionMetadata": {"apiName": name}, "compatibility": "COMPATIBLE"}
+                        for name in (
+                            "landingPagePlusQueryString",
+                            "hostName",
+                            "sessionDefaultChannelGroup",
+                        )
+                    ],
+                    "metricCompatibilities": [
+                        {"metricMetadata": {"apiName": name}, "compatibility": "COMPATIBLE"}
+                        for name in ("sessions", "totalUsers", "keyEvents")
+                    ],
+                },
+            )
+        assert body["dimensionFilter"] == requests[0]["dimensionFilter"]
+        assert body["dimensionFilter"]["andGroup"]["expressions"] == [
+            {
+                "filter": {
+                    "fieldName": field,
+                    "stringFilter": {"matchType": "EXACT", "value": value},
+                }
+            }
+            for field, value in (
+                ("sessionDefaultChannelGroup", "Organic Search"),
+                ("hostName", "www.example.com"),
+            )
+        ]
+        offset = int(body["offset"])
+        return httpx.Response(
+            200,
+            json={
+                "dimensionHeaders": [
+                    {"name": name}
+                    for name in (
+                        "landingPagePlusQueryString",
+                        "hostName",
+                        "sessionDefaultChannelGroup",
+                    )
+                ],
+                "metricHeaders": [
+                    {"name": name} for name in ("sessions", "totalUsers", "keyEvents")
+                ],
+                "rows": [
+                    {
+                        "dimensionValues": [
+                            {"value": "/service?ref=seo" if offset == 0 else "/contact"},
+                            {"value": "www.example.com"},
+                            {"value": "Organic Search"},
+                        ],
+                        "metricValues": [{"value": "0"}, {"value": "1"}, {"value": "0"}],
+                    }
+                ],
+                "rowCount": 2,
+            },
+        )
+
+    adapter = GoogleAnalyticsAdminAdapter(http_client_factory=mock_client_factory(handler))
+    assert (
+        await adapter.organic_page_report_compatible("token", "123", hostname="www.example.com")
+        is True
+    )
+    rows = await adapter.run_organic_page_report(
+        "token",
+        "123",
+        start_date="2026-01-01",
+        end_date="2026-01-07",
+        hostname="www.example.com",
+    )
+    assert len(rows) == 2
+    assert rows[0].metric_values["sessions"] == 0
+    assert rows[0].dimension_values["landingPagePlusQueryString"] == "/service?ref=seo"
+    assert [request["offset"] for request in requests[1:]] == ["0", "1"]
+
+
+@pytest.mark.anyio
+async def test_organic_page_adapter_unsupported_combination() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path.endswith(":checkCompatibility")
+        return httpx.Response(
+            200,
+            json={
+                "dimensionCompatibilities": [
+                    {"dimensionMetadata": {"apiName": name}, "compatibility": "COMPATIBLE"}
+                    for name in (
+                        "landingPagePlusQueryString",
+                        "hostName",
+                        "sessionDefaultChannelGroup",
+                    )
+                ],
+                "metricCompatibilities": [
+                    {"metricMetadata": {"apiName": "sessions"}, "compatibility": "COMPATIBLE"},
+                    {"metricMetadata": {"apiName": "totalUsers"}, "compatibility": "COMPATIBLE"},
+                ],
+            },
+        )
+
+    adapter = GoogleAnalyticsAdminAdapter(http_client_factory=mock_client_factory(handler))
+    assert (
+        await adapter.organic_page_report_compatible("token", "123", hostname="example.com")
+        is False
+    )
+
+
+@pytest.mark.anyio
+async def test_organic_page_adapter_rejects_missing_and_invalid_metrics() -> None:
+    for values in ([{"value": "0"}], [{"value": "bad"}] * 3):
+
+        def handler(
+            request: httpx.Request, row_values: list[dict[str, str]] = values
+        ) -> httpx.Response:
+            return httpx.Response(
+                200,
+                json={
+                    "dimensionHeaders": [
+                        {"name": name}
+                        for name in (
+                            "landingPagePlusQueryString",
+                            "hostName",
+                            "sessionDefaultChannelGroup",
+                        )
+                    ],
+                    "metricHeaders": [
+                        {"name": name} for name in ("sessions", "totalUsers", "keyEvents")
+                    ],
+                    "rows": [
+                        {
+                            "dimensionValues": [
+                                {"value": "/"},
+                                {"value": "example.com"},
+                                {"value": "Organic Search"},
+                            ],
+                            "metricValues": row_values,
+                        }
+                    ],
+                    "rowCount": 1,
+                },
+            )
+
+        adapter = GoogleAnalyticsAdminAdapter(http_client_factory=mock_client_factory(handler))
+        with pytest.raises(RuntimeError, match="incomplete|invalid"):
+            await adapter.run_organic_page_report(
+                "token",
+                "123",
+                start_date="2026-01-01",
+                end_date="2026-01-07",
+                hostname="example.com",
+            )
 
 
 @pytest.mark.anyio

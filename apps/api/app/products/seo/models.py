@@ -218,9 +218,18 @@ class SEOSearchObservation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             ondelete="RESTRICT",
         ),
         ForeignKeyConstraint(
-            ["organization_id", "page_id"],
-            ["seo_pages.organization_id", "seo_pages.id"],
+            ["organization_id", "website_id", "page_id"],
+            ["seo_pages.organization_id", "seo_pages.website_id", "seo_pages.id"],
             ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "website_id"],
+            ["seo_websites.organization_id", "seo_websites.id"],
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint(
+            "page_id IS NULL OR website_id IS NOT NULL OR resolver_version IS NULL",
+            name="page_requires_website",
         ),
         UniqueConstraint(
             "search_property_id",
@@ -229,12 +238,24 @@ class SEOSearchObservation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "dimension_hash",
             name="uq_seo_search_observation",
         ),
+        Index(
+            "ix_seo_search_observations_org_website_page_date_end",
+            "organization_id",
+            "website_id",
+            "page_id",
+            "date_end",
+        ),
     )
     organization_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
     )
     search_property_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    website_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
     page_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
+    mapping_state: Mapped[str | None] = mapped_column(String(16))
+    mapping_basis: Mapped[str | None] = mapped_column(String(32))
+    resolver_version: Mapped[str | None] = mapped_column(String(32))
+    mapping_limitation: Mapped[str | None] = mapped_column(Text)
     query: Mapped[str | None] = mapped_column(String(1000))
     date_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     date_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

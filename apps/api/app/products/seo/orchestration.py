@@ -14,7 +14,7 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from sqlalchemy import or_, select
+from sqlalchemy import case, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.app.config import Settings
@@ -460,8 +460,13 @@ class SEOOrchestrationService:
                 .where(
                     SEOSearchObservation.organization_id == organization_id,
                     SEOSearchObservation.search_property_id == search_property.id,
+                    or_(
+                        SEOSearchObservation.website_id == website_id,
+                        SEOSearchObservation.website_id.is_(None),
+                    ),
                     SEOSearchObservation.quality_status == "valid",
                     SEOSearchObservation.query.isnot(None),
+                    SEOSearchObservation.dimensions["observation_type"].astext != "page_query",
                 )
                 .order_by(
                     SEOSearchObservation.date_end.desc(),
@@ -479,19 +484,27 @@ class SEOOrchestrationService:
                 .where(
                     SEOSearchObservation.organization_id == organization_id,
                     SEOSearchObservation.search_property_id == search_property.id,
+                    or_(
+                        SEOSearchObservation.website_id == website_id,
+                        SEOSearchObservation.website_id.is_(None),
+                    ),
                     SEOSearchObservation.quality_status == "valid",
                     SEOSearchObservation.query.isnot(None),
+                    SEOSearchObservation.dimensions["observation_type"].astext != "page_query",
                     SEOSearchObservation.date_start == period_start,
                     SEOSearchObservation.date_end == period_end,
                 )
                 .order_by(
+                    case((SEOSearchObservation.website_id == website_id, 0), else_=1),
                     SEOSearchObservation.impressions.desc(),
                     SEOSearchObservation.id.asc(),
                 )
                 .limit(1501)
             )
         )
-        return rows[:1500], len(rows) <= 1500
+        pinned = [row for row in rows if row.website_id == website_id]
+        selected = pinned if pinned else [row for row in rows if row.website_id is None]
+        return selected[:1500], len(selected) <= 1500
 
     async def _upsert_opportunity(
         self,

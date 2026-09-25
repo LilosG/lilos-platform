@@ -501,6 +501,22 @@ def test_url_normalization() -> None:
     assert result == "https://example.test/Path"
 
 
+def test_query_identity_and_explicit_query_stripping() -> None:
+    raw = "HTTPS://Example.TEST:443/a?x=1#fragment"
+    assert normalize_crawl_url(raw) == "https://example.test/a?x=1"
+    assert normalize_crawl_url(raw, strip_query=True) == "https://example.test/a"
+    assert canonicalize_url(normalize_crawl_url(raw)) == "https://example.test/a?x=1"
+    assert canonicalize_url("https://Example.TEST:443/a/b/../c?x=1#fragment") == (
+        "https://example.test/a/c?x=1"
+    )
+    assert normalize_crawl_url("../a?x=1#part", "https://Example.TEST/dir/page") == (
+        "https://example.test/a?x=1"
+    )
+    assert normalize_crawl_url("https://EXAMPLE.TEST:444/a?x=1") == (
+        "https://example.test:444/a?x=1"
+    )
+
+
 def test_page_signals_extraction() -> None:
     signals = extract_page_signals(GOOD_HTML, 200, "https://example.test/", ["index", "follow"])
     assert signals["title"] is not None

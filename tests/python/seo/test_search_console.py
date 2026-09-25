@@ -16,7 +16,8 @@ from uuid import UUID, uuid4
 import httpx
 import pytest
 from cryptography.fernet import Fernet
-from sqlalchemy import select
+from sqlalchemy import event, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from apps.api.app.config import EnvironmentName, Settings
@@ -30,10 +31,13 @@ from apps.api.app.integrations.provider_seed import ProviderCatalogSeeder
 from apps.api.app.organizations.enums import OrganizationStatus, OrganizationType
 from apps.api.app.organizations.models import Organization
 from apps.api.app.products.seo.models import (
+    SEOPage,
     SEOSearchObservation,
     SEOSearchProperty,
     SEOWebsite,
 )
+from apps.api.app.products.seo.page_evidence import read_page_evidence
+from apps.api.app.products.seo.page_identity import resolve_page
 from apps.api.app.products.seo.search_console_adapter import (
     DiscoveredSearchProperty,
     GoogleSearchConsoleAdapter,
@@ -108,6 +112,148 @@ async def make_website(
     return website
 
 
+async def make_page(
+    session: AsyncSession,
+    organization_id: UUID,
+    website_id: UUID,
+    url: str,
+    *,
+    canonical_url: str | None = None,
+    redirect_destination: str | None = None,
+) -> SEOPage:
+    page = SEOPage(
+        organization_id=organization_id,
+        website_id=website_id,
+        normalized_url=url,
+        observed_url=url,
+        canonical_url=canonical_url,
+        normalization_reasons=[],
+        robots_directives=[],
+        internal_links=[],
+        external_links=[],
+        structured_data_present=False,
+        indexability="indexable",
+        technical_issues=[],
+        redirect_destination=redirect_destination,
+        quality_status="valid",
+    )
+    session.add(page)
+    await session.flush()
+    return page
+
+
+@pytest.mark.integration
+@pytest.mark.anyio
+async def test_page_resolver_preserves_queries_and_does_not_merge_relationships(
+    seo_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with seo_session_factory.begin() as session:
+        org = await make_organization(session)
+        website = await make_website(session, org.id, "https://example.com/")
+        page = await make_page(session, org.id, website.id, "https://example.com/a?x=1")
+        await make_page(
+            session,
+            org.id,
+            website.id,
+            "https://example.com/b",
+            canonical_url="https://example.com/alias",
+        )
+        await make_page(
+            session,
+            org.id,
+            website.id,
+            "https://example.com/redirect-source",
+            redirect_destination="https://example.com/redirect-target",
+        )
+        await make_page(session, org.id, website.id, "https://example.com/legacy")
+        await make_page(
+            session,
+            org.id,
+            website.id,
+            "https://example.com/parameter?x=1",
+            canonical_url="https://example.com/service",
+        )
+        await make_page(
+            session,
+            org.id,
+            website.id,
+            "https://example.com/c",
+            redirect_destination="https://example.com/ambiguous",
+        )
+        await make_page(
+            session,
+            org.id,
+            website.id,
+            "https://example.com/d",
+            canonical_url="https://example.com/ambiguous",
+        )
+        other_site = SEOWebsite(
+            organization_id=org.id,
+            location_id=None,
+            key="other",
+            name="Other",
+            canonical_origin="https://example.com/",
+            status="active",
+            ownership_status="verified",
+            version=1,
+        )
+        session.add(other_site)
+        await session.flush()
+        await make_page(session, org.id, other_site.id, "https://example.com/foreign")
+        other_org = await make_organization(session)
+        other_org_site = await make_website(session, other_org.id, "https://example.com/")
+        await make_page(session, other_org.id, other_org_site.id, "https://example.com/tenant")
+
+        exact = await resolve_page(session, org.id, website.id, "HTTPS://EXAMPLE.COM/a?x=1#part")
+        assert (exact.state, exact.page_id, exact.basis) == ("mapped", page.id, "exact")
+        for raw in (
+            "https://example.com/a",
+            "https://example.com/a/?x=1",
+            "https://example.com/a?x=2",
+            "http://example.com/a?x=1",
+            "https://www.example.com/a?x=1",
+            "https://example.com/foreign",
+            "https://example.com/tenant",
+            "https://example.com/legacy?x=1",
+        ):
+            assert (await resolve_page(session, org.id, website.id, raw)).state == "unmapped"
+        alias = await resolve_page(session, org.id, website.id, "https://example.com/alias")
+        assert (alias.state, alias.page_id, alias.basis) == (
+            "unmapped",
+            None,
+            "observed_canonical",
+        )
+        redirect = await resolve_page(
+            session, org.id, website.id, "https://example.com/redirect-target"
+        )
+        assert (redirect.state, redirect.page_id, redirect.basis) == (
+            "unmapped",
+            None,
+            "observed_redirect",
+        )
+        service = await resolve_page(session, org.id, website.id, "https://example.com/service")
+        assert (service.state, service.page_id, service.basis) == (
+            "unmapped",
+            None,
+            "observed_canonical",
+        )
+        exact_target = await make_page(
+            session, org.id, website.id, "https://example.com/redirect-target"
+        )
+        redirect = await resolve_page(
+            session, org.id, website.id, "https://example.com/redirect-target"
+        )
+        assert (redirect.state, redirect.page_id, redirect.basis) == (
+            "mapped",
+            exact_target.id,
+            "exact",
+        )
+        assert (
+            await resolve_page(session, org.id, website.id, "https://example.com/ambiguous")
+        ).state == "ambiguous"
+        assert (await resolve_page(session, org.id, website.id, None)).state == "unknown"
+
+
 async def make_connected_google_connection(
     session: AsyncSession,
     settings: Settings,
@@ -146,6 +292,7 @@ class FakeSearchConsoleAdapter(SearchConsoleAdapter):
         daily_rows: list[SearchAnalyticsRow] | None = None,
         query_rows: list[SearchAnalyticsRow] | None = None,
         page_rows: list[SearchAnalyticsRow] | None = None,
+        page_query_rows: list[SearchAnalyticsRow] | None = None,
         summary_by_start: dict[str, list[SearchAnalyticsRow]] | None = None,
         query_by_start: dict[str, list[SearchAnalyticsRow]] | None = None,
         page_by_start: dict[str, list[SearchAnalyticsRow]] | None = None,
@@ -156,6 +303,7 @@ class FakeSearchConsoleAdapter(SearchConsoleAdapter):
         self._daily_rows = daily_rows or []
         self._query_rows = query_rows or []
         self._page_rows = page_rows or []
+        self._page_query_rows = page_query_rows or []
         self._summary_by_start = summary_by_start or {}
         self._query_by_start = query_by_start or {}
         self._page_by_start = page_by_start or {}
@@ -184,11 +332,244 @@ class FakeSearchConsoleAdapter(SearchConsoleAdapter):
             return self._summary_by_start.get(start_date, self._summary_rows)
         if "date" in dimensions:
             return self._daily_rows
+        if tuple(dimensions) == ("page", "query"):
+            return self._page_query_rows
         if "query" in dimensions:
             return self._query_by_start.get(start_date, self._query_rows)
         if "page" in dimensions:
             return self._page_by_start.get(start_date, self._page_rows)
         return self._query_rows  # default fallback
+
+
+@pytest.mark.integration
+@pytest.mark.anyio
+async def test_gsc_page_query_and_query_only_mapping_contract(
+    seo_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with seo_session_factory.begin() as session:
+        org = await make_organization(session)
+        settings = make_settings()
+        await make_connected_google_connection(
+            session,
+            settings,
+            org.id,
+            http_handler=token_handler(
+                "https://www.googleapis.com/auth/webmasters.readonly "
+                "https://www.googleapis.com/auth/business.manage"
+            ),
+        )
+        website = await make_website(session, org.id, "https://example.com/")
+        page = await make_page(session, org.id, website.id, "https://example.com/service?q=1")
+        fake = FakeSearchConsoleAdapter(
+            properties=[DiscoveredSearchProperty("sc-domain:example.com", "domain", "siteOwner")],
+            query_rows=[SearchAnalyticsRow(("service query",), 1, 20, 0.05, 20.0)],
+            page_rows=[SearchAnalyticsRow((page.normalized_url,), 2, 30, 0.06, 8.0)],
+            page_query_rows=[
+                SearchAnalyticsRow((page.normalized_url, "service query"), 1, 10, 0.1, 4.0)
+            ],
+        )
+        service = SearchConsoleService(adapter=fake)
+        prop = await service.map_property(
+            session,
+            settings,
+            org.id,
+            website.id,
+            external_property_id="sc-domain:example.com",
+            property_type="domain",
+            actor_id=None,
+            correlation_id="map",
+        )
+        await service.sync_observations(
+            session, settings, org.id, prop.id, actor_id=None, correlation_id="sync"
+        )
+        rows = list(
+            await session.scalars(
+                select(SEOSearchObservation).where(
+                    SEOSearchObservation.search_property_id == prop.id
+                )
+            )
+        )
+        assert any(call[3] == ("page", "query") for call in fake.query_calls)
+        for observation_type in ("top_page", "page_query"):
+            matches = [
+                row for row in rows if row.dimensions.get("observation_type") == observation_type
+            ]
+            assert len(matches) == 3
+            assert all(row.website_id == website.id for row in matches)
+            assert all(row.page_id == page.id and row.mapping_state == "mapped" for row in matches)
+            assert all(row.mapping_basis == "exact" for row in matches)
+        query_only = [row for row in rows if row.dimensions.get("observation_type") == "top_query"]
+        assert len(query_only) == 3
+        assert all(row.page_id is None and row.mapping_state == "unknown" for row in query_only)
+        assert all(row.website_id == website.id for row in query_only)
+        non_page = [
+            row
+            for row in rows
+            if row.dimensions.get("observation_type") in {"site_summary", "daily"}
+        ]
+        assert non_page
+        assert all(row.website_id == website.id for row in non_page)
+        assert all(
+            row.page_id is None and row.mapping_state is None and row.resolver_version is None
+            for row in non_page
+        )
+
+        second = SEOWebsite(
+            organization_id=org.id,
+            location_id=None,
+            key="secondary",
+            name="Secondary",
+            canonical_origin="https://example.com/",
+            status="active",
+            ownership_status="verified",
+            version=1,
+        )
+        session.add(second)
+        await session.flush()
+        second_page = await make_page(session, org.id, second.id, "https://example.com/service?q=1")
+        await service.map_property(
+            session,
+            settings,
+            org.id,
+            second.id,
+            external_property_id="sc-domain:example.com",
+            property_type="domain",
+            actor_id=None,
+            correlation_id="remap",
+        )
+        await service.sync_observations(
+            session, settings, org.id, prop.id, actor_id=None, correlation_id="resync"
+        )
+        page_rows = list(
+            await session.scalars(
+                select(SEOSearchObservation).where(
+                    SEOSearchObservation.search_property_id == prop.id,
+                    SEOSearchObservation.dimensions["observation_type"].astext == "page_query",
+                )
+            )
+        )
+        assert len(page_rows) == 6
+        assert {(row.website_id, row.page_id) for row in page_rows} == {
+            (website.id, page.id),
+            (second.id, second_page.id),
+        }
+        first_row = next(row for row in page_rows if row.website_id == website.id)
+        savepoint = await session.begin_nested()
+        with pytest.raises(IntegrityError):
+            await session.execute(
+                update(SEOSearchObservation)
+                .where(SEOSearchObservation.id == first_row.id)
+                .values(page_id=second_page.id)
+            )
+        await savepoint.rollback()
+        legacy = SEOSearchObservation(
+            organization_id=org.id,
+            search_property_id=prop.id,
+            website_id=None,
+            page_id=page.id,
+            query="legacy query",
+            date_start=datetime(2026, 1, 1, tzinfo=UTC),
+            date_end=datetime(2026, 1, 8, tzinfo=UTC),
+            dimensions={"observation_type": "legacy_page", "page": page.normalized_url},
+            dimension_hash=uuid4().hex,
+            clicks=1,
+            impressions=2,
+            ctr=0.5,
+            position=1.0,
+            quality_status="valid",
+            partial=False,
+        )
+        session.add(legacy)
+        await session.flush()
+        evidence = await read_page_evidence(session, org.id, website.id, page.id)
+        assert evidence is not None
+        assert legacy not in evidence.gsc
+        savepoint = await session.begin_nested()
+        with pytest.raises(IntegrityError):
+            await session.execute(
+                update(SEOSearchObservation)
+                .where(SEOSearchObservation.id == legacy.id)
+                .values(resolver_version="page_identity.v1")
+            )
+        await savepoint.rollback()
+
+
+@pytest.mark.integration
+@pytest.mark.anyio
+async def test_gsc_page_rows_use_chunked_upserts_without_per_row_selects(
+    seo_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with seo_session_factory.begin() as session:
+        org = await make_organization(session)
+        settings = make_settings()
+        await make_connected_google_connection(
+            session,
+            settings,
+            org.id,
+            http_handler=token_handler("https://www.googleapis.com/auth/webmasters.readonly"),
+        )
+        website = await make_website(session, org.id, "https://example.com/")
+        page = await make_page(session, org.id, website.id, "https://example.com/service")
+        fake = FakeSearchConsoleAdapter(
+            properties=[DiscoveredSearchProperty("sc-domain:example.com", "domain", "siteOwner")],
+            page_rows=[
+                SearchAnalyticsRow((f"https://example.com/page-{index}",), 1, 2, 0.5, 3.0)
+                for index in range(210)
+            ],
+            page_query_rows=[
+                SearchAnalyticsRow((page.normalized_url, f"query-{index}"), 1, 2, 0.5, 3.0)
+                for index in range(210)
+            ],
+        )
+        service = SearchConsoleService(adapter=fake)
+        prop = await service.map_property(
+            session,
+            settings,
+            org.id,
+            website.id,
+            external_property_id="sc-domain:example.com",
+            property_type="domain",
+            actor_id=None,
+            correlation_id="map",
+        )
+        engine = seo_session_factory.kw["bind"].sync_engine
+        observation_selects = 0
+        page_upserts = 0
+
+        def inspect_statement(
+            connection: object,
+            cursor: object,
+            statement: str,
+            parameters: object,
+            context: object,
+            executemany: bool,
+        ) -> None:
+            nonlocal observation_selects, page_upserts
+            sql = statement.lower()
+            if "seo_search_observations" in sql and sql.lstrip().startswith("select"):
+                observation_selects += 1
+            if "insert into seo_search_observations" in sql and "on conflict" in sql:
+                page_upserts += 1
+
+        event.listen(engine, "before_cursor_execute", inspect_statement)
+        try:
+            await service.sync_observations(
+                session, settings, org.id, prop.id, actor_id=None, correlation_id="sync"
+            )
+        finally:
+            event.remove(engine, "before_cursor_execute", inspect_statement)
+        assert observation_selects < 20
+        assert page_upserts == 12  # two bounded chunks for two row types, in three windows
+        page_rows = list(
+            await session.scalars(
+                select(SEOSearchObservation).where(
+                    SEOSearchObservation.search_property_id == prop.id,
+                    SEOSearchObservation.dimensions["observation_type"].astext == "page_query",
+                )
+            )
+        )
+        assert len(page_rows) == 630
+        assert all(row.website_id == website.id and row.page_id == page.id for row in page_rows)
 
 
 def token_handler(scope: str) -> Callable[[httpx.Request], httpx.Response]:

@@ -30,6 +30,10 @@ GA4_METRICS: tuple[str, ...] = (
 )
 ACCOUNT_SUMMARIES_PAGE_SIZE = 200
 MAX_ACCOUNT_SUMMARY_PAGES = 1_000
+ORGANIC_PAGE_DIMENSIONS = ("landingPagePlusQueryString", "hostName", "sessionDefaultChannelGroup")
+ORGANIC_PAGE_METRICS = ("sessions", "totalUsers", "keyEvents")
+ORGANIC_PAGE_LIMIT = 10_000
+MAX_ORGANIC_PAGE_PAGES = 100
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,6 +71,40 @@ class GoogleAnalyticsAdapter(Protocol):
         metrics: Sequence[str] = GA4_METRICS,
         dimensions: Sequence[str] = (),
     ) -> list[AnalyticsReportRow]: ...
+
+    async def organic_page_report_compatible(
+        self, access_token: str, property_number: str, *, hostname: str
+    ) -> bool: ...
+
+    async def run_organic_page_report(
+        self,
+        access_token: str,
+        property_number: str,
+        *,
+        start_date: str,
+        end_date: str,
+        hostname: str,
+    ) -> list[AnalyticsReportRow]: ...
+
+
+def _organic_page_filter(hostname: str) -> dict[str, object]:
+    """Use the same exact channel and confirmed host scope for both provider calls."""
+    return {
+        "andGroup": {
+            "expressions": [
+                {
+                    "filter": {
+                        "fieldName": field,
+                        "stringFilter": {"matchType": "EXACT", "value": value},
+                    }
+                }
+                for field, value in (
+                    ("sessionDefaultChannelGroup", "Organic Search"),
+                    ("hostName", hostname),
+                )
+            ]
+        }
+    }
 
 
 def _property_number(name: str) -> str:
@@ -225,3 +263,103 @@ class GoogleAnalyticsAdminAdapter:
                 )
             )
         return results
+
+    async def organic_page_report_compatible(
+        self, access_token: str, property_number: str, *, hostname: str
+    ) -> bool:
+        payload = await self._post(
+            access_token,
+            f"{ANALYTICS_DATA_API}/properties/{property_number}:checkCompatibility",
+            {
+                "dimensions": [{"name": name} for name in ORGANIC_PAGE_DIMENSIONS],
+                "metrics": [{"name": name} for name in ORGANIC_PAGE_METRICS],
+                "dimensionFilter": _organic_page_filter(hostname),
+                "compatibilityFilter": "COMPATIBLE",
+            },
+        )
+        dimensions = payload.get("dimensionCompatibilities")
+        metrics = payload.get("metricCompatibilities")
+        if not isinstance(dimensions, list) or not isinstance(metrics, list):
+            raise RuntimeError("invalid Analytics compatibility response")
+        compatible_dimensions = {
+            item.get("dimensionMetadata", {}).get("apiName")
+            for item in dimensions
+            if isinstance(item, dict) and item.get("compatibility") == "COMPATIBLE"
+        }
+        compatible_metrics = {
+            item.get("metricMetadata", {}).get("apiName")
+            for item in metrics
+            if isinstance(item, dict) and item.get("compatibility") == "COMPATIBLE"
+        }
+        return (
+            set(ORGANIC_PAGE_DIMENSIONS) <= compatible_dimensions
+            and set(ORGANIC_PAGE_METRICS) <= compatible_metrics
+        )
+
+    async def run_organic_page_report(
+        self,
+        access_token: str,
+        property_number: str,
+        *,
+        start_date: str,
+        end_date: str,
+        hostname: str,
+    ) -> list[AnalyticsReportRow]:
+        """Read all Organic Search landing rows and fail closed on malformed evidence."""
+        body: dict[str, Any] = {
+            "dateRanges": [{"startDate": start_date, "endDate": end_date}],
+            "dimensions": [{"name": name} for name in ORGANIC_PAGE_DIMENSIONS],
+            "metrics": [{"name": name} for name in ORGANIC_PAGE_METRICS],
+            "dimensionFilter": _organic_page_filter(hostname),
+            "limit": str(ORGANIC_PAGE_LIMIT),
+        }
+        rows: list[AnalyticsReportRow] = []
+        for _ in range(MAX_ORGANIC_PAGE_PAGES):
+            body["offset"] = str(len(rows))
+            payload = await self._post(
+                access_token,
+                f"{ANALYTICS_DATA_API}/properties/{property_number}:runReport",
+                body,
+            )
+            raw_rows = payload.get("rows", [])
+            if not isinstance(raw_rows, list):
+                raise RuntimeError("invalid Analytics landing report rows")
+            metric_headers = [item.get("name") for item in payload.get("metricHeaders", [])]
+            dimension_headers = [item.get("name") for item in payload.get("dimensionHeaders", [])]
+            if set(metric_headers) != set(ORGANIC_PAGE_METRICS) or set(dimension_headers) != set(
+                ORGANIC_PAGE_DIMENSIONS
+            ):
+                raise RuntimeError("incomplete Analytics landing report headers")
+            for raw_row in raw_rows:
+                values = raw_row.get("metricValues") if isinstance(raw_row, dict) else None
+                dimensions = raw_row.get("dimensionValues") if isinstance(raw_row, dict) else None
+                if (
+                    not isinstance(values, list)
+                    or len(values) != len(metric_headers)
+                    or not isinstance(dimensions, list)
+                    or len(dimensions) != len(dimension_headers)
+                ):
+                    raise RuntimeError("incomplete Analytics landing report row")
+                metric_values: dict[str, int] = {}
+                for name, value in zip(metric_headers, values, strict=True):
+                    raw = value.get("value") if isinstance(value, dict) else None
+                    if not isinstance(raw, str) or not raw.isdecimal():
+                        raise RuntimeError("invalid Analytics landing report metric")
+                    metric_values[str(name)] = int(raw)
+                dimension_values: dict[str, str] = {}
+                for name, value in zip(dimension_headers, dimensions, strict=True):
+                    raw = value.get("value") if isinstance(value, dict) else None
+                    if not isinstance(raw, str):
+                        raise RuntimeError("invalid Analytics landing report dimension")
+                    dimension_values[str(name)] = raw
+                if dimension_values["sessionDefaultChannelGroup"] != "Organic Search":
+                    raise RuntimeError("Analytics landing report contained a non-organic row")
+                rows.append(AnalyticsReportRow(metric_values, dimension_values))
+            row_count = payload.get("rowCount")
+            if not isinstance(row_count, int) or row_count < len(rows):
+                raise RuntimeError("invalid Analytics landing report row count")
+            if len(rows) == row_count:
+                return rows
+            if not raw_rows:
+                raise RuntimeError("Analytics landing report pagination stopped early")
+        raise RuntimeError("Analytics landing report exceeded pagination safety limit")
