@@ -1,5 +1,6 @@
 """Deterministic URL, crawl-safety, score, and missing-data policies plus SEO domain service."""
 
+import asyncio
 import hashlib
 import ipaddress
 from collections.abc import Callable
@@ -533,8 +534,9 @@ class SEOService:
 
         created_opportunities: list[SEOOpportunity] = []
         page_failures: list[dict[str, str]] = []
+        persistence_lock = asyncio.Lock()
 
-        async def persist_page(page_data: Any) -> None:
+        async def persist_page_locked(page_data: Any) -> None:
             from apps.api.app.products.seo.crawl_engine import CrawledPage
 
             cp: CrawledPage = page_data
@@ -677,6 +679,10 @@ class SEOService:
                 )
 
             created_opportunities.extend(new_opportunities)
+
+        async def persist_page(page_data: Any) -> None:
+            async with persistence_lock:
+                await persist_page_locked(page_data)
 
         report: CrawlReport = CrawlReport(
             terminal_state="error", reason="Engine did not produce a report"

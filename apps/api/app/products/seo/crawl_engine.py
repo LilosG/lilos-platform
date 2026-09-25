@@ -225,7 +225,7 @@ def normalize_crawl_url(url: str, base: str = "", strip_query: bool = False) -> 
         netloc = f"{host}:{parsed.port}"
     path = parsed.path or "/"
     query = "" if strip_query else parsed.query
-    return urlunparse((scheme, netloc, path, query, "", ""))
+    return urlunparse((scheme, netloc, path, "", query, ""))
 
 
 def canonicalize_url(url: str) -> str:
@@ -248,7 +248,7 @@ def canonicalize_url(url: str) -> str:
             changed = True
     if path.endswith("/."):
         path = path[:-2]
-    return urlunparse((scheme, netloc, path, parsed.query, "", ""))
+    return urlunparse((scheme, netloc, path, "", parsed.query, ""))
 
 
 def host_of(url: str) -> str:

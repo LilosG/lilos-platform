@@ -65,3 +65,6 @@ class AnalyticsProperty(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     mapping_status: Mapped[str] = mapped_column(String(16), nullable=False)
     last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     freshness_status: Mapped[str] = mapped_column(String(16), nullable=False)
+    page_evidence_status: Mapped[str | None] = mapped_column(String(16))
+    page_evidence_limitation: Mapped[str | None] = mapped_column(String(500))
+    page_evidence_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

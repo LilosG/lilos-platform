@@ -10,6 +10,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     ForeignKeyConstraint,
+    Index,
     Integer,
     Numeric,
     String,
@@ -72,6 +73,17 @@ class MetricObservation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             ["insight_sources.organization_id", "insight_sources.id"],
             ondelete="RESTRICT",
         ),
+        ForeignKeyConstraint(
+            ["organization_id", "website_id"],
+            ["seo_websites.organization_id", "seo_websites.id"],
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "website_id", "page_id"],
+            ["seo_pages.organization_id", "seo_pages.website_id", "seo_pages.id"],
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint("page_id IS NULL OR website_id IS NOT NULL", name="page_requires_website"),
         UniqueConstraint(
             "organization_id",
             "source_id",
@@ -85,11 +97,20 @@ class MetricObservation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "quality_state IN ('valid','zero','missing','unavailable','unsupported','stale','partial','delayed','invalid','suppressed')",
             name="quality_state",
         ),
+        Index(
+            "ix_metric_observations_org_website_page_period_end",
+            "organization_id",
+            "website_id",
+            "page_id",
+            "period_end",
+        ),
     )
     organization_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
     )
     location_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
+    website_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
+    page_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
     source_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
     metric_definition_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),

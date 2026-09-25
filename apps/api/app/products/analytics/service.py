@@ -18,6 +18,7 @@ already defines are stored.
 
 import hashlib
 import json
+import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -28,6 +29,7 @@ from uuid import UUID
 
 import httpx
 from sqlalchemy import func, or_, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.app.audit.contracts import AuditEventCreate
@@ -48,6 +50,8 @@ from apps.api.app.integrations.connection_service import (
 from apps.api.app.integrations.models import IntegrationConnection
 from apps.api.app.products.analytics.adapter import (
     GA4_METRICS,
+    ORGANIC_PAGE_DIMENSIONS,
+    ORGANIC_PAGE_METRICS,
     AnalyticsReportRow,
     DiscoveredAnalyticsProperty,
     GoogleAnalyticsAdapter,
@@ -61,6 +65,7 @@ from apps.api.app.products.analytics.errors import (
 )
 from apps.api.app.products.analytics.models import AnalyticsProperty
 from apps.api.app.products.seo.models import SEOWebsite
+from apps.api.app.products.seo.page_identity import PageResolver
 from apps.api.app.reporting_periods import (
     GA4_SYNC_TAIL_EXCLUSION_DAYS,
     VALID_REPORTING_PERIODS,
@@ -74,6 +79,7 @@ from apps.api.app.reporting_periods import (
 ANALYTICS_PROVIDER_KEY = "google_analytics"
 DEFAULT_SYNC_WINDOW_DAYS = 28
 DEFAULT_FRESHNESS_STALE_SECONDS = 172_800  # 48 hours
+PAGE_METRIC_CHUNK_SIZE = 200
 
 # Versioned metric-definition catalog for the modeled GA4 metrics. These are
 # global (not org-scoped) and upserted idempotently on first sync.
@@ -108,6 +114,23 @@ GA4_METRIC_DEFINITIONS: tuple[dict[str, object], ...] = (
     },
 )
 METRIC_DEFINITION_VERSION = 1
+ORGANIC_LANDING_DEFINITIONS: tuple[tuple[str, str, str], ...] = (
+    (
+        "sessions",
+        "sum",
+        "GA4 Organic Search sessions grouped by session landing page and confirmed hostname.",
+    ),
+    (
+        "totalUsers",
+        "non_additive",
+        "GA4 Organic Search users grouped by session landing page; do not sum across pages.",
+    ),
+    (
+        "keyEvents",
+        "sum",
+        "GA4 key events associated with Organic Search sessions grouped by landing page.",
+    ),
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -120,6 +143,24 @@ def _canonical_host(origin: str | None) -> str:
     if not origin:
         return ""
     return (urlsplit(origin).hostname or "").lower().removeprefix("www.")
+
+
+def _confirmed_page_host(origin: str) -> str | None:
+    """Return the exact normalized website host, retaining any www label."""
+    try:
+        parts = urlsplit(origin)
+        host = parts.hostname
+        if (
+            parts.scheme.lower() not in {"http", "https"}
+            or not host
+            or parts.username is not None
+            or parts.password is not None
+            or not re.fullmatch(r"[a-z0-9]+(?:[.-][a-z0-9]+)*", host)
+        ):
+            return None
+        return host.lower()
+    except ValueError:
+        return None
 
 
 def _registrable_label(host: str) -> str:
@@ -307,6 +348,12 @@ class AnalyticsService:
             )
         )
         if existing is not None:
+            if existing.website_id != website_id:
+                existing.page_evidence_status = "unavailable"
+                existing.page_evidence_limitation = (
+                    "No Organic Search landing-page report ingested for this website mapping."
+                )
+                existing.page_evidence_checked_at = None
             existing.connection_id = connection.id
             existing.website_id = website_id
             existing.property_number = property_number
@@ -396,6 +443,43 @@ class AnalyticsService:
             if existing is not None:
                 by_key[key] = existing
         return by_key
+
+    async def _ensure_organic_landing_definitions(
+        self, session: AsyncSession
+    ) -> dict[str, MetricDefinition]:
+        definitions: dict[str, MetricDefinition] = {}
+        for metric, aggregation, description in ORGANIC_LANDING_DEFINITIONS:
+            key = f"ga4.organicLanding.{metric}"
+            definition = await session.scalar(
+                select(MetricDefinition).where(
+                    MetricDefinition.key == key,
+                    MetricDefinition.version == METRIC_DEFINITION_VERSION,
+                )
+            )
+            if definition is None:
+                definition = MetricDefinition(
+                    key=key,
+                    version=METRIC_DEFINITION_VERSION,
+                    name=f"GA4 Organic Landing {metric}",
+                    description=description,
+                    source_product="insights",
+                    unit="count",
+                    data_type="integer",
+                    aggregation_behavior=aggregation,
+                    supported_dimensions=list(ORGANIC_PAGE_DIMENSIONS),
+                    required_filters=[
+                        "sessionDefaultChannelGroup=Organic Search",
+                        "hostName=confirmed website hostname",
+                    ],
+                    freshness_seconds=86_400,
+                    partial_period_behavior="mark_partial",
+                    missing_data_behavior="mark_missing",
+                    status="active",
+                )
+                session.add(definition)
+                await session.flush()
+            definitions[metric] = definition
+        return definitions
 
     async def _insight_source(
         self, session: AsyncSession, organization_id: UUID, prop: AnalyticsProperty
@@ -583,6 +667,8 @@ class AnalyticsService:
                 prop.freshness_status = "never_synced"
             else:
                 prop.freshness_status = "stale"
+            if prop.page_evidence_status == "observed":
+                prop.page_evidence_status = "stale"
             await session.flush()
             await self._audit(
                 session,
@@ -606,6 +692,7 @@ class AnalyticsService:
             }
 
         await nested.commit()
+        await self._sync_organic_pages(session, organization_id, prop, source, token, now)
         prop.last_synced_at = now
         prop.freshness_status = "fresh"
         source.last_synced_at = prop.last_synced_at
@@ -632,6 +719,145 @@ class AnalyticsService:
             "periods_synced": list(VALID_REPORTING_PERIODS),
             "freshness_status": prop.freshness_status,
         }
+
+    async def _sync_organic_pages(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        prop: AnalyticsProperty,
+        source: InsightSource,
+        token: str,
+        now: datetime,
+    ) -> None:
+        website = await self._optional_website(session, organization_id, prop.website_id)
+        if website is None:
+            prop.page_evidence_status = "unavailable"
+            prop.page_evidence_limitation = "No confirmed website scope for this property."
+            prop.page_evidence_checked_at = now
+            return
+        expected_host = _confirmed_page_host(website.canonical_origin)
+        if expected_host is None:
+            prop.page_evidence_status = "unavailable"
+            prop.page_evidence_limitation = "No valid confirmed website hostname for page evidence."
+            prop.page_evidence_checked_at = now
+            return
+        resolver = await PageResolver.load(session, organization_id, website.id)
+        page_savepoint = session.begin_nested()
+        await page_savepoint.start()
+        try:
+            compatible = await self.adapter.organic_page_report_compatible(
+                token, prop.property_number, hostname=expected_host
+            )
+            if not compatible:
+                raise ValueError("Organic landing-page report is unsupported for this property.")
+            definitions = await self._ensure_organic_landing_definitions(session)
+            for period_days in VALID_REPORTING_PERIODS:
+                start, end = reporting_window(now, period_days, GA4_SYNC_TAIL_EXCLUSION_DAYS)
+                rows = await self.adapter.run_organic_page_report(
+                    token,
+                    prop.property_number,
+                    start_date=provider_start_date(start),
+                    end_date=provider_end_date(end),
+                    hostname=expected_host,
+                )
+                values_by_identity: dict[tuple[UUID, str], dict[str, object]] = {}
+                for row in rows:
+                    raw_path = row.dimension_values.get("landingPagePlusQueryString", "")
+                    raw_host = row.dimension_values.get("hostName", "")
+                    if raw_host.lower() != expected_host or raw_host != raw_host.strip():
+                        raise ValueError("Organic landing-page report returned a foreign hostname.")
+                    if row.dimension_values.get("sessionDefaultChannelGroup") != "Organic Search":
+                        raise ValueError("Organic landing-page report returned a foreign channel.")
+                    raw_url = (
+                        f"{urlsplit(website.canonical_origin).scheme}://{expected_host}{raw_path}"
+                        if raw_path.startswith("/")
+                        else None
+                    )
+                    resolution = resolver.resolve(raw_url)
+                    dimensions: dict[str, object] = {
+                        "observation_type": "organic_landing_page",
+                        "website_id": str(website.id),
+                        "landingPagePlusQueryString": raw_path,
+                        "hostName": raw_host,
+                        "sessionDefaultChannelGroup": "Organic Search",
+                    }
+                    dim_hash = _dimension_hash(dimensions)
+                    for metric in ORGANIC_PAGE_METRICS:
+                        if metric not in row.metric_values:
+                            raise ValueError("Missing Organic Search landing-page metric.")
+                        value = row.metric_values[metric]
+                        if type(value) is not int or value < 0:
+                            raise ValueError("Invalid Organic Search landing-page metric.")
+                        definition = definitions[metric]
+                        values_by_identity[(definition.id, dim_hash)] = {
+                            "organization_id": organization_id,
+                            "source_id": source.id,
+                            "metric_definition_id": definition.id,
+                            "period_start": start,
+                            "period_end": end,
+                            "dimension_hash": dim_hash,
+                            "website_id": website.id,
+                            "location_id": website.location_id,
+                            "page_id": resolution.page_id,
+                            "dimensions": dimensions,
+                            "value": Decimal(value),
+                            "quality_state": "valid" if value else "zero",
+                            "completeness": Decimal("1.0"),
+                            "provenance": {
+                                "provider": ANALYTICS_PROVIDER_KEY,
+                                "property": prop.external_property_id,
+                                "report": "organic_landing_page",
+                                "availability": "observed",
+                                "ingested_at": now.isoformat(),
+                                "window_days": period_days,
+                                "website_id": str(website.id),
+                                "raw_landing_path": raw_path,
+                                "raw_host_name": raw_host,
+                                "raw_candidate_url": raw_url,
+                                "mapping_state": resolution.state,
+                                "mapping_basis": resolution.basis,
+                                "resolver_version": resolution.resolver_version,
+                                "limitation": resolution.limitation,
+                                "metric_meaning": (
+                                    "GA4 key events associated with Organic Search sessions "
+                                    "grouped by landing page."
+                                    if metric == "keyEvents"
+                                    else None
+                                ),
+                            },
+                        }
+                values = list(values_by_identity.values())
+                for offset in range(0, len(values), PAGE_METRIC_CHUNK_SIZE):
+                    statement = pg_insert(MetricObservation).values(
+                        values[offset : offset + PAGE_METRIC_CHUNK_SIZE]
+                    )
+                    statement = statement.on_conflict_do_update(
+                        constraint="uq_metric_observation_identity",
+                        set_={
+                            key: getattr(statement.excluded, key)
+                            for key in (
+                                "website_id",
+                                "location_id",
+                                "page_id",
+                                "dimensions",
+                                "value",
+                                "quality_state",
+                                "completeness",
+                                "provenance",
+                            )
+                        },
+                    )
+                    await session.execute(statement)
+            await page_savepoint.commit()
+        except Exception as exc:
+            await page_savepoint.rollback()
+            prop.page_evidence_status = "unavailable"
+            prop.page_evidence_limitation = str(exc)[:500]
+            prop.page_evidence_checked_at = now
+            return
+        prop.page_evidence_status = "observed"
+        prop.page_evidence_limitation = None
+        prop.page_evidence_checked_at = now
 
     async def _sync_aggregate(
         self,

@@ -467,6 +467,112 @@ def test_website_crawl_generates_opportunities_and_landing_page_gaps(
 
 
 @pytest.mark.integration
+def test_concurrent_crawl_fetches_serialize_shared_session_persistence(
+    seo_client: tuple[TestClient, dict[str, UUID]],
+    seo_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    client, ids = seo_client
+    org = ids["organization"]
+    base = f"/api/v1/organizations/{org}/seo"
+    website = client.post(
+        f"{base}/websites",
+        headers=HEADERS,
+        json={
+            "location_id": str(ids["location"]),
+            "key": "concurrent",
+            "name": "Concurrent site",
+            "canonical_origin": "https://example.test",
+        },
+    )
+    assert website.status_code == 201, website.text
+    website_id = UUID(website.json()["data"]["id"])
+    crawl = client.post(
+        f"{base}/websites/{website_id}/crawl",
+        headers=HEADERS,
+        json={
+            "workflow_run_id": str(ids["workflow_run"]),
+            "seed_paths": ["/broken"],
+            "max_pages": 2,
+            "concurrency": 2,
+            "crawl_delay_seconds": 0.1,
+            "idempotency_key": "concurrent-persistence-test",
+        },
+    )
+    assert crawl.status_code == 202, crawl.text
+    crawl_run_id = UUID(crawl.json()["data"]["id"])
+
+    class ConcurrentFetchTransport(httpx.AsyncBaseTransport):
+        def __init__(self) -> None:
+            self.page_requests = 0
+            self.both_pages_requested = asyncio.Event()
+
+        async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+            if request.url.path in ("/", "/broken"):
+                self.page_requests += 1
+                if self.page_requests == 2:
+                    self.both_pages_requested.set()
+                await asyncio.wait_for(self.both_pages_requested.wait(), timeout=5)
+            return mock_handler(request)
+
+    async def scenario() -> None:
+        transport = ConcurrentFetchTransport()
+        seo_service = SEOService(http_client_factory=lambda: httpx.AsyncClient(transport=transport))
+        active_page_writes = 0
+        max_active_page_writes = 0
+        async with seo_session_factory.begin() as session:
+            original_execute = session.execute
+
+            async def delayed_execute(statement: Any, *args: Any, **kwargs: Any) -> Any:
+                nonlocal active_page_writes, max_active_page_writes
+                if getattr(getattr(statement, "table", None), "name", None) != "seo_pages":
+                    return await original_execute(statement, *args, **kwargs)
+                active_page_writes += 1
+                max_active_page_writes = max(max_active_page_writes, active_page_writes)
+                try:
+                    await asyncio.sleep(0.05)
+                    return await original_execute(statement, *args, **kwargs)
+                finally:
+                    active_page_writes -= 1
+
+            session.execute = delayed_execute  # type: ignore[method-assign]
+            run, _ = await seo_service.execute_crawl(
+                session, org, crawl_run_id, correlation_id="concurrent-persistence-test"
+            )
+            assert run.status == "success", run.stop_reason
+            assert run.safe_result["page_failures"] == []
+
+        assert transport.page_requests == 2
+        assert max_active_page_writes == 1
+        async with seo_session_factory() as session:
+            pages = (
+                await session.scalars(
+                    select(SEOPage).where(
+                        SEOPage.organization_id == org, SEOPage.website_id == website_id
+                    )
+                )
+            ).all()
+            observations = (
+                await session.scalars(
+                    select(SEOCrawlPageObservation).where(
+                        SEOCrawlPageObservation.organization_id == org,
+                        SEOCrawlPageObservation.website_id == website_id,
+                        SEOCrawlPageObservation.crawl_run_id == crawl_run_id,
+                    )
+                )
+            ).all()
+            assert {page.normalized_url for page in pages} == {
+                "https://example.test/",
+                "https://example.test/broken",
+            }
+            assert {item.normalized_url: item.title for item in observations} == {
+                "https://example.test/": "Downtown Services",
+                "https://example.test/broken": None,
+            }
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.integration
 def test_recommendation_approval_execution_and_outcome_flow(
     seo_client: tuple[TestClient, dict[str, UUID]],
     seo_session_factory: async_sessionmaker[AsyncSession],
