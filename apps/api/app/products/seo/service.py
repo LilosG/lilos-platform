@@ -6,7 +6,8 @@ import ipaddress
 import json
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from typing import Any, cast
 from urllib.parse import quote, unquote, urlsplit, urlunsplit
 from uuid import UUID
@@ -23,10 +24,13 @@ from apps.api.app.audit.repository import AuditEventRepository
 from apps.api.app.audit.service import AuditEventService
 from apps.api.app.execution.models import Job, WorkflowRun
 from apps.api.app.execution.service import ExecutionService
+from apps.api.app.insights.models import InsightSource, MetricDefinition, MetricObservation
 from apps.api.app.integrations.models import IntegrationConnection
 from apps.api.app.locations.models import Location
 from apps.api.app.notifications.models import NotificationTemplate
 from apps.api.app.notifications.service import NotificationService
+from apps.api.app.products.analytics.models import AnalyticsProperty
+from apps.api.app.products.analytics.service import DEFAULT_FRESHNESS_STALE_SECONDS
 from apps.api.app.products.seo.contracts import (
     CrawlRequest,
     ImplementationTaskCreate,
@@ -67,6 +71,12 @@ from apps.api.app.products.seo.models import (
     SEOWebsite,
 )
 from apps.api.app.products.seo.page_identity import RESOLVER_VERSION, PageResolver
+from apps.api.app.reporting_periods import GA4_SYNC_TAIL_EXCLUSION_DAYS, reporting_window
+
+BUSINESS_POLICY_VERSION = "business_importance.v1"
+SCORE_POLICY_VERSION = "opportunity_score.v2"
+SCORE_VERSION = 2
+BUSINESS_METRIC_KEY = "ga4.organicLanding.keyEvents"
 
 NOTIFICATION_TEMPLATES = {
     "seo.recommendation.awaiting_approval": ("in_app", "An SEO recommendation needs approval."),
@@ -123,7 +133,7 @@ def validate_crawl_target(value: str, allowed_hosts: frozenset[str]) -> Normaliz
 def opportunity_score(
     *,
     search_potential: int,
-    business_value: int,
+    business_value: int | None,
     relevance: int,
     confidence: int,
     urgency: int,
@@ -137,8 +147,9 @@ def opportunity_score(
         "urgency": urgency,
         "effort": effort,
     }
-    if any(value < 0 or value > 100 for value in score_inputs.values()):
+    if any(value < 0 or value > 100 for value in score_inputs.values() if value is not None):
         raise ValueError("score inputs must be between 0 and 100")
+    business_supplied = business_value is not None
     score = max(
         0,
         min(
@@ -146,19 +157,196 @@ def opportunity_score(
             round(
                 (
                     search_potential * 2
-                    + business_value * 3
+                    + (business_value * 3 if business_value is not None else 0)
                     + relevance * 2
                     + confidence * 2
                     + urgency
                     - effort
                 )
-                / 9
+                / (9 if business_supplied else 6)
             ),
         ),
     )
     inputs: dict[str, object] = dict(score_inputs)
+    inputs["business_component"] = "supplied" if business_supplied else "omitted"
+    inputs["business_importance_state"] = "inferred" if business_supplied else "unavailable"
+    inputs["business_policy_version"] = BUSINESS_POLICY_VERSION
+    inputs["score_policy_version"] = SCORE_POLICY_VERSION
     inputs["final_score"] = score
     return score, inputs
+
+
+def unavailable_business_importance(limitation: str) -> dict[str, object]:
+    return {
+        "business_importance_state": "unavailable",
+        "business_value": None,
+        "business_policy_version": BUSINESS_POLICY_VERSION,
+        "limitation": limitation,
+    }
+
+
+def inferred_business_value(key_events: int) -> int:
+    if key_events <= 0:
+        raise ValueError("key events must be positive")
+    return (
+        40
+        if key_events <= 2
+        else 55
+        if key_events <= 5
+        else 70
+        if key_events <= 10
+        else 85
+        if key_events <= 24
+        else 100
+    )
+
+
+async def page_business_importance(
+    session: AsyncSession,
+    organization_id: UUID,
+    website_id: UUID,
+    canonical_origin: str,
+    location_id: UUID | None,
+    page_ids: set[UUID],
+    *,
+    now: datetime,
+) -> dict[UUID, dict[str, object]]:
+    """Qualify exact current GA4 page observations without inventing attribution."""
+    if not page_ids:
+        return {}
+    properties = list(
+        await session.scalars(
+            select(AnalyticsProperty).where(
+                AnalyticsProperty.organization_id == organization_id,
+                AnalyticsProperty.website_id == website_id,
+                AnalyticsProperty.provider == "google_analytics",
+                AnalyticsProperty.mapping_status == "mapped",
+            )
+        )
+    )
+    if len(properties) != 1:
+        return {}
+    prop = properties[0]
+    if prop.page_evidence_status != "observed" or prop.freshness_status != "fresh":
+        return {}
+    if prop.last_synced_at is None or not (
+        now - timedelta(seconds=DEFAULT_FRESHNESS_STALE_SECONDS) <= prop.last_synced_at <= now
+    ):
+        return {}
+    start, end = reporting_window(now, 28, GA4_SYNC_TAIL_EXCLUSION_DAYS)
+    expected_host = urlsplit(canonical_origin).hostname
+    if not expected_host:
+        return {}
+    rows = list(
+        await session.execute(
+            select(MetricObservation, MetricDefinition, InsightSource)
+            .join(MetricDefinition, MetricObservation.metric_definition_id == MetricDefinition.id)
+            .join(InsightSource, MetricObservation.source_id == InsightSource.id)
+            .where(
+                MetricObservation.organization_id == organization_id,
+                MetricObservation.website_id == website_id,
+                MetricObservation.location_id.is_(None)
+                if location_id is None
+                else MetricObservation.location_id == location_id,
+                MetricObservation.page_id.in_(page_ids),
+                MetricObservation.period_start == start,
+                MetricObservation.period_end == end,
+                MetricDefinition.key == BUSINESS_METRIC_KEY,
+                InsightSource.organization_id == organization_id,
+                InsightSource.key == prop.external_property_id,
+                InsightSource.provider == prop.provider,
+                InsightSource.source_type == "analytics_property",
+            )
+        )
+    )
+    result: dict[UUID, dict[str, object]] = {}
+    disqualified: dict[UUID, str] = {}
+    for observation, definition, source in rows:
+        if observation.value == 0 or observation.quality_state == "zero":
+            disqualified[observation.page_id] = (
+                "Zero key events in the current 28-day page window do not establish importance."
+            )
+            continue
+        provenance = observation.provenance
+        ingested_raw = provenance.get("ingested_at")
+        try:
+            ingested_at = datetime.fromisoformat(str(ingested_raw))
+        except (TypeError, ValueError):
+            disqualified[observation.page_id] = "Page evidence lacks a valid ingestion timestamp."
+            continue
+        if ingested_at.tzinfo is None or not (
+            now - timedelta(seconds=DEFAULT_FRESHNESS_STALE_SECONDS) <= ingested_at <= now
+        ):
+            disqualified[observation.page_id] = (
+                "Page evidence is outside the 48-hour freshness SLA."
+            )
+            continue
+        if (
+            observation.quality_state != "valid"
+            or observation.completeness != Decimal("1.0")
+            or observation.value is None
+            or observation.value <= 0
+            or observation.value != observation.value.to_integral_value()
+            or provenance.get("mapping_state") != "mapped"
+            or provenance.get("provider") != prop.provider
+            or provenance.get("property") != prop.external_property_id
+            or provenance.get("report") != "organic_landing_page"
+            or provenance.get("availability") != "observed"
+            or provenance.get("window_days") != 28
+            or provenance.get("website_id") != str(website_id)
+            or not provenance.get("mapping_basis")
+            or not provenance.get("resolver_version")
+            or observation.dimensions.get("observation_type") != "organic_landing_page"
+            or observation.dimensions.get("sessionDefaultChannelGroup") != "Organic Search"
+            or observation.dimensions.get("website_id") != str(website_id)
+            or observation.dimensions.get("hostName") != expected_host
+            or provenance.get("raw_host_name") != expected_host
+        ):
+            disqualified[observation.page_id] = (
+                "Page evidence fails quality, completeness, mapping, or source-scope qualification."
+            )
+            continue
+        count = int(observation.value)
+        business_value = inferred_business_value(count)
+        candidate: dict[str, object] = {
+            "business_importance_state": "inferred",
+            "business_value": business_value,
+            "business_policy_version": BUSINESS_POLICY_VERSION,
+            "evidence_source": "google_analytics",
+            "metric_observation_id": str(observation.id),
+            "metric_definition_key": definition.key,
+            "metric_definition_version": definition.version,
+            "source_id": str(source.id),
+            "analytics_property_id": str(prop.id),
+            "analytics_property_external_id": prop.external_property_id,
+            "website_id": str(website_id),
+            "page_id": str(observation.page_id),
+            "location_id": str(location_id) if location_id else None,
+            "period_start": start.isoformat(),
+            "period_end": end.isoformat(),
+            "window_days": 28,
+            "value": count,
+            "quality_state": observation.quality_state,
+            "completeness": float(observation.completeness),
+            "mapping_state": provenance.get("mapping_state"),
+            "mapping_basis": provenance.get("mapping_basis"),
+            "resolver_version": provenance.get("resolver_version"),
+            "provider_ingested_at": ingested_at.isoformat(),
+            "provider_last_synced_at": prop.last_synced_at.isoformat(),
+            "calculated_at": now.isoformat(),
+            "limitation": (
+                "Key events infer importance; they are not attributed revenue or qualified leads."
+            ),
+        }
+        if observation.page_id in result:
+            result[observation.page_id] = unavailable_business_importance(
+                "Multiple page observations prevent a unique business-importance decision."
+            )
+        else:
+            result[observation.page_id] = candidate
+    for page_id, limitation in disqualified.items():
+        result[page_id] = unavailable_business_importance(limitation)
+    return result
 
 
 def metric_value(value: int | float | None, quality: str) -> dict[str, object]:
@@ -619,16 +807,36 @@ class SEOService:
                     )
 
                     digest = hashlib.sha256(cp.url.encode()).hexdigest()
+                    business = (
+                        await page_business_importance(
+                            session,
+                            organization_id,
+                            website.id,
+                            website.canonical_origin,
+                            website.location_id,
+                            {page.id},
+                            now=datetime.now(UTC),
+                        )
+                    ).get(
+                        page.id,
+                        unavailable_business_importance(
+                            "No qualifying current 28-day Organic Search key events for this page."
+                        ),
+                    )
                     for issue in cp.technical_issues:
                         dedup_key = f"{digest}.{issue}"
                         score, explanation = opportunity_score(
                             search_potential=40,
-                            business_value=40,
+                            business_value=cast(int | None, business["business_value"]),
                             relevance=60,
                             confidence=90,
                             urgency=30,
                             effort=10,
                         )
+                        explanation["business_importance_state"] = business[
+                            "business_importance_state"
+                        ]
+                        explanation["business_evidence_limitation"] = business.get("limitation")
                         existing_opportunity = await session.scalar(
                             select(SEOOpportunity).where(
                                 SEOOpportunity.organization_id == organization_id,
@@ -636,7 +844,31 @@ class SEOService:
                                 SEOOpportunity.active_marker == "active",
                             )
                         )
+                        if existing_opportunity and (
+                            existing_opportunity.website_id != website.id
+                            or existing_opportunity.location_id != website.location_id
+                        ):
+                            scoped_digest = hashlib.sha256(
+                                f"{website.id}|{cp.url}".encode()
+                            ).hexdigest()
+                            dedup_key = f"{scoped_digest}.{issue}"
+                            existing_opportunity = await session.scalar(
+                                select(SEOOpportunity).where(
+                                    SEOOpportunity.organization_id == organization_id,
+                                    SEOOpportunity.website_id == website.id,
+                                    SEOOpportunity.deduplication_key == dedup_key,
+                                    SEOOpportunity.active_marker == "active",
+                                )
+                            )
                         if existing_opportunity:
+                            existing_opportunity.evidence = {
+                                "url": cp.url,
+                                "issue": issue,
+                                "business_importance": business,
+                            }
+                            existing_opportunity.priority_score = score
+                            existing_opportunity.score_explanation = explanation
+                            existing_opportunity.score_version = SCORE_VERSION
                             continue
                         opportunity = SEOOpportunity(
                             organization_id=organization_id,
@@ -646,9 +878,13 @@ class SEOService:
                             opportunity_type=issue,
                             deduplication_key=dedup_key,
                             active_marker="active",
-                            evidence={"url": cp.url, "issue": issue},
+                            evidence={
+                                "url": cp.url,
+                                "issue": issue,
+                                "business_importance": business,
+                            },
                             source_versions=["crawl.v1"],
-                            score_version=1,
+                            score_version=SCORE_VERSION,
                             priority_score=score,
                             score_explanation=explanation,
                             status="identified",
