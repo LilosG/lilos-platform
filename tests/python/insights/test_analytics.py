@@ -7,7 +7,7 @@ Analytics scope granted.
 import json
 from collections.abc import Callable, Sequence
 from datetime import UTC, date, datetime, timedelta, timezone
-from typing import cast
+from typing import TypedDict, cast
 from urllib.parse import parse_qs, urlsplit
 from uuid import UUID, uuid4
 
@@ -45,6 +45,7 @@ from apps.api.app.products.analytics.service import (
 )
 from apps.api.app.products.seo.models import SEOPage, SEOWebsite
 from apps.api.app.products.seo.page_evidence import read_page_evidence
+from apps.api.app.products.seo.page_intelligence import read_page_intelligence
 from apps.api.app.reporting_periods import (
     GA4_SYNC_TAIL_EXCLUSION_DAYS,
     comparison_window,
@@ -52,6 +53,19 @@ from apps.api.app.reporting_periods import (
     provider_start_date,
     reporting_window,
 )
+
+
+class _PageEvidenceSection(TypedDict):
+    items: list[dict[str, object]]
+
+
+class _OrganicPageEvidence(TypedDict):
+    availability: str
+    page: _PageEvidenceSection
+    website_unresolved: _PageEvidenceSection
+    properties: _PageEvidenceSection
+    limitation: str
+    key_events_meaning: str
 
 
 def make_settings() -> Settings:
@@ -273,6 +287,63 @@ async def make_seo_page(session: AsyncSession, organization_id: UUID, website_id
 
 @pytest.mark.integration
 @pytest.mark.anyio
+async def test_page_intelligence_empty_organic_report_uses_persisted_property_status(
+    insights_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with insights_session_factory.begin() as session:
+        org = await make_organization(session)
+        settings = make_settings()
+        await make_connected_connection(
+            session, settings, org.id, "https://www.googleapis.com/auth/analytics.readonly"
+        )
+        website = await make_website(session, org.id, "https://example.com/")
+        page = await make_seo_page(session, org.id, website.id)
+        prop = await AnalyticsService(adapter=PageFakeAnalyticsAdapter()).map_property(
+            session,
+            settings,
+            org.id,
+            external_property_id="properties/123",
+            property_number="123",
+            display_name="Example",
+            website_id=website.id,
+            actor_id=None,
+            correlation_id="empty-report",
+        )
+
+        async def read_organic() -> _OrganicPageEvidence:
+            intelligence = await read_page_intelligence(session, org.id, website.id, page.id)
+            assert intelligence is not None
+            return cast(_OrganicPageEvidence, intelligence["ga4_organic_landing"])
+
+        prop.page_evidence_status = "unavailable"
+        prop.page_evidence_limitation = "Unsupported dimensions."
+        await session.flush()
+        unavailable = await read_organic()
+        assert unavailable["availability"] == "unavailable"
+        assert unavailable["page"]["items"] == []
+
+        prop.page_evidence_status = "observed"
+        prop.page_evidence_limitation = None
+        await session.flush()
+        observed = await read_organic()
+        assert observed["availability"] == "observed"
+        assert observed["page"]["items"] == []
+        assert observed["website_unresolved"]["items"] == []
+        assert observed["properties"]["items"][0]["status"] == "observed"
+
+        prop.page_evidence_status = "stale"
+        prop.freshness_status = "stale"
+        prop.page_evidence_limitation = "Latest page report unavailable."
+        await session.flush()
+        stale = await read_organic()
+        assert stale["availability"] == "observed"
+        assert stale["properties"]["items"][0]["status"] == "stale"
+        assert stale["properties"]["items"][0]["freshness"] == "stale"
+        assert stale["properties"]["items"][0]["limitation"] == "Latest page report unavailable."
+
+
+@pytest.mark.integration
+@pytest.mark.anyio
 async def test_organic_page_evidence_pins_website_and_location_through_remap(
     insights_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
@@ -433,6 +504,20 @@ async def test_organic_page_evidence_pins_website_and_location_through_remap(
         assert second_evidence is not None and len(second_evidence.ga4) == 9
         assert all(row.website_id == first.id for row in first_evidence.ga4)
         assert all(row.website_id == second.id for row in second_evidence.ga4)
+        intelligence = await read_page_intelligence(session, org.id, first.id, first_page.id)
+        assert intelligence is not None
+        organic = cast(_OrganicPageEvidence, intelligence["ga4_organic_landing"])
+        assert organic["availability"] == "observed"
+        assert len(organic["page"]["items"]) == 9
+        assert organic["website_unresolved"]["items"] == []
+        assert {item["metric_key"] for item in organic["page"]["items"]} == {
+            "ga4.organicLanding.sessions",
+            "ga4.organicLanding.totalUsers",
+            "ga4.organicLanding.keyEvents",
+        }
+        assert all(item["mapping_state"] == "mapped" for item in organic["page"]["items"])
+        assert "non-additive" in organic["limitation"]
+        assert "associated with Organic Search sessions" in organic["key_events_meaning"]
         assert await read_page_evidence(session, org.id, first.id, second_page.id) is None
         second_row = next(row for row in rows if row.website_id == second.id)
         savepoint = await session.begin_nested()
@@ -587,6 +672,21 @@ async def test_unmapped_organic_landing_evidence_keeps_raw_reference(
         assert all(
             row.provenance["raw_landing_path"] == "/unknown?x=1"
             for row in evidence.website_unresolved_ga4
+        )
+        intelligence = await read_page_intelligence(session, org.id, website.id, page.id)
+        assert intelligence is not None
+        organic = cast(_OrganicPageEvidence, intelligence["ga4_organic_landing"])
+        assert organic["page"]["items"] == []
+        assert len(organic["website_unresolved"]["items"]) == 9
+        assert all(
+            item["mapping_state"] == "unmapped" for item in organic["website_unresolved"]["items"]
+        )
+        persisted_limitation = evidence.website_unresolved_ga4[0].provenance["limitation"]
+        assert persisted_limitation
+        assert all(
+            item["limitation"] == persisted_limitation
+            and item["source_id"] == evidence.website_unresolved_ga4[0].source_id
+            for item in organic["website_unresolved"]["items"]
         )
 
 

@@ -3,6 +3,7 @@
 import asyncio
 import hashlib
 import ipaddress
+import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -11,7 +12,7 @@ from urllib.parse import quote, unquote, urlsplit, urlunsplit
 from uuid import UUID
 
 import httpx
-from sqlalchemy import Select, func, or_, select
+from sqlalchemy import Select, Table, bindparam, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -57,6 +58,7 @@ from apps.api.app.products.seo.models import (
     SEOCrawlPageObservation,
     SEOCrawlRun,
     SEOImplementationTask,
+    SEOInternalLinkObservation,
     SEOOpportunity,
     SEOOutcome,
     SEOPage,
@@ -64,6 +66,7 @@ from apps.api.app.products.seo.models import (
     SEOSearchProperty,
     SEOWebsite,
 )
+from apps.api.app.products.seo.page_identity import RESOLVER_VERSION, PageResolver
 
 NOTIFICATION_TEMPLATES = {
     "seo.recommendation.awaiting_approval": ("in_app", "An SEO recommendation needs approval."),
@@ -534,11 +537,16 @@ class SEOService:
 
         created_opportunities: list[SEOOpportunity] = []
         page_failures: list[dict[str, str]] = []
+        link_failures: list[dict[str, str]] = []
+        link_truncated = False
+        link_success_pages = 0
+        link_successful_source_urls: set[str] = set()
         persistence_lock = asyncio.Lock()
 
         async def persist_page_locked(page_data: Any) -> None:
             from apps.api.app.products.seo.crawl_engine import CrawledPage
 
+            nonlocal link_truncated, link_success_pages
             cp: CrawledPage = page_data
             new_opportunities: list[SEOOpportunity] = []
             try:
@@ -679,6 +687,66 @@ class SEOService:
                 )
 
             created_opportunities.extend(new_opportunities)
+            link_truncated = link_truncated or cp.internal_link_evidence_truncated
+            if cp.internal_link_evidence:
+                try:
+                    grouped: dict[tuple[str, str, str | None, bool], int] = {}
+                    for link in cp.internal_link_evidence:
+                        key = (
+                            link.raw_href,
+                            link.normalized_target_url,
+                            link.anchor_text,
+                            link.nofollow,
+                        )
+                        grouped[key] = grouped.get(key, 0) + link.occurrence_count
+                    observed_at = datetime.now(UTC)
+                    values = []
+                    for (raw_href, target_url, anchor_text, nofollow), count in grouped.items():
+                        fingerprint = hashlib.sha256(
+                            json.dumps(
+                                [raw_href, target_url, anchor_text, nofollow],
+                                ensure_ascii=False,
+                                separators=(",", ":"),
+                            ).encode("utf-8")
+                        ).hexdigest()
+                        values.append(
+                            {
+                                "organization_id": organization_id,
+                                "website_id": website.id,
+                                "crawl_run_id": crawl_run.id,
+                                "source_page_id": page.id,
+                                "raw_href": raw_href,
+                                "normalized_target_url": target_url,
+                                "anchor_text": anchor_text,
+                                "nofollow": nofollow,
+                                "occurrence_count": count,
+                                "link_fingerprint": fingerprint,
+                                "mapping_state": "unknown",
+                                "resolver_version": RESOLVER_VERSION,
+                                "mapping_limitation": "Target reconciliation is pending.",
+                                "observed_at": observed_at,
+                            }
+                        )
+                    async with session.begin_nested():
+                        for start in range(0, len(values), 200):
+                            statement = pg_insert(SEOInternalLinkObservation).values(
+                                values[start : start + 200]
+                            )
+                            await session.execute(
+                                statement.on_conflict_do_update(
+                                    constraint="uq_seo_internal_link_run_source_fingerprint",
+                                    set_={"occurrence_count": statement.excluded.occurrence_count},
+                                )
+                            )
+                    link_success_pages += 1
+                    link_successful_source_urls.add(cp.url)
+                except Exception as exc:
+                    link_failures.append(
+                        {"url": cp.url[:2048], "error": f"{type(exc).__name__}: {str(exc)[:400]}"}
+                    )
+            else:
+                link_success_pages += 1
+                link_successful_source_urls.add(cp.url)
 
         async def persist_page(page_data: Any) -> None:
             async with persistence_lock:
@@ -697,11 +765,99 @@ class SEOService:
                 reason=f"{type(exc).__name__}: {str(exc)[:400]}",
             )
 
+        link_filter = (
+            SEOInternalLinkObservation.organization_id == organization_id,
+            SEOInternalLinkObservation.website_id == website.id,
+            SEOInternalLinkObservation.crawl_run_id == crawl_run.id,
+        )
+        persisted_link_count = (
+            await session.scalar(
+                select(func.count()).select_from(SEOInternalLinkObservation).where(*link_filter)
+            )
+        ) or 0
+        reconciled_link_count = 0
+        try:
+            async with session.begin_nested():
+                resolver = await PageResolver.load(session, organization_id, website.id)
+                last_id: UUID | None = None
+                while True:
+                    statement = select(SEOInternalLinkObservation).where(*link_filter)
+                    if last_id is not None:
+                        statement = statement.where(SEOInternalLinkObservation.id > last_id)
+                    rows = list(
+                        await session.scalars(
+                            statement.order_by(SEOInternalLinkObservation.id).limit(200)
+                        )
+                    )
+                    if not rows:
+                        break
+                    updates = []
+                    for link in rows:
+                        resolution = resolver.resolve(link.normalized_target_url)
+                        updates.append(
+                            {
+                                "link_id": link.id,
+                                "target_page_id": resolution.page_id,
+                                "mapping_state": resolution.state,
+                                "mapping_basis": resolution.basis,
+                                "mapping_limitation": resolution.limitation,
+                            }
+                        )
+                    await session.execute(
+                        update(cast(Table, SEOInternalLinkObservation.__table__))
+                        .where(SEOInternalLinkObservation.id == bindparam("link_id"))
+                        .values(
+                            target_page_id=bindparam("target_page_id"),
+                            mapping_state=bindparam("mapping_state"),
+                            mapping_basis=bindparam("mapping_basis"),
+                            mapping_limitation=bindparam("mapping_limitation"),
+                        ),
+                        updates,
+                    )
+                    reconciled_link_count += len(rows)
+                    last_id = rows[-1].id
+        except Exception as exc:
+            reconciled_link_count = 0  # The reconciliation savepoint rolled back.
+            link_failures.append(
+                {
+                    "url": "<reconciliation>",
+                    "error": f"{type(exc).__name__}: {str(exc)[:400]}",
+                }
+            )
+
+        link_status = (
+            "unavailable"
+            if (
+                persisted_link_count == 0
+                and link_success_pages == 0
+                and (link_failures or page_failures or report.terminal_state != "success")
+            )
+            else "partial"
+            if link_failures
+            or link_truncated
+            or report.terminal_state != "success"
+            or page_failures
+            else "available"
+        )
+
         crawl_run.status = report.terminal_state
         crawl_run.stop_reason = report.reason
         crawl_run.completed_at = datetime.now(UTC)
         crawl_run.safe_result = {
             "page_evidence_version": "crawl_page.v1",
+            "internal_link_evidence_version": "internal_links.v1",
+            "internal_link_evidence_status": link_status,
+            "internal_link_evidence_count": persisted_link_count,
+            "internal_link_evidence_reconciled_count": reconciled_link_count,
+            "internal_link_evidence_successful_source_urls": sorted(link_successful_source_urls),
+            "internal_link_evidence_failure_count": len(link_failures),
+            "internal_link_evidence_truncated": link_truncated,
+            "internal_link_evidence_limitation": (
+                "Some link evidence failed, was truncated, or the crawl did not complete."
+                if link_status != "available"
+                else None
+            ),
+            "internal_link_evidence_failures": link_failures[:20],
             "pages_crawled": report.pages_fetched,
             "pages_queued": report.pages_queued,
             "pages_skipped": report.pages_skipped,
