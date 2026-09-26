@@ -10,7 +10,7 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Literal
 from uuid import UUID
 
@@ -30,7 +30,13 @@ from apps.api.app.products.seo.models import (
     SEOWebsite,
 )
 from apps.api.app.products.seo.pagespeed import PageSpeedService
-from apps.api.app.products.seo.service import SEOService, opportunity_score
+from apps.api.app.products.seo.service import (
+    SCORE_VERSION,
+    SEOService,
+    opportunity_score,
+    page_business_importance,
+    unavailable_business_importance,
+)
 
 RecommendationEffort = Literal["low", "medium", "high"]
 CONTENT_ADDRESSABLE_OPPORTUNITY_TYPES = frozenset(
@@ -70,6 +76,7 @@ class SEOOrchestrationService:
                 "recommendations_created": 0,
             }
 
+        analysis_now = datetime.now(UTC)
         touched: dict[UUID, SEOOpportunity] = {}
         evaluated_sources: set[str] = set()
         page_rows = list(
@@ -87,6 +94,31 @@ class SEOOrchestrationService:
         pages = page_rows[:500]
         page_lookup = {page.id: page for page in pages}
         page_url_lookup = {page.normalized_url: page for page in pages}
+        business_by_page = await page_business_importance(
+            session,
+            organization_id,
+            website.id,
+            website.canonical_origin,
+            website.location_id,
+            set(page_lookup),
+            now=analysis_now,
+        )
+
+        def business_for(page_id: UUID | None, limitation: str) -> dict[str, object]:
+            return (
+                business_by_page.get(page_id, unavailable_business_importance(limitation))
+                if page_id
+                else unavailable_business_importance(limitation)
+            )
+
+        def scored(business: dict[str, object], **inputs: int) -> tuple[int, dict[str, object]]:
+            value = business.get("business_value")
+            score, explanation = opportunity_score(
+                business_value=value if isinstance(value, int) else None, **inputs
+            )
+            explanation["business_importance_state"] = business["business_importance_state"]
+            explanation["business_evidence_limitation"] = business.get("limitation")
+            return score, explanation
 
         if pages and crawl_evidence_complete:
             evaluated_sources.add("crawl.v1")
@@ -96,9 +128,13 @@ class SEOOrchestrationService:
                 issue = str(raw_issue).strip()
                 if not issue:
                     continue
-                score, explanation = opportunity_score(
+                business = business_for(
+                    page.id,
+                    "No qualifying current 28-day Organic Search key events for this page.",
+                )
+                score, explanation = scored(
+                    business,
                     search_potential=45,
-                    business_value=60,
                     relevance=85,
                     confidence=95,
                     urgency=55,
@@ -118,6 +154,7 @@ class SEOOrchestrationService:
                         "issue": issue,
                         "http_status": page.http_status,
                         "indexability": page.indexability,
+                        "business_importance": business,
                     },
                     source_versions=["crawl.v1"],
                     priority_score=score,
@@ -128,6 +165,37 @@ class SEOOrchestrationService:
         observations, gsc_evidence_complete = await self._canonical_gsc_observations(
             session, organization_id, website.id
         )
+        missing_page_ids = {
+            row.page_id
+            for row in observations
+            if row.mapping_state == "mapped"
+            and row.page_id is not None
+            and row.page_id not in page_lookup
+        }
+        if missing_page_ids:
+            extra_pages = list(
+                await session.scalars(
+                    select(SEOPage).where(
+                        SEOPage.organization_id == organization_id,
+                        SEOPage.website_id == website.id,
+                        SEOPage.id.in_(missing_page_ids),
+                    )
+                )
+            )
+            for extra_page in extra_pages:
+                page_lookup[extra_page.id] = extra_page
+                page_url_lookup[extra_page.normalized_url] = extra_page
+            business_by_page.update(
+                await page_business_importance(
+                    session,
+                    organization_id,
+                    website.id,
+                    website.canonical_origin,
+                    website.location_id,
+                    {page.id for page in extra_pages},
+                    now=analysis_now,
+                )
+            )
         if observations and gsc_evidence_complete:
             evaluated_sources.add("gsc.v1")
         for observation in observations:
@@ -141,6 +209,15 @@ class SEOOrchestrationService:
             page_from_dimensions = observation.dimensions.get("page")
             if observed_page is None and page_from_dimensions:
                 observed_page = page_url_lookup.get(str(page_from_dimensions))
+            exact_page_id = (
+                observation.page_id
+                if observation.mapping_state == "mapped" and observation.page_id in page_lookup
+                else None
+            )
+            business = business_for(
+                exact_page_id,
+                "GSC evidence lacks an exact mapped page with current GA4 key events.",
+            )
             target = (
                 observed_page.normalized_url
                 if observed_page
@@ -150,9 +227,9 @@ class SEOOrchestrationService:
             )
 
             if impressions >= 50 and position is not None and 4 <= position <= 20:
-                score, explanation = opportunity_score(
+                score, explanation = scored(
+                    business,
                     search_potential=min(100, 55 + impressions // 100),
-                    business_value=75,
                     relevance=90,
                     confidence=90,
                     urgency=65,
@@ -176,6 +253,7 @@ class SEOOrchestrationService:
                         "position": position,
                         "date_start": observation.date_start.isoformat(),
                         "date_end": observation.date_end.isoformat(),
+                        "business_importance": business,
                     },
                     source_versions=["gsc.v1"],
                     priority_score=score,
@@ -190,9 +268,9 @@ class SEOOrchestrationService:
                 and ctr is not None
                 and ctr < 0.02
             ):
-                score, explanation = opportunity_score(
+                score, explanation = scored(
+                    business,
                     search_potential=min(100, 60 + impressions // 100),
-                    business_value=75,
                     relevance=90,
                     confidence=90,
                     urgency=70,
@@ -216,6 +294,7 @@ class SEOOrchestrationService:
                         "position": position,
                         "date_start": observation.date_start.isoformat(),
                         "date_end": observation.date_end.isoformat(),
+                        "business_importance": business,
                     },
                     source_versions=["gsc.v1"],
                     priority_score=score,
@@ -231,9 +310,12 @@ class SEOOrchestrationService:
                 and not page_from_dimensions
                 and (position is None or position > 20)
             ):
-                score, explanation = opportunity_score(
+                query_business = unavailable_business_importance(
+                    "Query-only GSC demand has no attributed landing page."
+                )
+                score, explanation = scored(
+                    query_business,
                     search_potential=min(100, 55 + impressions // 100),
-                    business_value=80,
                     relevance=80,
                     confidence=80,
                     urgency=55,
@@ -261,6 +343,7 @@ class SEOOrchestrationService:
                         ),
                         "date_start": observation.date_start.isoformat(),
                         "date_end": observation.date_end.isoformat(),
+                        "business_importance": query_business,
                     },
                     source_versions=["gsc.v1"],
                     priority_score=score,
@@ -295,9 +378,12 @@ class SEOOrchestrationService:
                     if not isinstance(raw_score, (int, float)) or raw_score >= threshold:
                         continue
                     opportunity_type = f"pagespeed_{category.replace('-', '_')}_{strategy}"
-                    score, explanation = opportunity_score(
+                    pagespeed_business = unavailable_business_importance(
+                        "Site-level PageSpeed evidence does not identify an exact page."
+                    )
+                    score, explanation = scored(
+                        pagespeed_business,
                         search_potential=55,
-                        business_value=70,
                         relevance=85,
                         confidence=95,
                         urgency=75 if category == "performance" else 55,
@@ -319,6 +405,7 @@ class SEOOrchestrationService:
                             "score": raw_score,
                             "threshold": threshold,
                             "summary": raw_summary,
+                            "business_importance": pagespeed_business,
                         },
                         source_versions=["pagespeed.v5"],
                         priority_score=score,
@@ -529,12 +616,27 @@ class SEOOrchestrationService:
                 SEOOpportunity.active_marker == "active",
             )
         )
+        if existing is not None and (
+            existing.website_id != website.id or existing.location_id != location_id
+        ):
+            digest = hashlib.sha256(
+                f"{website.id}|{opportunity_type}|{target_reference}".encode()
+            ).hexdigest()
+            existing = await session.scalar(
+                select(SEOOpportunity).where(
+                    SEOOpportunity.organization_id == organization_id,
+                    SEOOpportunity.website_id == website.id,
+                    SEOOpportunity.deduplication_key == digest,
+                    SEOOpportunity.active_marker == "active",
+                )
+            )
         if existing is not None:
             if not self._incoming_evidence_is_current(existing.evidence, evidence):
                 return existing
             existing.evidence = evidence
             existing.priority_score = priority_score
             existing.score_explanation = score_explanation
+            existing.score_version = SCORE_VERSION
             existing.source_versions = list(source_versions)
             await session.flush()
             return existing
@@ -549,7 +651,7 @@ class SEOOrchestrationService:
             active_marker="active",
             evidence=evidence,
             source_versions=list(source_versions),
-            score_version=1,
+            score_version=SCORE_VERSION,
             priority_score=priority_score,
             score_explanation=score_explanation,
             status="identified",

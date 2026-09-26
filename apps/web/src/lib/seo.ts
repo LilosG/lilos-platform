@@ -52,7 +52,7 @@ export type SEOOpportunity = {
   page_id: string | null;
   opportunity_type: string;
   priority_score: number;
-  score_explanation: Record<string, number>;
+  score_explanation: Record<string, string | number | null>;
   evidence: Record<string, unknown>;
   status: string;
 };
