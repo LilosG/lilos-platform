@@ -5,6 +5,8 @@ from __future__ import annotations
 import hashlib
 import json
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
+from typing import cast
 from uuid import UUID, uuid4
 
 import pytest
@@ -12,9 +14,11 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from apps.api.app.config import Settings
+from apps.api.app.insights.models import InsightSource, MetricDefinition, MetricObservation
 from apps.api.app.integrations.models import IntegrationConnection, Provider
 from apps.api.app.organizations.enums import OrganizationStatus, OrganizationType
 from apps.api.app.organizations.models import Organization
+from apps.api.app.products.analytics.models import AnalyticsProperty
 from apps.api.app.products.content.models import ContentOpportunity
 from apps.api.app.products.seo.models import (
     SEOOpportunity,
@@ -25,6 +29,7 @@ from apps.api.app.products.seo.models import (
 )
 from apps.api.app.products.seo.orchestration import SEOOrchestrationService
 from apps.api.app.products.seo.pagespeed import PageSpeedService
+from apps.api.app.reporting_periods import GA4_SYNC_TAIL_EXCLUSION_DAYS, reporting_window
 
 
 class FakePageSpeedService(PageSpeedService):
@@ -178,7 +183,11 @@ async def test_orchestration_uses_current_gsc_and_routes_only_content_work(
             return SEOSearchObservation(
                 organization_id=organization.id,
                 search_property_id=search_property.id,
+                website_id=website.id,
                 page_id=page_id,
+                mapping_state="mapped" if page_id else "unmapped",
+                mapping_basis="exact_normalized_url" if page_id else None,
+                resolver_version="page_identity.v1" if page_id else None,
                 query=query,
                 date_start=date_end - timedelta(days=7),
                 date_end=date_end,
@@ -223,6 +232,94 @@ async def test_orchestration_uses_current_gsc_and_routes_only_content_work(
             ]
         )
         await session.flush()
+        now = datetime.now(UTC)
+        analytics_property = AnalyticsProperty(
+            organization_id=organization.id,
+            connection_id=connection.id,
+            website_id=website.id,
+            provider="google_analytics",
+            external_property_id="properties/123456",
+            property_number="123456",
+            display_name="Primary GA4",
+            mapping_status="mapped",
+            last_synced_at=now,
+            freshness_status="fresh",
+            page_evidence_status="observed",
+        )
+        source = InsightSource(
+            organization_id=organization.id,
+            key="properties/123456",
+            source_type="analytics_property",
+            product_key="insights",
+            provider="google_analytics",
+            status="active",
+            authority_scope="organization",
+        )
+        definition = await session.scalar(
+            select(MetricDefinition).where(
+                MetricDefinition.key == "ga4.organicLanding.keyEvents",
+                MetricDefinition.version == 1,
+            )
+        )
+        session.add_all([analytics_property, source])
+        if definition is None:
+            definition = MetricDefinition(
+                key="ga4.organicLanding.keyEvents",
+                version=1,
+                name="GA4 Organic Landing keyEvents",
+                description="Organic landing page key events",
+                source_product="insights",
+                unit="count",
+                data_type="integer",
+                aggregation_behavior="sum",
+                supported_dimensions=[],
+                required_filters=[],
+                freshness_seconds=86400,
+                partial_period_behavior="mark_partial",
+                missing_data_behavior="mark_missing",
+                status="active",
+            )
+            session.add(definition)
+        await session.flush()
+        start, end = reporting_window(now, 28, GA4_SYNC_TAIL_EXCLUSION_DAYS)
+        dimensions: dict[str, object] = {
+            "observation_type": "organic_landing_page",
+            "website_id": str(website.id),
+            "hostName": "example.invalid",
+            "landingPagePlusQueryString": "/service/",
+            "sessionDefaultChannelGroup": "Organic Search",
+        }
+        key_events = MetricObservation(
+            organization_id=organization.id,
+            website_id=website.id,
+            location_id=None,
+            page_id=page.id,
+            source_id=source.id,
+            metric_definition_id=definition.id,
+            period_start=start,
+            period_end=end,
+            dimensions=dimensions,
+            dimension_hash=dimension_hash(dimensions),
+            value=Decimal(2),
+            quality_state="valid",
+            completeness=Decimal("1.0"),
+            provenance={
+                "provider": "google_analytics",
+                "property": "properties/123456",
+                "report": "organic_landing_page",
+                "availability": "observed",
+                "ingested_at": now.isoformat(),
+                "window_days": 28,
+                "website_id": str(website.id),
+                "raw_host_name": "example.invalid",
+                "mapping_state": "mapped",
+                "mapping_basis": "exact_normalized_url",
+                "resolver_version": "page_identity.v1",
+            },
+        )
+        session.add(key_events)
+        await session.flush()
+        key_events_id = key_events.id
         organization_id = organization.id
         website_id = website.id
 
@@ -250,10 +347,17 @@ async def test_orchestration_uses_current_gsc_and_routes_only_content_work(
         assert striking.evidence["impressions"] == 123
         assert striking.evidence["date_end"] == current_end.isoformat()
         assert striking.score_explanation["final_score"] == striking.priority_score
+        striking_business = cast(dict[str, object], striking.evidence["business_importance"])
+        assert striking_business["business_value"] == 40
+        assert striking_business["metric_observation_id"] == str(key_events_id)
+        assert striking.score_explanation["business_component"] == "supplied"
         query_demand = [row for row in opportunities if row.opportunity_type == "gsc_query_demand"]
         assert len(query_demand) == 1
         assert query_demand[0].evidence["query"] == "query demand to investigate"
         assert query_demand[0].evidence["page_mapping_state"] == "unknown"
+        query_business = cast(dict[str, object], query_demand[0].evidence["business_importance"])
+        assert query_business["business_value"] is None
+        assert query_demand[0].score_explanation["business_component"] == "omitted"
         assert "cannot identify" in str(query_demand[0].evidence["evidence_limitation"])
         assert not any(row.opportunity_type == "gsc_unmapped_demand" for row in opportunities)
         action, _, _ = service._recommendation_text(query_demand[0])
@@ -369,6 +473,11 @@ async def test_orchestration_uses_current_gsc_and_routes_only_content_work(
             )
 
     async with seo_session_factory.begin() as session:
+        observation_to_update = await session.get(MetricObservation, key_events_id)
+        assert observation_to_update is not None
+        observation_to_update.value = Decimal(25)
+
+    async with seo_session_factory.begin() as session:
         second = await service.analyze(
             session,
             organization_id,
@@ -376,6 +485,15 @@ async def test_orchestration_uses_current_gsc_and_routes_only_content_work(
             correlation_id="seo-current-evidence-rerun",
         )
         assert second["content_opportunities"] == 0
+        rescored = await session.get(SEOOpportunity, striking.id)
+        assert rescored is not None
+        rescored_business = cast(dict[str, object], rescored.evidence["business_importance"])
+        assert rescored_business["business_value"] == 100
+        assert rescored.score_version == 2
+        assert (
+            rescored.priority_score > striking.priority_score
+            or rescored.score_explanation["business_value"] == 100
+        )
         source_count = await session.scalar(
             select(func.count())
             .select_from(ContentOpportunity)
