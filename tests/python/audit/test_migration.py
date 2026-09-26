@@ -191,6 +191,7 @@ def test_audit_migration_upgrades_downgrades_and_restores_head(
             "seo_crawl_page_observations",
             "seo_crawl_runs",
             "seo_implementation_tasks",
+            "seo_internal_link_observations",
             "seo_opportunities",
             "seo_outcomes",
             "seo_pages",

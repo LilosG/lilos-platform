@@ -14,6 +14,7 @@ import xml.etree.ElementTree as ET
 from collections import deque
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
+from html.parser import HTMLParser
 from time import monotonic
 from typing import Any
 from urllib.parse import urljoin, urlparse, urlunparse
@@ -172,6 +173,8 @@ class CrawledPage:
     robots_directives: list[str] = field(default_factory=list)
     internal_links: list[str] = field(default_factory=list)
     external_links: list[str] = field(default_factory=list)
+    internal_link_evidence: list["CrawledLink"] = field(default_factory=list)
+    internal_link_evidence_truncated: bool = False
     word_count: int | None = None
     structured_data_present: bool = False
     content_hash: str | None = None
@@ -394,6 +397,77 @@ def extract_links(html: str, base_url: str) -> tuple[list[str], list[str], list[
         if is_nofollow:
             nofollow.append(absolute)
     return internal, external, nofollow
+
+
+@dataclass(frozen=True, slots=True)
+class CrawledLink:
+    raw_href: str
+    normalized_target_url: str
+    anchor_text: str | None
+    nofollow: bool
+    occurrence_count: int
+
+
+MAX_LINK_EVIDENCE_PER_PAGE = 2000
+
+
+class _AnchorEvidenceParser(HTMLParser):
+    def __init__(self, base_url: str) -> None:
+        super().__init__(convert_charrefs=True)
+        self.base_url = base_url
+        self.base_host = host_of(base_url)
+        self.active: list[tuple[str, str, bool, list[str]]] = []
+        self.links: list[CrawledLink] = []
+        self.truncated = False
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag != "a":
+            return
+        values = dict(attrs)
+        href = values.get("href") or ""
+        self.active.append((href, values.get("rel") or "", False, []))
+
+    def handle_data(self, data: str) -> None:
+        for _, _, _, parts in self.active:
+            parts.append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag != "a" or not self.active:
+            return
+        href, rel, _, parts = self.active.pop()
+        href = href.strip()
+        if not href or href.lower().startswith(
+            ("#", "javascript:", "mailto:", "tel:", "data:", "ftp:")
+        ):
+            return
+        try:
+            target = canonicalize_url(normalize_crawl_url(href, self.base_url))
+        except ValueError:
+            return
+        if not same_host(host_of(target), self.base_host):
+            return
+        if len(href) > MAX_URL_LENGTH or len(target) > MAX_URL_LENGTH:
+            self.truncated = True
+            return
+        if len(self.links) >= MAX_LINK_EVIDENCE_PER_PAGE:
+            self.truncated = True
+            return
+        anchor = " ".join("".join(parts).split()) or None
+        if anchor and len(anchor) > MAX_CONTENT_LENGTH:
+            anchor = (
+                anchor[: MAX_CONTENT_LENGTH - len(CONTENT_TRUNCATION_MARKER)]
+                + CONTENT_TRUNCATION_MARKER
+            )
+            self.truncated = True
+        self.links.append(CrawledLink(href, target, anchor, "nofollow" in rel.lower().split(), 1))
+
+
+def extract_internal_link_evidence(html: str, base_url: str) -> tuple[list[CrawledLink], bool]:
+    """Extract bounded same-host anchor facts without changing crawl traversal."""
+    parser = _AnchorEvidenceParser(base_url)
+    parser.feed(html)
+    parser.close()
+    return parser.links, parser.truncated
 
 
 def _parse_content_type(response: httpx.Response) -> str | None:
@@ -755,6 +829,11 @@ class CrawlEngine:
                 signals = extract_page_signals(
                     response.text, http_status, observed_url, robots_directives
                 )
+            link_evidence, link_evidence_truncated = (
+                extract_internal_link_evidence(response.text, observed_url)
+                if is_html and response.text
+                else ([], False)
+            )
 
             extra_issues: list[str] = []
             if observed_url_too_long:
@@ -782,6 +861,8 @@ class CrawlEngine:
                 robots_directives=robots_directives,
                 internal_links=signals.get("internal_links", []),
                 external_links=signals.get("external_links", []),
+                internal_link_evidence=link_evidence,
+                internal_link_evidence_truncated=link_evidence_truncated,
                 word_count=signals.get("word_count"),
                 structured_data_present=signals.get("structured_data_present", False),
                 content_hash=signals.get("content_hash"),

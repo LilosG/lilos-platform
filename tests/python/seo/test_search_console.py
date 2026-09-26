@@ -9,7 +9,7 @@ connected connection with the Search Console scope granted directly.
 import json
 from collections.abc import Callable, Sequence
 from datetime import UTC, date, datetime, timedelta, timezone
-from typing import cast
+from typing import TypedDict, cast
 from urllib.parse import parse_qs, urlsplit
 from uuid import UUID, uuid4
 
@@ -38,6 +38,7 @@ from apps.api.app.products.seo.models import (
 )
 from apps.api.app.products.seo.page_evidence import read_page_evidence
 from apps.api.app.products.seo.page_identity import resolve_page
+from apps.api.app.products.seo.page_intelligence import read_page_intelligence
 from apps.api.app.products.seo.search_console_adapter import (
     DiscoveredSearchProperty,
     GoogleSearchConsoleAdapter,
@@ -55,6 +56,23 @@ from apps.api.app.reporting_periods import (
     provider_start_date,
     reporting_window,
 )
+
+
+class _PageEvidenceSection(TypedDict):
+    items: list[dict[str, object]]
+    has_more: bool
+
+
+class _GSCPageEvidence(TypedDict):
+    availability: str
+    search_property_id: UUID | None
+    window_quality: str | None
+    period_start: datetime | None
+    period_end: datetime | None
+    page: _PageEvidenceSection
+    website_unresolved: _PageEvidenceSection
+    website_query_only: _PageEvidenceSection
+    properties: _PageEvidenceSection
 
 
 def make_settings() -> Settings:
@@ -402,6 +420,16 @@ async def test_gsc_page_query_and_query_only_mapping_contract(
         assert len(query_only) == 3
         assert all(row.page_id is None and row.mapping_state == "unknown" for row in query_only)
         assert all(row.website_id == website.id for row in query_only)
+        intelligence = await read_page_intelligence(session, org.id, website.id, page.id)
+        assert intelligence is not None
+        gsc = cast(_GSCPageEvidence, intelligence["gsc"])
+        assert gsc["availability"] == "observed"
+        assert len(gsc["page"]["items"]) == 2
+        assert gsc["website_unresolved"]["items"] == []
+        assert len(gsc["website_query_only"]["items"]) == 1
+        assert gsc["website_query_only"]["items"][0]["query"] == "service query"
+        assert {item["query"] for item in gsc["page"]["items"]} == {None, "service query"}
+        assert all(item["period_end"] == gsc["period_end"] for item in gsc["page"]["items"])
         non_page = [
             row
             for row in rows
@@ -496,6 +524,212 @@ async def test_gsc_page_query_and_query_only_mapping_contract(
 
 @pytest.mark.integration
 @pytest.mark.anyio
+async def test_page_intelligence_uses_only_authoritative_gsc_property_window(
+    seo_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with seo_session_factory.begin() as session:
+        org = await make_organization(session)
+        website = await make_website(session, org.id, "https://example.com/")
+        page = await make_page(session, org.id, website.id, "https://example.com/service")
+        connection = await make_connected_google_connection(
+            session,
+            make_settings(),
+            org.id,
+            http_handler=token_handler("https://www.googleapis.com/auth/webmasters.readonly"),
+        )
+        replaced = SEOSearchProperty(
+            organization_id=org.id,
+            website_id=website.id,
+            connection_id=connection.id,
+            provider="google_search_console",
+            external_property_id="sc-domain:old.example.com",
+            property_type="domain",
+            mapping_status="replaced",
+            freshness_status="stale",
+        )
+        mapped = SEOSearchProperty(
+            organization_id=org.id,
+            website_id=website.id,
+            connection_id=connection.id,
+            provider="google_search_console",
+            external_property_id="sc-domain:example.com",
+            property_type="domain",
+            mapping_status="mapped",
+            freshness_status="fresh",
+        )
+        session.add_all([replaced, mapped])
+        await session.flush()
+        current_start = datetime(2026, 8, 1, tzinfo=UTC)
+        newer_start = current_start + timedelta(days=1)
+
+        def observation(
+            prop: SEOSearchProperty,
+            start: datetime,
+            kind: str,
+            clicks: int,
+            *,
+            query: str | None = None,
+            raw_page: str | None = None,
+        ) -> SEOSearchObservation:
+            dims: dict[str, object] = {"observation_type": kind}
+            if raw_page:
+                dims["page"] = raw_page
+            if query:
+                dims["query"] = query
+            return SEOSearchObservation(
+                organization_id=org.id,
+                search_property_id=prop.id,
+                website_id=website.id,
+                page_id=page.id if raw_page == page.normalized_url else None,
+                mapping_state=(
+                    "mapped"
+                    if raw_page == page.normalized_url
+                    else "unmapped"
+                    if raw_page
+                    else "unknown"
+                    if query
+                    else None
+                ),
+                query=query,
+                date_start=start,
+                date_end=start + timedelta(days=28),
+                dimensions=dims,
+                dimension_hash=uuid4().hex,
+                clicks=clicks,
+                impressions=clicks * 2,
+                ctr=0.5,
+                position=8,
+                quality_status="valid",
+                partial=False,
+            )
+
+        session.add_all(
+            [
+                observation(mapped, current_start, "site_summary", 4),
+                observation(mapped, current_start, "top_page", 2, raw_page=page.normalized_url),
+                observation(
+                    mapped, current_start, "top_page", 1, raw_page="https://example.com/unresolved"
+                ),
+                observation(mapped, current_start, "top_query", 3, query="site query"),
+                observation(replaced, newer_start, "site_summary", 99),
+                observation(replaced, newer_start, "top_page", 99, raw_page=page.normalized_url),
+            ]
+        )
+        await session.flush()
+        intelligence = await read_page_intelligence(session, org.id, website.id, page.id)
+        assert intelligence is not None
+        gsc = cast(_GSCPageEvidence, intelligence["gsc"])
+        assert gsc["availability"] == "observed"
+        assert gsc["search_property_id"] == mapped.id
+        assert gsc["window_quality"] == "valid"
+        assert gsc["period_start"] == current_start
+        assert gsc["period_end"] == current_start + timedelta(days=28)
+        assert [item["clicks"] for item in gsc["page"]["items"]] == [2]
+        assert [item["clicks"] for item in gsc["website_unresolved"]["items"]] == [1]
+        assert [item["query"] for item in gsc["website_query_only"]["items"]] == ["site query"]
+        assert {
+            item["search_property_id"]
+            for section in (gsc["page"], gsc["website_unresolved"], gsc["website_query_only"])
+            for item in section["items"]
+        } == {mapped.id}
+        assert gsc["properties"]["items"][0]["freshness"] == "fresh"
+
+
+@pytest.mark.integration
+@pytest.mark.anyio
+async def test_page_intelligence_gsc_window_availability_without_page_rows(
+    seo_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with seo_session_factory.begin() as session:
+        org = await make_organization(session)
+        website = await make_website(session, org.id, "https://example.com/")
+        page = await make_page(session, org.id, website.id, "https://example.com/service")
+        connection = await make_connected_google_connection(
+            session,
+            make_settings(),
+            org.id,
+            http_handler=token_handler("https://www.googleapis.com/auth/webmasters.readonly"),
+        )
+        prop = SEOSearchProperty(
+            organization_id=org.id,
+            website_id=website.id,
+            connection_id=connection.id,
+            provider="google_search_console",
+            external_property_id="sc-domain:example.com",
+            property_type="domain",
+            mapping_status="mapped",
+            freshness_status="fresh",
+        )
+        session.add(prop)
+        await session.flush()
+        start = datetime(2026, 8, 1, tzinfo=UTC)
+        end = start + timedelta(days=28)
+
+        async def read_gsc() -> _GSCPageEvidence:
+            intelligence = await read_page_intelligence(session, org.id, website.id, page.id)
+            assert intelligence is not None
+            return cast(_GSCPageEvidence, intelligence["gsc"])
+
+        missing = await read_gsc()
+        assert missing["availability"] == "unavailable"
+        assert missing["window_quality"] is None
+        assert missing["period_start"] is None
+
+        summary = SEOSearchObservation(
+            organization_id=org.id,
+            search_property_id=prop.id,
+            website_id=website.id,
+            date_start=start,
+            date_end=end,
+            dimensions={"observation_type": "site_summary"},
+            dimension_hash=uuid4().hex,
+            clicks=0,
+            impressions=0,
+            ctr=0,
+            position=0,
+            quality_status="zero",
+            partial=False,
+        )
+        session.add(summary)
+        await session.flush()
+        zero = await read_gsc()
+        assert zero["availability"] == "observed"
+        assert zero["search_property_id"] == prop.id
+        assert zero["window_quality"] == "zero"
+        assert zero["period_start"] == start
+        assert zero["period_end"] == end
+        assert zero["page"]["items"] == []
+        assert zero["website_unresolved"]["items"] == []
+
+        query = SEOSearchObservation(
+            organization_id=org.id,
+            search_property_id=prop.id,
+            website_id=website.id,
+            mapping_state="unknown",
+            query="service query",
+            date_start=start,
+            date_end=end,
+            dimensions={"observation_type": "top_query", "query": "service query"},
+            dimension_hash=uuid4().hex,
+            clicks=0,
+            impressions=1,
+            ctr=0,
+            position=12,
+            quality_status="valid",
+            partial=False,
+        )
+        session.add(query)
+        await session.flush()
+        query_only = await read_gsc()
+        assert query_only["availability"] == "observed"
+        assert query_only["page"]["items"] == []
+        assert [row["query"] for row in query_only["website_query_only"]["items"]] == [
+            "service query"
+        ]
+
+
+@pytest.mark.integration
+@pytest.mark.anyio
 async def test_gsc_page_rows_use_chunked_upserts_without_per_row_selects(
     seo_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
@@ -569,6 +803,16 @@ async def test_gsc_page_rows_use_chunked_upserts_without_per_row_selects(
             )
         )
         assert len(page_rows) == 630
+        intelligence = await read_page_intelligence(session, org.id, website.id, page.id)
+        assert intelligence is not None
+        gsc = cast(_GSCPageEvidence, intelligence["gsc"])
+        assert len(gsc["page"]["items"]) == 50
+        assert gsc["page"]["has_more"] is True
+        assert len(gsc["website_unresolved"]["items"]) == 50
+        assert gsc["website_unresolved"]["has_more"] is True
+        assert all(
+            item["mapping_state"] == "unmapped" for item in gsc["website_unresolved"]["items"]
+        )
         assert all(row.website_id == website.id and row.page_id == page.id for row in page_rows)
 
 

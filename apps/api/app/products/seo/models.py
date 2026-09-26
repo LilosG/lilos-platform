@@ -209,6 +209,75 @@ class SEOCrawlPageObservation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class SEOInternalLinkObservation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """One source-page link observed in one crawl run, with exact target resolution."""
+
+    __tablename__ = "seo_internal_link_observations"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["organization_id", "website_id", "crawl_run_id"],
+            ["seo_crawl_runs.organization_id", "seo_crawl_runs.website_id", "seo_crawl_runs.id"],
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "website_id", "source_page_id"],
+            ["seo_pages.organization_id", "seo_pages.website_id", "seo_pages.id"],
+            name="fk_seo_internal_links_source_page",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "website_id", "target_page_id"],
+            ["seo_pages.organization_id", "seo_pages.website_id", "seo_pages.id"],
+            name="fk_seo_internal_links_target_page",
+            ondelete="RESTRICT",
+        ),
+        UniqueConstraint(
+            "crawl_run_id",
+            "source_page_id",
+            "link_fingerprint",
+            name="uq_seo_internal_link_run_source_fingerprint",
+        ),
+        CheckConstraint("occurrence_count > 0", name="positive_occurrence_count"),
+        CheckConstraint(
+            "(mapping_state = 'mapped' AND target_page_id IS NOT NULL) OR "
+            "(mapping_state IN ('unmapped','ambiguous','unknown') AND target_page_id IS NULL)",
+            name="target_mapping_consistent",
+        ),
+        Index(
+            "ix_seo_internal_links_org_website_run_source",
+            "organization_id",
+            "website_id",
+            "crawl_run_id",
+            "source_page_id",
+        ),
+        Index(
+            "ix_seo_internal_links_org_website_run_target",
+            "organization_id",
+            "website_id",
+            "crawl_run_id",
+            "target_page_id",
+        ),
+    )
+    organization_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    )
+    website_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    crawl_run_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    source_page_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    target_page_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
+    raw_href: Mapped[str] = mapped_column(Text, nullable=False)
+    normalized_target_url: Mapped[str] = mapped_column(Text, nullable=False)
+    anchor_text: Mapped[str | None] = mapped_column(Text)
+    nofollow: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    occurrence_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    link_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    mapping_state: Mapped[str] = mapped_column(String(16), nullable=False)
+    mapping_basis: Mapped[str | None] = mapped_column(String(32))
+    resolver_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    mapping_limitation: Mapped[str | None] = mapped_column(Text)
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class SEOSearchObservation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "seo_search_observations"
     __table_args__ = (

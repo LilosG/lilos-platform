@@ -13,6 +13,7 @@ from apps.api.app.products.seo.crawl_engine import (
     CrawlEngine,
     CrawlReport,
     canonicalize_url,
+    extract_internal_link_evidence,
     extract_page_signals,
     is_disallowed,
     normalize_crawl_url,
@@ -20,6 +21,25 @@ from apps.api.app.products.seo.crawl_engine import (
     parse_sitemap,
     parse_sitemap_index,
 )
+
+
+def test_internal_link_evidence_keeps_anchor_text_nofollow_and_exact_url() -> None:
+    html = (
+        '<a href="/service?x=1" rel="nofollow">Good <strong>service</strong></a>'
+        '<a href="/service?x=1" rel="nofollow">Good <em>service</em></a>'
+        '<a href="/service">Other</a>'
+        '<a href="https://foreign.test/out">Foreign</a>'
+    )
+    links, truncated = extract_internal_link_evidence(html, "https://example.test/old")
+    assert not truncated
+    assert len(links) == 3
+    assert [link.normalized_target_url for link in links] == [
+        "https://example.test/service?x=1",
+        "https://example.test/service?x=1",
+        "https://example.test/service",
+    ]
+    assert links[0].anchor_text == links[1].anchor_text == "Good service"
+    assert links[0].nofollow and links[1].nofollow and not links[2].nofollow
 
 
 def _repeat(text: str, count: int) -> str:

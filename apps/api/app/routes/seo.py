@@ -25,7 +25,7 @@ from apps.api.app.products.seo.contracts import (
     SearchPropertySelect,
     WebsiteCreate,
 )
-from apps.api.app.products.seo.errors import SEOCrawlRunNotFoundError
+from apps.api.app.products.seo.errors import SEOCrawlRunNotFoundError, SEOWebsiteNotFoundError
 from apps.api.app.products.seo.models import (
     SEOCrawlPageObservation,
     SEOCrawlRun,
@@ -38,6 +38,7 @@ from apps.api.app.products.seo.models import (
     SEOWebsite,
 )
 from apps.api.app.products.seo.orchestration import SEOOrchestrationService
+from apps.api.app.products.seo.page_intelligence import read_page_intelligence
 from apps.api.app.products.seo.search_console_service import SearchConsoleService
 from apps.api.app.products.seo.service import SEOService
 from apps.api.app.routes.health import settings_from_request
@@ -508,6 +509,24 @@ async def list_crawl_pages(
         "data": [page_row(item) for item in items],
         "meta": {**meta(request), "evidence_status": evidence_status},
     }
+
+
+@router.get(
+    "/websites/{website_id}/pages/{page_id}/intelligence",
+    dependencies=[Depends(no_store)],
+)
+async def get_page_intelligence(
+    request: Request,
+    organization_id: UUID,
+    website_id: UUID,
+    page_id: UUID,
+    session: Session,
+    _: Annotated[AuthorizationDecision, policy("seo.read")],
+) -> dict[str, object]:
+    data = await read_page_intelligence(session, organization_id, website_id, page_id)
+    if data is None:
+        raise SEOWebsiteNotFoundError
+    return {"data": data, "meta": meta(request)}
 
 
 @router.get("/summary", dependencies=[Depends(no_store)])

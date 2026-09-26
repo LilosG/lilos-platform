@@ -131,6 +131,7 @@ from apps.api.app.products.reviews.models import (
 from apps.api.app.products.seo.models import (
     SEOCrawlRun,
     SEOImplementationTask,
+    SEOInternalLinkObservation,
     SEOOpportunity,
     SEOOutcome,
     SEOPage,
@@ -244,6 +245,7 @@ for seo_model in (
     SEOSearchProperty,
     SEOPage,
     SEOCrawlRun,
+    SEOInternalLinkObservation,
     SEOSearchObservation,
     SEOOpportunity,
     SEORecommendationRevision,
