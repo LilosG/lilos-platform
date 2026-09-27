@@ -1,9 +1,11 @@
 """Protected evidence-driven SEO APIs."""
 
+from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Request, Response, status
+from fastapi import APIRouter, Depends, Query, Request, Response, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.app.access_control.enums import ScopeType
@@ -13,6 +15,13 @@ from apps.api.app.authorization.contracts import AuthorizationDecision
 from apps.api.app.authorization.dependencies import require_authorization
 from apps.api.app.database.session import get_database_session
 from apps.api.app.errors import request_correlation_id
+from apps.api.app.growth.measurement import (
+    METRIC_SPECS,
+    parse_verification_plan,
+    seo_page_periods,
+)
+from apps.api.app.growth.models import GrowthAction, GrowthInitiative
+from apps.api.app.products.analytics.models import AnalyticsProperty
 from apps.api.app.products.seo.contracts import (
     CrawlRequest,
     ImplementationTaskCreate,
@@ -25,7 +34,11 @@ from apps.api.app.products.seo.contracts import (
     SearchPropertySelect,
     WebsiteCreate,
 )
-from apps.api.app.products.seo.decision import growth_handoff, revision_decision
+from apps.api.app.products.seo.decision import (
+    growth_handoff,
+    recommendation_class,
+    revision_decision,
+)
 from apps.api.app.products.seo.errors import SEOCrawlRunNotFoundError, SEOWebsiteNotFoundError
 from apps.api.app.products.seo.models import (
     SEOCrawlPageObservation,
@@ -42,6 +55,10 @@ from apps.api.app.products.seo.orchestration import SEOOrchestrationService
 from apps.api.app.products.seo.page_intelligence import read_page_intelligence
 from apps.api.app.products.seo.search_console_service import SearchConsoleService
 from apps.api.app.products.seo.service import SEOService
+from apps.api.app.reporting_periods import (
+    GA4_SYNC_TAIL_EXCLUSION_DAYS,
+    GSC_SYNC_TAIL_EXCLUSION_DAYS,
+)
 from apps.api.app.routes.health import settings_from_request
 
 router = APIRouter(
@@ -102,6 +119,7 @@ def opportunity_row(item: SEOOpportunity) -> dict[str, object]:
         "website_id": str(item.website_id),
         "page_id": str(item.page_id) if item.page_id else None,
         "opportunity_type": item.opportunity_type,
+        "recommendation_class": recommendation_class(item),
         "priority_score": item.priority_score,
         "score_explanation": item.score_explanation,
         "evidence": item.evidence,
@@ -139,6 +157,8 @@ def recommendation_row(item: SEORecommendationRevision) -> dict[str, object]:
 def task_row(item: SEOImplementationTask) -> dict[str, object]:
     return {
         "id": str(item.id),
+        "recommendation_revision_id": str(item.recommendation_revision_id),
+        "workflow_run_id": str(item.workflow_run_id),
         "target_type": item.target_type,
         "target_reference": item.target_reference,
         "status": item.status,
@@ -150,11 +170,444 @@ def task_row(item: SEOImplementationTask) -> dict[str, object]:
 def outcome_row(item: SEOOutcome) -> dict[str, object]:
     return {
         "id": str(item.id),
+        "implementation_task_id": str(item.implementation_task_id),
         "classification": item.classification,
         "metrics": item.metrics,
         "limitations": item.limitations,
+        "baseline_start": item.baseline_start,
+        "baseline_end": item.baseline_end,
         "measurement_start": item.measurement_start,
         "measurement_end": item.measurement_end,
+    }
+
+
+@router.get("/workspace", dependencies=[Depends(no_store)])
+async def search_intelligence_workspace(
+    request: Request,
+    organization_id: UUID,
+    session: Session,
+    _: Annotated[AuthorizationDecision, policy("seo.read")],
+    website_id: UUID | None = None,
+    limit: int = Query(default=50, ge=1, le=50),
+    offset: int = Query(default=0, ge=0),
+) -> dict[str, object]:
+    """Bounded, scoped work projection over existing SEO and integration records."""
+    opportunities, has_more = await service.list_opportunities(
+        session, organization_id, website_id=website_id, limit=limit, offset=offset
+    )
+    websites = list(
+        await session.scalars(
+            select(SEOWebsite)
+            .where(SEOWebsite.organization_id == organization_id)
+            .order_by(SEOWebsite.name, SEOWebsite.id)
+            .limit(101)
+        )
+    )
+    opportunity_site_ids = {item.website_id for item in opportunities}
+    additional_sites = (
+        list(
+            await session.scalars(
+                select(SEOWebsite).where(
+                    SEOWebsite.organization_id == organization_id,
+                    SEOWebsite.id.in_(opportunity_site_ids - {item.id for item in websites}),
+                )
+            )
+        )
+        if opportunity_site_ids
+        else []
+    )
+    site_by_id = {item.id: item for item in [*websites, *additional_sites]}
+    page_ids = [item.page_id for item in opportunities if item.page_id is not None]
+    pages = (
+        list(
+            await session.scalars(
+                select(SEOPage).where(
+                    SEOPage.organization_id == organization_id, SEOPage.id.in_(page_ids)
+                )
+            )
+        )
+        if page_ids
+        else []
+    )
+    page_by_id = {item.id: item for item in pages}
+    opportunity_ids = [item.id for item in opportunities]
+    revisions = (
+        list(
+            await session.scalars(
+                select(SEORecommendationRevision)
+                .where(
+                    SEORecommendationRevision.organization_id == organization_id,
+                    SEORecommendationRevision.opportunity_id.in_(opportunity_ids),
+                )
+                .order_by(
+                    SEORecommendationRevision.created_at.desc(), SEORecommendationRevision.id.desc()
+                )
+                .limit(5001)
+            )
+        )
+        if opportunity_ids
+        else []
+    )
+    latest_revision: dict[UUID, SEORecommendationRevision] = {}
+    for candidate_revision in revisions:
+        latest_revision.setdefault(candidate_revision.opportunity_id, candidate_revision)
+    revision_ids = [item.id for item in revisions]
+    revision_by_id = {item.id: item for item in revisions}
+    tasks = (
+        list(
+            await session.scalars(
+                select(SEOImplementationTask)
+                .where(
+                    SEOImplementationTask.organization_id == organization_id,
+                    SEOImplementationTask.recommendation_revision_id.in_(revision_ids),
+                )
+                .order_by(SEOImplementationTask.created_at.desc(), SEOImplementationTask.id.desc())
+                .limit(5001)
+            )
+        )
+        if revision_ids
+        else []
+    )
+    latest_task: dict[UUID, SEOImplementationTask] = {}
+    for candidate_task in tasks:
+        latest_task.setdefault(candidate_task.recommendation_revision_id, candidate_task)
+    task_ids = [item.id for item in latest_task.values()]
+    outcomes = (
+        list(
+            await session.scalars(
+                select(SEOOutcome)
+                .where(
+                    SEOOutcome.organization_id == organization_id,
+                    SEOOutcome.implementation_task_id.in_(task_ids),
+                )
+                .order_by(SEOOutcome.created_at.desc(), SEOOutcome.id.desc())
+                .limit(5001)
+            )
+        )
+        if task_ids
+        else []
+    )
+    latest_outcome: dict[UUID, SEOOutcome] = {}
+    for candidate_outcome in outcomes:
+        latest_outcome.setdefault(candidate_outcome.implementation_task_id, candidate_outcome)
+    task_by_id = {item.id: item for item in tasks}
+    learned_by_opportunity: dict[
+        UUID, tuple[SEORecommendationRevision, SEOImplementationTask, SEOOutcome]
+    ] = {}
+    for candidate_outcome in outcomes:
+        measured_task = task_by_id[candidate_outcome.implementation_task_id]
+        measured_revision = revision_by_id[measured_task.recommendation_revision_id]
+        learned_by_opportunity.setdefault(
+            measured_revision.opportunity_id, (measured_revision, measured_task, candidate_outcome)
+        )
+    target_references = [f"seo-page:{page_id}" for page_id in page_ids]
+    growth_pairs = (
+        list(
+            (
+                await session.execute(
+                    select(GrowthAction, GrowthInitiative)
+                    .join(
+                        GrowthInitiative,
+                        (GrowthInitiative.organization_id == GrowthAction.organization_id)
+                        & (GrowthInitiative.id == GrowthAction.initiative_id),
+                    )
+                    .where(
+                        GrowthAction.organization_id == organization_id,
+                        GrowthAction.target_reference.in_(target_references),
+                    )
+                    .order_by(GrowthAction.created_at.desc())
+                    .limit(501)
+                )
+            ).all()
+        )
+        if target_references
+        else []
+    )
+    growth_by_revision: dict[UUID, GrowthAction] = {}
+    for action, initiative in growth_pairs[:500]:
+        for ref in action.evidence_references:
+            if not str(ref).startswith("seo-recommendation:"):
+                continue
+            try:
+                revision_id = UUID(str(ref).split(":", 1)[1])
+            except ValueError:
+                continue
+            linked_revision = revision_by_id.get(revision_id)
+            linked_opportunity = (
+                next(
+                    (item for item in opportunities if item.id == linked_revision.opportunity_id),
+                    None,
+                )
+                if linked_revision
+                else None
+            )
+            if (
+                linked_opportunity is not None
+                and linked_revision is not None
+                and initiative.location_id == linked_opportunity.location_id
+                and action.target_reference == f"seo-page:{linked_opportunity.page_id}"
+                and action.expected_result_hypothesis == linked_revision.expected_result_hypothesis
+            ):
+                growth_by_revision.setdefault(revision_id, action)
+    active_by_page: dict[UUID, dict[str, str]] = {}
+    active_history_truncated = False
+    if page_ids:
+        approved_pairs = list(
+            (
+                await session.execute(
+                    select(SEORecommendationRevision, SEOOpportunity)
+                    .join(
+                        SEOOpportunity,
+                        (
+                            SEOOpportunity.organization_id
+                            == SEORecommendationRevision.organization_id
+                        )
+                        & (SEOOpportunity.id == SEORecommendationRevision.opportunity_id),
+                    )
+                    .where(
+                        SEORecommendationRevision.organization_id == organization_id,
+                        SEORecommendationRevision.status == "approved",
+                        SEOOpportunity.page_id.in_(page_ids),
+                    )
+                    .order_by(SEORecommendationRevision.created_at.desc())
+                    .limit(5001)
+                )
+            ).all()
+        )
+        active_history_truncated = len(approved_pairs) > 5000
+        active_revision_ids = [revision.id for revision, _ in approved_pairs]
+        active_tasks = (
+            list(
+                await session.scalars(
+                    select(SEOImplementationTask)
+                    .where(
+                        SEOImplementationTask.organization_id == organization_id,
+                        SEOImplementationTask.recommendation_revision_id.in_(active_revision_ids),
+                    )
+                    .order_by(SEOImplementationTask.created_at.desc())
+                    .limit(5001)
+                )
+            )
+            if active_revision_ids
+            else []
+        )
+        active_history_truncated = active_history_truncated or len(active_tasks) > 5000
+        active_task_by_revision: dict[UUID, SEOImplementationTask] = {}
+        for active_task in active_tasks:
+            active_task_by_revision.setdefault(active_task.recommendation_revision_id, active_task)
+        active_outcome_task_ids = (
+            list(
+                await session.scalars(
+                    select(SEOOutcome.implementation_task_id).where(
+                        SEOOutcome.organization_id == organization_id,
+                        SEOOutcome.implementation_task_id.in_([item.id for item in active_tasks]),
+                    )
+                )
+            )
+            if active_tasks
+            else []
+        )
+        measured_task_ids = set(active_outcome_task_ids)
+        for approved_revision, approved_opp in approved_pairs:
+            if (
+                approved_opp.page_id is None
+                or recommendation_class(approved_opp) != "growth_change"
+                or approved_opp.page_id in active_by_page
+            ):
+                continue
+            matching_active_task = active_task_by_revision.get(approved_revision.id)
+            if matching_active_task and matching_active_task.status in {"failed", "cancelled"}:
+                continue
+            if matching_active_task and matching_active_task.id in measured_task_ids:
+                continue
+            state = (
+                "approved_awaiting_implementation"
+                if matching_active_task is None
+                else "implemented_measuring"
+                if matching_active_task.verified_at
+                else "implementing"
+            )
+            active_by_page[approved_opp.page_id] = {
+                "revision_id": str(approved_revision.id),
+                "state": state,
+            }
+    readiness_site_ids = [item.id for item in websites[:100]]
+    gsc = (
+        list(
+            await session.scalars(
+                select(SEOSearchProperty).where(
+                    SEOSearchProperty.organization_id == organization_id,
+                    SEOSearchProperty.website_id.in_(readiness_site_ids),
+                )
+            )
+        )
+        if readiness_site_ids
+        else []
+    )
+    ga4 = (
+        list(
+            await session.scalars(
+                select(AnalyticsProperty).where(
+                    AnalyticsProperty.organization_id == organization_id,
+                    AnalyticsProperty.website_id.in_(readiness_site_ids),
+                )
+            )
+        )
+        if readiness_site_ids
+        else []
+    )
+    inventory_sites = (
+        set(
+            await session.scalars(
+                select(SEOPage.website_id)
+                .where(
+                    SEOPage.organization_id == organization_id,
+                    SEOPage.website_id.in_(readiness_site_ids),
+                )
+                .distinct()
+            )
+        )
+        if readiness_site_ids
+        else set()
+    )
+    readiness = []
+    for readiness_site in websites[:100]:
+        site_gsc = [
+            item
+            for item in gsc
+            if item.website_id == readiness_site.id and item.mapping_status == "mapped"
+        ]
+        site_ga4 = [
+            item
+            for item in ga4
+            if item.website_id == readiness_site.id and item.mapping_status == "mapped"
+        ]
+        readiness.append(
+            {
+                "website_id": str(readiness_site.id),
+                "website_name": readiness_site.name,
+                "location_id": str(readiness_site.location_id)
+                if readiness_site.location_id
+                else None,
+                "gsc": "fresh"
+                if any(item.freshness_status == "fresh" for item in site_gsc)
+                else "stale"
+                if site_gsc
+                else "unavailable",
+                "ga4": "fresh"
+                if any(item.freshness_status == "fresh" for item in site_ga4)
+                else "stale"
+                if site_ga4
+                else "unavailable",
+                "page_inventory": "observed"
+                if readiness_site.id in inventory_sites
+                else "unavailable",
+            }
+        )
+    rows = []
+    for opportunity in opportunities:
+        site = site_by_id.get(opportunity.website_id)
+        page = page_by_id.get(opportunity.page_id) if opportunity.page_id else None
+        if (
+            site is None
+            or site.location_id != opportunity.location_id
+            or (opportunity.page_id is not None and (page is None or page.website_id != site.id))
+        ):
+            continue
+        revision = latest_revision.get(opportunity.id)
+        task = latest_task.get(revision.id) if revision else None
+        outcome = latest_outcome.get(task.id) if task else None
+        learned = learned_by_opportunity.get(opportunity.id)
+        growth_action = growth_by_revision.get(revision.id) if revision else None
+        measurement: dict[str, object] | None = None
+        if revision and recommendation_class(opportunity) == "growth_change":
+            plan = (
+                parse_verification_plan(dict(growth_action.verification_plan or {}))
+                if growth_action
+                else None
+            )
+            if task and task.verified_at and plan:
+                baseline_start, baseline_end, measurement_start, measurement_end = seo_page_periods(
+                    task.verified_at, plan.window_days
+                )
+                tail = (
+                    GSC_SYNC_TAIL_EXCLUSION_DAYS
+                    if METRIC_SPECS[plan.metric].family == "gsc"
+                    else GA4_SYNC_TAIL_EXCLUSION_DAYS
+                )
+                measurement = {
+                    "metric": plan.metric,
+                    "baseline_start": baseline_start,
+                    "baseline_end": baseline_end,
+                    "measurement_start": measurement_start,
+                    "measurement_end": measurement_end,
+                    "maturity": "mature"
+                    if datetime.now(UTC) >= measurement_end + timedelta(days=tail)
+                    else "pending",
+                    "limitation": (
+                        "Page-level GA4 outcome measurement is unavailable."
+                        if METRIC_SPECS[plan.metric].family != "gsc"
+                        else None
+                    ),
+                }
+            else:
+                context = revision_decision(revision.evidence_references)
+                measurement = {
+                    "metric": context.get("target_metric") if context else None,
+                    "maturity": "unavailable",
+                    "limitation": (
+                        "Implementation is not verified."
+                        if not task or not task.verified_at
+                        else "No supported linked Growth measurement plan exists."
+                    ),
+                }
+        rows.append(
+            {
+                "opportunity": opportunity_row(opportunity),
+                "website": website_row(site),
+                "page": page_row(page) if page else None,
+                "recommendation": recommendation_row(revision) if revision else None,
+                "task": task_row(task) if task else None,
+                "outcome": outcome_row(outcome) if outcome else None,
+                "measurement": measurement,
+                "latest_measured": {
+                    "recommendation": recommendation_row(learned[0]),
+                    "task": task_row(learned[1]),
+                    "outcome": outcome_row(learned[2]),
+                }
+                if learned
+                else None,
+                "active_change": (
+                    active_by_page.get(opportunity.page_id)
+                    if opportunity.page_id and recommendation_class(opportunity) == "growth_change"
+                    else None
+                ),
+            }
+        )
+    return {
+        "data": {
+            "items": rows,
+            "readiness": readiness,
+            "readiness_has_more": len(websites) > 100,
+            "history_truncated": (
+                any(len(history) > 5000 for history in (revisions, tasks, outcomes))
+                or len(growth_pairs) > 500
+                or active_history_truncated
+            ),
+            "pagination": {
+                "limit": limit,
+                "offset": offset,
+                "next_offset": offset + limit if has_more else None,
+                "has_more": has_more,
+            },
+        },
+        "pagination": {
+            "limit": limit,
+            "offset": offset,
+            "next_offset": offset + limit if has_more else None,
+            "has_more": has_more,
+        },
+        "meta": meta(request),
     }
 
 

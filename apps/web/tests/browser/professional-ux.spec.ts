@@ -151,9 +151,10 @@ test.describe("SEO workspace tabs", () => {
   test("SEO workspace has tab navigation", async ({ page }) => {
     await page.goto("/seo");
     const tabs = page.locator("#seo-tabs .ui-tabs__tab");
-    await expect(tabs).toHaveCount(4);
+    await expect(tabs).toHaveCount(5);
     const tabLabels = await tabs.allTextContents();
     expect(tabLabels).toEqual([
+      "Search Intelligence",
       "Search performance",
       "Website health",
       "Crawl",

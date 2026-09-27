@@ -55,14 +55,16 @@ import "../styles/global.css";
         <Tabs
           id="seo-tabs"
           label="SEO workspace"
-          activeId="search-console"
+          activeId="intelligence"
           items={[
+            { id: "intelligence", label: "Search Intelligence" },
             { id: "search-console", label: "Search performance" },
             { id: "overview", label: "Website health" },
             { id: "crawl", label: "Crawl" },
             { id: "opportunities", label: "Opportunities" },
           ]}
         >
+          <Region id="tab-intelligence" tabPanel="intelligence" />
           <Region id="tab-overview" tabPanel="overview" />
           <Region id="tab-crawl" tabPanel="crawl" hidden />
           <Region id="tab-opportunities" tabPanel="opportunities" hidden />
@@ -82,6 +84,7 @@ import "../styles/global.css";
         fetchWebsites,
         fetchSEOSummary,
         fetchOpportunities,
+        fetchSearchIntelligenceWorkspace,
         fetchSearchProperties,
         fetchRecommendations,
         createRecommendation,
@@ -96,6 +99,7 @@ import "../styles/global.css";
         isSEOOpportunityActionable,
         type SEOCrawlRun,
       } from "../lib/seo";
+      import { renderSearchIntelligenceWorkspace } from "../lib/ui/search-intelligence";
       import { fetchSearchConsolePerformance } from "../lib/search-console";
       import { startWorkflowRun } from "../lib/workflows";
       import {
@@ -173,6 +177,7 @@ import "../styles/global.css";
         renderCrawl(websitesResult);
         renderOpportunities(oppsResult);
         renderSearchConsole(websitesResult);
+        void loadSearchIntelligence();
       }
 
       /** Re-read and re-render the current organization after a write. */
@@ -187,6 +192,35 @@ import "../styles/global.css";
         renderCrawl(websitesResult);
         renderOpportunities(oppsResult);
         renderSearchConsole(websitesResult);
+        void loadSearchIntelligence();
+      }
+
+      async function loadSearchIntelligence(offset = 0): Promise<void> {
+        const panel = document.getElementById("tab-intelligence")!;
+        const requestedOrganization = organizationId;
+        panel.replaceChildren(
+          Object.assign(document.createElement("p"), {
+            className: "ui-text-secondary",
+            textContent: "Loading Search Intelligence work…",
+          }),
+        );
+        const result = await fetchSearchIntelligenceWorkspace(
+          requestedOrganization,
+          offset,
+        );
+        if (organizationId !== requestedOrganization) return;
+        if (result.kind === "ok") {
+          renderSearchIntelligenceWorkspace(
+            panel,
+            result.data,
+            requestedOrganization,
+            (nextOffset) => void loadSearchIntelligence(nextOffset ?? 0),
+          );
+        } else {
+          panel.replaceChildren(
+            errorAlert(describeFailure(result, "Search Intelligence")),
+          );
+        }
       }
 
       function renderMetrics(
