@@ -533,11 +533,19 @@ async def test_content_handoff_remains_approval_bound() -> None:
     content = Content()
     orchestration = SEOOrchestrationService(seo=cast(Any, SEO()), content=cast(Any, content))
     args = (cast(Any, None), organization_id, revision)
-    kwargs = {"actor_id": uuid4(), "correlation_id": "test"}
-    assert await orchestration.handoff_approved_recommendation(*args, **kwargs) is None
+    actor_id = uuid4()
+    correlation_id = "test"
+    assert (
+        await orchestration.handoff_approved_recommendation(
+            *args, actor_id=actor_id, correlation_id=correlation_id
+        )
+        is None
+    )
     assert content.objective is None
     revision.status = "approved"
-    assert await orchestration.handoff_approved_recommendation(*args, **kwargs)
+    assert await orchestration.handoff_approved_recommendation(
+        *args, actor_id=actor_id, correlation_id=correlation_id
+    )
     assert content.objective is not None
     assert "Improve page copy" in content.objective
     assert "More relevant visits" in content.objective
