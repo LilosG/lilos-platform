@@ -73,7 +73,7 @@ def test_complete_product_skill_and_sanctioned_tool_plane() -> None:
         # Prompt versions are immutable execution provenance: a changed prompt
         # must receive a new version rather than rewriting what a prior run means.
         "gbp.operator": 5,
-        "seo.operator": 2,
+        "seo.operator": 3,
         "content.operator": 4,
         "leads.operator": 1,
         "reviews.operator": 3,
@@ -577,7 +577,14 @@ def test_run_site_crawl_denies_when_no_website_is_registered() -> None:
     asyncio.run(scenario())
 
 
-def test_seo_agent_opportunities_use_bound_scope_before_limiting() -> None:
+def test_seo_agent_opportunities_use_bound_scope_before_limiting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def decision_stub(*_args: object) -> dict[str, object]:
+        return {"passes": {}}
+
+    monkeypatch.setattr("apps.api.app.agents.tools.resolve_decision", decision_stub)
+
     async def scenario() -> None:
         organization_id, location_id = uuid4(), uuid4()
         scoped = SimpleNamespace(
@@ -595,8 +602,13 @@ def test_seo_agent_opportunities_use_bound_scope_before_limiting() -> None:
                 self, _session: object, org: object, **kwargs: object
             ) -> tuple[list[object], bool]:
                 assert org == organization_id
-                assert kwargs == {"location_scope": (location_id, None), "limit": 1}
+                assert kwargs == {"location_scope": (location_id,), "limit": 1}
                 return [scoped], True
+
+            async def list_recommendations(
+                self, _session: object, _org: object, _opportunity: object
+            ) -> list[object]:
+                return []
 
         service = AgentToolService()
         service.seo = cast(Any, FakeSEO())

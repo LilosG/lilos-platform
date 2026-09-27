@@ -24,6 +24,7 @@ from apps.api.app.audit.repository import AuditEventRepository
 from apps.api.app.audit.service import AuditEventService
 from apps.api.app.execution.models import Job, WorkflowRun
 from apps.api.app.execution.service import ExecutionService
+from apps.api.app.growth.models import GrowthAction, GrowthInitiative, GrowthOutcome
 from apps.api.app.insights.models import InsightSource, MetricDefinition, MetricObservation
 from apps.api.app.integrations.models import IntegrationConnection
 from apps.api.app.locations.models import Location
@@ -48,6 +49,11 @@ from apps.api.app.products.seo.crawl_engine import (
     CrawlReport,
     host_of,
     normalize_crawl_url,
+)
+from apps.api.app.products.seo.decision import (
+    SEOActiveChangeError,
+    SEOEvidenceInvalidError,
+    resolve_decision,
 )
 from apps.api.app.products.seo.errors import (
     SEOImplementationTaskNotFoundError,
@@ -1264,6 +1270,11 @@ class SEOService:
         correlation_id: str,
     ) -> SEORecommendationRevision:
         opportunity = await self.get_opportunity(session, organization_id, opportunity_id)
+        decision = await resolve_decision(
+            session, organization_id, opportunity, command.evidence_references
+        )
+        if decision["recommendation_class"] == "growth_change" and opportunity.page_id:
+            await self._check_active_growth_change(session, organization_id, opportunity)
         last = await session.scalar(
             select(SEORecommendationRevision.revision_number)
             .where(SEORecommendationRevision.opportunity_id == opportunity_id)
@@ -1275,7 +1286,7 @@ class SEOService:
             opportunity_id=opportunity_id,
             revision_number=(last or 0) + 1,
             proposed_action=command.proposed_action,
-            evidence_references=command.evidence_references,
+            evidence_references=[*command.evidence_references, {"decision_context": decision}],
             expected_result_hypothesis=command.expected_result_hypothesis,
             risk=command.risk,
             effort=command.effort,
@@ -1306,6 +1317,145 @@ class SEOService:
             context={"opportunity_id": str(opportunity.id), "revision_id": str(revision.id)},
         )
         return revision
+
+    async def _check_active_growth_change(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        opportunity: SEOOpportunity,
+        *,
+        excluding_revision_id: UUID | None = None,
+    ) -> None:
+        """Serialize page decisions and reject overlapping attributable growth work."""
+        if opportunity.page_id is None:
+            return
+        page = await session.scalar(
+            select(SEOPage)
+            .where(
+                SEOPage.organization_id == organization_id,
+                SEOPage.website_id == opportunity.website_id,
+                SEOPage.id == opportunity.page_id,
+            )
+            .with_for_update()
+        )
+        if page is None:
+            raise SEOEvidenceInvalidError("Page is outside the website scope")
+        rows = await session.execute(
+            select(SEORecommendationRevision, SEOOpportunity)
+            .join(
+                SEOOpportunity,
+                (SEOOpportunity.organization_id == SEORecommendationRevision.organization_id)
+                & (SEOOpportunity.id == SEORecommendationRevision.opportunity_id),
+            )
+            .where(
+                SEORecommendationRevision.organization_id == organization_id,
+                SEOOpportunity.website_id == opportunity.website_id,
+                SEOOpportunity.location_id == opportunity.location_id,
+                SEOOpportunity.page_id == opportunity.page_id,
+                SEORecommendationRevision.status == "approved",
+            )
+        )
+        for revision, other in rows:
+            if revision.id == excluding_revision_id or other.opportunity_type not in {
+                "gsc_striking_distance",
+                "gsc_low_ctr",
+                "gsc_query_demand",
+            }:
+                continue
+            task = await session.scalar(
+                select(SEOImplementationTask)
+                .where(
+                    SEOImplementationTask.organization_id == organization_id,
+                    SEOImplementationTask.recommendation_revision_id == revision.id,
+                )
+                .order_by(SEOImplementationTask.created_at.desc())
+                .limit(1)
+            )
+            if task is None:
+                state = "approved_awaiting_implementation"
+            elif task.status in {"failed", "cancelled"}:
+                continue
+            elif task.verified_at is None:
+                state = "implementing"
+            else:
+                outcome = await session.scalar(
+                    select(SEOOutcome.id)
+                    .where(
+                        SEOOutcome.organization_id == organization_id,
+                        SEOOutcome.implementation_task_id == task.id,
+                    )
+                    .limit(1)
+                )
+                if outcome is not None:
+                    continue
+                state = "implemented_measuring"
+            raise SEOActiveChangeError(revision.id, state)
+
+        growth_rows = await session.execute(
+            select(GrowthAction)
+            .join(
+                GrowthInitiative,
+                (GrowthInitiative.organization_id == GrowthAction.organization_id)
+                & (GrowthInitiative.id == GrowthAction.initiative_id),
+            )
+            .where(
+                GrowthAction.organization_id == organization_id,
+                GrowthInitiative.location_id == opportunity.location_id,
+                GrowthAction.target_reference == f"seo-page:{opportunity.page_id}",
+                GrowthAction.status.in_(
+                    ("approved", "queued", "running", "waiting_approval", "completed")
+                ),
+            )
+        )
+        for action in growth_rows.scalars():
+            cited_revisions = [
+                str(ref)
+                for ref in action.evidence_references
+                if str(ref).startswith("seo-recommendation:")
+            ]
+            if (
+                excluding_revision_id
+                and f"seo-recommendation:{excluding_revision_id}" in cited_revisions
+            ):
+                continue
+            attributable = bool(action.verification_plan.get("metric"))
+            for reference in cited_revisions:
+                try:
+                    cited_id = UUID(reference.split(":", 1)[1])
+                except ValueError:
+                    continue
+                cited_revision = await session.scalar(
+                    select(SEORecommendationRevision).where(
+                        SEORecommendationRevision.organization_id == organization_id,
+                        SEORecommendationRevision.id == cited_id,
+                    )
+                )
+                if cited_revision and any(
+                    isinstance(ref, dict)
+                    and isinstance(ref.get("decision_context"), dict)
+                    and ref["decision_context"].get("recommendation_class") == "growth_change"
+                    for ref in cited_revision.evidence_references
+                ):
+                    attributable = True
+            if not attributable:
+                continue
+            if action.status == "completed":
+                outcome = await session.scalar(
+                    select(GrowthOutcome.id)
+                    .where(
+                        GrowthOutcome.organization_id == organization_id,
+                        GrowthOutcome.action_id == action.id,
+                    )
+                    .limit(1)
+                )
+                if outcome is not None:
+                    continue
+                state = "implemented_measuring"
+            elif action.status == "approved":
+                state = "approved_awaiting_implementation"
+            else:
+                state = "implementing"
+            raise SEOActiveChangeError(action.id, state)
 
     async def list_recommendations(
         self, session: AsyncSession, organization_id: UUID, opportunity_id: UUID
@@ -1355,6 +1505,35 @@ class SEOService:
             or opportunity.status != "recommended"
         ):
             raise SEORecommendationNotDecidableError
+        latest = await session.scalar(
+            select(SEORecommendationRevision.id)
+            .where(
+                SEORecommendationRevision.organization_id == organization_id,
+                SEORecommendationRevision.opportunity_id == opportunity.id,
+            )
+            .order_by(SEORecommendationRevision.revision_number.desc())
+            .limit(1)
+        )
+        if latest != revision.id:
+            raise SEORecommendationNotDecidableError
+        if command.approve:
+            refs = revision.evidence_references
+            context = (
+                refs[-1].get("decision_context") if refs and isinstance(refs[-1], dict) else None
+            )
+            if not isinstance(context, dict):
+                raise SEOEvidenceInvalidError("Recommendation has no governed evidence snapshot")
+            current = await resolve_decision(
+                session, organization_id, opportunity, [str(ref) for ref in refs[:-1]]
+            )
+            if current != context:
+                raise SEOEvidenceInvalidError(
+                    "Recommendation evidence has changed; create a new revision"
+                )
+            if current["recommendation_class"] == "growth_change" and opportunity.page_id:
+                await self._check_active_growth_change(
+                    session, organization_id, opportunity, excluding_revision_id=revision.id
+                )
         revision.status = "approved" if command.approve else "rejected"
         if command.approve:
             revision.approved_by_user_id = user_id

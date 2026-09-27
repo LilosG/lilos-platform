@@ -48,6 +48,12 @@ from apps.api.app.products.gbp.service import GBPService
 from apps.api.app.products.leads.service import LeadService
 from apps.api.app.products.reviews.service import ReviewService
 from apps.api.app.products.seo.contracts import CrawlRequest, RecommendationCreate
+from apps.api.app.products.seo.decision import (
+    SEOEvidenceInvalidError,
+    growth_handoff,
+    resolve_decision,
+    revision_decision,
+)
 from apps.api.app.products.seo.search_console_service import SearchConsoleService
 from apps.api.app.products.seo.service import SEOService
 
@@ -900,26 +906,66 @@ class AgentToolService:
         rows, has_more = await self.seo.list_opportunities(
             session,
             run.organization_id,
-            location_scope=(run.location_id, None),
+            location_scope=(run.location_id,),
             limit=limit,
         )
+        opportunities = []
+        approved_handoffs = []
+        for item in rows:
+            source_ref = f"seo-opportunity:{item.id}"
+            try:
+                decision = await resolve_decision(session, run.organization_id, item, [source_ref])
+            except SEOEvidenceInvalidError as exc:
+                decision = {
+                    "availability": "unavailable",
+                    "limitation": str(exc),
+                    "passes": {
+                        name: {
+                            "availability": "unavailable",
+                            "limitation": "Scoped persisted evidence is unavailable.",
+                        }
+                        for name in ("access", "competition", "answer_engines", "conversion")
+                    },
+                }
+            opportunities.append(
+                {
+                    "reference": source_ref,
+                    "opportunity_type": item.opportunity_type,
+                    "status": item.status,
+                    "priority_score": item.priority_score,
+                    "score_explanation": item.score_explanation,
+                    "evidence": item.evidence,
+                    "source_versions": item.source_versions,
+                    "governed_decision": decision,
+                }
+            )
+            for revision in await self.seo.list_recommendations(
+                session, run.organization_id, item.id
+            ):
+                if revision.status != "approved":
+                    continue
+                context = revision_decision(revision.evidence_references)
+                if context is not None:
+                    approved_handoffs.append(
+                        growth_handoff(
+                            revision.id,
+                            revision.status,
+                            revision.expected_result_hypothesis,
+                            revision.proposed_action,
+                            context,
+                        )
+                    )
+                break
         return {
             "data": {
-                "opportunities": [
-                    {
-                        "reference": f"seo-opportunity:{item.id}",
-                        "opportunity_type": item.opportunity_type,
-                        "status": item.status,
-                        "priority_score": item.priority_score,
-                        "score_explanation": item.score_explanation,
-                        "evidence": item.evidence,
-                        "source_versions": item.source_versions,
-                    }
-                    for item in rows
-                ],
+                "opportunities": opportunities,
+                "approved_growth_handoffs": approved_handoffs,
                 "has_more": has_more,
             },
-            "source_references": [f"seo-opportunity:{item.id}" for item in rows],
+            "source_references": [
+                *[f"seo-opportunity:{item.id}" for item in rows],
+                *[str(handoff["source_reference"]) for handoff in approved_handoffs],
+            ],
         }
 
     async def _tool_create_seo_recommendation_proposal(
@@ -927,7 +973,7 @@ class AgentToolService:
     ) -> dict[str, object]:
         opportunity_id = _uuid(arguments.get("opportunity_id"), "opportunity_id")
         opportunity = await self.seo.get_opportunity(session, run.organization_id, opportunity_id)
-        if opportunity.location_id is not None and opportunity.location_id != run.location_id:
+        if opportunity.location_id != run.location_id:
             raise AgentToolDeniedError("SEO opportunity is outside the bound location")
         source_ref = f"seo-opportunity:{opportunity.id}"
         requested_refs = self._observed_source_references(
@@ -954,8 +1000,21 @@ class AgentToolService:
             correlation_id=run.correlation_id,
         )
         ref = f"seo-recommendation:{revision.id}"
+        context = revision_decision(revision.evidence_references)
         return {
-            "data": {"status": revision.status},
+            "data": {
+                "status": revision.status,
+                "governed_decision": context,
+                "growth_handoff": growth_handoff(
+                    revision.id,
+                    revision.status,
+                    revision.expected_result_hypothesis,
+                    revision.proposed_action,
+                    context,
+                )
+                if context
+                else None,
+            },
             "source_references": [source_ref],
             "proposal_references": [ref],
         }
