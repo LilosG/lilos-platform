@@ -28,9 +28,11 @@ from apps.api.app.products.gbp.operations_models import (
     GBPPostRevision,
 )
 from apps.api.app.products.reviews.models import ReviewResponseRevision
+from apps.api.app.products.seo.decision import revision_decision
 from apps.api.app.products.seo.models import (
     SEOCrawlRun,
     SEOImplementationTask,
+    SEOOpportunity,
     SEORecommendationRevision,
 )
 
@@ -303,6 +305,8 @@ class GrowthArtifactLifecycleService:
             return GrowthArtifactState("failed", "missing", "DOWNSTREAM_ARTIFACT_MISSING")
         if revision.status == "rejected":
             return GrowthArtifactState("rejected", revision.status, "DOWNSTREAM_PROPOSAL_REJECTED")
+        if revision.status != "approved":
+            return GrowthArtifactState("pending", revision.status)
         task = await session.scalar(
             select(SEOImplementationTask)
             .where(
@@ -314,7 +318,36 @@ class GrowthArtifactLifecycleService:
         )
         if task is None:
             return GrowthArtifactState("pending", revision.status)
-        if task.status == "verified" or task.verified_at is not None:
+        opportunity = await session.scalar(
+            select(SEOOpportunity).where(
+                SEOOpportunity.organization_id == organization_id,
+                SEOOpportunity.id == revision.opportunity_id,
+            )
+        )
+        context = revision_decision(revision.evidence_references)
+        if opportunity is None or context is None:
+            return GrowthArtifactState("pending", "unresolved", "DOWNSTREAM_SCOPE_UNAVAILABLE")
+        expected_target = (
+            f"seo-page:{opportunity.page_id}"
+            if opportunity.page_id
+            else f"seo-opportunity:{opportunity.id}"
+        )
+        if (
+            context.get("organization_id") != str(organization_id)
+            or context.get("website_id") != str(opportunity.website_id)
+            or context.get("location_id")
+            != (str(opportunity.location_id) if opportunity.location_id else None)
+            or context.get("page_id") != (str(opportunity.page_id) if opportunity.page_id else None)
+            or task.target_reference != expected_target
+        ):
+            return GrowthArtifactState("pending", "unresolved", "DOWNSTREAM_SCOPE_UNAVAILABLE")
+        proof = task.verification_evidence or {}
+        recheck = proof.get("current_recheck")
+        if isinstance(recheck, dict) and recheck.get("result") != "verified":
+            return GrowthArtifactState(
+                "pending", "verification_contested", "DOWNSTREAM_VERIFICATION_CONTRADICTED"
+            )
+        if task.status == "verified" and task.verified_at is not None:
             return GrowthArtifactState("succeeded", "verified")
         if task.status in {"failed", "cancelled"}:
             return GrowthArtifactState("failed", task.status, "DOWNSTREAM_EXECUTION_FAILED")

@@ -1274,18 +1274,40 @@ def test_recommendation_approval_execution_and_outcome_flow(
     assert decision.status_code == 200
     assert decision.json()["data"]["status"] == "approved"
 
+    wrong_page = client.post(
+        f"{base}/recommendations/{revision_id}/tasks",
+        headers=HEADERS,
+        json={
+            "workflow_run_id": str(ids["workflow_run_2"]),
+            "target_type": "page",
+            "target_reference": f"seo-page:{uuid4()}",
+        },
+    )
+    assert wrong_page.status_code == 409
+
     task = client.post(
         f"{base}/recommendations/{revision_id}/tasks",
         headers=HEADERS,
         json={
             "workflow_run_id": str(ids["workflow_run_2"]),
-            "target_type": "page_title",
-            "target_reference": "https://example.test/broken",
+            "target_type": "page",
+            "target_reference": f"seo-page:{opportunities[0]['page_id']}",
         },
     )
     assert task.status_code == 201, task.text
     task_id = task.json()["data"]["id"]
     assert task.json()["data"]["status"] == "pending"
+    repeated_task = client.post(
+        f"{base}/recommendations/{revision_id}/tasks",
+        headers=HEADERS,
+        json={
+            "workflow_run_id": str(ids["workflow_run_2"]),
+            "target_type": "page",
+            "target_reference": f"seo-page:{opportunities[0]['page_id']}",
+        },
+    )
+    assert repeated_task.status_code == 201, repeated_task.text
+    assert repeated_task.json()["data"]["id"] == task_id
 
     verify = client.post(
         f"{base}/tasks/{task_id}/verify",
@@ -1293,7 +1315,16 @@ def test_recommendation_approval_execution_and_outcome_flow(
         json={"verification_evidence": {"title_present": True}},
     )
     assert verify.status_code == 200
-    assert verify.json()["data"]["status"] == "verified"
+    assert verify.json()["data"]["status"] == "implementing"
+    assert verify.json()["data"]["verified_at"] is None
+    assert verify.json()["data"]["verification_evidence"]["result"] == "pending"
+    repeated_verify = client.post(
+        f"{base}/tasks/{task_id}/verify",
+        headers=HEADERS,
+        json={"verification_evidence": {"deployment_verified": True}},
+    )
+    assert repeated_verify.status_code == 200
+    assert repeated_verify.json()["data"]["status"] == "implementing"
 
     now = datetime.now(UTC)
     outcome = client.post(
@@ -1309,8 +1340,7 @@ def test_recommendation_approval_execution_and_outcome_flow(
             "limitations": ["short_measurement_window"],
         },
     )
-    assert outcome.status_code == 201, outcome.text
-    assert outcome.json()["data"]["classification"] == "improved"
+    assert outcome.status_code == 409, outcome.text
 
 
 @pytest.mark.integration

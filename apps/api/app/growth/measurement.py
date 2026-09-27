@@ -24,7 +24,12 @@ from apps.api.app.growth.models import GrowthAction, GrowthInitiative, GrowthOut
 from apps.api.app.growth.service import GrowthStateError
 from apps.api.app.insights.models import InsightSource, MetricDefinition, MetricObservation
 from apps.api.app.products.analytics.models import AnalyticsProperty
+from apps.api.app.products.seo.decision import revision_decision
 from apps.api.app.products.seo.models import (
+    SEOImplementationTask,
+    SEOOpportunity,
+    SEOOutcome,
+    SEORecommendationRevision,
     SEOSearchObservation,
     SEOSearchProperty,
     SEOWebsite,
@@ -91,6 +96,7 @@ class MetricWindow:
     expected_rows: int
     source_count: int
     provider: str
+    evidence_references: tuple[str, ...] = ()
 
     @property
     def complete(self) -> bool:
@@ -170,6 +176,20 @@ def utc_day_after(value: datetime) -> datetime:
     return day + timedelta(days=1)
 
 
+def seo_page_periods(
+    verified_at: datetime, window_days: int
+) -> tuple[datetime, datetime, datetime, datetime]:
+    """Use complete UTC days, excluding the verification day from both windows."""
+    measurement_start = utc_day_after(verified_at)
+    baseline_end = measurement_start - timedelta(days=1)
+    return (
+        baseline_end - timedelta(days=window_days),
+        baseline_end,
+        measurement_start,
+        measurement_start + timedelta(days=window_days),
+    )
+
+
 class GrowthMeasurementService:
     """Persist human-entered and scheduler-measured Growth outcomes."""
 
@@ -196,6 +216,8 @@ class GrowthMeasurementService:
             raise GrowthStateError("growth action not found")
         if action.status != "completed":
             raise GrowthStateError("only completed growth actions may be measured")
+        if self._seo_reference(action) is not None:
+            raise GrowthStateError("SEO-linked outcomes require deterministic page measurement")
         return await self._persist(
             session,
             action,
@@ -255,9 +277,14 @@ class GrowthMeasurementService:
             if existing is not None:
                 continue
 
+            seo_reference = self._seo_reference(action)
             plan = parse_verification_plan(dict(action.verification_plan or {}))
             if plan is None:
-                manual += 1
+                if seo_reference is not None:
+                    action.safe_error_code = "SEO_MEASUREMENT_PLAN_UNAVAILABLE"
+                    pending += 1
+                else:
+                    manual += 1
                 continue
             initiative = await session.scalar(
                 select(GrowthInitiative).where(
@@ -269,8 +296,34 @@ class GrowthMeasurementService:
                 manual += 1
                 continue
 
-            measurement_start = utc_day_after(action.completed_at)
-            measurement_end = measurement_start + timedelta(days=plan.window_days)
+            seo_link = None
+            if seo_reference is not None:
+                seo_link = await self._verified_seo_link(session, action, initiative.location_id)
+                if seo_link is None:
+                    action.safe_error_code = "SEO_IMPLEMENTATION_UNVERIFIED"
+                    pending += 1
+                    continue
+                task, opportunity = seo_link
+                if opportunity.page_id is None:
+                    # Query-only demand is never a page-level outcome.
+                    action.safe_error_code = "SEO_PAGE_MAPPING_UNAVAILABLE"
+                    pending += 1
+                    continue
+                action.safe_error_code = None
+
+            verified_at = seo_link[0].verified_at if seo_link is not None else action.completed_at
+            if verified_at is None:
+                pending += 1
+                continue
+            if seo_link is not None:
+                baseline_start, baseline_end, measurement_start, measurement_end = seo_page_periods(
+                    verified_at, plan.window_days
+                )
+            else:
+                measurement_start = utc_day_after(verified_at)
+                measurement_end = measurement_start + timedelta(days=plan.window_days)
+                baseline_end = measurement_start
+                baseline_start = baseline_end - timedelta(days=plan.window_days)
             tail_days = (
                 GSC_SYNC_TAIL_EXCLUSION_DAYS
                 if METRIC_SPECS[plan.metric].family == "gsc"
@@ -281,14 +334,14 @@ class GrowthMeasurementService:
                 pending += 1
                 continue
 
-            baseline_start = measurement_start - timedelta(days=plan.window_days)
             baseline = await self._metric_window(
                 session,
                 action.organization_id,
                 initiative.location_id,
                 plan.metric,
                 baseline_start,
-                measurement_start,
+                baseline_end,
+                seo_target=seo_link[1] if seo_link is not None else None,
             )
             measurement = await self._metric_window(
                 session,
@@ -297,6 +350,7 @@ class GrowthMeasurementService:
                 plan.metric,
                 measurement_start,
                 measurement_end,
+                seo_target=seo_link[1] if seo_link is not None else None,
             )
 
             limitations = [
@@ -315,6 +369,9 @@ class GrowthMeasurementService:
                 limitations.append(
                     "The provider metric may not isolate the action target by itself."
                 )
+            if seo_link is not None:
+                limitations.pop()  # page-scoped evidence is required for SEO outcomes
+                limitations.append("Observed change does not establish causality.")
 
             if not baseline.complete or not measurement.complete:
                 grace_deadline = ready_at + timedelta(days=MEASUREMENT_DATA_GRACE_DAYS)
@@ -334,6 +391,7 @@ class GrowthMeasurementService:
                     actor_id=None,
                     correlation_id=f"growth-measurement-{action.id}"[:64],
                     automated=True,
+                    seo_task=seo_link[0] if seo_link is not None else None,
                 )
                 measured += 1
                 inconclusive += 1
@@ -366,6 +424,7 @@ class GrowthMeasurementService:
                 actor_id=None,
                 correlation_id=f"growth-measurement-{action.id}"[:64],
                 automated=True,
+                seo_task=seo_link[0] if seo_link is not None else None,
             )
             measured += 1
 
@@ -385,8 +444,21 @@ class GrowthMeasurementService:
         metric: str,
         start: datetime,
         end: datetime,
+        seo_target: SEOOpportunity | None = None,
     ) -> MetricWindow:
         spec = METRIC_SPECS[metric]
+        if seo_target is not None:
+            if spec.family != "gsc" or seo_target.page_id is None:
+                return MetricWindow(None, start, end, Decimal("0"), 0, 0, 0, spec.family)
+            return await self._gsc_page_window(
+                session,
+                organization_id,
+                location_id,
+                seo_target,
+                spec.source_key,
+                start,
+                end,
+            )
         if spec.family == "gsc":
             return await self._gsc_window(
                 session, organization_id, location_id, spec.source_key, start, end
@@ -425,19 +497,16 @@ class GrowthMeasurementService:
         if not property_ids:
             return MetricWindow(None, start, end, Decimal("0"), 0, 0, 0, "google_search_console")
 
-        observations = list(
-            await session.scalars(
-                select(SEOSearchObservation).where(
-                    SEOSearchObservation.organization_id == organization_id,
-                    SEOSearchObservation.search_property_id.in_(property_ids),
-                    SEOSearchObservation.date_start >= start,
-                    SEOSearchObservation.date_start < end,
-                    SEOSearchObservation.partial.is_(False),
-                    SEOSearchObservation.quality_status == "valid",
-                    SEOSearchObservation.dimensions.op("->>")("observation_type") == "daily",
-                )
-            )
+        observation_query = select(SEOSearchObservation).where(
+            SEOSearchObservation.organization_id == organization_id,
+            SEOSearchObservation.search_property_id.in_(property_ids),
+            SEOSearchObservation.date_start >= start,
+            SEOSearchObservation.date_start < end,
+            SEOSearchObservation.partial.is_(False),
+            SEOSearchObservation.quality_status == "valid",
+            SEOSearchObservation.dimensions.op("->>")("observation_type") == "daily",
         )
+        observations = list(await session.scalars(observation_query))
         observed_keys = {(item.search_property_id, item.date_start.date()) for item in observations}
         coverage = (
             Decimal(len(observed_keys)) / Decimal(expected_rows) if expected_rows else Decimal("0")
@@ -471,6 +540,120 @@ class GrowthMeasurementService:
             expected_rows,
             len(property_ids),
             "google_search_console",
+            tuple(f"seo-search-observation:{item.id}" for item in observations),
+        )
+
+    async def _gsc_page_window(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        location_id: UUID | None,
+        target: SEOOpportunity,
+        field: str,
+        start: datetime,
+        end: datetime,
+    ) -> MetricWindow:
+        properties = list(
+            await session.scalars(
+                select(SEOSearchProperty)
+                .join(
+                    SEOWebsite,
+                    (SEOWebsite.organization_id == SEOSearchProperty.organization_id)
+                    & (SEOWebsite.id == SEOSearchProperty.website_id),
+                )
+                .where(
+                    SEOSearchProperty.organization_id == organization_id,
+                    SEOSearchProperty.website_id == target.website_id,
+                    SEOSearchProperty.mapping_status == "mapped",
+                    SEOWebsite.location_id == location_id,
+                )
+            )
+        )
+        property_ids = [item.id for item in properties]
+        if not property_ids or target.page_id is None:
+            return MetricWindow(None, start, end, Decimal("0"), 0, 0, 0, "google_search_console")
+        if len(property_ids) != 1:
+            # Domain and URL-prefix properties can overlap for the same page.
+            return MetricWindow(
+                None,
+                start,
+                end,
+                Decimal("0"),
+                0,
+                len(property_ids),
+                len(property_ids),
+                "google_search_console",
+            )
+        if any(
+            item.freshness_status != "fresh"
+            or item.last_synced_at is None
+            or item.last_synced_at < end
+            for item in properties
+        ):
+            return MetricWindow(
+                None,
+                start,
+                end,
+                Decimal("0"),
+                0,
+                len(properties),
+                len(properties),
+                "google_search_console",
+            )
+        rows = list(
+            await session.scalars(
+                select(SEOSearchObservation).where(
+                    SEOSearchObservation.organization_id == organization_id,
+                    SEOSearchObservation.website_id == target.website_id,
+                    SEOSearchObservation.page_id == target.page_id,
+                    SEOSearchObservation.search_property_id.in_(property_ids),
+                    SEOSearchObservation.mapping_state == "mapped",
+                    SEOSearchObservation.query.is_(None),
+                    SEOSearchObservation.date_start == start,
+                    SEOSearchObservation.date_end == end,
+                    SEOSearchObservation.partial.is_(False),
+                    SEOSearchObservation.quality_status == "valid",
+                    SEOSearchObservation.dimensions.op("->>")("observation_type") == "page",
+                )
+            )
+        )
+        # A page-period row is a complete provider window; require every mapped
+        # property and never substitute query-only or site-wide observations.
+        coverage = Decimal(len({row.search_property_id for row in rows})) / Decimal(
+            len(property_ids)
+        )
+        value: Decimal | None = None
+        if len(rows) == len(property_ids):
+            clicks = sum((Decimal(row.clicks or 0) for row in rows), Decimal("0"))
+            impressions = sum((Decimal(row.impressions or 0) for row in rows), Decimal("0"))
+            if field == "clicks":
+                value = clicks
+            elif field == "impressions":
+                value = impressions
+            elif field == "ctr":
+                value = clicks / impressions if impressions else None
+            elif impressions:
+                value = (
+                    sum(
+                        (
+                            Decimal(str(row.position)) * Decimal(row.impressions or 0)
+                            for row in rows
+                            if row.position is not None
+                        ),
+                        Decimal("0"),
+                    )
+                    / impressions
+                )
+        return MetricWindow(
+            value,
+            start,
+            end,
+            coverage,
+            len(rows),
+            len(property_ids),
+            len(property_ids),
+            "google_search_console",
+            tuple(f"seo-search-observation:{row.id}" for row in rows),
         )
 
     async def _ga4_window(
@@ -582,7 +765,82 @@ class GrowthMeasurementService:
             "source_count": window.source_count,
             "provider": window.provider,
             "window_days": plan.window_days,
+            "metric_policy_version": "growth_measurement.v1",
+            "evidence_references": list(window.evidence_references),
         }
+
+    @staticmethod
+    def _seo_reference(action: GrowthAction) -> UUID | None:
+        refs = [
+            str(ref)
+            for ref in action.evidence_references
+            if str(ref).startswith("seo-recommendation:")
+        ]
+        if len(refs) != 1:
+            return None
+        try:
+            return UUID(refs[0].split(":", 1)[1])
+        except ValueError:
+            return None
+
+    async def _verified_seo_link(
+        self, session: AsyncSession, action: GrowthAction, location_id: UUID | None
+    ) -> tuple[SEOImplementationTask, SEOOpportunity] | None:
+        revision_id = self._seo_reference(action)
+        if revision_id is None:
+            return None
+        pair = await session.execute(
+            select(SEORecommendationRevision, SEOOpportunity)
+            .join(
+                SEOOpportunity,
+                (SEOOpportunity.organization_id == SEORecommendationRevision.organization_id)
+                & (SEOOpportunity.id == SEORecommendationRevision.opportunity_id),
+            )
+            .where(
+                SEORecommendationRevision.organization_id == action.organization_id,
+                SEORecommendationRevision.id == revision_id,
+                SEORecommendationRevision.status == "approved",
+                SEOOpportunity.location_id == location_id,
+            )
+        )
+        row = pair.first()
+        if row is None:
+            return None
+        revision, opportunity = row
+        context = revision_decision(revision.evidence_references)
+        if (
+            context is None
+            or context.get("organization_id") != str(action.organization_id)
+            or context.get("website_id") != str(opportunity.website_id)
+            or context.get("location_id") != (str(location_id) if location_id else None)
+            or context.get("page_id") != (str(opportunity.page_id) if opportunity.page_id else None)
+            or action.target_reference
+            != (
+                f"seo-page:{opportunity.page_id}"
+                if opportunity.page_id
+                else f"seo-opportunity:{opportunity.id}"
+            )
+            or action.expected_result_hypothesis != revision.expected_result_hypothesis
+        ):
+            return None
+        task = await session.scalar(
+            select(SEOImplementationTask)
+            .where(
+                SEOImplementationTask.organization_id == action.organization_id,
+                SEOImplementationTask.recommendation_revision_id == revision.id,
+                SEOImplementationTask.target_reference == action.target_reference,
+                SEOImplementationTask.status == "verified",
+                SEOImplementationTask.verified_at.is_not(None),
+            )
+            .limit(1)
+        )
+        if task is None:
+            return None
+        proof = task.verification_evidence or {}
+        recheck = proof.get("current_recheck")
+        if isinstance(recheck, dict) and recheck.get("result") != "verified":
+            return None
+        return task, opportunity
 
     async def _persist(
         self,
@@ -596,7 +854,18 @@ class GrowthMeasurementService:
         actor_id: UUID | None,
         correlation_id: str,
         automated: bool,
+        seo_task: SEOImplementationTask | None = None,
     ) -> GrowthOutcome:
+        existing = await session.scalar(
+            select(GrowthOutcome)
+            .where(
+                GrowthOutcome.organization_id == action.organization_id,
+                GrowthOutcome.action_id == action.id,
+            )
+            .limit(1)
+        )
+        if existing is not None:
+            return existing
         outcome = GrowthOutcome(
             organization_id=action.organization_id,
             action_id=action.id,
@@ -607,6 +876,34 @@ class GrowthMeasurementService:
         )
         session.add(outcome)
         await session.flush()
+        if seo_task is not None:
+            projection = await session.scalar(
+                select(SEOOutcome)
+                .where(
+                    SEOOutcome.organization_id == action.organization_id,
+                    SEOOutcome.implementation_task_id == seo_task.id,
+                )
+                .limit(1)
+            )
+            if projection is None:
+                session.add(
+                    SEOOutcome(
+                        organization_id=action.organization_id,
+                        implementation_task_id=seo_task.id,
+                        baseline_start=datetime.fromisoformat(str(baseline["period_start"])),
+                        baseline_end=datetime.fromisoformat(str(baseline["period_end"])),
+                        measurement_start=datetime.fromisoformat(str(measurement["period_start"])),
+                        measurement_end=datetime.fromisoformat(str(measurement["period_end"])),
+                        classification=classification,
+                        metrics={
+                            "growth_outcome_id": str(outcome.id),
+                            "baseline": baseline,
+                            "measurement": measurement,
+                        },
+                        limitations=limitations,
+                    )
+                )
+                await session.flush()
         await self.audit.record(
             session,
             AuditEventCreate(

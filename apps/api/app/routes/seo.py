@@ -677,6 +677,26 @@ async def decide_recommendation(
             actor_id=principal.platform_user_id,
             correlation_id=correlation_id,
         )
+        if workflow_run_id is not None:
+            opportunity = await service.get_opportunity(
+                session, organization_id, item.opportunity_id
+            )
+            await service.create_implementation_task(
+                session,
+                organization_id,
+                item.id,
+                ImplementationTaskCreate(
+                    workflow_run_id=UUID(workflow_run_id),
+                    target_type="page" if opportunity.page_id else "opportunity",
+                    target_reference=(
+                        f"seo-page:{opportunity.page_id}"
+                        if opportunity.page_id
+                        else f"seo-opportunity:{opportunity.id}"
+                    ),
+                ),
+                actor_id=principal.platform_user_id,
+                correlation_id=correlation_id,
+            )
     response_meta = meta(request)
     if workflow_run_id is not None:
         response_meta = {
