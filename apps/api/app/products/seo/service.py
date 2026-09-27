@@ -54,6 +54,7 @@ from apps.api.app.products.seo.decision import (
     SEOActiveChangeError,
     SEOEvidenceInvalidError,
     resolve_decision,
+    revision_decision,
 )
 from apps.api.app.products.seo.errors import (
     SEOImplementationTaskNotFoundError,
@@ -77,6 +78,7 @@ from apps.api.app.products.seo.models import (
     SEOWebsite,
 )
 from apps.api.app.products.seo.page_identity import RESOLVER_VERSION, PageResolver
+from apps.api.app.products.seo.verification import read_implementation_truth
 from apps.api.app.reporting_periods import GA4_SYNC_TAIL_EXCLUSION_DAYS, reporting_window
 
 BUSINESS_POLICY_VERSION = "business_importance.v1"
@@ -1564,17 +1566,57 @@ class SEOService:
         correlation_id: str,
     ) -> SEOImplementationTask:
         revision = await session.scalar(
-            select(SEORecommendationRevision).where(
+            select(SEORecommendationRevision)
+            .where(
                 SEORecommendationRevision.organization_id == organization_id,
                 SEORecommendationRevision.id == revision_id,
                 SEORecommendationRevision.status == "approved",
             )
+            .with_for_update()
         )
         if not revision:
             raise SEORecommendationNotFoundError
-        workflow_run = await self.execution.resolve_for_consumption(
-            session, organization_id, command.workflow_run_id, "seo.crawl_or_analysis"
+        opportunity = await self.get_opportunity(session, organization_id, revision.opportunity_id)
+        context = revision_decision(revision.evidence_references)
+        if (
+            context is None
+            or context.get("organization_id") != str(organization_id)
+            or context.get("website_id") != str(opportunity.website_id)
+            or context.get("location_id")
+            != (str(opportunity.location_id) if opportunity.location_id else None)
+            or context.get("page_id") != (str(opportunity.page_id) if opportunity.page_id else None)
+        ):
+            raise SEOEvidenceInvalidError("Approved target identity is unavailable")
+        expected_target = (
+            f"seo-page:{opportunity.page_id}"
+            if opportunity.page_id
+            else f"seo-opportunity:{opportunity.id}"
         )
+        expected_type = "page" if opportunity.page_id else "opportunity"
+        if command.target_reference != expected_target or command.target_type != expected_type:
+            raise SEOEvidenceInvalidError("Implementation target differs from approved decision")
+        existing = await session.scalar(
+            select(SEOImplementationTask)
+            .where(
+                SEOImplementationTask.organization_id == organization_id,
+                SEOImplementationTask.recommendation_revision_id == revision.id,
+            )
+            .limit(1)
+        )
+        if existing is not None:
+            if existing.target_reference != expected_target:
+                raise SEOEvidenceInvalidError("Existing implementation task has another target")
+            return existing
+        workflow_key = (
+            "agent.content"
+            if context.get("recommendation_class") == "growth_change"
+            else "seo.crawl_or_analysis"
+        )
+        workflow_run = await self.execution.resolve_for_consumption(
+            session, organization_id, command.workflow_run_id, workflow_key
+        )
+        if workflow_run.location_id != opportunity.location_id:
+            raise SEOEvidenceInvalidError("Implementation workflow is outside the location scope")
         task = SEOImplementationTask(
             organization_id=organization_id,
             recommendation_revision_id=revision.id,
@@ -1589,7 +1631,7 @@ class SEOService:
             session,
             event="seo.implementation_task.created",
             organization_id=organization_id,
-            location_id=None,
+            location_id=opportunity.location_id,
             actor_id=actor_id,
             resource_type="seo_opportunity",
             resource_id=revision.opportunity_id,
@@ -1619,21 +1661,67 @@ class SEOService:
         )
         if not task:
             raise SEOImplementationTaskNotFoundError
-        task.status = "verified"
-        task.verification_evidence = command.verification_evidence
-        task.verified_at = datetime.now(UTC)
+        revision = await session.scalar(
+            select(SEORecommendationRevision).where(
+                SEORecommendationRevision.organization_id == organization_id,
+                SEORecommendationRevision.id == task.recommendation_revision_id,
+            )
+        )
+        if revision is None:
+            raise SEORecommendationNotFoundError
+        opportunity = await self.get_opportunity(session, organization_id, revision.opportunity_id)
+        if task.status == "verified" and task.verified_at is not None:
+            current = await read_implementation_truth(session, task, revision, opportunity)
+            observed = current.get("observed_at")
+            if (
+                current.get("result") != "verified"
+                and isinstance(observed, str)
+                and datetime.fromisoformat(observed) > task.verified_at
+            ):
+                # Keep the original successful proof and timestamp immutable;
+                # surface later contradictory page evidence alongside them.
+                original = dict(task.verification_evidence or {})
+                original["current_recheck"] = current
+                task.verification_evidence = original
+                await session.flush()
+            return task
+        # The caller's JSON is never implementation evidence. Keep the route
+        # shape compatible while deriving truth solely from persisted records.
+        del command
+        proof = await read_implementation_truth(session, task, revision, opportunity)
+        result = proof["result"]
+        task.verification_evidence = proof
+        if result == "verified" and isinstance(proof.get("observed_at"), str):
+            task.status = "verified"
+            task.verified_at = datetime.fromisoformat(str(proof["observed_at"]))
+        elif result == "failed":
+            task.status = "verification_failed"
+        elif result == "pending":
+            workflow_state = proof.get("actual", {})
+            status = (
+                workflow_state.get("workflow_status") if isinstance(workflow_state, dict) else None
+            )
+            task.status = (
+                "implementing"
+                if status == "running"
+                else "pending"
+                if status in {"queued", "retry_scheduled"}
+                else "verification_pending"
+            )
+        else:
+            task.status = "verification_pending"
         await session.flush()
         await self._audit(
             session,
-            event="seo.implementation_task.verified",
+            event="seo.implementation_task.verification_checked",
             organization_id=organization_id,
-            location_id=None,
+            location_id=opportunity.location_id,
             actor_id=actor_id,
             resource_type="seo_implementation_task",
             resource_id=task.id,
             correlation_id=correlation_id,
-            summary="SEO implementation task verified.",
-            metadata={},
+            summary=f"SEO implementation verification: {result}.",
+            metadata={"result": str(result), "policy_version": proof["policy_version"]},
         )
         return task
 
@@ -1659,40 +1747,10 @@ class SEOService:
         actor_id: UUID | None,
         correlation_id: str,
     ) -> SEOOutcome:
-        task = await session.scalar(
-            select(SEOImplementationTask).where(
-                SEOImplementationTask.organization_id == organization_id,
-                SEOImplementationTask.id == task_id,
-            )
+        del session, organization_id, task_id, command, actor_id, correlation_id
+        raise SEOEvidenceInvalidError(
+            "SEO outcomes are projected from verified Growth measurement, not caller assertions"
         )
-        if not task:
-            raise SEOImplementationTaskNotFoundError
-        outcome = SEOOutcome(
-            organization_id=organization_id,
-            implementation_task_id=task.id,
-            baseline_start=datetime.fromisoformat(command.baseline_start),
-            baseline_end=datetime.fromisoformat(command.baseline_end),
-            measurement_start=datetime.fromisoformat(command.measurement_start),
-            measurement_end=datetime.fromisoformat(command.measurement_end),
-            classification=command.classification,
-            metrics=command.metrics,
-            limitations=command.limitations,
-        )
-        session.add(outcome)
-        await session.flush()
-        await self._audit(
-            session,
-            event="seo.outcome.recorded",
-            organization_id=organization_id,
-            location_id=None,
-            actor_id=actor_id,
-            resource_type="seo_implementation_task",
-            resource_id=task.id,
-            correlation_id=correlation_id,
-            summary=f"SEO outcome recorded: {outcome.classification}.",
-            metadata={"outcome_id": str(outcome.id)},
-        )
-        return outcome
 
     async def local_landing_page_gaps(
         self, session: AsyncSession, organization_id: UUID, website_id: UUID

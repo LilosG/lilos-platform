@@ -34,10 +34,33 @@ def test_verified_gbp_post_is_terminal_success() -> None:
 def test_approved_seo_recommendation_waits_for_verified_implementation() -> None:
     organization_id = uuid4()
     revision_id = uuid4()
-    revision = SimpleNamespace(id=revision_id, status="approved")
-    implementation = SimpleNamespace(status="pending", verified_at=None)
+    opportunity_id, website_id, location_id, page_id = (uuid4() for _ in range(4))
+    revision = SimpleNamespace(
+        id=revision_id,
+        status="approved",
+        opportunity_id=opportunity_id,
+        evidence_references=[
+            {
+                "decision_context": {
+                    "organization_id": str(organization_id),
+                    "website_id": str(website_id),
+                    "location_id": str(location_id),
+                    "page_id": str(page_id),
+                }
+            }
+        ],
+    )
+    implementation = SimpleNamespace(
+        status="pending",
+        verified_at=None,
+        target_reference=f"seo-page:{page_id}",
+        verification_evidence=None,
+    )
+    opportunity = SimpleNamespace(
+        id=opportunity_id, website_id=website_id, location_id=location_id, page_id=page_id
+    )
     session = MagicMock()
-    session.scalar = AsyncMock(side_effect=[revision, implementation])
+    session.scalar = AsyncMock(side_effect=[revision, implementation, opportunity])
 
     result = asyncio.run(
         GrowthArtifactLifecycleService().resolve(

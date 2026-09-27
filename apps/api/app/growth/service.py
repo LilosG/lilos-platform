@@ -192,6 +192,13 @@ class GrowthService:
                 raise GrowthPlanValidationError(
                     "Growth action does not match the approved SEO decision"
                 )
+            if context.get("recommendation_class") == "growth_change":
+                target_metric = context.get("target_metric")
+                proposed_metric = action.verification_plan.get("metric")
+                if target_metric != proposed_metric:
+                    raise GrowthPlanValidationError(
+                        "Growth measurement metric differs from the approved SEO decision"
+                    )
             try:
                 current = await resolve_decision(
                     session,
@@ -591,6 +598,17 @@ class GrowthService:
                 product_proposals = [
                     str(ref) for ref in proposals if not str(ref).startswith("growth-initiative:")
                 ]
+                seo_decisions = [
+                    str(ref)
+                    for ref in action.evidence_references
+                    if str(ref).startswith("seo-recommendation:")
+                ]
+                if seo_decisions:
+                    # The approved SEO revision and its implementation task own
+                    # execution truth. Agent completion only finishes delegation.
+                    action.status = "waiting_approval"
+                    action.result_reference = seo_decisions[0]
+                    continue
                 if product_proposals:
                     preferred_prefixes = (
                         "content-revision:",
