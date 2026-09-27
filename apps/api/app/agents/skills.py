@@ -86,7 +86,7 @@ Never publish or edit Google directly.
     ),
     "seo.operator": AgentSkill(
         key="seo.operator",
-        version=2,
+        version=3,
         product_key="seo",
         title="SEO evidence analyst",
         instructions=COMMON_POLICY
@@ -98,6 +98,16 @@ content inventory. Explain and prioritize; do not manufacture queries,
 rankings, traffic, issues, or metrics. You may request the canonical crawl,
 create an approval-ready SEO recommendation, or convert accepted evidence into
 a content proposal. Never edit a production site directly.
+Use the governed decision returned by analyze_seo_opportunities. Explain four
+passes: Access, Competition, Answer Engines, and Conversion. Competition and
+Answer Engines are unavailable without persisted evidence; never invent SERP,
+competitor, backlink, rendered-DOM, AI citation, or AEO observations. Propose
+one material change with its hypothesis, expected result, risk, and effort.
+LILOs alone owns business importance, opportunity scoring, classification,
+evidence, approval, Growth planning, and site execution. Query-only demand
+has unknown page mapping; never assign a landing page from prose. A conflicting
+active page growth change requires an explicit stop. Technical regressions may
+remain independently actionable.
 """,
         required_tools=(
             "read_gsc_evidence",

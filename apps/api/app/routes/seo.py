@@ -25,6 +25,7 @@ from apps.api.app.products.seo.contracts import (
     SearchPropertySelect,
     WebsiteCreate,
 )
+from apps.api.app.products.seo.decision import growth_handoff, revision_decision
 from apps.api.app.products.seo.errors import SEOCrawlRunNotFoundError, SEOWebsiteNotFoundError
 from apps.api.app.products.seo.models import (
     SEOCrawlPageObservation,
@@ -109,6 +110,7 @@ def opportunity_row(item: SEOOpportunity) -> dict[str, object]:
 
 
 def recommendation_row(item: SEORecommendationRevision) -> dict[str, object]:
+    context = revision_decision(item.evidence_references)
     return {
         "id": str(item.id),
         "revision_number": item.revision_number,
@@ -118,6 +120,19 @@ def recommendation_row(item: SEORecommendationRevision) -> dict[str, object]:
         "effort": item.effort,
         "status": item.status,
         "approved_by_user_id": str(item.approved_by_user_id) if item.approved_by_user_id else None,
+        "evidence_references": [ref for ref in item.evidence_references if isinstance(ref, str)],
+        "decision_context": context,
+        "growth_handoff": (
+            growth_handoff(
+                item.id,
+                item.status,
+                item.expected_result_hypothesis,
+                item.proposed_action,
+                context,
+            )
+            if context
+            else None
+        ),
     }
 
 

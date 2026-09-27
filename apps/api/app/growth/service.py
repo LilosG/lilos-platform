@@ -22,6 +22,14 @@ from apps.api.app.growth.contracts import GrowthPlanCreate
 from apps.api.app.growth.models import GrowthAction, GrowthInitiative
 from apps.api.app.products.content.contracts import OpportunityCreate
 from apps.api.app.products.content.service import ContentService
+from apps.api.app.products.seo.decision import (
+    SEOActiveChangeError,
+    SEOEvidenceInvalidError,
+    resolve_decision,
+    revision_decision,
+)
+from apps.api.app.products.seo.models import SEOOpportunity, SEORecommendationRevision
+from apps.api.app.products.seo.service import SEOService
 from apps.api.app.site_change_policy import is_technical_site_change
 
 # The planner coordinates product agents; it never jumps directly into a
@@ -138,6 +146,70 @@ class GrowthService:
         )
         if existing is not None:
             return existing
+
+        for action in command.actions:
+            recommendation_refs = [
+                ref for ref in action.evidence_references if ref.startswith("seo-recommendation:")
+            ]
+            if len(recommendation_refs) > 1:
+                raise GrowthPlanValidationError("One Growth action may cite only one SEO decision")
+            if not recommendation_refs:
+                continue
+            try:
+                revision_id = UUID(recommendation_refs[0].split(":", 1)[1])
+            except ValueError as exc:
+                raise GrowthPlanValidationError("SEO recommendation reference is invalid") from exc
+            pair = await session.execute(
+                select(SEORecommendationRevision, SEOOpportunity)
+                .join(
+                    SEOOpportunity,
+                    (SEOOpportunity.organization_id == SEORecommendationRevision.organization_id)
+                    & (SEOOpportunity.id == SEORecommendationRevision.opportunity_id),
+                )
+                .where(
+                    SEORecommendationRevision.organization_id == run.organization_id,
+                    SEORecommendationRevision.id == revision_id,
+                    SEOOpportunity.location_id == run.location_id,
+                )
+            )
+            row = pair.first()
+            if row is None:
+                raise GrowthPlanValidationError("SEO decision is outside this Growth scope")
+            revision, opportunity = row
+            context = revision_decision(revision.evidence_references)
+            expected_target = (
+                f"seo-page:{opportunity.page_id}"
+                if opportunity.page_id
+                else f"seo-opportunity:{opportunity.id}"
+            )
+            if (
+                revision.status != "approved"
+                or context is None
+                or action.target_reference != expected_target
+                or action.expected_result_hypothesis != revision.expected_result_hypothesis
+                or action.product_key not in {"seo", "content"}
+            ):
+                raise GrowthPlanValidationError(
+                    "Growth action does not match the approved SEO decision"
+                )
+            try:
+                current = await resolve_decision(
+                    session,
+                    run.organization_id,
+                    opportunity,
+                    [str(ref) for ref in revision.evidence_references[:-1]],
+                )
+                if current != context:
+                    raise GrowthPlanValidationError("SEO decision evidence has changed")
+                if context["recommendation_class"] == "growth_change":
+                    await SEOService()._check_active_growth_change(
+                        session,
+                        run.organization_id,
+                        opportunity,
+                        excluding_revision_id=revision.id,
+                    )
+            except (SEOEvidenceInvalidError, SEOActiveChangeError) as exc:
+                raise GrowthPlanValidationError(str(exc)) from exc
 
         initiative = GrowthInitiative(
             organization_id=run.organization_id,

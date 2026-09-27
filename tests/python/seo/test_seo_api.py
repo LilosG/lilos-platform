@@ -1258,7 +1258,7 @@ def test_recommendation_approval_execution_and_outcome_flow(
         headers=HEADERS,
         json={
             "proposed_action": "Add a descriptive title tag.",
-            "evidence_references": ["crawl-run"],
+            "evidence_references": [f"seo-opportunity:{opportunity_id}"],
             "expected_result_hypothesis": "Improved click-through rate from search results.",
             "risk": "low",
             "effort": "low",

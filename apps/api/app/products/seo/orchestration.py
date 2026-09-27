@@ -21,6 +21,7 @@ from apps.api.app.config import Settings
 from apps.api.app.products.content.contracts import OpportunityCreate
 from apps.api.app.products.content.service import ContentService
 from apps.api.app.products.seo.contracts import RecommendationCreate
+from apps.api.app.products.seo.decision import SEOEvidenceInvalidError
 from apps.api.app.products.seo.models import (
     SEOOpportunity,
     SEOPage,
@@ -245,6 +246,7 @@ class SEOOrchestrationService:
                     target_reference=f"{target}|{query}",
                     evidence={
                         "source": "google_search_console",
+                        "observation_id": str(observation.id),
                         "query": query,
                         "url": target,
                         "impressions": impressions,
@@ -286,6 +288,7 @@ class SEOOrchestrationService:
                     target_reference=f"{target}|{query}",
                     evidence={
                         "source": "google_search_console",
+                        "observation_id": str(observation.id),
                         "query": query,
                         "url": target,
                         "impressions": impressions,
@@ -331,6 +334,7 @@ class SEOOrchestrationService:
                     target_reference=query,
                     evidence={
                         "source": "google_search_console",
+                        "observation_id": str(observation.id),
                         "query": query,
                         "impressions": impressions,
                         "clicks": observation.clicks,
@@ -464,6 +468,8 @@ class SEOOrchestrationService:
         drafting, review, and publication. The mirrored Content opportunity is
         the durable handoff record between those domains.
         """
+        if revision.status != "approved":
+            return None
         opportunity = await self.seo.get_opportunity(
             session, organization_id, revision.opportunity_id
         )
@@ -749,21 +755,29 @@ class SEOOrchestrationService:
         )
         if existing is not None:
             return False
+        # PageSpeed's transient response has no persisted observation to cite.
+        if opportunity.evidence.get("source") == "google_pagespeed":
+            return False
         action, hypothesis, effort = self._recommendation_text(opportunity)
-        await self.seo.create_recommendation(
-            session,
-            organization_id,
-            opportunity.id,
-            RecommendationCreate(
-                proposed_action=action,
-                evidence_references=[f"seo-opportunity:{opportunity.id}"],
-                expected_result_hypothesis=hypothesis,
-                risk="low",
-                effort=effort,
-            ),
-            actor_id=None,
-            correlation_id=correlation_id,
-        )
+        try:
+            await self.seo.create_recommendation(
+                session,
+                organization_id,
+                opportunity.id,
+                RecommendationCreate(
+                    proposed_action=action,
+                    evidence_references=[f"seo-opportunity:{opportunity.id}"],
+                    expected_result_hypothesis=hypothesis,
+                    risk="low",
+                    effort=effort,
+                ),
+                actor_id=None,
+                correlation_id=correlation_id,
+            )
+        except SEOEvidenceInvalidError:
+            # Keep the opportunity visible; unresolved source evidence cannot
+            # produce an approval-ready material recommendation.
+            return False
         return True
 
     async def _mirror_to_content(
