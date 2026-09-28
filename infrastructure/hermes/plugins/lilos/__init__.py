@@ -50,9 +50,7 @@ SCHEMAS = {
             "effort": {"type": "string", "enum": ["low", "medium", "high"]},
         },
         [
-            "opportunity_id",
             "proposed_action",
-            "evidence_references",
             "expected_result_hypothesis",
             "risk",
             "effort",
@@ -242,7 +240,12 @@ DESCRIPTIONS = {
     "read_cross_product_summary": "Read the persisted cross-product operational summary.",
     "run_site_crawl": "Request the canonical LILOs crawl workflow.",
     "analyze_seo_opportunities": "Read opportunities produced by deterministic SEO detectors.",
-    "create_seo_recommendation_proposal": "Create an approval-waiting SEO recommendation.",
+    "create_seo_recommendation_proposal": (
+        "Create an approval-waiting SEO recommendation. For a bound Search Intelligence "
+        "opportunity, provide only proposed_action, expected_result_hypothesis, risk, and "
+        "effort; LILOs supplies the opportunity and evidence references. General SEO runs "
+        "must also provide an observed opportunity_id and evidence_references."
+    ),
     "create_content_proposal": "Convert an accepted opportunity into a governed Content item.",
     "create_content_brief": "Create a grounded Content brief from approved facts and evidence.",
     "generate_content_draft_proposal": (

@@ -249,6 +249,169 @@ def test_hermes_cannot_supply_authoritative_fields(forbidden: str) -> None:
 
 
 @pytest.mark.anyio
+async def test_bound_hermes_reads_only_selected_opportunity_and_uses_current_decision(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    opportunity = query_opportunity()
+    workflow = SimpleNamespace(input_document={"seo_opportunity_id": str(opportunity.id)})
+    run = SimpleNamespace(
+        workflow_run_id=uuid4(),
+        organization_id=opportunity.organization_id,
+        location_id=opportunity.location_id,
+    )
+
+    class Session:
+        async def get(self, _model: object, _identifier: object) -> object:
+            return workflow
+
+    class SEO:
+        async def get_opportunity(
+            self, _session: object, org: object, identifier: object
+        ) -> object:
+            assert org == opportunity.organization_id
+            assert identifier == opportunity.id
+            return opportunity
+
+        async def list_opportunities(self, *_args: object, **_kwargs: object) -> object:
+            raise AssertionError("Bound Hermes may not read another opportunity")
+
+    async def decision(*_args: object) -> dict[str, object]:
+        return {"page_id": None, "passes": {"competition": {"availability": "unavailable"}}}
+
+    service = AgentToolService()
+    service.seo = cast(Any, SEO())
+    monkeypatch.setattr("apps.api.app.agents.tools.resolve_decision", decision)
+    result = await service._tool_analyze_seo_opportunities(
+        cast(Any, Session()), cast(Any, run), {"limit": 50}
+    )
+    data = cast(dict[str, Any], result["data"])
+    assert len(data["opportunities"]) == 1
+    assert data["opportunities"][0]["governed_decision"]["page_id"] is None
+    assert result["source_references"] == [f"seo-opportunity:{opportunity.id}"]
+
+
+@pytest.mark.anyio
+async def test_bound_hermes_proposal_fails_closed_when_evidence_changes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    opportunity = query_opportunity()
+    reference = f"seo-opportunity:{opportunity.id}"
+    workflow = SimpleNamespace(
+        input_document={
+            "seo_opportunity_id": str(opportunity.id),
+            "seo_decision_snapshot": {"v": 1},
+        }
+    )
+    run = SimpleNamespace(
+        workflow_run_id=uuid4(),
+        organization_id=opportunity.organization_id,
+        location_id=opportunity.location_id,
+        source_references=[reference],
+        correlation_id="test",
+    )
+
+    class Session:
+        async def get(self, _model: object, _identifier: object) -> object:
+            return workflow
+
+    class SEO:
+        async def get_opportunity(self, *_args: object) -> SEOOpportunity:
+            return opportunity
+
+        async def create_recommendation(self, *_args: object, **_kwargs: object) -> object:
+            raise AssertionError("Stale reasoning must not create a revision")
+
+    async def decision(*_args: object) -> dict[str, object]:
+        return {"v": 2}
+
+    service = AgentToolService()
+    service.seo = cast(Any, SEO())
+    monkeypatch.setattr("apps.api.app.agents.tools.resolve_decision", decision)
+    arguments = {
+        "proposed_action": "Investigate unattributed demand",
+        "expected_result_hypothesis": "Clarify page attribution",
+        "risk": "low",
+        "effort": "low",
+    }
+    with pytest.raises(SEOEvidenceInvalidError, match="changed during Hermes reasoning"):
+        await service._tool_create_seo_recommendation_proposal(
+            cast(Any, Session()), cast(Any, run), arguments
+        )
+    with pytest.raises(AgentToolDeniedError, match="only action"):
+        await service._tool_create_seo_recommendation_proposal(
+            cast(Any, Session()), cast(Any, run), {**arguments, "opportunity_id": str(uuid4())}
+        )
+    with pytest.raises(AgentToolDeniedError, match="only action"):
+        await service._tool_create_seo_recommendation_proposal(
+            cast(Any, Session()), cast(Any, run), {**arguments, "evidence_references": [reference]}
+        )
+    with pytest.raises(AgentToolDeniedError, match="only action"):
+        await service._tool_create_seo_recommendation_proposal(
+            cast(Any, Session()), cast(Any, run), {"proposed_action": "Incomplete"}
+        )
+
+
+@pytest.mark.anyio
+async def test_bound_hermes_stages_proposal_until_successful_completion(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    opportunity = query_opportunity()
+    reference = f"seo-opportunity:{opportunity.id}"
+    decision: dict[str, object] = {
+        "contract_version": "seo_decision.v1",
+        "organization_id": str(opportunity.organization_id),
+        "location_id": str(opportunity.location_id),
+        "website_id": str(opportunity.website_id),
+        "page_id": None,
+        "opportunity_id": str(opportunity.id),
+        "page_mapping_state": "unknown",
+        "recommendation_class": "growth_change",
+        "evidence_references": [reference],
+        "target_metric": None,
+    }
+
+    async def resolve(*_args: object) -> dict[str, object]:
+        return decision
+
+    async def get_opportunity(*_args: object) -> SEOOpportunity:
+        return opportunity
+
+    monkeypatch.setattr("apps.api.app.agents.tools.resolve_decision", resolve)
+    tools = AgentToolService()
+    monkeypatch.setattr(tools.seo, "get_opportunity", get_opportunity)
+
+    class Session:
+        async def get(self, _model: object, _identifier: object) -> object:
+            return SimpleNamespace(
+                input_document={
+                    "seo_opportunity_id": str(opportunity.id),
+                    "seo_decision_snapshot": decision,
+                }
+            )
+
+    run = SimpleNamespace(
+        workflow_run_id=uuid4(),
+        organization_id=opportunity.organization_id,
+        location_id=opportunity.location_id,
+        source_references=[reference],
+        correlation_id="test",
+        final_output=None,
+    )
+    result = await tools._tool_create_seo_recommendation_proposal(
+        cast(Any, Session()),
+        cast(Any, run),
+        {
+            "proposed_action": "Investigate demand",
+            "expected_result_hypothesis": "Clarify demand attribution",
+            "risk": "low",
+            "effort": "medium",
+        },
+    )
+    assert result == {"data": {"accepted": True}, "source_references": [reference]}
+    assert run.final_output["seo_pending_proposal"]["proposed_action"] == "Investigate demand"
+
+
+@pytest.mark.anyio
 async def test_unsupported_revision_cannot_be_approved() -> None:
     organization_id = uuid4()
     opportunity = SEOOpportunity(

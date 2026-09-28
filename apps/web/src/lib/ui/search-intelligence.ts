@@ -2,13 +2,18 @@ import {
   createRecommendation,
   decideRecommendation,
   fetchPageIntelligence,
+  fetchRecommendations,
+  fetchOpportunityHermesRun,
+  startOpportunityHermesRun,
   verifyImplementationTask,
   type SearchIntelligenceItem,
   type SearchIntelligenceWorkspace,
   type SearchIntelligenceReadiness,
   type SEOPageIntelligence,
   type SEOReasoningPass,
+  type SEOHermesRun,
 } from "../seo";
+import { describeFailure } from "./index";
 import { statusLabel, statusTone } from "../status-language";
 import {
   detailFact,
@@ -473,6 +478,129 @@ async function renderDetail(
     );
   panel.append(intro);
 
+  const reasoning = sectionCard(
+    "Hermes reasoning",
+    "Hermes uses the selected opportunity's persisted evidence. A governed recommendation still requires human approval.",
+  );
+  const reasoningBody = reasoning.querySelector<HTMLElement>(".ui-card__body")!;
+  const runStatus = document.createElement("p");
+  runStatus.setAttribute("role", "status");
+  const ask = actionButton(
+    item.recommendation ? "Ask Hermes to revise" : "Ask Hermes",
+    () => void startReasoning(),
+  );
+  const active = (status: string) =>
+    [
+      "created",
+      "queued",
+      "running",
+      "waiting",
+      "waiting_approval",
+      "retry_scheduled",
+      "stopping",
+    ].includes(status);
+  const showRun = (run: SEOHermesRun | null) => {
+    ask.disabled = run !== null && active(run.status);
+    if (!run) {
+      runStatus.textContent =
+        "Hermes has not reasoned about this opportunity yet.";
+    } else if (active(run.status)) {
+      runStatus.textContent = `Hermes reasoning: ${statusLabel(run.status === "created" ? "queued" : run.status)}.`;
+    } else if (run.status === "completed" && run.proposal_references.length) {
+      runStatus.textContent =
+        "Hermes reasoning complete. The current recommendation is available for human review.";
+    } else {
+      const reason =
+        run.safe_error_code === "SEO_RECOMMENDATION_MISSING"
+          ? "No valid recommendation was created for this opportunity. Review the evidence and ask Hermes again."
+          : run.safe_error_code === "SEO_EVIDENCE_INVALID"
+            ? "The opportunity evidence changed during reasoning. Refresh the workspace and ask Hermes again."
+            : run.safe_error_code
+              ? statusLabel(run.safe_error_code)
+              : "No governed recommendation is available.";
+      runStatus.textContent = `Hermes reasoning ${statusLabel(run.status)}: ${reason}`;
+    }
+  };
+  let polling = false;
+  const pollRun = async () => {
+    if (polling || !panel.contains(reasoning)) return;
+    polling = true;
+    const result = await fetchOpportunityHermesRun(
+      organizationId,
+      item.opportunity.id,
+    );
+    polling = false;
+    if (!panel.contains(reasoning)) return;
+    if (result.kind === "ok") {
+      showRun(result.data);
+      const proposal = result.data?.proposal_references.find((reference) =>
+        reference.startsWith("seo-recommendation:"),
+      );
+      if (
+        result.data?.status === "completed" &&
+        proposal &&
+        proposal !== `seo-recommendation:${item.recommendation?.id}`
+      ) {
+        const revisions = await fetchRecommendations(
+          organizationId,
+          item.opportunity.id,
+        );
+        if (!panel.contains(reasoning)) return;
+        if (revisions.kind === "ok") {
+          const latest = revisions.data[0];
+          if (latest && proposal === `seo-recommendation:${latest.id}`) {
+            void renderDetail(
+              panel,
+              { ...item, recommendation: latest },
+              organizationId,
+              back,
+            );
+            return;
+          }
+        }
+      }
+      if (result.data && active(result.data.status))
+        window.setTimeout(() => void pollRun(), 2500);
+    } else runStatus.textContent = describeFailure(result, "Hermes run");
+  };
+  const startReasoning = async () => {
+    ask.disabled = true;
+    runStatus.textContent = "Submitting Hermes reasoning…";
+    const result = await startOpportunityHermesRun(
+      organizationId,
+      item.opportunity.id,
+    );
+    if (!panel.contains(reasoning)) return;
+    if (result.kind === "ok") {
+      showRun(result.data);
+      window.setTimeout(() => void pollRun(), 1500);
+    } else {
+      ask.disabled = false;
+      runStatus.textContent = describeFailure(result, "Hermes reasoning");
+    }
+  };
+  if (
+    item.active_change &&
+    item.opportunity.recommendation_class === "growth_change"
+  ) {
+    ask.disabled = true;
+    runStatus.textContent = `A page change is ${statusLabel(item.active_change.state)}. Finish its measurement before asking Hermes for another growth recommendation.`;
+  } else if (!item.website.location_id) {
+    ask.disabled = true;
+    runStatus.textContent =
+      "Hermes reasoning requires a location-scoped website.";
+  }
+  reasoningBody.append(ask, runStatus);
+  panel.append(reasoning);
+  if (
+    item.website.location_id &&
+    !(
+      item.active_change &&
+      item.opportunity.recommendation_class === "growth_change"
+    )
+  )
+    void pollRun();
+
   if (item.page) {
     const result = await fetchPageIntelligence(
       organizationId,
@@ -523,6 +651,7 @@ async function renderDetail(
     ]);
   if (item.recommendation) {
     decisionBody.append(
+      detailFact("Revision", String(item.recommendation.revision_number)),
       detailFact("Hypothesis", item.recommendation.expected_result_hypothesis),
       detailFact("Proposed change", item.recommendation.proposed_action),
       detailFact(
@@ -549,7 +678,7 @@ async function renderDetail(
             else {
               button.disabled = false;
               decisionBody.append(
-                errorAlert("Decision could not be recorded."),
+                errorAlert(describeFailure(result, "Recommendation decision")),
               );
             }
           });
@@ -577,8 +706,14 @@ async function renderDetail(
     const risk = document.createElement("select");
     const effort = document.createElement("select");
     for (const value of ["low", "medium", "high"]) {
-      risk.add(new Option(statusLabel(value), value));
-      effort.add(new Option(statusLabel(value), value));
+      const riskOption = document.createElement("option");
+      riskOption.value = value;
+      riskOption.textContent = statusLabel(value);
+      risk.add(riskOption);
+      const effortOption = document.createElement("option");
+      effortOption.value = value;
+      effortOption.textContent = statusLabel(value);
+      effort.add(effortOption);
     }
     risk.setAttribute("aria-label", "Risk");
     effort.setAttribute("aria-label", "Effort");

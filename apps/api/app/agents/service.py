@@ -30,6 +30,15 @@ from apps.api.app.audit.enums import AuditActorType, AuditResult
 from apps.api.app.audit.service import AuditEventService
 from apps.api.app.config import Settings
 from apps.api.app.execution.contracts import JobOutcome
+from apps.api.app.execution.models import WorkflowRun
+from apps.api.app.products.seo.contracts import RecommendationCreate
+from apps.api.app.products.seo.decision import (
+    SEOActiveChangeError,
+    SEOEvidenceInvalidError,
+    resolve_decision,
+)
+from apps.api.app.products.seo.errors import SEOOpportunityNotFoundError
+from apps.api.app.products.seo.service import SEOService
 
 TERMINAL_HERMES_STATUSES = {"completed", "failed", "cancelled"}
 ACTIVE_AGENT_STATUSES = {"queued", "running", "waiting_approval", "stopping"}
@@ -397,11 +406,16 @@ class AgentRuntimeService:
             run.status = "cancelled"
             run.safe_error_code = None
             run.completed_at = occurred_at
+            if (run.final_output or {}).get("seo_pending_proposal"):
+                run.final_output = None
         elif event_type == "run.failed":
             run.status = "failed"
             run.safe_error_code = "HERMES_RUN_FAILED"
             run.completed_at = occurred_at
+            if (run.final_output or {}).get("seo_pending_proposal"):
+                run.final_output = None
         elif event_type == "run.completed":
+            pending = (run.final_output or {}).get("seo_pending_proposal")
             run.status = "completed"
             run.safe_error_code = None
             run.completed_at = occurred_at
@@ -411,6 +425,59 @@ class AgentRuntimeService:
             usage = cast(dict[str, Any], raw_usage) if isinstance(raw_usage, dict) else {}
             run.input_tokens = usage.get("input_tokens")
             run.output_tokens = usage.get("output_tokens")
+            if run.skill_key == "seo.operator":
+                workflow = await session.get(WorkflowRun, run.workflow_run_id)
+                bound_id = workflow.input_document.get("seo_opportunity_id") if workflow else None
+                if bound_id is not None:
+                    safe_error: str | None = "SEO_RECOMMENDATION_MISSING"
+                    if isinstance(pending, dict) and workflow is not None:
+                        try:
+                            opportunity_id = UUID(str(bound_id))
+                            opportunity = await SEOService().get_opportunity(
+                                session, run.organization_id, opportunity_id
+                            )
+                            if opportunity.location_id != run.location_id:
+                                raise SEOEvidenceInvalidError(
+                                    "Opportunity location changed during Hermes reasoning"
+                                )
+                            source_ref = f"seo-opportunity:{opportunity.id}"
+                            if source_ref not in run.source_references:
+                                raise SEOEvidenceInvalidError(
+                                    "Opportunity was not observed by this Hermes run"
+                                )
+                            current = await resolve_decision(
+                                session, run.organization_id, opportunity, [source_ref]
+                            )
+                            if current != workflow.input_document.get("seo_decision_snapshot"):
+                                raise SEOEvidenceInvalidError(
+                                    "Opportunity evidence changed during Hermes reasoning"
+                                )
+                            command = RecommendationCreate.model_validate(
+                                {**pending, "evidence_references": [source_ref]}
+                            )
+                            revision = await SEOService().create_recommendation(
+                                session,
+                                run.organization_id,
+                                opportunity.id,
+                                command,
+                                actor_id=None,
+                                correlation_id=run.correlation_id,
+                            )
+                        except (SEOEvidenceInvalidError, SEOOpportunityNotFoundError):
+                            safe_error = "SEO_EVIDENCE_INVALID"
+                        except SEOActiveChangeError:
+                            safe_error = "SEO_ACTIVE_GROWTH_CHANGE"
+                        except (ValueError, TypeError):
+                            safe_error = "SEO_RECOMMENDATION_INVALID"
+                        else:
+                            run.output_references = [
+                                *run.output_references,
+                                f"seo-recommendation:{revision.id}",
+                            ]
+                            safe_error = None
+                    if safe_error is not None:
+                        run.status = "failed"
+                        run.safe_error_code = safe_error
         await session.flush()
         await session.commit()
 

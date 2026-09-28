@@ -86,7 +86,7 @@ Never publish or edit Google directly.
     ),
     "seo.operator": AgentSkill(
         key="seo.operator",
-        version=3,
+        version=4,
         product_key="seo",
         title="SEO evidence analyst",
         instructions=COMMON_POLICY
@@ -108,6 +108,10 @@ evidence, approval, Growth planning, and site execution. Query-only demand
 has unknown page mapping; never assign a landing page from prose. A conflicting
 active page growth change requires an explicit stop. Technical regressions may
 remain independently actionable.
+When the objective binds one Search Intelligence opportunity, read that exact
+opportunity, then call create_seo_recommendation_proposal with only
+proposed_action, expected_result_hypothesis, risk, and effort. LILOs supplies
+the authoritative opportunity and evidence references for that bound run.
 """,
         required_tools=(
             "read_gsc_evidence",

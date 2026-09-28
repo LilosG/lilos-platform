@@ -2,19 +2,23 @@
 
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, Query, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.app.access_control.enums import ScopeType
+from apps.api.app.agents.access import AgentAccessService
+from apps.api.app.agents.models import AgentRun
 from apps.api.app.authentication.dependencies import Authenticated, get_authenticated_principal
 from apps.api.app.authentication.enums import AssuranceLevel
 from apps.api.app.authorization.contracts import AuthorizationDecision
 from apps.api.app.authorization.dependencies import require_authorization
 from apps.api.app.database.session import get_database_session
 from apps.api.app.errors import request_correlation_id
+from apps.api.app.execution.models import WorkflowDefinition, WorkflowRun, WorkflowVersion
+from apps.api.app.execution.service import ExecutionService
 from apps.api.app.growth.measurement import (
     METRIC_SPECS,
     parse_verification_plan,
@@ -37,9 +41,14 @@ from apps.api.app.products.seo.contracts import (
 from apps.api.app.products.seo.decision import (
     growth_handoff,
     recommendation_class,
+    resolve_decision,
     revision_decision,
 )
-from apps.api.app.products.seo.errors import SEOCrawlRunNotFoundError, SEOWebsiteNotFoundError
+from apps.api.app.products.seo.errors import (
+    SEOCrawlRunNotFoundError,
+    SEOOpportunityNotFoundError,
+    SEOWebsiteNotFoundError,
+)
 from apps.api.app.products.seo.models import (
     SEOCrawlPageObservation,
     SEOCrawlRun,
@@ -69,7 +78,50 @@ router = APIRouter(
 service = SEOService()
 orchestration = SEOOrchestrationService(seo=service)
 search_console = SearchConsoleService()
+execution = ExecutionService()
+agent_access = AgentAccessService()
 Session = Annotated[AsyncSession, Depends(get_database_session)]
+
+
+async def _opportunity_reasoning_run(
+    session: AsyncSession, organization_id: UUID, opportunity_id: UUID
+) -> tuple[WorkflowRun, AgentRun | None] | None:
+    workflow = await session.scalar(
+        select(WorkflowRun)
+        .join(WorkflowVersion, WorkflowRun.workflow_version_id == WorkflowVersion.id)
+        .join(WorkflowDefinition, WorkflowVersion.definition_id == WorkflowDefinition.id)
+        .where(
+            WorkflowRun.organization_id == organization_id,
+            WorkflowDefinition.key == "agent.seo",
+            WorkflowRun.input_document.contains({"seo_opportunity_id": str(opportunity_id)}),
+        )
+        .order_by(WorkflowRun.created_at.desc(), WorkflowRun.id.desc())
+        .limit(1)
+    )
+    if workflow is None:
+        return None
+    agent = await session.scalar(
+        select(AgentRun).where(
+            AgentRun.organization_id == organization_id,
+            AgentRun.workflow_run_id == workflow.id,
+        )
+    )
+    return workflow, agent
+
+
+def _reasoning_run_row(workflow: WorkflowRun, agent: AgentRun | None) -> dict[str, object]:
+    terminal_failure = workflow.status in {"failed", "cancelled", "expired"}
+    return {
+        "workflow_run_id": str(workflow.id),
+        "agent_run_id": str(agent.id) if agent else None,
+        "status": workflow.status if terminal_failure or agent is None else agent.status,
+        "safe_error_code": (
+            (workflow.failure_code or (agent.safe_error_code if agent else None))
+            if terminal_failure or agent is None
+            else agent.safe_error_code
+        ),
+        "proposal_references": agent.output_references if agent else [],
+    }
 
 
 def no_store(response: Response) -> None:
@@ -1075,6 +1127,91 @@ async def list_recommendations(
 ) -> dict[str, object]:
     items = await service.list_recommendations(session, organization_id, opportunity_id)
     return {"data": [recommendation_row(item) for item in items], "meta": meta(request)}
+
+
+@router.get("/opportunities/{opportunity_id}/hermes-run", dependencies=[Depends(no_store)])
+async def get_opportunity_hermes_run(
+    request: Request,
+    organization_id: UUID,
+    opportunity_id: UUID,
+    session: Session,
+    _: Annotated[AuthorizationDecision, policy("seo.read")],
+) -> dict[str, object]:
+    await service.get_opportunity(session, organization_id, opportunity_id)
+    found = await _opportunity_reasoning_run(session, organization_id, opportunity_id)
+    return {"data": _reasoning_run_row(*found) if found else None, "meta": meta(request)}
+
+
+@router.post("/opportunities/{opportunity_id}/hermes-run", dependencies=[Depends(no_store)])
+async def start_opportunity_hermes_run(
+    request: Request,
+    organization_id: UUID,
+    opportunity_id: UUID,
+    session: Session,
+    principal: Authenticated,
+    _: Annotated[AuthorizationDecision, policy("seo.recommend")],
+    __: Annotated[AuthorizationDecision, policy("workflows.execute")],
+) -> dict[str, object]:
+    opportunity = await session.scalar(
+        select(SEOOpportunity)
+        .where(
+            SEOOpportunity.organization_id == organization_id, SEOOpportunity.id == opportunity_id
+        )
+        .with_for_update()
+    )
+    if opportunity is None:
+        raise SEOOpportunityNotFoundError
+    if opportunity.location_id is None:
+        raise HTTPException(
+            status_code=409, detail="A scoped location is required for Hermes reasoning"
+        )
+    eligibility = await agent_access.decision(
+        session,
+        organization_id=organization_id,
+        location_id=opportunity.location_id,
+        product_key="seo",
+    )
+    if not eligibility.eligible:
+        raise HTTPException(
+            status_code=eligibility.status_code,
+            detail=eligibility.detail or "SEO agent is unavailable for this location",
+        )
+    current = await resolve_decision(
+        session, organization_id, opportunity, [f"seo-opportunity:{opportunity.id}"]
+    )
+    if current["recommendation_class"] == "growth_change" and opportunity.page_id:
+        await service._check_active_growth_change(session, organization_id, opportunity)
+    existing = await _opportunity_reasoning_run(session, organization_id, opportunity_id)
+    if existing and existing[0].status in {
+        "created",
+        "queued",
+        "running",
+        "waiting",
+        "waiting_approval",
+        "retry_scheduled",
+    }:
+        return {"data": _reasoning_run_row(*existing), "meta": meta(request)}
+    run = await execution.start_named(
+        session,
+        organization_id,
+        "agent.seo",
+        f"seo-hermes-{opportunity.id}-{uuid4().hex}",
+        location_id=opportunity.location_id,
+        input_document={
+            "seo_opportunity_id": str(opportunity.id),
+            "seo_decision_snapshot": current,
+            "context_reference": f"seo-opportunity:{opportunity.id}",
+            "objective": (
+                "Analyze only the bound Search Intelligence opportunity. Read its current "
+                "canonical decision with analyze_seo_opportunities, then propose exactly one "
+                "governed SEO recommendation for human review. Do not approve or execute it."
+            ),
+        },
+        correlation_id=request_correlation_id(request),
+        actor_id=principal.platform_user_id,
+        enqueue_job=True,
+    )
+    return {"data": _reasoning_run_row(run, None), "meta": meta(request)}
 
 
 @router.post(
