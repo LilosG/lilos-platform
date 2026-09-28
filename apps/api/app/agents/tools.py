@@ -29,6 +29,7 @@ from apps.api.app.audit.enums import AuditActorType, AuditResult
 from apps.api.app.audit.metadata import JsonValue
 from apps.api.app.audit.service import AuditEventService
 from apps.api.app.config import Settings
+from apps.api.app.execution.models import WorkflowRun
 from apps.api.app.execution.service import ExecutionService
 from apps.api.app.growth.contracts import GrowthPlanCreate
 from apps.api.app.growth.models import GrowthInitiative
@@ -283,6 +284,37 @@ class AgentToolService:
         try:
             self._validate_skill_tool(run, tool_name)
             spec = self._validate_arguments(tool_name, arguments)
+            if run.skill_key == "seo.operator":
+                workflow = await session.get(WorkflowRun, run.workflow_run_id)
+                if workflow and workflow.input_document.get("seo_opportunity_id"):
+                    if tool_name not in {
+                        "analyze_seo_opportunities",
+                        "create_seo_recommendation_proposal",
+                    }:
+                        raise AgentToolDeniedError(
+                            "Bound Search Intelligence reasoning may only read its decision "
+                            "and propose a recommendation"
+                        )
+                    if tool_name == "create_seo_recommendation_proposal":
+                        locked = await session.scalar(
+                            select(AgentRun)
+                            .where(
+                                AgentRun.organization_id == run.organization_id,
+                                AgentRun.id == run.id,
+                            )
+                            .with_for_update()
+                            .execution_options(populate_existing=True)
+                        )
+                        if locked is None:
+                            raise AgentToolDeniedError("Bound Hermes run is unavailable")
+                        run = locked
+                        if (run.final_output or {}).get("seo_pending_proposal") or any(
+                            str(ref).startswith("seo-recommendation:")
+                            for ref in run.output_references
+                        ):
+                            raise AgentToolDeniedError(
+                                "This Hermes run already submitted its recommendation proposal"
+                            )
             handler = getattr(self, f"_tool_{tool_name}")
             result = await handler(session, run, arguments)
             if has_secret_key(result):
@@ -902,6 +934,41 @@ class AgentToolService:
     async def _tool_analyze_seo_opportunities(
         self, session: AsyncSession, run: AgentRun, arguments: dict[str, Any]
     ) -> dict[str, object]:
+        workflow = (
+            await session.get(WorkflowRun, run.workflow_run_id)
+            if getattr(run, "workflow_run_id", None) is not None
+            else None
+        )
+        bound_id = workflow.input_document.get("seo_opportunity_id") if workflow else None
+        if bound_id is not None and workflow is not None:
+            opportunity = await self.seo.get_opportunity(
+                session, run.organization_id, _uuid(bound_id, "seo_opportunity_id")
+            )
+            if opportunity.location_id != run.location_id:
+                raise AgentToolDeniedError("SEO opportunity is outside the bound location")
+            reference = f"seo-opportunity:{opportunity.id}"
+            decision = await resolve_decision(
+                session, run.organization_id, opportunity, [reference]
+            )
+            return {
+                "data": {
+                    "opportunities": [
+                        {
+                            "reference": reference,
+                            "opportunity_type": opportunity.opportunity_type,
+                            "status": opportunity.status,
+                            "priority_score": opportunity.priority_score,
+                            "score_explanation": opportunity.score_explanation,
+                            "evidence": opportunity.evidence,
+                            "source_versions": opportunity.source_versions,
+                            "governed_decision": decision,
+                        }
+                    ],
+                    "approved_growth_handoffs": [],
+                    "has_more": False,
+                },
+                "source_references": [reference],
+            }
         limit = min(max(int(arguments.get("limit") or 30), 1), 50)
         rows, has_more = await self.seo.list_opportunities(
             session,
@@ -971,31 +1038,69 @@ class AgentToolService:
     async def _tool_create_seo_recommendation_proposal(
         self, session: AsyncSession, run: AgentRun, arguments: dict[str, Any]
     ) -> dict[str, object]:
-        opportunity_id = _uuid(arguments.get("opportunity_id"), "opportunity_id")
+        workflow = await session.get(WorkflowRun, run.workflow_run_id)
+        bound_id = workflow.input_document.get("seo_opportunity_id") if workflow else None
+        if bound_id is not None:
+            if set(arguments) != {
+                "proposed_action",
+                "expected_result_hypothesis",
+                "risk",
+                "effort",
+            }:
+                raise AgentToolDeniedError(
+                    "Bound SEO reasoning accepts only action, hypothesis, risk, and effort"
+                )
+            opportunity_id = _uuid(bound_id, "seo_opportunity_id")
+        else:
+            opportunity_id = _uuid(arguments.get("opportunity_id"), "opportunity_id")
         opportunity = await self.seo.get_opportunity(session, run.organization_id, opportunity_id)
         if opportunity.location_id != run.location_id:
             raise AgentToolDeniedError("SEO opportunity is outside the bound location")
         source_ref = f"seo-opportunity:{opportunity.id}"
         requested_refs = self._observed_source_references(
-            run, arguments.get("evidence_references"), label="SEO evidence"
+            run,
+            [source_ref] if bound_id is not None else arguments.get("evidence_references"),
+            label="SEO evidence",
         )
         if source_ref not in requested_refs:
             raise AgentToolDeniedError(
                 "SEO recommendation must reference its observed deterministic opportunity"
             )
+        if bound_id is not None and workflow is not None:
+            current = await resolve_decision(
+                session, run.organization_id, opportunity, [source_ref]
+            )
+            if current != workflow.input_document.get("seo_decision_snapshot"):
+                raise SEOEvidenceInvalidError(
+                    "Opportunity evidence changed during Hermes reasoning; start a new run"
+                )
+        command = RecommendationCreate(
+            proposed_action=str(arguments.get("proposed_action") or "")[:10_000],
+            evidence_references=requested_refs,
+            expected_result_hypothesis=str(arguments.get("expected_result_hypothesis") or "")[
+                :2_000
+            ],
+            risk=cast(Any, str(arguments.get("risk") or "medium")),
+            effort=cast(Any, str(arguments.get("effort") or "medium")),
+        )
+        if bound_id is not None:
+            run.final_output = {
+                "seo_pending_proposal": {
+                    "proposed_action": command.proposed_action,
+                    "expected_result_hypothesis": command.expected_result_hypothesis,
+                    "risk": command.risk,
+                    "effort": command.effort,
+                }
+            }
+            return {
+                "data": {"accepted": True},
+                "source_references": [source_ref],
+            }
         revision = await self.seo.create_recommendation(
             session,
             run.organization_id,
             opportunity.id,
-            RecommendationCreate(
-                proposed_action=str(arguments.get("proposed_action") or "")[:10_000],
-                evidence_references=requested_refs,
-                expected_result_hypothesis=str(arguments.get("expected_result_hypothesis") or "")[
-                    :2_000
-                ],
-                risk=cast(Any, str(arguments.get("risk") or "medium")),
-                effort=cast(Any, str(arguments.get("effort") or "medium")),
-            ),
+            command,
             actor_id=None,
             correlation_id=run.correlation_id,
         )

@@ -71,6 +71,35 @@ export type SEORecommendation = {
   decision_context: SEODecisionContext | null;
 };
 
+export type SEOHermesRun = {
+  workflow_run_id: string;
+  agent_run_id: string | null;
+  status: string;
+  safe_error_code: string | null;
+  proposal_references: string[];
+};
+
+export function fetchOpportunityHermesRun(
+  organizationId: string,
+  opportunityId: string,
+): Promise<ApiOutcome<SEOHermesRun | null>> {
+  return apiGet(
+    `${base(organizationId)}/opportunities/${opportunityId}/hermes-run`,
+  );
+}
+
+export function startOpportunityHermesRun(
+  organizationId: string,
+  opportunityId: string,
+): Promise<ApiOutcome<SEOHermesRun>> {
+  return apiRequest(
+    `${base(organizationId)}/opportunities/${opportunityId}/hermes-run`,
+    {
+      method: "POST",
+    },
+  );
+}
+
 export type SEOReasoningPass = {
   availability: string;
   limitation?: string | null;

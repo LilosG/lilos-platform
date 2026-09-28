@@ -71,6 +71,16 @@ def test_plugin_and_server_expose_the_same_tools(plugin: Any) -> None:
     assert set(plugin.DESCRIPTIONS) == set(TOOL_SPECS)
 
 
+def test_bound_seo_proposal_requires_only_model_proposal_fields(plugin: Any) -> None:
+    required = set(plugin.SCHEMAS["create_seo_recommendation_proposal"]["required"])
+    assert required == {
+        "proposed_action",
+        "expected_result_hypothesis",
+        "risk",
+        "effort",
+    }
+
+
 def test_advertised_properties_never_exceed_accepted_arguments(plugin: Any) -> None:
     """A property the server refuses makes the tool uncallable as advertised."""
     for name, schema in plugin.SCHEMAS.items():

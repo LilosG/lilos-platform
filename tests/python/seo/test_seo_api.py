@@ -19,11 +19,20 @@ from apps.api.app.access_control.contracts import MembershipCreate, RoleAssignme
 from apps.api.app.access_control.enums import MembershipType, ScopeType
 from apps.api.app.access_control.service import AccessControlService
 from apps.api.app.administration.models import ProductEntitlement
+from apps.api.app.agents.hermes_client import (
+    REQUIRED_FEATURES,
+    REQUIRED_LILOS_TOOLS,
+    HermesCapabilities,
+)
+from apps.api.app.agents.service import AgentRuntimeService
+from apps.api.app.agents.skills import skill_for_workflow
+from apps.api.app.agents.tools import AgentToolService
 from apps.api.app.authentication.contracts import VerifiedProviderClaims
 from apps.api.app.authentication.enums import AssuranceLevel, UserStatus
 from apps.api.app.authentication.models import UserProfile
 from apps.api.app.config import EnvironmentName, Settings
 from apps.api.app.execution.models import WorkflowDefinition, WorkflowRun, WorkflowVersion
+from apps.api.app.execution.service import ExecutionService
 from apps.api.app.integrations.models import IntegrationConnection, Provider
 from apps.api.app.locations.enums import LocationStatus, LocationType
 from apps.api.app.locations.models import Location
@@ -39,6 +48,8 @@ from apps.api.app.products.seo.models import (
     SEOOutcome,
     SEOPage,
     SEORecommendationRevision,
+    SEOSearchObservation,
+    SEOSearchProperty,
     SEOWebsite,
 )
 from apps.api.app.products.seo.service import SEOService
@@ -399,6 +410,309 @@ def seo_client(
         create_app(settings, authentication_verifier=verifier), raise_server_exceptions=False
     ) as client:
         yield client, identifiers
+
+
+@pytest.mark.integration
+def test_selected_opportunity_starts_one_scoped_hermes_workflow(
+    seo_client: tuple[TestClient, dict[str, UUID]],
+    seo_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    client, ids = seo_client
+
+    async def populate() -> UUID:
+        async with seo_session_factory.begin() as session:
+            website = SEOWebsite(
+                organization_id=ids["organization"],
+                location_id=ids["location"],
+                key="hermes-selected",
+                name="Selected site",
+                canonical_origin="https://selected.example.invalid",
+                status="active",
+                ownership_status="verified",
+                version=1,
+            )
+            session.add(website)
+            await session.flush()
+            search_property = SEOSearchProperty(
+                organization_id=ids["organization"],
+                website_id=website.id,
+                connection_id=ids["connection"],
+                provider="google_search_console",
+                external_property_id="sc-domain:selected.example.invalid",
+                property_type="domain",
+                mapping_status="confirmed",
+                freshness_status="fresh",
+            )
+            session.add(search_property)
+            await session.flush()
+            now = datetime.now(UTC)
+            observation = SEOSearchObservation(
+                organization_id=ids["organization"],
+                search_property_id=search_property.id,
+                website_id=website.id,
+                page_id=None,
+                query="nearby service",
+                date_start=now - timedelta(days=28),
+                date_end=now,
+                dimensions={"query": "nearby service"},
+                dimension_hash="selected-hermes-query",
+                clicks=2,
+                impressions=100,
+                ctr=0.02,
+                position=30,
+                mapping_state="unknown",
+                quality_status="valid",
+                partial=False,
+            )
+            session.add(observation)
+            await session.flush()
+            opportunity = SEOOpportunity(
+                organization_id=ids["organization"],
+                location_id=ids["location"],
+                website_id=website.id,
+                page_id=None,
+                opportunity_type="gsc_query_demand",
+                deduplication_key="selected-hermes-query",
+                active_marker="active",
+                evidence={
+                    "source": "google_search_console",
+                    "query": "nearby service",
+                    "observation_id": str(observation.id),
+                    "page_mapping_state": "unknown",
+                    "clicks": 2,
+                    "impressions": 100,
+                    "ctr": 0.02,
+                    "position": 30,
+                    "date_start": observation.date_start.isoformat(),
+                    "date_end": observation.date_end.isoformat(),
+                },
+                source_versions=["gsc.v1"],
+                score_version=2,
+                priority_score=50,
+                score_explanation={"score_policy_version": "opportunity_score.v2"},
+                status="identified",
+                version=1,
+            )
+            session.add(opportunity)
+            await session.flush()
+            return opportunity.id
+
+    opportunity_id = asyncio.run(populate())
+    endpoint = (
+        f"/api/v1/organizations/{ids['organization']}/seo/opportunities/{opportunity_id}/hermes-run"
+    )
+    first = client.post(endpoint, headers=HEADERS)
+    assert first.status_code == 200, first.text
+    second = client.post(endpoint, headers=HEADERS)
+    assert second.status_code == 200, second.text
+    assert second.json()["data"]["workflow_run_id"] == first.json()["data"]["workflow_run_id"]
+    read = client.get(endpoint, headers=HEADERS)
+    assert read.status_code == 200
+    assert read.json()["data"]["workflow_run_id"] == first.json()["data"]["workflow_run_id"]
+    foreign = client.get(
+        endpoint.replace(str(ids["organization"]), str(ids["other_organization"])),
+        headers=HEADERS,
+    )
+    assert foreign.status_code in {403, 404}
+
+    async def inspect() -> None:
+        async with seo_session_factory() as session:
+            workflow = await session.get(WorkflowRun, UUID(first.json()["data"]["workflow_run_id"]))
+            assert workflow is not None
+            assert workflow.organization_id == ids["organization"]
+            assert workflow.location_id == ids["location"]
+            snapshot = cast(dict[str, Any], workflow.input_document["seo_decision_snapshot"])
+            assert snapshot["opportunity_id"] == str(opportunity_id)
+            assert snapshot["page_id"] is None
+            assert snapshot["passes"]["competition"]["availability"] == "unavailable"
+            assert snapshot["passes"]["answer_engines"]["availability"] == "unavailable"
+
+            # A different workflow with a coincidental JSON key cannot replace
+            # the opportunity's actual SEO agent run in the operator view.
+            await ExecutionService().start_named(
+                session,
+                ids["organization"],
+                "agent.gbp",
+                f"seo-unrelated-{uuid4().hex}",
+                location_id=ids["location"],
+                input_document={"seo_opportunity_id": str(opportunity_id)},
+                correlation_id="seo-unrelated-workflow",
+                enqueue_job=False,
+            )
+            capabilities = HermesCapabilities(
+                runtime_version="test",
+                model="test",
+                features={name: True for name in REQUIRED_FEATURES},
+                endpoints={},
+                runtime={"mode": "server_agent", "tool_execution": "server"},
+                sanctioned_tools=tuple(sorted(REQUIRED_LILOS_TOOLS)),
+                raw={},
+            )
+            runtime = AgentRuntimeService()
+            run, _ = await runtime._prepare(
+                session,
+                Settings.model_validate({"environment": EnvironmentName.TEST}),
+                ids["organization"],
+                ids["location"],
+                workflow.id,
+                skill_for_workflow("agent.seo"),
+                capabilities,
+                "seo-missing-proposal",
+            )
+            await runtime._persist_event(
+                session,
+                Settings.model_validate({"environment": EnvironmentName.TEST}),
+                run,
+                {"event": "run.completed", "output": "I considered the opportunity."},
+            )
+            assert run.status == "failed"
+            assert run.safe_error_code == "SEO_RECOMMENDATION_MISSING"
+            workflow.status = "failed"
+            await session.commit()
+            assert not list(
+                await session.scalars(
+                    select(SEORecommendationRevision).where(
+                        SEORecommendationRevision.opportunity_id == opportunity_id
+                    )
+                )
+            )
+
+    asyncio.run(inspect())
+    failed = client.get(endpoint, headers=HEADERS)
+    assert failed.status_code == 200
+    assert failed.json()["data"]["workflow_run_id"] == first.json()["data"]["workflow_run_id"]
+    assert failed.json()["data"]["status"] == "failed"
+    assert failed.json()["data"]["safe_error_code"] == "SEO_RECOMMENDATION_MISSING"
+
+    async def complete(
+        workflow_id: UUID,
+        action: str,
+        prior_count: int,
+        *,
+        fail: bool = False,
+        change_evidence: bool = False,
+    ) -> UUID | None:
+        async with seo_session_factory() as session:
+            workflow = await session.get(WorkflowRun, workflow_id)
+            assert workflow is not None
+            runtime = AgentRuntimeService()
+            settings = Settings.model_validate({"environment": EnvironmentName.TEST})
+            run, _ = await runtime._prepare(
+                session,
+                settings,
+                ids["organization"],
+                ids["location"],
+                workflow_id,
+                skill_for_workflow("agent.seo"),
+                HermesCapabilities(
+                    runtime_version="test",
+                    model="test",
+                    features={name: True for name in REQUIRED_FEATURES},
+                    endpoints={},
+                    runtime={"mode": "server_agent", "tool_execution": "server"},
+                    sanctioned_tools=tuple(sorted(REQUIRED_LILOS_TOOLS)),
+                    raw={},
+                ),
+                "seo-governed-completion",
+            )
+            tools = AgentToolService()
+            evidence = await tools._tool_analyze_seo_opportunities(session, run, {})
+            run.source_references = cast(list[object], evidence["source_references"])
+            staged = await tools._tool_create_seo_recommendation_proposal(
+                session,
+                run,
+                {
+                    "proposed_action": action,
+                    "expected_result_hypothesis": "Clarify demand attribution",
+                    "risk": "low",
+                    "effort": "medium",
+                },
+            )
+            assert staged["data"] == {"accepted": True}
+            before = await session.scalar(
+                select(func.count())
+                .select_from(SEORecommendationRevision)
+                .where(SEORecommendationRevision.opportunity_id == opportunity_id)
+            )
+            assert before == prior_count
+            await session.commit()
+            if change_evidence:
+                opportunity = await session.get(SEOOpportunity, opportunity_id)
+                assert opportunity is not None
+                opportunity.priority_score += 1
+                await session.commit()
+            await runtime._persist_event(
+                session,
+                settings,
+                run,
+                {"event": "run.failed" if fail else "run.completed", "output": "Done"},
+            )
+            if fail or change_evidence:
+                assert run.status == "failed"
+                if fail:
+                    assert run.final_output is None
+                if change_evidence:
+                    assert run.safe_error_code == "SEO_EVIDENCE_INVALID"
+                assert run.output_references == []
+                remaining = await session.scalar(
+                    select(func.count())
+                    .select_from(SEORecommendationRevision)
+                    .where(SEORecommendationRevision.opportunity_id == opportunity_id)
+                )
+                assert remaining == prior_count
+                workflow.status = "failed"
+                await session.commit()
+                return None
+            assert run.status == "completed"
+            assert len(run.output_references) == 1
+            revision_id = UUID(str(run.output_references[0]).removeprefix("seo-recommendation:"))
+            revision = await session.get(SEORecommendationRevision, revision_id)
+            assert revision is not None
+            assert revision.revision_number == prior_count + 1
+            assert revision.proposed_action == action
+            assert revision.status == "awaiting_approval"
+            workflow.status = "completed"
+            await session.commit()
+            return revision_id
+
+    for number, action in enumerate(("Investigate demand", "Revise demand plan")):
+        launched = client.post(endpoint, headers=HEADERS)
+        assert launched.status_code == 200, launched.text
+        revision_id = asyncio.run(
+            complete(UUID(launched.json()["data"]["workflow_run_id"]), action, number)
+        )
+        assert revision_id is not None
+        completed = client.get(endpoint, headers=HEADERS)
+        assert completed.json()["data"]["status"] == "completed"
+        assert completed.json()["data"]["proposal_references"] == [
+            f"seo-recommendation:{revision_id}"
+        ]
+    failed_after_proposal = client.post(endpoint, headers=HEADERS)
+    assert failed_after_proposal.status_code == 200
+    assert (
+        asyncio.run(
+            complete(
+                UUID(failed_after_proposal.json()["data"]["workflow_run_id"]),
+                "Do not persist this failed proposal",
+                2,
+                fail=True,
+            )
+        )
+        is None
+    )
+    stale = client.post(endpoint, headers=HEADERS)
+    assert stale.status_code == 200
+    assert (
+        asyncio.run(
+            complete(
+                UUID(stale.json()["data"]["workflow_run_id"]),
+                "Do not persist stale reasoning",
+                2,
+                change_evidence=True,
+            )
+        )
+        is None
+    )
 
 
 @pytest.mark.integration

@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import * as seo from "../seo";
 import type {
   SearchIntelligenceItem,
   SearchIntelligenceWorkspace,
@@ -68,6 +69,68 @@ function workspace(
 }
 
 describe("Search Intelligence workspace", () => {
+  it.each(["queued", "running", "completed", "failed"])(
+    "shows the persisted Hermes %s state for the selected opportunity",
+    async (state) => {
+      if (state === "completed")
+        vi.spyOn(seo, "fetchRecommendations").mockResolvedValue({
+          kind: "ok",
+          data: [
+            {
+              id: "revision",
+              revision_number: 1,
+              proposed_action: "Investigate demand",
+              expected_result_hypothesis: "Clarify attribution",
+              risk: "low",
+              effort: "medium",
+              status: "awaiting_approval",
+              approved_by_user_id: null,
+              evidence_references: [],
+              decision_context: null,
+            },
+          ],
+        });
+      vi.spyOn(seo, "fetchOpportunityHermesRun").mockResolvedValue({
+        kind: "ok",
+        data: {
+          workflow_run_id: "workflow",
+          agent_run_id: "agent",
+          status: state,
+          safe_error_code:
+            state === "failed" ? "HERMES_EXECUTION_FAILED" : null,
+          proposal_references:
+            state === "completed" ? ["seo-recommendation:revision"] : [],
+        },
+      });
+      const panel = document.createElement("div");
+      document.body.append(panel);
+      renderSearchIntelligenceWorkspace(
+        panel,
+        workspace([item("growth_change")]),
+        "organization",
+        () => undefined,
+      );
+      const review = [...panel.querySelectorAll("button")].find(
+        (button) => button.textContent === "Review",
+      );
+      review?.click();
+      await vi.waitFor(() => {
+        if (state === "completed")
+          expect(panel.textContent).toContain("Investigate demand");
+        else
+          expect(panel.textContent?.toLowerCase()).toContain(
+            state.replace("_", " "),
+          );
+      });
+      const ask = [...panel.querySelectorAll("button")].find((button) =>
+        button.textContent?.startsWith("Ask Hermes"),
+      );
+      expect(ask?.disabled).toBe(["queued", "running"].includes(state));
+      panel.remove();
+      vi.restoreAllMocks();
+    },
+  );
+
   it("uses deterministic classification and leaves query demand without a page", () => {
     const data = workspace([
       item("growth_change"),
