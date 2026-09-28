@@ -397,6 +397,7 @@ test("Search Intelligence deployed read path matches persisted evidence", async 
       hasText: `Priority ${selected.opportunity.priority_score}`,
     });
   row = row.first();
+  let uiOffset = 0;
   for (
     let pageNumber = 0;
     (await row.count()) === 0 && pageNumber < 20;
@@ -404,11 +405,28 @@ test("Search Intelligence deployed read path matches persisted evidence", async 
   ) {
     const nextButton = panel.getByRole("button", { name: "Next 50" });
     if (!(await nextButton.isVisible())) break;
+    const expectedOffset = uiOffset + 50;
+    const nextWorkspaceResponse = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return (
+        response.request().method() === "GET" &&
+        url.origin === API_BASE &&
+        url.pathname === `${base}/seo/workspace` &&
+        url.searchParams.get("limit") === "50" &&
+        url.searchParams.get("offset") === String(expectedOffset)
+      );
+    });
     await nextButton.click();
+    const response = await nextWorkspaceResponse;
+    expect(
+      response.ok(),
+      `Search Intelligence workspace page offset ${expectedOffset} failed: HTTP ${response.status()}`,
+    ).toBe(true);
     await expect(
       panel.getByRole("navigation", { name: "Search Intelligence work pages" }),
       "workspace pagination did not settle",
     ).toBeVisible();
+    uiOffset = expectedOffset;
   }
   await expect(
     row,
