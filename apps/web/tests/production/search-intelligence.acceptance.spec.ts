@@ -6,7 +6,7 @@
  * LILOS_SEARCH_ACCEPTANCE_WEBSITE_ID. Optional: LILOS_SEARCH_ACCEPTANCE_PAGE_ID.
  * Run explicitly with npm run production:search-intelligence.
  */
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -35,8 +35,11 @@ const fixture = {
 
 type ApiResponse<T> = { status: number; data?: T; error?: string };
 
-async function get<T>(page: Page, route: string, layer: string): Promise<T> {
-  const result = (await page.evaluate(
+async function authenticatedFetch<T>(
+  page: Page,
+  route: string,
+): Promise<ApiResponse<{ data: T }>> {
+  return page.evaluate(
     async ({ apiBase, route }) => {
       const key = Object.keys(localStorage).find(
         (value) => value.startsWith("sb-") && value.endsWith("-auth-token"),
@@ -71,7 +74,45 @@ async function get<T>(page: Page, route: string, layer: string): Promise<T> {
       }
     },
     { apiBase: API_BASE, route },
-  )) as ApiResponse<{ data: T }>;
+  ) as Promise<ApiResponse<{ data: T }>>;
+}
+
+async function refreshSession(page: Page): Promise<boolean> {
+  return page.evaluate(async () => {
+    const key = Object.keys(localStorage).find(
+      (value) => value.startsWith("sb-") && value.endsWith("-auth-token"),
+    );
+    if (!key) return false;
+    try {
+      const session = JSON.parse(localStorage.getItem(key) ?? "{}");
+      if (!session.refresh_token) return false;
+      const projectRef = key.replace(/^sb-/, "").replace(/-auth-token$/, "");
+      const response = await fetch(
+        `https://${projectRef}.supabase.co/auth/v1/token?grant_type=refresh_token`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ refresh_token: session.refresh_token }),
+        },
+      );
+      if (!response.ok) return false;
+      localStorage.setItem(key, JSON.stringify(await response.json()));
+      return true;
+    } catch {
+      return false;
+    }
+  });
+}
+
+async function get<T>(page: Page, route: string, layer: string): Promise<T> {
+  let result = await authenticatedFetch<T>(page, route);
+  if (result.status === 401) {
+    if (!(await refreshSession(page)))
+      throw new Error(
+        `${layer}: authentication unavailable; saved session could not be refreshed`,
+      );
+    result = await authenticatedFetch<T>(page, route);
+  }
   expect(
     result.status,
     `${layer}: ${result.status === 401 ? "authentication unavailable" : result.status === 404 ? "deployed route unavailable" : `GET ${route} failed`} (HTTP ${result.status}: ${result.error ?? "no detail"})`,
@@ -112,6 +153,24 @@ function requireFixture(): {
   };
 }
 
+function card(panel: Locator, title: string): Locator {
+  return panel.locator("section.ui-card").filter({
+    has: panel.getByRole("heading", { name: title, exact: true }),
+  });
+}
+
+function fact(card: Locator, label: string): Locator {
+  return card.getByText(label, { exact: true }).locator("..").locator("span");
+}
+
+function workspacePath(
+  base: string,
+  websiteId: string,
+  offset: number,
+): string {
+  return `${base}/seo/workspace?website_id=${encodeURIComponent(websiteId)}&limit=50&offset=${offset}`;
+}
+
 test("Search Intelligence deployed read path matches persisted evidence", async ({
   page,
 }) => {
@@ -130,6 +189,23 @@ test("Search Intelligence deployed read path matches persisted evidence", async 
     }
     await route.continue();
   });
+  await page.goto(`${WEB_BASE}/`, { waitUntil: "domcontentloaded" });
+  const base = `/api/v1/organizations/${target.organizationId}`;
+  const memberships = await get<
+    Array<{ organization_id: string; organization_name: string }>
+  >(page, "/api/v1/me/organizations", "organization scope");
+  const membership = memberships.find(
+    (row) => row.organization_id === target.organizationId,
+  );
+  if (!membership)
+    throw new Error(
+      "Search Intelligence UI prerequisite unavailable: the configured acceptance organization is not present in the operator workspace memberships. The current product workspace cannot select a platform-admin-only organization.",
+    );
+  expect(
+    membership.organization_name.trim().replace(/\s+/g, " ").toLowerCase(),
+    "acceptance organization ID/name mismatch",
+  ).toBe(target.organizationName.trim().replace(/\s+/g, " ").toLowerCase());
+
   await page.goto(
     `${WEB_BASE}/seo?org=${encodeURIComponent(target.organizationId)}`,
     {
@@ -151,47 +227,31 @@ test("Search Intelligence deployed read path matches persisted evidence", async 
   await expect(
     page.locator("#active-organization-name"),
     "UI/backend organization identity mismatch",
-  ).toHaveText(target.organizationName);
+  ).toHaveText(membership.organization_name);
 
-  const base = `/api/v1/organizations/${target.organizationId}`;
-  const memberships = await get<
-    Array<{ organization_id: string; organization_name: string }>
-  >(page, "/api/v1/me/organizations", "organization scope");
-  expect(
-    memberships.some(
-      (row) =>
-        row.organization_id === target.organizationId &&
-        row.organization_name === target.organizationName,
-    ),
-    "organization/location not resolved: authorized membership does not match fixture",
-  ).toBe(true);
-  const locations = await get<Array<{ id: string }>>(
+  const location = await get<{ id: string; organization_id: string }>(
     page,
-    `${base}/locations?limit=100`,
+    `${base}/locations/${target.locationId}`,
     "location scope",
   );
-  expect(
-    locations.some((row) => row.id === target.locationId),
-    "organization/location not resolved: fixture location is absent",
-  ).toBe(true);
-  const websites = await get<SEOWebsite[]>(
+  expect(location.id, "location identity mismatch").toBe(target.locationId);
+  expect(location.organization_id, "location organization mismatch").toBe(
+    target.organizationId,
+  );
+  const website = await get<SEOWebsite>(
     page,
-    `${base}/seo/websites`,
+    `${base}/seo/websites/${target.websiteId}`,
     "website identity",
   );
-  const website = websites.find((row) => row.id === target.websiteId);
-  expect(
-    website,
-    "website missing: configured fixture website is absent",
-  ).toBeDefined();
-  expect(website?.location_id, "UI/backend website location mismatch").toBe(
+  expect(website.id, "website identity mismatch").toBe(target.websiteId);
+  expect(website.location_id, "website location mismatch").toBe(
     target.locationId,
   );
-  expect(website?.canonical_origin, "website origin missing").toBeTruthy();
+  expect(website.canonical_origin, "website origin missing").toBeTruthy();
 
   const workspace = await get<SearchIntelligenceWorkspace>(
     page,
-    `${base}/seo/workspace?limit=50&offset=0`,
+    workspacePath(base, target.websiteId, 0),
     "Search Intelligence workspace",
   );
   const readiness = workspace.readiness.find(
@@ -236,21 +296,39 @@ test("Search Intelligence deployed read path matches persisted evidence", async 
     .locator(".ui-card")
     .filter({ hasText: "Acceptance journey readiness" });
   const siteReadiness = readinessCard.locator("div.ui-stack").filter({
-    has: page.getByRole("heading", { name: website!.name, exact: true }),
+    has: page.getByRole("heading", { name: website.name, exact: true }),
   });
   await expect(
     siteReadiness,
     "website identity absent from UI readiness",
   ).toBeVisible();
-  for (const state of [
-    readiness!.gsc,
-    readiness!.ga4,
-    readiness!.page_inventory,
-  ]) {
+  await expect(
+    fact(siteReadiness, "Organization/location"),
+    "readiness location label mismatch",
+  ).toHaveText("Resolved");
+  await expect(
+    fact(siteReadiness, "GSC mapping and freshness"),
+    "GSC readiness label mismatch",
+  ).toHaveText(statusLabel(readiness!.gsc));
+  await expect(
+    fact(siteReadiness, "GA4 mapping and freshness"),
+    "GA4 readiness label mismatch",
+  ).toHaveText(statusLabel(readiness!.ga4));
+  await expect(
+    fact(siteReadiness, "Page inventory"),
+    "page inventory label mismatch",
+  ).toHaveText(statusLabel(readiness!.page_inventory));
+  if (workspace.history_truncated) {
     await expect(
-      siteReadiness.getByText(statusLabel(state)).first(),
-      `readiness mismatch: ${state}`,
+      panel.getByText(
+        "Older recommendation or implementation history exceeds this bounded view.",
+        { exact: false },
+      ),
+      "history truncation hidden in UI",
     ).toBeVisible();
+    throw new Error(
+      "Search Intelligence workspace history truncated; live read acceptance cannot complete for this fixture",
+    );
   }
   expect(readiness!.gsc, "GSC unmapped for acceptance website").not.toBe(
     "unavailable",
@@ -269,23 +347,36 @@ test("Search Intelligence deployed read path matches persisted evidence", async 
     "fresh",
   );
 
-  let items: SearchIntelligenceItem[] = [...workspace.items];
+  const items: SearchIntelligenceItem[] = [...workspace.items];
   let next = workspace.pagination.next_offset;
-  for (let count = 0; next !== null && count < 20; count += 1) {
+  const matchesPage = (item: SearchIntelligenceItem): boolean =>
+    item.website.id === target.websiteId &&
+    (target.pageId ? item.page?.id === target.pageId : Boolean(item.page));
+  for (
+    let count = 0;
+    next !== null && !items.some(matchesPage) && count < 20;
+    count += 1
+  ) {
     const batch = await get<SearchIntelligenceWorkspace>(
       page,
-      `${base}/seo/workspace?limit=50&offset=${next}`,
+      workspacePath(base, target.websiteId, next),
       "workspace pagination",
     );
-    items = items.concat(batch.items);
+    if (batch.history_truncated)
+      throw new Error(
+        `Search Intelligence workspace history truncated at offset ${next}; live read acceptance cannot complete`,
+      );
+    items.push(...batch.items);
     next = batch.pagination.next_offset;
   }
-  expect(
-    next,
-    "workspace history exceeds bounded acceptance scan; supply a known page fixture",
-  ).toBeNull();
-  const scoped = items.filter((item) => item.website.id === target.websiteId);
-  for (const item of scoped) {
+  if (!items.some(matchesPage) && next !== null)
+    throw new Error(
+      "Scoped workspace page fixture not found within the bounded 20-page acceptance scan",
+    );
+  for (const item of items) {
+    expect(item.website.id, "workspace returned another website").toBe(
+      target.websiteId,
+    );
     expect(item.website.location_id, "opportunity location mismatch").toBe(
       target.locationId,
     );
@@ -323,9 +414,7 @@ test("Search Intelligence deployed read path matches persisted evidence", async 
       }
     }
   }
-  const candidates = scoped.filter((item) =>
-    target.pageId ? item.page?.id === target.pageId : Boolean(item.page),
-  );
+  const candidates = items.filter(matchesPage);
   const selected =
     candidates.find((item) => !item.outcome && !item.task?.verified_at) ??
     candidates[0];
@@ -362,10 +451,13 @@ test("Search Intelligence deployed read path matches persisted evidence", async 
       evidence.availability,
       `${source} page availability missing`,
     ).toBeTruthy();
-    expect(
-      evidence.limitation,
-      `${source} page limitation missing`,
-    ).toBeDefined();
+    if (evidence.availability === "unavailable")
+      expect(
+        typeof evidence.limitation === "string"
+          ? evidence.limitation.trim()
+          : "",
+        `${source} unavailable without persisted limitation`,
+      ).not.toBe("");
   }
   const pagePath = new URL(selected.page.normalized_url).pathname;
   const listSection =
@@ -381,7 +473,13 @@ test("Search Intelligence deployed read path matches persisted evidence", async 
           : selected.task?.verified_at
             ? "Currently Measuring"
             : "Requires Attention";
-  let row = panel
+  const displayedSummary =
+    listSection === "Completed / Learned"
+      ? `Observed after this change: ${statusLabel(selected.latest_measured?.outcome.classification)}.`
+      : listSection === "Currently Measuring"
+        ? `${statusLabel(selected.measurement?.maturity)} · ${selected.measurement?.metric || "Metric unavailable"}`
+        : `${statusLabel(selected.opportunity.opportunity_type)} · Priority ${selected.opportunity.priority_score}`;
+  const row = panel
     .locator("section.ui-card")
     .filter({
       has: page.getByRole("heading", { name: listSection, exact: true }),
@@ -389,15 +487,11 @@ test("Search Intelligence deployed read path matches persisted evidence", async 
     .locator("ul.ui-record-list > li")
     .filter({
       has: page.getByRole("heading", {
-        name: `${website!.name} · ${pagePath}`,
+        name: `${website.name} · ${pagePath}`,
         exact: true,
       }),
-    });
-  if (!selected.outcome && !selected.task?.verified_at)
-    row = row.filter({
-      hasText: `Priority ${selected.opportunity.priority_score}`,
-    });
-  row = row.first();
+    })
+    .filter({ has: page.getByText(displayedSummary, { exact: true }) });
   let uiOffset = 0;
   for (
     let pageNumber = 0;
@@ -407,6 +501,10 @@ test("Search Intelligence deployed read path matches persisted evidence", async 
     const nextButton = panel.getByRole("button", { name: "Next 50" });
     if (!(await nextButton.isVisible())) break;
     const expectedOffset = uiOffset + 50;
+    const loading = panel.getByText("Loading Search Intelligence work…", {
+      exact: true,
+    });
+    const loadingVisible = loading.waitFor({ state: "visible" });
     const nextWorkspaceResponse = page.waitForResponse((response) => {
       const url = new URL(response.url());
       return (
@@ -418,21 +516,29 @@ test("Search Intelligence deployed read path matches persisted evidence", async 
       );
     });
     await nextButton.click();
+    await loadingVisible;
     const response = await nextWorkspaceResponse;
     expect(
       response.ok(),
       `Search Intelligence workspace page offset ${expectedOffset} failed: HTTP ${response.status()}`,
     ).toBe(true);
+    await loading.waitFor({ state: "hidden" });
     await expect(
       panel.getByRole("navigation", { name: "Search Intelligence work pages" }),
       "workspace pagination did not settle",
     ).toBeVisible();
     uiOffset = expectedOffset;
   }
-  await expect(
-    row,
-    "resolved page opportunity absent from deployed workspace UI",
-  ).toBeVisible();
+  const matchingRows = await row.count();
+  expect(
+    matchingRows,
+    "resolved page work item absent from deployed workspace UI",
+  ).toBeGreaterThan(0);
+  expect(
+    matchingRows,
+    "resolved page work item is ambiguous in deployed workspace UI",
+  ).toBe(1);
+  await expect(row).toBeVisible();
   if (
     selected.opportunity.recommendation_class === "growth_change" &&
     !selected.outcome &&
@@ -449,24 +555,28 @@ test("Search Intelligence deployed read path matches persisted evidence", async 
     );
   }
   await row.getByRole("button", { name: "Review" }).click();
+  const pageIdentity = card(panel, "Page identity");
   await expect(
-    panel.getByRole("heading", { name: "Page identity" }),
+    pageIdentity,
     "Page Intelligence unavailable in UI",
   ).toBeVisible();
   await expect(
-    panel.getByText(selected.page.normalized_url, { exact: true }).first(),
-    "UI/backend page identity mismatch",
-  ).toBeVisible();
+    fact(pageIdentity, "Canonical page"),
+    "UI/backend page URL mismatch",
+  ).toHaveText(selected.page.normalized_url);
   await expect(
-    panel.getByText(target.websiteId),
+    fact(pageIdentity, "Website"),
     "UI/backend website identity mismatch",
-  ).toBeVisible();
+  ).toHaveText(target.websiteId);
   await expect(
-    panel
-      .locator(".ui-inline")
-      .filter({ has: page.getByText("Priority", { exact: true }) }),
+    fact(pageIdentity, "Page"),
+    "UI/backend page identity mismatch",
+  ).toHaveText(selected.page.id);
+  const opportunityCard = card(panel, `${website.name} · ${pagePath}`);
+  await expect(
+    fact(opportunityCard, "Priority"),
     "browser priority differs from backend",
-  ).toContainText(String(selected.opportunity.priority_score));
+  ).toHaveText(String(selected.opportunity.priority_score));
   for (const heading of [
     "Search evidence",
     "Conversion and content",
@@ -487,28 +597,55 @@ test("Search Intelligence deployed read path matches persisted evidence", async 
     ["Search evidence", "GSC", intelligence.gsc],
     ["Conversion and content", "GA4", intelligence.ga4_organic_landing],
   ] as const) {
-    const card = panel.locator(".ui-card").filter({
-      has: page.getByRole("heading", { name: heading, exact: true }),
-    });
+    const evidenceCard = card(panel, heading);
     await expect(
-      card,
+      fact(evidenceCard, source === "GSC" ? "GSC" : "GA4 Organic Landing"),
       `${source} availability differs from backend`,
-    ).toContainText(statusLabel(String(evidence.availability)));
+    ).toHaveText(statusLabel(String(evidence.availability)));
     if (typeof evidence.limitation === "string" && evidence.limitation)
-      await expect(card, `${source} limitation hidden`).toContainText(
+      await expect(evidenceCard, `${source} limitation hidden`).toContainText(
         evidence.limitation,
       );
-  }
-  const decision = selected.recommendation?.decision_context;
-  if (selected.recommendation) {
-    const decisionCard = panel.locator(".ui-card").filter({
-      has: page.getByRole("heading", { name: "Decision", exact: true }),
-    });
+    const properties =
+      (
+        evidence.properties as
+          { items?: Array<{ freshness?: string }> } | undefined
+      )?.items ?? [];
     await expect(
-      decisionCard,
-      "recommendation state differs from backend",
-    ).toContainText(statusLabel(selected.recommendation.status));
+      fact(evidenceCard, source === "GSC" ? "GSC freshness" : "GA4 freshness"),
+      `${source} page freshness differs from backend`,
+    ).toHaveText(statusLabel(properties[0]?.freshness));
   }
+  const queryOnly =
+    (intelligence.gsc.website_query_only as { items?: unknown[] } | undefined)
+      ?.items ?? [];
+  await expect(
+    fact(card(panel, "Search evidence"), "Query-only demand"),
+    "query-only demand attribution differs from backend",
+  ).toHaveText(`${queryOnly.length} website-scoped records`);
+  const decision = selected.recommendation?.decision_context;
+  const decisionCard = card(panel, "Decision");
+  if (selected.recommendation) {
+    await expect(
+      fact(decisionCard, "Approval"),
+      "recommendation state differs from backend",
+    ).toHaveText(statusLabel(selected.recommendation.status));
+  } else {
+    await expect(
+      decisionCard.getByRole("button", {
+        name: "Submit recommendation for approval",
+      }),
+      "missing-recommendation state hidden",
+    ).toBeVisible();
+    await expect(
+      decisionCard.getByText("Approval", { exact: true }),
+      "invented recommendation approval",
+    ).toHaveCount(0);
+  }
+  await expect(
+    fact(decisionCard, "Business importance"),
+    "decision business importance mismatch",
+  ).toHaveText(statusLabel(decision?.business_importance_state));
   if (decision) {
     for (const [name, key] of [
       ["Access", "access"],
@@ -516,73 +653,84 @@ test("Search Intelligence deployed read path matches persisted evidence", async 
       ["Answer Engines", "answer_engines"],
       ["Conversion", "conversion"],
     ] as const) {
-      const card = panel
-        .locator(".ui-card")
-        .filter({ has: page.getByRole("heading", { name, exact: true }) });
-      await expect(card, `Hermes ${name} pass mismatch`).toContainText(
-        statusLabel(decision.passes[key].availability),
-      );
+      const passCard = card(panel, name);
+      await expect(
+        fact(passCard, "Availability"),
+        `Hermes ${name} pass mismatch`,
+      ).toHaveText(statusLabel(decision.passes[key].availability));
       if (decision.passes[key].availability === "unavailable") {
         expect(
           decision.passes[key].limitation,
           `Hermes ${name} unavailable without persisted limitation`,
         ).toBeTruthy();
-        await expect(card, `Hermes ${name} limitation hidden`).toContainText(
-          decision.passes[key].limitation!,
-        );
+        await expect(
+          passCard,
+          `Hermes ${name} limitation hidden`,
+        ).toContainText(decision.passes[key].limitation!);
       }
     }
-    await expect(
-      panel.getByText(statusLabel(decision.business_importance_state), {
-        exact: true,
-      }),
-      "browser business importance differs from persisted decision",
-    ).toBeVisible();
-  }
-  if (selected.task) {
-    await expect(
-      panel
-        .getByText(statusLabel(selected.task.status), { exact: true })
-        .first(),
-      "implementation status mismatch",
-    ).toBeVisible();
-    const verification = selected.task.verification_evidence;
-    if (verification && typeof verification.result === "string") {
-      const implementationCard = panel.locator(".ui-card").filter({
-        has: page.getByRole("heading", {
-          name: "Implementation and verification",
-          exact: true,
-        }),
-      });
+  } else {
+    for (const name of [
+      "Access",
+      "Competition",
+      "Answer Engines",
+      "Conversion",
+    ]) {
+      const passCard = card(panel, name);
       await expect(
-        implementationCard,
-        "verification result differs from backend",
-      ).toContainText(statusLabel(verification.result));
+        fact(passCard, "Availability"),
+        `Hermes ${name} absence mismatch`,
+      ).toHaveText("Unavailable");
+      await expect(
+        passCard,
+        `Hermes ${name} absence limitation hidden`,
+      ).toContainText(
+        "A governed recommendation has not recorded this reasoning pass.",
+      );
     }
   }
-  if (selected.measurement)
+  const implementationCard = card(panel, "Implementation and verification");
+  if (selected.task) {
     await expect(
-      panel.locator(".ui-card").filter({
-        has: page.getByRole("heading", {
-          name: "Measurement and observed outcome",
-          exact: true,
-        }),
-      }),
-      "measurement maturity differs from backend",
-    ).toContainText(
-      selected.outcome
-        ? "Outcome recorded"
-        : statusLabel(selected.measurement.maturity),
+      fact(implementationCard, "Task"),
+      "implementation status mismatch",
+    ).toHaveText(statusLabel(selected.task.status));
+    const verification = selected.task.verification_evidence;
+    await expect(
+      fact(implementationCard, "Verification result"),
+      "verification result differs from backend",
+    ).toHaveText(
+      typeof verification?.result === "string" && verification.result.trim()
+        ? statusLabel(verification.result)
+        : "Unavailable",
     );
-  if (selected.outcome)
+  } else {
     await expect(
-      panel
-        .getByText(statusLabel(selected.outcome.classification), {
-          exact: true,
-        })
-        .first(),
-      "outcome status mismatch",
-    ).toBeVisible();
+      fact(implementationCard, "Task"),
+      "missing implementation task was invented",
+    ).toHaveText("Not delegated");
+    await expect(
+      fact(implementationCard, "Verification result"),
+      "missing verification was invented",
+    ).toHaveText("Unavailable");
+  }
+  const measurementCard = card(panel, "Measurement and observed outcome");
+  const outcome = selected.outcome ?? selected.latest_measured?.outcome;
+  await expect(
+    fact(measurementCard, "Maturity"),
+    "measurement maturity differs from backend",
+  ).toHaveText(
+    outcome ? "Outcome recorded" : statusLabel(selected.measurement?.maturity),
+  );
+  await expect(
+    fact(measurementCard, "Observed after this change"),
+    "outcome state differs from backend",
+  ).toHaveText(outcome ? statusLabel(outcome.classification) : "Pending");
+  if (!outcome && !selected.measurement)
+    await expect(
+      fact(measurementCard, "Metric"),
+      "missing measurement was invented",
+    ).toHaveText("Unavailable");
   expect(
     blockedWrites,
     `production mutation attempted: ${blockedWrites.join(", ")}`,
