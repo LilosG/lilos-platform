@@ -75,7 +75,9 @@ def _check(table: str) -> None:
         if table == "seo_search_observations"
         else "page_id IS NULL OR website_id IS NOT NULL"
     )
-    op.create_check_constraint(name, table, expression)
+    # The shared naming convention prefixes named checks. This is already the
+    # complete PostgreSQL name used by the comment and downgrade below.
+    op.create_check_constraint(op.f(name), table, expression)
     op.execute(sa.text(f"COMMENT ON CONSTRAINT {name} ON {table} IS '{MARKER}'"))
 
 
@@ -179,7 +181,7 @@ def downgrade() -> None:
     for table in ("metric_observations", "seo_search_observations"):
         check = f"ck_{table}_page_requires_website"
         if _comment(table, check) == MARKER:
-            op.drop_constraint(check, table, type_="check")
+            op.drop_constraint(op.f(check), table, type_="check")
         page_fk = f"fk_{table}_organization_id_seo_pages"
         if _comment(table, page_fk) == MARKER:
             op.drop_constraint(page_fk, table, type_="foreignkey")
