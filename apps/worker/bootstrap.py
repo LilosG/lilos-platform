@@ -34,3 +34,4 @@ import apps.api.app.products.gbp.post_generation_models  # noqa: F401
 import apps.api.app.products.leads.models  # noqa: F401
 import apps.api.app.products.reviews.models  # noqa: F401
 import apps.api.app.products.seo.models  # noqa: F401
+import apps.api.app.synchronization.models  # noqa: F401  — GBP publication FK target

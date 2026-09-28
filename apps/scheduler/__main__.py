@@ -3,6 +3,7 @@
 import asyncio
 import logging
 
+import apps.worker.bootstrap  # noqa: F401 — register shared ORM models before first query
 from apps.api.app.config import Settings
 from apps.api.app.execution.runtime import (
     RuntimeOptions,
