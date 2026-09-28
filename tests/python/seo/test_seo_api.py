@@ -402,6 +402,81 @@ def seo_client(
 
 
 @pytest.mark.integration
+def test_search_intelligence_workspace_keeps_query_demand_unattributed_and_scoped(
+    seo_client: tuple[TestClient, dict[str, UUID]],
+    seo_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    client, ids = seo_client
+
+    async def populate() -> UUID:
+        async with seo_session_factory.begin() as session:
+            site = SEOWebsite(
+                organization_id=ids["organization"],
+                location_id=ids["location"],
+                key="workspace",
+                name="Workspace",
+                canonical_origin="https://workspace.example.invalid",
+                status="active",
+                ownership_status="verified",
+                version=1,
+            )
+            foreign = SEOWebsite(
+                organization_id=ids["other_organization"],
+                location_id=None,
+                key="foreign-workspace",
+                name="Foreign",
+                canonical_origin="https://foreign.example.invalid",
+                status="active",
+                ownership_status="verified",
+                version=1,
+            )
+            session.add_all([site, foreign])
+            await session.flush()
+            session.add_all(
+                SEOOpportunity(
+                    organization_id=org,
+                    location_id=location,
+                    website_id=website.id,
+                    page_id=None,
+                    opportunity_type="gsc_query_demand",
+                    deduplication_key=f"workspace-{website.id}",
+                    active_marker="active",
+                    evidence={"query": "local services", "page_mapping_state": "unknown"},
+                    source_versions=["gsc.v1"],
+                    score_version=2,
+                    priority_score=50,
+                    score_explanation={},
+                    status="identified",
+                    version=1,
+                )
+                for org, location, website in (
+                    (ids["organization"], ids["location"], site),
+                    (ids["other_organization"], None, foreign),
+                )
+            )
+            return site.id
+
+    website_id = asyncio.run(populate())
+    base = f"/api/v1/organizations/{ids['organization']}/seo"
+    response = client.get(f"{base}/workspace?limit=1", headers=HEADERS)
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert len(data["items"]) == 1
+    item = data["items"][0]
+    assert item["website"]["id"] == str(website_id)
+    assert item["page"] is None
+    assert item["opportunity"]["recommendation_class"] == "growth_change"
+    assert item["opportunity"]["evidence"]["page_mapping_state"] == "unknown"
+    assert data["pagination"]["has_more"] is False
+    assert all(row["website_id"] == str(website_id) for row in data["readiness"])
+    foreign_response = client.get(
+        f"{base}/workspace?website_id={ids['other_organization']}", headers=HEADERS
+    )
+    assert foreign_response.status_code == 200
+    assert foreign_response.json()["data"]["items"] == []
+
+
+@pytest.mark.integration
 def test_website_crawl_generates_opportunities_and_landing_page_gaps(
     seo_client: tuple[TestClient, dict[str, UUID]],
     seo_session_factory: async_sessionmaker[AsyncSession],

@@ -51,6 +51,7 @@ export type SEOOpportunity = {
   website_id: string;
   page_id: string | null;
   opportunity_type: string;
+  recommendation_class?: "growth_change" | "technical_regression";
   priority_score: number;
   score_explanation: Record<string, string | number | null>;
   evidence: Record<string, unknown>;
@@ -66,15 +67,116 @@ export type SEORecommendation = {
   effort: string;
   status: string;
   approved_by_user_id: string | null;
+  evidence_references: string[];
+  decision_context: SEODecisionContext | null;
+};
+
+export type SEOReasoningPass = {
+  availability: string;
+  limitation?: string | null;
+  [key: string]: unknown;
+};
+
+export type SEODecisionContext = {
+  recommendation_class: "growth_change" | "technical_regression";
+  page_mapping_state: string;
+  evidence_references: string[];
+  evidence_freshness: string | null;
+  evidence_quality: string | null;
+  evidence_limitation: string | null;
+  business_importance_state: string;
+  business_importance_value: number | null;
+  business_importance_version: string | null;
+  opportunity_score_policy_version: string | null;
+  target_metric: string | null;
+  passes: Record<
+    "access" | "competition" | "answer_engines" | "conversion",
+    SEOReasoningPass
+  >;
 };
 
 export type SEOImplementationTask = {
   id: string;
+  recommendation_revision_id: string;
+  workflow_run_id: string;
   target_type: string;
   target_reference: string;
   status: string;
   verification_evidence: Record<string, unknown> | null;
   verified_at: string | null;
+};
+
+export type SEOOutcome = {
+  id: string;
+  implementation_task_id: string;
+  classification: "improved" | "unchanged" | "regressed" | "inconclusive";
+  baseline_start: string;
+  baseline_end: string;
+  measurement_start: string;
+  measurement_end: string;
+  metrics: Record<string, unknown>;
+  limitations: string[];
+};
+
+export type SEOPageIntelligence = {
+  version: string;
+  identity: Record<string, string>;
+  current_page: Record<string, unknown>;
+  crawl: Record<string, unknown>;
+  change: Record<string, unknown>;
+  gsc: Record<string, unknown>;
+  ga4_organic_landing: Record<string, unknown>;
+  internal_links: Record<string, unknown>;
+  content: Record<string, unknown>;
+  workflow: Record<string, unknown>;
+};
+
+export type SearchIntelligenceItem = {
+  opportunity: SEOOpportunity & {
+    recommendation_class: "growth_change" | "technical_regression";
+  };
+  website: SEOWebsite;
+  page: SEOPageRecord | null;
+  recommendation: SEORecommendation | null;
+  task: SEOImplementationTask | null;
+  outcome: SEOOutcome | null;
+  measurement: {
+    metric: string | null;
+    baseline_start?: string;
+    baseline_end?: string;
+    measurement_start?: string;
+    measurement_end?: string;
+    maturity: "unavailable" | "pending" | "mature";
+    limitation: string | null;
+  } | null;
+  active_change: { revision_id: string; state: string } | null;
+  latest_measured: {
+    recommendation: SEORecommendation;
+    task: SEOImplementationTask;
+    outcome: SEOOutcome;
+  } | null;
+};
+
+export type SearchIntelligenceReadiness = {
+  website_id: string;
+  website_name: string;
+  location_id: string | null;
+  gsc: "fresh" | "stale" | "unavailable";
+  ga4: "fresh" | "stale" | "unavailable";
+  page_inventory: "observed" | "unavailable";
+};
+
+export type SearchIntelligenceWorkspace = {
+  items: SearchIntelligenceItem[];
+  readiness: SearchIntelligenceReadiness[];
+  readiness_has_more: boolean;
+  history_truncated: boolean;
+  pagination: {
+    limit: number;
+    offset: number;
+    next_offset: number | null;
+    has_more: boolean;
+  };
 };
 
 export type SEOSummaryStats = {
@@ -285,6 +387,25 @@ export function fetchOpportunities(
   );
 }
 
+export function fetchSearchIntelligenceWorkspace(
+  organizationId: string,
+  offset = 0,
+): Promise<ApiOutcome<SearchIntelligenceWorkspace>> {
+  return apiGet<SearchIntelligenceWorkspace>(
+    `${base(organizationId)}/workspace?limit=50&offset=${offset}`,
+  );
+}
+
+export function fetchPageIntelligence(
+  organizationId: string,
+  websiteId: string,
+  pageId: string,
+): Promise<ApiOutcome<SEOPageIntelligence>> {
+  return apiGet<SEOPageIntelligence>(
+    `${base(organizationId)}/websites/${websiteId}/pages/${pageId}/intelligence`,
+  );
+}
+
 export function fetchOpportunityAudit(
   organizationId: string,
   opportunityId: string,
@@ -319,7 +440,7 @@ export function createRecommendation(
       method: "POST",
       body: {
         proposed_action: recommendation.proposedAction,
-        evidence_references: [],
+        evidence_references: [`seo-opportunity:${opportunityId}`],
         expected_result_hypothesis: recommendation.expectedResultHypothesis,
         risk: recommendation.risk,
         effort: recommendation.effort,
