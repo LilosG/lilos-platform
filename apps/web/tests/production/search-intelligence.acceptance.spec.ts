@@ -20,6 +20,7 @@ import { statusLabel } from "../../src/lib/status-language";
 
 const WEB_BASE = "https://lilos-platform-web.vercel.app";
 const API_BASE = "https://lilos-api.onrender.com";
+const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 const AUTH_FILE = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "../../.auth/production-state.json",
@@ -121,7 +122,7 @@ test("Search Intelligence deployed read path matches persisted evidence", async 
     const origin = new URL(request.url()).origin;
     if (
       (origin === API_BASE || origin === WEB_BASE) &&
-      request.method() !== "GET"
+      !SAFE_METHODS.has(request.method())
     ) {
       blockedWrites.push(`${request.method()} ${request.url()}`);
       await route.abort("blockedbyclient");
