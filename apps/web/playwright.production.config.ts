@@ -14,8 +14,9 @@ import { defineConfig, devices } from "@playwright/test";
  *   2. Run the active production acceptance canary:
  *      npm run production:test
  *
- * The active production project intentionally matches only the native Hermes
- * read-only acceptance spec. The older broad acceptance.spec.ts contains
+ * The default production project intentionally matches only the native Hermes
+ * acceptance spec. Search Intelligence has a separate, explicitly selected
+ * read-only project. The older broad acceptance.spec.ts contains
  * historical client-specific assumptions and is excluded from production
  * execution until it is fully generalized. This prevents a stale tenant name
  * from ever selecting or mutating a production client.
@@ -55,10 +56,22 @@ export default defineConfig({
     },
 
     // ── Production acceptance (reuses saved auth state) ────────────────
-    // Only the tenant-generic, read-only Hermes canary is active here.
+    // Only the tenant-generic Hermes canary is active here.
     {
       name: "production-acceptance",
       testMatch: /hermes\.acceptance\.spec\.ts/,
+      use: {
+        ...devices["Desktop Chrome"],
+        channel: "chrome",
+        viewport: { width: 1440, height: 900 },
+        storageState: ".auth/production-state.json",
+      },
+    },
+    // Explicitly selected read-only Search Intelligence journey. Never a
+    // dependency of the Hermes canary or the historical mutation suite.
+    {
+      name: "search-intelligence-acceptance",
+      testMatch: /search-intelligence\.acceptance\.spec\.ts/,
       use: {
         ...devices["Desktop Chrome"],
         channel: "chrome",

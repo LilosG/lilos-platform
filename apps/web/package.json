@@ -18,6 +18,7 @@
     "production:auth": "playwright test --config playwright.production.config.ts --project=auth-setup --headed",
     "production:test": "playwright test --config playwright.production.config.ts --project=production-acceptance",
     "production:hermes": "playwright test tests/production/hermes.acceptance.spec.ts --config playwright.production.config.ts --project=production-acceptance",
+    "production:search-intelligence": "playwright test --config playwright.production.config.ts --project=search-intelligence-acceptance",
     "typecheck": "astro check"
   },
   "dependencies": {
