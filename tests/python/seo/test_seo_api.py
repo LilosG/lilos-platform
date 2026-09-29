@@ -823,6 +823,7 @@ async def _seed_bound_completion(
             score_explanation={"score_policy_version": "opportunity_score.v2"},
             status="identified",
             version=1,
+            attribution_state="attributed" if page else "query_only",
         )
         session.add(opportunity)
         await session.flush()
@@ -2049,6 +2050,7 @@ def test_page_intelligence_workflow_descendants_survive_parent_limits(
                     status="identified",
                     version=1,
                     created_at=now + timedelta(seconds=i),
+                    attribution_state="attributed",
                 )
                 for i in range(51)
             ]

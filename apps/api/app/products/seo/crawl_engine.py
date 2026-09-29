@@ -21,6 +21,8 @@ from urllib.parse import urljoin, urlparse, urlunparse
 
 import httpx
 
+from apps.api.app.products.seo.crawl_limits import DEFAULT_MAX_DEPTH, DEFAULT_MAX_PAGES
+
 LILOS_USER_AGENT = "LILOs-Crawler/1.0 (+https://lilos.io)"
 
 # Documented ingest limits. Content columns (title, meta_description, h1) are
@@ -145,8 +147,8 @@ class CrawlConfig:
     base_origin: str
     allowed_host: str
     seeds: tuple[str, ...]
-    max_pages: int = 250
-    max_depth: int = 3
+    max_pages: int = DEFAULT_MAX_PAGES
+    max_depth: int = DEFAULT_MAX_DEPTH
     crawl_delay: float = 1.0
     request_timeout: float = 10.0
     total_timeout: float = 600.0

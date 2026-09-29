@@ -378,6 +378,41 @@ async def test_orchestration_uses_current_gsc_and_routes_only_content_work(
                 partial=False,
             )
 
+        def page_query_observation(
+            *,
+            query: str,
+            date_end: datetime,
+            impressions: int,
+            position: float,
+        ) -> SEOSearchObservation:
+            """A real `page_query` row: the attribution rewrite reads these,
+            never the query-dimension aggregate row, to resolve a page."""
+            dimensions: dict[str, object] = {
+                "observation_type": "page_query",
+                "page": page.normalized_url,
+                "query": query,
+            }
+            return SEOSearchObservation(
+                organization_id=organization.id,
+                search_property_id=search_property.id,
+                website_id=website.id,
+                page_id=page.id,
+                mapping_state="mapped",
+                mapping_basis="exact_normalized_url",
+                resolver_version="page_identity.v1",
+                query=query,
+                date_start=date_end - timedelta(days=7),
+                date_end=date_end,
+                dimensions=dimensions,
+                dimension_hash=dimension_hash(dimensions),
+                clicks=10,
+                impressions=impressions,
+                ctr=0.05,
+                position=position,
+                quality_status="valid",
+                partial=False,
+            )
+
         session.add_all(
             [
                 observation(
@@ -405,6 +440,22 @@ async def test_orchestration_uses_current_gsc_and_routes_only_content_work(
                     position=31,
                     page_id=None,
                     page_dimension=None,
+                ),
+                # Dominant-page evidence for the two current-period mapped
+                # queries above. Without a matching `page_query` row, the
+                # rewritten orchestration attributes nothing to `page.id` no
+                # matter what the query-dimension aggregate row says.
+                page_query_observation(
+                    query="electric service",
+                    date_end=current_end,
+                    impressions=123,
+                    position=10,
+                ),
+                page_query_observation(
+                    query="mapped weak query",
+                    date_end=current_end,
+                    impressions=200,
+                    position=30,
                 ),
             ]
         )
@@ -524,6 +575,10 @@ async def test_orchestration_uses_current_gsc_and_routes_only_content_work(
         assert striking.evidence["impressions"] == 123
         assert striking.evidence["date_end"] == current_end.isoformat()
         assert striking.score_explanation["final_score"] == striking.priority_score
+        assert striking.attribution_state == "attributed"
+        assert striking.page_id == page.id
+        assert striking.evidence["attribution_state"] == "attributed"
+        assert striking.evidence["url"] == page.normalized_url
         striking_business = cast(dict[str, object], striking.evidence["business_importance"])
         assert striking_business["business_value"] == 40
         assert striking_business["metric_observation_id"] == str(key_events_id)
@@ -532,6 +587,8 @@ async def test_orchestration_uses_current_gsc_and_routes_only_content_work(
         assert len(query_demand) == 1
         assert query_demand[0].evidence["query"] == "query demand to investigate"
         assert query_demand[0].evidence["page_mapping_state"] == "unknown"
+        assert query_demand[0].attribution_state == "query_only"
+        assert query_demand[0].page_id is None
         query_business = cast(dict[str, object], query_demand[0].evidence["business_importance"])
         assert query_business["business_value"] is None
         assert query_demand[0].score_explanation["business_component"] == "omitted"

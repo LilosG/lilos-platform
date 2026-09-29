@@ -1,8 +1,12 @@
 import { apiGet, apiRequest, type ApiOutcome } from "./api-client";
 import { statusLabel } from "./status-language";
 
-export const MAX_CRAWL_PAGES = 20;
-export const MAX_CRAWL_DEPTH = 10;
+// Fallback bounds used only until `fetchCrawlLimits` resolves, or if that
+// call fails. The API (`apps.api.app.products.seo.crawl_limits`) is the
+// single source of truth; these constants must never diverge from it in a
+// way that under-bounds a crawl, since the API always re-validates.
+export const FALLBACK_MAX_CRAWL_PAGES = 300;
+export const FALLBACK_MAX_CRAWL_DEPTH = 5;
 export const SEO_ACTIONABLE_OPPORTUNITY_STATUSES = [
   "identified",
   "recommended",
@@ -15,14 +19,35 @@ export function isSEOOpportunityActionable(status: string): boolean {
   );
 }
 
-export function normalizeCrawlPageLimit(value: number): number {
-  if (!Number.isFinite(value)) return MAX_CRAWL_PAGES;
-  return Math.min(MAX_CRAWL_PAGES, Math.max(1, Math.trunc(value)));
+export type SEOCrawlLimits = {
+  default_max_pages: number;
+  max_max_pages: number;
+  min_max_pages: number;
+  default_max_depth: number;
+  max_max_depth: number;
+  min_max_depth: number;
+};
+
+export function fetchCrawlLimits(
+  organizationId: string,
+): Promise<ApiOutcome<SEOCrawlLimits>> {
+  return apiGet(`${base(organizationId)}/crawl-limits`);
 }
 
-export function normalizeCrawlDepthLimit(value: number): number {
-  if (!Number.isFinite(value)) return MAX_CRAWL_DEPTH;
-  return Math.min(MAX_CRAWL_DEPTH, Math.max(1, Math.trunc(value)));
+export function normalizeCrawlPageLimit(
+  value: number,
+  maxPages: number = FALLBACK_MAX_CRAWL_PAGES,
+): number {
+  if (!Number.isFinite(value)) return maxPages;
+  return Math.min(maxPages, Math.max(1, Math.trunc(value)));
+}
+
+export function normalizeCrawlDepthLimit(
+  value: number,
+  maxDepth: number = FALLBACK_MAX_CRAWL_DEPTH,
+): number {
+  if (!Number.isFinite(value)) return maxDepth;
+  return Math.min(maxDepth, Math.max(1, Math.trunc(value)));
 }
 
 export type SEOWebsite = {

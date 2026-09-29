@@ -897,6 +897,7 @@ class SEOService:
                             score_explanation=explanation,
                             status="identified",
                             version=1,
+                            attribution_state="attributed",
                         )
                         session.add(opportunity)
                         await session.flush()

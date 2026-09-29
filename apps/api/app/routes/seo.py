@@ -38,6 +38,7 @@ from apps.api.app.products.seo.contracts import (
     SearchPropertySelect,
     WebsiteCreate,
 )
+from apps.api.app.products.seo.crawl_limits import crawl_limits_payload
 from apps.api.app.products.seo.decision import (
     SEOEvidenceInvalidError,
     growth_handoff,
@@ -674,6 +675,20 @@ async def search_intelligence_workspace(
         },
         "meta": meta(request),
     }
+
+
+@router.get("/crawl-limits", dependencies=[Depends(no_store)])
+async def crawl_limits(
+    request: Request,
+    organization_id: UUID,
+    _: Annotated[AuthorizationDecision, policy("seo.read")],
+) -> dict[str, object]:
+    """Return the single source of truth for crawl page/depth bounds.
+
+    The web operator UI reads these instead of hardcoding a parallel,
+    lower ceiling — see `apps.api.app.products.seo.crawl_limits`.
+    """
+    return {"data": crawl_limits_payload(), "meta": meta(request)}
 
 
 @router.get("/websites", dependencies=[Depends(no_store)])

@@ -579,6 +579,7 @@ def test_unattributed_seo_handoff_blocks_page_target_draft_and_publication(
             session.add(page)
             await session.flush()
             opportunity.page_id = page.id
+            opportunity.attribution_state = "attributed"
             return page.normalized_url
 
     denied_publish = client.post(

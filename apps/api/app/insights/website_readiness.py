@@ -165,7 +165,7 @@ class WebsiteReadinessService:
                 .where(
                     SEOCrawlRun.organization_id == organization_id,
                     SEOCrawlRun.website_id == w.id,
-                    SEOCrawlRun.status == "completed",
+                    SEOCrawlRun.status.in_(("success", "partial")),
                 )
                 .order_by(SEOCrawlRun.completed_at.desc())
             )
