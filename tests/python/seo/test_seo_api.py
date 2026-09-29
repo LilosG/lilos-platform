@@ -24,9 +24,10 @@ from apps.api.app.agents.hermes_client import (
     REQUIRED_LILOS_TOOLS,
     HermesCapabilities,
 )
+from apps.api.app.agents.models import AgentRun
 from apps.api.app.agents.service import AgentRuntimeService
 from apps.api.app.agents.skills import skill_for_workflow
-from apps.api.app.agents.tools import AgentToolService
+from apps.api.app.agents.tools import AgentToolDeniedError, AgentToolService
 from apps.api.app.authentication.contracts import VerifiedProviderClaims
 from apps.api.app.authentication.enums import AssuranceLevel, UserStatus
 from apps.api.app.authentication.models import UserProfile
@@ -39,6 +40,7 @@ from apps.api.app.locations.models import Location
 from apps.api.app.main import create_app
 from apps.api.app.organizations.enums import OrganizationStatus, OrganizationType
 from apps.api.app.organizations.models import Organization
+from apps.api.app.products.seo.decision import resolve_decision
 from apps.api.app.products.seo.models import (
     SEOCrawlPageObservation,
     SEOCrawlRun,
@@ -713,6 +715,467 @@ def test_selected_opportunity_starts_one_scoped_hermes_workflow(
         )
         is None
     )
+
+
+async def _seed_bound_completion(
+    factory: async_sessionmaker[AsyncSession],
+    ids: dict[str, UUID],
+    *,
+    location_id: UUID | None = None,
+    page_mapped: bool = False,
+) -> tuple[UUID, UUID]:
+    organization_id = ids["organization"]
+    location_id = location_id or ids["location"]
+    unique = uuid4().hex
+    async with factory.begin() as session:
+        website = SEOWebsite(
+            organization_id=organization_id,
+            location_id=location_id,
+            key=f"completion-{unique}",
+            name="Completion test site",
+            canonical_origin=f"https://{unique}.example.invalid",
+            status="active",
+            ownership_status="verified",
+            version=1,
+        )
+        session.add(website)
+        await session.flush()
+        page = None
+        if page_mapped:
+            page = SEOPage(
+                organization_id=organization_id,
+                website_id=website.id,
+                normalized_url=f"https://{unique}.example.invalid/page",
+                observed_url=f"https://{unique}.example.invalid/page",
+                normalization_reasons=[],
+                robots_directives=[],
+                internal_links=[],
+                external_links=[],
+                structured_data_present=False,
+                indexability="indexable",
+                technical_issues=[],
+                quality_status="clean",
+            )
+            session.add(page)
+            await session.flush()
+        property_row = SEOSearchProperty(
+            organization_id=organization_id,
+            website_id=website.id,
+            connection_id=ids["connection"],
+            provider="google_search_console",
+            external_property_id=f"sc-domain:{unique}.example.invalid",
+            property_type="domain",
+            mapping_status="confirmed",
+            freshness_status="fresh",
+        )
+        session.add(property_row)
+        await session.flush()
+        now = datetime.now(UTC)
+        observation = SEOSearchObservation(
+            organization_id=organization_id,
+            search_property_id=property_row.id,
+            website_id=website.id,
+            page_id=page.id if page else None,
+            query="local brunch",
+            date_start=now - timedelta(days=7),
+            date_end=now,
+            dimensions={
+                "query": "local brunch",
+                **({"page": page.normalized_url} if page else {}),
+            },
+            dimension_hash=f"completion-{unique}",
+            clicks=1,
+            impressions=222,
+            ctr=0.0045045,
+            position=5.2477,
+            mapping_state="mapped" if page else "unknown",
+            quality_status="valid",
+            partial=False,
+        )
+        session.add(observation)
+        await session.flush()
+        await session.refresh(observation)
+        assert observation.ctr is not None
+        assert observation.position is not None
+        opportunity = SEOOpportunity(
+            organization_id=organization_id,
+            location_id=location_id,
+            website_id=website.id,
+            page_id=page.id if page else None,
+            opportunity_type="gsc_low_ctr",
+            deduplication_key=f"completion-{unique}",
+            active_marker="active",
+            evidence={
+                "source": "google_search_console",
+                "observation_id": str(observation.id),
+                "query": observation.query,
+                "page_mapping_state": observation.mapping_state,
+                "clicks": observation.clicks,
+                "impressions": observation.impressions,
+                "ctr": float(observation.ctr),
+                "position": float(observation.position),
+                "date_start": observation.date_start.isoformat(),
+                "date_end": observation.date_end.isoformat(),
+            },
+            source_versions=["gsc.v1"],
+            score_version=2,
+            priority_score=89,
+            score_explanation={"score_policy_version": "opportunity_score.v2"},
+            status="identified",
+            version=1,
+        )
+        session.add(opportunity)
+        await session.flush()
+        source_ref = f"seo-opportunity:{opportunity.id}"
+        decision = await resolve_decision(session, organization_id, opportunity, [source_ref])
+        workflow = await ExecutionService().start_named(
+            session,
+            organization_id,
+            "agent.seo",
+            f"completion-{unique}",
+            location_id=location_id,
+            input_document={
+                "seo_opportunity_id": str(opportunity.id),
+                "seo_decision_snapshot": decision,
+            },
+            correlation_id=f"completion-{unique}",
+            enqueue_job=False,
+        )
+        return workflow.id, opportunity.id
+
+
+async def _prepare_bound_completion(
+    session: AsyncSession, organization_id: UUID, location_id: UUID, workflow_id: UUID
+) -> AgentRun:
+    run, _ = await AgentRuntimeService()._prepare(
+        session,
+        Settings.model_validate({"environment": EnvironmentName.TEST}),
+        organization_id,
+        location_id,
+        workflow_id,
+        skill_for_workflow("agent.seo"),
+        HermesCapabilities(
+            runtime_version="test",
+            model="test",
+            features={name: True for name in REQUIRED_FEATURES},
+            endpoints={},
+            runtime={"mode": "server_agent", "tool_execution": "server"},
+            sanctioned_tools=tuple(sorted(REQUIRED_LILOS_TOOLS)),
+            raw={},
+        ),
+        "completion-test",
+    )
+    return run
+
+
+async def _submit_bound_proposal(
+    factory: async_sessionmaker[AsyncSession], run: AgentRun, *, action: str
+) -> None:
+    async with factory.begin() as tool_session:
+        tools = AgentToolService()
+        bound = await tools.bound_run(tool_session, run.hermes_session_id)
+        assert bound.id == run.id
+        workflow = await tool_session.get(WorkflowRun, bound.workflow_run_id)
+        assert workflow is not None
+        opportunity = await tool_session.get(
+            SEOOpportunity, UUID(str(workflow.input_document["seo_opportunity_id"]))
+        )
+        assert opportunity is not None
+        decision = await resolve_decision(
+            tool_session, run.organization_id, opportunity, [f"seo-opportunity:{opportunity.id}"]
+        )
+        snapshot = cast(dict[str, Any], workflow.input_document["seo_decision_snapshot"])
+        assert decision == snapshot, {
+            key: (decision.get(key), snapshot.get(key))
+            for key in decision.keys() | snapshot.keys()
+            if decision.get(key) != snapshot.get(key)
+        }
+        await tools.invoke(tool_session, bound, "analyze_seo_opportunities", {})
+        result = await tools.invoke(
+            tool_session,
+            bound,
+            "create_seo_recommendation_proposal",
+            {
+                "proposed_action": action,
+                "expected_result_hypothesis": "Improve search CTR",
+                "risk": "low",
+                "effort": "medium",
+            },
+        )
+        assert result["data"] == {"accepted": True}
+
+
+@pytest.mark.integration
+def test_bound_seo_completion_sees_committed_tool_request_and_replay_is_stable(
+    seo_client: tuple[TestClient, dict[str, UUID]],
+    seo_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    _, ids = seo_client
+
+    async def scenario() -> None:
+        workflow_id, opportunity_id = await _seed_bound_completion(seo_session_factory, ids)
+        runtime = AgentRuntimeService()
+        settings = Settings.model_validate({"environment": EnvironmentName.TEST})
+        async with seo_session_factory() as worker:
+            run = await _prepare_bound_completion(
+                worker, ids["organization"], ids["location"], workflow_id
+            )
+            await _submit_bound_proposal(seo_session_factory, run, action="Improve local snippet")
+            # The worker still holds the exact stale ORM identity from before
+            # the independent tool transaction committed.
+            assert run.final_output is None
+            assert run.source_references == []
+            async with seo_session_factory.begin() as tool_session:
+                current = await tool_session.get(AgentRun, run.id)
+                assert current is not None
+                assert current.final_output is not None
+                pending = cast(dict[str, Any], current.final_output["seo_pending_proposal"])
+                assert pending["proposed_action"] == ("Improve local snippet")
+                current.output_references = ["existing:tool-output"]
+            await runtime._persist_event(
+                worker,
+                settings,
+                run,
+                {
+                    "event": "run.completed",
+                    "output": "Hermes finished",
+                    "usage": {"input_tokens": 12, "output_tokens": 4},
+                },
+            )
+            assert run.status == "completed"
+            assert run.safe_error_code is None
+            assert run.final_output == {"text": "Hermes finished"}
+            assert run.input_tokens == 12 and run.output_tokens == 4
+            assert run.source_references == [f"seo-opportunity:{opportunity_id}"]
+            assert run.output_references[0] == "existing:tool-output"
+            assert len(run.output_references) == 2
+            revision_id = UUID(str(run.output_references[1]).removeprefix("seo-recommendation:"))
+            revision = await worker.get(SEORecommendationRevision, revision_id)
+            assert revision is not None
+            assert revision.revision_number == 1
+            assert revision.status == "awaiting_approval"
+            assert revision.proposed_action == "Improve local snippet"
+            event_count = run.event_count
+            await runtime._persist_event(worker, settings, run, {"event": "run.completed"})
+            assert run.event_count == event_count
+        async with seo_session_factory() as replay_session:
+            replay_run = await replay_session.get(AgentRun, run.id)
+            assert replay_run is not None
+            await runtime._persist_event(
+                replay_session, settings, replay_run, {"event": "run.completed"}
+            )
+            assert replay_run.event_count == event_count
+            count = await replay_session.scalar(
+                select(func.count())
+                .select_from(SEORecommendationRevision)
+                .where(SEORecommendationRevision.opportunity_id == opportunity_id)
+            )
+            assert count == 1
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.integration
+def test_bound_seo_completion_recognizes_an_existing_scoped_revision_reference(
+    seo_client: tuple[TestClient, dict[str, UUID]],
+    seo_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    _, ids = seo_client
+
+    async def scenario() -> None:
+        workflow_id, opportunity_id = await _seed_bound_completion(seo_session_factory, ids)
+        runtime = AgentRuntimeService()
+        settings = Settings.model_validate({"environment": EnvironmentName.TEST})
+        async with seo_session_factory() as worker:
+            run = await _prepare_bound_completion(
+                worker, ids["organization"], ids["location"], workflow_id
+            )
+            await _submit_bound_proposal(seo_session_factory, run, action="Staged proposal")
+            async with seo_session_factory.begin() as other_request:
+                revision = SEORecommendationRevision(
+                    organization_id=ids["organization"],
+                    opportunity_id=opportunity_id,
+                    revision_number=1,
+                    proposed_action="Already created proposal",
+                    evidence_references=[f"seo-opportunity:{opportunity_id}"],
+                    expected_result_hypothesis="Improve CTR",
+                    risk="low",
+                    effort="medium",
+                    status="awaiting_approval",
+                    created_at=datetime.now(UTC),
+                )
+                other_request.add(revision)
+                await other_request.flush()
+                current = await other_request.get(AgentRun, run.id)
+                assert current is not None
+                current.output_references = [f"seo-recommendation:{revision.id}"]
+                revision_id = revision.id
+            await runtime._persist_event(
+                worker, settings, run, {"event": "run.completed", "output": "Hermes finished"}
+            )
+            assert run.status == "completed"
+            assert run.safe_error_code is None
+            assert run.output_references == [f"seo-recommendation:{revision_id}"]
+            count = await worker.scalar(
+                select(func.count())
+                .select_from(SEORecommendationRevision)
+                .where(SEORecommendationRevision.opportunity_id == opportunity_id)
+            )
+            assert count == 1
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    ("case", "event_type", "expected_error"),
+    [
+        ("missing", "run.completed", "SEO_RECOMMENDATION_MISSING"),
+        ("changed", "run.completed", "SEO_EVIDENCE_INVALID"),
+        ("active_change", "run.completed", "SEO_ACTIVE_GROWTH_CHANGE"),
+        ("failed", "run.failed", "HERMES_RUN_FAILED"),
+        ("cancelled", "run.cancelled", None),
+    ],
+)
+def test_bound_seo_terminal_failures_never_create_a_revision(
+    seo_client: tuple[TestClient, dict[str, UUID]],
+    seo_session_factory: async_sessionmaker[AsyncSession],
+    case: str,
+    event_type: str,
+    expected_error: str | None,
+) -> None:
+    _, ids = seo_client
+
+    async def scenario() -> None:
+        workflow_id, opportunity_id = await _seed_bound_completion(
+            seo_session_factory, ids, page_mapped=case == "active_change"
+        )
+        runtime = AgentRuntimeService()
+        settings = Settings.model_validate({"environment": EnvironmentName.TEST})
+        async with seo_session_factory() as worker:
+            run = await _prepare_bound_completion(
+                worker, ids["organization"], ids["location"], workflow_id
+            )
+            if case != "missing":
+                await _submit_bound_proposal(
+                    seo_session_factory, run, action=f"Proposal for {case}"
+                )
+            if case == "changed":
+                async with seo_session_factory.begin() as change:
+                    opportunity = await change.get(SEOOpportunity, opportunity_id)
+                    assert opportunity is not None
+                    opportunity.priority_score += 1
+            elif case == "active_change":
+                async with seo_session_factory.begin() as change:
+                    change.add(
+                        SEORecommendationRevision(
+                            organization_id=ids["organization"],
+                            opportunity_id=opportunity_id,
+                            revision_number=1,
+                            proposed_action="Approved prior page change",
+                            evidence_references=[f"seo-opportunity:{opportunity_id}"],
+                            expected_result_hypothesis="Improve CTR",
+                            risk="low",
+                            effort="low",
+                            status="approved",
+                            created_at=datetime.now(UTC),
+                        )
+                    )
+            await runtime._persist_event(worker, settings, run, {"event": event_type})
+            assert run.safe_error_code == expected_error
+            assert run.status == ("cancelled" if case == "cancelled" else "failed")
+            if case in {"failed", "cancelled"}:
+                assert run.final_output is None
+                await runtime._persist_event(worker, settings, run, {"event": "run.completed"})
+                assert run.status == ("cancelled" if case == "cancelled" else "failed")
+                async with seo_session_factory() as late_tool_session:
+                    with pytest.raises(AgentToolDeniedError, match="no longer active"):
+                        await AgentToolService().invoke(
+                            late_tool_session,
+                            run,
+                            "create_seo_recommendation_proposal",
+                            {
+                                "proposed_action": "Late proposal",
+                                "expected_result_hypothesis": "Improve CTR",
+                                "risk": "low",
+                                "effort": "medium",
+                            },
+                        )
+            count = await worker.scalar(
+                select(func.count())
+                .select_from(SEORecommendationRevision)
+                .where(SEORecommendationRevision.opportunity_id == opportunity_id)
+            )
+            assert count == (1 if case == "active_change" else 0)
+            assert run.output_references == []
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.integration
+def test_bound_seo_completion_cannot_consume_another_runs_proposal(
+    seo_client: tuple[TestClient, dict[str, UUID]],
+    seo_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    _, ids = seo_client
+
+    async def scenario() -> None:
+        async with seo_session_factory.begin() as session:
+            other_location = Location(
+                organization_id=ids["organization"],
+                name="Other completion location",
+                slug=f"other-completion-{uuid4().hex[:8]}",
+                location_type=LocationType.VIRTUAL,
+                status=LocationStatus.ACTIVE,
+                timezone="UTC",
+                country_code="US",
+                website_url="https://other.example.invalid",
+                is_primary=False,
+                version=1,
+            )
+            session.add(other_location)
+            await session.flush()
+            other_location_id = other_location.id
+        first_workflow, first_opportunity = await _seed_bound_completion(seo_session_factory, ids)
+        second_workflow, second_opportunity = await _seed_bound_completion(
+            seo_session_factory, ids, location_id=other_location_id
+        )
+        runtime = AgentRuntimeService()
+        settings = Settings.model_validate({"environment": EnvironmentName.TEST})
+        async with seo_session_factory() as worker:
+            first = await _prepare_bound_completion(
+                worker, ids["organization"], ids["location"], first_workflow
+            )
+            async with seo_session_factory() as other_worker:
+                second = await _prepare_bound_completion(
+                    other_worker, ids["organization"], other_location_id, second_workflow
+                )
+            await _submit_bound_proposal(
+                seo_session_factory, second, action="Other location proposal"
+            )
+            assert first.final_output is None
+            await runtime._persist_event(
+                worker, settings, first, {"event": "run.completed", "output": "Done"}
+            )
+            assert first.status == "failed"
+            assert first.safe_error_code == "SEO_RECOMMENDATION_MISSING"
+            assert first.source_references == []
+        async with seo_session_factory() as inspect:
+            other = await inspect.get(AgentRun, second.id)
+            assert other is not None
+            assert other.final_output is not None
+            pending = cast(dict[str, Any], other.final_output["seo_pending_proposal"])
+            assert pending["proposed_action"] == ("Other location proposal")
+            assert other.status == "queued"
+            for opportunity_id in (first_opportunity, second_opportunity):
+                count = await inspect.scalar(
+                    select(func.count())
+                    .select_from(SEORecommendationRevision)
+                    .where(SEORecommendationRevision.opportunity_id == opportunity_id)
+                )
+                assert count == 0
+
+    asyncio.run(scenario())
 
 
 @pytest.mark.integration

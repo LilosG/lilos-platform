@@ -308,6 +308,8 @@ class AgentToolService:
                         if locked is None:
                             raise AgentToolDeniedError("Bound Hermes run is unavailable")
                         run = locked
+                        if run.status not in {"queued", "running", "waiting_approval"}:
+                            raise AgentToolDeniedError("Bound Hermes run is no longer active")
                         if (run.final_output or {}).get("seo_pending_proposal") or any(
                             str(ref).startswith("seo-recommendation:")
                             for ref in run.output_references

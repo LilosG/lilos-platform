@@ -38,6 +38,7 @@ from apps.api.app.products.seo.decision import (
     resolve_decision,
 )
 from apps.api.app.products.seo.errors import SEOOpportunityNotFoundError
+from apps.api.app.products.seo.models import SEORecommendationRevision
 from apps.api.app.products.seo.service import SEOService
 
 TERMINAL_HERMES_STATUSES = {"completed", "failed", "cancelled"}
@@ -368,9 +369,35 @@ class AgentRuntimeService:
         raw_event: dict[str, Any],
     ) -> None:
         document = safe_event_document(raw_event)
-        if document is None or run.event_count >= settings.hermes_agent_event_limit:
+        if document is None:
             return
         event_type = str(raw_event.get("event", "unknown"))[:64]
+        if event_type in {"run.completed", "run.failed", "run.cancelled"}:
+            # Sanctioned tools commit through a separate API session while the
+            # worker retains this ORM identity across the Hermes event stream.
+            # Lock and repopulate it before reading a staged proposal or refs.
+            # The lock also serializes terminal replay with proposal submission.
+            with session.no_autoflush:
+                current_run = await session.scalar(
+                    select(AgentRun)
+                    .where(
+                        AgentRun.organization_id == run.organization_id,
+                        AgentRun.id == run.id,
+                        AgentRun.workflow_run_id == run.workflow_run_id,
+                    )
+                    .with_for_update()
+                    .execution_options(populate_existing=True)
+                )
+            if current_run is None:
+                raise RuntimeError("bound AgentRun is unavailable at terminal completion")
+            run = current_run
+            if run.status in TERMINAL_HERMES_STATUSES:
+                await session.commit()
+                return
+        if run.event_count >= settings.hermes_agent_event_limit:
+            if event_type in {"run.completed", "run.failed", "run.cancelled"}:
+                await session.commit()
+            return
         timestamp = raw_event.get("timestamp")
         occurred_at = (
             datetime.fromtimestamp(float(timestamp), tz=UTC)
@@ -430,7 +457,36 @@ class AgentRuntimeService:
                 bound_id = workflow.input_document.get("seo_opportunity_id") if workflow else None
                 if bound_id is not None:
                     safe_error: str | None = "SEO_RECOMMENDATION_MISSING"
-                    if isinstance(pending, dict) and workflow is not None:
+                    recommendation_refs = [
+                        str(ref)
+                        for ref in run.output_references
+                        if str(ref).startswith("seo-recommendation:")
+                    ]
+                    if recommendation_refs:
+                        # A terminal event can be replayed after the canonical
+                        # revision reference was already bound to this run.
+                        # Recognize only the exact scoped opportunity revision.
+                        try:
+                            revision_id = UUID(
+                                recommendation_refs[0].removeprefix("seo-recommendation:")
+                            )
+                            opportunity_id = UUID(str(bound_id))
+                        except (ValueError, TypeError):
+                            safe_error = "SEO_RECOMMENDATION_INVALID"
+                        else:
+                            existing = await session.scalar(
+                                select(SEORecommendationRevision).where(
+                                    SEORecommendationRevision.id == revision_id,
+                                    SEORecommendationRevision.organization_id
+                                    == run.organization_id,
+                                    SEORecommendationRevision.opportunity_id == opportunity_id,
+                                )
+                            )
+                            if existing is not None and len(recommendation_refs) == 1:
+                                safe_error = None
+                            else:
+                                safe_error = "SEO_RECOMMENDATION_INVALID"
+                    elif isinstance(pending, dict) and workflow is not None:
                         try:
                             opportunity_id = UUID(str(bound_id))
                             opportunity = await SEOService().get_opportunity(
