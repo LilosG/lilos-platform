@@ -92,14 +92,19 @@ import "../styles/global.css";
         fetchImplementationTasks,
         runCrawl,
         fetchCrawlRun,
+        fetchCrawlRuns,
         fetchCrawlPages,
+        fetchPageIntelligence,
         normalizeCrawlPageLimit,
         normalizeCrawlDepthLimit,
         crawlTerminalState,
         isSEOOpportunityActionable,
         type SEOCrawlRun,
       } from "../lib/seo";
-      import { renderSearchIntelligenceWorkspace } from "../lib/ui/search-intelligence";
+      import {
+        renderPageIntelligence,
+        renderSearchIntelligenceWorkspace,
+      } from "../lib/ui/search-intelligence";
       import { fetchSearchConsolePerformance } from "../lib/search-console";
       import { startWorkflowRun } from "../lib/workflows";
       import {
@@ -502,19 +507,23 @@ import "../styles/global.css";
         const table = document.createElement("table");
         const thead = document.createElement("thead");
         thead.innerHTML =
-          "<tr><th>URL</th><th>Status</th><th>Depth</th><th>Title</th><th>Indexable</th></tr>";
+          "<tr><th>URL</th><th>Status</th><th>Depth</th><th>Title</th><th>Indexable</th><th>Page intelligence</th></tr>";
         table.append(thead);
         const tbody = document.createElement("tbody");
 
         const loadingRow = document.createElement("tr");
         const loadingCell = document.createElement("td");
-        loadingCell.colSpan = 5;
+        loadingCell.colSpan = 6;
         loadingCell.className = "muted";
         loadingCell.textContent = "Loading page inventory…";
         loadingRow.append(loadingCell);
         tbody.append(loadingRow);
         table.append(tbody);
         wrapper.append(table);
+        const pageDetail = document.createElement("div");
+        pageDetail.className = "ui-stack ui-stack--4";
+        pageDetail.setAttribute("aria-live", "polite");
+        wrapper.append(pageDetail);
 
         void fetchCrawlPages(organizationId, run.id).then((pagesResult) => {
           if (pagesResult.kind !== "ok") {
@@ -547,13 +556,58 @@ import "../styles/global.css";
                   : "Not indexable",
               ),
             );
-            tr.append(urlTd, statusTd, depthTd, titleTd, indexTd);
+            const intelligenceTd = document.createElement("td");
+            const inspect = document.createElement("button");
+            inspect.type = "button";
+            inspect.className = "ui-button ui-button--secondary ui-button--sm";
+            inspect.textContent = "Inspect page";
+            inspect.setAttribute(
+              "aria-label",
+              `Inspect page ${page.normalized_url}`,
+            );
+            inspect.addEventListener("click", async () => {
+              const selectedOrganizationId = organizationId;
+              inspect.disabled = true;
+              pageDetail.replaceChildren(
+                Object.assign(document.createElement("p"), {
+                  textContent: "Loading Page Intelligence…",
+                }),
+              );
+              const result = await fetchPageIntelligence(
+                selectedOrganizationId,
+                run.website_id,
+                page.id,
+              );
+              if (
+                organizationId !== selectedOrganizationId ||
+                !wrapper.isConnected
+              )
+                return;
+              pageDetail.replaceChildren();
+              if (result.kind === "ok") {
+                pageDetail.append(...renderPageIntelligence(result.data));
+              } else {
+                pageDetail.append(
+                  errorAlert(describeFailure(result, "Page Intelligence")),
+                );
+              }
+              inspect.disabled = false;
+            });
+            intelligenceTd.append(inspect);
+            tr.append(
+              urlTd,
+              statusTd,
+              depthTd,
+              titleTd,
+              indexTd,
+              intelligenceTd,
+            );
             tbody.append(tr);
           }
           if (pagesResult.data.length === 0) {
             const emptyRow = document.createElement("tr");
             const emptyCell = document.createElement("td");
-            emptyCell.colSpan = 5;
+            emptyCell.colSpan = 6;
             emptyCell.className = "muted";
             emptyCell.textContent =
               run.safe_result.page_evidence_version === "crawl_page.v1"
@@ -671,8 +725,10 @@ import "../styles/global.css";
 
           const resultContainer = document.createElement("div");
           resultContainer.style.marginTop = "var(--space-4)";
+          let showingNewRun = false;
 
           crawlBtn.addEventListener("click", async () => {
+            showingNewRun = true;
             const crawlOrganizationId = organizationId;
             const requestTimestamp = Date.now();
             crawlBtn.disabled = true;
@@ -753,6 +809,29 @@ import "../styles/global.css";
           body.append(actions, resultContainer);
           card.append(body);
           panel.append(card);
+
+          const crawlOrganizationId = organizationId;
+          status.textContent = "Loading latest crawl…";
+          void fetchCrawlRuns(crawlOrganizationId, website.id).then((runs) => {
+            if (
+              showingNewRun ||
+              organizationId !== crawlOrganizationId ||
+              !card.isConnected
+            )
+              return;
+            if (runs.kind !== "ok") {
+              status.textContent = describeFailure(runs, "Latest crawl");
+              return;
+            }
+            const latest =
+              runs.data.find(
+                (run) => run.status === "success" || run.status === "partial",
+              ) ?? runs.data[0];
+            status.textContent = latest
+              ? "Latest recorded crawl"
+              : "No recorded crawl yet.";
+            if (latest) renderCrawlRunState(resultContainer, latest);
+          });
         }
       }
 

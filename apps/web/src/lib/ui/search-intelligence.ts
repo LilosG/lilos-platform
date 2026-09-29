@@ -87,7 +87,7 @@ function needsPageAttribution(item: SearchIntelligenceItem): boolean {
   return (
     item.opportunity.recommendation_class === "growth_change" &&
     item.recommendation?.status === "approved" &&
-    item.opportunity.evidence.page_mapping_state === "unknown" &&
+    item.opportunity.page_id === null &&
     !item.task?.verified_at
   );
 }
@@ -95,16 +95,32 @@ function needsPageAttribution(item: SearchIntelligenceItem): boolean {
 const pageAttributionAction =
   "Target resolution required: identify the ranking page from authoritative mapped evidence before implementing the title and meta change. The SEO opportunity is a work reference, not a page URL.";
 
+function eligibilityAction(limitation: string | null): string {
+  if (limitation === "Opportunity is outside the active organization scope")
+    return "This opportunity is no longer valid for the selected client and website. Review current source evidence before requesting a recommendation.";
+  if (limitation === "The source observation does not resolve in this scope")
+    return "The supporting source record is unavailable for this website. Check its mapping in Integrations and refresh evidence before requesting a recommendation.";
+  if (
+    limitation === "Opportunity has no governed source or score policy version"
+  )
+    return "This older opportunity lacks current source and scoring evidence. Review a newly generated opportunity before requesting a recommendation.";
+  if (
+    limitation === "No persisted scoped source record supports this opportunity"
+  )
+    return "No stored source observation supports this finding. Review current source evidence before requesting a recommendation.";
+  return (
+    limitation ??
+    "Current governed evidence is unavailable. Review source readiness before requesting a recommendation."
+  );
+}
+
 function attentionReasons(
   item: SearchIntelligenceItem,
   readiness?: SearchIntelligenceReadiness,
 ): string[] {
   const reasons: string[] = [];
   if (!item.governed_eligibility.eligible)
-    reasons.push(
-      item.governed_eligibility.limitation ??
-        "Current governed evidence is unavailable.",
-    );
+    reasons.push(eligibilityAction(item.governed_eligibility.limitation));
   if (item.recommendation?.status === "awaiting_approval")
     reasons.push("A human decision is required before implementation.");
   if (needsPageAttribution(item)) reasons.push(pageAttributionAction);
@@ -291,6 +307,7 @@ function renderSection(
   );
   for (const item of rows) {
     const row = document.createElement("li");
+    row.dataset.opportunityId = item.opportunity.id;
     const info = document.createElement("div");
     const title = document.createElement("h4");
     title.textContent = pageName(item);
@@ -358,7 +375,9 @@ function pageEvidenceCard(
   return card;
 }
 
-function renderPageIntelligence(model: SEOPageIntelligence): HTMLElement[] {
+export function renderPageIntelligence(
+  model: SEOPageIntelligence,
+): HTMLElement[] {
   const identity = model.identity;
   const current = model.current_page;
   const crawl = model.crawl;
@@ -611,9 +630,9 @@ async function renderDetail(
   }
   if (item.governed_eligibility.eligible) reasoningBody.append(ask, runStatus);
   else {
-    runStatus.textContent =
-      item.governed_eligibility.limitation ??
-      "Current governed evidence is unavailable.";
+    runStatus.textContent = eligibilityAction(
+      item.governed_eligibility.limitation,
+    );
     reasoningBody.append(runStatus);
   }
   panel.append(reasoning);
