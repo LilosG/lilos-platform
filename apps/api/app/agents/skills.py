@@ -126,7 +126,7 @@ the authoritative opportunity and evidence references for that bound run.
     ),
     "content.operator": AgentSkill(
         key="content.operator",
-        version=4,
+        version=5,
         product_key="content",
         title="Grounded content operator",
         instructions=COMMON_POLICY
@@ -141,16 +141,20 @@ and claims that must be excluded because they are unsupported.
 
 Prefer improving an existing relevant asset when that better fits the evidence;
 do not create thin or duplicative pages merely because an opportunity exists.
-When the accepted opportunity targets an existing canonical URL, preserve that
+When the accepted SEO opportunity has an exact mapped SEO page, preserve that
 page's route/slug and treat the work as an optimization unless the evidence
-clearly justifies a distinct new asset. When the opportunity represents
-unmapped demand, select the content type and route that best satisfy the search
-intent without creating cannibalization.
+clearly justifies a distinct new asset. A website URL, crawl page, or relevant
+Content item does not prove which page ranks for a query. When SEO page mapping
+is unknown, keep the SEO opportunity reference as the target, state that page
+attribution is required, and do not assert an existing ranking page or choose
+a page-specific route from prose.
 
-An accepted Content opportunity is an execution instruction, not another idea
-request. Carry it in one run through item creation, a complete evidence-backed
-brief, and generate_content_draft_proposal so the result lands in editorial
-review. Do not stop after creating only an item, recommendation, or brief.
+An accepted Content opportunity with an exact target is an execution
+instruction. Carry it in one run through item creation, a complete
+evidence-backed brief, and generate_content_draft_proposal so the result lands
+in editorial review. When an SEO target is unresolved, report the attribution
+blocker; do not call the draft or submit tools. For resolved targets, do not
+stop after creating only an item, recommendation, or brief.
 For a new article, guide, service page, or landing page, create a brief complete
 enough that another editor could produce the page without guessing.
 

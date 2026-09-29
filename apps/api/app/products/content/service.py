@@ -52,6 +52,8 @@ from apps.api.app.products.content.errors import (
     ContentPublicationRequiresApprovedRevisionError,
     ContentQueryInvalidError,
     ContentRevisionNotFoundError,
+    ContentSEOTargetMismatchError,
+    ContentSEOTargetUnresolvedError,
     ContentTargetNotConfiguredError,
 )
 from apps.api.app.products.content.models import (
@@ -62,6 +64,7 @@ from apps.api.app.products.content.models import (
     ContentRevision,
     PublishingTarget,
 )
+from apps.api.app.products.seo.models import SEOOpportunity, SEOPage
 
 SECRET_PATTERN = re.compile(r"(?i)(?:api[_-]?key|secret|token|password)\s*[:=]")
 
@@ -313,6 +316,70 @@ class ContentService:
         self.notifications = NotificationService()
         self.ai_gateway = build_ai_gateway()
         self.execution = ExecutionService()
+
+    async def _seo_target_for_item(
+        self, session: AsyncSession, organization_id: UUID, item: ContentItem
+    ) -> tuple[str, SEOPage | None] | None:
+        """Resolve the SEO-owned page rather than treating a Content URL as attribution."""
+        if item.opportunity_id is None:
+            return None
+        source = await session.scalar(
+            select(ContentOpportunity).where(
+                ContentOpportunity.organization_id == organization_id,
+                ContentOpportunity.id == item.opportunity_id,
+            )
+        )
+        if source is None:
+            raise ContentSEOTargetMismatchError
+        if source.product_key != "seo":
+            return None
+        try:
+            prefix, raw_id = source.source_reference.split(":", 1)
+            opportunity_id = UUID(raw_id)
+        except (ValueError, AttributeError) as exc:
+            raise ContentSEOTargetMismatchError from exc
+        if prefix != "seo-opportunity":
+            raise ContentSEOTargetMismatchError
+        opportunity = await session.scalar(
+            select(SEOOpportunity).where(
+                SEOOpportunity.organization_id == organization_id,
+                SEOOpportunity.id == opportunity_id,
+                SEOOpportunity.location_id == item.location_id,
+            )
+        )
+        if opportunity is None:
+            raise ContentSEOTargetMismatchError
+        if opportunity.page_id is None:
+            return source.source_reference, None
+        page = await session.scalar(
+            select(SEOPage).where(
+                SEOPage.organization_id == organization_id,
+                SEOPage.website_id == opportunity.website_id,
+                SEOPage.id == opportunity.page_id,
+            )
+        )
+        if page is None:
+            raise ContentSEOTargetMismatchError
+        return source.source_reference, page
+
+    async def _validate_seo_target_reference(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        item: ContentItem,
+        target_reference: str | None,
+        *,
+        require_page: bool = False,
+    ) -> None:
+        seo_target = await self._seo_target_for_item(session, organization_id, item)
+        if seo_target is None:
+            return
+        source_reference, page = seo_target
+        if page is None:
+            if require_page or target_reference != source_reference:
+                raise ContentSEOTargetUnresolvedError
+        elif target_reference is not None and target_reference != page.normalized_url:
+            raise ContentSEOTargetMismatchError
 
     async def _audit(
         self,
@@ -684,6 +751,9 @@ class ContentService:
         )
         if not item:
             raise ContentItemNotFoundError
+        await self._validate_seo_target_reference(
+            session, organization_id, item, command.target_reference
+        )
         last = await session.scalar(
             select(ContentBrief.revision_number)
             .where(ContentBrief.content_item_id == item_id)
@@ -846,6 +916,10 @@ class ContentService:
         )
         if not brief:
             raise ContentBriefNotFoundError
+
+        await self._validate_seo_target_reference(
+            session, organization_id, item, brief.target_reference, require_page=True
+        )
 
         task = await session.scalar(
             select(AITaskDefinition).where(
@@ -1109,6 +1183,10 @@ class ContentService:
         if not brief:
             raise ContentBriefNotFoundError
 
+        await self._validate_seo_target_reference(
+            session, organization_id, item, brief.target_reference, require_page=True
+        )
+
         task = await session.scalar(
             select(AITaskDefinition).where(
                 AITaskDefinition.key == AI_TASK_KEY, AITaskDefinition.status == "active"
@@ -1362,6 +1440,10 @@ class ContentService:
         actor_id: UUID | None,
         correlation_id: str,
     ) -> ContentPublication:
+        item = await self.get_item(session, organization_id, item_id)
+        await self._validate_seo_target_reference(
+            session, organization_id, item, None, require_page=True
+        )
         existing = await session.scalar(
             select(ContentPublication).where(
                 ContentPublication.organization_id == organization_id,

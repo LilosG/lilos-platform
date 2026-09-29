@@ -83,6 +83,18 @@ function evidenceSummary(item: SearchIntelligenceItem): string {
     : "Supporting source details are unavailable.";
 }
 
+function needsPageAttribution(item: SearchIntelligenceItem): boolean {
+  return (
+    item.opportunity.recommendation_class === "growth_change" &&
+    item.recommendation?.status === "approved" &&
+    item.opportunity.evidence.page_mapping_state === "unknown" &&
+    !item.task?.verified_at
+  );
+}
+
+const pageAttributionAction =
+  "Target resolution required: identify the ranking page from authoritative mapped evidence before implementing the title and meta change. The SEO opportunity is a work reference, not a page URL.";
+
 function attentionReasons(
   item: SearchIntelligenceItem,
   readiness?: SearchIntelligenceReadiness,
@@ -95,6 +107,7 @@ function attentionReasons(
     );
   if (item.recommendation?.status === "awaiting_approval")
     reasons.push("A human decision is required before implementation.");
+  if (needsPageAttribution(item)) reasons.push(pageAttributionAction);
   if (item.task?.status === "verification_failed")
     reasons.push("The latest implementation check failed.");
   if (item.task?.status === "failed" || item.task?.status === "cancelled")
@@ -109,7 +122,7 @@ function attentionReasons(
     );
   if (item.task?.status === "verification_pending")
     reasons.push(
-      "Implementation completed, but the approved change is not verified.",
+      "Implementation evidence is pending; the approved change is not verified.",
     );
   if (
     item.active_change &&
@@ -804,6 +817,8 @@ async function renderDetail(
   );
   const implementationBody =
     implementation.querySelector<HTMLElement>(".ui-card__body")!;
+  if (needsPageAttribution(item))
+    appendLines(implementationBody, [pageAttributionAction]);
   if (task && !task.verified_at) {
     const verify = actionButton("Check implementation evidence", () => {
       verify.disabled = true;
