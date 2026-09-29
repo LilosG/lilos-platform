@@ -189,6 +189,50 @@ describe("Search Intelligence workspace", () => {
     panel.remove();
   });
 
+  it("shows the exact next action for an approved unattributed change", () => {
+    const growth = item("growth_change");
+    growth.recommendation = {
+      id: "revision-two",
+      revision_number: 2,
+      proposed_action: "Revise title and meta description",
+      expected_result_hypothesis: "Improve CTR at stable rank",
+      risk: "low",
+      effort: "low",
+      status: "approved",
+      approved_by_user_id: "operator",
+      evidence_references: [],
+      decision_context: null,
+    };
+    growth.task = {
+      id: "task",
+      recommendation_revision_id: "revision-two",
+      workflow_run_id: "run",
+      target_type: "opportunity",
+      target_reference: "seo-opportunity:source",
+      status: "verification_pending",
+      verified_at: null,
+      verification_evidence: { result: "unavailable" },
+    };
+    const data = workspace([growth]);
+    expect(searchIntelligenceSections(data).attention).toEqual([growth]);
+    const panel = document.createElement("div");
+    document.body.append(panel);
+    renderSearchIntelligenceWorkspace(
+      panel,
+      data,
+      "organization",
+      () => undefined,
+    );
+    expect(panel.textContent).toContain("Implementation evidence is pending");
+    [...panel.querySelectorAll("button")]
+      .find((button) => button.textContent === "Review")
+      ?.click();
+    expect(panel.textContent).toContain("Target resolution required");
+    expect(panel.textContent).toContain("not a page URL");
+    expect(panel.textContent).not.toContain("Implementation completed");
+    panel.remove();
+  });
+
   it("does not turn a verified change into an observed outcome", () => {
     const growth = item("growth_change");
     growth.task = {

@@ -3,11 +3,13 @@
 import asyncio
 from collections.abc import Generator
 from datetime import UTC, datetime, timedelta
+from typing import cast
 from uuid import UUID, uuid4
 
 import pytest
 from authorization.fixtures import add_effective_product_entitlement
 from cryptography.fernet import Fernet
+from httpx import Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from starlette.testclient import TestClient
@@ -28,7 +30,16 @@ from apps.api.app.locations.models import Location
 from apps.api.app.main import create_app
 from apps.api.app.organizations.enums import OrganizationStatus, OrganizationType
 from apps.api.app.organizations.models import Organization
-from apps.api.app.products.content.models import ContentPublication, PublishingTarget
+from apps.api.app.products.content.contracts import AIDraftCreate
+from apps.api.app.products.content.errors import ContentSEOTargetUnresolvedError
+from apps.api.app.products.content.models import (
+    ContentOpportunity,
+    ContentPublication,
+    PublishingTarget,
+)
+from apps.api.app.products.content.service import ContentService
+from apps.api.app.products.seo.models import SEOOpportunity, SEOPage, SEOWebsite
+from apps.api.app.products.seo.orchestration import SEOOrchestrationService
 
 
 @pytest.mark.integration
@@ -437,6 +448,160 @@ def content_client(
 
 
 @pytest.mark.integration
+def test_unattributed_seo_handoff_blocks_page_target_draft_and_publication(
+    content_client: tuple[TestClient, dict[str, UUID]],
+    content_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    client, ids = content_client
+    organization_id, location_id = ids["organization"], ids["location"]
+
+    async def create_seo_source() -> tuple[UUID, UUID]:
+        async with content_session_factory.begin() as session:
+            website = SEOWebsite(
+                organization_id=organization_id,
+                location_id=location_id,
+                key="unattributed-seo-test",
+                name="Test website",
+                canonical_origin="https://example.invalid",
+                status="active",
+                ownership_status="verified",
+                version=1,
+            )
+            session.add(website)
+            await session.flush()
+            opportunity = SEOOpportunity(
+                organization_id=organization_id,
+                location_id=location_id,
+                website_id=website.id,
+                page_id=None,
+                opportunity_type="gsc_low_ctr",
+                deduplication_key="unattributed-seo-test",
+                active_marker="active",
+                evidence={"query": "local brunch", "page_mapping_state": "unknown"},
+                source_versions=["gsc.v1"],
+                score_version=1,
+                priority_score=89,
+                score_explanation={},
+                status="identified",
+                version=1,
+            )
+            session.add(opportunity)
+            await session.flush()
+            mirrored = await SEOOrchestrationService()._mirror_to_content(
+                session,
+                organization_id,
+                opportunity,
+                correlation_id="unattributed-seo-handoff-test",
+            )
+            assert mirrored
+            content_opportunity = await session.scalar(
+                select(ContentOpportunity).where(
+                    ContentOpportunity.organization_id == organization_id,
+                    ContentOpportunity.source_reference == f"seo-opportunity:{opportunity.id}",
+                )
+            )
+            assert content_opportunity is not None
+            assert content_opportunity.target_reference == f"seo-opportunity:{opportunity.id}"
+            return opportunity.id, content_opportunity.id
+
+    seo_opportunity_id, content_opportunity_id = asyncio.run(create_seo_source())
+    source_reference = f"seo-opportunity:{seo_opportunity_id}"
+    base = f"/api/v1/organizations/{organization_id}/content"
+    accepted = client.post(
+        f"{base}/opportunities/{content_opportunity_id}/decision",
+        headers=HEADERS,
+        json={"accept": True},
+    )
+    assert accepted.status_code == 200, accepted.text
+    created = client.post(
+        base,
+        headers=HEADERS,
+        json={
+            "opportunity_id": str(content_opportunity_id),
+            "location_id": str(location_id),
+            "content_type": "blog",
+            "title": "Brunch research",
+            "slug": "brunch-research",
+        },
+    )
+    assert created.status_code == 201, created.text
+    item_id = created.json()["data"]["id"]
+
+    def brief(target: str) -> Response:
+        return cast(
+            Response,
+            client.post(
+                f"{base}/{item_id}/briefs",
+                headers=HEADERS,
+                json={
+                    "audience": "Local visitors",
+                    "intent": "research",
+                    "target_reference": target,
+                    "approved_fact_revision_ids": [str(ids["approved_fact"])],
+                },
+            ),
+        )
+
+    invented = brief("https://example.invalid/brunch")
+    assert invented.status_code == 409, invented.text
+    assert invented.json()["error"]["code"] == "CONTENT_SEO_TARGET_UNRESOLVED"
+    unresolved_brief = brief(source_reference)
+    assert unresolved_brief.status_code == 201, unresolved_brief.text
+    brief_id = UUID(unresolved_brief.json()["data"]["id"])
+
+    async def check_draft_and_map_page() -> str:
+        async with content_session_factory.begin() as session:
+            with pytest.raises(ContentSEOTargetUnresolvedError):
+                await ContentService().generate_ai_draft(
+                    session,
+                    organization_id,
+                    UUID(item_id),
+                    AIDraftCreate(brief_id=brief_id, idempotency_key="unresolved-draft-001"),
+                    None,
+                    correlation_id="unresolved-draft-test",
+                )
+            opportunity = await session.get(SEOOpportunity, seo_opportunity_id)
+            assert opportunity is not None
+            page = SEOPage(
+                organization_id=organization_id,
+                website_id=opportunity.website_id,
+                normalized_url="https://example.invalid/real-page",
+                observed_url="https://example.invalid/real-page",
+                normalization_reasons=[],
+                robots_directives=[],
+                internal_links=[],
+                external_links=[],
+                structured_data_present=False,
+                indexability="indexable",
+                technical_issues=[],
+                quality_status="clean",
+            )
+            session.add(page)
+            await session.flush()
+            opportunity.page_id = page.id
+            return page.normalized_url
+
+    denied_publish = client.post(
+        f"{base}/{item_id}/revisions/{uuid4()}/publish",
+        headers=HEADERS,
+        json={
+            "publishing_target_id": str(ids["target"]),
+            "workflow_run_id": str(ids["workflow_run"]),
+            "target_path": "src/content/brunch.md",
+            "idempotency_key": "unresolved-publish-001",
+        },
+    )
+    assert denied_publish.status_code == 409, denied_publish.text
+    assert denied_publish.json()["error"]["code"] == "CONTENT_SEO_TARGET_UNRESOLVED"
+
+    mapped_url = asyncio.run(check_draft_and_map_page())
+    assert brief("https://example.invalid/brunch").json()["error"]["code"] == (
+        "CONTENT_SEO_TARGET_MISMATCH"
+    )
+    assert brief(mapped_url).status_code == 201
+
+
+@pytest.mark.integration
 def test_opportunity_item_brief_manual_revision_approval_and_publication_flow(
     content_client: tuple[TestClient, dict[str, UUID]],
 ) -> None:
@@ -449,10 +614,10 @@ def test_opportunity_item_brief_manual_revision_approval_and_publication_flow(
         headers=HEADERS,
         json={
             "location_id": str(location),
-            "product_key": "seo",
+            "product_key": "content",
             "target_reference": "/services/plumbing",
             "opportunity_type": "keyword_gap",
-            "source_type": "seo_analysis",
+            "source_type": "content_analysis",
             "source_reference": "seo-report-1",
             "evidence_document": {"keyword": "emergency plumbing"},
             "priority_score": 80,

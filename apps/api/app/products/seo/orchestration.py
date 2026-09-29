@@ -505,8 +505,11 @@ class SEOOrchestrationService:
             "workflow. Use the deterministic SEO opportunity and recommendation as "
             "evidence, inspect current website content and approved business facts, "
             "then decide whether to optimize the existing target or create a new "
-            "content asset. Produce a complete brief and quality-validated draft for "
-            "human review; do not stop after recommendation or planning. Approved SEO "
+            "content asset. A site URL or relevant page is not proof that it ranks "
+            "for this query. If the SEO opportunity has no mapped page, keep the "
+            "SEO opportunity as the target and request exact page attribution "
+            "before a page-specific brief or implementation. Produce a complete "
+            "brief and quality-validated draft when the target is resolved. Approved SEO "
             f"action: {revision.proposed_action}. Expected result: "
             f"{revision.expected_result_hypothesis}."
         )
@@ -794,14 +797,27 @@ class SEOOrchestrationService:
         if existing is not None:
             return False
 
-        target = str(opportunity.evidence.get("url") or opportunity.evidence.get("query") or "seo")
+        target = source_reference
+        if opportunity.page_id is not None:
+            page = await session.scalar(
+                select(SEOPage).where(
+                    SEOPage.organization_id == organization_id,
+                    SEOPage.website_id == opportunity.website_id,
+                    SEOPage.id == opportunity.page_id,
+                )
+            )
+            if page is None:
+                return False
+            target = page.normalized_url
+        if len(target) > 500:
+            return False
         await self.content.create_opportunity(
             session,
             organization_id,
             OpportunityCreate(
                 location_id=opportunity.location_id,
                 product_key="seo",
-                target_reference=target[:500],
+                target_reference=target,
                 opportunity_type=opportunity.opportunity_type[:64],
                 source_type="seo_analysis",
                 source_reference=source_reference,

@@ -56,6 +56,19 @@ class ContentTargetNotConfiguredError(ConflictError):
     public_message = "No active, connected publishing target is configured."
 
 
+class ContentSEOTargetUnresolvedError(ConflictError):
+    code = "CONTENT_SEO_TARGET_UNRESOLVED"
+    public_message = (
+        "The SEO opportunity has no attributed page. Resolve the exact "
+        "page from governed evidence before assigning a page target or publishing."
+    )
+
+
+class ContentSEOTargetMismatchError(ConflictError):
+    code = "CONTENT_SEO_TARGET_MISMATCH"
+    public_message = "The Content target does not match the scoped SEO page."
+
+
 class ContentGitHubProviderNotConfiguredError(ConflictError):
     code = "CONTENT_GITHUB_PROVIDER_NOT_CONFIGURED"
     public_message = (
