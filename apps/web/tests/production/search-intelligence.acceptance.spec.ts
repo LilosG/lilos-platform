@@ -671,7 +671,11 @@ test("Search Intelligence deployed read path matches persisted evidence", async 
       );
     }
   }
-  const implementationCard = card(page, panel, "Implementation and verification");
+  const implementationCard = card(
+    page,
+    panel,
+    "Implementation and verification",
+  );
   if (selected.task) {
     await expect(
       fact(implementationCard, "Task"),
