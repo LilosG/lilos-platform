@@ -35,7 +35,6 @@ from apps.api.app.products.seo.contracts import (
     RecommendationDecision,
     SearchConsoleSyncRequest,
     SearchPropertyCreate,
-    SearchPropertySelect,
     WebsiteCreate,
 )
 from apps.api.app.products.seo.crawl_limits import crawl_limits_payload
@@ -829,35 +828,6 @@ async def discover_search_console(
         },
         "meta": meta(request),
     }
-
-
-@router.post(
-    "/websites/{website_id}/search-console/map",
-    status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(no_store)],
-    summary="Map the operator-selected Search Console property",
-)
-async def map_search_console(
-    request: Request,
-    organization_id: UUID,
-    website_id: UUID,
-    command: SearchPropertySelect,
-    session: Session,
-    principal: Authenticated,
-    _: Annotated[AuthorizationDecision, policy("seo.manage")],
-) -> dict[str, object]:
-    settings = settings_from_request(request)
-    item = await search_console.map_property(
-        session,
-        settings,
-        organization_id,
-        website_id,
-        external_property_id=command.external_property_id,
-        property_type=command.property_type,
-        actor_id=principal.platform_user_id,
-        correlation_id=request_correlation_id(request),
-    )
-    return {"data": search_property_row(item), "meta": meta(request)}
 
 
 @router.post(

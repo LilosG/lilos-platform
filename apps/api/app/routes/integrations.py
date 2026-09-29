@@ -47,9 +47,14 @@ from apps.api.app.integrations.errors import (
     IntegrationStateInvalidError,
     IntegrationTokenExchangeFailedError,
 )
+from apps.api.app.products.analytics.contracts import AnalyticsPropertySelect
+from apps.api.app.products.analytics.service import AnalyticsService
 from apps.api.app.products.gbp.discovery_service import GBPDiscoveryService
 from apps.api.app.products.gbp.models import GBPLocation
+from apps.api.app.products.seo.contracts import SearchPropertySelect
+from apps.api.app.products.seo.search_console_service import SearchConsoleService
 from apps.api.app.routes.health import settings_from_request
+from apps.api.app.routes.seo import search_property_row
 from apps.api.app.schemas import ResponseMeta
 
 router = APIRouter(
@@ -62,6 +67,8 @@ service = GBPConnectionService()
 discovery = GBPDiscoveryService()
 administration = AdministrationService()
 directory_service = IntegrationDirectoryService()
+analytics = AnalyticsService()
+search_console = SearchConsoleService()
 Session = Annotated[AsyncSession, Depends(get_database_session)]
 GBPConnect = Annotated[
     AuthorizationDecision,
@@ -454,5 +461,85 @@ async def google_unmapped(
 
     return {
         "data": unmapped,
+        "meta": ResponseMeta(correlation_id=request_correlation_id(request)).model_dump(),
+    }
+
+
+@router.post(
+    "/analytics/properties/map",
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(no_store)],
+    summary="Map the operator-selected GA4 property to an SEO website",
+)
+async def map_analytics_property(
+    request: Request,
+    organization_id: UUID,
+    command: AnalyticsPropertySelect,
+    session: Session,
+    principal: Authenticated,
+    _: Annotated[
+        AuthorizationDecision,
+        Depends(
+            require_authorization(
+                "insights.manage", ScopeType.ORGANIZATION, AssuranceLevel.AAL1
+            )
+        ),
+    ],
+) -> dict[str, object]:
+    settings = settings_from_request(request)
+    item = await analytics.map_property(
+        session,
+        settings,
+        organization_id,
+        external_property_id=command.external_property_id,
+        property_number=command.property_number,
+        display_name=command.display_name,
+        website_id=command.website_id,
+        actor_id=principal.platform_user_id,
+        correlation_id=request_correlation_id(request),
+    )
+    return {
+        "data": {
+            "id": str(item.id),
+            "website_id": str(item.website_id) if item.website_id else None,
+            "display_name": item.display_name,
+            "external_property_id": item.external_property_id,
+            "mapping_status": item.mapping_status,
+            "freshness_status": item.freshness_status,
+        },
+        "meta": ResponseMeta(correlation_id=request_correlation_id(request)).model_dump(),
+    }
+
+
+@router.post(
+    "/search-console/properties/map",
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(no_store)],
+    summary="Map the operator-selected Search Console property to an SEO website",
+)
+async def map_search_console_property(
+    request: Request,
+    organization_id: UUID,
+    command: SearchPropertySelect,
+    session: Session,
+    principal: Authenticated,
+    _: Annotated[
+        AuthorizationDecision,
+        Depends(require_authorization("seo.manage", ScopeType.ORGANIZATION, AssuranceLevel.AAL1)),
+    ],
+) -> dict[str, object]:
+    settings = settings_from_request(request)
+    item = await search_console.map_property(
+        session,
+        settings,
+        organization_id,
+        command.website_id,
+        external_property_id=command.external_property_id,
+        property_type=command.property_type,
+        actor_id=principal.platform_user_id,
+        correlation_id=request_correlation_id(request),
+    )
+    return {
+        "data": search_property_row(item),
         "meta": ResponseMeta(correlation_id=request_correlation_id(request)).model_dump(),
     }

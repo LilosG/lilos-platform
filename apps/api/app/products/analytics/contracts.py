@@ -4,9 +4,14 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class AnalyticsPropertySelect(BaseModel):
-    """Operator selects a discovered GA4 property to map."""
+    """Operator selects a discovered GA4 property to map to one SEO website.
+
+    ``website_id`` is required: an unmapped GA4 property has no page-level
+    evidence path, so Integrations never persists a mapping without one.
+    """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
+    website_id: UUID
     external_property_id: str = Field(min_length=1, max_length=500)
     property_number: str = Field(min_length=1, max_length=64)
     display_name: str = Field(min_length=1, max_length=300)

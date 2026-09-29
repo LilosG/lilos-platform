@@ -30,6 +30,7 @@ class SearchPropertyCreate(BaseModel):
 
 class SearchPropertySelect(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
+    website_id: UUID
     external_property_id: str = Field(min_length=1, max_length=1000)
     property_type: Literal["domain", "url_prefix"]
 

@@ -85,6 +85,10 @@ function seoBase(organizationId: string): string {
   return `/api/v1/organizations/${organizationId}/seo`;
 }
 
+function integrationsBase(organizationId: string): string {
+  return `/api/v1/organizations/${organizationId}/integrations/google`;
+}
+
 export function searchConsoleReportHasData(
   report: SearchConsolePerformanceReport,
 ): boolean {
@@ -109,8 +113,8 @@ export function mapSearchConsole(
   },
 ): Promise<ApiOutcome<unknown>> {
   return apiRequest(
-    `${seoBase(organizationId)}/websites/${websiteId}/search-console/map`,
-    { method: "POST", body: selection },
+    `${integrationsBase(organizationId)}/search-console/properties/map`,
+    { method: "POST", body: { website_id: websiteId, ...selection } },
   );
 }
 

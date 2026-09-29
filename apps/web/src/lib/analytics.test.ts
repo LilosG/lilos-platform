@@ -31,17 +31,18 @@ describe("analytics lib routes", () => {
     );
   });
 
-  it("mapAnalytics POSTs the selected property to the map endpoint", async () => {
-    await mapAnalytics("org-1", {
+  it("mapAnalytics POSTs the selected property and website to the Integrations map endpoint", async () => {
+    await mapAnalytics("org-1", "site-1", {
       external_property_id: "properties/123",
       property_number: "123",
       display_name: "Wheyland",
     });
     expect(apiRequest).toHaveBeenCalledWith(
-      "/api/v1/organizations/org-1/insights/analytics/map",
+      "/api/v1/organizations/org-1/integrations/google/analytics/properties/map",
       {
         method: "POST",
         body: {
+          website_id: "site-1",
           external_property_id: "properties/123",
           property_number: "123",
           display_name: "Wheyland",

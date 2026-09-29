@@ -69,6 +69,10 @@ function base(organizationId: string): string {
   return `/api/v1/organizations/${organizationId}/insights`;
 }
 
+function integrationsBase(organizationId: string): string {
+  return `/api/v1/organizations/${organizationId}/integrations/google`;
+}
+
 export function analyticsReportHasData(
   report: AnalyticsPerformanceReport,
 ): boolean {
@@ -91,16 +95,20 @@ export function discoverAnalytics(
 
 export function mapAnalytics(
   organizationId: string,
+  websiteId: string,
   selection: {
     external_property_id: string;
     property_number: string;
     display_name: string;
   },
 ): Promise<ApiOutcome<unknown>> {
-  return apiRequest(`${base(organizationId)}/analytics/map`, {
-    method: "POST",
-    body: selection,
-  });
+  return apiRequest(
+    `${integrationsBase(organizationId)}/analytics/properties/map`,
+    {
+      method: "POST",
+      body: { website_id: websiteId, ...selection },
+    },
+  );
 }
 
 export function syncAnalytics(

@@ -3,7 +3,7 @@
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Request, Response, status
+from fastapi import APIRouter, Depends, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.app.access_control.enums import ScopeType
@@ -20,7 +20,6 @@ from apps.api.app.insights.aggregation_service import InsightsService
 from apps.api.app.insights.website_readiness import WebsiteReadinessService
 from apps.api.app.products.analytics.contracts import (
     AnalyticsDiscoverRequest,
-    AnalyticsPropertySelect,
     AnalyticsSyncRequest,
 )
 from apps.api.app.products.analytics.service import AnalyticsService
@@ -122,44 +121,6 @@ async def discover_analytics(
                 if result.recommended is not None
                 else None
             ),
-        },
-        "meta": meta(request),
-    }
-
-
-@router.post(
-    "/analytics/map",
-    status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(no_store)],
-    summary="Map the operator-selected GA4 property",
-)
-async def map_analytics(
-    request: Request,
-    organization_id: UUID,
-    session: Session,
-    principal: Authenticated,
-    _: Annotated[AuthorizationDecision, policy("insights.manage")],
-    command: AnalyticsPropertySelect,
-) -> dict[str, object]:
-    settings = settings_from_request(request)
-    item = await analytics.map_property(
-        session,
-        settings,
-        organization_id,
-        external_property_id=command.external_property_id,
-        property_number=command.property_number,
-        display_name=command.display_name,
-        website_id=None,
-        actor_id=principal.platform_user_id,
-        correlation_id=request_correlation_id(request),
-    )
-    return {
-        "data": {
-            "id": str(item.id),
-            "display_name": item.display_name,
-            "external_property_id": item.external_property_id,
-            "mapping_status": item.mapping_status,
-            "freshness_status": item.freshness_status,
         },
         "meta": meta(request),
     }
