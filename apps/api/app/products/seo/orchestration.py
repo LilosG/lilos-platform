@@ -14,7 +14,7 @@ from datetime import UTC, datetime
 from typing import Literal
 from uuid import UUID
 
-from sqlalchemy import case, or_, select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.app.config import Settings
@@ -197,13 +197,13 @@ class SEOOrchestrationService:
                     now=analysis_now,
                 )
             )
-        if observations and gsc_evidence_complete:
+        if gsc_evidence_complete:
             evaluated_sources.add("gsc.v1")
         for observation in observations:
             impressions = int(observation.impressions or 0)
             position = float(observation.position) if observation.position is not None else None
             ctr = float(observation.ctr) if observation.ctr is not None else None
-            query = (observation.query or "").strip()
+            query = observation.query or ""
             observed_page: SEOPage | None = (
                 page_lookup.get(observation.page_id) if observation.page_id else None
             )
@@ -215,6 +215,8 @@ class SEOOrchestrationService:
                 if observation.mapping_state == "mapped" and observation.page_id in page_lookup
                 else None
             )
+            if observation.page_id is not None and exact_page_id is None:
+                continue
             business = business_for(
                 exact_page_id,
                 "GSC evidence lacks an exact mapped page with current GA4 key events.",
@@ -241,7 +243,7 @@ class SEOOrchestrationService:
                     organization_id,
                     website,
                     location_id=website.location_id,
-                    page_id=observed_page.id if observed_page else None,
+                    page_id=exact_page_id,
                     opportunity_type="gsc_striking_distance",
                     target_reference=f"{target}|{query}",
                     evidence={
@@ -283,7 +285,7 @@ class SEOOrchestrationService:
                     organization_id,
                     website,
                     location_id=website.location_id,
-                    page_id=observed_page.id if observed_page else None,
+                    page_id=exact_page_id,
                     opportunity_type="gsc_low_ctr",
                     target_reference=f"{target}|{query}",
                     evidence={
@@ -530,8 +532,9 @@ class SEOOrchestrationService:
         detectors must never process all of them as independent current facts.
         The latest end boundary wins; when windows share that boundary, the
         latest start boundary is the deterministic canonical (most current)
-        period. Only the oldest confirmed mapping is treated as authoritative,
-        matching the reporting read model.
+        period. Only website-scoped observations may create website-scoped
+        opportunities. Legacy unscoped rows remain historical evidence and
+        cannot make an older scoped period current again.
         """
         search_property = await session.scalar(
             select(SEOSearchProperty)
@@ -577,10 +580,7 @@ class SEOOrchestrationService:
                 .where(
                     SEOSearchObservation.organization_id == organization_id,
                     SEOSearchObservation.search_property_id == search_property.id,
-                    or_(
-                        SEOSearchObservation.website_id == website_id,
-                        SEOSearchObservation.website_id.is_(None),
-                    ),
+                    SEOSearchObservation.website_id == website_id,
                     SEOSearchObservation.quality_status == "valid",
                     SEOSearchObservation.query.isnot(None),
                     SEOSearchObservation.dimensions["observation_type"].astext != "page_query",
@@ -588,16 +588,13 @@ class SEOOrchestrationService:
                     SEOSearchObservation.date_end == period_end,
                 )
                 .order_by(
-                    case((SEOSearchObservation.website_id == website_id, 0), else_=1),
                     SEOSearchObservation.impressions.desc(),
                     SEOSearchObservation.id.asc(),
                 )
                 .limit(1501)
             )
         )
-        pinned = [row for row in rows if row.website_id == website_id]
-        selected = pinned if pinned else [row for row in rows if row.website_id is None]
-        return selected[:1500], len(selected) <= 1500
+        return rows[:1500], len(rows) <= 1500
 
     async def _upsert_opportunity(
         self,

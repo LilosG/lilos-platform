@@ -39,6 +39,7 @@ from apps.api.app.products.seo.contracts import (
     WebsiteCreate,
 )
 from apps.api.app.products.seo.decision import (
+    SEOEvidenceInvalidError,
     growth_handoff,
     recommendation_class,
     resolve_decision,
@@ -566,6 +567,17 @@ async def search_intelligence_workspace(
             or (opportunity.page_id is not None and (page is None or page.website_id != site.id))
         ):
             continue
+        try:
+            await resolve_decision(
+                session,
+                organization_id,
+                opportunity,
+                [f"seo-opportunity:{opportunity.id}"],
+            )
+        except SEOEvidenceInvalidError as exc:
+            governed_eligibility = {"eligible": False, "limitation": str(exc)}
+        else:
+            governed_eligibility = {"eligible": True, "limitation": None}
         revision = latest_revision.get(opportunity.id)
         task = latest_task.get(revision.id) if revision else None
         outcome = latest_outcome.get(task.id) if task else None
@@ -634,6 +646,7 @@ async def search_intelligence_workspace(
                     if opportunity.page_id and recommendation_class(opportunity) == "growth_change"
                     else None
                 ),
+                "governed_eligibility": governed_eligibility,
             }
         )
     return {

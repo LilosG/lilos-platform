@@ -20,6 +20,7 @@ from apps.api.app.organizations.enums import OrganizationStatus, OrganizationTyp
 from apps.api.app.organizations.models import Organization
 from apps.api.app.products.analytics.models import AnalyticsProperty
 from apps.api.app.products.content.models import ContentOpportunity
+from apps.api.app.products.seo.decision import resolve_decision
 from apps.api.app.products.seo.models import (
     SEOOpportunity,
     SEOPage,
@@ -73,6 +74,182 @@ def test_query_demand_recommendation_leaves_page_presence_unknown() -> None:
     assert "no suitable page" not in action
     assert "create" not in action.lower()
     assert "mapping remains unknown" in hypothesis
+
+
+@pytest.mark.integration
+@pytest.mark.anyio
+async def test_legacy_unscoped_gsc_cannot_drive_opportunity_and_scoped_refresh_recovers_it(
+    seo_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    service = SEOOrchestrationService(pagespeed=FakePageSpeedService())
+    async with seo_session_factory.begin() as session:
+        organization = Organization(
+            name="Scoped GSC evidence",
+            slug=f"scoped-gsc-{uuid4().hex[:8]}",
+            organization_type=OrganizationType.TEST,
+            status=OrganizationStatus.ACTIVE,
+            timezone="UTC",
+            default_currency="USD",
+            version=1,
+        )
+        provider = Provider(
+            key=f"gsc-scoped-{uuid4().hex[:8]}",
+            name="Google Search Console",
+            status="active",
+            capabilities=["search_console.read"],
+            manifest_version=1,
+        )
+        session.add_all([organization, provider])
+        await session.flush()
+        connection = IntegrationConnection(
+            organization_id=organization.id,
+            provider_id=provider.id,
+            external_account_reference="scoped-gsc",
+            status="connected",
+            version=1,
+        )
+        website = SEOWebsite(
+            organization_id=organization.id,
+            location_id=None,
+            key="scoped",
+            name="Scoped site",
+            canonical_origin="https://scoped.example.invalid",
+            status="active",
+            ownership_status="verified",
+            version=1,
+        )
+        session.add_all([connection, website])
+        await session.flush()
+        search_property = SEOSearchProperty(
+            organization_id=organization.id,
+            website_id=website.id,
+            connection_id=connection.id,
+            provider="google_search_console",
+            external_property_id="sc-domain:scoped.example.invalid",
+            property_type="domain",
+            mapping_status="mapped",
+            freshness_status="fresh",
+        )
+        session.add(search_property)
+        await session.flush()
+        now = datetime.now(UTC)
+        observations = []
+        for source_site, end in (
+            (None, now),
+            (website.id, now - timedelta(days=7)),
+        ):
+            dimensions: dict[str, object] = {
+                "observation_type": "top_query",
+                "query": "brunch nearby",
+            }
+            observation = SEOSearchObservation(
+                organization_id=organization.id,
+                search_property_id=search_property.id,
+                website_id=source_site,
+                page_id=None,
+                query="brunch nearby",
+                date_start=end - timedelta(days=7),
+                date_end=end,
+                dimensions=dimensions,
+                dimension_hash=dimension_hash(dimensions),
+                clicks=0,
+                impressions=139,
+                ctr=0,
+                position=6.6763,
+                mapping_state="unknown" if source_site else None,
+                quality_status="valid",
+                partial=False,
+            )
+            session.add(observation)
+            await session.flush()
+            observations.append(observation)
+        legacy, scoped = observations
+        target = f"{website.canonical_origin}|brunch nearby"
+        opportunity = SEOOpportunity(
+            organization_id=organization.id,
+            location_id=None,
+            website_id=website.id,
+            page_id=None,
+            opportunity_type="gsc_low_ctr",
+            deduplication_key=hashlib.sha256(f"gsc_low_ctr|{target}".encode()).hexdigest(),
+            active_marker="active",
+            evidence={"source": "google_search_console", "observation_id": str(legacy.id)},
+            source_versions=["gsc.v1"],
+            score_version=2,
+            priority_score=89,
+            score_explanation={"score_policy_version": "opportunity_score.v2"},
+            status="identified",
+            version=1,
+        )
+        session.add(opportunity)
+        await session.flush()
+        selected, complete = await service._canonical_gsc_observations(
+            session, organization.id, website.id
+        )
+        assert complete is True
+        assert selected == []
+        analysis = await service.analyze(
+            session, organization.id, location_id=None, correlation_id="legacy-evidence-refresh"
+        )
+        assert analysis["status"] == "completed"
+        assert opportunity.status == "archived"
+        assert opportunity.active_marker != "active"
+        newer_scoped = SEOSearchObservation(
+            organization_id=organization.id,
+            search_property_id=search_property.id,
+            website_id=website.id,
+            page_id=None,
+            query=scoped.query,
+            date_start=now,
+            date_end=now + timedelta(days=7),
+            dimensions=scoped.dimensions,
+            dimension_hash=scoped.dimension_hash,
+            clicks=0,
+            impressions=139,
+            ctr=0,
+            position=6.6763,
+            mapping_state="unknown",
+            quality_status="valid",
+            partial=False,
+        )
+        session.add(newer_scoped)
+        await session.flush()
+        selected, complete = await service._canonical_gsc_observations(
+            session, organization.id, website.id
+        )
+        assert complete is True
+        assert [row.id for row in selected] == [newer_scoped.id]
+        evidence: dict[str, object] = {
+            "source": "google_search_console",
+            "observation_id": str(newer_scoped.id),
+            "query": newer_scoped.query,
+            "clicks": newer_scoped.clicks,
+            "impressions": newer_scoped.impressions,
+            "ctr": float(newer_scoped.ctr or 0),
+            "position": float(newer_scoped.position or 0),
+            "date_start": newer_scoped.date_start.isoformat(),
+            "date_end": newer_scoped.date_end.isoformat(),
+        }
+        refreshed = await service._upsert_opportunity(
+            session,
+            organization.id,
+            website,
+            location_id=None,
+            page_id=None,
+            opportunity_type="gsc_low_ctr",
+            target_reference=target,
+            evidence=evidence,
+            source_versions=["gsc.v1"],
+            priority_score=89,
+            score_explanation={"score_policy_version": "opportunity_score.v2"},
+        )
+        assert refreshed.id != opportunity.id
+        assert refreshed.evidence["observation_id"] == str(newer_scoped.id)
+        decision = await resolve_decision(
+            session, organization.id, refreshed, [f"seo-opportunity:{refreshed.id}"]
+        )
+        assert decision["website_id"] == str(website.id)
+        assert decision["page_id"] is None
 
 
 @pytest.mark.integration

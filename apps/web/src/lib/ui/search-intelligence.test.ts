@@ -43,6 +43,7 @@ function item(
     outcome: null,
     measurement: null,
     active_change: null,
+    governed_eligibility: { eligible: true, limitation: null },
     latest_measured: null,
   };
 }
@@ -151,6 +152,41 @@ describe("Search Intelligence workspace", () => {
     expect(panel.textContent).toContain("Unattributed query");
     expect(panel.textContent).not.toContain("SEO Health");
     expect(panel.textContent).not.toContain("caused");
+  });
+
+  it("keeps unresolved evidence visible without offering Ask Hermes", () => {
+    const invalid = item("growth_change");
+    invalid.governed_eligibility = {
+      eligible: false,
+      limitation: "The source observation does not resolve in this scope",
+    };
+    const data = workspace([invalid]);
+    const sections = searchIntelligenceSections(data);
+    expect(sections.attention).toEqual([invalid]);
+    expect(sections.growth).toEqual([]);
+    const panel = document.createElement("div");
+    document.body.append(panel);
+    renderSearchIntelligenceWorkspace(
+      panel,
+      data,
+      "organization",
+      () => undefined,
+    );
+    expect(panel.textContent).toContain(
+      invalid.governed_eligibility.limitation,
+    );
+    [...panel.querySelectorAll("button")]
+      .find((button) => button.textContent === "Review")
+      ?.click();
+    expect(panel.textContent).toContain(
+      invalid.governed_eligibility.limitation,
+    );
+    expect(
+      [...panel.querySelectorAll("button")].some((button) =>
+        button.textContent?.startsWith("Ask Hermes"),
+      ),
+    ).toBe(false);
+    panel.remove();
   });
 
   it("does not turn a verified change into an observed outcome", () => {

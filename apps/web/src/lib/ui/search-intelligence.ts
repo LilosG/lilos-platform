@@ -88,6 +88,11 @@ function attentionReasons(
   readiness?: SearchIntelligenceReadiness,
 ): string[] {
   const reasons: string[] = [];
+  if (!item.governed_eligibility.eligible)
+    reasons.push(
+      item.governed_eligibility.limitation ??
+        "Current governed evidence is unavailable.",
+    );
   if (item.recommendation?.status === "awaiting_approval")
     reasons.push("A human decision is required before implementation.");
   if (item.task?.status === "verification_failed")
@@ -143,6 +148,7 @@ export function searchIntelligenceSections(
   for (const item of workspace.items) {
     if (attentionReasons(item, readiness.get(item.website.id)).length)
       sections.attention.push(item);
+    if (!item.governed_eligibility.eligible) continue;
     if (item.opportunity.recommendation_class === "technical_regression") {
       if (!item.outcome) sections.technical.push(item);
     } else if (!item.outcome && !item.task?.verified_at) {
@@ -590,9 +596,16 @@ async function renderDetail(
     runStatus.textContent =
       "Hermes reasoning requires a location-scoped website.";
   }
-  reasoningBody.append(ask, runStatus);
+  if (item.governed_eligibility.eligible) reasoningBody.append(ask, runStatus);
+  else {
+    runStatus.textContent =
+      item.governed_eligibility.limitation ??
+      "Current governed evidence is unavailable.";
+    reasoningBody.append(runStatus);
+  }
   panel.append(reasoning);
   if (
+    item.governed_eligibility.eligible &&
     item.website.location_id &&
     !(
       item.active_change &&

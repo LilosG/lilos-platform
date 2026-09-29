@@ -81,7 +81,7 @@ test("selected opportunity shows Hermes completion, review, and a failed revisio
           decision_context: null,
         },
       ];
-    else if (path.endsWith("/seo/workspace"))
+    else if (path.endsWith("/seo/workspace")) {
       data = {
         items: [
           {
@@ -115,6 +115,7 @@ test("selected opportunity shows Hermes completion, review, and a failed revisio
             outcome: null,
             measurement: null,
             active_change: null,
+            governed_eligibility: { eligible: true, limitation: null },
             latest_measured: null,
           },
         ],
@@ -137,7 +138,29 @@ test("selected opportunity shows Hermes completion, review, and a failed revisio
           has_more: false,
         },
       };
-    else if (path.endsWith(`/opportunities/${opportunity}/hermes-run`)) {
+      const workspace = data as {
+        items: Array<{
+          opportunity: {
+            id: string;
+            priority_score: number;
+            evidence: Record<string, unknown>;
+          };
+          governed_eligibility: {
+            eligible: boolean;
+            limitation: string | null;
+          };
+        }>;
+      };
+      const invalid = structuredClone(workspace.items[0]);
+      invalid.opportunity.id = "invalid-opportunity";
+      invalid.opportunity.priority_score = 89;
+      invalid.opportunity.evidence.query = "legacy unscoped query";
+      invalid.governed_eligibility = {
+        eligible: false,
+        limitation: "The source observation does not resolve in this scope",
+      };
+      workspace.items.unshift(invalid);
+    } else if (path.endsWith(`/opportunities/${opportunity}/hermes-run`)) {
       if (route.request().method() === "POST") {
         submissions += 1;
         reads = 0;
@@ -183,8 +206,27 @@ test("selected opportunity shows Hermes completion, review, and a failed revisio
     });
   });
   await page.goto("/seo");
+  const attention = page.locator("#tab-intelligence section.ui-card").filter({
+    has: page.getByRole("heading", { name: "Requires Attention", exact: true }),
+  });
+  await attention
+    .locator("ul.ui-record-list > li")
+    .filter({ hasText: "legacy unscoped query" })
+    .getByRole("button", { name: "Review" })
+    .click();
+  await expect(
+    page.getByText("The source observation does not resolve in this scope"),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Ask Hermes" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Back to workspace" }).click();
   await page
-    .locator("#tab-intelligence")
+    .locator("#tab-intelligence section.ui-card")
+    .filter({
+      has: page.getByRole("heading", {
+        name: "Growth Opportunities",
+        exact: true,
+      }),
+    })
     .getByRole("button", { name: "Review" })
     .first()
     .click();
