@@ -12,14 +12,17 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from apps.api.app.agents.hermes_client import HermesRuntimeError
 from apps.api.app.agents.models import AgentRun, AgentSession
 from apps.api.app.agents.safety import safe_event_document
-from apps.api.app.agents.service import ACTIVE_AGENT_STATUSES, build_hermes_runs_client
-from apps.api.app.agents.skills import skill_for_workflow
+from apps.api.app.agents.service import (
+    ACTIVE_AGENT_STATUSES,
+    build_hermes_runs_client,
+    has_active_agent_for_scope,
+)
 from apps.api.app.ai.models import AIExecution
 from apps.api.app.config import Settings
 from apps.api.app.execution.models import (
@@ -448,27 +451,6 @@ async def _workflow_definition(
     return version, definition
 
 
-async def _has_active_agent_for_workflow(
-    session: AsyncSession,
-    run: WorkflowRun,
-    workflow_key: str,
-) -> bool:
-    if not workflow_key.startswith("agent."):
-        return False
-    skill = skill_for_workflow(workflow_key)
-    active = await session.scalar(
-        select(func.count())
-        .select_from(AgentRun)
-        .where(
-            AgentRun.organization_id == run.organization_id,
-            AgentRun.location_id == run.location_id,
-            AgentRun.skill_key == skill.key,
-            AgentRun.status.in_(ACTIVE_AGENT_STATUSES),
-        )
-    )
-    return bool(active)
-
-
 async def _review_verification_recoverable(
     session: AsyncSession,
     run: WorkflowRun,
@@ -537,7 +519,9 @@ async def requeue_recoverable_failures(
         if run.failure_code == "HERMES_SCOPED_SESSION_BUSY":
             if not definition.key.startswith("agent."):
                 continue
-            if await _has_active_agent_for_workflow(session, run, definition.key):
+            if await has_active_agent_for_scope(
+                session, run.organization_id, run.location_id, definition.key
+            ):
                 continue
         elif run.failure_code == "SEO_ACTIVE_WEBSITE_MISSING":
             if definition.key != "seo.crawl_or_analysis":
