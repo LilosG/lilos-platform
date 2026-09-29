@@ -179,6 +179,7 @@ export type SearchIntelligenceItem = {
     limitation: string | null;
   } | null;
   active_change: { revision_id: string; state: string } | null;
+  governed_eligibility: { eligible: boolean; limitation: string | null };
   latest_measured: {
     recommendation: SEORecommendation;
     task: SEOImplementationTask;

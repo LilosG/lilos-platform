@@ -791,6 +791,163 @@ def test_search_intelligence_workspace_keeps_query_demand_unattributed_and_scope
 
 
 @pytest.mark.integration
+def test_workspace_hermes_eligibility_uses_exact_governed_source_scope(
+    seo_client: tuple[TestClient, dict[str, UUID]],
+    seo_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    client, ids = seo_client
+
+    async def populate() -> tuple[UUID, dict[str, UUID]]:
+        async with seo_session_factory.begin() as session:
+            website = SEOWebsite(
+                organization_id=ids["organization"],
+                location_id=ids["location"],
+                key="eligibility",
+                name="Eligibility site",
+                canonical_origin="https://eligibility.example.invalid",
+                status="active",
+                ownership_status="verified",
+                version=1,
+            )
+            other_site = SEOWebsite(
+                organization_id=ids["organization"],
+                location_id=ids["location"],
+                key="other-eligibility",
+                name="Other eligibility site",
+                canonical_origin="https://other-eligibility.example.invalid",
+                status="active",
+                ownership_status="verified",
+                version=1,
+            )
+            session.add_all([website, other_site])
+            await session.flush()
+            search_property = SEOSearchProperty(
+                organization_id=ids["organization"],
+                website_id=website.id,
+                connection_id=ids["connection"],
+                provider="google_search_console",
+                external_property_id="sc-domain:eligibility.example.invalid",
+                property_type="domain",
+                mapping_status="mapped",
+                freshness_status="fresh",
+            )
+            session.add(search_property)
+            await session.flush()
+            now = datetime.now(UTC)
+            records: dict[str, UUID] = {}
+            for label, source_site, query in (
+                ("unscoped", None, "legacy brunch"),
+                ("wrong_site", other_site.id, "other brunch"),
+                ("wrong_query", website.id, "actual brunch"),
+                ("valid_low_ctr", website.id, "low ctr brunch"),
+                ("valid", website.id, "query demand"),
+            ):
+                observation = SEOSearchObservation(
+                    organization_id=ids["organization"],
+                    search_property_id=search_property.id,
+                    website_id=source_site,
+                    page_id=None,
+                    query=query,
+                    date_start=now - timedelta(days=7),
+                    date_end=now,
+                    dimensions={"observation_type": "top_query", "query": query},
+                    dimension_hash=f"eligibility-{label}",
+                    clicks=0,
+                    impressions=139,
+                    ctr=0,
+                    position=6.6763,
+                    mapping_state="unknown" if label in {"valid", "valid_low_ctr"} else None,
+                    quality_status="valid",
+                    partial=False,
+                )
+                session.add(observation)
+                await session.flush()
+                opportunity_query = "claimed brunch" if label == "wrong_query" else query
+                opportunity = SEOOpportunity(
+                    organization_id=ids["organization"],
+                    location_id=ids["location"],
+                    website_id=website.id,
+                    page_id=None,
+                    opportunity_type="gsc_query_demand" if label == "valid" else "gsc_low_ctr",
+                    deduplication_key=f"eligibility-{label}",
+                    active_marker="active",
+                    evidence={
+                        "source": "google_search_console",
+                        "observation_id": str(observation.id),
+                        "query": opportunity_query,
+                        "page_mapping_state": "unknown" if label == "valid" else None,
+                        "clicks": 0,
+                        "impressions": 139,
+                        "ctr": 0,
+                        "position": 6.6763,
+                        "date_start": observation.date_start.isoformat(),
+                        "date_end": observation.date_end.isoformat(),
+                    },
+                    source_versions=["gsc.v1"],
+                    score_version=2,
+                    priority_score=89 if label != "valid" else 72,
+                    score_explanation={"score_policy_version": "opportunity_score.v2"},
+                    status="identified",
+                    version=1,
+                )
+                session.add(opportunity)
+                await session.flush()
+                records[label] = opportunity.id
+            missing = SEOOpportunity(
+                organization_id=ids["organization"],
+                location_id=ids["location"],
+                website_id=website.id,
+                page_id=None,
+                opportunity_type="gsc_low_ctr",
+                deduplication_key="eligibility-missing",
+                active_marker="active",
+                evidence={
+                    "source": "google_search_console",
+                    "observation_id": str(uuid4()),
+                    "query": "missing brunch",
+                },
+                source_versions=["gsc.v1"],
+                score_version=2,
+                priority_score=90,
+                score_explanation={"score_policy_version": "opportunity_score.v2"},
+                status="identified",
+                version=1,
+            )
+            session.add(missing)
+            await session.flush()
+            records["missing"] = missing.id
+            return website.id, records
+
+    website_id, records = asyncio.run(populate())
+    base = f"/api/v1/organizations/{ids['organization']}/seo"
+    response = client.get(f"{base}/workspace?website_id={website_id}", headers=HEADERS)
+    assert response.status_code == 200, response.text
+    items = {row["opportunity"]["id"]: row for row in response.json()["data"]["items"]}
+    for label in ("unscoped", "wrong_site", "wrong_query", "missing"):
+        eligibility = items[str(records[label])]["governed_eligibility"]
+        assert eligibility["eligible"] is False
+        assert eligibility["limitation"] == "The source observation does not resolve in this scope"
+        endpoint = f"{base}/opportunities/{records[label]}/hermes-run"
+        rejected = client.post(endpoint, headers=HEADERS)
+        assert rejected.status_code == 409, rejected.text
+        assert rejected.json()["error"]["code"] == "SEO_EVIDENCE_INVALID"
+        assert client.get(endpoint, headers=HEADERS).json()["data"] is None
+    valid = items[str(records["valid"])]
+    assert valid["governed_eligibility"] == {"eligible": True, "limitation": None}
+    assert valid["opportunity"]["page_id"] is None
+    valid_low_ctr = items[str(records["valid_low_ctr"])]
+    assert valid_low_ctr["governed_eligibility"] == {"eligible": True, "limitation": None}
+    assert valid_low_ctr["opportunity"]["page_id"] is None
+    low_ctr_run = client.post(
+        f"{base}/opportunities/{records['valid_low_ctr']}/hermes-run", headers=HEADERS
+    )
+    assert low_ctr_run.status_code == 200, low_ctr_run.text
+    accepted = client.post(f"{base}/opportunities/{records['valid']}/hermes-run", headers=HEADERS)
+    assert accepted.status_code == 200, accepted.text
+    assert accepted.json()["data"]["workflow_run_id"]
+
+
+@pytest.mark.integration
 def test_website_crawl_generates_opportunities_and_landing_page_gaps(
     seo_client: tuple[TestClient, dict[str, UUID]],
     seo_session_factory: async_sessionmaker[AsyncSession],
