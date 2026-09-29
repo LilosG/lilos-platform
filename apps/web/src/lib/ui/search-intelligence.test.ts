@@ -173,13 +173,13 @@ describe("Search Intelligence workspace", () => {
       () => undefined,
     );
     expect(panel.textContent).toContain(
-      invalid.governed_eligibility.limitation,
+      "Check its mapping in Integrations and refresh evidence",
     );
     [...panel.querySelectorAll("button")]
       .find((button) => button.textContent === "Review")
       ?.click();
     expect(panel.textContent).toContain(
-      invalid.governed_eligibility.limitation,
+      "Check its mapping in Integrations and refresh evidence",
     );
     expect(
       [...panel.querySelectorAll("button")].some((button) =>
@@ -191,6 +191,7 @@ describe("Search Intelligence workspace", () => {
 
   it("shows the exact next action for an approved unattributed change", () => {
     const growth = item("growth_change");
+    delete growth.opportunity.evidence.page_mapping_state;
     growth.recommendation = {
       id: "revision-two",
       revision_number: 2,
@@ -223,6 +224,7 @@ describe("Search Intelligence workspace", () => {
       "organization",
       () => undefined,
     );
+    expect(panel.textContent).toContain("Target resolution required");
     expect(panel.textContent).toContain("Implementation evidence is pending");
     [...panel.querySelectorAll("button")]
       .find((button) => button.textContent === "Review")

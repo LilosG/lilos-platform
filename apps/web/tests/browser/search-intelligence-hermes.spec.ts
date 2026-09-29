@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 
 const organization = "11111111-1111-4111-8111-111111111111";
 const opportunity = "22222222-2222-4222-8222-222222222222";
+const pageId = "44444444-4444-4444-8444-444444444444";
 
 test("selected opportunity shows Hermes completion, review, and a failed revision run", async ({
   page,
@@ -64,7 +65,73 @@ test("selected opportunity shows Hermes completion, review, and a failed revisio
     else if (path.endsWith("/products"))
       data = [{ product_key: "seo", entitled: true }];
     else if (path.endsWith("/seo/summary")) data = { crawl_run_count: 0 };
-    else if (path.endsWith("/seo/websites")) data = [];
+    else if (path.endsWith("/seo/websites"))
+      data = [
+        {
+          id: "site",
+          location_id: "location",
+          key: "site",
+          name: "Example",
+          canonical_origin: "https://example.test",
+          status: "active",
+          ownership_status: "verified",
+          verified_at: null,
+        },
+      ];
+    else if (path.endsWith("/seo/crawl-runs"))
+      data = [
+        {
+          id: "crawl-run",
+          website_id: "site",
+          status: "success",
+          safe_result: {
+            pages_crawled: 1,
+            page_evidence_version: "crawl_page.v1",
+          },
+          stop_reason: null,
+        },
+      ];
+    else if (path.endsWith("/seo/crawl-runs/crawl-run/pages"))
+      data = [
+        {
+          id: pageId,
+          website_id: "site",
+          normalized_url: "https://example.test/resolved",
+          http_status: 200,
+          crawl_depth: 1,
+          title: "Resolved page",
+          indexability: "indexable",
+        },
+      ];
+    else if (path.endsWith(`/seo/websites/site/pages/${pageId}/intelligence`))
+      data = {
+        identity: {
+          organization_id: organization,
+          website_id: "site",
+          page_id: pageId,
+          normalized_url: "https://example.test/resolved",
+          canonical_url: "https://example.test/resolved",
+        },
+        current_page: { http_status: 200, indexability: "indexable" },
+        crawl: {
+          availability: "observed",
+          observed_at: "2026-09-28T00:00:00Z",
+        },
+        gsc: {
+          availability: "observed",
+          page: { items: [] },
+          properties: { items: [] },
+        },
+        ga4_organic_landing: {
+          availability: "unavailable",
+          limitation: "No mapped GA4 page observation is available.",
+          page: { items: [] },
+          properties: { items: [] },
+        },
+        internal_links: { mapped_inbound_count: 0, mapped_outbound_count: 0 },
+        content: {},
+        workflow: {},
+      };
     else if (path.endsWith("/seo/opportunities")) data = [];
     else if (path.endsWith(`/opportunities/${opportunity}/recommendations`))
       data = [
@@ -215,7 +282,9 @@ test("selected opportunity shows Hermes completion, review, and a failed revisio
     .getByRole("button", { name: "Review" })
     .click();
   await expect(
-    page.getByText("The source observation does not resolve in this scope"),
+    page.getByText("Check its mapping in Integrations and refresh evidence", {
+      exact: false,
+    }),
   ).toBeVisible();
   await expect(page.getByRole("button", { name: "Ask Hermes" })).toHaveCount(0);
   await page.getByRole("button", { name: "Back to workspace" }).click();
@@ -258,5 +327,23 @@ test("selected opportunity shows Hermes completion, review, and a failed revisio
       .getByRole("status")
       .filter({ hasText: "Hermes reasoning Needs attention" }),
   ).toContainText("No valid recommendation was created", { timeout: 10_000 });
+  expect(submissions).toBe(2);
+  await page
+    .locator("#seo-tabs .ui-tabs__tab")
+    .filter({ hasText: "Crawl" })
+    .click();
+  await expect(page.getByText("Latest recorded crawl")).toBeVisible();
+  await page
+    .getByRole("button", { name: "Inspect page https://example.test/resolved" })
+    .click();
+  await expect(
+    page
+      .locator("#tab-crawl section.ui-card")
+      .filter({ has: page.getByRole("heading", { name: "Page identity" }) })
+      .getByText("https://example.test/resolved", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("No mapped GA4 page observation is available."),
+  ).toBeVisible();
   expect(submissions).toBe(2);
 });

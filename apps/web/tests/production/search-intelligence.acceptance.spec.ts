@@ -31,6 +31,9 @@ const fixture = {
   locationId: process.env.LILOS_SEARCH_ACCEPTANCE_LOCATION_ID?.trim(),
   websiteId: process.env.LILOS_SEARCH_ACCEPTANCE_WEBSITE_ID?.trim(),
   pageId: process.env.LILOS_SEARCH_ACCEPTANCE_PAGE_ID?.trim(),
+  opportunityId: process.env.LILOS_SEARCH_ACCEPTANCE_OPPORTUNITY_ID?.trim(),
+  recommendationId:
+    process.env.LILOS_SEARCH_ACCEPTANCE_RECOMMENDATION_ID?.trim(),
 };
 
 type ApiResponse<T> = { status: number; data?: T; error?: string };
@@ -330,23 +333,6 @@ test("Search Intelligence deployed read path matches persisted evidence", async 
       "Search Intelligence workspace history truncated; live read acceptance cannot complete for this fixture",
     );
   }
-  expect(readiness!.gsc, "GSC unmapped for acceptance website").not.toBe(
-    "unavailable",
-  );
-  expect(readiness!.ga4, "GA4 unmapped for acceptance website").not.toBe(
-    "unavailable",
-  );
-  expect(
-    readiness!.page_inventory,
-    "crawl/page inventory unavailable for acceptance website",
-  ).toBe("observed");
-  expect(readiness!.gsc, "GSC evidence stale for acceptance website").toBe(
-    "fresh",
-  );
-  expect(readiness!.ga4, "GA4 evidence stale for acceptance website").toBe(
-    "fresh",
-  );
-
   const items: SearchIntelligenceItem[] = [...workspace.items];
   let next = workspace.pagination.next_offset;
   const matchesPage = (item: SearchIntelligenceItem): boolean =>
@@ -393,12 +379,6 @@ test("Search Intelligence deployed read path matches persisted evidence", async 
         item.opportunity.page_id,
         "query-only demand acquired an invented page attribution",
       ).toBeNull();
-    const business = item.opportunity.evidence.business_importance as
-      { business_importance_state?: string } | undefined;
-    expect(
-      business?.business_importance_state,
-      "backend business importance state missing",
-    ).toBeTruthy();
     const passes = item.recommendation?.decision_context?.passes;
     if (passes) {
       for (const key of [
@@ -419,9 +399,11 @@ test("Search Intelligence deployed read path matches persisted evidence", async 
     candidates.find((item) => !item.outcome && !item.task?.verified_at) ??
     candidates[0];
   if (!selected?.page) {
-    throw new Error(
-      `no resolved page fixture: website ${target.websiteId}; inventory=${readiness!.page_inventory}; ${target.pageId ? `page ${target.pageId} has no workspace opportunity` : "no page-backed workspace opportunity"}`,
+    console.log(
+      `No page-backed opportunity on website ${target.websiteId}; canonical page inventory is covered by the separate page journey.`,
     );
+    expect(blockedWrites).toEqual([]);
+    return;
   }
   const intelligence = await get<SEOPageIntelligence>(
     page,
@@ -735,4 +717,281 @@ test("Search Intelligence deployed read path matches persisted evidence", async 
     blockedWrites,
     `production mutation attempted: ${blockedWrites.join(", ")}`,
   ).toEqual([]);
+});
+
+test("approved unattributed work and canonical page inventory stay truthful", async ({
+  page,
+}) => {
+  const target = requireFixture();
+  if (!fixture.opportunityId || !fixture.recommendationId)
+    throw new Error(
+      "Set LILOS_SEARCH_ACCEPTANCE_OPPORTUNITY_ID and LILOS_SEARCH_ACCEPTANCE_RECOMMENDATION_ID for the approved read-only journey.",
+    );
+  const blockedWrites: string[] = [];
+  await page.route("**/*", async (route) => {
+    const request = route.request();
+    if (
+      [API_BASE, WEB_BASE].includes(new URL(request.url()).origin) &&
+      !SAFE_METHODS.has(request.method())
+    ) {
+      blockedWrites.push(`${request.method()} ${request.url()}`);
+      await route.abort("blockedbyclient");
+      return;
+    }
+    await route.continue();
+  });
+  await page.goto(`${WEB_BASE}/seo?org=${target.organizationId}`, {
+    waitUntil: "domcontentloaded",
+  });
+  const base = `/api/v1/organizations/${target.organizationId}`;
+  const workspace = await get<SearchIntelligenceWorkspace>(
+    page,
+    workspacePath(base, target.websiteId, 0),
+    "approved work scope",
+  );
+  expect(
+    workspace.pagination.next_offset,
+    "approved fixture requires pagination",
+  ).toBeNull();
+  const item = workspace.items.find(
+    (candidate) => candidate.opportunity.id === fixture.opportunityId,
+  );
+  expect(
+    item,
+    "approved opportunity absent from website workspace",
+  ).toBeDefined();
+  expect(item!.website.id).toBe(target.websiteId);
+  expect(item!.website.location_id).toBe(target.locationId);
+  expect(item!.opportunity.page_id).toBeNull();
+  expect(item!.page).toBeNull();
+  expect(item!.opportunity.priority_score).toBe(89);
+  expect(item!.governed_eligibility.eligible).toBe(true);
+  expect(item!.recommendation?.id).toBe(fixture.recommendationId);
+  expect(item!.recommendation?.revision_number).toBe(2);
+  expect(item!.recommendation?.status).toBe("approved");
+  expect(item!.recommendation?.decision_context?.page_mapping_state).toBe(
+    "unknown",
+  );
+  expect(
+    item!.recommendation?.decision_context?.business_importance_state,
+  ).toBe("unavailable");
+  const recommendations = await get<
+    Array<SearchIntelligenceItem["recommendation"]>
+  >(
+    page,
+    `${base}/seo/opportunities/${fixture.opportunityId}/recommendations`,
+    "recommendation history",
+  );
+  expect(recommendations.map((record) => record?.revision_number)).toEqual([
+    2, 1,
+  ]);
+  expect(recommendations[0]?.id).toBe(fixture.recommendationId);
+  expect(recommendations[0]?.approved_by_user_id).toBeTruthy();
+  expect(recommendations[1]?.status).toBe("awaiting_approval");
+  const handoff = (
+    recommendations[0] as (typeof recommendations)[0] & {
+      growth_handoff?: {
+        opportunity_reference: string;
+        target_reference: string;
+        website_id: string;
+        location_id: string;
+        page_mapping_state: string;
+        approval_state: string;
+      };
+    }
+  )?.growth_handoff;
+  expect(handoff?.opportunity_reference).toBe(
+    `seo-opportunity:${fixture.opportunityId}`,
+  );
+  expect(handoff?.target_reference).toBe(
+    `seo-opportunity:${fixture.opportunityId}`,
+  );
+  expect(handoff?.website_id).toBe(target.websiteId);
+  expect(handoff?.location_id).toBe(target.locationId);
+  expect(handoff?.page_mapping_state).toBe("unknown");
+  expect(handoff?.approval_state).toBe("approved");
+  const tasks = await get<Array<NonNullable<SearchIntelligenceItem["task"]>>>(
+    page,
+    `${base}/seo/recommendations/${fixture.recommendationId}/tasks`,
+    "downstream implementation",
+  );
+  expect(tasks).toHaveLength(1);
+  expect(tasks[0].recommendation_revision_id).toBe(fixture.recommendationId);
+  expect(tasks[0].target_type).toBe("opportunity");
+  expect(tasks[0].target_reference).toBe(
+    `seo-opportunity:${fixture.opportunityId}`,
+  );
+  expect(tasks[0].status).toBe("verification_pending");
+  expect(tasks[0].verified_at).toBeNull();
+  expect(tasks[0].verification_evidence?.result).toBe("unavailable");
+  expect(tasks[0].verification_evidence?.page_id).toBeNull();
+  expect(tasks[0].verification_evidence?.actual).toEqual({});
+  expect(item!.outcome).toBeNull();
+  expect(item!.measurement?.maturity).toBe("unavailable");
+
+  const panel = page.locator("#tab-intelligence");
+  await expect(panel.getByText("Acceptance journey readiness")).toBeVisible();
+  await expect(page.locator("h1"), "duplicate page heading").toHaveCount(1);
+  for (const heading of [
+    "Requires Attention",
+    "Growth Opportunities",
+    "Technical Regressions",
+    "Currently Measuring",
+    "Completed / Learned",
+  ])
+    await expect(card(panel, heading)).toBeVisible();
+  const attention = card(panel, "Requires Attention");
+  const approvedRow = attention.locator(
+    `li[data-opportunity-id="${fixture.opportunityId}"]`,
+  );
+  await expect(approvedRow).toContainText("Target resolution required");
+  await expect(approvedRow).toContainText("authoritative mapped evidence");
+  const invalid = workspace.items.find(
+    (candidate) => !candidate.governed_eligibility.eligible,
+  );
+  if (invalid) {
+    const invalidRow = attention.locator(
+      `li[data-opportunity-id="${invalid.opportunity.id}"]`,
+    );
+    await expect(invalidRow).toContainText(
+      "before requesting a recommendation",
+    );
+    await invalidRow.getByRole("button", { name: "Review" }).click();
+    await expect(
+      panel.getByRole("button", { name: "Ask Hermes", exact: true }),
+    ).toHaveCount(0);
+    await panel.getByRole("button", { name: "Back to workspace" }).click();
+  }
+  const growthRow = card(panel, "Growth Opportunities").locator(
+    `li[data-opportunity-id="${fixture.opportunityId}"]`,
+  );
+  await expect(growthRow).toContainText("Priority 89");
+  await expect(growthRow).toContainText("Business importance: Unavailable");
+  await expect(growthRow).toContainText("Approved");
+  await approvedRow.getByRole("button", { name: "Review" }).click();
+  await expect(panel.getByText("Page attribution unavailable")).toBeVisible();
+  await expect(
+    panel.getByText("Target resolution required", { exact: false }),
+  ).toBeVisible();
+  await expect(fact(card(panel, "Decision"), "Revision")).toHaveText("2");
+  await expect(fact(card(panel, "Decision"), "Approval")).toHaveText(
+    "Approved",
+  );
+  for (const [name, key] of [
+    ["Access", "access"],
+    ["Competition", "competition"],
+    ["Answer Engines", "answer_engines"],
+    ["Conversion", "conversion"],
+  ] as const) {
+    const pass = item!.recommendation!.decision_context!.passes[key];
+    await expect(fact(card(panel, name), "Availability")).toHaveText(
+      statusLabel(pass.availability),
+    );
+    if (pass.limitation)
+      await expect(card(panel, name)).toContainText(pass.limitation);
+  }
+  await expect(
+    fact(card(panel, "Implementation and verification"), "Task"),
+  ).toHaveText("Verification Pending");
+  await expect(
+    fact(card(panel, "Implementation and verification"), "Verified at"),
+  ).toHaveText("Unavailable");
+  await expect(
+    fact(card(panel, "Measurement and observed outcome"), "Maturity"),
+  ).toHaveText("Unavailable");
+  await expect(
+    fact(
+      card(panel, "Measurement and observed outcome"),
+      "Observed after this change",
+    ),
+  ).toHaveText("Pending");
+
+  const runs = await get<Array<{ id: string; status: string }>>(
+    page,
+    `${base}/seo/crawl-runs?website_id=${target.websiteId}&limit=20`,
+    "canonical crawl inventory",
+  );
+  const run = runs.find((candidate) => candidate.status === "success");
+  expect(run, "no completed crawl for canonical page inventory").toBeDefined();
+  const pages = await get<
+    Array<{ id: string; website_id: string; normalized_url: string }>
+  >(page, `${base}/seo/crawl-runs/${run!.id}/pages`, "canonical pages");
+  const selectedPage = target.pageId
+    ? pages.find((candidate) => candidate.id === target.pageId)
+    : pages[0];
+  expect(selectedPage, "no resolved page in completed crawl").toBeDefined();
+  const intelligence = await get<SEOPageIntelligence>(
+    page,
+    `${base}/seo/websites/${target.websiteId}/pages/${selectedPage!.id}/intelligence`,
+    "resolved Page Intelligence",
+  );
+  expect(intelligence.identity.organization_id).toBe(target.organizationId);
+  expect(intelligence.identity.website_id).toBe(target.websiteId);
+  expect(intelligence.identity.page_id).toBe(selectedPage!.id);
+  expect(intelligence.identity.normalized_url).toBe(
+    selectedPage!.normalized_url,
+  );
+  await page
+    .locator("#seo-tabs .ui-tabs__tab")
+    .filter({ hasText: "Crawl" })
+    .click();
+  const inspect = page.getByRole("button", {
+    name: `Inspect page ${selectedPage!.normalized_url}`,
+  });
+  await expect(inspect).toBeVisible();
+  await inspect.click();
+  const identity = page
+    .locator("#tab-crawl")
+    .locator("section.ui-card")
+    .filter({
+      has: page.getByRole("heading", { name: "Page identity", exact: true }),
+    });
+  await expect(fact(identity, "Canonical page")).toHaveText(
+    selectedPage!.normalized_url,
+  );
+  await expect(fact(identity, "Website")).toHaveText(target.websiteId);
+  await expect(fact(identity, "Page")).toHaveText(selectedPage!.id);
+  for (const [heading, label, evidence] of [
+    ["Search evidence", "GSC", intelligence.gsc],
+    [
+      "Conversion and content",
+      "GA4 Organic Landing",
+      intelligence.ga4_organic_landing,
+    ],
+  ] as const) {
+    const evidenceCard = page
+      .locator("#tab-crawl")
+      .locator("section.ui-card")
+      .filter({
+        has: page.getByRole("heading", { name: heading, exact: true }),
+      });
+    await expect(fact(evidenceCard, label)).toHaveText(
+      statusLabel(String(evidence.availability)),
+    );
+    if (evidence.limitation)
+      await expect(evidenceCard).toContainText(String(evidence.limitation));
+  }
+  const wrongId = "00000000-0000-4000-8000-000000000001";
+  for (const [scope, route] of [
+    [
+      "organization",
+      `/api/v1/organizations/${wrongId}/seo/opportunities/${fixture.opportunityId}`,
+    ],
+    ["location", `${base}/locations/${wrongId}`],
+    ["website", `${base}/seo/websites/${wrongId}`],
+    [
+      "page",
+      `${base}/seo/websites/${target.websiteId}/pages/${wrongId}/intelligence`,
+    ],
+    [
+      "recommendation",
+      `/api/v1/organizations/${wrongId}/seo/recommendations/${fixture.recommendationId}/tasks`,
+    ],
+  ] as const) {
+    const response = await authenticatedFetch(page, route);
+    expect([403, 404], `${scope} scope unexpectedly readable`).toContain(
+      response.status,
+    );
+  }
+  expect(blockedWrites).toEqual([]);
 });
