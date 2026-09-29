@@ -156,9 +156,9 @@ function requireFixture(): {
   };
 }
 
-function card(panel: Locator, title: string): Locator {
+function card(page: Page, panel: Locator, title: string): Locator {
   return panel.locator("section.ui-card").filter({
-    has: panel.getByRole("heading", { name: title, exact: true }),
+    has: page.getByRole("heading", { name: title, exact: true }),
   });
 }
 
@@ -537,7 +537,7 @@ test("Search Intelligence deployed read path matches persisted evidence", async 
     );
   }
   await row.getByRole("button", { name: "Review" }).click();
-  const pageIdentity = card(panel, "Page identity");
+  const pageIdentity = card(page, panel, "Page identity");
   await expect(
     pageIdentity,
     "Page Intelligence unavailable in UI",
@@ -554,7 +554,7 @@ test("Search Intelligence deployed read path matches persisted evidence", async 
     fact(pageIdentity, "Page"),
     "UI/backend page identity mismatch",
   ).toHaveText(selected.page.id);
-  const opportunityCard = card(panel, `${website.name} · ${pagePath}`);
+  const opportunityCard = card(page, panel, `${website.name} · ${pagePath}`);
   await expect(
     fact(opportunityCard, "Priority"),
     "browser priority differs from backend",
@@ -579,7 +579,7 @@ test("Search Intelligence deployed read path matches persisted evidence", async 
     ["Search evidence", "GSC", intelligence.gsc],
     ["Conversion and content", "GA4", intelligence.ga4_organic_landing],
   ] as const) {
-    const evidenceCard = card(panel, heading);
+    const evidenceCard = card(page, panel, heading);
     await expect(
       fact(evidenceCard, source === "GSC" ? "GSC" : "GA4 Organic Landing"),
       `${source} availability differs from backend`,
@@ -602,11 +602,11 @@ test("Search Intelligence deployed read path matches persisted evidence", async 
     (intelligence.gsc.website_query_only as { items?: unknown[] } | undefined)
       ?.items ?? [];
   await expect(
-    fact(card(panel, "Search evidence"), "Query-only demand"),
+    fact(card(page, panel, "Search evidence"), "Query-only demand"),
     "query-only demand attribution differs from backend",
   ).toHaveText(`${queryOnly.length} website-scoped records`);
   const decision = selected.recommendation?.decision_context;
-  const decisionCard = card(panel, "Decision");
+  const decisionCard = card(page, panel, "Decision");
   if (selected.recommendation) {
     await expect(
       fact(decisionCard, "Approval"),
@@ -635,7 +635,7 @@ test("Search Intelligence deployed read path matches persisted evidence", async 
       ["Answer Engines", "answer_engines"],
       ["Conversion", "conversion"],
     ] as const) {
-      const passCard = card(panel, name);
+      const passCard = card(page, panel, name);
       await expect(
         fact(passCard, "Availability"),
         `Hermes ${name} pass mismatch`,
@@ -658,7 +658,7 @@ test("Search Intelligence deployed read path matches persisted evidence", async 
       "Answer Engines",
       "Conversion",
     ]) {
-      const passCard = card(panel, name);
+      const passCard = card(page, panel, name);
       await expect(
         fact(passCard, "Availability"),
         `Hermes ${name} absence mismatch`,
@@ -671,7 +671,11 @@ test("Search Intelligence deployed read path matches persisted evidence", async 
       );
     }
   }
-  const implementationCard = card(panel, "Implementation and verification");
+  const implementationCard = card(
+    page,
+    panel,
+    "Implementation and verification",
+  );
   if (selected.task) {
     await expect(
       fact(implementationCard, "Task"),
@@ -696,7 +700,7 @@ test("Search Intelligence deployed read path matches persisted evidence", async 
       "missing verification was invented",
     ).toHaveText("Unavailable");
   }
-  const measurementCard = card(panel, "Measurement and observed outcome");
+  const measurementCard = card(page, panel, "Measurement and observed outcome");
   const outcome = selected.outcome ?? selected.latest_measured?.outcome;
   await expect(
     fact(measurementCard, "Maturity"),
@@ -839,8 +843,8 @@ test("approved unattributed work and canonical page inventory stay truthful", as
     "Currently Measuring",
     "Completed / Learned",
   ])
-    await expect(card(panel, heading)).toBeVisible();
-  const attention = card(panel, "Requires Attention");
+    await expect(card(page, panel, heading)).toBeVisible();
+  const attention = card(page, panel, "Requires Attention");
   const approvedRow = attention.locator(
     `li[data-opportunity-id="${fixture.opportunityId}"]`,
   );
@@ -862,7 +866,7 @@ test("approved unattributed work and canonical page inventory stay truthful", as
     ).toHaveCount(0);
     await panel.getByRole("button", { name: "Back to workspace" }).click();
   }
-  const growthRow = card(panel, "Growth Opportunities").locator(
+  const growthRow = card(page, panel, "Growth Opportunities").locator(
     `li[data-opportunity-id="${fixture.opportunityId}"]`,
   );
   await expect(growthRow).toContainText("Priority 89");
@@ -873,8 +877,8 @@ test("approved unattributed work and canonical page inventory stay truthful", as
   await expect(
     panel.getByText("Target resolution required", { exact: false }),
   ).toBeVisible();
-  await expect(fact(card(panel, "Decision"), "Revision")).toHaveText("2");
-  await expect(fact(card(panel, "Decision"), "Approval")).toHaveText(
+  await expect(fact(card(page, panel, "Decision"), "Revision")).toHaveText("2");
+  await expect(fact(card(page, panel, "Decision"), "Approval")).toHaveText(
     "Approved",
   );
   for (const [name, key] of [
@@ -884,24 +888,24 @@ test("approved unattributed work and canonical page inventory stay truthful", as
     ["Conversion", "conversion"],
   ] as const) {
     const pass = item!.recommendation!.decision_context!.passes[key];
-    await expect(fact(card(panel, name), "Availability")).toHaveText(
+    await expect(fact(card(page, panel, name), "Availability")).toHaveText(
       statusLabel(pass.availability),
     );
     if (pass.limitation)
-      await expect(card(panel, name)).toContainText(pass.limitation);
+      await expect(card(page, panel, name)).toContainText(pass.limitation);
   }
   await expect(
-    fact(card(panel, "Implementation and verification"), "Task"),
+    fact(card(page, panel, "Implementation and verification"), "Task"),
   ).toHaveText("Verification Pending");
   await expect(
-    fact(card(panel, "Implementation and verification"), "Verified at"),
+    fact(card(page, panel, "Implementation and verification"), "Verified at"),
   ).toHaveText("Unavailable");
   await expect(
-    fact(card(panel, "Measurement and observed outcome"), "Maturity"),
+    fact(card(page, panel, "Measurement and observed outcome"), "Maturity"),
   ).toHaveText("Unavailable");
   await expect(
     fact(
-      card(panel, "Measurement and observed outcome"),
+      card(page, panel, "Measurement and observed outcome"),
       "Observed after this change",
     ),
   ).toHaveText("Pending");
@@ -937,6 +941,7 @@ test("approved unattributed work and canonical page inventory stay truthful", as
     .click();
   const inspect = page.getByRole("button", {
     name: `Inspect page ${selectedPage!.normalized_url}`,
+    exact: true,
   });
   await expect(inspect).toBeVisible();
   await inspect.click();
