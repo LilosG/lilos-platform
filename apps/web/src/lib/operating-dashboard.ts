@@ -128,10 +128,15 @@ export function dashboardMetrics(
   }
   const opportunities = summary.seo?.opportunities ?? {};
   if (Object.keys(opportunities).length > 0) {
+    const actionable = Math.max(
+      0,
+      count(opportunities, SEO_ACTIONABLE_OPPORTUNITY_STATUSES) -
+        (summary.seo?.opportunities_blocked ?? 0),
+    );
     metrics.push({
       key: "seo",
       label: "Open SEO opportunities",
-      value: count(opportunities, SEO_ACTIONABLE_OPPORTUNITY_STATUSES),
+      value: actionable,
       meta: "Prioritized work queue",
       href: "/seo",
     });
@@ -206,9 +211,11 @@ export function todaysWork(summary: InsightsSummary | null): WorkItem[] {
   const items: WorkItem[] = [];
   const reviewCount = count(summary.reviews ?? {}, REVIEW_NEEDS_RESPONSE);
   const newLeads = count(summary.leads ?? {}, ["new", "unassigned"]);
-  const seoWork = count(
-    summary.seo?.opportunities ?? {},
-    SEO_ACTIONABLE_OPPORTUNITY_STATUSES,
+  const seoBlocked = summary.seo?.opportunities_blocked ?? 0;
+  const seoWork = Math.max(
+    0,
+    count(summary.seo?.opportunities ?? {}, SEO_ACTIONABLE_OPPORTUNITY_STATUSES) -
+      seoBlocked,
   );
   const contentWaiting = count(summary.content_publications ?? {}, [
     "reserved",
@@ -251,6 +258,16 @@ export function todaysWork(summary: InsightsSummary | null): WorkItem[] {
       detail: "Open opportunities are ready to prioritize.",
       count: seoWork,
       severity: "work",
+      href: "/seo",
+    });
+  if (seoBlocked > 0)
+    items.push({
+      key: "seo-blocked",
+      label: "SEO opportunities need evidence",
+      detail:
+        "Page-level evidence exists but did not resolve to a crawled page. Review in Integrations or re-run analysis.",
+      count: seoBlocked,
+      severity: "urgent",
       href: "/seo",
     });
   return items;

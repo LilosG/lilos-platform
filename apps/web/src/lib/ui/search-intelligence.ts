@@ -16,6 +16,7 @@ import {
 import { describeFailure } from "./index";
 import { statusLabel, statusTone } from "../status-language";
 import {
+  canUsePlatformAdministration,
   detailFact,
   emptyState,
   errorAlert,
@@ -229,10 +230,12 @@ function appendLines(parent: HTMLElement, values: string[]): void {
   parent.append(list);
 }
 
-function renderReadiness(workspace: SearchIntelligenceWorkspace): HTMLElement {
+function renderIntegrationDiagnostics(
+  workspace: SearchIntelligenceWorkspace,
+): HTMLElement {
   const card = sectionCard(
-    "Acceptance journey readiness",
-    "Recorded prerequisites for a controlled operator walkthrough. This is not live acceptance.",
+    "Integration diagnostics",
+    "GSC/GA4 mapping and page inventory for each website. Visible to platform administrators only.",
   );
   const body = card.querySelector<HTMLElement>(".ui-card__body")!;
   if (!workspace.readiness.length) {
@@ -919,7 +922,9 @@ export function renderSearchIntelligenceWorkspace(
   reload: (offset?: number) => void,
 ): void {
   panel.replaceChildren();
-  panel.append(renderReadiness(workspace));
+  if (canUsePlatformAdministration()) {
+    panel.append(renderIntegrationDiagnostics(workspace));
+  }
   if (workspace.history_truncated) {
     panel.append(
       errorAlert(

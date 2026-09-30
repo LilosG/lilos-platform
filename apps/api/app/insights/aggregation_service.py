@@ -114,6 +114,16 @@ class InsightsService:
         seo_opportunities = await self._status_counts(
             session, SEOOpportunity, seo_opportunity_scope
         )
+        seo_opportunities_blocked = await self._count(
+            session,
+            SEOOpportunity,
+            and_(
+                seo_opportunity_scope,
+                SEOOpportunity.active_marker == "active",
+                SEOOpportunity.status.in_(("identified", "recommended", "approved")),
+                SEOOpportunity.attribution_state == "unresolved",
+            ),
+        )
         leads = await self._status_counts(session, Lead, scoped(Lead))
         growth = await self._growth_summary(session, organization_id, location_id=location_id)
         ga4 = await self.analytics.summary(session, organization_id, location_id=location_id)
@@ -129,6 +139,7 @@ class InsightsService:
             "seo": {
                 "crawl_runs": seo_crawl_runs,
                 "opportunities": seo_opportunities,
+                "opportunities_blocked": seo_opportunities_blocked,
             },
             "leads": leads,
             "ga4": ga4,
