@@ -21,6 +21,7 @@ const summary: InsightsSummary = {
   seo: {
     crawl_runs: { completed: 2 },
     opportunities: { identified: 3, rejected: 1 },
+    opportunities_blocked: 0,
   },
   leads: { new: 2, assigned: 3, converted: 1, lost: 1 },
 };
@@ -44,7 +45,7 @@ describe("operating dashboard", () => {
       gbp: { locations: 1, profile_snapshots: 0, publications: {} },
       reviews: {},
       content_publications: {},
-      seo: { crawl_runs: {}, opportunities: {} },
+      seo: { crawl_runs: {}, opportunities: {}, opportunities_blocked: 0 },
       leads: {},
     };
     expect(dashboardMetrics(thinSummary)).toEqual([]);
@@ -68,5 +69,25 @@ describe("operating dashboard", () => {
 
   it("sums only the supplied provider-observed statuses", () => {
     expect(totalStatuses({ new: 2, responded: 7 })).toBe(9);
+  });
+
+  it("counts blocked SEO opportunities separately from actionable ones", () => {
+    const withBlocked: InsightsSummary = {
+      ...summary,
+      seo: {
+        crawl_runs: { completed: 2 },
+        opportunities: { identified: 5 },
+        opportunities_blocked: 2,
+      },
+    };
+    const seoMetric = dashboardMetrics(withBlocked).find(
+      (item) => item.key === "seo",
+    );
+    expect(seoMetric?.value).toBe(3);
+    const work = todaysWork(withBlocked);
+    expect(work.find((item) => item.key === "seo-work")?.count).toBe(3);
+    const blocked = work.find((item) => item.key === "seo-blocked");
+    expect(blocked?.count).toBe(2);
+    expect(blocked?.severity).toBe("urgent");
   });
 });

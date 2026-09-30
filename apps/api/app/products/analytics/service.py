@@ -62,6 +62,7 @@ from apps.api.app.products.analytics.errors import (
     AnalyticsNotConfiguredError,
     AnalyticsPropertyNotFoundError,
     AnalyticsScopeRequiredError,
+    AnalyticsWebsiteScopeError,
 )
 from apps.api.app.products.analytics.models import AnalyticsProperty
 from apps.api.app.products.seo.models import SEOWebsite
@@ -340,6 +341,15 @@ class AnalyticsService:
     ) -> AnalyticsProperty:
         token, connection = await self._fresh_token(session, settings, organization_id)
         del token
+        if website_id is not None:
+            website = await session.scalar(
+                select(SEOWebsite).where(
+                    SEOWebsite.organization_id == organization_id,
+                    SEOWebsite.id == website_id,
+                )
+            )
+            if website is None:
+                raise AnalyticsWebsiteScopeError
         existing = await session.scalar(
             select(AnalyticsProperty).where(
                 AnalyticsProperty.organization_id == organization_id,

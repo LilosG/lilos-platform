@@ -18,6 +18,7 @@ from apps.api.app.audit.service import AuditEventService
 from apps.api.app.execution.models import WorkflowRun
 from apps.api.app.execution.service import ExecutionService
 from apps.api.app.execution.workflow_catalog import WORKFLOW_TYPES
+from apps.api.app.growth.action_types import deterministic_workflow_for
 from apps.api.app.growth.contracts import GrowthPlanCreate
 from apps.api.app.growth.models import GrowthAction, GrowthInitiative
 from apps.api.app.products.content.contracts import OpportunityCreate
@@ -90,7 +91,9 @@ class GrowthService:
                 # into Content and later present a misleading Publish button.
                 product_key = "seo"
                 action_type = "site_implementation"
-            workflow_key = GROWTH_EXECUTOR_BY_PRODUCT.get(product_key)
+            workflow_key = deterministic_workflow_for(
+                product_key, action_type
+            ) or GROWTH_EXECUTOR_BY_PRODUCT.get(product_key)
             if workflow_key is None:
                 raise GrowthPlanValidationError(
                     f"product {action.product_key} has no growth-delegatable executor"
@@ -117,10 +120,15 @@ class GrowthService:
                 raise GrowthPlanValidationError(
                     f"unknown executor workflow for action {action.action_key}"
                 )
-            owner = GROWTH_EXECUTOR_WORKFLOWS.get(workflow_key)
+            owner = GROWTH_EXECUTOR_WORKFLOWS.get(workflow_key) or (
+                WORKFLOW_TYPES[workflow_key][1]
+                if deterministic_workflow_for(action.product_key, action.action_type)
+                == workflow_key
+                else None
+            )
             if owner is None:
                 raise GrowthPlanValidationError(
-                    f"workflow {workflow_key} is not a growth-delegatable product agent"
+                    f"workflow {workflow_key} is not a growth-delegatable executor"
                 )
             if owner != action.product_key:
                 raise GrowthPlanValidationError(
@@ -446,11 +454,35 @@ class GrowthService:
             ):
                 continue
             workflow_key = action.executor_workflow_key
-            if (
-                workflow_key is None
-                or GROWTH_EXECUTOR_WORKFLOWS.get(workflow_key) != action.product_key
-            ):
+            is_deterministic = workflow_key is not None and not workflow_key.startswith("agent.")
+            expected_owner = (
+                WORKFLOW_TYPES[workflow_key][1]
+                if is_deterministic and workflow_key in WORKFLOW_TYPES
+                else GROWTH_EXECUTOR_WORKFLOWS.get(workflow_key)
+                if workflow_key
+                else None
+            )
+            if workflow_key is None or expected_owner != action.product_key:
                 raise GrowthStateError("growth action executor binding is no longer valid")
+
+            if is_deterministic:
+                # Deterministic work is code, never Hermes — dispatch its
+                # workflow directly with no free-text objective to reason over.
+                workflow = await self.execution.start_named(
+                    session,
+                    organization_id,
+                    workflow_key,
+                    f"growth-action-{action.id}",
+                    location_id=initiative.location_id,
+                    input_document={"context_reference": f"growth-action:{action.id}"},
+                    correlation_id=correlation_id,
+                    actor_id=actor_id,
+                    enqueue_job=True,
+                )
+                action.workflow_run_id = workflow.id
+                action.status = "queued"
+                dispatched.append(action)
+                continue
 
             objective = (
                 f"Execute the approved Growth action '{action.action_key}' for target "

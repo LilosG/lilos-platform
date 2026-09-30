@@ -145,6 +145,10 @@ class SEOCrawlRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         UniqueConstraint(
             "organization_id", "website_id", "id", name="uq_seo_crawl_runs_org_website_id"
         ),
+        CheckConstraint(
+            "status IN ('queued','running','success','partial','error')",
+            name="seo_crawl_run_status",
+        ),
     )
     organization_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
@@ -363,6 +367,15 @@ class SEOOpportunity(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "active_marker",
             name="uq_seo_active_opportunity",
         ),
+        CheckConstraint(
+            "attribution_state IN ('attributed','shared','query_only','unresolved')",
+            name="attribution_state",
+        ),
+        CheckConstraint(
+            "(attribution_state = 'attributed' AND page_id IS NOT NULL) OR "
+            "(attribution_state <> 'attributed' AND page_id IS NULL)",
+            name="attribution_state_page_consistent",
+        ),
     )
     organization_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
@@ -382,6 +395,12 @@ class SEOOpportunity(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     score_explanation: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
     status: Mapped[str] = mapped_column(String(24), nullable=False)
     version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
+    attribution_state: Mapped[str] = mapped_column(
+        String(24), nullable=False, server_default="query_only"
+    )
+    candidate_pages: Mapped[list[object]] = mapped_column(
+        JSONB, nullable=False, server_default="[]"
+    )
 
 
 class SEORecommendationRevision(UUIDPrimaryKeyMixin, Base):
@@ -412,6 +431,8 @@ class SEORecommendationRevision(UUIDPrimaryKeyMixin, Base):
         PGUUID(as_uuid=True), ForeignKey("user_profiles.id", ondelete="RESTRICT")
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    change_set: Mapped[dict[str, object] | None] = mapped_column(JSONB)
+    change_set_fingerprint: Mapped[str | None] = mapped_column(String(64))
 
 
 class SEOImplementationTask(UUIDPrimaryKeyMixin, TimestampMixin, Base):

@@ -38,11 +38,43 @@ from apps.api.app.products.seo.decision import (
     resolve_decision,
 )
 from apps.api.app.products.seo.errors import SEOOpportunityNotFoundError
+from apps.api.app.products.seo.limitation_codes import SEOLimitationCode
 from apps.api.app.products.seo.models import SEORecommendationRevision
 from apps.api.app.products.seo.service import SEOService
 
 TERMINAL_HERMES_STATUSES = {"completed", "failed", "cancelled"}
 ACTIVE_AGENT_STATUSES = {"queued", "running", "waiting_approval", "stopping"}
+
+
+async def has_active_agent_for_scope(
+    session: AsyncSession,
+    organization_id: UUID,
+    location_id: UUID | None,
+    workflow_key: str,
+) -> bool:
+    """True when a Hermes run is already active for this scoped session.
+
+    A scoped session is keyed on (organization, location, skill) — see
+    `AgentRuntimeService._namespace_hash`. Only one `AgentRun` may be active
+    per scoped session at a time (the partial unique index on
+    `agent_runs.agent_session_id`), so this is the same busy predicate that
+    raises `HERMES_SCOPED_SESSION_BUSY` inside `_prepare`. Non-agent workflow
+    keys are never busy in this sense.
+    """
+    if not workflow_key.startswith("agent."):
+        return False
+    skill = skill_for_workflow(workflow_key)
+    active = await session.scalar(
+        select(func.count())
+        .select_from(AgentRun)
+        .where(
+            AgentRun.organization_id == organization_id,
+            AgentRun.location_id == location_id,
+            AgentRun.skill_key == skill.key,
+            AgentRun.status.in_(ACTIVE_AGENT_STATUSES),
+        )
+    )
+    return bool(active)
 
 
 def build_hermes_runs_client(settings: Settings) -> HermesRunsClient:
@@ -494,19 +526,19 @@ class AgentRuntimeService:
                             )
                             if opportunity.location_id != run.location_id:
                                 raise SEOEvidenceInvalidError(
-                                    "Opportunity location changed during Hermes reasoning"
+                                    SEOLimitationCode.OPPORTUNITY_LOCATION_CHANGED
                                 )
                             source_ref = f"seo-opportunity:{opportunity.id}"
                             if source_ref not in run.source_references:
                                 raise SEOEvidenceInvalidError(
-                                    "Opportunity was not observed by this Hermes run"
+                                    SEOLimitationCode.OPPORTUNITY_NOT_OBSERVED_BY_RUN
                                 )
                             current = await resolve_decision(
                                 session, run.organization_id, opportunity, [source_ref]
                             )
                             if current != workflow.input_document.get("seo_decision_snapshot"):
                                 raise SEOEvidenceInvalidError(
-                                    "Opportunity evidence changed during Hermes reasoning"
+                                    SEOLimitationCode.OPPORTUNITY_EVIDENCE_CHANGED_DURING_RUN
                                 )
                             command = RecommendationCreate.model_validate(
                                 {**pending, "evidence_references": [source_ref]}

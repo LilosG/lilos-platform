@@ -147,7 +147,7 @@ def test_growth_service_forbids_direct_product_lifecycle_workflows(
 
     with pytest.raises(
         GrowthPlanValidationError,
-        match="not a growth-delegatable product agent",
+        match="not a growth-delegatable executor",
     ):
         GrowthService._validate_executor_bindings(plan)
 

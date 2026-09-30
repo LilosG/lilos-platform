@@ -434,7 +434,7 @@ async def test_website_readiness_failed_crawl_not_ready(
     async with insights_session_factory.begin() as session:
         org = await make_organization(session)
         website = await make_website(session, org.id, "https://example.com/")
-        await make_crawl_run(session, org.id, website.id, status="failed", completed_at=None)
+        await make_crawl_run(session, org.id, website.id, status="error", completed_at=None)
         service = WebsiteReadinessService()
         result = await service.readiness(session, org.id)
         assert result["crawl_ready"] is False
@@ -451,7 +451,7 @@ async def test_website_readiness_completed_crawl_ready(
         website = await make_website(session, org.id, "https://example.com/")
         completed_at = datetime.now(UTC) - timedelta(days=1)
         await make_crawl_run(
-            session, org.id, website.id, status="completed", completed_at=completed_at
+            session, org.id, website.id, status="success", completed_at=completed_at
         )
         service = WebsiteReadinessService()
         result = await service.readiness(session, org.id)
@@ -469,10 +469,10 @@ async def test_website_readiness_newer_failed_crawl_keeps_completed(
         website = await make_website(session, org.id, "https://example.com/")
         older_completed = datetime.now(UTC) - timedelta(days=2)
         await make_crawl_run(
-            session, org.id, website.id, status="completed", completed_at=older_completed
+            session, org.id, website.id, status="success", completed_at=older_completed
         )
         await make_crawl_run(
-            session, org.id, website.id, status="failed", completed_at=datetime.now(UTC)
+            session, org.id, website.id, status="error", completed_at=datetime.now(UTC)
         )
         service = WebsiteReadinessService()
         result = await service.readiness(session, org.id)
@@ -492,7 +492,7 @@ async def test_website_readiness_crawl_tenant_isolation(
         website_b = await make_website(session, org_b.id, "https://b.example/")
 
         await make_crawl_run(
-            session, org_b.id, website_b.id, status="completed", completed_at=datetime.now(UTC)
+            session, org_b.id, website_b.id, status="success", completed_at=datetime.now(UTC)
         )
 
         service = WebsiteReadinessService()

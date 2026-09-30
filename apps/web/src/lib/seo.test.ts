@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  MAX_CRAWL_PAGES,
+  FALLBACK_MAX_CRAWL_PAGES,
   describeCrawlResult,
   isSEOOpportunityActionable,
   normalizeCrawlPageLimit,
@@ -17,15 +17,20 @@ describe("SEO opportunity lifecycle", () => {
 });
 
 describe("normalizeCrawlPageLimit", () => {
-  it("matches the API crawl limit", () => {
-    expect(MAX_CRAWL_PAGES).toBe(20);
-    expect(normalizeCrawlPageLimit(100)).toBe(20);
+  it("falls back to the platform default when the API limit is unavailable", () => {
+    expect(FALLBACK_MAX_CRAWL_PAGES).toBe(300);
+    expect(normalizeCrawlPageLimit(10_000)).toBe(300);
+  });
+
+  it("clamps to an API-supplied limit rather than the fallback", () => {
+    expect(normalizeCrawlPageLimit(1_000, 500)).toBe(500);
+    expect(normalizeCrawlPageLimit(10, 500)).toBe(10);
   });
 
   it("keeps the operator value within the accepted range", () => {
     expect(normalizeCrawlPageLimit(5)).toBe(5);
     expect(normalizeCrawlPageLimit(0)).toBe(1);
-    expect(normalizeCrawlPageLimit(Number.NaN)).toBe(20);
+    expect(normalizeCrawlPageLimit(Number.NaN)).toBe(300);
   });
 });
 

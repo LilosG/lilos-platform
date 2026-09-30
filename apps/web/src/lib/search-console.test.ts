@@ -32,16 +32,17 @@ describe("search-console lib routes", () => {
     );
   });
 
-  it("mapSearchConsole POSTs the selected property to the map endpoint", async () => {
+  it("mapSearchConsole POSTs the selected property and website to the Integrations map endpoint", async () => {
     await mapSearchConsole("org-1", "site-1", {
       external_property_id: "sc-domain:example.com",
       property_type: "domain",
     });
     expect(apiRequest).toHaveBeenCalledWith(
-      "/api/v1/organizations/org-1/seo/websites/site-1/search-console/map",
+      "/api/v1/organizations/org-1/integrations/google/search-console/properties/map",
       {
         method: "POST",
         body: {
+          website_id: "site-1",
           external_property_id: "sc-domain:example.com",
           property_type: "domain",
         },

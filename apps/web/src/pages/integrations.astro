@@ -1316,9 +1316,17 @@ import "../styles/global.css";
               );
               return;
             }
+            if (!websiteId) {
+              discoveryRegion.append(
+                errorAlert(
+                  "This organization needs exactly one SEO website before an Analytics property can be mapped to it.",
+                ),
+              );
+              return;
+            }
             mapButton.disabled = true;
             mapButton.textContent = "Mapping…";
-            const mapped = await mapAnalytics(organizationId, {
+            const mapped = await mapAnalytics(organizationId, websiteId, {
               external_property_id: selected.external_property_id,
               property_number: selected.property_number,
               display_name: selected.display_name,

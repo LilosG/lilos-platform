@@ -1157,6 +1157,41 @@ async def test_ga4_discover_map_sync_and_insights_consumption(
 
 @pytest.mark.integration
 @pytest.mark.anyio
+async def test_ga4_map_property_rejects_website_from_another_organization(
+    insights_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """The Integrations mapping route always persists a real, org-scoped
+    website_id (see `routes/integrations.py::map_analytics_property`); the
+    service enforces that scope so a cross-organization id can never be
+    silently accepted."""
+    from apps.api.app.products.analytics.errors import AnalyticsWebsiteScopeError
+
+    async with insights_session_factory.begin() as session:
+        org = await make_organization(session)
+        other_org = await make_organization(session)
+        settings = make_settings()
+        await make_connected_connection(
+            session, settings, org.id, "https://www.googleapis.com/auth/analytics.readonly"
+        )
+        other_website = await make_website(session, other_org.id, "https://other.example.com/")
+
+        service = AnalyticsService(adapter=PageFakeAnalyticsAdapter())
+        with pytest.raises(AnalyticsWebsiteScopeError):
+            await service.map_property(
+                session,
+                settings,
+                org.id,
+                external_property_id="properties/cross-org",
+                property_number="1",
+                display_name="Cross org",
+                website_id=other_website.id,
+                actor_id=None,
+                correlation_id="cross-org-map",
+            )
+
+
+@pytest.mark.integration
+@pytest.mark.anyio
 async def test_ga4_requires_analytics_scope(
     insights_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:

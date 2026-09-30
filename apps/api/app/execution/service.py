@@ -572,6 +572,16 @@ class ExecutionService:
                 # opening a new one so it cannot linger as ``running``.
                 await self._close_abandoned_attempt(session, job, now)
 
+            if await self._blocked_by_busy_scoped_session(session, job):
+                # A sibling Hermes run already owns this (organization,
+                # location, skill) scope. Defer this job to the next poll
+                # instead of consuming an attempt on a failure the caller
+                # cannot control -- HERMES_SCOPED_SESSION_BUSY is a scheduling
+                # collision, not a fault in this job's own work.
+                job.available_at = now + timedelta(seconds=15)
+                await session.flush()
+                continue
+
             job.status, job.lease_owner, job.lease_expires_at = (
                 "claimed",
                 worker_id,
@@ -589,6 +599,34 @@ class ExecutionService:
             )
             await session.flush()
             return job
+
+    async def _blocked_by_busy_scoped_session(self, session: AsyncSession, job: Job) -> bool:
+        """True when this job's Hermes scope is already occupied.
+
+        Only `workflow.execute` jobs can name an `agent.*` workflow key; any
+        other job type is never blocked. Resolving the key requires the
+        WorkflowRun -> WorkflowVersion -> WorkflowDefinition chain, since the
+        job itself only carries a generic `job_type`.
+        """
+        if job.job_type != "workflow.execute":
+            return False
+        # Deferred import: apps.api.app.agents.service transitively imports
+        # apps.api.app.products.seo.service, which imports ExecutionService
+        # from this module -- a top-level import here would be circular.
+        from apps.api.app.agents.service import has_active_agent_for_scope
+
+        run = await session.get(WorkflowRun, job.workflow_run_id)
+        if run is None:
+            return False
+        version = await session.get(WorkflowVersion, run.workflow_version_id)
+        if version is None:
+            return False
+        definition = await session.get(WorkflowDefinition, version.definition_id)
+        if definition is None:
+            return False
+        return await has_active_agent_for_scope(
+            session, run.organization_id, run.location_id, definition.key
+        )
 
     async def _close_abandoned_attempt(
         self, session: AsyncSession, job: Job, now: datetime

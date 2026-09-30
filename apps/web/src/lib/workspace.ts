@@ -117,6 +117,7 @@ export type InsightsSummary = {
   seo: {
     crawl_runs: Record<string, number>;
     opportunities: Record<string, number>;
+    opportunities_blocked: number;
   };
   leads: Record<string, number>;
   ga4?: {

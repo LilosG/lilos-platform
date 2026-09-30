@@ -388,6 +388,7 @@ export const insightsSummary = {
   seo: {
     crawl_runs: { completed: 12 },
     opportunities: { identified: 6, approved: 3 },
+    opportunities_blocked: 0,
   },
   leads: { new: 7, assigned: 14, contacted: 9, converted: 6 },
 } satisfies InsightsSummary;
@@ -397,7 +398,7 @@ export const emptyInsightsSummary = {
   gbp: { locations: 1, profile_snapshots: 0, publications: {} },
   reviews: {},
   content_publications: {},
-  seo: { crawl_runs: {}, opportunities: {} },
+  seo: { crawl_runs: {}, opportunities: {}, opportunities_blocked: 0 },
   leads: {},
 } satisfies InsightsSummary;
 

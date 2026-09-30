@@ -79,8 +79,10 @@ import "../styles/global.css";
     <script>
       import { mountProductAutomations } from "../lib/ui/product-automations";
       import {
-        MAX_CRAWL_PAGES,
-        MAX_CRAWL_DEPTH,
+        FALLBACK_MAX_CRAWL_PAGES,
+        FALLBACK_MAX_CRAWL_DEPTH,
+        fetchCrawlLimits,
+        type SEOCrawlLimits,
         fetchWebsites,
         fetchSEOSummary,
         fetchOpportunities,
@@ -145,6 +147,14 @@ import "../styles/global.css";
       } from "../lib/status-language";
 
       let organizationId = "";
+      let crawlLimits: SEOCrawlLimits = {
+        default_max_pages: FALLBACK_MAX_CRAWL_PAGES,
+        max_max_pages: FALLBACK_MAX_CRAWL_PAGES,
+        min_max_pages: 1,
+        default_max_depth: FALLBACK_MAX_CRAWL_DEPTH,
+        max_max_depth: FALLBACK_MAX_CRAWL_DEPTH,
+        min_max_depth: 1,
+      };
 
       const regions: BootRegions = {
         notConfigured: document.getElementById("boot-not-configured")!,
@@ -171,11 +181,16 @@ import "../styles/global.css";
           ["internal", "partner", "support"].includes(org.membership_type),
         );
 
-        const [summaryResult, websitesResult, oppsResult] = await Promise.all([
-          fetchSEOSummary(organizationId),
-          fetchWebsites(organizationId),
-          fetchOpportunities(organizationId),
-        ]);
+        const [summaryResult, websitesResult, oppsResult, crawlLimitsResult] =
+          await Promise.all([
+            fetchSEOSummary(organizationId),
+            fetchWebsites(organizationId),
+            fetchOpportunities(organizationId),
+            fetchCrawlLimits(organizationId),
+          ]);
+        if (crawlLimitsResult.kind === "ok") {
+          crawlLimits = crawlLimitsResult.data;
+        }
 
         renderMetrics(summaryResult, websitesResult, oppsResult);
         renderOverview(websitesResult, oppsResult);
@@ -672,9 +687,9 @@ import "../styles/global.css";
           maxPagesInput.className = "ui-input";
           maxPagesInput.id = `crawl-max-pages-${website.id}`;
           maxPagesInput.type = "number";
-          maxPagesInput.min = "1";
-          maxPagesInput.max = String(MAX_CRAWL_PAGES);
-          maxPagesInput.value = "50";
+          maxPagesInput.min = String(crawlLimits.min_max_pages);
+          maxPagesInput.max = String(crawlLimits.max_max_pages);
+          maxPagesInput.value = String(crawlLimits.default_max_pages);
           maxPagesField.append(maxPagesInput);
 
           const maxDepthField = document.createElement("div");
@@ -688,9 +703,9 @@ import "../styles/global.css";
           const maxDepthInput = document.createElement("input");
           maxDepthInput.id = `crawl-max-depth-${website.id}`;
           maxDepthInput.type = "number";
-          maxDepthInput.min = "1";
-          maxDepthInput.max = String(MAX_CRAWL_DEPTH);
-          maxDepthInput.value = "3";
+          maxDepthInput.min = String(crawlLimits.min_max_depth);
+          maxDepthInput.max = String(crawlLimits.max_max_depth);
+          maxDepthInput.value = String(crawlLimits.default_max_depth);
           maxDepthField.append(maxDepthInput);
 
           const delayField = document.createElement("div");
@@ -753,8 +768,14 @@ import "../styles/global.css";
             const result = await runCrawl(crawlOrganizationId, website.id, {
               workflowRunId: workflowStart.data.workflow_run_id,
               seedPaths: ["/"],
-              maxPages: normalizeCrawlPageLimit(Number(maxPagesInput.value)),
-              maxDepth: normalizeCrawlDepthLimit(Number(maxDepthInput.value)),
+              maxPages: normalizeCrawlPageLimit(
+                Number(maxPagesInput.value),
+                crawlLimits.max_max_pages,
+              ),
+              maxDepth: normalizeCrawlDepthLimit(
+                Number(maxDepthInput.value),
+                crawlLimits.max_max_depth,
+              ),
               crawlDelaySeconds: Math.min(
                 10,
                 Math.max(0.1, Number(delayInput.value) || 1),

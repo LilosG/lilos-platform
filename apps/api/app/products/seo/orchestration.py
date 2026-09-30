@@ -34,6 +34,7 @@ from apps.api.app.products.seo.pagespeed import PageSpeedService
 from apps.api.app.products.seo.service import (
     SCORE_VERSION,
     SEOService,
+    normalize_url,
     opportunity_score,
     page_business_importance,
     unavailable_business_importance,
@@ -43,6 +44,31 @@ RecommendationEffort = Literal["low", "medium", "high"]
 CONTENT_ADDRESSABLE_OPPORTUNITY_TYPES = frozenset(
     {"gsc_striking_distance", "gsc_low_ctr", "gsc_unmapped_demand"}
 )
+
+# A query's dominant ranking page must carry at least this share of its
+# mapped page_query impressions to be treated as a single attributed page.
+# Below this, multiple pages compete for the same query (a cannibalization
+# signal, not a blocker) and the opportunity is recorded as "shared".
+ATTRIBUTION_DOMINANT_SHARE = 0.6
+ATTRIBUTION_CANDIDATE_LIMIT = 5
+
+
+@dataclass(slots=True)
+class QueryAttribution:
+    """Deterministic page attribution for one Search Console query.
+
+    ``observation`` is the exact persisted `SEOSearchObservation` an
+    opportunity built from this attribution must cite as evidence — the
+    page-specific `page_query` row when attributed, otherwise the
+    query-level aggregate row. `decision.resolve_decision` re-derives an
+    opportunity's facts from that citation, so evidence values must always
+    come from ``observation`` itself, never a different record's numbers.
+    """
+
+    state: str  # attributed | shared | unresolved | query_only
+    page_id: UUID | None
+    candidate_pages: list[dict[str, object]]
+    observation: SEOSearchObservation
 
 
 @dataclass(slots=True)
@@ -160,19 +186,29 @@ class SEOOrchestrationService:
                     source_versions=["crawl.v1"],
                     priority_score=score,
                     score_explanation=explanation,
+                    attribution_state="attributed",
                 )
                 touched[opportunity.id] = opportunity
 
         observations, gsc_evidence_complete = await self._canonical_gsc_observations(
             session, organization_id, website.id
         )
-        missing_page_ids = {
+        page_query_index: dict[str, list[SEOSearchObservation]] = {}
+        if observations:
+            page_query_index = await self._page_query_attribution(
+                session,
+                organization_id,
+                website.id,
+                observations[0].date_start,
+                observations[0].date_end,
+            )
+        candidate_page_ids = {
             row.page_id
-            for row in observations
-            if row.mapping_state == "mapped"
-            and row.page_id is not None
-            and row.page_id not in page_lookup
+            for rows in page_query_index.values()
+            for row in rows
+            if row.mapping_state == "mapped" and row.page_id is not None
         }
+        missing_page_ids = candidate_page_ids - set(page_lookup)
         if missing_page_ids:
             extra_pages = list(
                 await session.scalars(
@@ -200,34 +236,56 @@ class SEOOrchestrationService:
         if gsc_evidence_complete:
             evaluated_sources.add("gsc.v1")
         for observation in observations:
-            impressions = int(observation.impressions or 0)
-            position = float(observation.position) if observation.position is not None else None
-            ctr = float(observation.ctr) if observation.ctr is not None else None
             query = observation.query or ""
-            observed_page: SEOPage | None = (
-                page_lookup.get(observation.page_id) if observation.page_id else None
-            )
-            page_from_dimensions = observation.dimensions.get("page")
-            if observed_page is None and page_from_dimensions:
-                observed_page = page_url_lookup.get(str(page_from_dimensions))
-            exact_page_id = (
-                observation.page_id
-                if observation.mapping_state == "mapped" and observation.page_id in page_lookup
-                else None
-            )
-            if observation.page_id is not None and exact_page_id is None:
-                continue
+            attribution = self._attribute_query(observation, page_query_index.get(query, []))
+            cited = attribution.observation
+            impressions = int(cited.impressions or 0)
+            position = float(cited.position) if cited.position is not None else None
+            ctr = float(cited.ctr) if cited.ctr is not None else None
+            attributed_page = page_lookup.get(attribution.page_id) if attribution.page_id else None
             business = business_for(
-                exact_page_id,
-                "GSC evidence lacks an exact mapped page with current GA4 key events.",
+                attribution.page_id,
+                "GSC evidence lacks an exact mapped page with current GA4 key events."
+                if attribution.state == "attributed"
+                else "No landing page is attributed to this query.",
             )
-            target = (
-                observed_page.normalized_url
-                if observed_page
-                else str(page_from_dimensions)
-                if page_from_dimensions
-                else website.canonical_origin
+            # Never target the site origin as a guess: an attributed query
+            # points at its dominant page; anything else is keyed on the
+            # query alone rather than a fabricated URL.
+            target_reference = (
+                f"{attributed_page.normalized_url}|{query}" if attributed_page else query
             )
+            evidence_base: dict[str, object] = {
+                "source": "google_search_console",
+                "observation_id": str(cited.id),
+                "query": query,
+                "url": attributed_page.normalized_url if attributed_page else None,
+                "impressions": impressions,
+                "clicks": cited.clicks,
+                "ctr": ctr,
+                "position": position,
+                "date_start": cited.date_start.isoformat(),
+                "date_end": cited.date_end.isoformat(),
+                "attribution_state": attribution.state,
+                "candidate_pages": attribution.candidate_pages,
+                "business_importance": business,
+            }
+            if attribution.state != "attributed":
+                evidence_base["page_mapping_state"] = "unknown"
+                evidence_base["evidence_limitation"] = {
+                    "shared": (
+                        "Multiple pages compete for this query; no single page earns a "
+                        "dominant share of its impressions."
+                    ),
+                    "unresolved": (
+                        "Page-level Search Console evidence exists for this query but did "
+                        "not resolve to a crawled page."
+                    ),
+                    "query_only": (
+                        "Query-only GSC evidence cannot identify the ranking or suitable "
+                        "landing page."
+                    ),
+                }[attribution.state]
 
             if impressions >= 50 and position is not None and 4 <= position <= 20:
                 score, explanation = scored(
@@ -243,25 +301,15 @@ class SEOOrchestrationService:
                     organization_id,
                     website,
                     location_id=website.location_id,
-                    page_id=exact_page_id,
+                    page_id=attribution.page_id,
                     opportunity_type="gsc_striking_distance",
-                    target_reference=f"{target}|{query}",
-                    evidence={
-                        "source": "google_search_console",
-                        "observation_id": str(observation.id),
-                        "query": query,
-                        "url": target,
-                        "impressions": impressions,
-                        "clicks": observation.clicks,
-                        "ctr": ctr,
-                        "position": position,
-                        "date_start": observation.date_start.isoformat(),
-                        "date_end": observation.date_end.isoformat(),
-                        "business_importance": business,
-                    },
+                    target_reference=target_reference,
+                    evidence=dict(evidence_base),
                     source_versions=["gsc.v1"],
                     priority_score=score,
                     score_explanation=explanation,
+                    attribution_state=attribution.state,
+                    candidate_pages=attribution.candidate_pages,
                 )
                 touched[opportunity.id] = opportunity
 
@@ -285,34 +333,23 @@ class SEOOrchestrationService:
                     organization_id,
                     website,
                     location_id=website.location_id,
-                    page_id=exact_page_id,
+                    page_id=attribution.page_id,
                     opportunity_type="gsc_low_ctr",
-                    target_reference=f"{target}|{query}",
-                    evidence={
-                        "source": "google_search_console",
-                        "observation_id": str(observation.id),
-                        "query": query,
-                        "url": target,
-                        "impressions": impressions,
-                        "clicks": observation.clicks,
-                        "ctr": ctr,
-                        "position": position,
-                        "date_start": observation.date_start.isoformat(),
-                        "date_end": observation.date_end.isoformat(),
-                        "business_importance": business,
-                    },
+                    target_reference=target_reference,
+                    evidence=dict(evidence_base),
                     source_versions=["gsc.v1"],
                     priority_score=score,
                     score_explanation=explanation,
+                    attribution_state=attribution.state,
+                    candidate_pages=attribution.candidate_pages,
                 )
                 touched[opportunity.id] = opportunity
 
-            # Query-only observations establish demand, not landing-page absence.
+            # Query-only observations establish demand, never a guessed landing page.
             if (
                 impressions >= 50
                 and query
-                and observation.page_id is None
-                and not page_from_dimensions
+                and attribution.page_id is None
                 and (position is None or position > 20)
             ):
                 query_business = unavailable_business_importance(
@@ -334,26 +371,12 @@ class SEOOrchestrationService:
                     page_id=None,
                     opportunity_type="gsc_query_demand",
                     target_reference=query,
-                    evidence={
-                        "source": "google_search_console",
-                        "observation_id": str(observation.id),
-                        "query": query,
-                        "impressions": impressions,
-                        "clicks": observation.clicks,
-                        "ctr": ctr,
-                        "position": position,
-                        "page_mapping_state": "unknown",
-                        "evidence_limitation": (
-                            "Query-only GSC evidence cannot identify the ranking "
-                            "or suitable landing page."
-                        ),
-                        "date_start": observation.date_start.isoformat(),
-                        "date_end": observation.date_end.isoformat(),
-                        "business_importance": query_business,
-                    },
+                    evidence={**evidence_base, "business_importance": query_business},
                     source_versions=["gsc.v1"],
                     priority_score=score,
                     score_explanation=explanation,
+                    attribution_state=attribution.state,
+                    candidate_pages=attribution.candidate_pages,
                 )
                 touched[opportunity.id] = opportunity
 
@@ -362,6 +385,28 @@ class SEOOrchestrationService:
             pagespeed_result = await self.pagespeed.analyze(Settings(), website.canonical_origin)
         except Exception as exc:
             pagespeed_result = {"error": type(exc).__name__, "provider": "google_pagespeed"}
+
+        # PageSpeed only ever analyzes the site origin, so the only page it can
+        # honestly attribute to is the homepage. Extending it to additional
+        # pages requires per-page PageSpeed calls, which belong in the worker
+        # (see D1) rather than this synchronous analysis path.
+        try:
+            homepage_url = normalize_url(website.canonical_origin).value
+        except ValueError:
+            homepage_url = None
+        homepage_page = page_url_lookup.get(homepage_url) if homepage_url else None
+        pagespeed_attribution_state = "attributed" if homepage_page else "unresolved"
+        pagespeed_business = (
+            business_for(
+                homepage_page.id,
+                "PageSpeed evidence has no current GA4 key events for this page.",
+            )
+            if homepage_page
+            else unavailable_business_importance(
+                "The homepage has not been crawled yet, so PageSpeed evidence cannot be "
+                "attributed to a page."
+            )
+        )
 
         if pagespeed_result and isinstance(pagespeed_result.get("strategies"), dict):
             evaluated_sources.add("pagespeed.v5")
@@ -384,9 +429,6 @@ class SEOOrchestrationService:
                     if not isinstance(raw_score, (int, float)) or raw_score >= threshold:
                         continue
                     opportunity_type = f"pagespeed_{category.replace('-', '_')}_{strategy}"
-                    pagespeed_business = unavailable_business_importance(
-                        "Site-level PageSpeed evidence does not identify an exact page."
-                    )
                     score, explanation = scored(
                         pagespeed_business,
                         search_potential=55,
@@ -400,12 +442,15 @@ class SEOOrchestrationService:
                         organization_id,
                         website,
                         location_id=website.location_id,
-                        page_id=None,
+                        page_id=homepage_page.id if homepage_page else None,
                         opportunity_type=opportunity_type,
                         target_reference=website.canonical_origin,
+                        attribution_state=pagespeed_attribution_state,
                         evidence={
                             "source": "google_pagespeed",
-                            "url": website.canonical_origin,
+                            "url": homepage_page.normalized_url
+                            if homepage_page
+                            else website.canonical_origin,
                             "strategy": str(strategy),
                             "category": category,
                             "score": raw_score,
@@ -599,6 +644,85 @@ class SEOOrchestrationService:
         )
         return rows[:1500], len(rows) <= 1500
 
+    async def _page_query_attribution(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        website_id: UUID,
+        period_start: datetime,
+        period_end: datetime,
+    ) -> dict[str, list[SEOSearchObservation]]:
+        """Group persisted `page_query` rows by query for one canonical period.
+
+        `page_query` observations carry both a page and a query (unlike
+        `top_query`, which is query-only). This is the evidence that lets a
+        query be attributed to the page that actually earns its impressions,
+        instead of every opportunity falling back to the site homepage.
+        """
+        rows = list(
+            await session.scalars(
+                select(SEOSearchObservation)
+                .where(
+                    SEOSearchObservation.organization_id == organization_id,
+                    SEOSearchObservation.website_id == website_id,
+                    SEOSearchObservation.quality_status == "valid",
+                    SEOSearchObservation.query.isnot(None),
+                    SEOSearchObservation.dimensions["observation_type"].astext == "page_query",
+                    SEOSearchObservation.date_start == period_start,
+                    SEOSearchObservation.date_end == period_end,
+                )
+                .order_by(
+                    SEOSearchObservation.impressions.desc(),
+                    SEOSearchObservation.id.asc(),
+                )
+                .limit(5001)
+            )
+        )
+        index: dict[str, list[SEOSearchObservation]] = {}
+        for row in rows[:5000]:
+            index.setdefault(row.query or "", []).append(row)
+        return index
+
+    @staticmethod
+    def _attribute_query(
+        fallback_observation: SEOSearchObservation,
+        page_query_rows: list[SEOSearchObservation],
+    ) -> QueryAttribution:
+        """Resolve one query's dominant page from its persisted `page_query` rows.
+
+        No `page_query` coverage at all -> `query_only` (unchanged from the
+        prior behaviour: real demand, no landing-page evidence exists yet).
+        Coverage exists but none of it resolved to a page (ambiguous/unmapped
+        crawl matches) -> `unresolved`. A single page earns >= 60% of the
+        mapped impressions -> `attributed`. Otherwise multiple pages compete
+        for the query -> `shared`, a cannibalization signal for Hermes, not a
+        blocker.
+        """
+        if not page_query_rows:
+            return QueryAttribution("query_only", None, [], fallback_observation)
+        mapped = [
+            row
+            for row in page_query_rows
+            if row.mapping_state == "mapped" and row.page_id is not None
+        ]
+        if not mapped:
+            return QueryAttribution("unresolved", None, [], fallback_observation)
+        total_impressions = sum(int(row.impressions or 0) for row in mapped) or 1
+        ranked = sorted(mapped, key=lambda row: int(row.impressions or 0), reverse=True)
+        dominant = ranked[0]
+        share = int(dominant.impressions or 0) / total_impressions
+        candidates = [
+            {
+                "page_id": str(row.page_id),
+                "impressions": int(row.impressions or 0),
+                "share": round(int(row.impressions or 0) / total_impressions, 4),
+            }
+            for row in ranked[:ATTRIBUTION_CANDIDATE_LIMIT]
+        ]
+        if share >= ATTRIBUTION_DOMINANT_SHARE:
+            return QueryAttribution("attributed", dominant.page_id, candidates, dominant)
+        return QueryAttribution("shared", None, candidates, fallback_observation)
+
     async def _upsert_opportunity(
         self,
         session: AsyncSession,
@@ -613,6 +737,8 @@ class SEOOrchestrationService:
         source_versions: Sequence[object],
         priority_score: int,
         score_explanation: dict[str, object],
+        attribution_state: str = "query_only",
+        candidate_pages: Sequence[dict[str, object]] = (),
     ) -> SEOOpportunity:
         digest = hashlib.sha256(f"{opportunity_type}|{target_reference}".encode()).hexdigest()
         existing = await session.scalar(
@@ -644,6 +770,13 @@ class SEOOrchestrationService:
             existing.score_explanation = score_explanation
             existing.score_version = SCORE_VERSION
             existing.source_versions = list(source_versions)
+            # Re-evaluation must be able to repair attribution on a row that
+            # was created before evidence existed (or under an older score
+            # policy) — otherwise the 100%-unattributed backlog can never
+            # converge without a hand-written SQL repair.
+            existing.page_id = page_id
+            existing.attribution_state = attribution_state
+            existing.candidate_pages = list(candidate_pages)
             await session.flush()
             return existing
 
@@ -662,6 +795,8 @@ class SEOOrchestrationService:
             score_explanation=score_explanation,
             status="identified",
             version=1,
+            attribution_state=attribution_state,
+            candidate_pages=list(candidate_pages),
         )
         session.add(opportunity)
         await session.flush()

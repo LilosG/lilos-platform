@@ -16,6 +16,7 @@ import {
 import { describeFailure } from "./index";
 import { statusLabel, statusTone } from "../status-language";
 import {
+  canUsePlatformAdministration,
   detailFact,
   emptyState,
   errorAlert,
@@ -95,19 +96,28 @@ function needsPageAttribution(item: SearchIntelligenceItem): boolean {
 const pageAttributionAction =
   "Target resolution required: identify the ranking page from authoritative mapped evidence before implementing the title and meta change. The SEO opportunity is a work reference, not a page URL.";
 
-function eligibilityAction(limitation: string | null): string {
-  if (limitation === "Opportunity is outside the active organization scope")
-    return "This opportunity is no longer valid for the selected client and website. Review current source evidence before requesting a recommendation.";
-  if (limitation === "The source observation does not resolve in this scope")
-    return "The supporting source record is unavailable for this website. Check its mapping in Integrations and refresh evidence before requesting a recommendation.";
-  if (
-    limitation === "Opportunity has no governed source or score policy version"
-  )
-    return "This older opportunity lacks current source and scoring evidence. Review a newly generated opportunity before requesting a recommendation.";
-  if (
-    limitation === "No persisted scoped source record supports this opportunity"
-  )
-    return "No stored source observation supports this finding. Review current source evidence before requesting a recommendation.";
+// Mirrors apps/api/app/products/seo/limitation_codes.py::SEOLimitationCode.
+// Switch on the code, never on `limitation` prose -- the backend's exact
+// English sentence is not a contract and several distinct reasons share
+// similar wording (see CLAUDE.md: typed contracts, not string matching).
+const ELIGIBILITY_ACTION_BY_CODE: Record<string, string> = {
+  ORGANIZATION_SCOPE_INVALID:
+    "This opportunity is no longer valid for the selected client and website. Review current source evidence before requesting a recommendation.",
+  SOURCE_RECORD_NOT_FOUND:
+    "The supporting source record is unavailable for this website. Check its mapping in Integrations and refresh evidence before requesting a recommendation.",
+  SCORE_POLICY_STALE:
+    "This older opportunity lacks current source and scoring evidence. Review a newly generated opportunity before requesting a recommendation.",
+  SOURCE_RECORD_UNSUPPORTED:
+    "No stored source observation supports this finding. Review current source evidence before requesting a recommendation.",
+};
+
+function eligibilityAction(
+  limitation: string | null,
+  limitationCode: string | null,
+): string {
+  if (limitationCode && ELIGIBILITY_ACTION_BY_CODE[limitationCode]) {
+    return ELIGIBILITY_ACTION_BY_CODE[limitationCode];
+  }
   return (
     limitation ??
     "Current governed evidence is unavailable. Review source readiness before requesting a recommendation."
@@ -120,7 +130,12 @@ function attentionReasons(
 ): string[] {
   const reasons: string[] = [];
   if (!item.governed_eligibility.eligible)
-    reasons.push(eligibilityAction(item.governed_eligibility.limitation));
+    reasons.push(
+      eligibilityAction(
+        item.governed_eligibility.limitation,
+        item.governed_eligibility.limitation_code,
+      ),
+    );
   if (item.recommendation?.status === "awaiting_approval")
     reasons.push("A human decision is required before implementation.");
   if (needsPageAttribution(item)) reasons.push(pageAttributionAction);
@@ -215,10 +230,12 @@ function appendLines(parent: HTMLElement, values: string[]): void {
   parent.append(list);
 }
 
-function renderReadiness(workspace: SearchIntelligenceWorkspace): HTMLElement {
+function renderIntegrationDiagnostics(
+  workspace: SearchIntelligenceWorkspace,
+): HTMLElement {
   const card = sectionCard(
-    "Acceptance journey readiness",
-    "Recorded prerequisites for a controlled operator walkthrough. This is not live acceptance.",
+    "Integration diagnostics",
+    "GSC/GA4 mapping and page inventory for each website. Visible to platform administrators only.",
   );
   const body = card.querySelector<HTMLElement>(".ui-card__body")!;
   if (!workspace.readiness.length) {
@@ -632,6 +649,7 @@ async function renderDetail(
   else {
     runStatus.textContent = eligibilityAction(
       item.governed_eligibility.limitation,
+      item.governed_eligibility.limitation_code,
     );
     reasoningBody.append(runStatus);
   }
@@ -904,7 +922,9 @@ export function renderSearchIntelligenceWorkspace(
   reload: (offset?: number) => void,
 ): void {
   panel.replaceChildren();
-  panel.append(renderReadiness(workspace));
+  if (canUsePlatformAdministration()) {
+    panel.append(renderIntegrationDiagnostics(workspace));
+  }
   if (workspace.history_truncated) {
     panel.append(
       errorAlert(

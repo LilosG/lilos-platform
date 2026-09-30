@@ -35,9 +35,9 @@ from apps.api.app.products.seo.contracts import (
     RecommendationDecision,
     SearchConsoleSyncRequest,
     SearchPropertyCreate,
-    SearchPropertySelect,
     WebsiteCreate,
 )
+from apps.api.app.products.seo.crawl_limits import crawl_limits_payload
 from apps.api.app.products.seo.decision import (
     SEOEvidenceInvalidError,
     growth_handoff,
@@ -575,9 +575,13 @@ async def search_intelligence_workspace(
                 [f"seo-opportunity:{opportunity.id}"],
             )
         except SEOEvidenceInvalidError as exc:
-            governed_eligibility = {"eligible": False, "limitation": str(exc)}
+            governed_eligibility = {
+                "eligible": False,
+                "limitation": str(exc),
+                "limitation_code": exc.limitation_code,
+            }
         else:
-            governed_eligibility = {"eligible": True, "limitation": None}
+            governed_eligibility = {"eligible": True, "limitation": None, "limitation_code": None}
         revision = latest_revision.get(opportunity.id)
         task = latest_task.get(revision.id) if revision else None
         outcome = latest_outcome.get(task.id) if task else None
@@ -674,6 +678,20 @@ async def search_intelligence_workspace(
         },
         "meta": meta(request),
     }
+
+
+@router.get("/crawl-limits", dependencies=[Depends(no_store)])
+async def crawl_limits(
+    request: Request,
+    organization_id: UUID,
+    _: Annotated[AuthorizationDecision, policy("seo.read")],
+) -> dict[str, object]:
+    """Return the single source of truth for crawl page/depth bounds.
+
+    The web operator UI reads these instead of hardcoding a parallel,
+    lower ceiling — see `apps.api.app.products.seo.crawl_limits`.
+    """
+    return {"data": crawl_limits_payload(), "meta": meta(request)}
 
 
 @router.get("/websites", dependencies=[Depends(no_store)])
@@ -814,35 +832,6 @@ async def discover_search_console(
         },
         "meta": meta(request),
     }
-
-
-@router.post(
-    "/websites/{website_id}/search-console/map",
-    status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(no_store)],
-    summary="Map the operator-selected Search Console property",
-)
-async def map_search_console(
-    request: Request,
-    organization_id: UUID,
-    website_id: UUID,
-    command: SearchPropertySelect,
-    session: Session,
-    principal: Authenticated,
-    _: Annotated[AuthorizationDecision, policy("seo.manage")],
-) -> dict[str, object]:
-    settings = settings_from_request(request)
-    item = await search_console.map_property(
-        session,
-        settings,
-        organization_id,
-        website_id,
-        external_property_id=command.external_property_id,
-        property_type=command.property_type,
-        actor_id=principal.platform_user_id,
-        correlation_id=request_correlation_id(request),
-    )
-    return {"data": search_property_row(item), "meta": meta(request)}
 
 
 @router.post(

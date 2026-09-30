@@ -12,14 +12,17 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from apps.api.app.agents.hermes_client import HermesRuntimeError
 from apps.api.app.agents.models import AgentRun, AgentSession
 from apps.api.app.agents.safety import safe_event_document
-from apps.api.app.agents.service import ACTIVE_AGENT_STATUSES, build_hermes_runs_client
-from apps.api.app.agents.skills import skill_for_workflow
+from apps.api.app.agents.service import (
+    ACTIVE_AGENT_STATUSES,
+    build_hermes_runs_client,
+    has_active_agent_for_scope,
+)
 from apps.api.app.ai.models import AIExecution
 from apps.api.app.config import Settings
 from apps.api.app.execution.models import (
@@ -30,7 +33,7 @@ from apps.api.app.execution.models import (
     WorkflowVersion,
 )
 from apps.api.app.products.reviews.models import ReviewResponseRevision
-from apps.api.app.products.seo.models import SEOWebsite
+from apps.api.app.products.seo.models import SEOCrawlRun, SEOWebsite
 
 ACTIVE_JOB_STATUSES = {
     "queued",
@@ -152,6 +155,49 @@ async def reconcile_exhausted_workflows(
             run.failure_code = (await _latest_error(session, latest_job)) or run.failure_code
         changed += 1
 
+    await session.flush()
+    return changed
+
+
+async def reconcile_orphaned_crawl_runs(
+    session: AsyncSession,
+    *,
+    limit: int = 200,
+) -> int:
+    """Close crawl runs stuck `queued`/`running` with no live execution job.
+
+    The one-shot migration `20260815_0001_reconcile_orphaned_jobs` repaired
+    the rows poisoned before `ExecutionService.claim` enforced
+    `attempt_count < max_attempts`. This is the recurring counterpart: any
+    later crawl run left `queued` or `running` because its job was lost
+    (worker crash, dead-lettered job, cancelled workflow) gets the same
+    truthful `error` terminal state instead of hanging forever.
+    """
+    now = datetime.now(UTC)
+    changed = 0
+    stuck_runs = (
+        await session.scalars(
+            select(SEOCrawlRun)
+            .where(SEOCrawlRun.status.in_(("queued", "running")))
+            .order_by(SEOCrawlRun.created_at)
+            .with_for_update(skip_locked=True)
+            .limit(limit)
+        )
+    ).all()
+    for crawl_run in stuck_runs:
+        active_job = await session.scalar(
+            select(Job.id).where(
+                Job.organization_id == crawl_run.organization_id,
+                Job.workflow_run_id == crawl_run.workflow_run_id,
+                Job.status.in_(ACTIVE_JOB_STATUSES),
+            )
+        )
+        if active_job is not None:
+            continue
+        crawl_run.status = "error"
+        crawl_run.stop_reason = "Orphaned crawl reconciled: no live execution job"
+        crawl_run.completed_at = crawl_run.completed_at or now
+        changed += 1
     await session.flush()
     return changed
 
@@ -405,27 +451,6 @@ async def _workflow_definition(
     return version, definition
 
 
-async def _has_active_agent_for_workflow(
-    session: AsyncSession,
-    run: WorkflowRun,
-    workflow_key: str,
-) -> bool:
-    if not workflow_key.startswith("agent."):
-        return False
-    skill = skill_for_workflow(workflow_key)
-    active = await session.scalar(
-        select(func.count())
-        .select_from(AgentRun)
-        .where(
-            AgentRun.organization_id == run.organization_id,
-            AgentRun.location_id == run.location_id,
-            AgentRun.skill_key == skill.key,
-            AgentRun.status.in_(ACTIVE_AGENT_STATUSES),
-        )
-    )
-    return bool(active)
-
-
 async def _review_verification_recoverable(
     session: AsyncSession,
     run: WorkflowRun,
@@ -494,7 +519,9 @@ async def requeue_recoverable_failures(
         if run.failure_code == "HERMES_SCOPED_SESSION_BUSY":
             if not definition.key.startswith("agent."):
                 continue
-            if await _has_active_agent_for_workflow(session, run, definition.key):
+            if await has_active_agent_for_scope(
+                session, run.organization_id, run.location_id, definition.key
+            ):
                 continue
         elif run.failure_code == "SEO_ACTIVE_WEBSITE_MISSING":
             if definition.key != "seo.crawl_or_analysis":
@@ -566,6 +593,7 @@ async def reconcile_worker_state(
     """Run all bounded recovery passes in dependency order."""
     async with sessions() as session, session.begin():
         workflows = await reconcile_exhausted_workflows(session)
+        crawl_runs = await reconcile_orphaned_crawl_runs(session)
 
     agents = await reconcile_orphaned_agent_runs(sessions, settings)
 
@@ -575,4 +603,9 @@ async def reconcile_worker_state(
         workflows += await reconcile_exhausted_workflows(session)
         requeued = await requeue_recoverable_failures(session)
 
-    return {"workflows": workflows, "agents": agents, "requeued": requeued}
+    return {
+        "workflows": workflows,
+        "agents": agents,
+        "requeued": requeued,
+        "crawl_runs": crawl_runs,
+    }

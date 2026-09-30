@@ -31,3 +31,10 @@ class AnalyticsDiscoveryFailedError(ApiError):
 class AnalyticsPropertyNotFoundError(NotFoundError):
     code = "ANALYTICS_PROPERTY_NOT_FOUND"
     public_message = "The requested Analytics property mapping was not found."
+
+
+class AnalyticsWebsiteScopeError(ConflictError):
+    """The selected website does not belong to the mapping organization."""
+
+    code = "ANALYTICS_WEBSITE_SCOPE_INVALID"
+    public_message = "The selected website is outside this organization."
