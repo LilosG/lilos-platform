@@ -431,6 +431,8 @@ class SEORecommendationRevision(UUIDPrimaryKeyMixin, Base):
         PGUUID(as_uuid=True), ForeignKey("user_profiles.id", ondelete="RESTRICT")
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    change_set: Mapped[dict[str, object] | None] = mapped_column(JSONB)
+    change_set_fingerprint: Mapped[str | None] = mapped_column(String(64))
 
 
 class SEOImplementationTask(UUIDPrimaryKeyMixin, TimestampMixin, Base):
