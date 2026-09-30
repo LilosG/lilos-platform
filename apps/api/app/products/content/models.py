@@ -185,6 +185,12 @@ class PublishingTarget(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     repository_id: Mapped[str] = mapped_column(String(255), nullable=False)
     base_branch: Mapped[str] = mapped_column(String(255), nullable=False)
     allowed_path_prefix: Mapped[str] = mapped_column(String(500), nullable=False)
+    # Repository path prefixes a governed SEO site change may edit. Deliberately
+    # separate from the blog-only `allowed_path_prefix`: editing page metadata and
+    # publishing a post are different permissions over different parts of the repo.
+    allowed_site_change_prefixes: Mapped[list[str]] = mapped_column(
+        JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb")
+    )
     # This client's Astro collection schema: field names, required fields, enum
     # members, FAQ key names. Empty means "assume only the universal floor".
     frontmatter_contract: Mapped[dict[str, object]] = mapped_column(
@@ -202,6 +208,17 @@ class ContentPublication(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "organization_id", "idempotency_key", name="uq_content_publication_idempotency"
         ),
         CheckConstraint(
+            "publication_kind IN ('content','site_change')",
+            name="publication_kind",
+        ),
+        CheckConstraint(
+            "(publication_kind = 'content' AND content_item_id IS NOT NULL "
+            "AND content_revision_id IS NOT NULL AND seo_recommendation_revision_id IS NULL) "
+            "OR (publication_kind = 'site_change' AND content_item_id IS NULL "
+            "AND content_revision_id IS NULL AND seo_recommendation_revision_id IS NOT NULL)",
+            name="publication_subject",
+        ),
+        CheckConstraint(
             "status IN ('reserved','branch_created','pull_request_created','checks_running','checks_failed','merged','deployment_pending','deployed','verified','failed','reconciliation_required','rolled_back')",
             name="status",
         ),
@@ -209,13 +226,23 @@ class ContentPublication(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     organization_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
     )
-    content_item_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("content_items.id", ondelete="RESTRICT"), nullable=False
+    publication_kind: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default="content"
     )
-    content_revision_id: Mapped[UUID] = mapped_column(
+    content_item_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("content_items.id", ondelete="RESTRICT"), nullable=True
+    )
+    content_revision_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True),
         ForeignKey("content_revisions.id", ondelete="RESTRICT"),
-        nullable=False,
+        nullable=True,
+    )
+    # Set (instead of the two content columns) when the publication applies an
+    # approved SEO change set to a client's site. Deliberately not a database FK:
+    # early migrations build this table from model metadata before the SEO tables
+    # exist, so the reference is resolved tenant-scoped in code instead.
+    seo_recommendation_revision_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), nullable=True
     )
     publishing_target_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
@@ -241,3 +268,8 @@ class ContentPublication(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         PGUUID(as_uuid=True), ForeignKey("content_publications.id", ondelete="RESTRICT")
     )
     safe_error_code: Mapped[str | None] = mapped_column(String(64))
+    # Site changes only: digest of the approved change set this run applies, and the
+    # live-site proof read back after deployment.
+    change_set_fingerprint: Mapped[str | None] = mapped_column(String(64))
+    verification_status: Mapped[str | None] = mapped_column(String(32))
+    verification_evidence: Mapped[dict[str, object] | None] = mapped_column(JSONB)

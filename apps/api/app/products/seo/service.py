@@ -32,6 +32,7 @@ from apps.api.app.notifications.models import NotificationTemplate
 from apps.api.app.notifications.service import NotificationService
 from apps.api.app.products.analytics.models import AnalyticsProperty
 from apps.api.app.products.analytics.service import DEFAULT_FRESHNESS_STALE_SECONDS
+from apps.api.app.products.seo.change_set import SiteChangeSet
 from apps.api.app.products.seo.contracts import (
     CrawlRequest,
     ImplementationTaskCreate,
@@ -79,6 +80,7 @@ from apps.api.app.products.seo.models import (
     SEOWebsite,
 )
 from apps.api.app.products.seo.page_identity import RESOLVER_VERSION, PageResolver
+from apps.api.app.products.seo.site_change_service import SiteChangeService
 from apps.api.app.products.seo.verification import read_implementation_truth
 from apps.api.app.reporting_periods import GA4_SYNC_TAIL_EXCLUSION_DAYS, reporting_window
 
@@ -370,6 +372,7 @@ class SEOService:
         self.audit_repository = AuditEventRepository()
         self.notifications = NotificationService()
         self.execution = ExecutionService()
+        self.site_changes = SiteChangeService()
         self._http_client_factory = http_client_factory
 
     async def _audit(
@@ -1539,6 +1542,12 @@ class SEOService:
         revision.status = "approved" if command.approve else "rejected"
         if command.approve:
             revision.approved_by_user_id = user_id
+            if revision.change_set is not None:
+                # What the human approved is exactly this digest; execution
+                # re-derives it and refuses on any difference.
+                revision.change_set_fingerprint = SiteChangeSet.model_validate(
+                    revision.change_set
+                ).fingerprint()
         opportunity.status = "approved" if command.approve else "rejected"
         await session.flush()
         await self._audit(
@@ -1607,8 +1616,17 @@ class SEOService:
             if existing.target_reference != expected_target:
                 raise SEOEvidenceInvalidError(SEOLimitationCode.IMPLEMENTATION_TASK_TARGET_CONFLICT)
             return existing
+        site_change = revision.change_set
+        if site_change is not None and (
+            revision.change_set_fingerprint is None
+            or SiteChangeSet.model_validate(site_change).fingerprint()
+            != revision.change_set_fingerprint
+        ):
+            raise SEOEvidenceInvalidError(SEOLimitationCode.SITE_CHANGE_FINGERPRINT_MISMATCH)
         workflow_key = (
-            "agent.content"
+            "seo.apply_site_change"
+            if site_change is not None
+            else "agent.content"
             if context.get("recommendation_class") == "growth_change"
             else "seo.crawl_or_analysis"
         )
@@ -1639,6 +1657,17 @@ class SEOService:
             summary="SEO implementation task created.",
             metadata={"task_id": str(task.id)},
         )
+        if site_change is not None:
+            await self.site_changes.reserve_publication(
+                session,
+                organization_id,
+                revision,
+                workflow_run,
+                actor_id=actor_id,
+                correlation_id=correlation_id,
+                audit=self._audit,
+                location_id=opportunity.location_id,
+            )
         return task
 
     async def verify_implementation_task(

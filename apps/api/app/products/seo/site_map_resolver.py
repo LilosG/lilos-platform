@@ -27,7 +27,10 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from pathlib import PurePosixPath
+from urllib.parse import urlsplit
 
 import yaml
 
@@ -235,3 +238,154 @@ def apply_change(
     start, end = match.span(2)
     updated = f"{content[:start]}{escaped_proposed}{content[end:]}"
     return {**files, locator.file_path: updated}
+
+
+# --------------------------------------------------------------------------
+# Declarative page map
+#
+# A publishing target stores its page map under ``frontmatter_contract["page_map"]``:
+#
+#   {"/brunch": {"seo_title": {"source_type": "keystatic_json",
+#                              "file_path": "src/content/brunchPage.json",
+#                              "json_pointer": ["singleton", "seo", "title"]},
+#                "meta_description": {...}},
+#    "/blog/{slug}": {"seo_title": {"source_type": "frontmatter",
+#                                   "file_path": "src/content/blog/{slug}.mdx",
+#                                   "key": "seoTitle"}}}
+#
+# A key is an exact URL path, or a template whose ``{name}`` segments capture one
+# path segment and are substituted into ``file_path``. Nothing here is inferred:
+# a URL that matches no key, or more than one template, is refused for that page.
+# --------------------------------------------------------------------------
+
+_TEMPLATE_PART = re.compile(r"\{([a-z_][a-z0-9_]*)\}")
+
+
+def normalize_url_path(url_or_path: str) -> str:
+    """Reduce a live URL or path to its canonical path: no host, query, fragment or slash."""
+    path = urlsplit(url_or_path).path or "/"
+    if not path.startswith("/"):
+        path = f"/{path}"
+    return path if path == "/" else path.rstrip("/")
+
+
+def _template_pattern(template: str) -> re.Pattern[str]:
+    pieces: list[str] = []
+    cursor = 0
+    for match in _TEMPLATE_PART.finditer(template):
+        pieces.append(re.escape(template[cursor : match.start()]))
+        pieces.append(f"(?P<{match.group(1)}>[^/]+)")
+        cursor = match.end()
+    pieces.append(re.escape(template[cursor:]))
+    return re.compile("^" + "".join(pieces) + "$")
+
+
+def _fill(value: str, captures: Mapping[str, str]) -> str:
+    return _TEMPLATE_PART.sub(lambda match: captures.get(match.group(1), match.group(0)), value)
+
+
+def _path_is_allowed(file_path: str, allowed_prefixes: Sequence[str]) -> bool:
+    candidate = PurePosixPath(file_path)
+    if candidate.is_absolute() or ".." in candidate.parts or ".git" in candidate.parts:
+        return False
+    return any(
+        candidate.parts[: len(PurePosixPath(prefix).parts)] == PurePosixPath(prefix).parts
+        for prefix in allowed_prefixes
+        if prefix.strip("/")
+    )
+
+
+def _locator_from_document(
+    document: object,
+    captures: Mapping[str, str],
+    allowed_prefixes: Sequence[str],
+    field_name: str,
+) -> SiteMapLocator:
+    if not isinstance(document, Mapping):
+        raise SEOSiteMappingRequiredError(f"Page map entry for {field_name} is not an object.")
+    raw_path = document.get("file_path")
+    if not isinstance(raw_path, str) or not raw_path:
+        raise SEOSiteMappingRequiredError(f"Page map entry for {field_name} has no file_path.")
+    file_path = _fill(raw_path, captures)
+    if _TEMPLATE_PART.search(file_path) or not _path_is_allowed(file_path, allowed_prefixes):
+        raise SEOSiteMappingRequiredError(
+            f"{file_path} is outside this target's allowed site-change paths."
+        )
+    source_type = document.get("source_type")
+    if source_type == "keystatic_json":
+        pointer = document.get("json_pointer")
+        if (
+            not isinstance(pointer, Sequence)
+            or isinstance(pointer, str)
+            or not pointer
+            or not all(isinstance(part, str) for part in pointer)
+        ):
+            raise SEOSiteMappingRequiredError(f"{field_name} has an invalid json_pointer.")
+        return KeystaticJsonLocator(file_path=file_path, json_pointer=tuple(pointer))
+    if source_type == "frontmatter":
+        key = document.get("key")
+        if not isinstance(key, str) or not key:
+            raise SEOSiteMappingRequiredError(f"{field_name} has no frontmatter key.")
+        return FrontmatterLocator(file_path=file_path, key=key)
+    if source_type == "astro_code":
+        binding = document.get("binding_name")
+        if not isinstance(binding, str) or not binding:
+            raise SEOSiteMappingRequiredError(f"{field_name} has no binding_name.")
+        return AstroCodeLocator(file_path=file_path, binding_name=binding)
+    raise SEOSiteMappingRequiredError(f"{field_name} has an unsupported source_type.")
+
+
+def page_map_from_contract(contract: object) -> Mapping[str, object]:
+    """The declarative page map stored on a publishing target, or empty."""
+    if not isinstance(contract, Mapping):
+        return {}
+    page_map = contract.get("page_map")
+    return page_map if isinstance(page_map, Mapping) else {}
+
+
+def resolve_entry(
+    page_map: Mapping[str, object],
+    url_or_path: str,
+    allowed_prefixes: Sequence[str],
+) -> SiteMapEntry:
+    """Resolve one live page to its exact per-field locators, or refuse that page.
+
+    An exact key beats a template. Two templates matching the same path is
+    ambiguous and refused; so is any mapped file outside the target's allowed
+    site-change prefixes.
+    """
+    url_path = normalize_url_path(url_or_path)
+    matched: tuple[str, Mapping[str, str]] | None = None
+    if url_path in page_map:
+        matched = (url_path, {})
+    else:
+        templates: list[tuple[str, Mapping[str, str]]] = []
+        for key in page_map:
+            if not _TEMPLATE_PART.search(key):
+                continue
+            found = _template_pattern(key).match(url_path)
+            if found:
+                templates.append((key, found.groupdict()))
+        if len(templates) > 1:
+            raise SEOSiteMappingRequiredError(
+                f"{url_path} matches more than one page map template."
+            )
+        if templates:
+            matched = templates[0]
+    if matched is None:
+        raise SEOSiteMappingRequiredError(f"{url_path} has no entry in this target's page map.")
+
+    key, captures = matched
+    raw_fields = page_map[key]
+    if not isinstance(raw_fields, Mapping) or not raw_fields:
+        raise SEOSiteMappingRequiredError(f"Page map entry {key} declares no fields.")
+    fields: dict[SiteChangeField, SiteMapLocator] = {}
+    for raw_field, document in raw_fields.items():
+        try:
+            field = SiteChangeField(str(raw_field))
+        except ValueError as exc:
+            raise SEOSiteMappingRequiredError(
+                f"Page map entry {key} names unknown field {raw_field!r}."
+            ) from exc
+        fields[field] = _locator_from_document(document, captures, allowed_prefixes, str(raw_field))
+    return SiteMapEntry(url_path=url_path, fields=fields)

@@ -51,6 +51,9 @@ class SEOLimitationCode(StrEnum):
     OPPORTUNITY_LOCATION_CHANGED = "OPPORTUNITY_LOCATION_CHANGED"
     OPPORTUNITY_NOT_OBSERVED_BY_RUN = "OPPORTUNITY_NOT_OBSERVED_BY_RUN"
     OPPORTUNITY_EVIDENCE_CHANGED_DURING_RUN = "OPPORTUNITY_EVIDENCE_CHANGED_DURING_RUN"
+    SITE_MAPPING_REQUIRED = "SITE_MAPPING_REQUIRED"
+    SITE_CHANGE_FINGERPRINT_MISMATCH = "SITE_CHANGE_FINGERPRINT_MISMATCH"
+    SITE_CHANGE_TARGET_UNAVAILABLE = "SITE_CHANGE_TARGET_UNAVAILABLE"
 
 
 # Exhaustive over SEOLimitationCode -- tests assert this registry covers
@@ -123,5 +126,14 @@ LIMITATION_COPY: dict[SEOLimitationCode, str] = {
     ),
     SEOLimitationCode.OPPORTUNITY_EVIDENCE_CHANGED_DURING_RUN: (
         "Opportunity evidence changed during Hermes reasoning; start a new run."
+    ),
+    SEOLimitationCode.SITE_MAPPING_REQUIRED: (
+        "This page has no confirmed file and field mapping for a governed site change."
+    ),
+    SEOLimitationCode.SITE_CHANGE_FINGERPRINT_MISMATCH: (
+        "The change set no longer matches what was approved; create a new revision."
+    ),
+    SEOLimitationCode.SITE_CHANGE_TARGET_UNAVAILABLE: (
+        "No active GitHub publishing target is connected for this website."
     ),
 }

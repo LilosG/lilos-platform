@@ -50,6 +50,8 @@ def decision_fixture() -> tuple[Any, Any, Any]:
         organization_id=org,
         opportunity_id=opportunity_id,
         status="approved",
+        change_set=None,  # an ordinary recommendation: no governed site change attached
+        change_set_fingerprint=None,
         evidence_references=[
             {
                 "decision_context": {

@@ -6,10 +6,13 @@ Only source records already persisted by SEO or Content can verify an outcome.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from datetime import datetime
+import html as html_lib
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from uuid import UUID
 
+import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,6 +22,8 @@ from apps.api.app.products.content.models import (
     ContentOpportunity,
     ContentPublication,
 )
+from apps.api.app.products.seo.change_set import SiteChangeField, SiteChangeSet
+from apps.api.app.products.seo.crawl_engine import extract_page_signals
 from apps.api.app.products.seo.decision import revision_decision
 from apps.api.app.products.seo.models import (
     SEOCrawlPageObservation,
@@ -28,6 +33,8 @@ from apps.api.app.products.seo.models import (
 )
 
 VERSION = "seo_implementation_verification.v1"
+LIVE_VERSION = "seo_site_change_live_verification.v1"
+LIVE_FETCH_TIMEOUT_SECONDS = 20.0
 CRAWL_VERIFIABLE_ISSUES = frozenset(
     {
         "missing_title",
@@ -156,6 +163,8 @@ async def read_implementation_truth(
             limitations=["A workflow state cannot prove a client-facing page change."],
         )
 
+    if revision.change_set is not None:
+        return await _verify_site_change(session, task, opportunity, revision)
     if context.get("recommendation_class") == "technical_regression":
         return await _verify_technical(session, task, opportunity, context)
     return await _verify_content(session, task, opportunity)
@@ -334,4 +343,171 @@ async def _verify_content(
             else "Content deployment identity is recorded, but no exact public-page "
             "revision parity evidence links it to this SEO target."
         ],
+    )
+
+
+# --------------------------------------------------------------------------
+# Live-site verification of an applied change set
+# --------------------------------------------------------------------------
+
+# The page signal each verifiable field is read back from. A field not listed here
+# (body sections, schema, links) is applied but reported as not checked -- never as
+# verified -- because this read-back cannot prove it.
+_LIVE_SIGNAL: dict[SiteChangeField, str] = {
+    SiteChangeField.SEO_TITLE: "title",
+    SiteChangeField.META_DESCRIPTION: "meta_description",
+    SiteChangeField.H1: "h1",
+}
+
+
+@dataclass(frozen=True, slots=True)
+class LivePage:
+    """One fetched production page: its HTML, or why it could not be read."""
+
+    url: str
+    http_status: int | None
+    html: str | None
+    error: str | None = None
+
+
+def _normalize_text(value: str | None) -> str:
+    return " ".join(html_lib.unescape(value or "").split())
+
+
+async def fetch_live_page(
+    url: str, *, cache_buster: str, client: httpx.AsyncClient | None = None
+) -> LivePage:
+    """Fetch the public page with no database transaction held by the caller.
+
+    The cache-buster query keeps a CDN that still holds the pre-deploy copy from
+    making a correct change look like a failed one.
+    """
+    separator = "&" if "?" in url else "?"
+    target = f"{url}{separator}lilos_verify={cache_buster}"
+    owns_client = client is None
+    http = client or httpx.AsyncClient(timeout=LIVE_FETCH_TIMEOUT_SECONDS, follow_redirects=True)
+    try:
+        response = await http.get(target, headers={"Cache-Control": "no-cache"})
+        return LivePage(url=url, http_status=response.status_code, html=response.text)
+    except httpx.HTTPError as exc:
+        return LivePage(url=url, http_status=None, html=None, error=type(exc).__name__)
+    finally:
+        if owns_client:
+            await http.aclose()
+
+
+def verify_live_site_change(
+    change_set: SiteChangeSet,
+    pages: Mapping[UUID, LivePage],
+    *,
+    now: Callable[[], datetime] = lambda: datetime.now(UTC),
+) -> dict[str, object]:
+    """Confirm every applied value is what production now serves.
+
+    ``unavailable`` means the live page could not be read (retry later); ``failed``
+    means it was read and a value differs, with the observed value recorded.
+    """
+    checks: list[dict[str, object]] = []
+    unavailable = False
+    failed = False
+    for item in change_set.items:
+        page = pages.get(item.page_id)
+        signal = _LIVE_SIGNAL.get(item.field)
+        check: dict[str, object] = {
+            "page_id": str(item.page_id),
+            "url": page.url if page else None,
+            "field": item.field.value,
+            "expected": item.proposed_value,
+            "observed": None,
+        }
+        if signal is None:
+            check["state"] = "not_checked"
+        elif page is None or page.html is None or page.http_status != 200:
+            check["state"] = "unavailable"
+            check["http_status"] = page.http_status if page else None
+            check["error"] = page.error if page else "PAGE_NOT_FETCHED"
+            unavailable = True
+        else:
+            observed = extract_page_signals(page.html, page.http_status, page.url, [])[signal]
+            check["observed"] = observed
+            if _normalize_text(observed) == _normalize_text(item.proposed_value):
+                check["state"] = "verified"
+            else:
+                check["state"] = "mismatch"
+                failed = True
+        checks.append(check)
+
+    # A mismatch is decisive even if another page could not be read.
+    result = "failed" if failed else "unavailable" if unavailable else "verified"
+    return {
+        "policy_version": LIVE_VERSION,
+        "result": result,
+        "observed_at": now().isoformat(),
+        "checks": checks,
+        "limitations": [
+            f"{check['field']} is applied but cannot be read back from the live page."
+            for check in checks
+            if check["state"] == "not_checked"
+        ],
+    }
+
+
+async def _verify_site_change(
+    session: AsyncSession,
+    task: SEOImplementationTask,
+    opportunity: SEOOpportunity,
+    revision: SEORecommendationRevision,
+) -> dict[str, object]:
+    """Report the live-site proof the executor persisted; never re-derive it here."""
+    publication = await session.scalar(
+        select(ContentPublication)
+        .where(
+            ContentPublication.organization_id == task.organization_id,
+            ContentPublication.publication_kind == "site_change",
+            ContentPublication.seo_recommendation_revision_id == revision.id,
+        )
+        .order_by(ContentPublication.created_at.desc())
+        .limit(1)
+    )
+    expected = {"change_set_fingerprint": revision.change_set_fingerprint}
+    if publication is None:
+        return _result(
+            task,
+            opportunity,
+            state="pending",
+            method="site_change_live_read_back",
+            references=[],
+            observed_at=None,
+            expected=expected,
+            actual={},
+            limitations=["The site change has not been published yet."],
+        )
+    references = [f"content-publication:{publication.id}"]
+    actual: dict[str, object] = {
+        "publication_status": publication.status,
+        "pull_request": publication.external_pull_request_id,
+        "merged_commit_sha": publication.external_revision_id,
+        "build_status": publication.build_status,
+        "blocked_code": publication.safe_error_code,
+        "live_checks": (publication.verification_evidence or {}).get("checks", []),
+    }
+    proof = publication.verification_evidence or {}
+    observed_raw = proof.get("observed_at")
+    observed_at = datetime.fromisoformat(observed_raw) if isinstance(observed_raw, str) else None
+    if publication.status == "verified" and proof.get("result") == "verified":
+        state, limitation = "verified", "Every changed value was read back from the live page."
+    elif publication.status in {"failed", "checks_failed", "rolled_back"}:
+        state, limitation = "failed", "The site change stopped before it was verified live."
+    else:
+        state, limitation = "pending", "The site change is still moving through the pipeline."
+    return _result(
+        task,
+        opportunity,
+        state=state,
+        method="site_change_live_read_back",
+        references=references,
+        observed_at=observed_at,
+        expected=expected,
+        actual=actual,
+        limitations=[limitation],
     )

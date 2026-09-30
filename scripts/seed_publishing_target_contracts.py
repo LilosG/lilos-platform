@@ -253,6 +253,121 @@ CONTRACTS: dict[str, dict[str, Any]] = {
 }
 
 
+# --- Site-change page maps -------------------------------------------------
+#
+# Where each live page's SEO title and meta description actually live in the
+# client repository, for the governed `seo.apply_site_change` executor. Every
+# entry was read from the repository AND compared with the live page on
+# 2026-09-30: a field is mapped only when the repository value equals the live
+# <title>/<meta name="description"> exactly and carries no `{{token}}`
+# placeholder (those are filled at render time, so the stored text is not what a
+# visitor sees). A page or field absent here is refused as SITE_MAPPING_REQUIRED
+# rather than guessed at.
+#
+# Wheyland Electric is deliberately absent: it is not a client.
+
+
+def _keystatic_page(
+    file_path: str,
+    pointer: tuple[str, ...],
+    *,
+    description_key: str | None,
+) -> dict[str, Any]:
+    """One Keystatic JSON page: ``<pointer>.title`` and optionally its description."""
+    fields: dict[str, Any] = {
+        "seo_title": {
+            "source_type": "keystatic_json",
+            "file_path": file_path,
+            "json_pointer": [*pointer, "title"],
+        }
+    }
+    if description_key is not None:
+        fields["meta_description"] = {
+            "source_type": "keystatic_json",
+            "file_path": file_path,
+            "json_pointer": [*pointer, description_key],
+        }
+    return fields
+
+
+def _blog_post_page(title_key: str, description_key: str) -> dict[str, Any]:
+    return {
+        "seo_title": {
+            "source_type": "frontmatter",
+            "file_path": "src/content/blog/{slug}.mdx",
+            "key": title_key,
+        },
+        "meta_description": {
+            "source_type": "frontmatter",
+            "file_path": "src/content/blog/{slug}.mdx",
+            "key": description_key,
+        },
+    }
+
+
+# coco-maya: singleton-wrapped Keystatic files, `src/content/<name>.json`.
+# url path -> (content file, meta description key or None when it is templated)
+_COCO_MAYA_PAGES: dict[str, tuple[str, str | None]] = {
+    "/": ("home", None),
+    "/about": ("about", None),
+    "/blog": ("blogIndexPage", "description"),
+    "/brunch": ("brunchPage", "descriptionTemplate"),
+    "/events": ("eventsPage", "descriptionTemplate"),
+    "/faq": ("faqPage", "description"),
+    "/happy-hour": ("happyHourPage", "description"),
+    "/menu": ("menuPage", None),
+    "/private-events": ("privateEventsIndexPage", None),
+    "/private-events/inquire": ("eventInquiryPage", "description"),
+    "/reservations": ("reservationsPage", None),
+    "/the-space": ("spacePage", None),
+}
+
+# louisiana-purchase: top-level Keystatic files, `src/content/<name>/page.json`.
+_LOUISIANA_PURCHASE_PAGES: dict[str, tuple[str, str | None]] = {
+    "/brunch": ("brunchPage", "description"),
+    "/happy-hour": ("happyHourPage", None),
+    "/menu/cocktails": ("menuCocktailsPage", "description"),
+    "/menu/dinner": ("menuDinnerPage", "description"),
+    "/private-events": ("privateEventsIndexPage", None),
+}
+
+PAGE_MAPS: dict[str, dict[str, Any]] = {
+    "LilosG/coco-maya": {
+        **{
+            url: _keystatic_page(
+                f"src/content/{name}.json", ("singleton", "seo"), description_key=key
+            )
+            for url, (name, key) in _COCO_MAYA_PAGES.items()
+        },
+        # blog loader is **/*.mdx; `<title>` is seoTitle, the description is `description`.
+        "/blog/{slug}": _blog_post_page("seoTitle", "description"),
+    },
+    "LilosG/louisiana-purchase": {
+        **{
+            url: _keystatic_page(f"src/content/{name}/page.json", ("seo",), description_key=key)
+            for url, (name, key) in _LOUISIANA_PURCHASE_PAGES.items()
+        },
+        # every published post declares seoTitle; the page uses seoTitle || title.
+        "/blog/{slug}": _blog_post_page("seoTitle", "description"),
+    },
+}
+
+# Separate from each target's blog-only `allowed_path_prefix`.
+SITE_CHANGE_PREFIXES: dict[str, list[str]] = {
+    "LilosG/coco-maya": ["src/content"],
+    "LilosG/louisiana-purchase": ["src/content"],
+}
+
+
+def full_contract(repository_id: str) -> dict[str, Any] | None:
+    """The publishing contract plus this repository's page map, if it has either."""
+    contract = CONTRACTS.get(repository_id)
+    page_map = PAGE_MAPS.get(repository_id)
+    if contract is None:
+        return None
+    return {**contract, "page_map": page_map} if page_map else contract
+
+
 async def main() -> int:
     runtime = create_database_runtime(Settings())
     factory = runtime.require_session_factory()
@@ -261,15 +376,20 @@ async def main() -> int:
     async with factory() as session, session.begin():
         targets = list(await session.scalars(select(PublishingTarget)))
         for target in targets:
-            contract = CONTRACTS.get(target.repository_id)
+            contract = full_contract(target.repository_id)
             if contract is None:
                 print(f"  no recorded contract for {target.repository_id} — left empty")
                 skipped += 1
                 continue
-            if target.frontmatter_contract == contract:
+            prefixes = SITE_CHANGE_PREFIXES.get(target.repository_id, [])
+            if (
+                target.frontmatter_contract == contract
+                and list(target.allowed_site_change_prefixes) == prefixes
+            ):
                 print(f"  unchanged: {target.repository_id}")
                 continue
             target.frontmatter_contract = contract
+            target.allowed_site_change_prefixes = prefixes
             print(f"  updated:   {target.repository_id}")
             updated += 1
     await runtime.dispose()
