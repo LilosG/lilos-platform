@@ -312,6 +312,9 @@ class SEOOrchestrationService:
                     candidate_pages=attribution.candidate_pages,
                 )
                 touched[opportunity.id] = opportunity
+                await self._retire_superseded(
+                    session, organization_id, website.id, opportunity, query, correlation_id
+                )
 
             if (
                 impressions >= 100
@@ -344,6 +347,9 @@ class SEOOrchestrationService:
                     candidate_pages=attribution.candidate_pages,
                 )
                 touched[opportunity.id] = opportunity
+                await self._retire_superseded(
+                    session, organization_id, website.id, opportunity, query, correlation_id
+                )
 
             # Query-only observations establish demand, never a guessed landing page.
             if (
@@ -470,6 +476,7 @@ class SEOOrchestrationService:
             website.id,
             touched_ids=set(touched),
             evaluated_sources=evaluated_sources,
+            correlation_id=correlation_id,
         )
 
         content_count = 0
@@ -834,6 +841,7 @@ class SEOOrchestrationService:
         *,
         touched_ids: set[UUID],
         evaluated_sources: set[str],
+        correlation_id: str,
     ) -> int:
         """Archive only detector-owned, non-decided opportunities evaluated now."""
         if not evaluated_sources:
@@ -855,22 +863,101 @@ class SEOOrchestrationService:
             source_keys = {str(value) for value in opportunity.source_versions}
             if not source_keys or source_keys.isdisjoint(evaluated_sources):
                 continue
-            opportunity.status = "archived"
-            opportunity.active_marker = opportunity.id.hex[:8]
-            content_opportunity = await self.content.get_opportunity_by_source_reference(
+            await self.archive_opportunity(
                 session,
                 organization_id,
-                f"seo-opportunity:{opportunity.id}",
+                opportunity,
+                reason="stale",
+                superseded_by=None,
+                correlation_id=correlation_id,
             )
-            if content_opportunity is not None and content_opportunity.status in {
-                "identified",
-                "validated",
-            }:
-                content_opportunity.status = "archived"
             archived += 1
-        if archived:
-            await session.flush()
         return archived
+
+    async def archive_opportunity(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        opportunity: SEOOpportunity,
+        *,
+        reason: Literal["stale", "superseded"],
+        superseded_by: UUID | None,
+        correlation_id: str,
+    ) -> None:
+        """The one status transition that retires an opportunity, always audited."""
+        previous_status = opportunity.status
+        opportunity.status = "archived"
+        opportunity.active_marker = opportunity.id.hex[:8]
+        opportunity.version += 1
+        content_opportunity = await self.content.get_opportunity_by_source_reference(
+            session,
+            organization_id,
+            f"seo-opportunity:{opportunity.id}",
+        )
+        if content_opportunity is not None and content_opportunity.status in {
+            "identified",
+            "validated",
+        }:
+            content_opportunity.status = "archived"
+        await session.flush()
+        await self.seo._audit(
+            session,
+            event="seo.opportunity.archived",
+            organization_id=organization_id,
+            location_id=opportunity.location_id,
+            actor_id=None,
+            resource_type="seo_opportunity",
+            resource_id=opportunity.id,
+            correlation_id=correlation_id,
+            summary=f"SEO opportunity archived ({reason}).",
+            metadata={
+                "reason": reason,
+                "previous_status": previous_status,
+                "superseded_by": str(superseded_by) if superseded_by else None,
+            },
+        )
+
+    async def _retire_superseded(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        website_id: UUID,
+        current: SEOOpportunity,
+        query: str,
+        correlation_id: str,
+    ) -> int:
+        """Archive older rows for the same (website, query, type) under another target key.
+
+        Only an attributed or shared opportunity supersedes; a query-only or
+        unresolved row never retires a page-specific one. Work a human has
+        already decided on (approved/rejected) is never touched.
+        """
+        if current.attribution_state not in {"attributed", "shared"} or not query:
+            return 0
+        older = list(
+            await session.scalars(
+                select(SEOOpportunity).where(
+                    SEOOpportunity.organization_id == organization_id,
+                    SEOOpportunity.website_id == website_id,
+                    SEOOpportunity.opportunity_type == current.opportunity_type,
+                    SEOOpportunity.active_marker == "active",
+                    SEOOpportunity.id != current.id,
+                    SEOOpportunity.deduplication_key != current.deduplication_key,
+                    SEOOpportunity.status.in_(("identified", "recommended")),
+                    SEOOpportunity.evidence["query"].as_string() == query,
+                )
+            )
+        )
+        for opportunity in older:
+            await self.archive_opportunity(
+                session,
+                organization_id,
+                opportunity,
+                reason="superseded",
+                superseded_by=current.id,
+                correlation_id=correlation_id,
+            )
+        return len(older)
 
     async def _ensure_recommendation(
         self,
