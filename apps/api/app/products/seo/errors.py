@@ -71,3 +71,19 @@ class SEOCrawlRunNotFoundError(NotFoundError):
 class SEOQueryInvalidError(ConflictError):
     code = "SEO_QUERY_INVALID"
     public_message = "The SEO query parameters are invalid."
+
+
+class SEOSiteMappingRequiredError(ConflictError):
+    """A live URL could not be resolved to an exact, unambiguous file and field.
+
+    Raised by `site_map_resolver` instead of guessing: no page map entry for
+    the URL, the current value doesn't appear exactly once in the resolved
+    file, or the file/field cannot be parsed as expected.
+    """
+
+    code = "SEO_SITE_MAPPING_REQUIRED"
+    public_message = "This page has no confirmed file/field mapping for a governed site change."
+
+    def __init__(self, reason: str) -> None:
+        self.public_message = reason
+        super().__init__(reason)
