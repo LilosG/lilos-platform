@@ -92,6 +92,9 @@ describe("Search Intelligence workspace", () => {
               approved_by_user_id: null,
               evidence_references: [],
               decision_context: null,
+              change_set: [],
+              change_set_limitation_code: null,
+              site_change: null,
             },
           ],
         });
@@ -208,6 +211,9 @@ describe("Search Intelligence workspace", () => {
       approved_by_user_id: "operator",
       evidence_references: [],
       decision_context: null,
+      change_set: [],
+      change_set_limitation_code: null,
+      site_change: null,
     };
     growth.task = {
       id: "task",
@@ -260,5 +266,131 @@ describe("Search Intelligence workspace", () => {
     const sections = searchIntelligenceSections(workspace([growth]));
     expect(sections.measuring).toEqual([growth]);
     expect(sections.learned).toHaveLength(0);
+  });
+
+  function approvedSiteChange(
+    siteChange: NonNullable<
+      SearchIntelligenceItem["recommendation"]
+    >["site_change"],
+  ): SearchIntelligenceItem {
+    const growth = item("growth_change");
+    growth.recommendation = {
+      id: "revision-site",
+      revision_number: 2,
+      proposed_action: "Rewrite the title",
+      expected_result_hypothesis: "More clicks",
+      risk: "low",
+      effort: "low",
+      status: "approved",
+      approved_by_user_id: "operator",
+      evidence_references: [],
+      decision_context: null,
+      change_set: [
+        {
+          page_id: "page",
+          field: "seo_title",
+          current_value: "Old title",
+          proposed_value: "New title",
+          rationale: "Lead with the query",
+        },
+      ],
+      change_set_limitation_code: null,
+      site_change: siteChange,
+    };
+    return growth;
+  }
+
+  function openDetail(growth: SearchIntelligenceItem): HTMLElement {
+    const panel = document.createElement("div");
+    document.body.append(panel);
+    renderSearchIntelligenceWorkspace(
+      panel,
+      workspace([growth]),
+      "organization",
+      () => undefined,
+    );
+    [...panel.querySelectorAll("button")]
+      .find((button) => button.textContent === "Review")
+      ?.click();
+    return panel;
+  }
+
+  it("links an approved change to its pull request with mapping, build and live state", () => {
+    const panel = openDetail(
+      approvedSiteChange({
+        mapping_state: "mapped",
+        blocked_code: null,
+        publication_status: "checks_running",
+        pull_request_url: "https://github.com/LilosG/coco-maya/pull/42",
+        build_gate: "vercel_preview",
+        build_state: "pending",
+        verification_state: null,
+        live_checks: [],
+      }),
+    );
+    const link = [...panel.querySelectorAll("a")].find(
+      (anchor) => anchor.textContent === "View pull request on GitHub",
+    );
+    expect(link?.getAttribute("href")).toBe(
+      "https://github.com/LilosG/coco-maya/pull/42",
+    );
+    expect(link?.getAttribute("rel")).toContain("noopener");
+    expect(panel.textContent).toContain("Old title");
+    expect(panel.textContent).toContain("New title");
+    expect(panel.textContent).toContain("Mapping: Page mapped to its file");
+    expect(panel.textContent).toContain("Build: Waiting on Vercel preview");
+    panel.remove();
+  });
+
+  it("shows the typed code when a change is blocked and never links an unsafe URL", () => {
+    const panel = openDetail(
+      approvedSiteChange({
+        mapping_state: "mapped",
+        blocked_code: "CHECKS_UNAVAILABLE",
+        publication_status: "checks_failed",
+        pull_request_url: "https://evil.example/pull/1",
+        build_gate: "none",
+        build_state: "unavailable",
+        verification_state: null,
+        live_checks: [],
+      }),
+    );
+    const alert = panel.querySelector<HTMLElement>("[data-blocked-code]");
+    expect(alert?.dataset.blockedCode).toBe("CHECKS_UNAVAILABLE");
+    expect(alert?.textContent).toContain("CHECKS_UNAVAILABLE");
+    expect(alert?.textContent).toContain("not merged");
+    expect(
+      [...panel.querySelectorAll("a")].some((anchor) =>
+        anchor.textContent?.includes("pull request"),
+      ),
+    ).toBe(false);
+    panel.remove();
+  });
+
+  it("reports the observed live value when verification failed", () => {
+    const panel = openDetail(
+      approvedSiteChange({
+        mapping_state: "mapped",
+        blocked_code: "SITE_CHANGE_VERIFICATION_FAILED",
+        publication_status: "failed",
+        pull_request_url: "https://github.com/LilosG/coco-maya/pull/42",
+        build_gate: "repository_ci",
+        build_state: "passed",
+        verification_state: "failed",
+        live_checks: [
+          {
+            field: "seo_title",
+            expected: "New title",
+            observed: "Old title",
+            state: "mismatch",
+          },
+        ],
+      }),
+    );
+    expect(panel.textContent).toContain("SITE_CHANGE_VERIFICATION_FAILED");
+    expect(panel.textContent).toContain(
+      "Expected “New title”, observed “Old title”",
+    );
+    panel.remove();
   });
 });

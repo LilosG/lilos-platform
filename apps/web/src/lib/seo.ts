@@ -83,6 +83,34 @@ export type SEOOpportunity = {
   status: string;
 };
 
+/** One approved edit: the current value was read from the client repo, not guessed. */
+export type SEOChangeSetItem = {
+  page_id: string;
+  field: string;
+  current_value: string;
+  proposed_value: string;
+  rationale: string;
+};
+
+export type SEOLiveCheck = {
+  field: string;
+  expected: string;
+  observed: string | null;
+  state: string;
+};
+
+/** Where an approved site change is, and -- when it stopped -- the typed code why. */
+export type SEOSiteChangeState = {
+  mapping_state: "mapped" | "required" | null;
+  blocked_code: string | null;
+  publication_status: string | null;
+  pull_request_url: string | null;
+  build_gate: string | null;
+  build_state: "passed" | "failed" | "pending" | "unavailable" | null;
+  verification_state: string | null;
+  live_checks: SEOLiveCheck[];
+};
+
 export type SEORecommendation = {
   id: string;
   revision_number: number;
@@ -94,6 +122,9 @@ export type SEORecommendation = {
   approved_by_user_id: string | null;
   evidence_references: string[];
   decision_context: SEODecisionContext | null;
+  change_set: SEOChangeSetItem[];
+  change_set_limitation_code: string | null;
+  site_change: SEOSiteChangeState | null;
 };
 
 export type SEOHermesRun = {

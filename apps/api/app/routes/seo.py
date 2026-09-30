@@ -67,6 +67,10 @@ from apps.api.app.products.seo.orchestration import SEOOrchestrationService
 from apps.api.app.products.seo.page_intelligence import read_page_intelligence
 from apps.api.app.products.seo.search_console_service import SearchConsoleService
 from apps.api.app.products.seo.service import SEOService
+from apps.api.app.products.seo.site_change_state import (
+    change_set_items,
+    load_site_change_states,
+)
 from apps.api.app.reporting_periods import (
     GA4_SYNC_TAIL_EXCLUSION_DAYS,
     GSC_SYNC_TAIL_EXCLUSION_DAYS,
@@ -182,9 +186,16 @@ def opportunity_row(item: SEOOpportunity) -> dict[str, object]:
     }
 
 
-def recommendation_row(item: SEORecommendationRevision) -> dict[str, object]:
+def recommendation_row(
+    item: SEORecommendationRevision, site_change: dict[str, object] | None = None
+) -> dict[str, object]:
     context = revision_decision(item.evidence_references)
     return {
+        "change_set": change_set_items(item),
+        "change_set_limitation_code": item.change_set_limitation_code,
+        # Where an approved change is (pull request, build gate, live read-back) and, when
+        # it stopped, the typed code why. Null when the recommendation carries no site change.
+        "site_change": site_change,
         "id": str(item.id),
         "revision_number": item.revision_number,
         "proposed_action": item.proposed_action,
@@ -559,6 +570,9 @@ async def search_intelligence_workspace(
                 else "unavailable",
             }
         )
+    site_changes = await load_site_change_states(
+        session, organization_id, list(latest_revision.values())
+    )
     rows = []
     for opportunity in opportunities:
         site = site_by_id.get(opportunity.website_id)
@@ -636,7 +650,11 @@ async def search_intelligence_workspace(
                 "opportunity": opportunity_row(opportunity),
                 "website": website_row(site),
                 "page": page_row(page) if page else None,
-                "recommendation": recommendation_row(revision) if revision else None,
+                "recommendation": (
+                    recommendation_row(revision, site_changes.get(revision.id))
+                    if revision
+                    else None
+                ),
                 "task": task_row(task) if task else None,
                 "outcome": outcome_row(outcome) if outcome else None,
                 "measurement": measurement,
@@ -1154,7 +1172,11 @@ async def list_recommendations(
     _: Annotated[AuthorizationDecision, policy("seo.read")],
 ) -> dict[str, object]:
     items = await service.list_recommendations(session, organization_id, opportunity_id)
-    return {"data": [recommendation_row(item) for item in items], "meta": meta(request)}
+    states = await load_site_change_states(session, organization_id, items)
+    return {
+        "data": [recommendation_row(item, states.get(item.id)) for item in items],
+        "meta": meta(request),
+    }
 
 
 @router.get("/opportunities/{opportunity_id}/hermes-run", dependencies=[Depends(no_store)])
@@ -1264,7 +1286,8 @@ async def create_recommendation(
         actor_id=principal.platform_user_id,
         correlation_id=request_correlation_id(request),
     )
-    return {"data": recommendation_row(item), "meta": meta(request)}
+    states = await load_site_change_states(session, organization_id, [item])
+    return {"data": recommendation_row(item, states.get(item.id)), "meta": meta(request)}
 
 
 @router.post("/recommendations/{revision_id}/decision", dependencies=[Depends(no_store)])
@@ -1287,14 +1310,35 @@ async def decide_recommendation(
         correlation_id=correlation_id,
     )
     workflow_run_id = None
+    workflow_key = "agent.content"
     if command.approve:
-        workflow_run_id = await orchestration.handoff_approved_recommendation(
-            session,
-            organization_id,
-            item,
-            actor_id=principal.platform_user_id,
-            correlation_id=correlation_id,
-        )
+        if item.change_set is not None:
+            # The approved change set IS the work: reserve the site-change run that the
+            # implementation task consumes, which opens the pull request. Nothing is
+            # handed to Content -- what was approved is exactly what executes.
+            approved_opportunity = await service.get_opportunity(
+                session, organization_id, item.opportunity_id
+            )
+            site_change_run = await execution.start_named(
+                session,
+                organization_id,
+                "seo.apply_site_change",
+                f"seo-site-change-run-{item.id}",
+                location_id=approved_opportunity.location_id,
+                correlation_id=correlation_id,
+                actor_id=principal.platform_user_id,
+                enqueue_job=False,
+            )
+            workflow_run_id = str(site_change_run.id)
+            workflow_key = "seo.apply_site_change"
+        else:
+            workflow_run_id = await orchestration.handoff_approved_recommendation(
+                session,
+                organization_id,
+                item,
+                actor_id=principal.platform_user_id,
+                correlation_id=correlation_id,
+            )
         if workflow_run_id is not None:
             opportunity = await service.get_opportunity(
                 session, organization_id, item.opportunity_id
@@ -1320,9 +1364,10 @@ async def decide_recommendation(
         response_meta = {
             **response_meta,
             "workflow_run_id": workflow_run_id,
-            "workflow_key": "agent.content",
+            "workflow_key": workflow_key,
         }
-    return {"data": recommendation_row(item), "meta": response_meta}
+    states = await load_site_change_states(session, organization_id, [item])
+    return {"data": recommendation_row(item, states.get(item.id)), "meta": response_meta}
 
 
 @router.get("/recommendations/{revision_id}/tasks", dependencies=[Depends(no_store)])
