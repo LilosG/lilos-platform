@@ -207,11 +207,14 @@ def test_list_workflow_types_returns_canonical_catalog(p5_client: P5Context) -> 
         "gbp.publish_post",
         "gbp.sync",
         "gbp.upload_media",
+        "insights.sync_analytics",
         "leads.send_communication",
         "reviews.ingest",
         "reviews.publish_response",
         "seo.analyze",
+        "seo.apply_site_change",
         "seo.crawl_or_analysis",
+        "seo.sync_search_console",
     }
 
 
@@ -1125,11 +1128,14 @@ def test_service_list_workflow_types(
             "gbp.publish_post",
             "gbp.sync",
             "gbp.upload_media",
+            "insights.sync_analytics",
             "leads.send_communication",
             "reviews.ingest",
             "reviews.publish_response",
             "seo.analyze",
+            "seo.apply_site_change",
             "seo.crawl_or_analysis",
+            "seo.sync_search_console",
         }
         for item in items:
             assert "key" in item
@@ -1138,7 +1144,7 @@ def test_service_list_workflow_types(
         return len(items)
 
     count = run_db(postgresql_test_url, scenario)
-    assert count == 19
+    assert count == 22
 
 
 @pytest.mark.integration

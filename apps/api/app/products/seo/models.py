@@ -433,6 +433,9 @@ class SEORecommendationRevision(UUIDPrimaryKeyMixin, Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     change_set: Mapped[dict[str, object] | None] = mapped_column(JSONB)
     change_set_fingerprint: Mapped[str | None] = mapped_column(String(64))
+    # Typed reason a recommendation for an attributed page carries no change set
+    # (for example SITE_MAPPING_REQUIRED). Never free text.
+    change_set_limitation_code: Mapped[str | None] = mapped_column(String(64))
 
 
 class SEOImplementationTask(UUIDPrimaryKeyMixin, TimestampMixin, Base):

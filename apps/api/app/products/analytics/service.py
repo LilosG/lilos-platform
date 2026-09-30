@@ -37,6 +37,7 @@ from apps.api.app.audit.enums import AuditActorType, AuditResult
 from apps.api.app.audit.metadata import JsonValue
 from apps.api.app.audit.service import AuditEventService
 from apps.api.app.config import Settings
+from apps.api.app.database.scope import TransactionScope
 from apps.api.app.insights.models import (
     InsightSource,
     MetricDefinition,
@@ -46,6 +47,10 @@ from apps.api.app.integrations.connection_service import (
     ANALYTICS_SCOPE,
     GBPConnectionService,
     connection_has_scope,
+)
+from apps.api.app.integrations.errors import (
+    IntegrationReconnectRequiredError,
+    IntegrationTokenExchangeFailedError,
 )
 from apps.api.app.integrations.models import IntegrationConnection
 from apps.api.app.products.analytics.adapter import (
@@ -220,6 +225,33 @@ def _dimension_hash(dimensions: dict[str, object]) -> str:
     return hashlib.sha256(
         json.dumps(dimensions, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
+
+
+@dataclass(slots=True)
+class PeriodReports:
+    """One period's provider reports, fetched before anything is written."""
+
+    aggregate: list[AnalyticsReportRow]
+    prior_aggregate: list[AnalyticsReportRow]
+    daily: list[AnalyticsReportRow]
+
+
+@dataclass(slots=True)
+class OrganicPagePlan:
+    """What the organic landing-page report needs, read before the provider is called."""
+
+    unavailable: str | None
+    website_id: UUID | None = None
+    location_id: UUID | None = None
+    scheme: str | None = None
+    expected_host: str | None = None
+    resolver: PageResolver | None = None
+
+
+@dataclass(slots=True)
+class OrganicPageFetch:
+    error: Exception | None
+    rows: dict[int, list[AnalyticsReportRow]]
 
 
 @dataclass(slots=True)
@@ -517,7 +549,7 @@ class AnalyticsService:
 
     async def sync_metrics(
         self,
-        session: AsyncSession,
+        scope: TransactionScope,
         settings: Settings,
         organization_id: UUID,
         analytics_property_id: UUID,
@@ -526,60 +558,107 @@ class AnalyticsService:
         correlation_id: str,
         days: int = DEFAULT_SYNC_WINDOW_DAYS,
     ) -> dict[str, object]:
-        prop = await session.scalar(
-            select(AnalyticsProperty).where(
-                AnalyticsProperty.organization_id == organization_id,
-                AnalyticsProperty.id == analytics_property_id,
-            )
-        )
-        if prop is None:
-            raise AnalyticsPropertyNotFoundError
-        token, connection = await self._fresh_token(session, settings, organization_id)
-        del connection
+        """Pull GA4 metrics into ``MetricObservation`` without holding a transaction
+        across any provider request.
+
+        Three phases: (1) a short read transaction, (2) every provider request --
+        token refresh, the 7/28/90 reports and the organic landing-page report --
+        fetched into memory with nothing open, (3) one short transaction that
+        persists everything. Nothing is written until every required period has
+        returned, so a failed period leaves the previous successful dataset intact.
+        """
+        # -- phase 1: read -------------------------------------------------------
+        async with scope.begin() as session:
+            prop = await self.load_property(session, organization_id, analytics_property_id)
+            connection = await self._connection(session, organization_id)
+            if not connection_has_scope(connection, ANALYTICS_SCOPE):
+                raise AnalyticsScopeRequiredError
+            plan = await self.connection.begin_token_refresh(session, settings, connection)
+            connection_id = connection.id
+            property_number = prop.property_number
+            organic = await self._plan_organic_pages(session, organization_id, prop)
+
+        # -- phase 2: provider HTTP, nothing open --------------------------------
+        if plan.access_token is not None:
+            token = plan.access_token
+        else:
+            assert plan.refresh_token is not None
+            try:
+                payload = await self.connection.refresh_token_pair(settings, plan.refresh_token)
+            except IntegrationTokenExchangeFailedError:
+                async with scope.begin() as session:
+                    stale = await session.get(IntegrationConnection, connection_id)
+                    if stale is not None:
+                        await self.connection.fail_token_refresh(session, stale)
+                raise IntegrationReconnectRequiredError from None
+            async with scope.begin() as session:
+                refreshed = await session.get(IntegrationConnection, connection_id)
+                if refreshed is None:
+                    raise AnalyticsNotConfiguredError
+                token = await self.connection.complete_token_refresh(
+                    session, settings, refreshed, plan, payload
+                )
+
         now = datetime.now(UTC)
-        definitions = await self._ensure_metric_definitions(session)
-        source = await self._insight_source(session, organization_id, prop)
+        windows = {
+            period_days: reporting_window(now, period_days, GA4_SYNC_TAIL_EXCLUSION_DAYS)
+            for period_days in VALID_REPORTING_PERIODS
+        }
+        reports: dict[int, PeriodReports | Exception] = {}
+        for period_days, (start, end) in windows.items():
+            reports[period_days] = await self._fetch_period(
+                token, property_number, start, end, period_days
+            )
+        organic_fetch = await self._fetch_organic_pages(token, property_number, organic, windows)
+
+        # -- phase 3: persist ----------------------------------------------------
         upserted = 0
-        failed = False
-        failures: list[dict[str, object]] = []
+        failures: list[dict[str, object]] = [
+            {"period_days": period_days, "error": str(result)[:200]}
+            for period_days, result in reports.items()
+            if isinstance(result, Exception)
+        ]
+        async with scope.begin() as session:
+            prop = await self.load_property(session, organization_id, analytics_property_id)
+            # Created even when a period failed, as before: the definitions and the
+            # source describe the property, not the data a failed sync did not write.
+            definitions = await self._ensure_metric_definitions(session)
+            source = await self._insight_source(session, organization_id, prop)
+            if failures:
+                # Nothing was written: the previous successful dataset is preserved.
+                prop.freshness_status = "never_synced" if prop.last_synced_at is None else "stale"
+                if prop.page_evidence_status == "observed":
+                    prop.page_evidence_status = "stale"
+                await session.flush()
+                await self._audit(
+                    session,
+                    event="insights.analytics.sync_incomplete",
+                    organization_id=organization_id,
+                    actor_id=actor_id,
+                    resource_type="analytics_property",
+                    resource_id=prop.id,
+                    correlation_id=correlation_id,
+                    summary="GA4 sync incomplete: one or more required periods failed; "
+                    "previous successful dataset preserved.",
+                    metadata={"failures": failures},
+                    result=AuditResult.FAILED,
+                )
+                return {
+                    "analytics_property_id": str(prop.id),
+                    "metrics_synced": 0,
+                    "window_days": days,
+                    "periods_synced": [],
+                    "freshness_status": prop.freshness_status,
+                }
 
-        # Persist the 7/28/90 contract atomically: a partial attempt must never
-        # publish a newer incomplete current window. On any required failure the
-        # savepoint is rolled back and the previous successful dataset remains.
-        nested = session.begin_nested()
-        await nested.start()
-        try:
             for period_days in VALID_REPORTING_PERIODS:
-                start, end = reporting_window(now, period_days, GA4_SYNC_TAIL_EXCLUSION_DAYS)
+                start, end = windows[period_days]
                 comp_start, comp_end = comparison_window(start, period_days)
-                try:
-                    aggregate_rows = await self.adapter.run_report(
-                        token,
-                        prop.property_number,
-                        start_date=provider_start_date(start),
-                        end_date=provider_end_date(end),
-                        metrics=GA4_METRICS,
-                    )
-                    prior_aggregate_rows = await self.adapter.run_report(
-                        token,
-                        prop.property_number,
-                        start_date=provider_start_date(comp_start),
-                        end_date=provider_end_date(comp_end),
-                        metrics=GA4_METRICS,
-                    )
-                    daily_rows = await self.adapter.run_report(
-                        token,
-                        prop.property_number,
-                        start_date=provider_start_date(start),
-                        end_date=provider_end_date(end),
-                        metrics=GA4_METRICS,
-                        dimensions=("date",),
-                    )
-                except Exception as exc:
-                    failed = True
-                    failures.append({"period_days": period_days, "error": str(exc)[:200]})
-                    continue
-
+                fetched = reports[period_days]
+                assert not isinstance(fetched, Exception)
+                aggregate_rows = fetched.aggregate
+                prior_aggregate_rows = fetched.prior_aggregate
+                daily_rows = fetched.daily
                 upserted += await self._sync_aggregate(
                     session,
                     organization_id,
@@ -667,109 +746,167 @@ class AnalyticsService:
                             )
                         upserted += 1
                 await session.flush()
-        except BaseException:
-            await nested.rollback()
-            raise
 
-        if failed:
-            await nested.rollback()
-            if prop.last_synced_at is None:
-                prop.freshness_status = "never_synced"
-            else:
-                prop.freshness_status = "stale"
-            if prop.page_evidence_status == "observed":
-                prop.page_evidence_status = "stale"
+            await self._persist_organic_pages(
+                session, organization_id, prop, source, organic, organic_fetch, windows, now
+            )
+            prop.last_synced_at = now
+            prop.freshness_status = "fresh"
+            source.last_synced_at = prop.last_synced_at
             await session.flush()
             await self._audit(
                 session,
-                event="insights.analytics.sync_incomplete",
+                event="insights.analytics.synced",
                 organization_id=organization_id,
                 actor_id=actor_id,
                 resource_type="analytics_property",
                 resource_id=prop.id,
                 correlation_id=correlation_id,
-                summary="GA4 sync incomplete: one or more required periods failed; "
-                "previous successful dataset preserved.",
-                metadata={"failures": failures},
-                result=AuditResult.FAILED,
+                summary=f"Synced {upserted} GA4 metric observations across "
+                f"{len(VALID_REPORTING_PERIODS)} periods.",
+                metadata={
+                    "observations": upserted,
+                    "periods_synced": list(VALID_REPORTING_PERIODS),
+                },
             )
             return {
                 "analytics_property_id": str(prop.id),
-                "metrics_synced": 0,
+                "metrics_synced": upserted,
                 "window_days": days,
-                "periods_synced": [],
+                "periods_synced": list(VALID_REPORTING_PERIODS),
                 "freshness_status": prop.freshness_status,
             }
 
-        await nested.commit()
-        await self._sync_organic_pages(session, organization_id, prop, source, token, now)
-        prop.last_synced_at = now
-        prop.freshness_status = "fresh"
-        source.last_synced_at = prop.last_synced_at
-        await session.flush()
-        await self._audit(
-            session,
-            event="insights.analytics.synced",
-            organization_id=organization_id,
-            actor_id=actor_id,
-            resource_type="analytics_property",
-            resource_id=prop.id,
-            correlation_id=correlation_id,
-            summary=f"Synced {upserted} GA4 metric observations across "
-            f"{len(VALID_REPORTING_PERIODS)} periods.",
-            metadata={
-                "observations": upserted,
-                "periods_synced": list(VALID_REPORTING_PERIODS),
-            },
+    async def load_property(
+        self, session: AsyncSession, organization_id: UUID, analytics_property_id: UUID
+    ) -> AnalyticsProperty:
+        prop = await session.scalar(
+            select(AnalyticsProperty).where(
+                AnalyticsProperty.organization_id == organization_id,
+                AnalyticsProperty.id == analytics_property_id,
+            )
         )
-        return {
-            "analytics_property_id": str(prop.id),
-            "metrics_synced": upserted,
-            "window_days": days,
-            "periods_synced": list(VALID_REPORTING_PERIODS),
-            "freshness_status": prop.freshness_status,
-        }
+        if prop is None:
+            raise AnalyticsPropertyNotFoundError
+        return prop
 
-    async def _sync_organic_pages(
+    async def _fetch_period(
+        self, token: str, property_number: str, start: datetime, end: datetime, period_days: int
+    ) -> PeriodReports | Exception:
+        """One period's three GA4 reports, fetched into memory. Touches no database."""
+        comp_start, comp_end = comparison_window(start, period_days)
+        try:
+            return PeriodReports(
+                aggregate=await self.adapter.run_report(
+                    token,
+                    property_number,
+                    start_date=provider_start_date(start),
+                    end_date=provider_end_date(end),
+                    metrics=GA4_METRICS,
+                ),
+                prior_aggregate=await self.adapter.run_report(
+                    token,
+                    property_number,
+                    start_date=provider_start_date(comp_start),
+                    end_date=provider_end_date(comp_end),
+                    metrics=GA4_METRICS,
+                ),
+                daily=await self.adapter.run_report(
+                    token,
+                    property_number,
+                    start_date=provider_start_date(start),
+                    end_date=provider_end_date(end),
+                    metrics=GA4_METRICS,
+                    dimensions=("date",),
+                ),
+            )
+        except Exception as exc:
+            return exc
+
+    async def _plan_organic_pages(
+        self, session: AsyncSession, organization_id: UUID, prop: AnalyticsProperty
+    ) -> OrganicPagePlan:
+        """Read what the organic landing-page report needs, or why it cannot run."""
+        website = await self._optional_website(session, organization_id, prop.website_id)
+        if website is None:
+            return OrganicPagePlan(unavailable="No confirmed website scope for this property.")
+        expected_host = _confirmed_page_host(website.canonical_origin)
+        if expected_host is None:
+            return OrganicPagePlan(
+                unavailable="No valid confirmed website hostname for page evidence."
+            )
+        return OrganicPagePlan(
+            unavailable=None,
+            website_id=website.id,
+            location_id=website.location_id,
+            scheme=urlsplit(website.canonical_origin).scheme,
+            expected_host=expected_host,
+            resolver=await PageResolver.load(session, organization_id, website.id),
+        )
+
+    async def _fetch_organic_pages(
+        self,
+        token: str,
+        property_number: str,
+        plan: OrganicPagePlan,
+        windows: dict[int, tuple[datetime, datetime]],
+    ) -> OrganicPageFetch:
+        """Fetch the organic landing-page reports; any failure is carried, not raised."""
+        if plan.unavailable is not None or plan.expected_host is None:
+            return OrganicPageFetch(error=None, rows={})
+        try:
+            compatible = await self.adapter.organic_page_report_compatible(
+                token, property_number, hostname=plan.expected_host
+            )
+            if not compatible:
+                raise ValueError("Organic landing-page report is unsupported for this property.")
+            rows: dict[int, list[AnalyticsReportRow]] = {}
+            for period_days, (start, end) in windows.items():
+                rows[period_days] = await self.adapter.run_organic_page_report(
+                    token,
+                    property_number,
+                    start_date=provider_start_date(start),
+                    end_date=provider_end_date(end),
+                    hostname=plan.expected_host,
+                )
+        except Exception as exc:
+            return OrganicPageFetch(error=exc, rows={})
+        return OrganicPageFetch(error=None, rows=rows)
+
+    async def _persist_organic_pages(
         self,
         session: AsyncSession,
         organization_id: UUID,
         prop: AnalyticsProperty,
         source: InsightSource,
-        token: str,
+        plan: OrganicPagePlan,
+        fetch: OrganicPageFetch,
+        windows: dict[int, tuple[datetime, datetime]],
         now: datetime,
     ) -> None:
-        website = await self._optional_website(session, organization_id, prop.website_id)
-        if website is None:
+        """Validate and store the already-fetched organic landing-page rows.
+
+        A failure here only marks page evidence unavailable; it never fails the
+        main sync, and its partial writes roll back with the savepoint.
+        """
+        if plan.unavailable is not None:
             prop.page_evidence_status = "unavailable"
-            prop.page_evidence_limitation = "No confirmed website scope for this property."
+            prop.page_evidence_limitation = plan.unavailable
             prop.page_evidence_checked_at = now
             return
-        expected_host = _confirmed_page_host(website.canonical_origin)
-        if expected_host is None:
-            prop.page_evidence_status = "unavailable"
-            prop.page_evidence_limitation = "No valid confirmed website hostname for page evidence."
-            prop.page_evidence_checked_at = now
-            return
-        resolver = await PageResolver.load(session, organization_id, website.id)
+        assert plan.website_id is not None and plan.expected_host is not None
+        assert plan.resolver is not None and plan.scheme is not None
+        expected_host = plan.expected_host
+        resolver = plan.resolver
         page_savepoint = session.begin_nested()
         await page_savepoint.start()
         try:
-            compatible = await self.adapter.organic_page_report_compatible(
-                token, prop.property_number, hostname=expected_host
-            )
-            if not compatible:
-                raise ValueError("Organic landing-page report is unsupported for this property.")
+            if fetch.error is not None:
+                raise fetch.error
             definitions = await self._ensure_organic_landing_definitions(session)
             for period_days in VALID_REPORTING_PERIODS:
-                start, end = reporting_window(now, period_days, GA4_SYNC_TAIL_EXCLUSION_DAYS)
-                rows = await self.adapter.run_organic_page_report(
-                    token,
-                    prop.property_number,
-                    start_date=provider_start_date(start),
-                    end_date=provider_end_date(end),
-                    hostname=expected_host,
-                )
+                start, end = windows[period_days]
+                rows = fetch.rows[period_days]
                 values_by_identity: dict[tuple[UUID, str], dict[str, object]] = {}
                 for row in rows:
                     raw_path = row.dimension_values.get("landingPagePlusQueryString", "")
@@ -779,14 +916,14 @@ class AnalyticsService:
                     if row.dimension_values.get("sessionDefaultChannelGroup") != "Organic Search":
                         raise ValueError("Organic landing-page report returned a foreign channel.")
                     raw_url = (
-                        f"{urlsplit(website.canonical_origin).scheme}://{expected_host}{raw_path}"
+                        f"{plan.scheme}://{expected_host}{raw_path}"
                         if raw_path.startswith("/")
                         else None
                     )
                     resolution = resolver.resolve(raw_url)
                     dimensions: dict[str, object] = {
                         "observation_type": "organic_landing_page",
-                        "website_id": str(website.id),
+                        "website_id": str(plan.website_id),
                         "landingPagePlusQueryString": raw_path,
                         "hostName": raw_host,
                         "sessionDefaultChannelGroup": "Organic Search",
@@ -806,8 +943,8 @@ class AnalyticsService:
                             "period_start": start,
                             "period_end": end,
                             "dimension_hash": dim_hash,
-                            "website_id": website.id,
-                            "location_id": website.location_id,
+                            "website_id": plan.website_id,
+                            "location_id": plan.location_id,
                             "page_id": resolution.page_id,
                             "dimensions": dimensions,
                             "value": Decimal(value),
@@ -820,7 +957,7 @@ class AnalyticsService:
                                 "availability": "observed",
                                 "ingested_at": now.isoformat(),
                                 "window_days": period_days,
-                                "website_id": str(website.id),
+                                "website_id": str(plan.website_id),
                                 "raw_landing_path": raw_path,
                                 "raw_host_name": raw_host,
                                 "raw_candidate_url": raw_url,

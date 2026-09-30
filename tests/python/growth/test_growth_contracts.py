@@ -216,11 +216,7 @@ def test_runtime_dependency_check_ignores_legacy_non_workflow_gate() -> None:
 
 def test_growth_routes_technical_site_change_away_from_content() -> None:
     action = _action("content.add_missing_h1", product="content", workflow="agent.content")
-    action["action_type"] = "publish_content_asset"
-    action["expected_result_hypothesis"] = (
-        "Add the missing H1 to the blog index template so search engines receive "
-        "a correct page-level heading."
-    )
+    action["action_type"] = "missing_h1"  # a typed site-change class, not prose
     plan = _plan([action])
 
     canonical = GrowthService._canonicalize_executor_bindings(plan)
@@ -228,6 +224,56 @@ def test_growth_routes_technical_site_change_away_from_content() -> None:
     assert canonical.actions[0].product_key == "seo"
     assert canonical.actions[0].action_type == "site_implementation"
     assert canonical.actions[0].executor_workflow_key == "agent.seo"
+
+
+def test_growth_does_not_reroute_on_prose_alone() -> None:
+    # The old policy matched "h1", "template", "canonical"... in free text. Routing is
+    # now decided by the typed action_type only, so technical-sounding prose on an
+    # editorial action type stays in Content.
+    action = _action("content.add_missing_h1", product="content", workflow="agent.content")
+    action["action_type"] = "publish_content_asset"
+    action["expected_result_hypothesis"] = (
+        "Add the missing H1 to the blog index template so search engines receive "
+        "a correct page-level heading."
+    )
+
+    canonical = GrowthService._canonicalize_executor_bindings(_plan([action]))
+
+    assert canonical.actions[0].product_key == "content"
+    assert canonical.actions[0].action_type == "publish_content_asset"
+    assert canonical.actions[0].executor_workflow_key == "agent.content"
+
+
+def test_site_change_action_types_mirror_the_typed_sources() -> None:
+    from apps.api.app.growth.action_types import (
+        SITE_CHANGE_ACTION_TYPES,
+        GrowthActionType,
+        is_site_change_action,
+    )
+    from apps.api.app.products.seo.change_set import SiteChangeField
+    from apps.api.app.products.seo.verification import CRAWL_VERIFIABLE_ISSUES
+
+    typed = {action_type.value for action_type in SITE_CHANGE_ACTION_TYPES}
+    assert {field.value for field in SiteChangeField} <= typed
+    assert set(CRAWL_VERIFIABLE_ISSUES) <= typed
+    assert typed == (
+        {field.value for field in SiteChangeField}
+        | set(CRAWL_VERIFIABLE_ISSUES)
+        | {GrowthActionType.SITE_IMPLEMENTATION.value}
+    )
+    # Exact lookup: near-misses and deterministic types are not site changes.
+    assert is_site_change_action("missing_h1")
+    assert not is_site_change_action("Missing H1")
+    assert not is_site_change_action("fix the missing h1 on the blog index")
+    assert not is_site_change_action("analysis")
+    assert not is_site_change_action(None)
+
+
+def test_keyword_policy_module_is_gone() -> None:
+    import importlib
+
+    with pytest.raises(ModuleNotFoundError):
+        importlib.import_module("apps.api.app.site_change_policy")
 
 
 def test_growth_keeps_editorial_content_in_content_workflow() -> None:

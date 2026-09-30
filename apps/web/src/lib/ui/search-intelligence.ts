@@ -14,6 +14,12 @@ import {
   type SEOHermesRun,
 } from "../seo";
 import { describeFailure } from "./index";
+import {
+  isSafePullRequestUrl,
+  siteChangeView,
+  type SiteChangeView,
+  type StageTone,
+} from "./site-change-view";
 import { statusLabel, statusTone } from "../status-language";
 import {
   canUsePlatformAdministration,
@@ -216,6 +222,77 @@ function actionButton(label: string, onClick: () => void): HTMLButtonElement {
   button.textContent = label;
   button.addEventListener("click", onClick);
   return button;
+}
+
+const STAGE_BADGE: Record<
+  StageTone,
+  "ready" | "setup" | "blocked" | "neutral"
+> = {
+  ready: "ready",
+  pending: "setup",
+  blocked: "blocked",
+  neutral: "neutral",
+};
+
+/**
+ * The approved site change: exact before/after, where it is (mapping, build gate, live
+ * check), a link to the pull request on the client repo, and -- when it stopped --
+ * the typed code and what it means. Everything comes from `siteChangeView`.
+ */
+function renderSiteChangeCard(view: SiteChangeView): HTMLElement {
+  const card = sectionCard(
+    "Site change",
+    "Exactly what was approved for this page, and where it is now.",
+  );
+  const body = card.querySelector<HTMLElement>(".ui-card__body")!;
+
+  for (const change of view.changes) {
+    const block = document.createElement("div");
+    block.className = "ui-stack ui-stack--2";
+    block.append(
+      detailFact(`${change.label} — before`, change.before),
+      detailFact(`${change.label} — after`, change.after),
+      detailFact("Why", change.rationale),
+    );
+    body.append(block);
+  }
+
+  const stages = document.createElement("div");
+  stages.className = "ui-inline ui-inline--center";
+  for (const stage of view.stages) {
+    stages.append(
+      statusBadge(STAGE_BADGE[stage.tone], `${stage.label}: ${stage.text}`),
+    );
+  }
+  body.append(stages);
+
+  if (view.pullRequest && isSafePullRequestUrl(view.pullRequest.href)) {
+    const link = document.createElement("a");
+    link.href = view.pullRequest.href;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    link.className = "ui-button ui-button--secondary ui-button--sm";
+    link.textContent = view.pullRequest.label;
+    body.append(link);
+  }
+
+  if (view.blocked) {
+    const alert = errorAlert(`${view.blocked.code}: ${view.blocked.message}`);
+    alert.dataset.blockedCode = view.blocked.code;
+    body.append(alert);
+  }
+
+  for (const check of view.liveChecks) {
+    body.append(
+      detailFact(
+        `${check.label} on the live page`,
+        check.matches
+          ? `Confirmed: ${check.observed}`
+          : `Expected “${check.expected}”, observed “${check.observed}”`,
+      ),
+    );
+  }
+  return card;
 }
 
 function appendLines(parent: HTMLElement, values: string[]): void {
@@ -808,6 +885,8 @@ async function renderDetail(
     decisionBody.append(form);
   }
   panel.append(decisionCard);
+  const siteChange = siteChangeView(item.recommendation);
+  if (siteChange) panel.append(renderSiteChangeCard(siteChange));
 
   const passes = decision?.passes;
   const passGrid = document.createElement("div");

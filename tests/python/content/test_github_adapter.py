@@ -52,7 +52,10 @@ async def test_checks_and_deployments_read_all_github_pages() -> None:
         ],
     )
 
-    assert await publisher.checks("owner/repo", "revision") == {"state": "success"}
+    assert await publisher.checks("owner/repo", "revision") == {
+        "state": "success",
+        "gate": "repository_ci",
+    }
     assert await publisher.deployment("owner/repo", "revision") == {
         "state": "success",
         "url": "https://example.com",
@@ -81,7 +84,7 @@ async def test_vercel_preview_comment_cannot_authorize_a_merge() -> None:
         commit_status={"statuses": []},
     )
 
-    assert await publisher.checks("owner/repo", "revision") == {"state": "none"}
+    assert await publisher.checks("owner/repo", "revision") == {"state": "none", "gate": "none"}
 
 
 @pytest.mark.anyio
@@ -97,7 +100,10 @@ async def test_failed_vercel_commit_status_blocks_merge() -> None:
         commit_status={"statuses": [{"context": "Vercel", "state": "failure"}]},
     )
 
-    assert await publisher.checks("owner/repo", "revision") == {"state": "failed"}
+    assert await publisher.checks("owner/repo", "revision") == {
+        "state": "failed",
+        "gate": "vercel_preview",
+    }
 
 
 @pytest.mark.anyio
@@ -173,3 +179,97 @@ async def test_merge_binds_to_the_content_head_that_passed_checks() -> None:
     )
     with pytest.raises(RuntimeError, match="head has changed"):
         await publisher.merge_pull_request("owner/repo", "17", "different-head")
+
+
+PREVIEW_COMMENTS = {"name": "Vercel Preview Comments", "conclusion": "success"}
+
+
+def _checks_publisher(
+    runs: list[dict[str, Any]], statuses: list[dict[str, Any]]
+) -> StubGitHubPublisher:
+    return StubGitHubPublisher(
+        check_pages=[{"check_runs": runs, "total_count": len(runs)}],
+        deployment_pages=[],
+        commit_status={"statuses": statuses},
+    )
+
+
+@pytest.mark.anyio
+async def test_checks_requires_repository_ci_when_present() -> None:
+    # The client's own CI is the gate: a green Vercel preview cannot outvote a red check.
+    failing = _checks_publisher(
+        [{"name": "validate", "conclusion": "failure"}, PREVIEW_COMMENTS],
+        [{"context": "Vercel", "state": "success"}],
+    )
+    assert await failing.checks("owner/repo", "sha") == {
+        "state": "failed",
+        "gate": "repository_ci",
+    }
+
+    # A passing CI run still waits on a Vercel preview that is not finished.
+    waiting = _checks_publisher(
+        [{"name": "validate", "conclusion": "success"}],
+        [{"context": "Vercel", "state": "pending"}],
+    )
+    assert await waiting.checks("owner/repo", "sha") == {
+        "state": "pending",
+        "gate": "repository_ci",
+    }
+
+    passing = _checks_publisher(
+        [{"name": "validate", "conclusion": "success"}],
+        [{"context": "Vercel", "state": "success"}],
+    )
+    assert await passing.checks("owner/repo", "sha") == {
+        "state": "success",
+        "gate": "repository_ci",
+    }
+
+
+@pytest.mark.anyio
+async def test_checks_falls_back_to_vercel_preview_status() -> None:
+    # No CI of its own (Louisiana Purchase's shape): only a preview-deployment
+    # commit status on the head commit can stand in for a build.
+    green = _checks_publisher([PREVIEW_COMMENTS], [{"context": "Vercel", "state": "success"}])
+    assert await green.checks("owner/repo", "sha") == {
+        "state": "success",
+        "gate": "vercel_preview",
+    }
+
+    building = _checks_publisher([PREVIEW_COMMENTS], [{"context": "Vercel", "state": "pending"}])
+    assert await building.checks("owner/repo", "sha") == {
+        "state": "pending",
+        "gate": "vercel_preview",
+    }
+
+    # Vercel names the status after the project ("Vercel – project"); still Vercel.
+    named = _checks_publisher([], [{"context": "Vercel \u2013 site", "state": "success"}])
+    assert (await named.checks("owner/repo", "sha"))["gate"] == "vercel_preview"
+
+
+@pytest.mark.anyio
+async def test_get_file_decodes_content_and_reports_missing_file() -> None:
+    import base64
+
+    class FilePublisher(GitHubRepositoryPublisher):
+        def __init__(self, payload: Any) -> None:
+            super().__init__(access_token="token")
+            self.payload = payload
+            self.params: dict[str, Any] = {}
+
+        async def _request_json(
+            self, method: str, path: str, *, expected_status: Any = 200, **kwargs: Any
+        ) -> Any:
+            del method, path, expected_status
+            self.params = kwargs["params"]
+            return self.payload
+
+    text = '{"title": "Caf\u00e9 \u2014 Brunch"}'
+    found = FilePublisher(
+        {"type": "file", "encoding": "base64", "content": base64.b64encode(text.encode()).decode()}
+    )
+    assert await found.get_file("owner/repo", "abc123", "src/content/page.json") == text
+    assert found.params == {"ref": "abc123"}
+    assert await FilePublisher(None).get_file("owner/repo", "abc123", "missing.json") is None
+    with pytest.raises(RuntimeError):
+        await FilePublisher({"type": "dir"}).get_file("owner/repo", "abc123", "src")

@@ -86,7 +86,7 @@ Never publish or edit Google directly.
     ),
     "seo.operator": AgentSkill(
         key="seo.operator",
-        version=4,
+        version=5,
         product_key="seo",
         title="SEO evidence analyst",
         instructions=COMMON_POLICY
@@ -112,6 +112,16 @@ When the objective binds one Search Intelligence opportunity, read that exact
 opportunity, then call create_seo_recommendation_proposal with only
 proposed_action, expected_result_hypothesis, risk, and effort. LILOs supplies
 the authoritative opportunity and evidence references for that bound run.
+When that opportunity's site_change_context has status "available", the page's
+real current values (read from the client's repository) are listed under
+"fields". You may add site_changes: exact replacements, each with field,
+proposed_value and rationale, for fields that context lists. Never restate or
+invent a current value -- LILOs supplies it -- and keep a seo_title at most 60
+characters and a meta_description at most 160, non-empty and different from the
+current text. A rejected site_changes call names the problem and does not spend
+your one proposal; correct it and call again. When the status is "unavailable",
+omit site_changes: the recommendation will carry the typed code (for example
+SITE_MAPPING_REQUIRED) and a human will decide how the change is made.
 """,
         required_tools=(
             "read_gsc_evidence",
@@ -262,7 +272,7 @@ missing data with a narrative.
     ),
     "growth.planner": AgentSkill(
         key="growth.planner",
-        version=5,
+        version=6,
         product_key="growth",
         title="Cross-product growth planner",
         instructions=COMMON_POLICY
@@ -290,6 +300,11 @@ through GBP, route work to Reviews, require a manual action, or monitor without
 changing anything. Technical/site-code work -- including H1/template fixes,
 metadata mechanics, canonicals, schema markup, redirects, robots/sitemaps, and
 Core Web Vitals implementation -- belongs to the SEO product, never Content.
+Mark such an action by setting action_type to exactly one of: site_implementation,
+seo_title, meta_description, h1, body_section, schema, internal_link,
+missing_title, missing_meta_description, missing_h1, multiple_h1, non_200_status,
+title_truncated, meta_description_truncated, or h1_truncated. LILOs routes on that
+exact value, never on your wording, so an editorial asset must never use one.
 Content is reserved for substantive editorial assets and on-page copy that can
 be reviewed and published as content. For workflow actions, choose the owning
 product only. LILOs assigns the

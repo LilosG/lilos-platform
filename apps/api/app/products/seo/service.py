@@ -32,6 +32,7 @@ from apps.api.app.notifications.models import NotificationTemplate
 from apps.api.app.notifications.service import NotificationService
 from apps.api.app.products.analytics.models import AnalyticsProperty
 from apps.api.app.products.analytics.service import DEFAULT_FRESHNESS_STALE_SECONDS
+from apps.api.app.products.seo.change_set import SiteChangeSet
 from apps.api.app.products.seo.contracts import (
     CrawlRequest,
     ImplementationTaskCreate,
@@ -79,10 +80,13 @@ from apps.api.app.products.seo.models import (
     SEOWebsite,
 )
 from apps.api.app.products.seo.page_identity import RESOLVER_VERSION, PageResolver
+from apps.api.app.products.seo.site_change_service import SiteChangeService
 from apps.api.app.products.seo.verification import read_implementation_truth
 from apps.api.app.reporting_periods import GA4_SYNC_TAIL_EXCLUSION_DAYS, reporting_window
 
 BUSINESS_POLICY_VERSION = "business_importance.v1"
+# A recommendation in any other status can still be acted on, so it can be withdrawn.
+TERMINAL_RECOMMENDATION_STATUSES = frozenset({"rejected", "implemented", "withdrawn"})
 SCORE_POLICY_VERSION = "opportunity_score.v2"
 SCORE_VERSION = 2
 BUSINESS_METRIC_KEY = "ga4.organicLanding.keyEvents"
@@ -370,6 +374,7 @@ class SEOService:
         self.audit_repository = AuditEventRepository()
         self.notifications = NotificationService()
         self.execution = ExecutionService()
+        self.site_changes = SiteChangeService()
         self._http_client_factory = http_client_factory
 
     async def _audit(
@@ -1221,6 +1226,7 @@ class SEOService:
         website_id: UUID | None = None,
         status_filter: str | None = None,
         location_scope: tuple[UUID | None, ...] | None = None,
+        exclude_archived: bool = False,
         limit: int = 50,
         offset: int = 0,
     ) -> tuple[list[SEOOpportunity], bool]:
@@ -1231,6 +1237,8 @@ class SEOService:
         )
         if website_id is not None:
             statement = statement.where(SEOOpportunity.website_id == website_id)
+        if exclude_archived:
+            statement = statement.where(SEOOpportunity.status != "archived")
         if status_filter is not None:
             statement = statement.where(SEOOpportunity.status == status_filter)
         if location_scope is not None:
@@ -1285,6 +1293,22 @@ class SEOService:
             .order_by(SEORecommendationRevision.revision_number.desc())
             .limit(1)
         )
+        change_set: dict[str, object] | None = None
+        limitation_code: str | None = None
+        if command.change_set is not None:
+            proposed = SiteChangeSet.model_validate(command.change_set)
+            if opportunity.page_id is None or any(
+                item.page_id != opportunity.page_id for item in proposed.items
+            ):
+                # A change set may only edit the page this opportunity is attributed to.
+                raise SEOEvidenceInvalidError(SEOLimitationCode.PAGE_OUT_OF_SCOPE)
+            change_set = proposed.model_dump(mode="json")
+        elif opportunity.page_id is not None and opportunity.attribution_state == "attributed":
+            # No exact change was proposed. If the page could not be edited through a page
+            # map anyway, say so with a typed code instead of leaving the gap silent.
+            limitation_code = await self.site_changes.mapping_limitation(
+                session, organization_id, opportunity.page_id
+            )
         revision = SEORecommendationRevision(
             organization_id=organization_id,
             opportunity_id=opportunity_id,
@@ -1296,6 +1320,8 @@ class SEOService:
             effort=command.effort,
             status="awaiting_approval",
             created_at=datetime.now(UTC),
+            change_set=change_set,
+            change_set_limitation_code=limitation_code,
         )
         session.add(revision)
         opportunity.status = "recommended"
@@ -1475,6 +1501,85 @@ class SEOService:
             )
         )
 
+    async def withdraw_recommendation(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        revision: SEORecommendationRevision,
+        *,
+        reason: str,
+        correlation_id: str,
+    ) -> bool:
+        """Take a recommendation out of play: terminal, audited, never deleted.
+
+        Returns False (and does nothing) if it already reached a terminal status.
+        """
+        if revision.status in TERMINAL_RECOMMENDATION_STATUSES:
+            return False
+        previous_status = revision.status
+        revision.status = "withdrawn"
+        await session.flush()
+        location_id = await session.scalar(
+            select(SEOOpportunity.location_id).where(
+                SEOOpportunity.organization_id == organization_id,
+                SEOOpportunity.id == revision.opportunity_id,
+            )
+        )
+        await self._audit(
+            session,
+            event="seo.recommendation.withdrawn",
+            organization_id=organization_id,
+            location_id=location_id,
+            actor_id=None,
+            resource_type="seo_opportunity",
+            resource_id=revision.opportunity_id,
+            correlation_id=correlation_id,
+            summary=f"SEO recommendation withdrawn ({reason}).",
+            metadata={
+                "revision_id": str(revision.id),
+                "reason": reason,
+                "previous_status": previous_status,
+            },
+        )
+        return True
+
+    async def withdraw_approval(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        opportunity: SEOOpportunity,
+        *,
+        reason: str,
+        correlation_id: str,
+    ) -> int:
+        """Return an approved opportunity to `identified`, withdrawing its live recommendations.
+
+        For an approval that can never execute (it predates page attribution), so the
+        opportunity goes back to being a finding rather than staying approved forever.
+        """
+        withdrawn = 0
+        for revision in await self.list_recommendations(session, organization_id, opportunity.id):
+            if await self.withdraw_recommendation(
+                session, organization_id, revision, reason=reason, correlation_id=correlation_id
+            ):
+                withdrawn += 1
+        opportunity.status = "identified"
+        opportunity.version += 1
+        await session.flush()
+        await self._audit(
+            session,
+            event="seo.opportunity.approval_withdrawn",
+            organization_id=organization_id,
+            location_id=opportunity.location_id,
+            actor_id=None,
+            resource_type="seo_opportunity",
+            resource_id=opportunity.id,
+            correlation_id=correlation_id,
+            summary=f"SEO approval withdrawn ({reason}).",
+            metadata={"reason": reason, "recommendations_withdrawn": withdrawn},
+        )
+        return withdrawn
+
     async def decide_recommendation(
         self,
         session: AsyncSession,
@@ -1539,6 +1644,12 @@ class SEOService:
         revision.status = "approved" if command.approve else "rejected"
         if command.approve:
             revision.approved_by_user_id = user_id
+            if revision.change_set is not None:
+                # What the human approved is exactly this digest; execution
+                # re-derives it and refuses on any difference.
+                revision.change_set_fingerprint = SiteChangeSet.model_validate(
+                    revision.change_set
+                ).fingerprint()
         opportunity.status = "approved" if command.approve else "rejected"
         await session.flush()
         await self._audit(
@@ -1607,8 +1718,17 @@ class SEOService:
             if existing.target_reference != expected_target:
                 raise SEOEvidenceInvalidError(SEOLimitationCode.IMPLEMENTATION_TASK_TARGET_CONFLICT)
             return existing
+        site_change = revision.change_set
+        if site_change is not None and (
+            revision.change_set_fingerprint is None
+            or SiteChangeSet.model_validate(site_change).fingerprint()
+            != revision.change_set_fingerprint
+        ):
+            raise SEOEvidenceInvalidError(SEOLimitationCode.SITE_CHANGE_FINGERPRINT_MISMATCH)
         workflow_key = (
-            "agent.content"
+            "seo.apply_site_change"
+            if site_change is not None
+            else "agent.content"
             if context.get("recommendation_class") == "growth_change"
             else "seo.crawl_or_analysis"
         )
@@ -1639,6 +1759,17 @@ class SEOService:
             summary="SEO implementation task created.",
             metadata={"task_id": str(task.id)},
         )
+        if site_change is not None:
+            await self.site_changes.reserve_publication(
+                session,
+                organization_id,
+                revision,
+                workflow_run,
+                actor_id=actor_id,
+                correlation_id=correlation_id,
+                audit=self._audit,
+                location_id=opportunity.location_id,
+            )
         return task
 
     async def verify_implementation_task(
@@ -1772,7 +1903,10 @@ class SEOService:
         rows = (
             await session.execute(
                 select(SEOOpportunity.status, func.count())
-                .where(SEOOpportunity.organization_id == organization_id)
+                .where(
+                    SEOOpportunity.organization_id == organization_id,
+                    SEOOpportunity.status != "archived",
+                )
                 .group_by(SEOOpportunity.status)
             )
         ).all()

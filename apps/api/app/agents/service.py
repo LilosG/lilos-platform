@@ -41,6 +41,7 @@ from apps.api.app.products.seo.errors import SEOOpportunityNotFoundError
 from apps.api.app.products.seo.limitation_codes import SEOLimitationCode
 from apps.api.app.products.seo.models import SEORecommendationRevision
 from apps.api.app.products.seo.service import SEOService
+from apps.api.app.products.seo.site_change_service import SiteChangeService
 
 TERMINAL_HERMES_STATUSES = {"completed", "failed", "cancelled"}
 ACTIVE_AGENT_STATUSES = {"queued", "running", "waiting_approval", "stopping"}
@@ -569,6 +570,41 @@ class AgentRuntimeService:
         await session.flush()
         await session.commit()
 
+    async def _prepare_site_change_context(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        workflow_run_id: UUID,
+        input_document: dict[str, Any],
+    ) -> None:
+        """Read a bound opportunity's page from the client repo before Hermes reasons.
+
+        Runs in the worker step that owns this session, so the repository is read with
+        no transaction open. The result is stored on the workflow input, where the
+        bound tools read it: Hermes sees the page's real current values and can only
+        propose replacements for them. Idempotent across retries.
+        """
+        bound = input_document.get("seo_opportunity_id")
+        if not bound or "site_change_context" in input_document:
+            return
+        try:
+            opportunity = await SEOService().get_opportunity(
+                session, organization_id, UUID(str(bound))
+            )
+        except (ValueError, SEOOpportunityNotFoundError):
+            return
+        context = await SiteChangeService().site_change_context(
+            session, organization_id, opportunity
+        )
+        workflow = await session.get(WorkflowRun, workflow_run_id)
+        if workflow is None:
+            return
+        workflow.input_document = {
+            **(workflow.input_document or {}),
+            "site_change_context": context,
+        }
+        await session.commit()
+
     async def execute_workflow(
         self,
         session: AsyncSession,
@@ -586,6 +622,10 @@ class AgentRuntimeService:
         if has_secret_key(input_document):
             return JobOutcome(result="permanent_failure", safe_error="AGENT_INPUT_SECRET_REJECTED")
         skill = skill_for_workflow(workflow_key)
+        if skill.key == "seo.operator":
+            await self._prepare_site_change_context(
+                session, organization_id, workflow_run_id, input_document
+            )
         client = self._client_factory(settings)
         try:
             capabilities = await client.capabilities()

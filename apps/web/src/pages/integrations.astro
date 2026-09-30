@@ -142,14 +142,14 @@ import "../styles/global.css";
         fetchSearchConsolePerformance,
         mapSearchConsole,
         searchConsoleReportHasData,
-        syncSearchConsole,
+        syncSearchConsoleToCompletion,
       } from "../lib/search-console";
       import {
         analyticsReportHasData,
         discoverAnalytics,
         fetchAnalyticsPerformance,
         mapAnalytics,
-        syncAnalytics,
+        syncAnalyticsToCompletion,
       } from "../lib/analytics";
 
       let organizationId = "";
@@ -1052,7 +1052,7 @@ import "../styles/global.css";
           syncButton.addEventListener("click", async () => {
             syncButton.disabled = true;
             syncButton.textContent = "Syncing…";
-            const result = await syncSearchConsole(
+            const result = await syncSearchConsoleToCompletion(
               organizationId,
               website.id,
               mapped.id,
@@ -1170,7 +1170,7 @@ import "../styles/global.css";
             return;
           }
           mapButton.textContent = "Syncing…";
-          const synced = await syncSearchConsole(
+          const synced = await syncSearchConsoleToCompletion(
             organizationId,
             website.id,
             mappedProperty.id,
@@ -1231,7 +1231,10 @@ import "../styles/global.css";
               syncButton.addEventListener("click", async () => {
                 syncButton.disabled = true;
                 syncButton.textContent = "Syncing…";
-                const result = await syncAnalytics(organizationId, property.id);
+                const result = await syncAnalyticsToCompletion(
+                  organizationId,
+                  property.id,
+                );
                 if (result.kind === "ok") await reloadGoogleWorkspace();
                 else {
                   syncButton.disabled = false;
@@ -1357,7 +1360,7 @@ import "../styles/global.css";
               return;
             }
             mapButton.textContent = "Syncing…";
-            const synced = await syncAnalytics(
+            const synced = await syncAnalyticsToCompletion(
               organizationId,
               mappedProperty.id,
             );

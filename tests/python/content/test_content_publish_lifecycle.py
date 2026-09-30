@@ -1,5 +1,6 @@
 """Provider-state acceptance for recoverable Content publication."""
 
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from typing import Any, cast
 from uuid import uuid4
@@ -160,9 +161,12 @@ async def test_repository_without_checks_does_not_auto_merge() -> None:
         "owner/repo",
     )
 
+    # Nothing has reported yet and the pull request is brand new (no timestamp
+    # here): wait, never merge.
     assert outcome is not None and outcome.result == "retryable_failure"
+    assert outcome.safe_error == "CONTENT_CHECKS_PENDING"
     assert publication.status == "checks_running"
-    assert publication.safe_error_code == "CONTENT_CHECKS_UNAVAILABLE"
+    assert publication.build_status == "none:none"
 
 
 @pytest.mark.anyio
@@ -198,3 +202,64 @@ async def test_matching_production_deployment_marks_approved_revision_published(
     assert revision.status == "published"
     assert item.status == "published"
     assert item.approved_revision_id == revision.id
+
+
+@pytest.mark.anyio
+async def test_checks_unavailable_blocks_after_grace_without_merge() -> None:
+    session = SessionStub()
+    publication: Any = SimpleNamespace(
+        external_pull_request_id="17",
+        approved_head_sha="branch-commit",
+        external_revision_id="branch-commit",
+        status="checks_running",
+        safe_error_code=None,
+        build_status=None,
+    )
+    stale = (datetime.now(UTC) - timedelta(hours=2)).isoformat()
+    provider = ProviderStub(
+        pr={"head": {"sha": "branch-commit"}, "created_at": stale},
+        deployment={"state": "none"},
+    )
+
+    outcome = await _wait_for_pull_request_checks(
+        cast(AsyncSession, session),
+        publication,
+        cast(RepositoryPublisher, provider),
+        "owner/repo",
+    )
+
+    # No CI and no Vercel preview status after the grace window: blocked, and the
+    # status leaves the set that `advance_publication` merges from.
+    assert outcome is not None and outcome.result == "permanent_failure"
+    assert outcome.safe_error == "CHECKS_UNAVAILABLE"
+    assert publication.status == "checks_failed"
+    assert publication.status not in {"pull_request_created", "checks_running"}
+    assert publication.build_status == "none:none"
+
+
+@pytest.mark.anyio
+async def test_checks_within_grace_window_keep_waiting() -> None:
+    session = SessionStub()
+    publication: Any = SimpleNamespace(
+        external_pull_request_id="17",
+        approved_head_sha="branch-commit",
+        external_revision_id="branch-commit",
+        status="pull_request_created",
+        safe_error_code=None,
+        build_status=None,
+    )
+    fresh = (datetime.now(UTC) - timedelta(minutes=2)).isoformat()
+    provider = ProviderStub(
+        pr={"head": {"sha": "branch-commit"}, "created_at": fresh},
+        deployment={"state": "none"},
+    )
+
+    outcome = await _wait_for_pull_request_checks(
+        cast(AsyncSession, session),
+        publication,
+        cast(RepositoryPublisher, provider),
+        "owner/repo",
+    )
+
+    assert outcome is not None and outcome.result == "retryable_failure"
+    assert publication.status == "checks_running"

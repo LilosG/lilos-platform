@@ -9,13 +9,17 @@ the home-services pattern (no Keystatic layer, page copy lives directly in
 
 import pytest
 
+from apps.api.app.products.seo.change_set import SiteChangeField
 from apps.api.app.products.seo.errors import SEOSiteMappingRequiredError
 from apps.api.app.products.seo.site_map_resolver import (
     AstroCodeLocator,
     FrontmatterLocator,
     KeystaticJsonLocator,
     apply_change,
+    normalize_url_path,
+    page_map_from_contract,
     resolve_current_value,
+    resolve_entry,
 )
 
 # A trimmed excerpt of the real singleton shape at
@@ -238,3 +242,126 @@ def test_apply_change_refuses_ambiguous_duplicate_value() -> None:
     locator = KeystaticJsonLocator(file_path="dup.json", json_pointer=("seo", "title"))
     with pytest.raises(SEOSiteMappingRequiredError, match="occurs 2 times"):
         apply_change(files, locator, "Same Value", "New Value")
+
+
+# ---------------------------------------------------------------------------
+# Declarative page map
+# ---------------------------------------------------------------------------
+
+PAGE_MAP = {
+    "/brunch": {
+        "seo_title": {
+            "source_type": "keystatic_json",
+            "file_path": "src/content/brunchPage.json",
+            "json_pointer": ["singleton", "seo", "title"],
+        },
+    },
+    "/blog/{slug}": {
+        "seo_title": {
+            "source_type": "frontmatter",
+            "file_path": "src/content/blog/{slug}.mdx",
+            "key": "seoTitle",
+        },
+    },
+    # Two templates that both match /menu/cocktails: a deliberately ambiguous map.
+    "/menu/{page}": {
+        "seo_title": {
+            "source_type": "keystatic_json",
+            "file_path": "src/content/menu.json",
+            "json_pointer": ["seo", "title"],
+        },
+    },
+    "/{section}/cocktails": {
+        "seo_title": {
+            "source_type": "keystatic_json",
+            "file_path": "src/content/cocktails.json",
+            "json_pointer": ["seo", "title"],
+        },
+    },
+}
+PREFIXES = ["src/content"]
+
+
+def test_normalize_url_path_reduces_urls_to_their_path() -> None:
+    assert normalize_url_path("https://example.com/brunch/") == "/brunch"
+    assert normalize_url_path("https://example.com") == "/"
+    assert normalize_url_path("/blog/post?utm=1#top") == "/blog/post"
+    assert normalize_url_path("brunch") == "/brunch"
+
+
+def test_page_map_resolves_exact_path_and_fills_blog_template() -> None:
+    exact = resolve_entry(PAGE_MAP, "https://example.com/brunch/", PREFIXES)
+    assert exact.url_path == "/brunch"
+    locator = exact.fields[SiteChangeField.SEO_TITLE]
+    assert isinstance(locator, KeystaticJsonLocator)
+    assert locator.json_pointer == ("singleton", "seo", "title")
+
+    post = resolve_entry(PAGE_MAP, "/blog/best-brunch-san-diego", PREFIXES)
+    post_locator = post.fields[SiteChangeField.SEO_TITLE]
+    assert isinstance(post_locator, FrontmatterLocator)
+    assert post_locator.file_path == "src/content/blog/best-brunch-san-diego.mdx"
+    assert post_locator.key == "seoTitle"
+
+
+def test_ambiguous_page_map_blocks_only_that_page() -> None:
+    with pytest.raises(SEOSiteMappingRequiredError, match="more than one"):
+        resolve_entry(PAGE_MAP, "/menu/cocktails", PREFIXES)
+    with pytest.raises(SEOSiteMappingRequiredError, match="no entry"):
+        resolve_entry(PAGE_MAP, "/unmapped", PREFIXES)
+    # Neighbouring pages in the same map are unaffected.
+    assert resolve_entry(PAGE_MAP, "/brunch", PREFIXES).url_path == "/brunch"
+    assert resolve_entry(PAGE_MAP, "/blog/another-post", PREFIXES).url_path == "/blog/another-post"
+
+
+def test_page_map_refuses_files_outside_allowed_prefixes() -> None:
+    with pytest.raises(SEOSiteMappingRequiredError, match="allowed site-change paths"):
+        resolve_entry(PAGE_MAP, "/brunch", ["src/pages"])
+    with pytest.raises(SEOSiteMappingRequiredError, match="allowed site-change paths"):
+        resolve_entry(PAGE_MAP, "/brunch", [])
+    escaping = {
+        "/x": {
+            "seo_title": {
+                "source_type": "keystatic_json",
+                "file_path": "src/content/../../secrets.json",
+                "json_pointer": ["a"],
+            }
+        }
+    }
+    with pytest.raises(SEOSiteMappingRequiredError, match="allowed site-change paths"):
+        resolve_entry(escaping, "/x", PREFIXES)
+
+
+def test_page_map_rejects_unknown_fields_and_source_types() -> None:
+    unknown_field = {
+        "/x": {
+            "favicon": {"source_type": "frontmatter", "file_path": "src/content/a.md", "key": "k"}
+        }
+    }
+    with pytest.raises(SEOSiteMappingRequiredError, match="unknown field"):
+        resolve_entry(unknown_field, "/x", PREFIXES)
+    unknown_source = {
+        "/x": {"seo_title": {"source_type": "wordpress", "file_path": "src/content/a.md"}}
+    }
+    with pytest.raises(SEOSiteMappingRequiredError, match="unsupported source_type"):
+        resolve_entry(unknown_source, "/x", PREFIXES)
+
+
+def test_page_map_is_read_from_the_publishing_contract_and_defaults_empty() -> None:
+    assert page_map_from_contract({"page_map": PAGE_MAP}) == PAGE_MAP
+    assert page_map_from_contract({}) == {}
+    assert page_map_from_contract(None) == {}
+
+
+def test_seeded_page_maps_resolve_within_their_allowed_prefixes() -> None:
+    from scripts.seed_publishing_target_contracts import PAGE_MAPS, SITE_CHANGE_PREFIXES
+
+    # Only real clients with a publishing target are mapped; Wheyland Electric is not a client.
+    assert set(PAGE_MAPS) == {"LilosG/coco-maya", "LilosG/louisiana-purchase"}
+    assert not any("wheyland" in repository.lower() for repository in PAGE_MAPS)
+    for repository, page_map in PAGE_MAPS.items():
+        prefixes = SITE_CHANGE_PREFIXES[repository]
+        assert "/brunch" in page_map
+        for url_path in page_map:
+            sample = url_path.replace("{slug}", "a-post")
+            entry = resolve_entry(page_map, sample, prefixes)
+            assert entry.fields, (repository, url_path)

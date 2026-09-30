@@ -13,6 +13,7 @@ import pytest
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from apps.api.app.audit.models import AuditEvent
 from apps.api.app.config import Settings
 from apps.api.app.insights.models import InsightSource, MetricDefinition, MetricObservation
 from apps.api.app.integrations.models import IntegrationConnection, Provider
@@ -746,5 +747,301 @@ async def test_orchestration_uses_current_gsc_and_routes_only_content_work(
         assert archived_unmapped is not None and archived_unmapped.status == "archived"
         assert refreshed_unrelated is not None and refreshed_unrelated.status == "recommended"
         assert refreshed_unrelated.active_marker == "active"
-        assert refreshed_decided is not None and refreshed_decided.status == "approved"
+        # Stale archival never touches decided work. This one is an unattributed approval,
+        # which can never execute, so the legacy pass withdraws the approval instead: it
+        # returns to `identified` and stays live (it is not archived).
+        assert refreshed_decided is not None and refreshed_decided.status == "identified"
         assert refreshed_decided.active_marker == "active"
+
+
+QUERY = "brunch spots san diego"
+
+
+async def _seed_attributed_query(
+    session: AsyncSession,
+) -> tuple[Organization, SEOWebsite, SEOPage, SEOSearchProperty]:
+    """A site whose one query is dominated by a single crawled page."""
+    organization = Organization(
+        name="Superseded opportunities",
+        slug=f"superseded-{uuid4().hex[:8]}",
+        organization_type=OrganizationType.TEST,
+        status=OrganizationStatus.ACTIVE,
+        timezone="UTC",
+        default_currency="USD",
+        version=1,
+    )
+    provider = Provider(
+        key=f"gsc-superseded-{uuid4().hex[:8]}",
+        name="Google Search Console",
+        status="active",
+        capabilities=["search_console.read"],
+        manifest_version=1,
+    )
+    session.add_all([organization, provider])
+    await session.flush()
+    connection = IntegrationConnection(
+        organization_id=organization.id,
+        provider_id=provider.id,
+        external_account_reference="gsc-superseded",
+        status="connected",
+        version=1,
+    )
+    website = SEOWebsite(
+        organization_id=organization.id,
+        location_id=None,
+        key="primary",
+        name="Primary site",
+        canonical_origin="https://superseded.example.invalid",
+        status="active",
+        ownership_status="verified",
+        version=1,
+    )
+    session.add_all([connection, website])
+    await session.flush()
+    search_property = SEOSearchProperty(
+        organization_id=organization.id,
+        website_id=website.id,
+        connection_id=connection.id,
+        provider="google_search_console",
+        external_property_id="sc-domain:superseded.example.invalid",
+        property_type="domain",
+        mapping_status="mapped",
+        freshness_status="fresh",
+    )
+    page = SEOPage(
+        organization_id=organization.id,
+        website_id=website.id,
+        normalized_url="https://superseded.example.invalid/blog/best-brunch",
+        observed_url="https://superseded.example.invalid/blog/best-brunch",
+        canonical_url="https://superseded.example.invalid/blog/best-brunch",
+        normalization_reasons=[],
+        http_status=200,
+        content_type="text/html",
+        title="Best brunch",
+        meta_description="Brunch",
+        h1="Best brunch",
+        robots_directives=[],
+        internal_links=[],
+        external_links=[],
+        word_count=900,
+        structured_data_present=False,
+        content_hash="b" * 64,
+        indexability="indexable",
+        technical_issues=[],
+        crawl_depth=1,
+        redirect_destination=None,
+        quality_status="valid",
+        body_text="Brunch",
+        observed_at=datetime.now(UTC),
+    )
+    session.add_all([search_property, page])
+    await session.flush()
+    end = datetime.now(UTC)
+    start = end - timedelta(days=28)
+    for observation_type, page_id, mapping_state in (
+        ("top_query", None, "unknown"),
+        ("page_query", page.id, "mapped"),
+    ):
+        dimensions: dict[str, object] = {"observation_type": observation_type, "query": QUERY}
+        session.add(
+            SEOSearchObservation(
+                organization_id=organization.id,
+                search_property_id=search_property.id,
+                website_id=website.id,
+                page_id=page_id,
+                query=QUERY,
+                date_start=start,
+                date_end=end,
+                dimensions=dimensions,
+                dimension_hash=dimension_hash(dimensions),
+                clicks=10,
+                impressions=400,
+                ctr=0.01,
+                position=8.2,
+                mapping_state=mapping_state,
+                quality_status="valid",
+                partial=False,
+            )
+        )
+    await session.flush()
+    return organization, website, page, search_property
+
+
+def _legacy_query_only_row(
+    organization: Organization, website: SEOWebsite, *, status: str
+) -> SEOOpportunity:
+    """The pre-attribution row: keyed on `<origin>|<query>`, no page."""
+    target = f"{website.canonical_origin}|{QUERY}"
+    return SEOOpportunity(
+        organization_id=organization.id,
+        location_id=None,
+        website_id=website.id,
+        page_id=None,
+        opportunity_type="gsc_striking_distance",
+        deduplication_key=hashlib.sha256(f"gsc_striking_distance|{target}".encode()).hexdigest(),
+        active_marker="active",
+        evidence={"source": "google_search_console", "query": QUERY},
+        source_versions=["gsc.v1"],
+        score_version=2,
+        priority_score=70,
+        score_explanation={"score_policy_version": "opportunity_score.v2"},
+        status=status,
+        version=1,
+    )
+
+
+async def _live_rows(
+    session: AsyncSession, organization_id: UUID, opportunity_type: str
+) -> list[SEOOpportunity]:
+    rows = await session.scalars(
+        select(SEOOpportunity).where(
+            SEOOpportunity.organization_id == organization_id,
+            SEOOpportunity.opportunity_type == opportunity_type,
+            SEOOpportunity.active_marker == "active",
+        )
+    )
+    return list(rows)
+
+
+@pytest.mark.integration
+@pytest.mark.anyio
+async def test_attributed_opportunity_retires_query_only_row_with_audit(
+    seo_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    service = SEOOrchestrationService(pagespeed=FakePageSpeedService())
+    async with seo_session_factory.begin() as session:
+        organization, website, page, _ = await _seed_attributed_query(session)
+        legacy = _legacy_query_only_row(organization, website, status="recommended")
+        session.add(legacy)
+        await session.flush()
+
+        await service.analyze(session, organization.id, location_id=None, correlation_id="retire-1")
+
+        live = await _live_rows(session, organization.id, "gsc_striking_distance")
+        assert [row.page_id for row in live] == [page.id]
+        assert live[0].attribution_state == "attributed"
+        await session.refresh(legacy)
+        assert legacy.status == "archived"
+        assert legacy.active_marker != "active"
+        assert legacy.version == 2
+        events = list(
+            await session.scalars(
+                select(AuditEvent).where(
+                    AuditEvent.organization_id == organization.id,
+                    AuditEvent.event_type == "seo.opportunity.archived",
+                    AuditEvent.resource_id == legacy.id,
+                )
+            )
+        )
+        assert len(events) == 1
+        assert events[0].event_metadata["superseded_by"] == str(live[0].id)
+        assert events[0].event_metadata["reason"] in {"superseded", "stale"}
+
+
+@pytest.mark.integration
+@pytest.mark.anyio
+async def test_reanalysis_converges_to_one_live_row_per_query_and_type(
+    seo_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    service = SEOOrchestrationService(pagespeed=FakePageSpeedService())
+    async with seo_session_factory.begin() as session:
+        organization, website, _, _ = await _seed_attributed_query(session)
+        session.add(_legacy_query_only_row(organization, website, status="identified"))
+        await session.flush()
+
+        for run in range(3):
+            await service.analyze(
+                session, organization.id, location_id=None, correlation_id=f"converge-{run}"
+            )
+            for opportunity_type in ("gsc_striking_distance", "gsc_low_ctr"):
+                live = [
+                    row
+                    for row in await _live_rows(session, organization.id, opportunity_type)
+                    if row.evidence.get("query") == QUERY
+                ]
+                assert len(live) == 1, (run, opportunity_type)
+
+        archived_events = await session.scalar(
+            select(func.count())
+            .select_from(AuditEvent)
+            .where(
+                AuditEvent.organization_id == organization.id,
+                AuditEvent.event_type == "seo.opportunity.archived",
+            )
+        )
+        assert archived_events == 1  # later runs archive nothing further
+
+
+@pytest.mark.integration
+@pytest.mark.anyio
+async def test_plain_retirement_skips_approved_work_but_legacy_pass_supersedes_it(
+    seo_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """`_retire_superseded` never archives decided work; the legacy-approval pass does.
+
+    An approved query-only row with nothing in flight can never execute, so once an
+    attributed replacement exists it is superseded -- audited as a legacy approval, not
+    as an ordinary retirement.
+    """
+    service = SEOOrchestrationService(pagespeed=FakePageSpeedService())
+    async with seo_session_factory.begin() as session:
+        organization, website, _, _ = await _seed_attributed_query(session)
+        approved = _legacy_query_only_row(organization, website, status="approved")
+        session.add(approved)
+        await session.flush()
+        replacement = await service._upsert_opportunity(
+            session,
+            organization.id,
+            website,
+            location_id=None,
+            page_id=None,
+            opportunity_type="gsc_striking_distance",
+            target_reference=QUERY,
+            evidence={"source": "google_search_console", "query": QUERY},
+            source_versions=["gsc.v1"],
+            priority_score=50,
+            score_explanation={},
+        )
+        assert replacement.id != approved.id
+        # The ordinary retirement path leaves an approved row exactly as it found it.
+        retired = await service._retire_superseded(
+            session,
+            organization.id,
+            website.id,
+            await _attributed(session, organization.id, replacement),
+            QUERY,
+            "keep-1",
+        )
+        assert retired == 0
+        await session.refresh(approved)
+        assert approved.status == "approved" and approved.active_marker == "active"
+
+        await service.analyze(session, organization.id, location_id=None, correlation_id="keep-2")
+
+        await session.refresh(approved)
+        assert approved.status == "archived"
+        events = list(
+            await session.scalars(
+                select(AuditEvent).where(
+                    AuditEvent.organization_id == organization.id,
+                    AuditEvent.event_type == "seo.opportunity.archived",
+                    AuditEvent.resource_id == approved.id,
+                )
+            )
+        )
+        assert [event.event_metadata["reason"] for event in events] == [
+            "legacy_approval_superseded"
+        ]
+
+
+async def _attributed(
+    session: AsyncSession, organization_id: UUID, like: SEOOpportunity
+) -> SEOOpportunity:
+    """Mark `like` attributed to a page so it can act as the superseding opportunity."""
+    page_id = await session.scalar(
+        select(SEOPage.id).where(SEOPage.organization_id == organization_id)
+    )
+    like.page_id = page_id
+    like.attribution_state = "attributed"
+    await session.flush()
+    return like

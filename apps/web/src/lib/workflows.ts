@@ -208,3 +208,99 @@ export function updateSchedule(
     },
   );
 }
+
+const TERMINAL_RUN_STATUSES = new Set([
+  "completed",
+  "partially_completed",
+  "failed",
+  "cancelled",
+  "expired",
+  "escalated",
+]);
+
+/**
+ * Operator-facing copy for the typed codes a queued sync can end with. The
+ * backend reports a code, never prose; this is the only place a code becomes a
+ * sentence, and an unknown code falls back to a generic line that still shows it.
+ */
+const RUN_FAILURE_COPY: Record<string, string> = {
+  INTEGRATION_RECONNECT_REQUIRED:
+    "Google needs to be reconnected in Integrations before this can sync.",
+  SEARCH_CONSOLE_SCOPE_REQUIRED:
+    "Reconnect Google and grant Search Console access, then sync again.",
+  ANALYTICS_SCOPE_REQUIRED:
+    "Reconnect Google and grant Analytics access, then sync again.",
+  SEARCH_CONSOLE_SYNC_INCOMPLETE:
+    "Google did not return every report. Your previous data is unchanged; try again shortly.",
+  ANALYTICS_SYNC_INCOMPLETE:
+    "Google did not return every report. Your previous data is unchanged; try again shortly.",
+  SEARCH_CONSOLE_SYNC_FAILED: "The sync failed. Try again shortly.",
+  ANALYTICS_SYNC_FAILED: "The sync failed. Try again shortly.",
+  SEARCH_PROPERTY_NOT_FOUND: "This property is no longer mapped.",
+  ANALYTICS_PROPERTY_NOT_FOUND: "This property is no longer mapped.",
+};
+
+export function describeRunFailureCode(code: string | null): string {
+  if (code && RUN_FAILURE_COPY[code]) return RUN_FAILURE_COPY[code];
+  return code
+    ? `The sync did not finish (${code}).`
+    : "The sync did not finish.";
+}
+
+/**
+ * Poll a queued workflow run until it reaches a terminal state.
+ *
+ * Resolves `ok` with the run when it completed, and otherwise an `error`
+ * outcome, so callers render it with the same `describeFailure` path as any
+ * other request: `WORKFLOW_RUN_FAILED` carries the run's typed failure code in
+ * `details`, and `WORKFLOW_RUN_PENDING` means it is still working in the background.
+ */
+export async function waitForWorkflowRun(
+  organizationId: string,
+  runId: string,
+  options: {
+    intervalMs?: number;
+    timeoutMs?: number;
+    sleep?: (ms: number) => Promise<void>;
+  } = {},
+): Promise<ApiOutcome<WorkflowRunDetail>> {
+  const intervalMs = options.intervalMs ?? 2_000;
+  const timeoutMs = options.timeoutMs ?? 300_000;
+  const sleep =
+    options.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
+  let waited = 0;
+  for (;;) {
+    const outcome = await getWorkflowRun(organizationId, runId);
+    if (outcome.kind !== "ok") return outcome;
+    const run = outcome.data;
+    if (TERMINAL_RUN_STATUSES.has(run.status)) {
+      if (run.status === "completed" || run.status === "partially_completed") {
+        return outcome;
+      }
+      return {
+        kind: "error",
+        status: 409,
+        code: "WORKFLOW_RUN_FAILED",
+        message: describeRunFailureCode(run.failure_code),
+        details: [
+          {
+            code: run.failure_code ?? run.status,
+            message: describeRunFailureCode(run.failure_code),
+          },
+        ],
+      };
+    }
+    if (waited >= timeoutMs) {
+      return {
+        kind: "error",
+        status: 202,
+        code: "WORKFLOW_RUN_PENDING",
+        message:
+          "The sync is still running in the background. Reload in a few minutes to see the result.",
+        details: [],
+      };
+    }
+    await sleep(intervalMs);
+    waited += intervalMs;
+  }
+}

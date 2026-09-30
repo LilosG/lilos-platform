@@ -10,6 +10,7 @@ from time import monotonic
 from typing import Any, cast
 from uuid import UUID
 
+from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -48,6 +49,7 @@ from apps.api.app.products.gbp.post_generation_models import GBPPostAsset
 from apps.api.app.products.gbp.service import GBPService
 from apps.api.app.products.leads.service import LeadService
 from apps.api.app.products.reviews.service import ReviewService
+from apps.api.app.products.seo.change_set import SiteChangeField, SiteChangeItem, SiteChangeSet
 from apps.api.app.products.seo.contracts import CrawlRequest, RecommendationCreate
 from apps.api.app.products.seo.decision import (
     SEOEvidenceInvalidError,
@@ -62,6 +64,18 @@ from apps.api.app.products.seo.service import SEOService
 
 class AgentToolDeniedError(ValueError):
     pass
+
+
+class SiteChangeInvalidError(AgentToolDeniedError):
+    """A proposed site change failed deterministic validation; Hermes may correct it.
+
+    Raised before anything is staged, so the run's one allowed proposal is not spent.
+    """
+
+    code = "SITE_CHANGE_INVALID"
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(f"{self.code}: {reason}")
 
 
 @dataclass(frozen=True, slots=True)
@@ -92,6 +106,7 @@ TOOL_SPECS: dict[str, ToolSpec] = {
                 "expected_result_hypothesis",
                 "risk",
                 "effort",
+                "site_changes",
             }
         ),
         mutating=True,
@@ -201,6 +216,67 @@ def _is_truncated(text: str | None, limit: int = REVIEW_BODY_EXCERPT_CHARACTERS)
     if text is None:
         return False
     return len(" ".join(str(text).split())) > limit
+
+
+def build_change_set(raw: object, opportunity: Any, context: object) -> dict[str, object]:
+    """Turn Hermes' proposed replacements into a validated `SiteChangeSet`.
+
+    `current_value` is taken from the repo-read context the run was started with --
+    never from Hermes -- and every proposed value is checked deterministically (title
+    at most 60 characters, meta description at most 160, non-empty, different from
+    the current value) by `SiteChangeItem`. Any problem is a typed, correctable error.
+    """
+    if not isinstance(raw, list) or not raw:
+        raise SiteChangeInvalidError("site_changes must be a non-empty list")
+    if not isinstance(context, dict) or context.get("status") != "available":
+        code = context.get("code") if isinstance(context, dict) else None
+        raise SiteChangeInvalidError(
+            f"this page has no readable mapped fields ({code or 'SITE_MAPPING_REQUIRED'}); "
+            "omit site_changes and describe the change in proposed_action"
+        )
+    if opportunity.page_id is None or context.get("page_id") != str(opportunity.page_id):
+        raise SiteChangeInvalidError("the page context does not match this opportunity")
+    current_values = context.get("fields")
+    if not isinstance(current_values, dict):
+        raise SiteChangeInvalidError("the page context has no field values")
+
+    items: list[SiteChangeItem] = []
+    seen: set[SiteChangeField] = set()
+    for entry in raw[:20]:
+        if not isinstance(entry, dict) or set(entry) != {"field", "proposed_value", "rationale"}:
+            raise SiteChangeInvalidError(
+                "each site change needs exactly field, proposed_value and rationale"
+            )
+        try:
+            field = SiteChangeField(str(entry["field"]))
+        except ValueError:
+            raise SiteChangeInvalidError(f"unknown field {str(entry['field'])[:40]!r}") from None
+        current = current_values.get(field.value)
+        if not isinstance(current, str):
+            raise SiteChangeInvalidError(
+                f"{field.value} is not mapped for this page; mapped fields: "
+                f"{sorted(str(key) for key in current_values)}"
+            )
+        if field in seen:
+            raise SiteChangeInvalidError(f"{field.value} appears more than once")
+        seen.add(field)
+        try:
+            items.append(
+                SiteChangeItem(
+                    page_id=opportunity.page_id,
+                    field=field,
+                    current_value=current,
+                    proposed_value=str(entry["proposed_value"]),
+                    rationale=str(entry["rationale"]),
+                )
+            )
+        except ValidationError as exc:
+            message = str(exc.errors()[0]["msg"]).removeprefix("Value error, ")
+            raise SiteChangeInvalidError(message) from None
+    try:
+        return SiteChangeSet(items=items).model_dump(mode="json")
+    except ValidationError as exc:
+        raise SiteChangeInvalidError(str(exc.errors()[0]["msg"])) from None
 
 
 class AgentToolService:
@@ -965,6 +1041,13 @@ class AgentToolService:
                             "evidence": opportunity.evidence,
                             "source_versions": opportunity.source_versions,
                             "governed_decision": decision,
+                            # Current page values, read from the client repo through the
+                            # page map when the run started -- evidence, not a guess. Propose
+                            # replacements with `site_changes`; never restate current text.
+                            "site_change_context": (workflow.input_document or {}).get(
+                                "site_change_context"
+                            )
+                            or {"status": "not_applicable"},
                         }
                     ],
                     "approved_growth_handoffs": [],
@@ -1044,16 +1127,19 @@ class AgentToolService:
         workflow = await session.get(WorkflowRun, run.workflow_run_id)
         bound_id = workflow.input_document.get("seo_opportunity_id") if workflow else None
         if bound_id is not None:
-            if set(arguments) != {
+            if set(arguments) - {"site_changes"} != {
                 "proposed_action",
                 "expected_result_hypothesis",
                 "risk",
                 "effort",
             }:
                 raise AgentToolDeniedError(
-                    "Bound SEO reasoning accepts only action, hypothesis, risk, and effort"
+                    "Bound SEO reasoning accepts only action, hypothesis, risk, effort, "
+                    "and optional site_changes"
                 )
             opportunity_id = _uuid(bound_id, "seo_opportunity_id")
+        elif "site_changes" in arguments:
+            raise AgentToolDeniedError("site_changes is only accepted for a bound opportunity")
         else:
             opportunity_id = _uuid(arguments.get("opportunity_id"), "opportunity_id")
         opportunity = await self.seo.get_opportunity(session, run.organization_id, opportunity_id)
@@ -1087,14 +1173,20 @@ class AgentToolService:
             effort=cast(Any, str(arguments.get("effort") or "medium")),
         )
         if bound_id is not None:
-            run.final_output = {
-                "seo_pending_proposal": {
-                    "proposed_action": command.proposed_action,
-                    "expected_result_hypothesis": command.expected_result_hypothesis,
-                    "risk": command.risk,
-                    "effort": command.effort,
-                }
+            pending: dict[str, object] = {
+                "proposed_action": command.proposed_action,
+                "expected_result_hypothesis": command.expected_result_hypothesis,
+                "risk": command.risk,
+                "effort": command.effort,
             }
+            if "site_changes" in arguments:
+                assert workflow is not None
+                pending["change_set"] = build_change_set(
+                    arguments["site_changes"],
+                    opportunity,
+                    workflow.input_document.get("site_change_context"),
+                )
+            run.final_output = {"seo_pending_proposal": pending}
             return {
                 "data": {"accepted": True},
                 "source_references": [source_ref],

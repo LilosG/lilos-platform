@@ -1,3 +1,4 @@
+import { waitForWorkflowRun } from "./workflows";
 import { apiGet, apiRequest, type ApiOutcome } from "./api-client";
 
 export type DiscoveredSearchProperty = {
@@ -79,8 +80,6 @@ export type SearchConsolePerformanceReport = {
   }[];
 };
 
-const PROVIDER_SYNC_TIMEOUT_MS = 90_000;
-
 function seoBase(organizationId: string): string {
   return `/api/v1/organizations/${organizationId}/seo`;
 }
@@ -118,20 +117,40 @@ export function mapSearchConsole(
   );
 }
 
+export type SyncQueued = {
+  workflow_run_id: string;
+  workflow_key: string;
+  status: string;
+};
+
+/** Queue a sync for the worker. Returns at once; the run does the provider work. */
 export function syncSearchConsole(
   organizationId: string,
   websiteId: string,
   searchPropertyId: string,
   days = 28,
-): Promise<ApiOutcome<{ search_property_id: string; rows_synced: number }>> {
+): Promise<ApiOutcome<SyncQueued & { search_property_id: string }>> {
   return apiRequest(
     `${seoBase(organizationId)}/websites/${websiteId}/search-properties/${searchPropertyId}/sync`,
-    {
-      method: "POST",
-      body: { days },
-      timeoutMs: PROVIDER_SYNC_TIMEOUT_MS,
-    },
+    { method: "POST", body: { days } },
   );
+}
+
+/** Queue a sync and wait for the worker to finish it. */
+export async function syncSearchConsoleToCompletion(
+  organizationId: string,
+  websiteId: string,
+  searchPropertyId: string,
+  days = 28,
+): Promise<ApiOutcome<unknown>> {
+  const queued = await syncSearchConsole(
+    organizationId,
+    websiteId,
+    searchPropertyId,
+    days,
+  );
+  if (queued.kind !== "ok") return queued;
+  return waitForWorkflowRun(organizationId, queued.data.workflow_run_id);
 }
 
 export async function fetchSearchConsolePerformance(

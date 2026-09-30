@@ -62,6 +62,9 @@ class RecommendationCreate(BaseModel):
     expected_result_hypothesis: str = Field(min_length=1, max_length=2000)
     risk: Literal["low", "medium", "high"]
     effort: Literal["low", "medium", "high"]
+    # A `SiteChangeSet` (as JSON) when Hermes proposes exact page edits. Validated and
+    # bound to the opportunity's own page when the recommendation is created.
+    change_set: dict[str, object] | None = None
 
 
 class RecommendationDecision(BaseModel):

@@ -1643,6 +1643,7 @@ class ContentService:
             raise ContentTargetNotConfiguredError
         from apps.api.app.products.content.target_contract_catalog import (
             contract_for_repository,
+            site_change_prefixes_for_repository,
         )
 
         target = PublishingTarget(
@@ -1655,6 +1656,7 @@ class ContentService:
             allowed_path_prefix=command.allowed_path_prefix,
             deployment_target_reference=command.deployment_target_reference,
             frontmatter_contract=contract_for_repository(command.repository_id),
+            allowed_site_change_prefixes=site_change_prefixes_for_repository(command.repository_id),
             status="active",
             version=1,
         )

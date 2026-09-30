@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import PurePosixPath
 from uuid import UUID
@@ -13,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from apps.api.app.config import Settings
 from apps.api.app.execution.models import Job, WorkflowRun
 from apps.api.app.execution.service import ExecutionService
+from apps.api.app.growth.action_types import is_site_change_action
 from apps.api.app.integrations.models import IntegrationConnection
 from apps.api.app.products.content.contracts import ApprovalDecision, PublicationCreate
 from apps.api.app.products.content.errors import (
@@ -33,12 +35,12 @@ from apps.api.app.products.content.github_app_service import (
 from apps.api.app.products.content.models import (
     ContentBrief,
     ContentItem,
+    ContentOpportunity,
     ContentPublication,
     ContentRevision,
     PublishingTarget,
 )
 from apps.api.app.products.content.service import ContentService, build_publishable_frontmatter
-from apps.api.app.site_change_policy import is_technical_site_change
 
 _IMAGE_EXTENSIONS = {".avif", ".gif", ".jpeg", ".jpg", ".png", ".webp"}
 _ACTIVE_PUBLICATION_STATES = {
@@ -114,7 +116,10 @@ class ContentOperatorService:
         for revision in revisions:
             latest_revision.setdefault(revision.content_item_id, revision)
         for publication in publications:
-            latest_publication.setdefault(publication.content_item_id, publication)
+            # The query matches content items only, so a site-change row (no item)
+            # cannot appear; the guard narrows the nullable column for the type checker.
+            if publication.content_item_id is not None:
+                latest_publication.setdefault(publication.content_item_id, publication)
         run_ids = [publication.workflow_run_id for publication in latest_publication.values()]
         jobs = list(
             await session.scalars(
@@ -126,6 +131,7 @@ class ContentOperatorService:
         latest_job_status: dict[UUID, str] = {}
         for job in jobs:
             latest_job_status.setdefault(job.workflow_run_id, job.status)
+        opportunity_types = await self._opportunity_types(session, organization_id, items)
         return [
             self._summary(
                 item,
@@ -134,6 +140,7 @@ class ContentOperatorService:
                 latest_job_status.get(latest_publication[item.id].workflow_run_id)
                 if item.id in latest_publication
                 else None,
+                opportunity_type=opportunity_types.get(item.id),
             )
             for item in items
         ], has_more
@@ -173,7 +180,15 @@ class ContentOperatorService:
             str(target.id): self._requirements(target, latest_revision) for target in targets
         }
         return {
-            **self._summary(item, latest_revision, latest_publication, job_status),
+            **self._summary(
+                item,
+                latest_revision,
+                latest_publication,
+                job_status,
+                opportunity_type=(
+                    await self._opportunity_types(session, organization_id, [item])
+                ).get(item.id),
+            ),
             "briefs": [self._brief_row(brief) for brief in briefs],
             "revisions": [self._revision_row(revision) for revision in revisions],
             "publications": [self._publication_row(publication) for publication in publications],
@@ -252,7 +267,9 @@ class ContentOperatorService:
         revision = await self._approved_revision(session, organization_id, item)
         if revision is None:
             raise ContentPublicationRequiresApprovedRevisionError
-        if self._technical_site_change(item, revision):
+        if self._technical_site_change(
+            (await self._opportunity_types(session, organization_id, [item])).get(item.id)
+        ):
             raise ContentTechnicalSiteChangeRequiresSEOError
         targets = [
             target
@@ -523,11 +540,13 @@ class ContentOperatorService:
         revision: ContentRevision | None,
         publication: ContentPublication | None,
         job_status: str | None = None,
+        *,
+        opportunity_type: str | None = None,
     ) -> dict[str, object]:
         stage, next_action = ContentOperatorService._operator_state(
             item, revision, publication, job_status
         )
-        technical_site_change = ContentOperatorService._technical_site_change(item, revision)
+        technical_site_change = ContentOperatorService._technical_site_change(opportunity_type)
         if technical_site_change:
             next_action = {"key": "seo_implementation", "label": "Continue in SEO"}
         return {
@@ -547,15 +566,34 @@ class ContentOperatorService:
         }
 
     @staticmethod
-    def _technical_site_change(
-        item: ContentItem,
-        revision: ContentRevision | None,
-    ) -> bool:
-        return is_technical_site_change(
-            item.title,
-            item.slug,
-            revision.body if revision is not None else None,
+    def _technical_site_change(opportunity_type: str | None) -> bool:
+        """True when this item's source opportunity is a typed governed site change.
+
+        The signal is the closed `opportunity_type` the item was created from
+        (`GrowthActionType`), never its title, slug or body text.
+        """
+        return is_site_change_action(opportunity_type)
+
+    @staticmethod
+    async def _opportunity_types(
+        session: AsyncSession, organization_id: UUID, items: Sequence[ContentItem]
+    ) -> dict[UUID, str]:
+        """Source `opportunity_type` per item, in one tenant-scoped query."""
+        opportunity_ids = {item.opportunity_id for item in items if item.opportunity_id}
+        if not opportunity_ids:
+            return {}
+        rows = await session.execute(
+            select(ContentOpportunity.id, ContentOpportunity.opportunity_type).where(
+                ContentOpportunity.organization_id == organization_id,
+                ContentOpportunity.id.in_(opportunity_ids),
+            )
         )
+        by_opportunity = {row.id: row.opportunity_type for row in rows}
+        return {
+            item.id: by_opportunity[item.opportunity_id]
+            for item in items
+            if item.opportunity_id in by_opportunity
+        }
 
     @staticmethod
     def _operator_state(

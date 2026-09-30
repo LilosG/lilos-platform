@@ -57,6 +57,8 @@ from apps.api.app.reporting_periods import (
     reporting_window,
 )
 
+from .scope import SharedSessionScope
+
 
 class _PageEvidenceSection(TypedDict):
     items: list[dict[str, object]]
@@ -398,7 +400,12 @@ async def test_gsc_page_query_and_query_only_mapping_contract(
             correlation_id="map",
         )
         await service.sync_observations(
-            session, settings, org.id, prop.id, actor_id=None, correlation_id="sync"
+            SharedSessionScope(session),
+            settings,
+            org.id,
+            prop.id,
+            actor_id=None,
+            correlation_id="sync",
         )
         rows = list(
             await session.scalars(
@@ -466,7 +473,12 @@ async def test_gsc_page_query_and_query_only_mapping_contract(
             correlation_id="remap",
         )
         await service.sync_observations(
-            session, settings, org.id, prop.id, actor_id=None, correlation_id="resync"
+            SharedSessionScope(session),
+            settings,
+            org.id,
+            prop.id,
+            actor_id=None,
+            correlation_id="resync",
         )
         page_rows = list(
             await session.scalars(
@@ -788,7 +800,12 @@ async def test_gsc_page_rows_use_chunked_upserts_without_per_row_selects(
         event.listen(engine, "before_cursor_execute", inspect_statement)
         try:
             await service.sync_observations(
-                session, settings, org.id, prop.id, actor_id=None, correlation_id="sync"
+                SharedSessionScope(session),
+                settings,
+                org.id,
+                prop.id,
+                actor_id=None,
+                correlation_id="sync",
             )
         finally:
             event.remove(engine, "before_cursor_execute", inspect_statement)
@@ -990,7 +1007,12 @@ async def test_search_console_discover_recommend_map_and_sync(
 
         # Sync pulls real modeled metrics into SEOSearchObservation.
         result = await service.sync_observations(
-            session, settings, org.id, mapped.id, actor_id=None, correlation_id="s1"
+            SharedSessionScope(session),
+            settings,
+            org.id,
+            mapped.id,
+            actor_id=None,
+            correlation_id="s1",
         )
         # 3 × (1 current summary + 1 prior summary + 2 daily + 2 query + 2 page) = 24 upserts;
         # daily rows dedup across periods (same day boundaries) → 20 stored
@@ -1057,13 +1079,23 @@ async def test_search_console_sync_is_idempotent_on_repeat(
             correlation_id="m1",
         )
         first_result = await service.sync_observations(
-            session, settings, org.id, mapped.id, actor_id=None, correlation_id="s1"
+            SharedSessionScope(session),
+            settings,
+            org.id,
+            mapped.id,
+            actor_id=None,
+            correlation_id="s1",
         )
         # 3 periods × (1 current summary + 1 prior summary + 1 query) = 9 upserts
         assert first_result["rows_synced"] == 9
         # Second sync upserts in place rather than duplicating rows.
         await service.sync_observations(
-            session, settings, org.id, mapped.id, actor_id=None, correlation_id="s2"
+            SharedSessionScope(session),
+            settings,
+            org.id,
+            mapped.id,
+            actor_id=None,
+            correlation_id="s2",
         )
         await session.flush()
         observations = list(
@@ -1220,7 +1252,12 @@ async def test_search_console_sync_sends_exact_inclusive_provider_dates(
             correlation_id="m1",
         )
         await service.sync_observations(
-            session, settings, org.id, mapped.id, actor_id=None, correlation_id="s1"
+            SharedSessionScope(session),
+            settings,
+            org.id,
+            mapped.id,
+            actor_id=None,
+            correlation_id="s1",
         )
 
         # Current site-summary windows must each span exactly 7/28/90 inclusive dates.
@@ -1296,7 +1333,12 @@ async def test_search_console_performance_report_current_and_prior_from_single_s
             correlation_id="m1",
         )
         await service.sync_observations(
-            session, settings, org.id, mapped.id, actor_id=None, correlation_id="s1"
+            SharedSessionScope(session),
+            settings,
+            org.id,
+            mapped.id,
+            actor_id=None,
+            correlation_id="s1",
         )
 
         for days in (7, 28, 90):
@@ -1615,7 +1657,12 @@ async def test_search_console_report_anchored_to_stored_window_across_rollover(
         service = SearchConsoleService(adapter=fake)
         mapped, website = await _setup_mapped_gsc(session, settings, org, fake)
         await service.sync_observations(
-            session, settings, org.id, mapped.id, actor_id=None, correlation_id="s1"
+            SharedSessionScope(session),
+            settings,
+            org.id,
+            mapped.id,
+            actor_id=None,
+            correlation_id="s1",
         )
 
         _FrozenDateTime.frozen_now = day_n1
@@ -1667,7 +1714,12 @@ async def test_search_console_partial_sync_preserves_previous_freshness(
         mapped, website = await _setup_mapped_gsc(session, settings, org, fake)
 
         first = await service.sync_observations(
-            session, settings, org.id, mapped.id, actor_id=None, correlation_id="s1"
+            SharedSessionScope(session),
+            settings,
+            org.id,
+            mapped.id,
+            actor_id=None,
+            correlation_id="s1",
         )
         assert first["freshness_status"] == "fresh"
         prop_before = await session.scalar(
@@ -1680,7 +1732,12 @@ async def test_search_console_partial_sync_preserves_previous_freshness(
         cur90_start, _ = reporting_window(day_n, 90, GSC_SYNC_TAIL_EXCLUSION_DAYS)
         fake._fail_on_start = {provider_start_date(cur90_start)}
         second = await service.sync_observations(
-            session, settings, org.id, mapped.id, actor_id=None, correlation_id="s2"
+            SharedSessionScope(session),
+            settings,
+            org.id,
+            mapped.id,
+            actor_id=None,
+            correlation_id="s2",
         )
         assert second["freshness_status"] == "stale"
         assert second["rows_synced"] == 0
@@ -1732,7 +1789,12 @@ async def test_search_console_total_first_sync_failure_is_never_synced(
         mapped, website = await _setup_mapped_gsc(session, settings, org, fake)
 
         result = await service.sync_observations(
-            session, settings, org.id, mapped.id, actor_id=None, correlation_id="s1"
+            SharedSessionScope(session),
+            settings,
+            org.id,
+            mapped.id,
+            actor_id=None,
+            correlation_id="s1",
         )
         assert result["freshness_status"] == "never_synced"
         assert result["rows_synced"] == 0
@@ -1796,7 +1858,12 @@ async def test_search_console_sync_failure_tenant_isolation(
             correlation_id="ma",
         )
         result_a = await service_a.sync_observations(
-            session, settings, org_a.id, mapped_a.id, actor_id=None, correlation_id="sa"
+            SharedSessionScope(session),
+            settings,
+            org_a.id,
+            mapped_a.id,
+            actor_id=None,
+            correlation_id="sa",
         )
         assert result_a["freshness_status"] == "fresh"
 
@@ -1821,7 +1888,12 @@ async def test_search_console_sync_failure_tenant_isolation(
             correlation_id="mb",
         )
         result_b = await service_b.sync_observations(
-            session, settings, org_b.id, mapped_b.id, actor_id=None, correlation_id="sb"
+            SharedSessionScope(session),
+            settings,
+            org_b.id,
+            mapped_b.id,
+            actor_id=None,
+            correlation_id="sb",
         )
         assert result_b["freshness_status"] == "never_synced"
 
@@ -1874,7 +1946,12 @@ async def test_search_console_empty_current_summary_persists_zero_observation(
         service = SearchConsoleService(adapter=fake1)
         mapped, website = await _setup_mapped_gsc(session, settings, org, fake1)
         result = await service.sync_observations(
-            session, settings, org.id, mapped.id, actor_id=None, correlation_id="s1"
+            SharedSessionScope(session),
+            settings,
+            org.id,
+            mapped.id,
+            actor_id=None,
+            correlation_id="s1",
         )
         assert result["freshness_status"] == "fresh"
         assert mapped.last_synced_at is not None
@@ -1905,7 +1982,12 @@ async def test_search_console_empty_current_summary_persists_zero_observation(
         )
         service2 = SearchConsoleService(adapter=fake2)
         result2 = await service2.sync_observations(
-            session, settings, org.id, mapped.id, actor_id=None, correlation_id="s2"
+            SharedSessionScope(session),
+            settings,
+            org.id,
+            mapped.id,
+            actor_id=None,
+            correlation_id="s2",
         )
         assert result2["freshness_status"] == "fresh"
         await session.refresh(mapped)
@@ -1935,7 +2017,12 @@ async def test_search_console_empty_current_summary_persists_zero_observation(
 
         # Repeated empty sync is idempotent
         result3 = await service2.sync_observations(
-            session, settings, org.id, mapped.id, actor_id=None, correlation_id="s3"
+            SharedSessionScope(session),
+            settings,
+            org.id,
+            mapped.id,
+            actor_id=None,
+            correlation_id="s3",
         )
         assert result3["freshness_status"] == "fresh"
         report3 = await service2.performance_report(session, org.id, website.id, days=28)
@@ -1980,7 +2067,12 @@ async def test_search_console_empty_prior_summary_does_not_substitute_stale_prio
         service = SearchConsoleService(adapter=fake)
         mapped, website = await _setup_mapped_gsc(session, settings, org, fake)
         await service.sync_observations(
-            session, settings, org.id, mapped.id, actor_id=None, correlation_id="s1"
+            SharedSessionScope(session),
+            settings,
+            org.id,
+            mapped.id,
+            actor_id=None,
+            correlation_id="s1",
         )
 
         report = await service.performance_report(session, org.id, website.id, days=28)
@@ -2035,7 +2127,12 @@ async def test_search_console_ctr_position_decimal_deltas(
         service = SearchConsoleService(adapter=fake)
         mapped, website = await _setup_mapped_gsc(session, settings, org, fake)
         await service.sync_observations(
-            session, settings, org.id, mapped.id, actor_id=None, correlation_id="s1"
+            SharedSessionScope(session),
+            settings,
+            org.id,
+            mapped.id,
+            actor_id=None,
+            correlation_id="s1",
         )
 
         report = await service.performance_report(session, org.id, website.id, days=28)
@@ -2112,7 +2209,12 @@ async def test_top_queries_exact_window_no_cross_period_leak(
         service = SearchConsoleService(adapter=fake)
         mapped, website = await _setup_mapped_gsc(session, settings, org, fake)
         await service.sync_observations(
-            session, settings, org.id, mapped.id, actor_id=None, correlation_id="s1"
+            SharedSessionScope(session),
+            settings,
+            org.id,
+            mapped.id,
+            actor_id=None,
+            correlation_id="s1",
         )
 
         # 7d report → only 7d "wheyland electric" (8 clicks / 30 impressions)
@@ -2178,7 +2280,12 @@ async def test_top_pages_exact_window_no_cross_period_leak(
         service = SearchConsoleService(adapter=fake)
         mapped, website = await _setup_mapped_gsc(session, settings, org, fake)
         await service.sync_observations(
-            session, settings, org.id, mapped.id, actor_id=None, correlation_id="s1"
+            SharedSessionScope(session),
+            settings,
+            org.id,
+            mapped.id,
+            actor_id=None,
+            correlation_id="s1",
         )
 
         r7 = await service.performance_report(session, org.id, website.id, days=7)
@@ -2244,7 +2351,12 @@ async def test_daily_series_still_uses_containment_not_exact_window(
         service = SearchConsoleService(adapter=fake)
         mapped, website = await _setup_mapped_gsc(session, settings, org, fake)
         await service.sync_observations(
-            session, settings, org.id, mapped.id, actor_id=None, correlation_id="s1"
+            SharedSessionScope(session),
+            settings,
+            org.id,
+            mapped.id,
+            actor_id=None,
+            correlation_id="s1",
         )
 
         # All three periods produce the same daily_date row, each stored with
@@ -2301,7 +2413,12 @@ async def test_site_summary_kpi_unaffected_by_exact_window_fix(
         service = SearchConsoleService(adapter=fake)
         mapped, website = await _setup_mapped_gsc(session, settings, org, fake)
         await service.sync_observations(
-            session, settings, org.id, mapped.id, actor_id=None, correlation_id="s1"
+            SharedSessionScope(session),
+            settings,
+            org.id,
+            mapped.id,
+            actor_id=None,
+            correlation_id="s1",
         )
 
         r7 = await service.performance_report(session, org.id, website.id, days=7)

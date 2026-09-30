@@ -66,6 +66,16 @@ GOOGLE_SCOPE_PRODUCTS: dict[str, str] = {
     ANALYTICS_SCOPE: "analytics",
 }
 REFRESH_SKEW = timedelta(minutes=5)
+
+
+@dataclass(frozen=True, slots=True)
+class TokenRefreshPlan:
+    """What a token read decided: use this access token, or exchange this refresh token."""
+
+    access_token: str | None
+    refresh_token: str | None
+
+
 DEFAULT_TOKEN_LIFETIME_SECONDS = 3600
 
 
@@ -587,7 +597,31 @@ class GBPConnectionService:
     async def ensure_fresh_token(
         self, session: AsyncSession, settings: Settings, connection: IntegrationConnection
     ) -> str:
-        """Return a valid access token, refreshing via Google if it is near expiry."""
+        """Return a valid access token, refreshing via Google if it is near expiry.
+
+        Holds the caller's transaction across the refresh request. Long-running
+        callers that must not do that use the three steps below directly.
+        """
+        plan = await self.begin_token_refresh(session, settings, connection)
+        if plan.access_token is not None:
+            return plan.access_token
+        assert plan.refresh_token is not None
+        try:
+            payload = await self.refresh_token_pair(settings, plan.refresh_token)
+        except IntegrationTokenExchangeFailedError:
+            await self.fail_token_refresh(session, connection)
+            raise IntegrationReconnectRequiredError from None
+        return await self.complete_token_refresh(session, settings, connection, plan, payload)
+
+    async def begin_token_refresh(
+        self, session: AsyncSession, settings: Settings, connection: IntegrationConnection
+    ) -> TokenRefreshPlan:
+        """Read the stored credentials and say whether a provider refresh is needed.
+
+        Database reads only. When the token is still fresh the plan carries the
+        access token; otherwise it carries the refresh token to exchange, and the
+        caller does that HTTP call with no transaction open.
+        """
         if not connection.credential_reference:
             raise IntegrationReconnectRequiredError
         tokens = await self._read_tokens(session, settings, connection.credential_reference)
@@ -596,27 +630,45 @@ class GBPConnectionService:
             connection.token_expires_at is not None
             and connection.token_expires_at - now > REFRESH_SKEW
         ):
-            return tokens["access_token"]
-        try:
-            payload = await self.refresh_token_pair(settings, tokens["refresh_token"])
-        except IntegrationTokenExchangeFailedError:
-            connection.status = "reconnect_required"
-            await session.flush()
-            await self._audit(
-                session,
-                event="gbp.connection.reconnect_required",
-                organization_id=connection.organization_id,
-                actor_id=None,
-                resource_type="integration_connection",
-                resource_id=connection.id,
-                correlation_id="gbp.connection.reconnect_required",
-                summary="GBP token refresh failed; reconnect required.",
-                metadata={"status": connection.status},
-                result=AuditResult.FAILED,
-            )
-            raise IntegrationReconnectRequiredError from None
+            return TokenRefreshPlan(access_token=tokens["access_token"], refresh_token=None)
+        return TokenRefreshPlan(access_token=None, refresh_token=tokens["refresh_token"])
+
+    async def fail_token_refresh(
+        self, session: AsyncSession, connection: IntegrationConnection
+    ) -> None:
+        """Record that the provider rejected the refresh; the caller commits, then raises.
+
+        Persisting this in its own short transaction keeps the `reconnect_required`
+        status and its audit row from being lost when the error unwinds the caller.
+        """
+        connection.status = "reconnect_required"
+        await session.flush()
+        await self._audit(
+            session,
+            event="gbp.connection.reconnect_required",
+            organization_id=connection.organization_id,
+            actor_id=None,
+            resource_type="integration_connection",
+            resource_id=connection.id,
+            correlation_id="gbp.connection.reconnect_required",
+            summary="GBP token refresh failed; reconnect required.",
+            metadata={"status": connection.status},
+            result=AuditResult.FAILED,
+        )
+
+    async def complete_token_refresh(
+        self,
+        session: AsyncSession,
+        settings: Settings,
+        connection: IntegrationConnection,
+        plan: TokenRefreshPlan,
+        payload: dict[str, object],
+    ) -> str:
+        """Persist a successful provider refresh and return the new access token."""
+        assert plan.refresh_token is not None
+        now = datetime.now(UTC)
         new_access_token = str(payload["access_token"])
-        new_refresh_token = str(payload.get("refresh_token") or tokens["refresh_token"])
+        new_refresh_token = str(payload.get("refresh_token") or plan.refresh_token)
         expires_in = int(cast(int, payload.get("expires_in", DEFAULT_TOKEN_LIFETIME_SECONDS)))
         refreshed_scope = payload.get("scope")
         await self._replace_tokens(

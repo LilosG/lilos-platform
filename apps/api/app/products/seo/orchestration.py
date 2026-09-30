@@ -19,10 +19,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.app.config import Settings
 from apps.api.app.products.content.contracts import OpportunityCreate
+from apps.api.app.products.content.models import ContentPublication
 from apps.api.app.products.content.service import ContentService
 from apps.api.app.products.seo.contracts import RecommendationCreate
 from apps.api.app.products.seo.decision import SEOEvidenceInvalidError
 from apps.api.app.products.seo.models import (
+    SEOImplementationTask,
     SEOOpportunity,
     SEOPage,
     SEORecommendationRevision,
@@ -33,6 +35,7 @@ from apps.api.app.products.seo.models import (
 from apps.api.app.products.seo.pagespeed import PageSpeedService
 from apps.api.app.products.seo.service import (
     SCORE_VERSION,
+    TERMINAL_RECOMMENDATION_STATUSES,
     SEOService,
     normalize_url,
     opportunity_score,
@@ -312,6 +315,9 @@ class SEOOrchestrationService:
                     candidate_pages=attribution.candidate_pages,
                 )
                 touched[opportunity.id] = opportunity
+                await self._retire_superseded(
+                    session, organization_id, website.id, opportunity, query, correlation_id
+                )
 
             if (
                 impressions >= 100
@@ -344,6 +350,9 @@ class SEOOrchestrationService:
                     candidate_pages=attribution.candidate_pages,
                 )
                 touched[opportunity.id] = opportunity
+                await self._retire_superseded(
+                    session, organization_id, website.id, opportunity, query, correlation_id
+                )
 
             # Query-only observations establish demand, never a guessed landing page.
             if (
@@ -470,6 +479,13 @@ class SEOOrchestrationService:
             website.id,
             touched_ids=set(touched),
             evaluated_sources=evaluated_sources,
+            correlation_id=correlation_id,
+        )
+        legacy = await self._resolve_legacy_approved(
+            session, organization_id, website.id, correlation_id
+        )
+        orphaned = await self._withdraw_orphaned_recommendations(
+            session, organization_id, website.id, correlation_id
         )
 
         content_count = 0
@@ -497,6 +513,8 @@ class SEOOrchestrationService:
             "content_opportunities": content_count,
             "recommendations_created": recommendation_count,
             "opportunities_archived": stale_count,
+            "legacy_approved": legacy,
+            "orphaned_recommendations_withdrawn": orphaned,
             "pagespeed": pagespeed_result,
         }
 
@@ -834,6 +852,7 @@ class SEOOrchestrationService:
         *,
         touched_ids: set[UUID],
         evaluated_sources: set[str],
+        correlation_id: str,
     ) -> int:
         """Archive only detector-owned, non-decided opportunities evaluated now."""
         if not evaluated_sources:
@@ -855,22 +874,267 @@ class SEOOrchestrationService:
             source_keys = {str(value) for value in opportunity.source_versions}
             if not source_keys or source_keys.isdisjoint(evaluated_sources):
                 continue
-            opportunity.status = "archived"
-            opportunity.active_marker = opportunity.id.hex[:8]
-            content_opportunity = await self.content.get_opportunity_by_source_reference(
+            await self.archive_opportunity(
                 session,
                 organization_id,
-                f"seo-opportunity:{opportunity.id}",
+                opportunity,
+                reason="stale",
+                superseded_by=None,
+                correlation_id=correlation_id,
             )
-            if content_opportunity is not None and content_opportunity.status in {
-                "identified",
-                "validated",
-            }:
-                content_opportunity.status = "archived"
             archived += 1
-        if archived:
-            await session.flush()
         return archived
+
+    async def archive_opportunity(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        opportunity: SEOOpportunity,
+        *,
+        reason: Literal["stale", "superseded", "legacy_approval_superseded"],
+        superseded_by: UUID | None,
+        correlation_id: str,
+    ) -> None:
+        """The one status transition that retires an opportunity, always audited."""
+        previous_status = opportunity.status
+        opportunity.status = "archived"
+        opportunity.active_marker = opportunity.id.hex[:8]
+        opportunity.version += 1
+        # A recommendation on an archived opportunity can never be acted on, so it is
+        # withdrawn in this same transition rather than left to render as a live item.
+        withdrawn = 0
+        for recommendation in await self.seo.list_recommendations(
+            session, organization_id, opportunity.id
+        ):
+            if await self.seo.withdraw_recommendation(
+                session,
+                organization_id,
+                recommendation,
+                reason=f"opportunity_archived:{reason}",
+                correlation_id=correlation_id,
+            ):
+                withdrawn += 1
+        content_opportunity = await self.content.get_opportunity_by_source_reference(
+            session,
+            organization_id,
+            f"seo-opportunity:{opportunity.id}",
+        )
+        if content_opportunity is not None and content_opportunity.status in {
+            "identified",
+            "validated",
+        }:
+            content_opportunity.status = "archived"
+        await session.flush()
+        await self.seo._audit(
+            session,
+            event="seo.opportunity.archived",
+            organization_id=organization_id,
+            location_id=opportunity.location_id,
+            actor_id=None,
+            resource_type="seo_opportunity",
+            resource_id=opportunity.id,
+            correlation_id=correlation_id,
+            summary=f"SEO opportunity archived ({reason}).",
+            metadata={
+                "reason": reason,
+                "previous_status": previous_status,
+                "superseded_by": str(superseded_by) if superseded_by else None,
+                "recommendations_withdrawn": withdrawn,
+            },
+        )
+
+    async def _in_flight_reason(
+        self, session: AsyncSession, organization_id: UUID, opportunity_id: UUID
+    ) -> str | None:
+        """Why an approved opportunity's work is underway, or None if nothing has started."""
+        revision_ids = list(
+            await session.scalars(
+                select(SEORecommendationRevision.id).where(
+                    SEORecommendationRevision.organization_id == organization_id,
+                    SEORecommendationRevision.opportunity_id == opportunity_id,
+                )
+            )
+        )
+        if not revision_ids:
+            return None
+        task_status = await session.scalar(
+            select(SEOImplementationTask.status)
+            .where(
+                SEOImplementationTask.organization_id == organization_id,
+                SEOImplementationTask.recommendation_revision_id.in_(revision_ids),
+                SEOImplementationTask.status.not_in(("failed", "cancelled")),
+            )
+            .limit(1)
+        )
+        if task_status is not None:
+            return f"implementation_task:{task_status}"
+        publication_status = await session.scalar(
+            select(ContentPublication.status)
+            .where(
+                ContentPublication.organization_id == organization_id,
+                ContentPublication.seo_recommendation_revision_id.in_(revision_ids),
+                ContentPublication.status.not_in(("failed", "checks_failed", "rolled_back")),
+            )
+            .limit(1)
+        )
+        return f"publication:{publication_status}" if publication_status is not None else None
+
+    async def _resolve_legacy_approved(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        website_id: UUID,
+        correlation_id: str,
+    ) -> dict[str, object]:
+        """Settle approvals that predate page attribution: they can never execute.
+
+        An approved `query_only`/`unresolved` opportunity with no implementation task or
+        publication in flight is superseded by an attributed or shared opportunity for the
+        same (website, query, type) when one exists, else moved back to `identified` with
+        its approval withdrawn. Anything already in flight is left alone and listed.
+        """
+        candidates = list(
+            await session.scalars(
+                select(SEOOpportunity).where(
+                    SEOOpportunity.organization_id == organization_id,
+                    SEOOpportunity.website_id == website_id,
+                    SEOOpportunity.active_marker == "active",
+                    SEOOpportunity.status == "approved",
+                    SEOOpportunity.attribution_state.in_(("query_only", "unresolved")),
+                )
+            )
+        )
+        superseded = withdrawn = 0
+        in_flight: list[dict[str, str]] = []
+        for opportunity in candidates:
+            busy = await self._in_flight_reason(session, organization_id, opportunity.id)
+            if busy is not None:
+                in_flight.append({"opportunity_id": str(opportunity.id), "reason": busy})
+                continue
+            query = opportunity.evidence.get("query")
+            replacement = None
+            if isinstance(query, str) and query:
+                replacement = await session.scalar(
+                    select(SEOOpportunity)
+                    .where(
+                        SEOOpportunity.organization_id == organization_id,
+                        SEOOpportunity.website_id == website_id,
+                        SEOOpportunity.opportunity_type == opportunity.opportunity_type,
+                        SEOOpportunity.id != opportunity.id,
+                        SEOOpportunity.active_marker == "active",
+                        SEOOpportunity.attribution_state.in_(("attributed", "shared")),
+                        SEOOpportunity.evidence["query"].as_string() == query,
+                    )
+                    .limit(1)
+                )
+            if replacement is not None:
+                await self.archive_opportunity(
+                    session,
+                    organization_id,
+                    opportunity,
+                    reason="legacy_approval_superseded",
+                    superseded_by=replacement.id,
+                    correlation_id=correlation_id,
+                )
+                superseded += 1
+            else:
+                await self.seo.withdraw_approval(
+                    session,
+                    organization_id,
+                    opportunity,
+                    reason="unattributed_approval_cannot_execute",
+                    correlation_id=correlation_id,
+                )
+                withdrawn += 1
+        return {
+            "superseded": superseded,
+            "approval_withdrawn": withdrawn,
+            "left_in_flight": in_flight,
+        }
+
+    async def _withdraw_orphaned_recommendations(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        website_id: UUID,
+        correlation_id: str,
+    ) -> int:
+        """Withdraw live recommendations still attached to already-archived opportunities.
+
+        Archival now withdraws them in the same transition; this repairs the ones archived
+        before that rule existed, so they stop rendering as actionable.
+        """
+        orphans = list(
+            await session.scalars(
+                select(SEORecommendationRevision)
+                .join(
+                    SEOOpportunity,
+                    (SEOOpportunity.organization_id == SEORecommendationRevision.organization_id)
+                    & (SEOOpportunity.id == SEORecommendationRevision.opportunity_id),
+                )
+                .where(
+                    SEORecommendationRevision.organization_id == organization_id,
+                    SEOOpportunity.website_id == website_id,
+                    SEOOpportunity.status == "archived",
+                    SEORecommendationRevision.status.not_in(
+                        tuple(TERMINAL_RECOMMENDATION_STATUSES)
+                    ),
+                )
+            )
+        )
+        withdrawn = 0
+        for revision in orphans:
+            if await self.seo.withdraw_recommendation(
+                session,
+                organization_id,
+                revision,
+                reason="opportunity_archived:orphaned",
+                correlation_id=correlation_id,
+            ):
+                withdrawn += 1
+        return withdrawn
+
+    async def _retire_superseded(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        website_id: UUID,
+        current: SEOOpportunity,
+        query: str,
+        correlation_id: str,
+    ) -> int:
+        """Archive older rows for the same (website, query, type) under another target key.
+
+        Only an attributed or shared opportunity supersedes; a query-only or
+        unresolved row never retires a page-specific one. Work a human has
+        already decided on (approved/rejected) is never touched.
+        """
+        if current.attribution_state not in {"attributed", "shared"} or not query:
+            return 0
+        older = list(
+            await session.scalars(
+                select(SEOOpportunity).where(
+                    SEOOpportunity.organization_id == organization_id,
+                    SEOOpportunity.website_id == website_id,
+                    SEOOpportunity.opportunity_type == current.opportunity_type,
+                    SEOOpportunity.active_marker == "active",
+                    SEOOpportunity.id != current.id,
+                    SEOOpportunity.deduplication_key != current.deduplication_key,
+                    SEOOpportunity.status.in_(("identified", "recommended")),
+                    SEOOpportunity.evidence["query"].as_string() == query,
+                )
+            )
+        )
+        for opportunity in older:
+            await self.archive_opportunity(
+                session,
+                organization_id,
+                opportunity,
+                reason="superseded",
+                superseded_by=current.id,
+                correlation_id=correlation_id,
+            )
+        return len(older)
 
     async def _ensure_recommendation(
         self,

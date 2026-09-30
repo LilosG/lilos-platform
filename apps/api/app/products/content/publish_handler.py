@@ -10,7 +10,9 @@ idempotent rather than duplicate-producing.
 from __future__ import annotations
 
 import logging
-from datetime import UTC, datetime
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -42,22 +44,51 @@ from apps.api.app.products.content.service import build_publishable_frontmatter
 logger = logging.getLogger(__name__)
 
 
-async def handle_content_publish(
+# A repository with no CI and no Vercel preview status yet may simply be slow to
+# report; after this long without either, the change is blocked rather than merged.
+CHECKS_GRACE_WINDOW = timedelta(minutes=20)
+
+# Builds the exact {repository path: new file text} set a pull request carries, or
+# returns a permanent failure. Called once the base commit is pinned.
+FileBuilder = Callable[[str], Awaitable["dict[str, str] | JobOutcome"]]
+DeploymentFinisher = Callable[[str | None], Awaitable[JobOutcome]]
+SubjectStateSetter = Callable[[str], None]
+
+
+@dataclass(slots=True)
+class PublishingContext:
+    """Provider access resolved once per worker attempt."""
+
+    target: PublishingTarget
+    publisher: RepositoryPublisher
+    repository_id: str
+
+
+@dataclass(slots=True)
+class PublicationSubject:
+    """What a publication is publishing, as far as the shared phases care.
+
+    Content publications keep their item status in step with the provider
+    lifecycle; a site change has no item, so its setter is a no-op. ``finish``
+    runs once a production deployment is observed for the merged commit.
+    """
+
+    set_state: SubjectStateSetter
+    finish: DeploymentFinisher
+
+
+async def load_publication(
     session: AsyncSession,
-    *,
     organization_id: UUID,
-    location_id: UUID | None,
-    input_document: dict[str, Any],
-    correlation_id: str,
-    workflow_run_id: UUID,
-) -> JobOutcome:
-    """Advance one Content publication through provider-observed phases."""
-    del location_id, correlation_id, workflow_run_id
-    publication_id_raw = input_document.get("publication_id")
-    if not publication_id_raw:
+    raw_publication_id: object,
+    *,
+    kind: str,
+) -> ContentPublication | JobOutcome:
+    """Lock the publication this worker attempt owns, or explain why not."""
+    if not raw_publication_id:
         return JobOutcome(result="permanent_failure", safe_error="MISSING_PUBLICATION_ID")
     try:
-        publication_id = UUID(str(publication_id_raw))
+        publication_id = UUID(str(raw_publication_id))
     except (TypeError, ValueError):
         return JobOutcome(result="permanent_failure", safe_error="INVALID_PUBLICATION_ID")
 
@@ -71,6 +102,8 @@ async def handle_content_publish(
     )
     if publication is None:
         return JobOutcome(result="permanent_failure", safe_error="PUBLICATION_NOT_FOUND")
+    if publication.publication_kind != kind:
+        return JobOutcome(result="permanent_failure", safe_error="PUBLICATION_KIND_MISMATCH")
     if publication.status == "verified":
         return JobOutcome(result="succeeded", result_reference=f"publication:{publication.id}")
     if publication.status in {"failed", "checks_failed", "rolled_back"}:
@@ -78,6 +111,15 @@ async def handle_content_publish(
             result="permanent_failure",
             safe_error=publication.safe_error_code or "PUBLICATION_FAILED",
         )
+    return publication
+
+
+async def load_publishing_context(
+    session: AsyncSession,
+    organization_id: UUID,
+    publication: ContentPublication,
+) -> PublishingContext | JobOutcome:
+    """Resolve the target, connection and token; fail the publication if any is missing."""
     if not _provider_writes_enabled():
         await _fail(session, publication, "PROVIDER_WRITES_DISABLED")
         return JobOutcome(result="permanent_failure", safe_error="PROVIDER_WRITES_DISABLED")
@@ -109,28 +151,26 @@ async def handle_content_publish(
         await _fail(session, publication, "GITHUB_CREDENTIAL_REQUIRED")
         return JobOutcome(result="permanent_failure", safe_error="GITHUB_CREDENTIAL_REQUIRED")
 
-    revision = await session.scalar(
-        select(ContentRevision).where(
-            ContentRevision.organization_id == organization_id,
-            ContentRevision.id == publication.content_revision_id,
-            ContentRevision.content_item_id == publication.content_item_id,
-        )
+    return PublishingContext(
+        target=target,
+        publisher=_content_publisher_factory(token),
+        repository_id=target.repository_id,
     )
-    item = await session.scalar(
-        select(ContentItem)
-        .where(
-            ContentItem.organization_id == organization_id,
-            ContentItem.id == publication.content_item_id,
-        )
-        .with_for_update()
-    )
-    if revision is None or item is None:
-        await _fail(session, publication, "REVISION_NOT_FOUND")
-        return JobOutcome(result="permanent_failure", safe_error="REVISION_NOT_FOUND")
 
-    publisher: RepositoryPublisher = _content_publisher_factory(token)
-    repository_id = target.repository_id
-    overrides = _safe_overrides(input_document.get("frontmatter_overrides"))
+
+async def advance_publication(
+    session: AsyncSession,
+    publication: ContentPublication,
+    context: PublishingContext,
+    *,
+    build_files: FileBuilder,
+    branch_prefix: str,
+    pull_request_title: str,
+    subject: PublicationSubject,
+) -> JobOutcome:
+    """Advance one publication through the provider-observed phases."""
+    publisher = context.publisher
+    repository_id = context.repository_id
 
     if publication.status == "reconciliation_required":
         reconciliation = await _reconcile_phase(session, publication, publisher, repository_id)
@@ -141,11 +181,12 @@ async def handle_content_publish(
         preparation = await _prepare_pull_request(
             session,
             publication,
-            revision,
-            target,
+            context.target,
             publisher,
             repository_id,
-            overrides,
+            build_files,
+            branch_prefix=branch_prefix,
+            pull_request_title=pull_request_title,
         )
         if preparation is not None:
             return preparation
@@ -163,20 +204,87 @@ async def handle_content_publish(
             return merge_result
 
     if publication.status in {"merged", "deployment_pending", "deployed"}:
-        return await _verify_deployment(
-            session,
-            publication,
-            revision,
-            item,
-            publisher,
-            repository_id,
+        return await _verify_merged_deployment(
+            session, publication, publisher, repository_id, subject
         )
 
     publication.status = "reconciliation_required"
     publication.safe_error_code = "PUBLICATION_STATE_UNRECOGNIZED"
-    item.status = "reconciliation_required"
+    subject.set_state("reconciliation_required")
     await session.commit()
     return JobOutcome(result="retryable_failure", safe_error="PUBLICATION_STATE_UNRECOGNIZED")
+
+
+async def handle_content_publish(
+    session: AsyncSession,
+    *,
+    organization_id: UUID,
+    location_id: UUID | None,
+    input_document: dict[str, Any],
+    correlation_id: str,
+    workflow_run_id: UUID,
+) -> JobOutcome:
+    """Advance one Content publication through provider-observed phases."""
+    del location_id, correlation_id, workflow_run_id
+    loaded = await load_publication(
+        session, organization_id, input_document.get("publication_id"), kind="content"
+    )
+    if isinstance(loaded, JobOutcome):
+        return loaded
+    publication = loaded
+
+    context = await load_publishing_context(session, organization_id, publication)
+    if isinstance(context, JobOutcome):
+        return context
+
+    revision = None
+    item = None
+    if publication.content_revision_id is not None and publication.content_item_id is not None:
+        revision = await session.scalar(
+            select(ContentRevision).where(
+                ContentRevision.organization_id == organization_id,
+                ContentRevision.id == publication.content_revision_id,
+                ContentRevision.content_item_id == publication.content_item_id,
+            )
+        )
+        item = await session.scalar(
+            select(ContentItem)
+            .where(
+                ContentItem.organization_id == organization_id,
+                ContentItem.id == publication.content_item_id,
+            )
+            .with_for_update()
+        )
+    if revision is None or item is None:
+        await _fail(session, publication, "REVISION_NOT_FOUND")
+        return JobOutcome(result="permanent_failure", safe_error="REVISION_NOT_FOUND")
+
+    overrides = _safe_overrides(input_document.get("frontmatter_overrides"))
+    content_revision, content_item = revision, item
+
+    async def build_files(base_commit: str) -> dict[str, str] | JobOutcome:
+        del base_commit
+        return await _build_content_files(
+            session, publication, content_revision, context.target, overrides
+        )
+
+    async def finish(deployment_url: str | None) -> JobOutcome:
+        return await _mark_published(
+            session, publication, content_revision, content_item, deployment_url
+        )
+
+    def set_state(state: str) -> None:
+        content_item.status = state
+
+    return await advance_publication(
+        session,
+        publication,
+        context,
+        build_files=build_files,
+        branch_prefix="lilos-content",
+        pull_request_title=f"Publish: {publication.target_path}",
+        subject=PublicationSubject(set_state=set_state, finish=finish),
+    )
 
 
 async def _reconcile_phase(
@@ -256,15 +364,13 @@ def _canonical_frontmatter(
     return canonical
 
 
-async def _prepare_pull_request(
+async def _build_content_files(
     session: AsyncSession,
     publication: ContentPublication,
     revision: ContentRevision,
     target: PublishingTarget,
-    publisher: RepositoryPublisher,
-    repository_id: str,
     overrides: dict[str, object],
-) -> JobOutcome | None:
+) -> dict[str, str] | JobOutcome:
     try:
         contract = FrontmatterContract.from_document(target.frontmatter_contract)
         path_rejection = contract.rejects_path(publication.target_path)
@@ -285,18 +391,33 @@ async def _prepare_pull_request(
                 "CONTENT_FRONTMATTER_INCOMPLETE",
                 f"missing required publishing fields: {', '.join(missing)}",
             )
-        file_contents = build_content_file(revision.body, rendered)
+        return {publication.target_path: build_content_file(revision.body, rendered)}
     except FrontmatterContractError as exc:
         return await _permanent(session, publication, exc.safe_code, str(exc))
     except ContentFileFormatError as exc:
         return await _permanent(session, publication, exc.safe_code, str(exc))
 
-    branch_name = publication.branch_name or f"lilos-content-{publication.id}"
+
+async def _prepare_pull_request(
+    session: AsyncSession,
+    publication: ContentPublication,
+    target: PublishingTarget,
+    publisher: RepositoryPublisher,
+    repository_id: str,
+    build_files: FileBuilder,
+    *,
+    branch_prefix: str,
+    pull_request_title: str,
+) -> JobOutcome | None:
+    branch_name = publication.branch_name or f"{branch_prefix}-{publication.id}"
     try:
         if not publication.base_commit:
             publication.base_commit = await publisher.get_base_commit(
                 repository_id, target.base_branch
             )
+        built = await build_files(publication.base_commit)
+        if isinstance(built, JobOutcome):
+            return built
         await publisher.create_branch(
             repository_id,
             target.base_branch,
@@ -307,18 +428,13 @@ async def _prepare_pull_request(
         publication.status = "branch_created"
         await session.commit()
 
-        await publisher.put_file(
-            repository_id,
-            branch_name,
-            publication.target_path,
-            file_contents,
-            None,
-        )
+        for path, file_contents in built.items():
+            await publisher.put_file(repository_id, branch_name, path, file_contents, None)
         pr_number = publication.external_pull_request_id or await publisher.create_pull_request(
             repository_id,
             branch_name,
             target.base_branch,
-            f"Publish: {publication.target_path}",
+            pull_request_title,
             str(publication.idempotency_key),
         )
         pr = await publisher.get_pull_request(repository_id, pr_number)
@@ -353,6 +469,7 @@ async def _wait_for_pull_request_checks(
         publication.safe_error_code = "PULL_REQUEST_REFERENCE_MISSING"
         await session.commit()
         return JobOutcome(result="retryable_failure", safe_error="PULL_REQUEST_REFERENCE_MISSING")
+    pr: dict[str, object] = {}
     try:
         pr = await publisher.get_pull_request(repository_id, publication.external_pull_request_id)
         head = pr.get("head") if isinstance(pr, dict) else None
@@ -377,26 +494,46 @@ async def _wait_for_pull_request_checks(
         return JobOutcome(result="retryable_failure", safe_error="CHECKS_REREAD_FAILED")
 
     state = checks.get("state", "pending")
-    publication.build_status = state
+    gate = checks.get("gate", "none")
+    publication.build_status = f"{gate}:{state}"
     if state == "failed":
         publication.status = "checks_failed"
         publication.safe_error_code = "CONTENT_CHECKS_FAILED"
         await session.commit()
         return JobOutcome(result="permanent_failure", safe_error="CONTENT_CHECKS_FAILED")
-    if state in {"pending", "none"}:
+    if state == "none":
+        # Neither repository CI nor a Vercel preview status exists. Give a slow
+        # reporter a grace window; past it the change is blocked, never merged.
+        if _checks_grace_elapsed(pr):
+            publication.status = "checks_failed"
+            publication.safe_error_code = "CHECKS_UNAVAILABLE"
+            await session.commit()
+            return JobOutcome(result="permanent_failure", safe_error="CHECKS_UNAVAILABLE")
         publication.status = "checks_running"
-        publication.safe_error_code = "CONTENT_CHECKS_UNAVAILABLE" if state == "none" else None
+        publication.safe_error_code = None
         await session.commit()
-        return JobOutcome(
-            result="retryable_failure",
-            safe_error="CONTENT_CHECKS_UNAVAILABLE"
-            if state == "none"
-            else "CONTENT_CHECKS_PENDING",
-        )
+        return JobOutcome(result="retryable_failure", safe_error="CONTENT_CHECKS_PENDING")
+    if state == "pending":
+        publication.status = "checks_running"
+        publication.safe_error_code = None
+        await session.commit()
+        return JobOutcome(result="retryable_failure", safe_error="CONTENT_CHECKS_PENDING")
     publication.status = "pull_request_created"
     publication.safe_error_code = None
     await session.commit()
     return None
+
+
+def _checks_grace_elapsed(pr: dict[str, object]) -> bool:
+    """True once the pull request is older than the no-checks grace window."""
+    raw_created = pr.get("created_at")
+    if not isinstance(raw_created, str):
+        return False
+    try:
+        created = datetime.fromisoformat(raw_created.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    return datetime.now(UTC) - created > CHECKS_GRACE_WINDOW
 
 
 async def _merge_pull_request(
@@ -434,11 +571,33 @@ async def _verify_deployment(
     publisher: RepositoryPublisher,
     repository_id: str,
 ) -> JobOutcome:
+    async def finish(deployment_url: str | None) -> JobOutcome:
+        return await _mark_published(session, publication, revision, item, deployment_url)
+
+    def set_state(state: str) -> None:
+        item.status = state
+
+    return await _verify_merged_deployment(
+        session,
+        publication,
+        publisher,
+        repository_id,
+        PublicationSubject(set_state=set_state, finish=finish),
+    )
+
+
+async def _verify_merged_deployment(
+    session: AsyncSession,
+    publication: ContentPublication,
+    publisher: RepositoryPublisher,
+    repository_id: str,
+    subject: PublicationSubject,
+) -> JobOutcome:
     revision_id = publication.external_revision_id
     if not revision_id:
         publication.status = "reconciliation_required"
         publication.safe_error_code = "MERGE_REVISION_MISSING"
-        item.status = "reconciliation_required"
+        subject.set_state("reconciliation_required")
         await session.commit()
         return JobOutcome(result="retryable_failure", safe_error="MERGE_REVISION_MISSING")
     try:
@@ -446,13 +605,11 @@ async def _verify_deployment(
         state = deployment.get("state", "none").lower()
         publication.deployment_status = state
         if state in {"success", "active"}:
-            return await _mark_published(
-                session, publication, revision, item, deployment.get("url")
-            )
+            return await subject.finish(deployment.get("url"))
         if state in {"error", "failure", "inactive"}:
             publication.status = "failed"
             publication.safe_error_code = "CONTENT_DEPLOYMENT_FAILED"
-            item.status = "failed"
+            subject.set_state("failed")
             await session.commit()
             return JobOutcome(result="permanent_failure", safe_error="CONTENT_DEPLOYMENT_FAILED")
 
@@ -460,14 +617,14 @@ async def _verify_deployment(
         # Only a production deployment bound to this merged commit proves delivery.
         publication.status = "deployment_pending"
         publication.safe_error_code = None
-        item.status = "publishing"
+        subject.set_state("publishing")
         await session.commit()
         return JobOutcome(result="retryable_failure", safe_error="CONTENT_DEPLOYMENT_PENDING")
     except Exception as exc:
         logger.warning("Content deployment verification failed", exc_info=exc)
         publication.status = "reconciliation_required"
         publication.safe_error_code = "DEPLOYMENT_REREAD_FAILED"
-        item.status = "reconciliation_required"
+        subject.set_state("reconciliation_required")
         await session.commit()
         return JobOutcome(result="retryable_failure", safe_error="DEPLOYMENT_REREAD_FAILED")
 

@@ -8,10 +8,28 @@ from pathlib import Path
 import pytest
 from alembic import command
 from alembic.config import Config
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 from sqlalchemy.pool import NullPool
 
 ROOT = Path(__file__).resolve().parents[3]
+
+
+async def purge_job_queue(engine: AsyncEngine) -> None:
+    """Leave no durable job behind.
+
+    These fixtures reset the schema when a test starts, not when it ends, so a committed
+    `queued` job (a route or service that enqueued work) outlives its test. The next
+    worker-runtime test in the same shard then claims that stranger's job instead of its
+    own. Clearing the queue at teardown makes each test leave the queue as it found it.
+    """
+    async with engine.begin() as connection:
+        await connection.execute(text("TRUNCATE TABLE jobs CASCADE"))
 
 
 @pytest.fixture(autouse=True)
@@ -43,4 +61,5 @@ def seo_session_factory(
     try:
         yield async_sessionmaker(engine, expire_on_commit=False)
     finally:
+        asyncio.run(purge_job_queue(engine))
         asyncio.run(engine.dispose())

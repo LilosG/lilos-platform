@@ -48,6 +48,29 @@ SCHEMAS = {
             "expected_result_hypothesis": STRING,
             "risk": {"type": "string", "enum": ["low", "medium", "high"]},
             "effort": {"type": "string", "enum": ["low", "medium", "high"]},
+            "site_changes": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 20,
+                "items": _object(
+                    {
+                        "field": {
+                            "type": "string",
+                            "enum": [
+                                "seo_title",
+                                "meta_description",
+                                "h1",
+                                "body_section",
+                                "schema",
+                                "internal_link",
+                            ],
+                        },
+                        "proposed_value": STRING,
+                        "rationale": STRING,
+                    },
+                    ["field", "proposed_value", "rationale"],
+                ),
+            },
         },
         [
             "proposed_action",
@@ -243,8 +266,12 @@ DESCRIPTIONS = {
     "create_seo_recommendation_proposal": (
         "Create an approval-waiting SEO recommendation. For a bound Search Intelligence "
         "opportunity, provide only proposed_action, expected_result_hypothesis, risk, and "
-        "effort; LILOs supplies the opportunity and evidence references. General SEO runs "
-        "must also provide an observed opportunity_id and evidence_references."
+        "effort; LILOs supplies the opportunity and evidence references. When the "
+        "opportunity's site_change_context is available, you may also provide site_changes: "
+        "exact replacements (field, proposed_value, rationale) for the fields it lists. LILOs "
+        "supplies each current value from the client repo and rejects a title over 60 characters, "
+        "a meta description over 160, an empty value, or one equal to the current value. "
+        "General SEO runs must also provide an observed opportunity_id and evidence_references."
     ),
     "create_content_proposal": "Convert an accepted opportunity into a governed Content item.",
     "create_content_brief": "Create a grounded Content brief from approved facts and evidence.",

@@ -71,6 +71,24 @@ class GitHubRepositoryPublisher:
         payload = await self._request("GET", f"/repos/{repository_id}/git/refs/heads/{base_branch}")
         return str(payload["object"]["sha"])
 
+    async def get_file(self, repository_id: str, ref: str, path: str) -> str | None:
+        """Read one UTF-8 text file at a ref, or None when it does not exist there."""
+        import base64
+
+        payload = await self._request_json(
+            "GET",
+            f"/repos/{repository_id}/contents/{path}",
+            expected_status=(200, 404),
+            params={"ref": ref},
+        )
+        if payload is None:
+            return None
+        if not isinstance(payload, dict) or payload.get("type") != "file":
+            raise RuntimeError("GitHub path is not a file")
+        if payload.get("encoding") != "base64" or not isinstance(payload.get("content"), str):
+            raise RuntimeError("GitHub file content is unavailable")
+        return base64.b64decode(payload["content"]).decode("utf-8")
+
     async def create_branch(
         self, repository_id: str, base_branch: str, base_commit: str, branch_name: str
     ) -> str:
@@ -208,17 +226,34 @@ class GitHubRepositoryPublisher:
             for run in runs
             if str(run.get("name") or "").strip().lower() != "vercel preview comments"
         ]
-        if not meaningful_runs and not raw_statuses:
-            return {"state": "none"}
+        vercel_statuses = [
+            status
+            for status in raw_statuses
+            if str(status.get("context") or "").strip().lower().startswith("vercel")
+        ]
+        other_statuses = [status for status in raw_statuses if status not in vercel_statuses]
+
+        # What gates a merge. The client's own CI wins when it exists; otherwise a
+        # Vercel preview deployment status on the head commit stands in for a build.
+        # With neither there is nothing to prove the change builds: state "none".
+        if meaningful_runs or other_statuses:
+            gate = "repository_ci"
+        elif vercel_statuses:
+            gate = "vercel_preview"
+        else:
+            return {"state": "none", "gate": "none"}
+
+        # A failing Vercel status still fails a CI-gated change, and a pending one
+        # keeps it waiting: every reported result must be green before merging.
         states = {
             str(run.get("conclusion") or run.get("status", "")).lower() for run in meaningful_runs
         }
         states.update(str(status.get("state") or "").lower() for status in raw_statuses)
-        if states and states <= {"success", "neutral", "skipped"}:
-            return {"state": "success"}
+        if states <= {"success", "neutral", "skipped"}:
+            return {"state": "success", "gate": gate}
         if states & {"failure", "error", "cancelled", "timed_out", "action_required"}:
-            return {"state": "failed"}
-        return {"state": "pending"}
+            return {"state": "failed", "gate": gate}
+        return {"state": "pending", "gate": gate}
 
     async def merge_pull_request(
         self, repository_id: str, pr_number: str, expected_head_sha: str

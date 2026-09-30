@@ -14,6 +14,7 @@ import {
   discoverSearchConsole,
   mapSearchConsole,
   syncSearchConsole,
+  syncSearchConsoleToCompletion,
   fetchSearchConsoleSummary,
 } from "./search-console";
 
@@ -50,11 +51,37 @@ describe("search-console lib routes", () => {
     );
   });
 
-  it("syncSearchConsole POSTs to the sync endpoint with the window", async () => {
+  it("syncSearchConsole queues the sync and returns without a long timeout", async () => {
     await syncSearchConsole("org-1", "site-1", "prop-1", 90);
     expect(apiRequest).toHaveBeenCalledWith(
       "/api/v1/organizations/org-1/seo/websites/site-1/search-properties/prop-1/sync",
-      { method: "POST", body: { days: 90 }, timeoutMs: 90_000 },
+      { method: "POST", body: { days: 90 } },
+    );
+  });
+
+  it("syncSearchConsoleToCompletion polls the queued run, not the request", async () => {
+    apiRequest
+      .mockResolvedValueOnce({
+        kind: "ok",
+        data: {
+          workflow_run_id: "run-1",
+          workflow_key: "seo.sync_search_console",
+          status: "queued",
+        },
+      })
+      .mockResolvedValueOnce({
+        kind: "ok",
+        data: { id: "run-1", status: "completed", failure_code: null },
+      });
+    const outcome = await syncSearchConsoleToCompletion(
+      "org-1",
+      "site-1",
+      "prop-1",
+    );
+    expect(outcome.kind).toBe("ok");
+    expect(apiRequest).toHaveBeenLastCalledWith(
+      "/api/v1/organizations/org-1/workflows/runs/run-1",
+      { method: "GET" },
     );
   });
 

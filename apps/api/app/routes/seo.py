@@ -1,5 +1,6 @@
 """Protected evidence-driven SEO APIs."""
 
+import time
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any
 from uuid import UUID, uuid4
@@ -48,6 +49,7 @@ from apps.api.app.products.seo.decision import (
 from apps.api.app.products.seo.errors import (
     SEOCrawlRunNotFoundError,
     SEOOpportunityNotFoundError,
+    SEOSearchPropertyNotFoundError,
     SEOWebsiteNotFoundError,
 )
 from apps.api.app.products.seo.models import (
@@ -65,6 +67,10 @@ from apps.api.app.products.seo.orchestration import SEOOrchestrationService
 from apps.api.app.products.seo.page_intelligence import read_page_intelligence
 from apps.api.app.products.seo.search_console_service import SearchConsoleService
 from apps.api.app.products.seo.service import SEOService
+from apps.api.app.products.seo.site_change_state import (
+    change_set_items,
+    load_site_change_states,
+)
 from apps.api.app.reporting_periods import (
     GA4_SYNC_TAIL_EXCLUSION_DAYS,
     GSC_SYNC_TAIL_EXCLUSION_DAYS,
@@ -180,9 +186,16 @@ def opportunity_row(item: SEOOpportunity) -> dict[str, object]:
     }
 
 
-def recommendation_row(item: SEORecommendationRevision) -> dict[str, object]:
+def recommendation_row(
+    item: SEORecommendationRevision, site_change: dict[str, object] | None = None
+) -> dict[str, object]:
     context = revision_decision(item.evidence_references)
     return {
+        "change_set": change_set_items(item),
+        "change_set_limitation_code": item.change_set_limitation_code,
+        # Where an approved change is (pull request, build gate, live read-back) and, when
+        # it stopped, the typed code why. Null when the recommendation carries no site change.
+        "site_change": site_change,
         "id": str(item.id),
         "revision_number": item.revision_number,
         "proposed_action": item.proposed_action,
@@ -246,7 +259,12 @@ async def search_intelligence_workspace(
 ) -> dict[str, object]:
     """Bounded, scoped work projection over existing SEO and integration records."""
     opportunities, has_more = await service.list_opportunities(
-        session, organization_id, website_id=website_id, limit=limit, offset=offset
+        session,
+        organization_id,
+        website_id=website_id,
+        exclude_archived=True,
+        limit=limit,
+        offset=offset,
     )
     websites = list(
         await session.scalars(
@@ -291,6 +309,8 @@ async def search_intelligence_workspace(
                 .where(
                     SEORecommendationRevision.organization_id == organization_id,
                     SEORecommendationRevision.opportunity_id.in_(opportunity_ids),
+                    # A withdrawn recommendation is out of play; it is history, not work.
+                    SEORecommendationRevision.status != "withdrawn",
                 )
                 .order_by(
                     SEORecommendationRevision.created_at.desc(), SEORecommendationRevision.id.desc()
@@ -421,6 +441,7 @@ async def search_intelligence_workspace(
                         SEORecommendationRevision.organization_id == organization_id,
                         SEORecommendationRevision.status == "approved",
                         SEOOpportunity.page_id.in_(page_ids),
+                        SEOOpportunity.status != "archived",
                     )
                     .order_by(SEORecommendationRevision.created_at.desc())
                     .limit(5001)
@@ -557,6 +578,9 @@ async def search_intelligence_workspace(
                 else "unavailable",
             }
         )
+    site_changes = await load_site_change_states(
+        session, organization_id, list(latest_revision.values())
+    )
     rows = []
     for opportunity in opportunities:
         site = site_by_id.get(opportunity.website_id)
@@ -634,7 +658,11 @@ async def search_intelligence_workspace(
                 "opportunity": opportunity_row(opportunity),
                 "website": website_row(site),
                 "page": page_row(page) if page else None,
-                "recommendation": recommendation_row(revision) if revision else None,
+                "recommendation": (
+                    recommendation_row(revision, site_changes.get(revision.id))
+                    if revision
+                    else None
+                ),
                 "task": task_row(task) if task else None,
                 "outcome": outcome_row(outcome) if outcome else None,
                 "measurement": measurement,
@@ -836,8 +864,9 @@ async def discover_search_console(
 
 @router.post(
     "/websites/{website_id}/search-properties/{search_property_id}/sync",
+    status_code=status.HTTP_202_ACCEPTED,
     dependencies=[Depends(no_store)],
-    summary="Sync Search Console observations for a mapped property",
+    summary="Queue a Search Console sync for a mapped property",
 )
 async def sync_search_console(
     request: Request,
@@ -849,18 +878,41 @@ async def sync_search_console(
     _: Annotated[AuthorizationDecision, policy("seo.manage")],
     command: SearchConsoleSyncRequest | None = None,
 ) -> dict[str, object]:
-    settings = settings_from_request(request)
+    """Enqueue the sync for the worker and return at once.
+
+    Syncing calls Google for every reporting period, which can take minutes, so it
+    runs as the `seo.sync_search_console` workflow rather than inside this request.
+    Poll `GET /workflows/runs/{workflow_run_id}` for the outcome.
+    """
+    property_row = await search_console.load_property(session, organization_id, search_property_id)
+    if property_row.website_id != website_id:
+        raise SEOSearchPropertyNotFoundError
     days = command.days if command is not None else 28
-    result = await search_console.sync_observations(
+    run = await ExecutionService().start_named(
         session,
-        settings,
         organization_id,
-        search_property_id,
-        actor_id=principal.platform_user_id,
+        "seo.sync_search_console",
+        # One queued sync per property per five minutes: a double click joins the
+        # run already waiting instead of spending Google quota twice.
+        f"seo-gsc-sync-{search_property_id}-{int(time.time() // 300)}",
+        input_document={
+            "search_property_id": str(search_property_id),
+            "days": days,
+            "actor_id": str(principal.platform_user_id) if principal.platform_user_id else None,
+        },
         correlation_id=request_correlation_id(request),
-        days=days,
+        actor_id=principal.platform_user_id,
+        enqueue_job=True,
     )
-    return {"data": result, "meta": meta(request)}
+    return {
+        "data": {
+            "workflow_run_id": str(run.id),
+            "workflow_key": "seo.sync_search_console",
+            "status": run.status,
+            "search_property_id": str(search_property_id),
+        },
+        "meta": meta(request),
+    }
 
 
 @router.get(
@@ -1128,7 +1180,11 @@ async def list_recommendations(
     _: Annotated[AuthorizationDecision, policy("seo.read")],
 ) -> dict[str, object]:
     items = await service.list_recommendations(session, organization_id, opportunity_id)
-    return {"data": [recommendation_row(item) for item in items], "meta": meta(request)}
+    states = await load_site_change_states(session, organization_id, items)
+    return {
+        "data": [recommendation_row(item, states.get(item.id)) for item in items],
+        "meta": meta(request),
+    }
 
 
 @router.get("/opportunities/{opportunity_id}/hermes-run", dependencies=[Depends(no_store)])
@@ -1238,7 +1294,8 @@ async def create_recommendation(
         actor_id=principal.platform_user_id,
         correlation_id=request_correlation_id(request),
     )
-    return {"data": recommendation_row(item), "meta": meta(request)}
+    states = await load_site_change_states(session, organization_id, [item])
+    return {"data": recommendation_row(item, states.get(item.id)), "meta": meta(request)}
 
 
 @router.post("/recommendations/{revision_id}/decision", dependencies=[Depends(no_store)])
@@ -1261,14 +1318,35 @@ async def decide_recommendation(
         correlation_id=correlation_id,
     )
     workflow_run_id = None
+    workflow_key = "agent.content"
     if command.approve:
-        workflow_run_id = await orchestration.handoff_approved_recommendation(
-            session,
-            organization_id,
-            item,
-            actor_id=principal.platform_user_id,
-            correlation_id=correlation_id,
-        )
+        if item.change_set is not None:
+            # The approved change set IS the work: reserve the site-change run that the
+            # implementation task consumes, which opens the pull request. Nothing is
+            # handed to Content -- what was approved is exactly what executes.
+            approved_opportunity = await service.get_opportunity(
+                session, organization_id, item.opportunity_id
+            )
+            site_change_run = await execution.start_named(
+                session,
+                organization_id,
+                "seo.apply_site_change",
+                f"seo-site-change-run-{item.id}",
+                location_id=approved_opportunity.location_id,
+                correlation_id=correlation_id,
+                actor_id=principal.platform_user_id,
+                enqueue_job=False,
+            )
+            workflow_run_id = str(site_change_run.id)
+            workflow_key = "seo.apply_site_change"
+        else:
+            workflow_run_id = await orchestration.handoff_approved_recommendation(
+                session,
+                organization_id,
+                item,
+                actor_id=principal.platform_user_id,
+                correlation_id=correlation_id,
+            )
         if workflow_run_id is not None:
             opportunity = await service.get_opportunity(
                 session, organization_id, item.opportunity_id
@@ -1294,9 +1372,10 @@ async def decide_recommendation(
         response_meta = {
             **response_meta,
             "workflow_run_id": workflow_run_id,
-            "workflow_key": "agent.content",
+            "workflow_key": workflow_key,
         }
-    return {"data": recommendation_row(item), "meta": response_meta}
+    states = await load_site_change_states(session, organization_id, [item])
+    return {"data": recommendation_row(item, states.get(item.id)), "meta": response_meta}
 
 
 @router.get("/recommendations/{revision_id}/tasks", dependencies=[Depends(no_store)])

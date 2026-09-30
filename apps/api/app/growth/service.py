@@ -18,7 +18,11 @@ from apps.api.app.audit.service import AuditEventService
 from apps.api.app.execution.models import WorkflowRun
 from apps.api.app.execution.service import ExecutionService
 from apps.api.app.execution.workflow_catalog import WORKFLOW_TYPES
-from apps.api.app.growth.action_types import deterministic_workflow_for
+from apps.api.app.growth.action_types import (
+    GrowthActionType,
+    deterministic_workflow_for,
+    is_site_change_action,
+)
 from apps.api.app.growth.contracts import GrowthPlanCreate
 from apps.api.app.growth.models import GrowthAction, GrowthInitiative
 from apps.api.app.products.content.contracts import OpportunityCreate
@@ -31,7 +35,6 @@ from apps.api.app.products.seo.decision import (
 )
 from apps.api.app.products.seo.models import SEOOpportunity, SEORecommendationRevision
 from apps.api.app.products.seo.service import SEOService
-from apps.api.app.site_change_policy import is_technical_site_change
 
 # The planner coordinates product agents; it never jumps directly into a
 # publication/provider-write workflow. Product agents translate the plan into
@@ -80,17 +83,14 @@ class GrowthService:
                 continue
             product_key = action.product_key
             action_type = action.action_type
-            if product_key == "content" and is_technical_site_change(
-                action.action_key,
-                action.action_type,
-                action.expected_result_hypothesis,
-            ):
-                # Technical/template/code changes are SEO implementation work,
-                # not publishable editorial assets. Canonicalize here so one
-                # planner classification mistake cannot send code remediation
-                # into Content and later present a misleading Publish button.
+            if product_key == "content" and is_site_change_action(action.action_type):
+                # A typed site-change action is SEO implementation work, not a
+                # publishable editorial asset. Canonicalize on the closed action
+                # type (never on prose) so one planner classification mistake cannot
+                # send code remediation into Content and later present a misleading
+                # Publish button.
                 product_key = "seo"
-                action_type = "site_implementation"
+                action_type = GrowthActionType.SITE_IMPLEMENTATION.value
             workflow_key = deterministic_workflow_for(
                 product_key, action_type
             ) or GROWTH_EXECUTOR_BY_PRODUCT.get(product_key)
