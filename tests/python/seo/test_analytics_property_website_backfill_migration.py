@@ -148,6 +148,10 @@ def test_backfill_binds_only_organizations_with_exactly_one_website(
 ) -> None:
     monkeypatch.setenv("LILOS_MIGRATION_DATABASE_URL", postgresql_test_url)
     config = Config(ROOT / "alembic.ini")
+    # Reset to a known state first: this session's database may already be at
+    # a later revision (or hold data) from another migration test that ran
+    # earlier against the same shared postgresql_test_url.
+    command.downgrade(config, "base")
     command.upgrade(config, "20260929_0002")
 
     seeded = asyncio.run(_seed(postgresql_test_url))

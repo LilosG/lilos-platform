@@ -575,9 +575,13 @@ async def search_intelligence_workspace(
                 [f"seo-opportunity:{opportunity.id}"],
             )
         except SEOEvidenceInvalidError as exc:
-            governed_eligibility = {"eligible": False, "limitation": str(exc)}
+            governed_eligibility = {
+                "eligible": False,
+                "limitation": str(exc),
+                "limitation_code": exc.limitation_code,
+            }
         else:
-            governed_eligibility = {"eligible": True, "limitation": None}
+            governed_eligibility = {"eligible": True, "limitation": None, "limitation_code": None}
         revision = latest_revision.get(opportunity.id)
         task = latest_task.get(revision.id) if revision else None
         outcome = latest_outcome.get(task.id) if task else None

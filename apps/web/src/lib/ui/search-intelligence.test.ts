@@ -43,7 +43,7 @@ function item(
     outcome: null,
     measurement: null,
     active_change: null,
-    governed_eligibility: { eligible: true, limitation: null },
+    governed_eligibility: { eligible: true, limitation: null, limitation_code: null },
     latest_measured: null,
   };
 }
@@ -159,6 +159,7 @@ describe("Search Intelligence workspace", () => {
     invalid.governed_eligibility = {
       eligible: false,
       limitation: "The source observation does not resolve in this scope",
+      limitation_code: "SOURCE_RECORD_NOT_FOUND",
     };
     const data = workspace([invalid]);
     const sections = searchIntelligenceSections(data);

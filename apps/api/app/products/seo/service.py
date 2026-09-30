@@ -65,6 +65,7 @@ from apps.api.app.products.seo.errors import (
     SEOSearchPropertyNotConfiguredError,
     SEOWebsiteNotFoundError,
 )
+from apps.api.app.products.seo.limitation_codes import SEOLimitationCode
 from apps.api.app.products.seo.models import (
     SEOCrawlPageObservation,
     SEOCrawlRun,
@@ -1342,7 +1343,7 @@ class SEOService:
             .with_for_update()
         )
         if page is None:
-            raise SEOEvidenceInvalidError("Page is outside the website scope")
+            raise SEOEvidenceInvalidError(SEOLimitationCode.PAGE_OUT_OF_SCOPE)
         rows = await session.execute(
             select(SEORecommendationRevision, SEOOpportunity)
             .join(
@@ -1525,14 +1526,12 @@ class SEOService:
                 refs[-1].get("decision_context") if refs and isinstance(refs[-1], dict) else None
             )
             if not isinstance(context, dict):
-                raise SEOEvidenceInvalidError("Recommendation has no governed evidence snapshot")
+                raise SEOEvidenceInvalidError(SEOLimitationCode.EVIDENCE_SNAPSHOT_MISSING)
             current = await resolve_decision(
                 session, organization_id, opportunity, [str(ref) for ref in refs[:-1]]
             )
             if current != context:
-                raise SEOEvidenceInvalidError(
-                    "Recommendation evidence has changed; create a new revision"
-                )
+                raise SEOEvidenceInvalidError(SEOLimitationCode.EVIDENCE_CHANGED_SINCE_APPROVAL)
             if current["recommendation_class"] == "growth_change" and opportunity.page_id:
                 await self._check_active_growth_change(
                     session, organization_id, opportunity, excluding_revision_id=revision.id
@@ -1587,7 +1586,7 @@ class SEOService:
             != (str(opportunity.location_id) if opportunity.location_id else None)
             or context.get("page_id") != (str(opportunity.page_id) if opportunity.page_id else None)
         ):
-            raise SEOEvidenceInvalidError("Approved target identity is unavailable")
+            raise SEOEvidenceInvalidError(SEOLimitationCode.APPROVED_TARGET_IDENTITY_UNAVAILABLE)
         expected_target = (
             f"seo-page:{opportunity.page_id}"
             if opportunity.page_id
@@ -1595,7 +1594,7 @@ class SEOService:
         )
         expected_type = "page" if opportunity.page_id else "opportunity"
         if command.target_reference != expected_target or command.target_type != expected_type:
-            raise SEOEvidenceInvalidError("Implementation target differs from approved decision")
+            raise SEOEvidenceInvalidError(SEOLimitationCode.IMPLEMENTATION_TARGET_MISMATCH)
         existing = await session.scalar(
             select(SEOImplementationTask)
             .where(
@@ -1606,7 +1605,7 @@ class SEOService:
         )
         if existing is not None:
             if existing.target_reference != expected_target:
-                raise SEOEvidenceInvalidError("Existing implementation task has another target")
+                raise SEOEvidenceInvalidError(SEOLimitationCode.IMPLEMENTATION_TASK_TARGET_CONFLICT)
             return existing
         workflow_key = (
             "agent.content"
@@ -1617,7 +1616,7 @@ class SEOService:
             session, organization_id, command.workflow_run_id, workflow_key
         )
         if workflow_run.location_id != opportunity.location_id:
-            raise SEOEvidenceInvalidError("Implementation workflow is outside the location scope")
+            raise SEOEvidenceInvalidError(SEOLimitationCode.IMPLEMENTATION_WORKFLOW_SCOPE_INVALID)
         task = SEOImplementationTask(
             organization_id=organization_id,
             recommendation_revision_id=revision.id,
@@ -1749,9 +1748,7 @@ class SEOService:
         correlation_id: str,
     ) -> SEOOutcome:
         del session, organization_id, task_id, command, actor_id, correlation_id
-        raise SEOEvidenceInvalidError(
-            "SEO outcomes are projected from verified Growth measurement, not caller assertions"
-        )
+        raise SEOEvidenceInvalidError(SEOLimitationCode.OUTCOME_MUST_BE_MEASURED)
 
     async def local_landing_page_gaps(
         self, session: AsyncSession, organization_id: UUID, website_id: UUID

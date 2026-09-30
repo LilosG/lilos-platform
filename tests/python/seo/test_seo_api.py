@@ -1390,17 +1390,26 @@ def test_workspace_hermes_eligibility_uses_exact_governed_source_scope(
     for label in ("unscoped", "wrong_site", "wrong_query", "missing"):
         eligibility = items[str(records[label])]["governed_eligibility"]
         assert eligibility["eligible"] is False
-        assert eligibility["limitation"] == "The source observation does not resolve in this scope"
+        assert eligibility["limitation"] == "The source observation does not resolve in this scope."
+        assert eligibility["limitation_code"] == "SOURCE_RECORD_NOT_FOUND"
         endpoint = f"{base}/opportunities/{records[label]}/hermes-run"
         rejected = client.post(endpoint, headers=HEADERS)
         assert rejected.status_code == 409, rejected.text
         assert rejected.json()["error"]["code"] == "SEO_EVIDENCE_INVALID"
         assert client.get(endpoint, headers=HEADERS).json()["data"] is None
     valid = items[str(records["valid"])]
-    assert valid["governed_eligibility"] == {"eligible": True, "limitation": None}
+    assert valid["governed_eligibility"] == {
+        "eligible": True,
+        "limitation": None,
+        "limitation_code": None,
+    }
     assert valid["opportunity"]["page_id"] is None
     valid_low_ctr = items[str(records["valid_low_ctr"])]
-    assert valid_low_ctr["governed_eligibility"] == {"eligible": True, "limitation": None}
+    assert valid_low_ctr["governed_eligibility"] == {
+        "eligible": True,
+        "limitation": None,
+        "limitation_code": None,
+    }
     assert valid_low_ctr["opportunity"]["page_id"] is None
     low_ctr_run = client.post(
         f"{base}/opportunities/{records['valid_low_ctr']}/hermes-run", headers=HEADERS

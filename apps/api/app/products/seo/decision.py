@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.app.errors import ConflictError
 from apps.api.app.insights.models import MetricObservation
+from apps.api.app.products.seo.limitation_codes import LIMITATION_COPY, SEOLimitationCode
 from apps.api.app.products.seo.models import (
     SEOCrawlPageObservation,
     SEOOpportunity,
@@ -34,18 +35,24 @@ def _metric_float(value: object) -> float | None:
     try:
         return float(str(value))
     except ValueError as exc:
-        raise SEOEvidenceInvalidError("Opportunity metric is invalid") from exc
+        raise SEOEvidenceInvalidError(SEOLimitationCode.METRIC_VALUE_INVALID) from exc
 
 
 class SEOEvidenceInvalidError(ConflictError):
-    """The proposed decision cannot be resolved to scoped persisted evidence."""
+    """The proposed decision cannot be resolved to scoped persisted evidence.
+
+    ``limitation_code`` closes the set of reasons this can be raised for
+    (`SEOLimitationCode`); the frontend switches on it instead of matching
+    ``public_message`` prose.
+    """
 
     code = "SEO_EVIDENCE_INVALID"
     public_message = "The recommendation evidence cannot be resolved in this scope."
 
-    def __init__(self, reason: str) -> None:
-        self.public_message = reason
-        super().__init__(reason)
+    def __init__(self, limitation_code: SEOLimitationCode) -> None:
+        self.limitation_code = limitation_code.value
+        self.public_message = LIMITATION_COPY[limitation_code]
+        super().__init__(self.public_message)
 
 
 class SEOActiveChangeError(ConflictError):
@@ -103,14 +110,14 @@ async def resolve_decision(
     """Only LILOs derives identifiers, facts, and availability; prose is untrusted."""
     source_ref = f"seo-opportunity:{opportunity.id}"
     if references != [source_ref]:
-        raise SEOEvidenceInvalidError("Recommendation must cite its exact SEO opportunity")
+        raise SEOEvidenceInvalidError(SEOLimitationCode.REFERENCE_MISMATCH)
     if opportunity.organization_id != organization_id or opportunity.active_marker != "active":
-        raise SEOEvidenceInvalidError("Opportunity is outside the active organization scope")
+        raise SEOEvidenceInvalidError(SEOLimitationCode.ORGANIZATION_SCOPE_INVALID)
     if (
         not opportunity.source_versions
         or opportunity.score_explanation.get("score_policy_version") != "opportunity_score.v2"
     ):
-        raise SEOEvidenceInvalidError("Opportunity has no governed source or score policy version")
+        raise SEOEvidenceInvalidError(SEOLimitationCode.SCORE_POLICY_STALE)
     website = await session.scalar(
         select(SEOWebsite).where(
             SEOWebsite.organization_id == organization_id,
@@ -119,7 +126,7 @@ async def resolve_decision(
         )
     )
     if website is None:
-        raise SEOEvidenceInvalidError("Website or location mapping is unavailable")
+        raise SEOEvidenceInvalidError(SEOLimitationCode.WEBSITE_MAPPING_UNAVAILABLE)
     if opportunity.page_id is not None:
         page = await session.scalar(
             select(SEOPage).where(
@@ -129,7 +136,7 @@ async def resolve_decision(
             )
         )
         if page is None:
-            raise SEOEvidenceInvalidError("Page is outside the website scope")
+            raise SEOEvidenceInvalidError(SEOLimitationCode.PAGE_OUT_OF_SCOPE)
 
     evidence = opportunity.evidence or {}
     source = evidence.get("source")
@@ -139,11 +146,11 @@ async def resolve_decision(
     if source == "google_search_console":
         record_id = evidence.get("observation_id")
         if not isinstance(record_id, str):
-            raise SEOEvidenceInvalidError("Search Console observation ID is unavailable")
+            raise SEOEvidenceInvalidError(SEOLimitationCode.OBSERVATION_ID_MISSING)
         try:
             parsed_id = UUID(record_id)
         except (TypeError, ValueError) as exc:
-            raise SEOEvidenceInvalidError("Search Console observation ID is invalid") from exc
+            raise SEOEvidenceInvalidError(SEOLimitationCode.OBSERVATION_ID_INVALID) from exc
         observation = await session.scalar(
             select(SEOSearchObservation).where(
                 SEOSearchObservation.id == parsed_id,
@@ -167,21 +174,21 @@ async def resolve_decision(
         )
         record_ref = f"seo-crawl-observation:{observation.id}" if observation else ""
     else:
-        raise SEOEvidenceInvalidError("No persisted scoped source record supports this opportunity")
+        raise SEOEvidenceInvalidError(SEOLimitationCode.SOURCE_RECORD_UNSUPPORTED)
     if observation is None:
-        raise SEOEvidenceInvalidError("The source observation does not resolve in this scope")
+        raise SEOEvidenceInvalidError(SEOLimitationCode.SOURCE_RECORD_NOT_FOUND)
     if (
         isinstance(observation, SEOCrawlPageObservation)
         and opportunity.opportunity_type not in observation.technical_issues
     ):
-        raise SEOEvidenceInvalidError("The latest crawl does not support this technical issue")
+        raise SEOEvidenceInvalidError(SEOLimitationCode.CRAWL_ISSUE_STALE)
     allowed_quality = (
         {"issues_detected"}
         if isinstance(observation, SEOCrawlPageObservation)
         else {"valid", "zero"}
     )
     if getattr(observation, "quality_status", None) not in allowed_quality:
-        raise SEOEvidenceInvalidError("The source observation is not valid for a material decision")
+        raise SEOEvidenceInvalidError(SEOLimitationCode.SOURCE_QUALITY_INVALID)
     if isinstance(observation, SEOSearchObservation):
         observed_facts: dict[str, object] = {
             "clicks": observation.clicks,
@@ -201,9 +208,7 @@ async def resolve_decision(
             or _metric_float(evidence.get("ctr")) != _metric_float(observation.ctr)
             or _metric_float(evidence.get("position")) != _metric_float(observation.position)
         ):
-            raise SEOEvidenceInvalidError(
-                "Opportunity facts differ from persisted Search Console evidence"
-            )
+            raise SEOEvidenceInvalidError(SEOLimitationCode.SEARCH_FACTS_CHANGED)
     else:
         observed_facts = {
             "technical_issues": observation.technical_issues,
@@ -215,7 +220,7 @@ async def resolve_decision(
         if ("http_status" in evidence and evidence["http_status"] != observation.http_status) or (
             "indexability" in evidence and evidence["indexability"] != observation.indexability
         ):
-            raise SEOEvidenceInvalidError("Opportunity facts differ from persisted crawl evidence")
+            raise SEOEvidenceInvalidError(SEOLimitationCode.CRAWL_FACTS_CHANGED)
     if (
         opportunity.opportunity_type == "gsc_query_demand"
         and isinstance(observation, SEOSearchObservation)
@@ -225,7 +230,7 @@ async def resolve_decision(
             or evidence.get("page_mapping_state") != "unknown"
         )
     ):
-        raise SEOEvidenceInvalidError("Query-only demand cannot be assigned a landing page")
+        raise SEOEvidenceInvalidError(SEOLimitationCode.QUERY_DEMAND_CANNOT_TARGET_PAGE)
 
     limitation = evidence.get("evidence_limitation")
     if opportunity.page_id is None:
@@ -238,7 +243,7 @@ async def resolve_decision(
         try:
             parsed_metric_id = UUID(str(metric_id))
         except ValueError as exc:
-            raise SEOEvidenceInvalidError("Business importance evidence ID is invalid") from exc
+            raise SEOEvidenceInvalidError(SEOLimitationCode.BUSINESS_EVIDENCE_ID_INVALID) from exc
         metric = await session.scalar(
             select(MetricObservation).where(
                 MetricObservation.id == parsed_metric_id,
@@ -250,16 +255,14 @@ async def resolve_decision(
         if metric is None or business.get("location_id") != (
             str(opportunity.location_id) if opportunity.location_id else None
         ):
-            raise SEOEvidenceInvalidError("Business importance evidence is outside the page scope")
+            raise SEOEvidenceInvalidError(SEOLimitationCode.BUSINESS_EVIDENCE_OUT_OF_SCOPE)
         if (
             metric.quality_state != "valid"
             or metric.value is None
             or business.get("value") != int(metric.value)
             or business.get("business_policy_version") != "business_importance.v1"
         ):
-            raise SEOEvidenceInvalidError(
-                "Business importance claim does not match source evidence"
-            )
+            raise SEOEvidenceInvalidError(SEOLimitationCode.BUSINESS_EVIDENCE_MISMATCH)
         business_ref = f"metric-observation:{metric.id}"
         business_fingerprint = _fingerprint(
             {

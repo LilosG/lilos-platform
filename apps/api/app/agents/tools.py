@@ -55,6 +55,7 @@ from apps.api.app.products.seo.decision import (
     resolve_decision,
     revision_decision,
 )
+from apps.api.app.products.seo.limitation_codes import SEOLimitationCode
 from apps.api.app.products.seo.search_console_service import SearchConsoleService
 from apps.api.app.products.seo.service import SEOService
 
@@ -1074,7 +1075,7 @@ class AgentToolService:
             )
             if current != workflow.input_document.get("seo_decision_snapshot"):
                 raise SEOEvidenceInvalidError(
-                    "Opportunity evidence changed during Hermes reasoning; start a new run"
+                    SEOLimitationCode.OPPORTUNITY_EVIDENCE_CHANGED_DURING_RUN
                 )
         command = RecommendationCreate(
             proposed_action=str(arguments.get("proposed_action") or "")[:10_000],

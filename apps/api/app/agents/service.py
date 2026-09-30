@@ -38,6 +38,7 @@ from apps.api.app.products.seo.decision import (
     resolve_decision,
 )
 from apps.api.app.products.seo.errors import SEOOpportunityNotFoundError
+from apps.api.app.products.seo.limitation_codes import SEOLimitationCode
 from apps.api.app.products.seo.models import SEORecommendationRevision
 from apps.api.app.products.seo.service import SEOService
 
@@ -525,19 +526,19 @@ class AgentRuntimeService:
                             )
                             if opportunity.location_id != run.location_id:
                                 raise SEOEvidenceInvalidError(
-                                    "Opportunity location changed during Hermes reasoning"
+                                    SEOLimitationCode.OPPORTUNITY_LOCATION_CHANGED
                                 )
                             source_ref = f"seo-opportunity:{opportunity.id}"
                             if source_ref not in run.source_references:
                                 raise SEOEvidenceInvalidError(
-                                    "Opportunity was not observed by this Hermes run"
+                                    SEOLimitationCode.OPPORTUNITY_NOT_OBSERVED_BY_RUN
                                 )
                             current = await resolve_decision(
                                 session, run.organization_id, opportunity, [source_ref]
                             )
                             if current != workflow.input_document.get("seo_decision_snapshot"):
                                 raise SEOEvidenceInvalidError(
-                                    "Opportunity evidence changed during Hermes reasoning"
+                                    SEOLimitationCode.OPPORTUNITY_EVIDENCE_CHANGED_DURING_RUN
                                 )
                             command = RecommendationCreate.model_validate(
                                 {**pending, "evidence_references": [source_ref]}
