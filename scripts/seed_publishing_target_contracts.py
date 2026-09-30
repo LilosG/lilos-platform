@@ -6,16 +6,15 @@ site on a ``PublishingTarget``. Every entry below was read from that repository'
 keeps an empty contract and is validated only against the universal floor of
 title + description, which is safe but publishes less metadata.
 
-Run after a target exists:
+Run after a target exists (Render shell):
 
-    uv run python -m scripts.seed_publishing_target_contracts
+    LILOS_RELEASE="$RENDER_GIT_COMMIT" python -m scripts.seed_publishing_target_contracts
 
 Idempotent: it only writes when the stored contract differs from the recorded one.
 """
 
 from __future__ import annotations
 
-import asyncio
 import json
 from typing import Any
 
@@ -27,6 +26,7 @@ from apps.api.app.integrations.models import IntegrationConnection, Provider
 from apps.api.app.locations.models import Location
 from apps.api.app.organizations.models import Organization
 from apps.api.app.products.content.models import PublishingTarget
+from scripts._cli import run_script
 
 # Standalone seed processes do not import the application model graph. Register the
 # tables referenced by PublishingTarget's composite foreign key before SQLAlchemy
@@ -403,4 +403,4 @@ async def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(asyncio.run(main()))
+    raise SystemExit(run_script("seed_publishing_target_contracts", main))
