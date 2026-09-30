@@ -111,8 +111,11 @@ class InsightsService:
             if location_id is not None
             else SEOOpportunity.organization_id == organization_id
         )
+        # Archived opportunities are history, not work: never counted in Overview.
         seo_opportunities = await self._status_counts(
-            session, SEOOpportunity, seo_opportunity_scope
+            session,
+            SEOOpportunity,
+            and_(seo_opportunity_scope, SEOOpportunity.status != "archived"),
         )
         seo_opportunities_blocked = await self._count(
             session,

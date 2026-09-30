@@ -85,6 +85,8 @@ from apps.api.app.products.seo.verification import read_implementation_truth
 from apps.api.app.reporting_periods import GA4_SYNC_TAIL_EXCLUSION_DAYS, reporting_window
 
 BUSINESS_POLICY_VERSION = "business_importance.v1"
+# A recommendation in any other status can still be acted on, so it can be withdrawn.
+TERMINAL_RECOMMENDATION_STATUSES = frozenset({"rejected", "implemented", "withdrawn"})
 SCORE_POLICY_VERSION = "opportunity_score.v2"
 SCORE_VERSION = 2
 BUSINESS_METRIC_KEY = "ga4.organicLanding.keyEvents"
@@ -1224,6 +1226,7 @@ class SEOService:
         website_id: UUID | None = None,
         status_filter: str | None = None,
         location_scope: tuple[UUID | None, ...] | None = None,
+        exclude_archived: bool = False,
         limit: int = 50,
         offset: int = 0,
     ) -> tuple[list[SEOOpportunity], bool]:
@@ -1234,6 +1237,8 @@ class SEOService:
         )
         if website_id is not None:
             statement = statement.where(SEOOpportunity.website_id == website_id)
+        if exclude_archived:
+            statement = statement.where(SEOOpportunity.status != "archived")
         if status_filter is not None:
             statement = statement.where(SEOOpportunity.status == status_filter)
         if location_scope is not None:
@@ -1495,6 +1500,85 @@ class SEOService:
                 .order_by(SEORecommendationRevision.revision_number.desc())
             )
         )
+
+    async def withdraw_recommendation(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        revision: SEORecommendationRevision,
+        *,
+        reason: str,
+        correlation_id: str,
+    ) -> bool:
+        """Take a recommendation out of play: terminal, audited, never deleted.
+
+        Returns False (and does nothing) if it already reached a terminal status.
+        """
+        if revision.status in TERMINAL_RECOMMENDATION_STATUSES:
+            return False
+        previous_status = revision.status
+        revision.status = "withdrawn"
+        await session.flush()
+        location_id = await session.scalar(
+            select(SEOOpportunity.location_id).where(
+                SEOOpportunity.organization_id == organization_id,
+                SEOOpportunity.id == revision.opportunity_id,
+            )
+        )
+        await self._audit(
+            session,
+            event="seo.recommendation.withdrawn",
+            organization_id=organization_id,
+            location_id=location_id,
+            actor_id=None,
+            resource_type="seo_opportunity",
+            resource_id=revision.opportunity_id,
+            correlation_id=correlation_id,
+            summary=f"SEO recommendation withdrawn ({reason}).",
+            metadata={
+                "revision_id": str(revision.id),
+                "reason": reason,
+                "previous_status": previous_status,
+            },
+        )
+        return True
+
+    async def withdraw_approval(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        opportunity: SEOOpportunity,
+        *,
+        reason: str,
+        correlation_id: str,
+    ) -> int:
+        """Return an approved opportunity to `identified`, withdrawing its live recommendations.
+
+        For an approval that can never execute (it predates page attribution), so the
+        opportunity goes back to being a finding rather than staying approved forever.
+        """
+        withdrawn = 0
+        for revision in await self.list_recommendations(session, organization_id, opportunity.id):
+            if await self.withdraw_recommendation(
+                session, organization_id, revision, reason=reason, correlation_id=correlation_id
+            ):
+                withdrawn += 1
+        opportunity.status = "identified"
+        opportunity.version += 1
+        await session.flush()
+        await self._audit(
+            session,
+            event="seo.opportunity.approval_withdrawn",
+            organization_id=organization_id,
+            location_id=opportunity.location_id,
+            actor_id=None,
+            resource_type="seo_opportunity",
+            resource_id=opportunity.id,
+            correlation_id=correlation_id,
+            summary=f"SEO approval withdrawn ({reason}).",
+            metadata={"reason": reason, "recommendations_withdrawn": withdrawn},
+        )
+        return withdrawn
 
     async def decide_recommendation(
         self,
@@ -1819,7 +1903,10 @@ class SEOService:
         rows = (
             await session.execute(
                 select(SEOOpportunity.status, func.count())
-                .where(SEOOpportunity.organization_id == organization_id)
+                .where(
+                    SEOOpportunity.organization_id == organization_id,
+                    SEOOpportunity.status != "archived",
+                )
                 .group_by(SEOOpportunity.status)
             )
         ).all()

@@ -259,7 +259,12 @@ async def search_intelligence_workspace(
 ) -> dict[str, object]:
     """Bounded, scoped work projection over existing SEO and integration records."""
     opportunities, has_more = await service.list_opportunities(
-        session, organization_id, website_id=website_id, limit=limit, offset=offset
+        session,
+        organization_id,
+        website_id=website_id,
+        exclude_archived=True,
+        limit=limit,
+        offset=offset,
     )
     websites = list(
         await session.scalars(
@@ -304,6 +309,8 @@ async def search_intelligence_workspace(
                 .where(
                     SEORecommendationRevision.organization_id == organization_id,
                     SEORecommendationRevision.opportunity_id.in_(opportunity_ids),
+                    # A withdrawn recommendation is out of play; it is history, not work.
+                    SEORecommendationRevision.status != "withdrawn",
                 )
                 .order_by(
                     SEORecommendationRevision.created_at.desc(), SEORecommendationRevision.id.desc()
@@ -434,6 +441,7 @@ async def search_intelligence_workspace(
                         SEORecommendationRevision.organization_id == organization_id,
                         SEORecommendationRevision.status == "approved",
                         SEOOpportunity.page_id.in_(page_ids),
+                        SEOOpportunity.status != "archived",
                     )
                     .order_by(SEORecommendationRevision.created_at.desc())
                     .limit(5001)

@@ -747,7 +747,10 @@ async def test_orchestration_uses_current_gsc_and_routes_only_content_work(
         assert archived_unmapped is not None and archived_unmapped.status == "archived"
         assert refreshed_unrelated is not None and refreshed_unrelated.status == "recommended"
         assert refreshed_unrelated.active_marker == "active"
-        assert refreshed_decided is not None and refreshed_decided.status == "approved"
+        # Stale archival never touches decided work. This one is an unattributed approval,
+        # which can never execute, so the legacy pass withdraws the approval instead: it
+        # returns to `identified` and stays live (it is not archived).
+        assert refreshed_decided is not None and refreshed_decided.status == "identified"
         assert refreshed_decided.active_marker == "active"
 
 
@@ -971,18 +974,74 @@ async def test_reanalysis_converges_to_one_live_row_per_query_and_type(
 
 @pytest.mark.integration
 @pytest.mark.anyio
-async def test_superseded_retirement_skips_approved_work(
+async def test_plain_retirement_skips_approved_work_but_legacy_pass_supersedes_it(
     seo_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
+    """`_retire_superseded` never archives decided work; the legacy-approval pass does.
+
+    An approved query-only row with nothing in flight can never execute, so once an
+    attributed replacement exists it is superseded -- audited as a legacy approval, not
+    as an ordinary retirement.
+    """
     service = SEOOrchestrationService(pagespeed=FakePageSpeedService())
     async with seo_session_factory.begin() as session:
         organization, website, _, _ = await _seed_attributed_query(session)
         approved = _legacy_query_only_row(organization, website, status="approved")
         session.add(approved)
         await session.flush()
+        replacement = await service._upsert_opportunity(
+            session,
+            organization.id,
+            website,
+            location_id=None,
+            page_id=None,
+            opportunity_type="gsc_striking_distance",
+            target_reference=QUERY,
+            evidence={"source": "google_search_console", "query": QUERY},
+            source_versions=["gsc.v1"],
+            priority_score=50,
+            score_explanation={},
+        )
+        assert replacement.id != approved.id
+        # The ordinary retirement path leaves an approved row exactly as it found it.
+        retired = await service._retire_superseded(
+            session,
+            organization.id,
+            website.id,
+            await _attributed(session, organization.id, replacement),
+            QUERY,
+            "keep-1",
+        )
+        assert retired == 0
+        await session.refresh(approved)
+        assert approved.status == "approved" and approved.active_marker == "active"
 
-        await service.analyze(session, organization.id, location_id=None, correlation_id="keep-1")
+        await service.analyze(session, organization.id, location_id=None, correlation_id="keep-2")
 
         await session.refresh(approved)
-        assert approved.status == "approved"
-        assert approved.active_marker == "active"
+        assert approved.status == "archived"
+        events = list(
+            await session.scalars(
+                select(AuditEvent).where(
+                    AuditEvent.organization_id == organization.id,
+                    AuditEvent.event_type == "seo.opportunity.archived",
+                    AuditEvent.resource_id == approved.id,
+                )
+            )
+        )
+        assert [event.event_metadata["reason"] for event in events] == [
+            "legacy_approval_superseded"
+        ]
+
+
+async def _attributed(
+    session: AsyncSession, organization_id: UUID, like: SEOOpportunity
+) -> SEOOpportunity:
+    """Mark `like` attributed to a page so it can act as the superseding opportunity."""
+    page_id = await session.scalar(
+        select(SEOPage.id).where(SEOPage.organization_id == organization_id)
+    )
+    like.page_id = page_id
+    like.attribution_state = "attributed"
+    await session.flush()
+    return like
