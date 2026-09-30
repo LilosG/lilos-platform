@@ -186,15 +186,23 @@ def test_legacy_technical_site_item_is_routed_out_of_content_publish() -> None:
         ),
     )
 
+    item = _item(title="Add missing H1 to blog index and category pages", slug="blog")
+
     summary = ContentOperatorService._summary(
-        _item(
-            title="Add missing H1 to blog index and category pages",
-            slug="blog",
-        ),
+        item,
         revision,
         _publication("checks_failed"),
         "failed",
+        opportunity_type="missing_h1",  # the typed class the item was created from
     )
+
+    # The same title/slug/body with no typed site-change class is just content: the
+    # old keyword matching on prose is gone.
+    untyped = ContentOperatorService._summary(
+        item, revision, _publication("checks_failed"), "failed", opportunity_type="gsc_low_ctr"
+    )
+    assert untyped["technical_site_change"] is False
+    assert ContentOperatorService._summary(item, revision, None)["technical_site_change"] is False
 
     assert summary["technical_site_change"] is True
     assert summary["next_action"] == {

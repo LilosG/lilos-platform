@@ -262,7 +262,7 @@ missing data with a narrative.
     ),
     "growth.planner": AgentSkill(
         key="growth.planner",
-        version=5,
+        version=6,
         product_key="growth",
         title="Cross-product growth planner",
         instructions=COMMON_POLICY
@@ -290,6 +290,11 @@ through GBP, route work to Reviews, require a manual action, or monitor without
 changing anything. Technical/site-code work -- including H1/template fixes,
 metadata mechanics, canonicals, schema markup, redirects, robots/sitemaps, and
 Core Web Vitals implementation -- belongs to the SEO product, never Content.
+Mark such an action by setting action_type to exactly one of: site_implementation,
+seo_title, meta_description, h1, body_section, schema, internal_link,
+missing_title, missing_meta_description, missing_h1, multiple_h1, non_200_status,
+title_truncated, meta_description_truncated, or h1_truncated. LILOs routes on that
+exact value, never on your wording, so an editorial asset must never use one.
 Content is reserved for substantive editorial assets and on-page copy that can
 be reviewed and published as content. For workflow actions, choose the owning
 product only. LILOs assigns the
