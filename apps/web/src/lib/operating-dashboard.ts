@@ -214,8 +214,10 @@ export function todaysWork(summary: InsightsSummary | null): WorkItem[] {
   const seoBlocked = summary.seo?.opportunities_blocked ?? 0;
   const seoWork = Math.max(
     0,
-    count(summary.seo?.opportunities ?? {}, SEO_ACTIONABLE_OPPORTUNITY_STATUSES) -
-      seoBlocked,
+    count(
+      summary.seo?.opportunities ?? {},
+      SEO_ACTIONABLE_OPPORTUNITY_STATUSES,
+    ) - seoBlocked,
   );
   const contentWaiting = count(summary.content_publications ?? {}, [
     "reserved",

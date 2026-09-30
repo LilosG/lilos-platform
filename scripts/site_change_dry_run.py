@@ -66,9 +66,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo-path", required=True, type=Path)
     parser.add_argument("--page", required=True, choices=sorted(COCO_MAYA_PAGE_MAP))
-    parser.add_argument(
-        "--field", required=True, choices=[f.value for f in SiteChangeField]
-    )
+    parser.add_argument("--field", required=True, choices=[f.value for f in SiteChangeField])
     parser.add_argument("--proposed-value", required=True)
     args = parser.parse_args()
 

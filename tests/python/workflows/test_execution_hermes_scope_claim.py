@@ -171,9 +171,7 @@ async def test_claim_succeeds_once_the_scoped_session_frees_up(
 
     # The busy run completes.
     async with workflows_session_factory.begin() as session:
-        busy_agent_run = await session.scalar(
-            select(AgentRun).where(AgentRun.status == "running")
-        )
+        busy_agent_run = await session.scalar(select(AgentRun).where(AgentRun.status == "running"))
         assert busy_agent_run is not None
         busy_agent_run.status = "completed"
 

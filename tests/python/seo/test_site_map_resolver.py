@@ -134,10 +134,7 @@ def test_applies_edit_to_louisiana_purchase_top_level_shape() -> None:
     )
     current = resolve_current_value(files, locator)
     updated = apply_change(files, locator, current, "New North Park Brunch Title")
-    assert (
-        '"title": "New North Park Brunch Title"'
-        in updated["src/content/brunchPage/page.json"]
-    )
+    assert '"title": "New North Park Brunch Title"' in updated["src/content/brunchPage/page.json"]
     assert '"href": "/menu"' in updated["src/content/brunchPage/page.json"]
 
 
@@ -183,17 +180,13 @@ def test_resolves_and_edits_astro_code_homepage_meta_title() -> None:
     updated = apply_change(files, locator, current, "New Electrician Title")
     updated_content = updated["src/lib/seo.ts"]
     assert 'title: "New Electrician Title"' in updated_content
-    assert (
-        'description: "Licensed electrician serving North County San Diego."'
-        in updated_content
-    )
+    assert 'description: "Licensed electrician serving North County San Diego."' in updated_content
 
 
 def test_astro_code_ambiguous_binding_requires_mapping() -> None:
     files = {
         "src/lib/seo.ts": (
-            'export const a = { title: "First" };\n'
-            'export const b = { title: "Second" };\n'
+            'export const a = { title: "First" };\nexport const b = { title: "Second" };\n'
         )
     }
     locator = AstroCodeLocator(file_path="src/lib/seo.ts", binding_name="title")
@@ -241,9 +234,7 @@ def test_applies_edit_when_current_value_contains_non_ascii_characters() -> None
 
 
 def test_apply_change_refuses_ambiguous_duplicate_value() -> None:
-    files = {
-        "dup.json": '{"seo": {"title": "Same Value"}, "other": {"title": "Same Value"}}'
-    }
+    files = {"dup.json": '{"seo": {"title": "Same Value"}, "other": {"title": "Same Value"}}'}
     locator = KeystaticJsonLocator(file_path="dup.json", json_pointer=("seo", "title"))
     with pytest.raises(SEOSiteMappingRequiredError, match="occurs 2 times"):
         apply_change(files, locator, "Same Value", "New Value")

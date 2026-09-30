@@ -480,9 +480,7 @@ async def map_analytics_property(
     _: Annotated[
         AuthorizationDecision,
         Depends(
-            require_authorization(
-                "insights.manage", ScopeType.ORGANIZATION, AssuranceLevel.AAL1
-            )
+            require_authorization("insights.manage", ScopeType.ORGANIZATION, AssuranceLevel.AAL1)
         ),
     ],
 ) -> dict[str, object]:

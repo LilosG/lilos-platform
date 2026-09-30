@@ -458,7 +458,9 @@ class GrowthService:
             expected_owner = (
                 WORKFLOW_TYPES[workflow_key][1]
                 if is_deterministic and workflow_key in WORKFLOW_TYPES
-                else GROWTH_EXECUTOR_WORKFLOWS.get(workflow_key) if workflow_key else None
+                else GROWTH_EXECUTOR_WORKFLOWS.get(workflow_key)
+                if workflow_key
+                else None
             )
             if workflow_key is None or expected_owner != action.product_key:
                 raise GrowthStateError("growth action executor binding is no longer valid")

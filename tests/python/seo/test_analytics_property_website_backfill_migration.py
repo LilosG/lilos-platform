@@ -127,9 +127,7 @@ async def _seed(database_url: str) -> dict[str, object]:
         await engine.dispose()
 
 
-async def _read_website_ids(
-    database_url: str, property_ids: list[object]
-) -> dict[object, object]:
+async def _read_website_ids(database_url: str, property_ids: list[object]) -> dict[object, object]:
     engine = create_async_engine(database_url)
     try:
         async with engine.connect() as connection:
@@ -175,6 +173,6 @@ def test_backfill_binds_only_organizations_with_exactly_one_website(
     # No websites in its organization -> left NULL.
     assert website_by_property[seeded["empty_property"]] is None
     # Already had a website_id -> untouched by the backfill.
-    assert website_by_property[seeded["already_mapped_property"]] == (
-        seeded["already_mapped_website"]
+    assert (
+        website_by_property[seeded["already_mapped_property"]] == (seeded["already_mapped_website"])
     )
