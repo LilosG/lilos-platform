@@ -25,11 +25,16 @@ from apps.api.app.execution.models import WorkflowRun
 from apps.api.app.execution.service import ExecutionService
 from apps.api.app.integrations.models import IntegrationConnection
 from apps.api.app.products.content.models import ContentPublication, PublishingTarget
-from apps.api.app.products.seo.change_set import SiteChangeField, SiteChangeSet
+from apps.api.app.products.seo.change_set import (
+    MAX_META_DESCRIPTION_LENGTH,
+    MAX_SEO_TITLE_LENGTH,
+    SiteChangeField,
+    SiteChangeSet,
+)
 from apps.api.app.products.seo.decision import SEOEvidenceInvalidError
 from apps.api.app.products.seo.errors import SEOSiteMappingRequiredError
 from apps.api.app.products.seo.limitation_codes import SEOLimitationCode
-from apps.api.app.products.seo.models import SEOPage, SEORecommendationRevision
+from apps.api.app.products.seo.models import SEOOpportunity, SEOPage, SEORecommendationRevision
 from apps.api.app.products.seo.site_change_codes import SiteChangeCode
 from apps.api.app.products.seo.site_map_resolver import (
     SiteMapLocator,
@@ -170,6 +175,67 @@ class SiteChangeService:
         job = await self.execution.enqueue_consumed_run(session, workflow_run)
         job.max_attempts = SITE_CHANGE_JOB_ATTEMPTS
         return publication
+
+    async def mapping_limitation(
+        self, session: AsyncSession, organization_id: UUID, page_id: UUID
+    ) -> str | None:
+        """`SITE_MAPPING_REQUIRED` when this page cannot be edited through a page map.
+
+        Database only -- no repository is read -- so it is safe to call while a
+        recommendation is being created. None means a site change is possible.
+        """
+        page = await session.scalar(
+            select(SEOPage).where(SEOPage.organization_id == organization_id, SEOPage.id == page_id)
+        )
+        target = await self.active_target(session, organization_id)
+        if page is None or target is None or not target.allowed_site_change_prefixes:
+            return SiteChangeCode.SITE_MAPPING_REQUIRED.value
+        try:
+            resolve_entry(
+                page_map_from_contract(target.frontmatter_contract),
+                page.normalized_url,
+                target.allowed_site_change_prefixes,
+            )
+        except SEOSiteMappingRequiredError:
+            return SiteChangeCode.SITE_MAPPING_REQUIRED.value
+        return None
+
+    async def site_change_context(
+        self, session: AsyncSession, organization_id: UUID, opportunity: SEOOpportunity
+    ) -> dict[str, object]:
+        """What Hermes is told about editing this opportunity's page, read from the repo.
+
+        Commits the caller's session before reading the client repository, so call it
+        only from a worker step that owns the session. The values are evidence read
+        through the page map; Hermes proposes replacements, never the current text.
+        """
+        if opportunity.page_id is None or opportunity.attribution_state != "attributed":
+            return {"status": "not_applicable"}
+        page = await session.scalar(
+            select(SEOPage).where(
+                SEOPage.organization_id == organization_id, SEOPage.id == opportunity.page_id
+            )
+        )
+        if page is None:
+            return {"status": "unavailable", "code": SiteChangeCode.SITE_MAPPING_REQUIRED.value}
+        page_id, page_url = page.id, page.normalized_url
+        result = await self.read_page_fields(session, organization_id, page)
+        if isinstance(result, FieldsUnavailable):
+            return {
+                "status": "unavailable",
+                "code": str(result.code),
+                "detail": result.detail[:300],
+            }
+        return {
+            "status": "available",
+            "page_id": str(page_id),
+            "page_url": page_url,
+            "fields": {field_name.value: value for field_name, value in result.values.items()},
+            "limits": {
+                SiteChangeField.SEO_TITLE.value: MAX_SEO_TITLE_LENGTH,
+                SiteChangeField.META_DESCRIPTION.value: MAX_META_DESCRIPTION_LENGTH,
+            },
+        }
 
     async def read_page_fields(
         self,

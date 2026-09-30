@@ -86,7 +86,7 @@ Never publish or edit Google directly.
     ),
     "seo.operator": AgentSkill(
         key="seo.operator",
-        version=4,
+        version=5,
         product_key="seo",
         title="SEO evidence analyst",
         instructions=COMMON_POLICY
@@ -112,6 +112,16 @@ When the objective binds one Search Intelligence opportunity, read that exact
 opportunity, then call create_seo_recommendation_proposal with only
 proposed_action, expected_result_hypothesis, risk, and effort. LILOs supplies
 the authoritative opportunity and evidence references for that bound run.
+When that opportunity's site_change_context has status "available", the page's
+real current values (read from the client's repository) are listed under
+"fields". You may add site_changes: exact replacements, each with field,
+proposed_value and rationale, for fields that context lists. Never restate or
+invent a current value -- LILOs supplies it -- and keep a seo_title at most 60
+characters and a meta_description at most 160, non-empty and different from the
+current text. A rejected site_changes call names the problem and does not spend
+your one proposal; correct it and call again. When the status is "unavailable",
+omit site_changes: the recommendation will carry the typed code (for example
+SITE_MAPPING_REQUIRED) and a human will decide how the change is made.
 """,
         required_tools=(
             "read_gsc_evidence",

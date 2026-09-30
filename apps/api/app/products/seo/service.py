@@ -1288,6 +1288,22 @@ class SEOService:
             .order_by(SEORecommendationRevision.revision_number.desc())
             .limit(1)
         )
+        change_set: dict[str, object] | None = None
+        limitation_code: str | None = None
+        if command.change_set is not None:
+            proposed = SiteChangeSet.model_validate(command.change_set)
+            if opportunity.page_id is None or any(
+                item.page_id != opportunity.page_id for item in proposed.items
+            ):
+                # A change set may only edit the page this opportunity is attributed to.
+                raise SEOEvidenceInvalidError(SEOLimitationCode.PAGE_OUT_OF_SCOPE)
+            change_set = proposed.model_dump(mode="json")
+        elif opportunity.page_id is not None and opportunity.attribution_state == "attributed":
+            # No exact change was proposed. If the page could not be edited through a page
+            # map anyway, say so with a typed code instead of leaving the gap silent.
+            limitation_code = await self.site_changes.mapping_limitation(
+                session, organization_id, opportunity.page_id
+            )
         revision = SEORecommendationRevision(
             organization_id=organization_id,
             opportunity_id=opportunity_id,
@@ -1299,6 +1315,8 @@ class SEOService:
             effort=command.effort,
             status="awaiting_approval",
             created_at=datetime.now(UTC),
+            change_set=change_set,
+            change_set_limitation_code=limitation_code,
         )
         session.add(revision)
         opportunity.status = "recommended"
