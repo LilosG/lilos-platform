@@ -36,12 +36,17 @@ from apps.api.app.audit.enums import AuditActorType, AuditResult
 from apps.api.app.audit.metadata import JsonValue
 from apps.api.app.audit.service import AuditEventService
 from apps.api.app.config import Settings
+from apps.api.app.database.scope import TransactionScope
 from apps.api.app.integrations.connection_service import (
     SEARCH_CONSOLE_SCOPE,
     GBPConnectionService,
     connection_has_scope,
 )
-from apps.api.app.integrations.errors import IntegrationNotFoundError
+from apps.api.app.integrations.errors import (
+    IntegrationNotFoundError,
+    IntegrationReconnectRequiredError,
+    IntegrationTokenExchangeFailedError,
+)
 from apps.api.app.integrations.models import IntegrationConnection
 from apps.api.app.products.seo.errors import (
     SEOSearchConsoleDiscoveryFailedError,
@@ -66,6 +71,24 @@ from apps.api.app.reporting_periods import (
     provider_start_date,
     reporting_window,
 )
+
+
+@dataclass(slots=True)
+class PeriodFetch:
+    """One reporting period's provider responses, fetched before anything is written.
+
+    Each field is the rows, or the exception the request raised (so a failed
+    request is recorded and audited exactly as it was when fetch and write were
+    interleaved).
+    """
+
+    site_summary: "list[SearchAnalyticsRow] | Exception"
+    prior_summary: "list[SearchAnalyticsRow] | Exception"
+    daily: "list[SearchAnalyticsRow] | Exception"
+    top_queries: "list[SearchAnalyticsRow] | Exception"
+    top_pages: "list[SearchAnalyticsRow] | Exception"
+    page_query: "list[SearchAnalyticsRow] | Exception"
+
 
 DEFAULT_SYNC_WINDOW_DAYS = 28
 DEFAULT_FRESHNESS_STALE_SECONDS = 172_800  # 48 hours
@@ -352,7 +375,7 @@ class SearchConsoleService:
 
     async def sync_observations(
         self,
-        session: AsyncSession,
+        scope: TransactionScope,
         settings: Settings,
         organization_id: UUID,
         search_property_id: UUID,
@@ -365,7 +388,7 @@ class SearchConsoleService:
 
         Syncs all supported reporting periods (7/28/90 days) so the reporting
         selector is populated by a single governed sync. For each period it
-        pulls four observation types:
+        pulls these observation types:
 
         - site_summary: no dimensions (authoritative site-level totals)
         - daily: date dimension (for trend series)
@@ -375,156 +398,276 @@ class SearchConsoleService:
 
         Rows are upserted idempotently on the
         (search_property, date_start, date_end, dimension_hash) uniqueness key.
+
+        Three phases, so no database transaction is ever open while Google is
+        being called: (1) a short read transaction, (2) every provider request --
+        token refresh included -- with no transaction open, fetched into memory,
+        (3) one short transaction that persists everything. Because nothing is
+        written until every request has returned, a failed request leaves the
+        previous successful dataset untouched, which is what the old per-request
+        savepoint guaranteed.
         """
-        property_row = await session.scalar(
-            select(SEOSearchProperty).where(
-                SEOSearchProperty.organization_id == organization_id,
-                SEOSearchProperty.id == search_property_id,
-            )
-        )
-        if property_row is None:
-            raise SEOSearchPropertyNotFoundError
-        if property_row.provider != "google_search_console":
-            raise SEOSearchPropertyNotFoundError
-        website = await self._get_website(session, organization_id, property_row.website_id)
-        resolver = await PageResolver.load(session, organization_id, website.id)
-        token, connection = await self._fresh_token(session, settings, organization_id)
-        del connection
+        # -- phase 1: read -------------------------------------------------------
+        async with scope.begin() as session:
+            property_row = await self.load_property(session, organization_id, search_property_id)
+            website = await self._get_website(session, organization_id, property_row.website_id)
+            resolver = await PageResolver.load(session, organization_id, website.id)
+            connection = await self._connection(session, organization_id)
+            if not connection_has_scope(connection, SEARCH_CONSOLE_SCOPE):
+                raise SEOSearchConsoleScopeRequiredError
+            plan = await self.connection.begin_token_refresh(session, settings, connection)
+            external_id = property_row.external_property_id
+            connection_id = connection.id
+
+        # -- phase 2: provider HTTP, nothing open --------------------------------
+        if plan.access_token is not None:
+            token = plan.access_token
+        else:
+            assert plan.refresh_token is not None
+            try:
+                payload = await self.connection.refresh_token_pair(settings, plan.refresh_token)
+            except IntegrationTokenExchangeFailedError:
+                # Committed on its own so the status survives the error unwinding us.
+                async with scope.begin() as session:
+                    stale = await session.get(IntegrationConnection, connection_id)
+                    if stale is not None:
+                        await self.connection.fail_token_refresh(session, stale)
+                raise IntegrationReconnectRequiredError from None
+            async with scope.begin() as session:
+                refreshed = await session.get(IntegrationConnection, connection_id)
+                if refreshed is None:
+                    raise SEOSearchPropertyNotConfiguredError
+                token = await self.connection.complete_token_refresh(
+                    session, settings, refreshed, plan, payload
+                )
+
         now = datetime.now(UTC)
+        windows = {
+            period_days: reporting_window(now, period_days, GSC_SYNC_TAIL_EXCLUSION_DAYS)
+            for period_days in VALID_REPORTING_PERIODS
+        }
+        fetched = {
+            period_days: await self._fetch_period(token, external_id, start, end, period_days)
+            for period_days, (start, end) in windows.items()
+        }
+
+        # -- phase 3: persist ----------------------------------------------------
         upserted = 0
         failed = False
         failures: list[dict[str, object]] = []
-
-        # Persist the 7/28/90 contract atomically so a partial attempt never
-        # publishes a newer incomplete current window. On any required failure
-        # the savepoint is rolled back and the previous successful dataset stays.
-        nested = session.begin_nested()
-        await nested.start()
-        try:
+        async with scope.begin() as session:
+            property_row = await self.load_property(session, organization_id, search_property_id)
             for period_days in VALID_REPORTING_PERIODS:
-                start, window_end = reporting_window(now, period_days, GSC_SYNC_TAIL_EXCLUSION_DAYS)
-                period_upserted, period_failed = await self._sync_period(
+                start, window_end = windows[period_days]
+                if await self._period_failed(fetched[period_days], period_days, failures):
+                    failed = True
+            if failed:
+                # Nothing was written: the previous successful dataset is preserved.
+                property_row.freshness_status = (
+                    "never_synced" if property_row.last_synced_at is None else "stale"
+                )
+                await session.flush()
+                await self._audit(
                     session,
-                    token,
+                    event="seo.search_console.sync_incomplete",
+                    organization_id=organization_id,
+                    actor_id=actor_id,
+                    resource_type="seo_search_property",
+                    resource_id=property_row.id,
+                    correlation_id=correlation_id,
+                    summary="Search Console sync incomplete: one or more required requests "
+                    "failed; previous successful dataset preserved.",
+                    metadata={"failures": failures},
+                    result=AuditResult.FAILED,
+                )
+                return {
+                    "search_property_id": str(property_row.id),
+                    "rows_synced": 0,
+                    "window_days": days,
+                    "periods_synced": [],
+                    "freshness_status": property_row.freshness_status,
+                }
+
+            for period_days in VALID_REPORTING_PERIODS:
+                start, window_end = windows[period_days]
+                upserted += await self._sync_period(
+                    session,
                     organization_id,
                     property_row,
                     resolver,
                     start,
                     window_end,
                     period_days,
-                    actor_id,
-                    correlation_id,
-                    failures,
+                    fetched[period_days],
                 )
-                upserted += period_upserted
-                if period_failed:
-                    failed = True
-        except BaseException:
-            await nested.rollback()
-            raise
-
-        if failed:
-            await nested.rollback()
-            if property_row.last_synced_at is None:
-                property_row.freshness_status = "never_synced"
-            else:
-                property_row.freshness_status = "stale"
+            property_row.last_synced_at = now
+            property_row.freshness_status = "fresh"
             await session.flush()
             await self._audit(
                 session,
-                event="seo.search_console.sync_incomplete",
+                event="seo.search_console.synced",
                 organization_id=organization_id,
                 actor_id=actor_id,
                 resource_type="seo_search_property",
                 resource_id=property_row.id,
                 correlation_id=correlation_id,
-                summary="Search Console sync incomplete: one or more required requests "
-                "failed; previous successful dataset preserved.",
-                metadata={"failures": failures},
-                result=AuditResult.FAILED,
+                summary=f"Synced {upserted} Search Console observations across "
+                f"{len(VALID_REPORTING_PERIODS)} periods.",
+                metadata={
+                    "rows": upserted,
+                    "periods_synced": list(VALID_REPORTING_PERIODS),
+                },
             )
-            del website
             return {
                 "search_property_id": str(property_row.id),
-                "rows_synced": 0,
+                "rows_synced": upserted,
                 "window_days": days,
-                "periods_synced": [],
+                "periods_synced": list(VALID_REPORTING_PERIODS),
                 "freshness_status": property_row.freshness_status,
             }
 
-        await nested.commit()
-        property_row.last_synced_at = now
-        property_row.freshness_status = "fresh"
-        await session.flush()
-        await self._audit(
-            session,
-            event="seo.search_console.synced",
-            organization_id=organization_id,
-            actor_id=actor_id,
-            resource_type="seo_search_property",
-            resource_id=property_row.id,
-            correlation_id=correlation_id,
-            summary=f"Synced {upserted} Search Console observations across "
-            f"{len(VALID_REPORTING_PERIODS)} periods.",
-            metadata={
-                "rows": upserted,
-                "periods_synced": list(VALID_REPORTING_PERIODS),
-            },
+    async def load_property(
+        self, session: AsyncSession, organization_id: UUID, search_property_id: UUID
+    ) -> SEOSearchProperty:
+        property_row = await session.scalar(
+            select(SEOSearchProperty).where(
+                SEOSearchProperty.organization_id == organization_id,
+                SEOSearchProperty.id == search_property_id,
+            )
         )
-        del website
-        return {
-            "search_property_id": str(property_row.id),
-            "rows_synced": upserted,
-            "window_days": days,
-            "periods_synced": list(VALID_REPORTING_PERIODS),
-            "freshness_status": property_row.freshness_status,
-        }
+        if property_row is None or property_row.provider != "google_search_console":
+            raise SEOSearchPropertyNotFoundError
+        return property_row
+
+    async def _query(
+        self,
+        token: str,
+        external_id: str,
+        *,
+        start: datetime,
+        end: datetime,
+        dimensions: tuple[str, ...],
+        row_limit: int,
+    ) -> list[SearchAnalyticsRow] | Exception:
+        try:
+            return await self.adapter.query_search_analytics(
+                token,
+                external_id,
+                start_date=provider_start_date(start),
+                end_date=provider_end_date(end),
+                dimensions=dimensions,
+                row_limit=row_limit,
+            )
+        except Exception as exc:
+            return exc
+
+    async def _fetch_period(
+        self,
+        token: str,
+        external_id: str,
+        start: datetime,
+        window_end: datetime,
+        period_days: int,
+    ) -> PeriodFetch:
+        """Fetch one period's responses into memory. Touches no database."""
+        comp_start, comp_end = comparison_window(start, period_days)
+        summary = await self._query(
+            token, external_id, start=start, end=window_end, dimensions=(), row_limit=1000
+        )
+        if isinstance(summary, Exception):
+            # The period cannot be used without its site summary; skip its other
+            # requests exactly as the interleaved version did.
+            return PeriodFetch(summary, [], [], [], [], [])
+        return PeriodFetch(
+            site_summary=summary,
+            prior_summary=await self._query(
+                token, external_id, start=comp_start, end=comp_end, dimensions=(), row_limit=1000
+            ),
+            daily=await self._query(
+                token,
+                external_id,
+                start=start,
+                end=window_end,
+                dimensions=("date",),
+                row_limit=25000,
+            ),
+            top_queries=await self._query(
+                token,
+                external_id,
+                start=start,
+                end=window_end,
+                dimensions=("query",),
+                row_limit=1000,
+            ),
+            top_pages=await self._query(
+                token,
+                external_id,
+                start=start,
+                end=window_end,
+                dimensions=("page",),
+                row_limit=1000,
+            ),
+            page_query=await self._query(
+                token,
+                external_id,
+                start=start,
+                end=window_end,
+                dimensions=("page", "query"),
+                row_limit=25000,
+            ),
+        )
+
+    @staticmethod
+    async def _period_failed(
+        fetched: PeriodFetch, period_days: int, failures: list[dict[str, object]]
+    ) -> bool:
+        """Record every failed request for the audit row; True if any required one failed."""
+        failed = False
+        for request, result in (
+            ("site_summary", fetched.site_summary),
+            ("prior_site_summary", fetched.prior_summary),
+            ("daily", fetched.daily),
+            ("top_queries", fetched.top_queries),
+            ("top_pages", fetched.top_pages),
+            ("page_query", fetched.page_query),
+        ):
+            if isinstance(result, Exception):
+                failed = True
+                failures.append(
+                    {"request": request, "period_days": period_days, "error": str(result)[:200]}
+                )
+        return failed
 
     async def _sync_period(
         self,
         session: AsyncSession,
-        token: str,
         organization_id: UUID,
         property_row: SEOSearchProperty,
         resolver: PageResolver,
         start: datetime,
         window_end: datetime,
         period_days: int,
-        actor_id: UUID | None,
-        correlation_id: str,
-        failures: list[dict[str, object]],
-    ) -> tuple[int, bool]:
-        """Sync one period's current + prior aggregates and current dimensions.
+        fetched: PeriodFetch,
+    ) -> int:
+        """Persist one period's already-fetched aggregates and dimensions.
 
-        Returns ``(rows_upserted, failed)``; ``failed`` is True when any
-        required provider request for the reporting contract did not succeed.
-        Provider failures are appended to ``failures`` for auditing after the
-        atomic savepoint decision.
+        Only called when every required request succeeded (see
+        ``_period_failed``), and it makes no provider request of its own.
         """
         upserted = 0
-        failed = False
-        external_id = property_row.external_property_id
         comp_start, comp_end = comparison_window(start, period_days)
-
-        # A. Current site summary — no dimensions, authoritative site-level totals
-        try:
-            summary_rows = await self.adapter.query_search_analytics(
-                token,
-                external_id,
-                start_date=provider_start_date(start),
-                end_date=provider_end_date(window_end),
-                dimensions=(),
-                row_limit=1000,
-            )
-        except Exception as exc:
-            failures.append(
-                {
-                    "request": "site_summary",
-                    "period_days": period_days,
-                    "error": str(exc)[:200],
-                }
-            )
-            return 0, True
+        assert not isinstance(fetched.site_summary, Exception)
+        assert not isinstance(fetched.prior_summary, Exception)
+        assert not isinstance(fetched.daily, Exception)
+        assert not isinstance(fetched.top_queries, Exception)
+        assert not isinstance(fetched.top_pages, Exception)
+        assert not isinstance(fetched.page_query, Exception)
+        summary_rows = fetched.site_summary
+        prior_summary_rows = fetched.prior_summary
+        daily_rows = fetched.daily
+        query_rows = fetched.top_queries
+        page_rows = fetched.top_pages
+        page_query_rows = fetched.page_query
 
         for row in summary_rows:
             await self._store_site_summary(
@@ -548,29 +691,6 @@ class SearchConsoleService:
             )
             upserted += 1
 
-        # B. Prior site summary — exact comparison window for delta/percent
-        prior_failed = False
-        try:
-            prior_summary_rows = await self.adapter.query_search_analytics(
-                token,
-                external_id,
-                start_date=provider_start_date(comp_start),
-                end_date=provider_end_date(comp_end),
-                dimensions=(),
-                row_limit=1000,
-            )
-        except Exception as exc:
-            prior_summary_rows = []
-            prior_failed = True
-            failed = True
-            failures.append(
-                {
-                    "request": "prior_site_summary",
-                    "period_days": period_days,
-                    "error": str(exc)[:200],
-                }
-            )
-
         for row in prior_summary_rows:
             await self._store_site_summary(
                 session,
@@ -582,7 +702,7 @@ class SearchConsoleService:
             )
             upserted += 1
 
-        if not prior_summary_rows and not prior_failed:
+        if not prior_summary_rows:
             await self._store_site_summary(
                 session,
                 property_row,
@@ -592,27 +712,6 @@ class SearchConsoleService:
                 row=None,
             )
             upserted += 1
-
-        # B. Daily series — date dimension for trend charts
-        try:
-            daily_rows = await self.adapter.query_search_analytics(
-                token,
-                external_id,
-                start_date=provider_start_date(start),
-                end_date=provider_end_date(window_end),
-                dimensions=("date",),
-                row_limit=25000,
-            )
-        except Exception as exc:
-            daily_rows = []
-            failed = True
-            failures.append(
-                {
-                    "request": "daily",
-                    "period_days": period_days,
-                    "error": str(exc)[:200],
-                }
-            )
 
         from datetime import date as date_type
 
@@ -673,27 +772,6 @@ class SearchConsoleService:
                 )
             upserted += 1
 
-        # C. Top queries — query dimension
-        try:
-            query_rows = await self.adapter.query_search_analytics(
-                token,
-                external_id,
-                start_date=provider_start_date(start),
-                end_date=provider_end_date(window_end),
-                dimensions=("query",),
-                row_limit=1000,
-            )
-        except Exception as exc:
-            query_rows = []
-            failed = True
-            failures.append(
-                {
-                    "request": "top_queries",
-                    "period_days": period_days,
-                    "error": str(exc)[:200],
-                }
-            )
-
         for row in query_rows:
             q = row.keys[0] if row.keys else ""
             query_dims: dict[str, object] = {
@@ -750,27 +828,6 @@ class SearchConsoleService:
                 )
             upserted += 1
 
-        # D. Top pages — page dimension
-        try:
-            page_rows = await self.adapter.query_search_analytics(
-                token,
-                external_id,
-                start_date=provider_start_date(start),
-                end_date=provider_end_date(window_end),
-                dimensions=("page",),
-                row_limit=1000,
-            )
-        except Exception as exc:
-            page_rows = []
-            failed = True
-            failures.append(
-                {
-                    "request": "top_pages",
-                    "period_days": period_days,
-                    "error": str(exc)[:200],
-                }
-            )
-
         upserted += await self._store_page_rows(
             session,
             organization_id,
@@ -782,21 +839,6 @@ class SearchConsoleService:
             "top_page",
         )
 
-        try:
-            page_query_rows = await self.adapter.query_search_analytics(
-                token,
-                external_id,
-                start_date=provider_start_date(start),
-                end_date=provider_end_date(window_end),
-                dimensions=("page", "query"),
-                row_limit=25000,
-            )
-        except Exception as exc:
-            page_query_rows = []
-            failed = True
-            failures.append(
-                {"request": "page_query", "period_days": period_days, "error": str(exc)[:200]}
-            )
         upserted += await self._store_page_rows(
             session,
             organization_id,
@@ -809,7 +851,7 @@ class SearchConsoleService:
         )
 
         await session.flush()
-        return upserted, failed
+        return upserted
 
     async def _store_page_rows(
         self,

@@ -14,9 +14,14 @@ from apps.api.app.execution.handlers import (
     _handle_seo_crawl,
     register_workflow_handler,
 )
+from apps.api.app.execution.provider_sync_handlers import (
+    handle_analytics_sync,
+    handle_search_console_sync,
+)
 from apps.api.app.products.gbp.post_strategy import StrategicGBPPostGenerationService
 from apps.api.app.products.gbp.proposal_enrichment import GBPProposalEnrichmentError
 from apps.api.app.products.seo.orchestration import SEOOrchestrationService
+from apps.api.app.products.seo.site_change_handler import handle_seo_apply_site_change
 
 logger = logging.getLogger(__name__)
 
@@ -323,6 +328,9 @@ async def _handle_gbp_generate_post(
 
 register_workflow_handler("seo.crawl_or_analysis", _handle_seo_crawl_and_analysis)
 register_workflow_handler("seo.analyze", _handle_seo_analysis)
+register_workflow_handler("seo.apply_site_change", handle_seo_apply_site_change)
+register_workflow_handler("seo.sync_search_console", handle_search_console_sync)
+register_workflow_handler("insights.sync_analytics", handle_analytics_sync)
 register_workflow_handler("gbp.generate_post", _handle_gbp_generate_post)
 for _agent_workflow_key in (
     "agent.gbp",

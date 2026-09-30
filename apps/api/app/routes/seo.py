@@ -1,5 +1,6 @@
 """Protected evidence-driven SEO APIs."""
 
+import time
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any
 from uuid import UUID, uuid4
@@ -48,6 +49,7 @@ from apps.api.app.products.seo.decision import (
 from apps.api.app.products.seo.errors import (
     SEOCrawlRunNotFoundError,
     SEOOpportunityNotFoundError,
+    SEOSearchPropertyNotFoundError,
     SEOWebsiteNotFoundError,
 )
 from apps.api.app.products.seo.models import (
@@ -836,8 +838,9 @@ async def discover_search_console(
 
 @router.post(
     "/websites/{website_id}/search-properties/{search_property_id}/sync",
+    status_code=status.HTTP_202_ACCEPTED,
     dependencies=[Depends(no_store)],
-    summary="Sync Search Console observations for a mapped property",
+    summary="Queue a Search Console sync for a mapped property",
 )
 async def sync_search_console(
     request: Request,
@@ -849,18 +852,41 @@ async def sync_search_console(
     _: Annotated[AuthorizationDecision, policy("seo.manage")],
     command: SearchConsoleSyncRequest | None = None,
 ) -> dict[str, object]:
-    settings = settings_from_request(request)
+    """Enqueue the sync for the worker and return at once.
+
+    Syncing calls Google for every reporting period, which can take minutes, so it
+    runs as the `seo.sync_search_console` workflow rather than inside this request.
+    Poll `GET /workflows/runs/{workflow_run_id}` for the outcome.
+    """
+    property_row = await search_console.load_property(session, organization_id, search_property_id)
+    if property_row.website_id != website_id:
+        raise SEOSearchPropertyNotFoundError
     days = command.days if command is not None else 28
-    result = await search_console.sync_observations(
+    run = await ExecutionService().start_named(
         session,
-        settings,
         organization_id,
-        search_property_id,
-        actor_id=principal.platform_user_id,
+        "seo.sync_search_console",
+        # One queued sync per property per five minutes: a double click joins the
+        # run already waiting instead of spending Google quota twice.
+        f"seo-gsc-sync-{search_property_id}-{int(time.time() // 300)}",
+        input_document={
+            "search_property_id": str(search_property_id),
+            "days": days,
+            "actor_id": str(principal.platform_user_id) if principal.platform_user_id else None,
+        },
         correlation_id=request_correlation_id(request),
-        days=days,
+        actor_id=principal.platform_user_id,
+        enqueue_job=True,
     )
-    return {"data": result, "meta": meta(request)}
+    return {
+        "data": {
+            "workflow_run_id": str(run.id),
+            "workflow_key": "seo.sync_search_console",
+            "status": run.status,
+            "search_property_id": str(search_property_id),
+        },
+        "meta": meta(request),
+    }
 
 
 @router.get(

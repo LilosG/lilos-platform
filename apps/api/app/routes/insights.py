@@ -1,9 +1,10 @@
 """Protected Insights APIs backed by real cross-product activity data."""
 
+import time
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import APIRouter, Depends, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.app.access_control.enums import ScopeType
@@ -16,6 +17,7 @@ from apps.api.app.authorization.contracts import AuthorizationDecision
 from apps.api.app.authorization.dependencies import require_authorization
 from apps.api.app.database.session import get_database_session
 from apps.api.app.errors import request_correlation_id
+from apps.api.app.execution.service import ExecutionService
 from apps.api.app.insights.aggregation_service import InsightsService
 from apps.api.app.insights.website_readiness import WebsiteReadinessService
 from apps.api.app.products.analytics.contracts import (
@@ -128,8 +130,9 @@ async def discover_analytics(
 
 @router.post(
     "/analytics/properties/{analytics_property_id}/sync",
+    status_code=status.HTTP_202_ACCEPTED,
     dependencies=[Depends(no_store)],
-    summary="Sync GA4 metrics for a mapped property",
+    summary="Queue a GA4 sync for a mapped property",
 )
 async def sync_analytics(
     request: Request,
@@ -140,18 +143,36 @@ async def sync_analytics(
     _: Annotated[AuthorizationDecision, policy("insights.manage")],
     command: AnalyticsSyncRequest | None = None,
 ) -> dict[str, object]:
-    settings = settings_from_request(request)
+    """Enqueue the sync for the worker and return at once.
+
+    The GA4 sync makes several provider requests per reporting period, so it runs as
+    the `insights.sync_analytics` workflow instead of inside this request.
+    """
+    await analytics.load_property(session, organization_id, analytics_property_id)
     days = command.days if command is not None else 28
-    result = await analytics.sync_metrics(
+    run = await ExecutionService().start_named(
         session,
-        settings,
         organization_id,
-        analytics_property_id,
-        actor_id=principal.platform_user_id,
+        "insights.sync_analytics",
+        f"insights-ga4-sync-{analytics_property_id}-{int(time.time() // 300)}",
+        input_document={
+            "analytics_property_id": str(analytics_property_id),
+            "days": days,
+            "actor_id": str(principal.platform_user_id) if principal.platform_user_id else None,
+        },
         correlation_id=request_correlation_id(request),
-        days=days,
+        actor_id=principal.platform_user_id,
+        enqueue_job=True,
     )
-    return {"data": result, "meta": meta(request)}
+    return {
+        "data": {
+            "workflow_run_id": str(run.id),
+            "workflow_key": "insights.sync_analytics",
+            "status": run.status,
+            "analytics_property_id": str(analytics_property_id),
+        },
+        "meta": meta(request),
+    }
 
 
 @router.get(

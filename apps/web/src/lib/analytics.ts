@@ -1,3 +1,4 @@
+import { waitForWorkflowRun } from "./workflows";
 import { apiGet, apiRequest, type ApiOutcome } from "./api-client";
 
 export type DiscoveredAnalyticsProperty = {
@@ -63,8 +64,6 @@ export type AnalyticsPerformanceReport = {
   }[];
 };
 
-const PROVIDER_SYNC_TIMEOUT_MS = 90_000;
-
 function base(organizationId: string): string {
   return `/api/v1/organizations/${organizationId}/insights`;
 }
@@ -111,21 +110,34 @@ export function mapAnalytics(
   );
 }
 
+/** Queue a GA4 sync for the worker. Returns at once; the run does the provider work. */
 export function syncAnalytics(
   organizationId: string,
   analyticsPropertyId: string,
   days = 28,
 ): Promise<
-  ApiOutcome<{ analytics_property_id: string; metrics_synced: number }>
+  ApiOutcome<{
+    workflow_run_id: string;
+    workflow_key: string;
+    status: string;
+    analytics_property_id: string;
+  }>
 > {
   return apiRequest(
     `${base(organizationId)}/analytics/properties/${analyticsPropertyId}/sync`,
-    {
-      method: "POST",
-      body: { days },
-      timeoutMs: PROVIDER_SYNC_TIMEOUT_MS,
-    },
+    { method: "POST", body: { days } },
   );
+}
+
+/** Queue a GA4 sync and wait for the worker to finish it. */
+export async function syncAnalyticsToCompletion(
+  organizationId: string,
+  analyticsPropertyId: string,
+  days = 28,
+): Promise<ApiOutcome<unknown>> {
+  const queued = await syncAnalytics(organizationId, analyticsPropertyId, days);
+  if (queued.kind !== "ok") return queued;
+  return waitForWorkflowRun(organizationId, queued.data.workflow_run_id);
 }
 
 export async function fetchAnalyticsPerformance(

@@ -12,6 +12,7 @@ import {
   discoverAnalytics,
   mapAnalytics,
   syncAnalytics,
+  syncAnalyticsToCompletion,
   fetchAnalyticsSummary,
 } from "./analytics";
 
@@ -51,12 +52,38 @@ describe("analytics lib routes", () => {
     );
   });
 
-  it("syncAnalytics POSTs to the sync endpoint", async () => {
+  it("syncAnalytics queues the sync and returns without a long timeout", async () => {
     await syncAnalytics("org-1", "prop-1", 28);
     expect(apiRequest).toHaveBeenCalledWith(
       "/api/v1/organizations/org-1/insights/analytics/properties/prop-1/sync",
-      { method: "POST", body: { days: 28 }, timeoutMs: 90_000 },
+      { method: "POST", body: { days: 28 } },
     );
+  });
+
+  it("syncAnalyticsToCompletion reports a failed run by its typed code", async () => {
+    apiRequest
+      .mockResolvedValueOnce({
+        kind: "ok",
+        data: {
+          workflow_run_id: "run-9",
+          workflow_key: "insights.sync_analytics",
+          status: "queued",
+        },
+      })
+      .mockResolvedValueOnce({
+        kind: "ok",
+        data: {
+          id: "run-9",
+          status: "failed",
+          failure_code: "INTEGRATION_RECONNECT_REQUIRED",
+        },
+      });
+    const outcome = await syncAnalyticsToCompletion("org-1", "prop-1");
+    expect(outcome).toMatchObject({
+      kind: "error",
+      code: "WORKFLOW_RUN_FAILED",
+      details: [{ code: "INTEGRATION_RECONNECT_REQUIRED" }],
+    });
   });
 
   it("fetchAnalyticsSummary GETs the summary endpoint", async () => {

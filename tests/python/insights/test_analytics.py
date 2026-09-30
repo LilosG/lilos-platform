@@ -14,6 +14,7 @@ from uuid import UUID, uuid4
 import httpx
 import pytest
 from cryptography.fernet import Fernet
+from seo.scope import SharedSessionScope
 from sqlalchemy import event, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -415,7 +416,12 @@ async def test_organic_page_evidence_pins_website_and_location_through_remap(
 
         event.listen(engine, "before_cursor_execute", count_page_upserts)
         await service.sync_metrics(
-            session, settings, org.id, prop.id, actor_id=None, correlation_id="a"
+            SharedSessionScope(session),
+            settings,
+            org.id,
+            prop.id,
+            actor_id=None,
+            correlation_id="a",
         )
         prop = await service.map_property(
             session,
@@ -430,7 +436,12 @@ async def test_organic_page_evidence_pins_website_and_location_through_remap(
         )
         assert prop.page_evidence_status == "unavailable"
         await service.sync_metrics(
-            session, settings, org.id, prop.id, actor_id=None, correlation_id="b"
+            SharedSessionScope(session),
+            settings,
+            org.id,
+            prop.id,
+            actor_id=None,
+            correlation_id="b",
         )
         event.remove(engine, "before_cursor_execute", count_page_upserts)
         assert page_upserts == 6  # one batch for each period and pinned website
@@ -567,7 +578,12 @@ async def test_unsupported_page_report_preserves_aggregate_evidence(
             correlation_id="map",
         )
         result = await service.sync_metrics(
-            session, settings, org.id, prop.id, actor_id=None, correlation_id="sync"
+            SharedSessionScope(session),
+            settings,
+            org.id,
+            prop.id,
+            actor_id=None,
+            correlation_id="sync",
         )
         assert result["freshness_status"] == "fresh"
         assert prop.page_evidence_status == "unavailable"
@@ -618,7 +634,12 @@ async def test_foreign_organic_hostname_fails_closed_without_location_evidence(
             correlation_id="map",
         )
         result = await service.sync_metrics(
-            session, settings, org.id, prop.id, actor_id=None, correlation_id="sync"
+            SharedSessionScope(session),
+            settings,
+            org.id,
+            prop.id,
+            actor_id=None,
+            correlation_id="sync",
         )
         assert result["freshness_status"] == "fresh"
         assert prop.page_evidence_status == "unavailable"
@@ -659,7 +680,12 @@ async def test_unmapped_organic_landing_evidence_keeps_raw_reference(
             correlation_id="map",
         )
         await service.sync_metrics(
-            session, settings, org.id, prop.id, actor_id=None, correlation_id="sync"
+            SharedSessionScope(session),
+            settings,
+            org.id,
+            prop.id,
+            actor_id=None,
+            correlation_id="sync",
         )
         evidence = await read_page_evidence(session, org.id, website.id, page.id)
         assert evidence is not None
@@ -734,7 +760,12 @@ async def test_missing_page_metric_fails_closed_without_aggregate_regression(
             correlation_id="map",
         )
         result = await service.sync_metrics(
-            session, settings, org.id, prop.id, actor_id=None, correlation_id="sync"
+            SharedSessionScope(session),
+            settings,
+            org.id,
+            prop.id,
+            actor_id=None,
+            correlation_id="sync",
         )
         assert result["freshness_status"] == "fresh"
         assert prop.page_evidence_status == "unavailable"
@@ -1098,7 +1129,12 @@ async def test_ga4_discover_map_sync_and_insights_consumption(
         assert again.id == mapped.id
 
         result = await service.sync_metrics(
-            session, settings, org.id, mapped.id, actor_id=None, correlation_id="s1"
+            SharedSessionScope(session),
+            settings,
+            org.id,
+            mapped.id,
+            actor_id=None,
+            correlation_id="s1",
         )
         # 3 periods × (4 current aggregate + 4 prior aggregate + 2 daily × 4) = 48 upserts
         assert result["metrics_synced"] == 48
@@ -1144,7 +1180,12 @@ async def test_ga4_discover_map_sync_and_insights_consumption(
 
         # Repeat sync is idempotent (upsert, not duplicate).
         await service.sync_metrics(
-            session, settings, org.id, mapped.id, actor_id=None, correlation_id="s2"
+            SharedSessionScope(session),
+            settings,
+            org.id,
+            mapped.id,
+            actor_id=None,
+            correlation_id="s2",
         )
         await session.flush()
         observations2 = list(
@@ -1265,7 +1306,12 @@ async def test_ga4_sync_sends_exact_inclusive_provider_dates(
             correlation_id="m1",
         )
         await service.sync_metrics(
-            session, settings, org.id, mapped.id, actor_id=None, correlation_id="s1"
+            SharedSessionScope(session),
+            settings,
+            org.id,
+            mapped.id,
+            actor_id=None,
+            correlation_id="s1",
         )
 
         aggregate_calls = [c for c in fake.report_calls if c[2] == ()]
@@ -1347,7 +1393,12 @@ async def test_ga4_performance_report_current_and_prior_from_single_sync(
             correlation_id="m1",
         )
         await service.sync_metrics(
-            session, settings, org.id, mapped.id, actor_id=None, correlation_id="s1"
+            SharedSessionScope(session),
+            settings,
+            org.id,
+            mapped.id,
+            actor_id=None,
+            correlation_id="s1",
         )
 
         for days in (7, 28, 90):
@@ -1419,7 +1470,12 @@ async def test_ga4_missing_current_remains_none_not_zero(
             correlation_id="m1",
         )
         await service.sync_metrics(
-            session, settings, org.id, mapped.id, actor_id=None, correlation_id="s1"
+            SharedSessionScope(session),
+            settings,
+            org.id,
+            mapped.id,
+            actor_id=None,
+            correlation_id="s1",
         )
 
         # A real provider zero must remain numeric 0 (not missing).
@@ -1565,7 +1621,12 @@ async def test_ga4_report_anchored_to_stored_window_across_rollover(
         service = AnalyticsService(adapter=fake)
         mapped = await _setup_mapped_ga4(session, settings, org, fake)
         await service.sync_metrics(
-            session, settings, org.id, mapped.id, actor_id=None, correlation_id="s1"
+            SharedSessionScope(session),
+            settings,
+            org.id,
+            mapped.id,
+            actor_id=None,
+            correlation_id="s1",
         )
 
         # Advance the clock to day N+1 WITHOUT another sync.
@@ -1618,7 +1679,12 @@ async def test_ga4_partial_sync_preserves_previous_freshness(
         mapped = await _setup_mapped_ga4(session, settings, org, fake)
 
         first = await service.sync_metrics(
-            session, settings, org.id, mapped.id, actor_id=None, correlation_id="s1"
+            SharedSessionScope(session),
+            settings,
+            org.id,
+            mapped.id,
+            actor_id=None,
+            correlation_id="s1",
         )
         assert first["freshness_status"] == "fresh"
         prop_before = await session.scalar(
@@ -1632,7 +1698,12 @@ async def test_ga4_partial_sync_preserves_previous_freshness(
         cur90_start, _ = reporting_window(day_n, 90, GA4_SYNC_TAIL_EXCLUSION_DAYS)
         fake._fail_on_start = {provider_start_date(cur90_start)}
         second = await service.sync_metrics(
-            session, settings, org.id, mapped.id, actor_id=None, correlation_id="s2"
+            SharedSessionScope(session),
+            settings,
+            org.id,
+            mapped.id,
+            actor_id=None,
+            correlation_id="s2",
         )
         assert second["freshness_status"] == "stale"
         assert second["metrics_synced"] == 0
@@ -1685,7 +1756,12 @@ async def test_ga4_total_first_sync_failure_is_never_synced(
         mapped = await _setup_mapped_ga4(session, settings, org, fake)
 
         result = await service.sync_metrics(
-            session, settings, org.id, mapped.id, actor_id=None, correlation_id="s1"
+            SharedSessionScope(session),
+            settings,
+            org.id,
+            mapped.id,
+            actor_id=None,
+            correlation_id="s1",
         )
         assert result["freshness_status"] == "never_synced"
         assert result["metrics_synced"] == 0
@@ -1745,7 +1821,12 @@ async def test_ga4_sync_failure_tenant_isolation(
             correlation_id="ma",
         )
         result_a = await service_a.sync_metrics(
-            session, settings, org_a.id, mapped_a.id, actor_id=None, correlation_id="sa"
+            SharedSessionScope(session),
+            settings,
+            org_a.id,
+            mapped_a.id,
+            actor_id=None,
+            correlation_id="sa",
         )
         assert result_a["freshness_status"] == "fresh"
 
@@ -1772,7 +1853,12 @@ async def test_ga4_sync_failure_tenant_isolation(
             correlation_id="mb",
         )
         result_b = await service_b.sync_metrics(
-            session, settings, org_b.id, mapped_b.id, actor_id=None, correlation_id="sb"
+            SharedSessionScope(session),
+            settings,
+            org_b.id,
+            mapped_b.id,
+            actor_id=None,
+            correlation_id="sb",
         )
         assert result_b["freshness_status"] == "never_synced"
 
