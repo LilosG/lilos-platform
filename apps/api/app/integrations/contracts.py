@@ -19,6 +19,8 @@ class GoogleConnectRequest(Contract):
     Analytics. Re-consent reuses the existing connection row.
     """
 
+    return_app: Literal["web", "console"] = "web"
+
     products: list[Literal["gbp", "search_console", "analytics"]] = Field(
         default=["gbp"], min_length=1, max_length=3
     )

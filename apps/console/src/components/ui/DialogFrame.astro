@@ -2,8 +2,9 @@
 interface Props {
   id: string;
   returnTo: string;
+  returnLabel?: string;
 }
-const { id, returnTo } = Astro.props;
+const { id, returnTo, returnLabel = "All opportunities" } = Astro.props;
 ---
 
 <dialog id={id} aria-labelledby={`${id}-title`} open data-return={returnTo}>
@@ -16,7 +17,7 @@ const { id, returnTo } = Astro.props;
     >
   </div>
   <div class="body"><slot name="body" /></div><div class="dialogfoot">
-    <a class="control" href={returnTo}>All opportunities</a>
+    <a class="control" href={returnTo}>{returnLabel}</a>
   </div>
 </dialog>
 <script>

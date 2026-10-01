@@ -1720,3 +1720,11 @@ pre {
 .reportpreview p {
   color: #526460;
 }
+
+/* Phase 2 surfaces need AA contrast on the approved canvas and table backgrounds. */
+.phase2-surface {
+  --muted: #62706e;
+}
+.phase2-surface footer {
+  color: var(--muted);
+}

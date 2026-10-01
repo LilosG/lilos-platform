@@ -6,6 +6,7 @@ from typing import Annotated, Any
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -28,6 +29,7 @@ from apps.api.app.growth.measurement import (
 from apps.api.app.growth.models import GrowthAction, GrowthInitiative
 from apps.api.app.products.analytics.models import AnalyticsProperty
 from apps.api.app.products.seo.contracts import (
+    CrawlQueuedResponse,
     CrawlRequest,
     ImplementationTaskCreate,
     ImplementationTaskVerify,
@@ -1487,3 +1489,53 @@ async def record_outcome(
         correlation_id=request_correlation_id(request),
     )
     return {"data": outcome_row(item), "meta": meta(request)}
+
+
+class WebsiteCheckRequest(BaseModel):
+    """Reserve and queue the canonical crawl in one transaction."""
+
+    model_config = ConfigDict(extra="forbid")
+    idempotency_key: str = Field(min_length=8, max_length=128)
+
+
+@router.post(
+    "/websites/{website_id}/check",
+    status_code=202,
+    response_model=CrawlQueuedResponse,
+    dependencies=[Depends(no_store)],
+)
+async def check_website(
+    request: Request,
+    organization_id: UUID,
+    website_id: UUID,
+    command: WebsiteCheckRequest,
+    session: Session,
+    principal: Authenticated,
+    _: Annotated[AuthorizationDecision, policy("seo.manage")],
+    _workflow: Annotated[AuthorizationDecision, policy("workflows.execute")],
+) -> dict[str, object]:
+    import hashlib
+
+    await service.get_website(session, organization_id, website_id)
+    key = (
+        "console-crawl-"
+        + hashlib.sha256(f"{website_id}:{command.idempotency_key}".encode()).hexdigest()
+    )
+    run = await ExecutionService().start_named(
+        session,
+        organization_id,
+        "seo.crawl_or_analysis",
+        key,
+        actor_id=principal.platform_user_id,
+        correlation_id=request_correlation_id(request),
+        enqueue_job=False,
+    )
+    crawl = await service.enqueue_crawl(
+        session,
+        organization_id,
+        website_id,
+        CrawlRequest(workflow_run_id=run.id, idempotency_key=key),
+        actor_id=principal.platform_user_id,
+        correlation_id=request_correlation_id(request),
+    )
+    return {"data": crawl_run_row(crawl), "meta": meta(request)}

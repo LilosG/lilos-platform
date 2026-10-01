@@ -1,0 +1,353 @@
+---
+import type { LocalSearchView } from "../../adapters/local-search";
+import { value } from "../../adapters/local-search";
+import Performance from "./Performance.astro";
+interface Props {
+  view: LocalSearchView;
+  slug: string;
+  tab: string;
+  days: number;
+  offset: number;
+}
+const { view: v, slug, tab, days, offset } = Astro.props;
+const base = `/clients/${slug}/local-search/`;
+const api = `/api/organizations/${v.organization_id}/`;
+const tabs = [
+  ["Overview", ""],
+  ["Rankings", "rankings"],
+  ["Google Business Profile", "google-business-profile"],
+  ["Search Console", "search-console"],
+  ["Pages", "pages"],
+  ["Technical", "technical"],
+];
+const query = new URLSearchParams({
+  days: String(days),
+  ...(v.website_id ? { website_id: v.website_id } : {}),
+}).toString();
+---
+
+<nav class="sectiontabs" aria-label="Local Search tabs">
+  {
+    tabs.map(([label, path]) => (
+      <a
+        class:list={["tab", { active: tab === path }]}
+        aria-current={tab === path ? "page" : undefined}
+        href={`${base}${path ? path + "/" : ""}?${query}`}
+      >
+        {label}
+      </a>
+    ))
+  }
+</nav>
+<form method="get" class="filterbar">
+  <label
+    >Website<select name="website_id"
+      >{
+        v.websites.map((w) => (
+          <option value={w.id} selected={w.id === v.website_id}>
+            {w.name}
+          </option>
+        ))
+      }</select
+    ></label
+  >
+  <label
+    >Period<select name="days"
+      >{
+        [7, 28, 90].map((d) => (
+          <option value={d} selected={days === d}>
+            {d} days
+          </option>
+        ))
+      }</select
+    ></label
+  >
+  <button type="submit">Apply</button>
+</form>
+<div class="banner">
+  <div>
+    <h2>Google authorization: {v.google_status ?? "Not connected"}</h2><p>
+      Persisted observations may remain available when authorization needs
+      attention.
+    </p>
+  </div><a class="control" href={`/clients/${slug}/integrations/`}
+    >Manage Integration</a
+  >
+</div>
+{
+  v.syncs.length ? (
+    <section class="panel">
+      <h2>Recent source syncs</h2>
+      {v.syncs.map((s) => (
+        <p>
+          {s.source} · {s.status} · {s.failure_code ?? "No failure code"} ·{" "}
+          {s.completed_at ?? s.started_at ?? "Not started"} · Run {s.id}
+        </p>
+      ))}
+    </section>
+  ) : null
+}
+{
+  tab === "rankings" ? (
+    <section class="panel">
+      <>
+        <h2>Local visibility unavailable</h2>
+        <p>
+          No persisted geographic rank-grid or rank-scan source exists. Search
+          Console average position is provider evidence, not a local map rank.
+        </p>
+        <button disabled>Run rank scan unavailable</button>
+      </>
+    </section>
+  ) : tab === "google-business-profile" ? (
+    <>
+      <section class="panel">
+        <h2>Profile operations</h2>
+        {v.profiles.length ? (
+          v.profiles.map((p) => (
+            <div class="listrow">
+              <div>
+                <h3>{p.business_name}</h3>
+                <p>
+                  Mapping: {p.mapping_status} · Last sync:{" "}
+                  {p.last_synced_at ?? "Never synced"} · Write access:{" "}
+                  {p.write_enabled ? "Enabled" : "Disabled"}
+                </p>
+              </div>
+              <a
+                class="control"
+                href={`${base}profiles/${p.location_id}/${p.id}/?${query}`}
+              >
+                View profile and posts
+              </a>
+            </div>
+          ))
+        ) : (
+          <p>
+            No authorized confirmed profiles. Confirm a resource in Integrations
+            before operating it.
+          </p>
+        )}
+      </section>
+      <section class="panel">
+        <>
+          <h2>GBP performance unavailable</h2>
+          <p>
+            Calls, clicks and directions have no canonical performance
+            observation source. No metrics or trend are inferred from profile
+            health.
+          </p>
+        </>
+      </section>
+    </>
+  ) : tab === "pages" || tab === "technical" ? (
+    <>
+      <section class="panel">
+        <Fragment>
+          <h2>
+            {tab === "technical" ? "Technical findings" : "Observed pages"}
+          </h2>
+          <p>
+            Crawl indexability does not establish Google indexation. Health
+            scores and Google indexing coverage are unavailable.
+          </p>
+        </Fragment>
+        <div class="tablewrap">
+          <table>
+            <>
+              <caption>Persisted crawl evidence</caption>
+              <thead>
+                <tr>
+                  <>
+                    <th scope="col">Page</th>
+                    <th scope="col">HTTP / indexability</th>
+                    <th scope="col">Quality / observed</th>
+                    <th scope="col">
+                      {tab === "technical" ? "Findings" : "Action"}
+                    </th>
+                  </>
+                </tr>
+              </thead>
+              <tbody>
+                {v.pages.map((p) => (
+                  <tr>
+                    <td>
+                      {p.title ?? "Untitled"}
+                      <span class="sub">{p.normalized_url}</span>
+                    </td>
+                    <td>
+                      {value(p.http_status)} · {value(p.indexability)}
+                    </td>
+                    <td>
+                      {p.quality_status}
+                      <span class="sub">{p.observed_at ?? "Unavailable"}</span>
+                    </td>
+                    <td>
+                      {tab === "technical" ? (
+                        <p>
+                          {p.technical_issues.length
+                            ? p.technical_issues.map(value).join(", ")
+                            : "No findings recorded for this page"}
+                        </p>
+                      ) : null}
+                      <a
+                        href={`${base}pages/${p.website_id}/${p.id}/?${query}`}
+                      >
+                        Inspect page intelligence
+                      </a>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </>
+          </table>
+        </div>
+        {!v.pages.length && (
+          <p>No persisted page observations in this scope.</p>
+        )}
+        {offset > 0 && (
+          <a href={`?${query}&offset=${Math.max(0, offset - 50)}`}>
+            Previous page
+          </a>
+        )}
+        {v.next_offset !== null && (
+          <a href={`?${query}&offset=${v.next_offset}`}>Next page</a>
+        )}
+      </section>
+      <section class="panel">
+        <Fragment>
+          <h2>Website checks</h2>
+          <button
+            inert
+            disabled={!v.can_crawl}
+            data-action={
+              v.website_id
+                ? api + `seo/websites/${v.website_id}/check/`
+                : undefined
+            }
+            data-key
+          >
+            Run website check
+          </button>
+        </Fragment>
+        <p>
+          Checks are queued in the canonical workflow. Refresh to inspect
+          persisted progress.
+        </p>
+        {v.crawls.length ? (
+          v.crawls.map((c) => (
+            <div class="listrow">
+              <div>
+                <h3>{c.status}</h3>
+                <p>
+                  Completed: {c.completed_at ?? "Unavailable"} · Stop reason:{" "}
+                  {c.stop_reason ?? "Unavailable"}
+                </p>
+                <details>
+                  <summary>Crawl evidence</summary>
+                  <p>{value(c.safe_result)}</p>
+                </details>
+              </div>
+            </div>
+          ))
+        ) : (
+          <p>No crawl runs.</p>
+        )}
+        <a href={`/clients/${slug}/opportunities/`}>
+          Inspect governed opportunities
+        </a>
+      </section>
+    </>
+  ) : (
+    <>
+      <Performance
+        report={v.search_console}
+        title="Search Console performance"
+      />
+      {tab === "search-console" ? (
+        <>
+          <section class="panel tablewrap">
+            <h2>Organic search demand</h2>
+            <p>
+              Average position is not an exact rank. Query-only demand is
+              website scoped.
+            </p>
+            <table>
+              <caption>Search Console query observations</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Query</th>
+                  <th scope="col">Clicks</th>
+                  <th scope="col">Impressions</th>
+                  <th scope="col">CTR</th>
+                  <th scope="col">Average position</th>
+                </tr>
+              </thead>
+              <tbody>
+                {v.search_console?.top_queries.map((q) => (
+                  <tr>
+                    <td>{q.query}</td>
+                    <td>{value(q.clicks)}</td>
+                    <td>{value(q.impressions)}</td>
+                    <td>{value(q.ctr)}</td>
+                    <td>{value(q.position)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {!v.search_console?.top_queries.length && (
+              <p>No query observations in this period.</p>
+            )}
+          </section>
+          <section class="panel">
+            <h2>Search landing pages</h2>
+            {v.search_console?.top_pages.length ? (
+              v.search_console.top_pages.map((p) => (
+                <div class="listrow">
+                  <div>
+                    <h3>{p.page}</h3>
+                    <p>
+                      Clicks: {value(p.clicks)} · Impressions:{" "}
+                      {value(p.impressions)} · Position: {value(p.position)}
+                    </p>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <p>No page-attributed Search Console observations.</p>
+            )}
+            <a href={`${base}pages/?${query}`}>Inspect observed pages</a>
+          </section>
+        </>
+      ) : (
+        <>
+          <Performance
+            report={v.analytics}
+            title="GA4 organization performance · all channels"
+          />
+          <p>
+            GA4 availability: {v.analytics_availability}. These organization
+            totals are not Organic Search or a selected website's results.
+            Page-attributed Organic Search evidence appears in page
+            intelligence. Key events do not establish completed business
+            outcomes.
+          </p>
+          <section class="panel">
+            <h2>Search priorities</h2>
+            <a href={`/clients/${slug}/opportunities/`}>
+              Inspect canonical opportunities
+            </a>
+            <p>
+              Momentum, guaranteed growth and local visibility scores are
+              unavailable without authoritative evidence.
+            </p>
+          </section>
+        </>
+      )}
+    </>
+  )
+}
+<p role="status" aria-live="polite" data-search-status></p>
+<script>
+  import "../../lib/search-actions";
+</script>

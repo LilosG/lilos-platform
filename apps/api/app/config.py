@@ -88,6 +88,7 @@ class Settings(BaseSettings):
     google_oauth_client_id: Annotated[str, Field(min_length=1, max_length=255)] | None = None
     google_oauth_client_secret: Annotated[str, Field(min_length=1, max_length=255)] | None = None
     google_oauth_redirect_uri: HttpUrl | None = None
+    console_origin: HttpUrl | None = None
     google_pagespeed_api_key: Annotated[str, Field(min_length=1, max_length=512)] | None = None
     google_drive_service_account_json: (
         Annotated[str, Field(min_length=2, max_length=50_000)] | None
@@ -265,6 +266,20 @@ class Settings(BaseSettings):
             ):
                 raise ValueError("Staging path must be a normalized directory prefix")
         return self
+
+    @field_validator("console_origin")
+    @classmethod
+    def validate_console_origin(cls, value: HttpUrl | None) -> HttpUrl | None:
+        if value is not None and (
+            value.scheme != "https"
+            or value.path not in (None, "", "/")
+            or value.query
+            or value.fragment
+            or value.username
+            or value.password
+        ):
+            raise ValueError("LILOS_CONSOLE_ORIGIN must be a bare HTTPS origin")
+        return value
 
     @field_validator("web_origins")
     @classmethod

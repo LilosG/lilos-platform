@@ -9,6 +9,7 @@ from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request, Response, status
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -29,6 +30,7 @@ from apps.api.app.products.gbp.operations_contracts import (
     MediaPropose,
     MediaPublishRequest,
     PostDecision,
+    PostDispatchResponse,
     PostPublishRequest,
     PostRevisionCreate,
     SpecialHoursPropose,
@@ -765,3 +767,63 @@ async def location_operations_audit(
         session, organization_id, resource_type="gbp_location", resource_id=gbp_location_id
     )
     return {"data": history, "meta": meta(request)}
+
+
+class PostDispatchRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    idempotency_key: str = Field(min_length=8, max_length=128)
+
+
+@router.post(
+    "/posts/{revision_id}/dispatch",
+    status_code=202,
+    response_model=PostDispatchResponse,
+    dependencies=[Depends(no_store)],
+)
+async def dispatch_post(
+    request: Request,
+    organization_id: UUID,
+    location_id: UUID,
+    revision_id: UUID,
+    command: PostDispatchRequest,
+    session: Session,
+    principal: Authenticated,
+    _: Annotated[AuthorizationDecision, policy("gbp.publish", True)],
+    _workflow: Annotated[
+        AuthorizationDecision,
+        Depends(
+            require_authorization("workflows.execute", ScopeType.ORGANIZATION, AssuranceLevel.AAL1)
+        ),
+    ],
+) -> dict[str, object]:
+    import hashlib
+
+    from apps.api.app.execution.service import ExecutionService
+
+    await require_child_location_scope(
+        session, organization_id, location_id, GBPPostRevision, revision_id
+    )
+    key = (
+        "console-post-"
+        + hashlib.sha256(f"{revision_id}:{command.idempotency_key}".encode()).hexdigest()
+    )
+    run = await ExecutionService().start_named(
+        session,
+        organization_id,
+        "gbp.publish_post",
+        key,
+        location_id=location_id,
+        actor_id=principal.platform_user_id,
+        correlation_id=request_correlation_id(request),
+        enqueue_job=False,
+    )
+    publication = await service.reserve_post_publication(
+        session,
+        organization_id,
+        revision_id,
+        run.id,
+        key,
+        actor_id=principal.platform_user_id,
+        correlation_id=request_correlation_id(request),
+    )
+    return {"data": post_publication_row(publication), "meta": meta(request)}

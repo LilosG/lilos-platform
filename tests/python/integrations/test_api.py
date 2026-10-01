@@ -3,11 +3,13 @@
 import asyncio
 from collections.abc import Generator
 from datetime import UTC, datetime, timedelta
+from typing import cast
 from uuid import UUID, uuid4
 
 import httpx
 import pytest
 from cryptography.fernet import Fernet
+from fastapi import FastAPI
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from starlette.testclient import TestClient
 
@@ -405,3 +407,61 @@ def test_callback_with_provider_denial_redirects_with_failure_reason(
     assert "connected=0" in location
     assert "reason=access_denied" in location
     assert f"org={organization_id}" in location
+
+
+@pytest.mark.integration
+def test_console_oauth_return_is_fixed_and_bound_to_persisted_state(
+    integrations_client: tuple[TestClient, FakeVerifier, dict[str, object]],
+) -> None:
+    from urllib.parse import urlparse
+
+    from pydantic import HttpUrl
+
+    client, _, ids = integrations_client
+    app = cast(FastAPI, client.app)
+    app.state.settings = app.state.settings.model_copy(
+        update={"console_origin": HttpUrl("https://console.example.invalid")}
+    )
+    org = ids["organization_id"]
+    base = f"/api/v1/organizations/{org}/integrations/google"
+    response = client.post(
+        base + "/connect",
+        headers=HEADERS,
+        json={
+            "products": ["search_console", "analytics"],
+            "return_app": "console",
+        },
+    )
+    assert response.status_code == 200, response.text
+    state = httpx.URL(response.json()["data"]["authorization_url"]).params["state"]
+    assert state.startswith("console.")
+    tampered = client.get(
+        "/api/v1/integrations/google/callback",
+        params={"state": state[8:], "error": "access_denied"},
+        follow_redirects=False,
+    )
+    assert "invalid_state" in tampered.headers["location"]
+    assert urlparse(tampered.headers["location"]).netloc == "app.example.invalid"
+    failure = client.get(
+        "/api/v1/integrations/google/callback",
+        params={"state": state, "error": "access_denied"},
+        follow_redirects=False,
+    )
+    assert failure.status_code == 302
+    assert failure.headers["location"].startswith("https://console.example.invalid/integrations/?")
+    assert f"org={org}" in failure.headers["location"]
+    assert (
+        client.post(
+            base + "/connect", headers=HEADERS, json={"return_app": "https://evil.test"}
+        ).status_code
+        == 422
+    )
+    old = client.post(base + "/connect", headers=HEADERS)
+    old_state = httpx.URL(old.json()["data"]["authorization_url"]).params["state"]
+    assert not old_state.startswith("console.")
+    old_failure = client.get(
+        "/api/v1/integrations/google/callback",
+        params={"state": old_state, "error": "access_denied"},
+        follow_redirects=False,
+    )
+    assert old_failure.headers["location"].startswith("https://app.example.invalid/integrations?")

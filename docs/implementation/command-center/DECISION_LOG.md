@@ -100,3 +100,12 @@ steps. Phase 0 discovery and the approved architecture were not reopened.
 - D39 — OWNER ACTION REQUIRED: live staging's eight scenarios remain pending the
   consolidated checklist in `PHASE_01_ACCEPTANCE.md`. Repository acceptance does not
   certify a live provider or production rollout. Stop at one PR; do not begin Phase 2.
+
+
+## Phase 2 implementation decisions
+
+- D40 — IMPLEMENTED_NOT_ACCEPTED: bounded typed Integrations/Local Search/Page Intelligence/GBP projections consume existing canonical services and scoped persisted sources. Astro never computes provider metrics or selects mapping authority.
+- D41 — IMPLEMENTED_NOT_ACCEPTED: atomic website-check and exact-approved-post dispatch endpoints reuse ExecutionService and canonical crawl/publication enqueue, idempotency, audits and reconciliation; closed BFF exposes no arbitrary workflow launch.
+- D42 — IMPLEMENTED_NOT_ACCEPTED: console OAuth return uses a configured bare HTTPS origin and a marker bound into persisted OAuth state before hashing. Existing callers retain their web return. No provider redirect registration changed.
+- D43 — VERIFIED CURRENT FACT: no persisted geographic rank-grid/scan or GBP performance source exists. Explicit unavailable states remain; crawler indexability is not Google confirmed indexation. GA4 overview is organization-wide/all channels, with page organic evidence only from canonical Page Intelligence.
+- D44 — OWNER ACTION REQUIRED: repository/synthetic evidence does not establish live provider acceptance. Phase 2 acceptance carries forward Phase 0.5/1 owner prerequisites and adds backend console origin plus deployed Integrations/Local Search/OAuth source-state journeys. Phase 3 requires review/merge; no Phase 3 work performed.

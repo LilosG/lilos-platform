@@ -1,4 +1,20 @@
 ---
+import Integrations from "../../../components/integrations/Integrations.astro";
+import LocalSearch from "../../../components/local-search/LocalSearch.astro";
+import PageIntelligence from "../../../components/local-search/PageIntelligence.astro";
+import Profile from "../../../components/local-search/Profile.astro";
+import {
+  adaptIntegrations,
+  adaptLocalSearch,
+  adaptPage,
+  adaptProfile,
+} from "../../../adapters/local-search";
+import type {
+  IntegrationsView,
+  LocalSearchView,
+  PageIntelligence as PageView,
+  ProfileView,
+} from "../../../adapters/local-search";
 import DialogFrame from "../../../components/ui/DialogFrame.astro";
 import AppLayout from "../../../layouts/AppLayout.astro";
 import OpportunityRow from "../../../components/opportunities/OpportunityRow.astro";
@@ -25,6 +41,29 @@ try {
 const path = (Astro.params.workspace ?? "").replace(/\/$/, "");
 const section = path.split("/")[0];
 const sourceId = path.split("/")[1];
+let integrations: IntegrationsView | undefined;
+let localSearch: LocalSearchView | undefined;
+let pageView: PageView | undefined;
+let profileView: ProfileView | undefined;
+const segments = path.split("/");
+const tab = segments[1] ?? "";
+const days = Number(Astro.url.searchParams.get("days") ?? 28);
+if (section === "local-search" && ![7, 28, 90].includes(days))
+  return new Response("Invalid period", { status: 400 });
+const websiteId = Astro.url.searchParams.get("website_id") ?? undefined;
+if (
+  section === "local-search" &&
+  ![
+    "",
+    "rankings",
+    "google-business-profile",
+    "search-console",
+    "pages",
+    "technical",
+    "profiles",
+  ].includes(tab)
+)
+  return new Response("Page not found", { status: 404 });
 let opportunities: OpportunityView[] = [];
 let attention: AttentionView[] = [];
 let detail: Detail | undefined;
@@ -35,7 +74,49 @@ if (!Number.isInteger(offset) || offset < 0 || offset > 100000)
   return new Response("Invalid page", { status: 400 });
 const scope = `organizations/${client.organization_id}/command-center/`;
 try {
-  if (section === "opportunities") {
+  if (section === "integrations") {
+    if (sourceId) return new Response("Page not found", { status: 404 });
+    integrations = adaptIntegrations(
+      await read(Astro.locals, scope + "integrations/"),
+      client.organization_id,
+    );
+  } else if (section === "local-search") {
+    if (segments.length === 4 && tab === "pages")
+      pageView = adaptPage(
+        await read(
+          Astro.locals,
+          scope + `local-search/websites/${segments[2]}/pages/${segments[3]}/`,
+        ),
+        client.organization_id,
+        segments[2],
+        segments[3],
+      );
+    else if (segments.length === 4 && tab === "profiles")
+      profileView = adaptProfile(
+        await read(
+          Astro.locals,
+          scope +
+            `local-search/locations/${segments[2]}/profiles/${segments[3]}/`,
+        ),
+        client.organization_id,
+        segments[2],
+        segments[3],
+      );
+    else {
+      if (segments.length > 2 || tab === "profiles")
+        return new Response("Page not found", { status: 404 });
+      const params = new URLSearchParams({
+        days: String(days),
+        offset: String(offset),
+        ...(websiteId ? { website_id: websiteId } : {}),
+      });
+      localSearch = adaptLocalSearch(
+        await read(Astro.locals, scope + `local-search/?${params}`),
+        client.organization_id,
+        websiteId,
+      );
+    }
+  } else if (section === "opportunities") {
     if (sourceId)
       detail = adaptDetail(
         await read(Astro.locals, scope + `opportunities/${sourceId}/`),
@@ -65,18 +146,53 @@ try {
     "This source is temporarily unavailable. No sample data is substituted.";
 }
 const title =
-  section === "opportunities"
-    ? "Opportunities"
-    : section === "attention"
-      ? "Requires attention"
-      : section
-        ? section.replaceAll("-", " ")
-        : client.organization_name;
+  section === "local-search"
+    ? "Local Search"
+    : section === "integrations"
+      ? "Integrations"
+      : section === "opportunities"
+        ? "Opportunities"
+        : section === "attention"
+          ? "Requires attention"
+          : section
+            ? section.replaceAll("-", " ")
+            : client.organization_name;
 ---
 
-<AppLayout title={title} organizations={rows} client={client}>
+<AppLayout
+  title={title}
+  organizations={rows}
+  client={client}
+  surface={section === "local-search" || section === "integrations"
+    ? section
+    : undefined}
+>
   {
-    detail ? (
+    pageView ? (
+      <DialogFrame
+        id="page-intelligence"
+        returnLabel="All pages"
+        returnTo={`/clients/${client.organization_slug}/local-search/pages/`}
+      >
+        <PageIntelligence
+          slot="body"
+          view={pageView}
+          slug={client.organization_slug}
+        />
+      </DialogFrame>
+    ) : profileView ? (
+      <DialogFrame
+        id="profile-detail"
+        returnLabel="All profiles"
+        returnTo={`/clients/${client.organization_slug}/local-search/google-business-profile/`}
+      >
+        <Profile
+          slot="body"
+          view={profileView}
+          slug={client.organization_slug}
+        />
+      </DialogFrame>
+    ) : detail ? (
       <DialogFrame
         id="opportunity-detail"
         returnTo={`/clients/${client.organization_slug}/opportunities/`}
@@ -99,6 +215,16 @@ const title =
         </div>
         {error ? (
           <p role="alert">{error}</p>
+        ) : integrations ? (
+          <Integrations view={integrations} slug={client.organization_slug} />
+        ) : localSearch ? (
+          <LocalSearch
+            view={localSearch}
+            slug={client.organization_slug}
+            tab={tab}
+            days={days}
+            offset={offset}
+          />
         ) : section === "opportunities" ? (
           opportunities.length ? (
             <div class="panel">

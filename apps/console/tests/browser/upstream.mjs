@@ -1,4 +1,8 @@
 // Isolated HTTP simulator. Production loaders/session/BFF remain the code under test.
+import { readFileSync } from "node:fs";
+const phase2 = JSON.parse(
+  readFileSync(new URL("../fixtures/phase2.json", import.meta.url), "utf8"),
+);
 import { createServer } from "node:http";
 const ids = {
   a: "11111111-1111-4111-8111-111111111111",
@@ -174,6 +178,50 @@ createServer(async (req, res) => {
   if (!scoped || scoped[1] !== claims.sub)
     return reply({ code: "NOT_FOUND" }, 404);
   const path = scoped[2];
+  const phase2Payload = (key) => {
+    const data = structuredClone(phase2[key]);
+    data.organization_id = claims.sub;
+    if (key === "profile") data.can_approve = claims.aal === "aal2";
+    return data;
+  };
+  if (path === "command-center/integrations")
+    return reply(phase2Payload("integration"));
+  if (path === "command-center/local-search")
+    return reply(phase2Payload("search"));
+  if (path.startsWith("command-center/local-search/websites/"))
+    return reply(phase2Payload("page"));
+  if (path.startsWith("command-center/local-search/locations/"))
+    return reply(phase2Payload("profile"));
+  if (path.endsWith("search-console/discover"))
+    return reply({
+      data: {
+        properties: [
+          {
+            external_property_id: "sc-domain:synthetic.example.invalid",
+            property_type: "domain",
+            permission_level: "siteOwner",
+          },
+        ],
+      },
+    });
+  if (path.endsWith("insights/analytics/discover"))
+    return reply({ data: { properties: [] } });
+  if (path.endsWith("properties/map"))
+    return reply({ data: { mapping_status: "mapped" } }, 201);
+  if (path.endsWith("/check"))
+    return reply({ data: { id: ids.run, status: "queued" } }, 202);
+  if (path.endsWith("/sync"))
+    return reply({ data: { workflow_run_id: ids.run, status: "queued" } }, 202);
+  if (path.includes("gbp-mapping/") && path.endsWith("/confirm"))
+    return reply({
+      data: {
+        id: ids.factor,
+        mapping_status: "confirmed",
+        write_enabled: parsed.write_enabled,
+      },
+    });
+  if (path.endsWith("gbp/operations/locations/" + ids.factor + "/posts"))
+    return reply({ data: { id: ids.rev, status: "awaiting_approval" } }, 201);
   const opportunity = {
     id: `seo_opportunity:${ids.opp}`,
     source_kind: "seo_opportunity",

@@ -26,8 +26,10 @@ class OAuthIntentService:
         connection_id: UUID,
         redirect_uri: str,
         verifier_reference: str | None = None,
+        *,
+        console_return: bool = False,
     ) -> tuple[OAuthAuthorizationIntent, str]:
-        state = secrets.token_urlsafe(32)
+        state = ("console." if console_return else "") + secrets.token_urlsafe(32)
         digest = hashlib.sha256(state.encode()).hexdigest()
         item = OAuthAuthorizationIntent(
             organization_id=organization_id,

@@ -167,3 +167,25 @@ def test_production_requires_https_web_origins() -> None:
                 "web_origins": "http://insecure.invalid",
             }
         )
+
+
+@pytest.mark.parametrize(
+    "origin",
+    [
+        "http://console.example.com",
+        "https://console.example.com/path",
+        "https://console.example.com/?org=anything",
+        "https://console.example.com/#fragment",
+        "https://user:password@console.example.com",
+    ],
+)
+def test_console_oauth_origin_rejects_non_origin_targets(origin: str) -> None:
+    with pytest.raises(ValidationError, match="bare HTTPS origin"):
+        Settings.model_validate({"console_origin": origin})
+
+
+def test_console_oauth_origin_is_optional_and_fixed() -> None:
+    assert Settings().console_origin is None
+    assert str(
+        Settings.model_validate({"console_origin": "https://console.example.com"}).console_origin
+    ) == ("https://console.example.com/")

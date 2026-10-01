@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { searchRoutes } from "./search-routes";
 import { assertMutation, boundedBody, privateHeaders } from "./security";
 import type { paths } from "@lilos/contracts/api";
 const uuid =
@@ -27,6 +28,7 @@ const decision = z.object({ approve: z.boolean() }).strict();
 type DecisionBody =
   paths["/api/v1/organizations/{organization_id}/seo/recommendations/{revision_id}/decision"]["post"]["requestBody"]["content"]["application/json"];
 export const routes = [
+  ...searchRoutes,
   { pattern: /^me\/$/, method: "GET", upstream: "/api/v1/me", query: [] },
   {
     pattern: /^me\/organizations\/$/,
@@ -121,15 +123,19 @@ export async function forward(
   for (const [key, value] of query) {
     if (
       !(route.query as readonly string[]).includes(key) ||
-      !/^\d+$/.test(value) ||
+      (key === "website_id"
+        ? !z.uuid().safeParse(value).success
+        : !/^\d+$/.test(value)) ||
       query.getAll(key).length !== 1 ||
-      Number(value) > (key === "limit" ? 100 : 100000) ||
+      (key !== "website_id" &&
+        Number(value) > (key === "limit" ? 100 : 100000)) ||
+      (key === "days" && ![7, 28, 90].includes(Number(value))) ||
       (key === "limit" && Number(value) < 1)
     )
       return response("QUERY_INVALID", 400);
   }
   let body: string | undefined;
-  if (request.method === "POST") {
+  if (request.method === "POST" || request.method === "DELETE") {
     try {
       assertMutation(
         request,
@@ -139,18 +145,32 @@ export async function forward(
         locals.settings,
       );
       if (
+        request.method === "POST" &&
         request.headers.get("content-type")?.split(";", 1)[0] !==
-        "application/json"
+          "application/json"
       )
         return response("BODY_INVALID", 400);
-      const raw = JSON.parse(await boundedBody(request, 262144));
-      if (!("body" in route)) return response("BODY_INVALID", 400);
-      const parsed = route.body.safeParse(raw);
-      if (!parsed.success) return response("BODY_INVALID", 400);
-      if (route.body === decision) {
-        const typed: DecisionBody = parsed.data as DecisionBody;
-        body = JSON.stringify(typed);
-      } else body = JSON.stringify(parsed.data);
+      const raw =
+        request.method === "DELETE"
+          ? {}
+          : JSON.parse(await boundedBody(request, 262144));
+      if (
+        request.method === "DELETE" &&
+        (await boundedBody(request, 262144)).length
+      )
+        return response("BODY_INVALID", 400);
+      if (request.method === "DELETE") {
+        body = undefined;
+      } else {
+        if (!("body" in route) || !route.body)
+          return response("BODY_INVALID", 400);
+        const parsed = route.body.safeParse(raw);
+        if (!parsed.success) return response("BODY_INVALID", 400);
+        if (route.body === decision) {
+          const typed: DecisionBody = parsed.data as DecisionBody;
+          body = JSON.stringify(typed);
+        } else body = JSON.stringify(parsed.data);
+      }
     } catch (error) {
       return response(
         error instanceof Error && error.message === "BODY_TOO_LARGE"
@@ -205,7 +225,7 @@ export async function forward(
     });
   } catch {
     return response(
-      request.method === "POST"
+      request.method !== "GET"
         ? "MUTATION_OUTCOME_UNCERTAIN"
         : "UPSTREAM_UNAVAILABLE",
       504,

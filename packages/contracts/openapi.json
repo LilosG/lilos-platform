@@ -1205,6 +1205,114 @@
         "title": "ControlState",
         "type": "string"
       },
+      "CrawlQueuedData": {
+        "properties": {
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "crawl_delay_seconds": {
+            "title": "Crawl Delay Seconds",
+            "type": "number"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "max_depth": {
+            "title": "Max Depth",
+            "type": "integer"
+          },
+          "max_pages": {
+            "title": "Max Pages",
+            "type": "integer"
+          },
+          "safe_result": {
+            "additionalProperties": true,
+            "title": "Safe Result",
+            "type": "object"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "stop_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stop Reason"
+          },
+          "website_id": {
+            "format": "uuid",
+            "title": "Website Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "website_id",
+          "status",
+          "max_pages",
+          "max_depth",
+          "crawl_delay_seconds",
+          "stop_reason",
+          "safe_result",
+          "started_at",
+          "completed_at",
+          "created_at"
+        ],
+        "title": "CrawlQueuedData",
+        "type": "object"
+      },
+      "CrawlQueuedResponse": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/CrawlQueuedData"
+          },
+          "meta": {
+            "additionalProperties": true,
+            "title": "Meta",
+            "type": "object"
+          }
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "title": "CrawlQueuedResponse",
+        "type": "object"
+      },
       "CrawlRequest": {
         "additionalProperties": false,
         "properties": {
@@ -1289,6 +1397,77 @@
           "idempotency_key"
         ],
         "title": "CrawlRequest",
+        "type": "object"
+      },
+      "CrawlView": {
+        "properties": {
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "safe_result": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Safe Result",
+            "type": "object"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "stop_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stop Reason"
+          },
+          "website_id": {
+            "format": "uuid",
+            "title": "Website Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "website_id",
+          "status",
+          "stop_reason",
+          "started_at",
+          "completed_at",
+          "safe_result"
+        ],
+        "title": "CrawlView",
         "type": "object"
       },
       "DataResponse": {
@@ -1788,6 +1967,172 @@
         "title": "FeatureFlagCreate",
         "type": "object"
       },
+      "Freshness": {
+        "properties": {
+          "last_synced_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Synced At"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "last_synced_at",
+          "status"
+        ],
+        "title": "Freshness",
+        "type": "object"
+      },
+      "GBPDetailView": {
+        "properties": {
+          "can_approve": {
+            "title": "Can Approve",
+            "type": "boolean"
+          },
+          "can_propose": {
+            "title": "Can Propose",
+            "type": "boolean"
+          },
+          "can_publish": {
+            "title": "Can Publish",
+            "type": "boolean"
+          },
+          "completeness": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completeness"
+          },
+          "completeness_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completeness Code"
+          },
+          "health": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Health"
+          },
+          "location_id": {
+            "format": "uuid",
+            "title": "Location Id",
+            "type": "string"
+          },
+          "observed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed At"
+          },
+          "organization_id": {
+            "format": "uuid",
+            "title": "Organization Id",
+            "type": "string"
+          },
+          "posts": {
+            "items": {
+              "$ref": "#/components/schemas/PostRevisionView"
+            },
+            "title": "Posts",
+            "type": "array"
+          },
+          "profile": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profile"
+          },
+          "profile_id": {
+            "format": "uuid",
+            "title": "Profile Id",
+            "type": "string"
+          },
+          "provider_posts": {
+            "items": {
+              "$ref": "#/components/schemas/ProviderPostView"
+            },
+            "title": "Provider Posts",
+            "type": "array"
+          },
+          "snapshot_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snapshot Id"
+          }
+        },
+        "required": [
+          "organization_id",
+          "location_id",
+          "profile_id",
+          "snapshot_id",
+          "profile",
+          "observed_at",
+          "health",
+          "completeness",
+          "completeness_code",
+          "posts",
+          "provider_posts",
+          "can_propose",
+          "can_approve",
+          "can_publish"
+        ],
+        "title": "GBPDetailView",
+        "type": "object"
+      },
       "GitHubConnectionCreate": {
         "additionalProperties": false,
         "description": "Register an application-side GitHub connection (PAT fallback).\n\nThis is the **advanced/developer fallback** path. Normal production\npublishing uses the GitHub App installation flow\n(``POST .../integrations/github/install``), which mints short-lived\ninstallation tokens and never persists a long-lived credential. This PAT\npath remains for local development or app-less environments.",
@@ -1817,6 +2162,29 @@
         "title": "GitHubConnectionCreate",
         "type": "object"
       },
+      "GoogleCapability": {
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "label",
+          "enabled"
+        ],
+        "title": "GoogleCapability",
+        "type": "object"
+      },
       "GoogleConnectRequest": {
         "additionalProperties": false,
         "description": "Begin (or re-consent) a Google connection for the given products.\n\nDefaults to ``gbp`` only to preserve the existing GBP-page behavior; the\nIntegrations page requests the union of products it needs so a single\nGoogle authorization covers Business Profile, Search Console, and\nAnalytics. Re-consent reuses the existing connection row.",
@@ -1837,9 +2205,200 @@
             "minItems": 1,
             "title": "Products",
             "type": "array"
+          },
+          "return_app": {
+            "default": "web",
+            "enum": [
+              "web",
+              "console"
+            ],
+            "title": "Return App",
+            "type": "string"
           }
         },
         "title": "GoogleConnectRequest",
+        "type": "object"
+      },
+      "GoogleMapping": {
+        "properties": {
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "external_resource_id": {
+            "title": "External Resource Id",
+            "type": "string"
+          },
+          "gbp_location_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gbp Location Id"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "last_synced_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Synced At"
+          },
+          "mapping_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mapping Status"
+          },
+          "platform_resource_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Platform Resource Id"
+          },
+          "resource_type": {
+            "title": "Resource Type",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "sync_freshness": {
+            "title": "Sync Freshness",
+            "type": "string"
+          },
+          "write_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Write Enabled"
+          }
+        },
+        "required": [
+          "id",
+          "external_resource_id",
+          "platform_resource_id",
+          "resource_type",
+          "status",
+          "display_name",
+          "last_synced_at",
+          "sync_freshness",
+          "gbp_location_id",
+          "mapping_status",
+          "write_enabled"
+        ],
+        "title": "GoogleMapping",
+        "type": "object"
+      },
+      "GoogleState": {
+        "properties": {
+          "capabilities": {
+            "items": {
+              "$ref": "#/components/schemas/GoogleCapability"
+            },
+            "title": "Capabilities",
+            "type": "array"
+          },
+          "connection_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Connection Id"
+          },
+          "connection_status": {
+            "title": "Connection Status",
+            "type": "string"
+          },
+          "last_verified_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Verified At"
+          },
+          "mapped_resources": {
+            "items": {
+              "$ref": "#/components/schemas/GoogleMapping"
+            },
+            "title": "Mapped Resources",
+            "type": "array"
+          },
+          "token_expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Token Expires At"
+          },
+          "unmapped_count": {
+            "title": "Unmapped Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "connection_status",
+          "connection_id",
+          "token_expires_at",
+          "last_verified_at",
+          "capabilities",
+          "mapped_resources",
+          "unmapped_count"
+        ],
+        "title": "GoogleState",
         "type": "object"
       },
       "GrowthActionOutcomeRecord": {
@@ -2000,6 +2559,105 @@
         ],
         "title": "IndustryStatus",
         "type": "string"
+      },
+      "IntegrationView": {
+        "properties": {
+          "analytics_properties": {
+            "items": {
+              "$ref": "#/components/schemas/SearchMapping"
+            },
+            "title": "Analytics Properties",
+            "type": "array"
+          },
+          "can_connect": {
+            "title": "Can Connect",
+            "type": "boolean"
+          },
+          "can_manage_analytics": {
+            "title": "Can Manage Analytics",
+            "type": "boolean"
+          },
+          "can_manage_search": {
+            "title": "Can Manage Search",
+            "type": "boolean"
+          },
+          "github_limitation": {
+            "const": "publishing_configuration_remains_in_existing_control_plane",
+            "default": "publishing_configuration_remains_in_existing_control_plane",
+            "title": "Github Limitation",
+            "type": "string"
+          },
+          "github_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Github Status"
+          },
+          "google": {
+            "$ref": "#/components/schemas/GoogleState"
+          },
+          "locations": {
+            "items": {
+              "$ref": "#/components/schemas/LocationOption"
+            },
+            "title": "Locations",
+            "type": "array"
+          },
+          "organization_id": {
+            "format": "uuid",
+            "title": "Organization Id",
+            "type": "string"
+          },
+          "search_properties": {
+            "items": {
+              "$ref": "#/components/schemas/SearchMapping"
+            },
+            "title": "Search Properties",
+            "type": "array"
+          },
+          "syncs": {
+            "items": {
+              "$ref": "#/components/schemas/SyncState"
+            },
+            "title": "Syncs",
+            "type": "array"
+          },
+          "unmapped_profiles": {
+            "items": {
+              "$ref": "#/components/schemas/UnmappedProfile"
+            },
+            "title": "Unmapped Profiles",
+            "type": "array"
+          },
+          "websites": {
+            "items": {
+              "$ref": "#/components/schemas/WebsiteOption"
+            },
+            "title": "Websites",
+            "type": "array"
+          }
+        },
+        "required": [
+          "organization_id",
+          "syncs",
+          "google",
+          "websites",
+          "locations",
+          "search_properties",
+          "analytics_properties",
+          "unmapped_profiles",
+          "can_connect",
+          "can_manage_search",
+          "can_manage_analytics",
+          "github_status"
+        ],
+        "title": "IntegrationView",
+        "type": "object"
       },
       "InvitationAccept": {
         "additionalProperties": false,
@@ -2254,6 +2912,7 @@
         "title": "ItemCreate",
         "type": "object"
       },
+      "JsonValue": {},
       "LeadAssignment": {
         "additionalProperties": false,
         "properties": {
@@ -3852,6 +4511,30 @@
         "title": "LocationListResponse",
         "type": "object"
       },
+      "LocationOption": {
+        "properties": {
+          "can_map": {
+            "title": "Can Map",
+            "type": "boolean"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "can_map"
+        ],
+        "title": "LocationOption",
+        "type": "object"
+      },
       "LocationPagination": {
         "additionalProperties": false,
         "properties": {
@@ -5080,6 +5763,78 @@
         ],
         "title": "MembershipType",
         "type": "string"
+      },
+      "MetricComparison": {
+        "properties": {
+          "current": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current"
+          },
+          "delta": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delta"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "percent_delta": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Percent Delta"
+          },
+          "previous": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous"
+          },
+          "quality": {
+            "title": "Quality",
+            "type": "string"
+          }
+        },
+        "required": [
+          "current",
+          "previous",
+          "delta",
+          "percent_delta",
+          "quality"
+        ],
+        "title": "MetricComparison",
+        "type": "object"
       },
       "MyOrganizationData": {
         "additionalProperties": false,
@@ -7298,6 +8053,259 @@
         "title": "OutcomeRecord",
         "type": "object"
       },
+      "PageIdentity": {
+        "properties": {
+          "canonical_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Canonical Url"
+          },
+          "normalized_url": {
+            "title": "Normalized Url",
+            "type": "string"
+          },
+          "observed_url": {
+            "title": "Observed Url",
+            "type": "string"
+          },
+          "organization_id": {
+            "format": "uuid",
+            "title": "Organization Id",
+            "type": "string"
+          },
+          "page_id": {
+            "format": "uuid",
+            "title": "Page Id",
+            "type": "string"
+          },
+          "website_id": {
+            "format": "uuid",
+            "title": "Website Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "organization_id",
+          "website_id",
+          "page_id",
+          "normalized_url",
+          "observed_url",
+          "canonical_url"
+        ],
+        "title": "PageIdentity",
+        "type": "object"
+      },
+      "PageIntelligenceView": {
+        "properties": {
+          "change": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Change",
+            "type": "object"
+          },
+          "content": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Content",
+            "type": "object"
+          },
+          "crawl": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Crawl",
+            "type": "object"
+          },
+          "current_page": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Current Page",
+            "type": "object"
+          },
+          "ga4_organic_landing": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Ga4 Organic Landing",
+            "type": "object"
+          },
+          "gsc": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Gsc",
+            "type": "object"
+          },
+          "identity": {
+            "$ref": "#/components/schemas/PageIdentity"
+          },
+          "internal_links": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Internal Links",
+            "type": "object"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          },
+          "workflow": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Workflow",
+            "type": "object"
+          }
+        },
+        "required": [
+          "version",
+          "identity",
+          "current_page",
+          "crawl",
+          "change",
+          "gsc",
+          "ga4_organic_landing",
+          "internal_links",
+          "content",
+          "workflow"
+        ],
+        "title": "PageIntelligenceView",
+        "type": "object"
+      },
+      "PageSummary": {
+        "properties": {
+          "http_status": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Http Status"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "indexability": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Indexability"
+          },
+          "normalized_url": {
+            "title": "Normalized Url",
+            "type": "string"
+          },
+          "observed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed At"
+          },
+          "quality_status": {
+            "title": "Quality Status",
+            "type": "string"
+          },
+          "technical_issues": {
+            "items": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Technical Issues",
+            "type": "array"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "website_id": {
+            "format": "uuid",
+            "title": "Website Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "website_id",
+          "normalized_url",
+          "title",
+          "http_status",
+          "indexability",
+          "quality_status",
+          "observed_at",
+          "technical_issues"
+        ],
+        "title": "PageSummary",
+        "type": "object"
+      },
+      "PerformanceProperty": {
+        "properties": {
+          "external_property_id": {
+            "title": "External Property Id",
+            "type": "string"
+          },
+          "freshness_status": {
+            "title": "Freshness Status",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "last_synced_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Synced At"
+          }
+        },
+        "required": [
+          "id",
+          "external_property_id",
+          "freshness_status",
+          "last_synced_at"
+        ],
+        "title": "PerformanceProperty",
+        "type": "object"
+      },
       "PermissionData": {
         "additionalProperties": false,
         "properties": {
@@ -7546,6 +8554,115 @@
         "title": "PostDecision",
         "type": "object"
       },
+      "PostDispatchRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "idempotency_key": {
+            "maxLength": 128,
+            "minLength": 8,
+            "title": "Idempotency Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "idempotency_key"
+        ],
+        "title": "PostDispatchRequest",
+        "type": "object"
+      },
+      "PostDispatchResponse": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/PostPublicationData"
+          },
+          "meta": {
+            "additionalProperties": true,
+            "title": "Meta",
+            "type": "object"
+          }
+        },
+        "required": [
+          "data",
+          "meta"
+        ],
+        "title": "PostDispatchResponse",
+        "type": "object"
+      },
+      "PostPublicationData": {
+        "properties": {
+          "dispatched_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dispatched At"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "provider_post_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Post Id"
+          },
+          "recovery_allowed": {
+            "title": "Recovery Allowed",
+            "type": "boolean"
+          },
+          "scheduled_for": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scheduled For"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "verified_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verified At"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "scheduled_for",
+          "dispatched_at",
+          "provider_post_id",
+          "verified_at",
+          "recovery_allowed"
+        ],
+        "title": "PostPublicationData",
+        "type": "object"
+      },
       "PostPublishRequest": {
         "additionalProperties": false,
         "properties": {
@@ -7631,6 +8748,87 @@
         "title": "PostRevisionCreate",
         "type": "object"
       },
+      "PostRevisionView": {
+        "properties": {
+          "call_to_action": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Call To Action"
+          },
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "event_or_offer": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Or Offer"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "post_key": {
+            "format": "uuid",
+            "title": "Post Key",
+            "type": "string"
+          },
+          "post_type": {
+            "title": "Post Type",
+            "type": "string"
+          },
+          "publication": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PostPublicationData"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "post_key",
+          "revision",
+          "post_type",
+          "content",
+          "call_to_action",
+          "event_or_offer",
+          "status",
+          "publication"
+        ],
+        "title": "PostRevisionView",
+        "type": "object"
+      },
       "ProfileChangeCreate": {
         "additionalProperties": false,
         "properties": {
@@ -7661,6 +8859,113 @@
           "approved_fact_revision_ids"
         ],
         "title": "ProfileChangeCreate",
+        "type": "object"
+      },
+      "ProfileSummary": {
+        "properties": {
+          "business_name": {
+            "title": "Business Name",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "last_synced_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Synced At"
+          },
+          "location_id": {
+            "format": "uuid",
+            "title": "Location Id",
+            "type": "string"
+          },
+          "mapping_status": {
+            "title": "Mapping Status",
+            "type": "string"
+          },
+          "write_enabled": {
+            "title": "Write Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "location_id",
+          "business_name",
+          "mapping_status",
+          "write_enabled",
+          "last_synced_at"
+        ],
+        "title": "ProfileSummary",
+        "type": "object"
+      },
+      "ProviderPostView": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "observed_at": {
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "post_type": {
+            "title": "Post Type",
+            "type": "string"
+          },
+          "provider_post_name": {
+            "title": "Provider Post Name",
+            "type": "string"
+          },
+          "state": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "State"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary"
+          }
+        },
+        "required": [
+          "id",
+          "provider_post_name",
+          "post_type",
+          "state",
+          "summary",
+          "status",
+          "observed_at"
+        ],
+        "title": "ProviderPostView",
         "type": "object"
       },
       "PublicationCreate": {
@@ -8249,6 +9554,29 @@
         "title": "RecommendationView",
         "type": "object"
       },
+      "ReportingRange": {
+        "properties": {
+          "days": {
+            "title": "Days",
+            "type": "integer"
+          },
+          "end": {
+            "title": "End",
+            "type": "string"
+          },
+          "start": {
+            "title": "Start",
+            "type": "string"
+          }
+        },
+        "required": [
+          "start",
+          "end",
+          "days"
+        ],
+        "title": "ReportingRange",
+        "type": "object"
+      },
       "ResolvedCallToAction": {
         "additionalProperties": false,
         "properties": {
@@ -8734,6 +10062,231 @@
         "title": "SearchConsoleSyncRequest",
         "type": "object"
       },
+      "SearchLanding": {
+        "properties": {
+          "clicks": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clicks"
+          },
+          "ctr": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ctr"
+          },
+          "impressions": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Impressions"
+          },
+          "page": {
+            "title": "Page",
+            "type": "string"
+          },
+          "position": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Position"
+          }
+        },
+        "required": [
+          "page",
+          "clicks",
+          "impressions",
+          "ctr",
+          "position"
+        ],
+        "title": "SearchLanding",
+        "type": "object"
+      },
+      "SearchMapping": {
+        "properties": {
+          "can_sync": {
+            "default": false,
+            "title": "Can Sync",
+            "type": "boolean"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "external_property_id": {
+            "title": "External Property Id",
+            "type": "string"
+          },
+          "freshness_status": {
+            "title": "Freshness Status",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "last_synced_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Synced At"
+          },
+          "mapping_status": {
+            "title": "Mapping Status",
+            "type": "string"
+          },
+          "property_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Property Type"
+          },
+          "website_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Website Id"
+          }
+        },
+        "required": [
+          "id",
+          "website_id",
+          "external_property_id",
+          "mapping_status",
+          "freshness_status",
+          "last_synced_at"
+        ],
+        "title": "SearchMapping",
+        "type": "object"
+      },
+      "SearchPerformance": {
+        "properties": {
+          "comparison_range": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReportingRange"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "connected": {
+            "title": "Connected",
+            "type": "boolean"
+          },
+          "freshness": {
+            "$ref": "#/components/schemas/Freshness"
+          },
+          "metrics": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/MetricComparison"
+            },
+            "title": "Metrics",
+            "type": "object"
+          },
+          "properties": {
+            "items": {
+              "$ref": "#/components/schemas/PerformanceProperty"
+            },
+            "title": "Properties",
+            "type": "array"
+          },
+          "range": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReportingRange"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "series": {
+            "items": {
+              "additionalProperties": {
+                "$ref": "#/components/schemas/JsonValue"
+              },
+              "type": "object"
+            },
+            "title": "Series",
+            "type": "array"
+          },
+          "top_pages": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/SearchLanding"
+            },
+            "title": "Top Pages",
+            "type": "array"
+          },
+          "top_queries": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/SearchQuery"
+            },
+            "title": "Top Queries",
+            "type": "array"
+          }
+        },
+        "required": [
+          "connected",
+          "properties",
+          "range",
+          "comparison_range",
+          "freshness",
+          "metrics",
+          "series"
+        ],
+        "title": "SearchPerformance",
+        "type": "object"
+      },
       "SearchPropertyCreate": {
         "additionalProperties": false,
         "properties": {
@@ -8794,6 +10347,213 @@
           "property_type"
         ],
         "title": "SearchPropertySelect",
+        "type": "object"
+      },
+      "SearchQuery": {
+        "properties": {
+          "clicks": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clicks"
+          },
+          "ctr": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ctr"
+          },
+          "impressions": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Impressions"
+          },
+          "position": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Position"
+          },
+          "query": {
+            "title": "Query",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query",
+          "clicks",
+          "impressions",
+          "ctr",
+          "position"
+        ],
+        "title": "SearchQuery",
+        "type": "object"
+      },
+      "SearchView": {
+        "properties": {
+          "analytics": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SearchPerformance"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "analytics_availability": {
+            "enum": [
+              "available",
+              "permission_required"
+            ],
+            "title": "Analytics Availability",
+            "type": "string"
+          },
+          "analytics_scope": {
+            "const": "organization_all_channels",
+            "default": "organization_all_channels",
+            "title": "Analytics Scope",
+            "type": "string"
+          },
+          "can_crawl": {
+            "title": "Can Crawl",
+            "type": "boolean"
+          },
+          "crawls": {
+            "items": {
+              "$ref": "#/components/schemas/CrawlView"
+            },
+            "title": "Crawls",
+            "type": "array"
+          },
+          "google_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Google Status"
+          },
+          "next_offset": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Offset"
+          },
+          "organization_id": {
+            "format": "uuid",
+            "title": "Organization Id",
+            "type": "string"
+          },
+          "pages": {
+            "items": {
+              "$ref": "#/components/schemas/PageSummary"
+            },
+            "title": "Pages",
+            "type": "array"
+          },
+          "profiles": {
+            "items": {
+              "$ref": "#/components/schemas/ProfileSummary"
+            },
+            "title": "Profiles",
+            "type": "array"
+          },
+          "search_console": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SearchPerformance"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "syncs": {
+            "items": {
+              "$ref": "#/components/schemas/SyncState"
+            },
+            "title": "Syncs",
+            "type": "array"
+          },
+          "unsupported": {
+            "default": [
+              "geographic_rank_grid",
+              "rank_scan",
+              "gbp_performance_metrics",
+              "google_indexation"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "title": "Unsupported",
+            "type": "array"
+          },
+          "website_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Website Id"
+          },
+          "websites": {
+            "items": {
+              "$ref": "#/components/schemas/WebsiteOption"
+            },
+            "title": "Websites",
+            "type": "array"
+          }
+        },
+        "required": [
+          "organization_id",
+          "websites",
+          "website_id",
+          "syncs",
+          "google_status",
+          "search_console",
+          "analytics",
+          "analytics_availability",
+          "pages",
+          "next_offset",
+          "crawls",
+          "profiles",
+          "can_crawl"
+        ],
+        "title": "SearchView",
         "type": "object"
       },
       "ServiceAssignmentCreate": {
@@ -9110,6 +10870,84 @@
         "title": "SuspensionCaseReport",
         "type": "object"
       },
+      "SyncState": {
+        "properties": {
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "failure_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Code"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "search_console",
+              "analytics"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "source_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Id"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "failure_code",
+          "started_at",
+          "completed_at",
+          "source_id",
+          "source"
+        ],
+        "title": "SyncState",
+        "type": "object"
+      },
       "TargetCreate": {
         "additionalProperties": false,
         "description": "Configure a repository publishing target that references a GitHub connection.",
@@ -9182,6 +11020,30 @@
           }
         },
         "title": "ToolInvocation",
+        "type": "object"
+      },
+      "UnmappedProfile": {
+        "properties": {
+          "business_name": {
+            "title": "Business Name",
+            "type": "string"
+          },
+          "external_location_id": {
+            "title": "External Location Id",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "business_name",
+          "external_location_id"
+        ],
+        "title": "UnmappedProfile",
         "type": "object"
       },
       "UserProfileCreate": {
@@ -9273,6 +11135,23 @@
         "title": "ValidationError",
         "type": "object"
       },
+      "WebsiteCheckRequest": {
+        "additionalProperties": false,
+        "description": "Reserve and queue the canonical crawl in one transaction.",
+        "properties": {
+          "idempotency_key": {
+            "maxLength": 128,
+            "minLength": 8,
+            "title": "Idempotency Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "idempotency_key"
+        ],
+        "title": "WebsiteCheckRequest",
+        "type": "object"
+      },
       "WebsiteCreate": {
         "additionalProperties": false,
         "properties": {
@@ -9313,6 +11192,48 @@
           "canonical_origin"
         ],
         "title": "WebsiteCreate",
+        "type": "object"
+      },
+      "WebsiteOption": {
+        "properties": {
+          "canonical_origin": {
+            "title": "Canonical Origin",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "location_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location Id"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "canonical_origin",
+          "location_id",
+          "status"
+        ],
+        "title": "WebsiteOption",
         "type": "object"
       },
       "WorkflowRunStart": {
@@ -11129,6 +13050,262 @@
           }
         },
         "summary": "Attention",
+        "tags": [
+          "command-center"
+        ]
+      }
+    },
+    "/api/v1/organizations/{organization_id}/command-center/integrations": {
+      "get": {
+        "operationId": "integrations_view_api_v1_organizations__organization_id__command_center_integrations_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Integrations View",
+        "tags": [
+          "command-center"
+        ]
+      }
+    },
+    "/api/v1/organizations/{organization_id}/command-center/local-search": {
+      "get": {
+        "operationId": "local_search_view_api_v1_organizations__organization_id__command_center_local_search_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "website_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Website Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "default": 28,
+              "enum": [
+                7,
+                28,
+                90
+              ],
+              "title": "Days",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "maximum": 100000,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Local Search View",
+        "tags": [
+          "command-center"
+        ]
+      }
+    },
+    "/api/v1/organizations/{organization_id}/command-center/local-search/locations/{location_id}/profiles/{profile_id}": {
+      "get": {
+        "operationId": "profile_view_api_v1_organizations__organization_id__command_center_local_search_locations__location_id__profiles__profile_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "location_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Location Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "profile_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Profile Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GBPDetailView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Profile View",
+        "tags": [
+          "command-center"
+        ]
+      }
+    },
+    "/api/v1/organizations/{organization_id}/command-center/local-search/websites/{website_id}/pages/{page_id}": {
+      "get": {
+        "operationId": "page_intelligence_view_api_v1_organizations__organization_id__command_center_local_search_websites__website_id__pages__page_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "website_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Website Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "page_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Page Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageIntelligenceView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Page Intelligence View",
         "tags": [
           "command-center"
         ]
@@ -19899,6 +22076,79 @@
         ]
       }
     },
+    "/api/v1/organizations/{organization_id}/locations/{location_id}/gbp/operations/posts/{revision_id}/dispatch": {
+      "post": {
+        "operationId": "dispatch_post_api_v1_organizations__organization_id__locations__location_id__gbp_operations_posts__revision_id__dispatch_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "location_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Location Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "revision_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Revision Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostDispatchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostDispatchResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Dispatch Post",
+        "tags": [
+          "gbp"
+        ]
+      }
+    },
     "/api/v1/organizations/{organization_id}/locations/{location_id}/gbp/operations/posts/{revision_id}/publish": {
       "post": {
         "operationId": "publish_post_api_v1_organizations__organization_id__locations__location_id__gbp_operations_posts__revision_id__publish_post",
@@ -24279,6 +26529,69 @@
           }
         },
         "summary": "Website Audit",
+        "tags": [
+          "seo"
+        ]
+      }
+    },
+    "/api/v1/organizations/{organization_id}/seo/websites/{website_id}/check": {
+      "post": {
+        "operationId": "check_website_api_v1_organizations__organization_id__seo_websites__website_id__check_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "website_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Website Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebsiteCheckRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CrawlQueuedResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Check Website",
         "tags": [
           "seo"
         ]

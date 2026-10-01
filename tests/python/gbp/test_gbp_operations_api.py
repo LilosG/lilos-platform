@@ -770,3 +770,46 @@ def test_cross_tenant_change_set_list_is_not_found(
     base = f"/api/v1/organizations/{other_org}/locations/{location}/gbp/operations"
     response = client.get(f"{base}/locations/{uuid4()}/change-sets", headers=HEADERS)
     assert response.status_code in (403, 404)
+
+
+def test_console_post_dispatch_is_atomic_idempotent_and_location_scoped(
+    postgresql_test_url: str,
+    gbp_operations_client: tuple[TestClient, dict[str, UUID]],
+) -> None:
+    client, ids = gbp_operations_client
+    org, location, profile = ids["organization"], ids["location"], ids["gbp_location"]
+    base = f"/api/v1/organizations/{org}/locations/{location}/gbp/operations"
+    revision = client.post(
+        f"{base}/locations/{profile}/posts",
+        headers=HEADERS,
+        json={
+            "post_type": "standard",
+            "content": "Synthetic Phase 2 exact post",
+        },
+    )
+    assert revision.status_code == 201, revision.text
+    rev = revision.json()["data"]["id"]
+    command = {"idempotency_key": "phase2-post-dispatch"}
+    denied = client.post(f"{base}/posts/{rev}/dispatch", headers=HEADERS, json=command)
+    assert denied.status_code == 409, denied.text
+    approved = client.post(f"{base}/posts/{rev}/decision", headers=HEADERS, json={"approve": True})
+    assert approved.status_code == 200, approved.text
+    sibling = f"/api/v1/organizations/{org}/locations/{ids['sibling_location']}/gbp/operations"
+    assert (
+        client.post(f"{sibling}/posts/{rev}/dispatch", headers=HEADERS, json=command).status_code
+        == 404
+    )
+    publication = client.post(f"{base}/posts/{rev}/dispatch", headers=HEADERS, json=command)
+    assert publication.status_code == 202, publication.text
+    repeated = client.post(f"{base}/posts/{rev}/dispatch", headers=HEADERS, json=command)
+    assert repeated.status_code == 202, repeated.text
+    assert repeated.json()["data"]["id"] == publication.json()["data"]["id"]
+    assert publication.json()["data"]["status"] == "reserved"
+    assert publication.json()["data"]["verified_at"] is None
+    assert client.post(f"{base}/posts/{rev}/dispatch", json=command).status_code == 401
+
+    async def count(session: AsyncSession) -> None:
+        rows = list(await session.scalars(select(Job).where(Job.organization_id == org)))
+        assert len(rows) == 1
+
+    run_db(postgresql_test_url, count)
