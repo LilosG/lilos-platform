@@ -1,4 +1,8 @@
 ---
+import Leads from "../../../components/leads/Leads.astro";
+import LeadDetail from "../../../components/leads/LeadDetail.astro";
+import { adaptLeads, adaptLeadDetail } from "../../../adapters/leads";
+import type { LeadsView, LeadDetailView } from "../../../adapters/leads";
 import Website from "../../../components/website-content/Website.astro";
 import ContentDetail from "../../../components/website-content/ContentDetail.astro";
 import WebsitePageDetail from "../../../components/website-content/PageDetail.astro";
@@ -58,6 +62,8 @@ try {
 const path = (Astro.params.workspace ?? "").replace(/\/$/, "");
 const section = path.split("/")[0];
 const sourceId = path.split("/")[1];
+let leads: LeadsView | undefined;
+let leadDetail: LeadDetailView | undefined;
 let website: WebsiteView | undefined;
 let websitePage: WebsitePageView | undefined;
 let contentDetail: ContentView | undefined;
@@ -96,7 +102,29 @@ if (!Number.isInteger(offset) || offset < 0 || offset > 100000)
   return new Response("Invalid page", { status: 400 });
 const scope = `organizations/${client.organization_id}/command-center/`;
 try {
-  if (section === "website-content") {
+  if (section === "leads") {
+    const location = Astro.url.searchParams.get("location_id") || undefined;
+    const params = new URLSearchParams(
+      location ? { location_id: location } : {},
+    );
+    if (segments.length === 2 && tab && tab !== "outcomes")
+      leadDetail = adaptLeadDetail(
+        await read(Astro.locals, scope + `leads/${tab}/?${params}`),
+        client.organization_id,
+        tab,
+        location,
+      );
+    else {
+      if (segments.length > 2 || !["", "outcomes"].includes(tab))
+        return new Response("Page not found", { status: 404 });
+      params.set("offset", String(offset));
+      leads = adaptLeads(
+        await read(Astro.locals, scope + `leads/?${params}`),
+        client.organization_id,
+        location,
+      );
+    }
+  } else if (section === "website-content") {
     if (segments.length === 4 && tab === "pages")
       websitePage = adaptWebsitePage(
         await read(
@@ -232,19 +260,21 @@ try {
 const title =
   section === "website-content"
     ? "Website & Content"
-    : section === "reviews"
-      ? "Reviews"
-      : section === "local-search"
-        ? "Local Search"
-        : section === "integrations"
-          ? "Integrations"
-          : section === "opportunities"
-            ? "Opportunities"
-            : section === "attention"
-              ? "Requires attention"
-              : section
-                ? section.replaceAll("-", " ")
-                : client.organization_name;
+    : section === "leads"
+      ? "Leads"
+      : section === "reviews"
+        ? "Reviews"
+        : section === "local-search"
+          ? "Local Search"
+          : section === "integrations"
+            ? "Integrations"
+            : section === "opportunities"
+              ? "Opportunities"
+              : section === "attention"
+                ? "Requires attention"
+                : section
+                  ? section.replaceAll("-", " ")
+                  : client.organization_name;
 ---
 
 <AppLayout
@@ -254,12 +284,25 @@ const title =
   surface={section === "local-search" ||
   section === "integrations" ||
   section === "reviews" ||
-  section === "website-content"
+  section === "website-content" ||
+  section === "leads"
     ? section
     : undefined}
 >
   {
-    contentDetail ? (
+    leadDetail ? (
+      <DialogFrame
+        id="lead-detail"
+        returnLabel="All leads"
+        returnTo={`/clients/${client.organization_slug}/leads/${leadDetail.lead.location_id ? `?location_id=${leadDetail.lead.location_id}` : ""}`}
+      >
+        <LeadDetail
+          slot="body"
+          view={leadDetail}
+          slug={client.organization_slug}
+        />
+      </DialogFrame>
+    ) : contentDetail ? (
       <DialogFrame
         id="content-detail"
         returnLabel="All content"
@@ -342,6 +385,8 @@ const title =
         </div>
         {error ? (
           <p role="alert">{error}</p>
+        ) : leads ? (
+          <Leads view={leads} slug={client.organization_slug} tab={tab} />
         ) : website ? (
           <Website
             view={website}

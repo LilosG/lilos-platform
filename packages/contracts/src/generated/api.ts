@@ -611,6 +611,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/organizations/{organization_id}/command-center/leads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Workspace */
+        get: operations["workspace_api_v1_organizations__organization_id__command_center_leads_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/organizations/{organization_id}/command-center/leads/{lead_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Detail */
+        get: operations["detail_api_v1_organizations__organization_id__command_center_leads__lead_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/organizations/{organization_id}/command-center/local-search": {
         parameters: {
             query?: never;
@@ -6301,6 +6335,161 @@ export interface components {
              */
             assigned_to_user_id: string;
         };
+        /** LeadCRMEvidence */
+        LeadCRMEvidence: {
+            /**
+             * Connection Id
+             * Format: uuid
+             */
+            connection_id: string;
+            /** External Lead Id */
+            external_lead_id: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Sync Status */
+            sync_status: string;
+        };
+        /** LeadCapabilities */
+        LeadCapabilities: {
+            /** Allowed Statuses */
+            allowed_statuses: string[];
+            /** Can Assign */
+            can_assign: boolean;
+            /** Can Manage Consent */
+            can_manage_consent: boolean;
+            /** Can Read Audit */
+            can_read_audit: boolean;
+            /** Can Record Outcome */
+            can_record_outcome: boolean;
+            /** Can Respond */
+            can_respond: boolean;
+        };
+        /** LeadCommunicationEvidence */
+        LeadCommunicationEvidence: {
+            /** Channel */
+            channel: string;
+            /** Delivered At */
+            delivered_at: string | null;
+            /** Direction */
+            direction: string;
+            /** Failed At */
+            failed_at: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Message Reference */
+            message_reference: string;
+            /** Provider Message Id */
+            provider_message_id: string | null;
+            /** Sent At */
+            sent_at: string | null;
+            /** Status */
+            status: string;
+            /**
+             * Workflow Run Id
+             * Format: uuid
+             */
+            workflow_run_id: string;
+            /** Workflow Status */
+            workflow_status: string | null;
+        };
+        /** LeadConsentEvidence */
+        LeadConsentEvidence: {
+            /**
+             * Captured At
+             * Format: date-time
+             */
+            captured_at: string;
+            /** Channel */
+            channel: string;
+            /** Consent Type */
+            consent_type: string;
+            /** Disclosure Version */
+            disclosure_version: string;
+            /** Evidence Reference */
+            evidence_reference: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Source */
+            source: string;
+            /** Status */
+            status: string;
+            /** Withdrawn At */
+            withdrawn_at: string | null;
+        };
+        /** LeadContact */
+        LeadContact: {
+            /** Acknowledged At */
+            acknowledged_at: string | null;
+            /** Assigned To User Id */
+            assigned_to_user_id: string | null;
+            /**
+             * Attribution
+             * @default source_identity_only_no_campaign_or_landing_page
+             * @constant
+             */
+            attribution: "source_identity_only_no_campaign_or_landing_page";
+            /** Converted At */
+            converted_at: string | null;
+            /** Converted Value Cents */
+            converted_value_cents: number | null;
+            /** Duplicate Of Lead Id */
+            duplicate_of_lead_id: string | null;
+            /** First Delivered At */
+            first_delivered_at: string | null;
+            /** First Human Contact At */
+            first_human_contact_at: string | null;
+            /** First Name */
+            first_name: string | null;
+            /** First Outbound Attempt At */
+            first_outbound_attempt_at: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Last Name */
+            last_name: string | null;
+            /** Location Id */
+            location_id: string | null;
+            /** Location Match Status */
+            location_match_status: string;
+            /** Loss Reason */
+            loss_reason: string | null;
+            /** Message */
+            message: string | null;
+            /** Normalized Email */
+            normalized_email: string | null;
+            /** Normalized Phone */
+            normalized_phone: string | null;
+            /**
+             * Outcome
+             * @enum {string}
+             */
+            outcome: "recorded_conversion" | "recorded_loss" | "unknown";
+            /**
+             * Received At
+             * Format: date-time
+             */
+            received_at: string;
+            /**
+             * Source Id
+             * Format: uuid
+             */
+            source_id: string;
+            /** Status */
+            status: string;
+            /** Urgency */
+            urgency: string;
+        };
         /** LeadConversion */
         LeadConversion: {
             /** Converted Value Cents */
@@ -6366,6 +6555,69 @@ export interface components {
             /** Service Id */
             service_id?: string | null;
         };
+        /** LeadInventoryItem */
+        LeadInventoryItem: {
+            /** Acknowledged At */
+            acknowledged_at: string | null;
+            /** Assigned To User Id */
+            assigned_to_user_id: string | null;
+            /**
+             * Attribution
+             * @default source_identity_only_no_campaign_or_landing_page
+             * @constant
+             */
+            attribution: "source_identity_only_no_campaign_or_landing_page";
+            /** Converted At */
+            converted_at: string | null;
+            /** Converted Value Cents */
+            converted_value_cents: number | null;
+            /** Duplicate Of Lead Id */
+            duplicate_of_lead_id: string | null;
+            /** First Delivered At */
+            first_delivered_at: string | null;
+            /** First Human Contact At */
+            first_human_contact_at: string | null;
+            /** First Outbound Attempt At */
+            first_outbound_attempt_at: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Location Id */
+            location_id: string | null;
+            /** Loss Reason */
+            loss_reason: string | null;
+            /**
+             * Outcome
+             * @enum {string}
+             */
+            outcome: "recorded_conversion" | "recorded_loss" | "unknown";
+            /**
+             * Received At
+             * Format: date-time
+             */
+            received_at: string;
+            /**
+             * Source Id
+             * Format: uuid
+             */
+            source_id: string;
+            /** Status */
+            status: string;
+            /** Urgency */
+            urgency: string;
+        };
+        /** LeadLocation */
+        LeadLocation: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+        };
         /** LeadLoss */
         LeadLoss: {
             /** Loss Reason */
@@ -6380,6 +6632,23 @@ export interface components {
         LeadNoteCreate: {
             /** Body */
             body: string;
+        };
+        /** LeadNoteEvidence */
+        LeadNoteEvidence: {
+            /** Author User Id */
+            author_user_id: string | null;
+            /** Body */
+            body: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
         };
         /** LeadSourceCreate */
         LeadSourceCreate: {
@@ -6412,6 +6681,51 @@ export interface components {
             /** Verification Reference */
             verification_reference?: string | null;
         };
+        /** LeadSourceEvidence */
+        LeadSourceEvidence: {
+            /** Connection Status */
+            connection_status: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Intake Recency
+             * @enum {string}
+             */
+            intake_recency: "recent" | "stale" | "unavailable";
+            /** Integration Connection Id */
+            integration_connection_id: string | null;
+            /** Last Intake At */
+            last_intake_at: string | null;
+            /** Lead Count */
+            lead_count: number;
+            /** Location Id */
+            location_id: string | null;
+            /** Name */
+            name: string;
+            /** Provider */
+            provider: string | null;
+            /**
+             * Quality
+             * @default partial
+             * @constant
+             */
+            quality: "partial";
+            /** Recorded Conversions */
+            recorded_conversions: number;
+            /** Source Type */
+            source_type: string;
+            /** Status */
+            status: string;
+            /**
+             * Sync State
+             * @default unavailable_no_canonical_sync_record
+             * @constant
+             */
+            sync_state: "unavailable_no_canonical_sync_record";
+        };
         /** LeadSourceUpdate */
         LeadSourceUpdate: {
             /** Consent Capabilities */
@@ -6429,6 +6743,27 @@ export interface components {
             /** Verification Reference */
             verification_reference?: string | null;
         };
+        /** LeadStateEvidence */
+        LeadStateEvidence: {
+            /** Actor Type */
+            actor_type: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** From Status */
+            from_status: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Safe Reason */
+            safe_reason: string | null;
+            /** To Status */
+            to_status: string;
+        };
         /** LeadStatusTransition */
         LeadStatusTransition: {
             /** Safe Reason */
@@ -6438,6 +6773,28 @@ export interface components {
              * @enum {string}
              */
             to_status: "new" | "validating" | "unassigned" | "assigned" | "acknowledged" | "contact_attempted" | "contacted" | "qualifying" | "qualified" | "appointment_requested" | "appointment_scheduled" | "nurture" | "unresponsive" | "archived";
+        };
+        /** LeadSubmissionEvidence */
+        LeadSubmissionEvidence: {
+            /** External Submission Id */
+            external_submission_id: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Received At
+             * Format: date-time
+             */
+            received_at: string;
+            /**
+             * Source Id
+             * Format: uuid
+             */
+            source_id: string;
+            /** Status */
+            status: string;
         };
         /** LeadTaskCreate */
         LeadTaskCreate: {
@@ -6449,6 +6806,112 @@ export interface components {
             due_at?: string | null;
             /** Title */
             title: string;
+        };
+        /** LeadTaskEvidence */
+        LeadTaskEvidence: {
+            /** Assigned To User Id */
+            assigned_to_user_id: string | null;
+            /** Completed At */
+            completed_at: string | null;
+            /** Description */
+            description: string | null;
+            /** Due At */
+            due_at: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Status */
+            status: string;
+            /** Title */
+            title: string;
+        };
+        /** LeadWorkspaceDetail */
+        LeadWorkspaceDetail: {
+            /** Assignees */
+            assignees: components["schemas"]["AssignableMemberData"][];
+            capabilities: components["schemas"]["LeadCapabilities"];
+            /** Communications */
+            communications: components["schemas"]["LeadCommunicationEvidence"][];
+            /** Consents */
+            consents: components["schemas"]["LeadConsentEvidence"][];
+            /** Crm Mappings */
+            crm_mappings: components["schemas"]["LeadCRMEvidence"][];
+            /**
+             * Downstream Outcomes
+             * @default unavailable_no_booking_sales_jobs_or_revenue_source
+             * @constant
+             */
+            downstream_outcomes: "unavailable_no_booking_sales_jobs_or_revenue_source";
+            /** History */
+            history: components["schemas"]["ReviewHistory"][];
+            /**
+             * History Limit
+             * @default 50
+             * @constant
+             */
+            history_limit: 50;
+            /**
+             * History Quality
+             * @default bounded_partial
+             * @constant
+             */
+            history_quality: "bounded_partial";
+            lead: components["schemas"]["LeadContact"];
+            /** Notes */
+            notes: components["schemas"]["LeadNoteEvidence"][];
+            /**
+             * Organization Id
+             * Format: uuid
+             */
+            organization_id: string;
+            source: components["schemas"]["LeadSourceEvidence"];
+            /** States */
+            states: components["schemas"]["LeadStateEvidence"][];
+            /** Submissions */
+            submissions: components["schemas"]["LeadSubmissionEvidence"][];
+            /** Tasks */
+            tasks: components["schemas"]["LeadTaskEvidence"][];
+        };
+        /** LeadsWorkspace */
+        LeadsWorkspace: {
+            /**
+             * Downstream Outcomes
+             * @default unavailable_no_booking_sales_jobs_or_revenue_source
+             * @constant
+             */
+            downstream_outcomes: "unavailable_no_booking_sales_jobs_or_revenue_source";
+            /** Inventory Count */
+            inventory_count: number | null;
+            /** Items */
+            items: components["schemas"]["LeadInventoryItem"][];
+            /** Location Id */
+            location_id: string | null;
+            /** Locations */
+            locations: components["schemas"]["LeadLocation"][];
+            /** Next Offset */
+            next_offset: number | null;
+            /**
+             * Organization Id
+             * Format: uuid
+             */
+            organization_id: string;
+            /**
+             * Period
+             * @default all_persisted_records
+             * @constant
+             */
+            period: "all_persisted_records";
+            /**
+             * Quality
+             * @enum {string}
+             */
+            quality: "partial" | "unavailable";
+            /** Recorded Conversions */
+            recorded_conversions: number | null;
+            /** Sources */
+            sources: components["schemas"]["LeadSourceEvidence"][];
         };
         /** LiveCheck */
         LiveCheck: {
@@ -10511,6 +10974,74 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["IntegrationView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    workspace_api_v1_organizations__organization_id__command_center_leads_get: {
+        parameters: {
+            query?: {
+                location_id?: string | null;
+                offset?: number;
+            };
+            header?: never;
+            path: {
+                organization_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LeadsWorkspace"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    detail_api_v1_organizations__organization_id__command_center_leads__lead_id__get: {
+        parameters: {
+            query?: {
+                location_id?: string | null;
+            };
+            header?: never;
+            path: {
+                organization_id: string;
+                lead_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LeadWorkspaceDetail"];
                 };
             };
             /** @description Validation Error */

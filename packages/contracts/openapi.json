@@ -3427,6 +3427,488 @@
         "title": "LeadAssignment",
         "type": "object"
       },
+      "LeadCRMEvidence": {
+        "properties": {
+          "connection_id": {
+            "format": "uuid",
+            "title": "Connection Id",
+            "type": "string"
+          },
+          "external_lead_id": {
+            "title": "External Lead Id",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "sync_status": {
+            "title": "Sync Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "connection_id",
+          "external_lead_id",
+          "sync_status"
+        ],
+        "title": "LeadCRMEvidence",
+        "type": "object"
+      },
+      "LeadCapabilities": {
+        "properties": {
+          "allowed_statuses": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Allowed Statuses",
+            "type": "array"
+          },
+          "can_assign": {
+            "title": "Can Assign",
+            "type": "boolean"
+          },
+          "can_manage_consent": {
+            "title": "Can Manage Consent",
+            "type": "boolean"
+          },
+          "can_read_audit": {
+            "title": "Can Read Audit",
+            "type": "boolean"
+          },
+          "can_record_outcome": {
+            "title": "Can Record Outcome",
+            "type": "boolean"
+          },
+          "can_respond": {
+            "title": "Can Respond",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "can_assign",
+          "can_respond",
+          "can_manage_consent",
+          "can_read_audit",
+          "allowed_statuses",
+          "can_record_outcome"
+        ],
+        "title": "LeadCapabilities",
+        "type": "object"
+      },
+      "LeadCommunicationEvidence": {
+        "properties": {
+          "channel": {
+            "title": "Channel",
+            "type": "string"
+          },
+          "delivered_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delivered At"
+          },
+          "direction": {
+            "title": "Direction",
+            "type": "string"
+          },
+          "failed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failed At"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "message_reference": {
+            "title": "Message Reference",
+            "type": "string"
+          },
+          "provider_message_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Message Id"
+          },
+          "sent_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sent At"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "workflow_run_id": {
+            "format": "uuid",
+            "title": "Workflow Run Id",
+            "type": "string"
+          },
+          "workflow_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Status"
+          }
+        },
+        "required": [
+          "id",
+          "direction",
+          "channel",
+          "status",
+          "message_reference",
+          "provider_message_id",
+          "workflow_run_id",
+          "workflow_status",
+          "sent_at",
+          "delivered_at",
+          "failed_at"
+        ],
+        "title": "LeadCommunicationEvidence",
+        "type": "object"
+      },
+      "LeadConsentEvidence": {
+        "properties": {
+          "captured_at": {
+            "format": "date-time",
+            "title": "Captured At",
+            "type": "string"
+          },
+          "channel": {
+            "title": "Channel",
+            "type": "string"
+          },
+          "consent_type": {
+            "title": "Consent Type",
+            "type": "string"
+          },
+          "disclosure_version": {
+            "title": "Disclosure Version",
+            "type": "string"
+          },
+          "evidence_reference": {
+            "title": "Evidence Reference",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "withdrawn_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Withdrawn At"
+          }
+        },
+        "required": [
+          "id",
+          "channel",
+          "consent_type",
+          "status",
+          "source",
+          "disclosure_version",
+          "evidence_reference",
+          "captured_at",
+          "withdrawn_at"
+        ],
+        "title": "LeadConsentEvidence",
+        "type": "object"
+      },
+      "LeadContact": {
+        "properties": {
+          "acknowledged_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acknowledged At"
+          },
+          "assigned_to_user_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assigned To User Id"
+          },
+          "attribution": {
+            "const": "source_identity_only_no_campaign_or_landing_page",
+            "default": "source_identity_only_no_campaign_or_landing_page",
+            "title": "Attribution",
+            "type": "string"
+          },
+          "converted_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Converted At"
+          },
+          "converted_value_cents": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Converted Value Cents"
+          },
+          "duplicate_of_lead_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duplicate Of Lead Id"
+          },
+          "first_delivered_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Delivered At"
+          },
+          "first_human_contact_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Human Contact At"
+          },
+          "first_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Name"
+          },
+          "first_outbound_attempt_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Outbound Attempt At"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "last_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Name"
+          },
+          "location_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location Id"
+          },
+          "location_match_status": {
+            "title": "Location Match Status",
+            "type": "string"
+          },
+          "loss_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loss Reason"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "normalized_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Normalized Email"
+          },
+          "normalized_phone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Normalized Phone"
+          },
+          "outcome": {
+            "enum": [
+              "recorded_conversion",
+              "recorded_loss",
+              "unknown"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "received_at": {
+            "format": "date-time",
+            "title": "Received At",
+            "type": "string"
+          },
+          "source_id": {
+            "format": "uuid",
+            "title": "Source Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "urgency": {
+            "title": "Urgency",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "location_id",
+          "source_id",
+          "status",
+          "urgency",
+          "received_at",
+          "acknowledged_at",
+          "first_outbound_attempt_at",
+          "first_delivered_at",
+          "first_human_contact_at",
+          "converted_at",
+          "converted_value_cents",
+          "loss_reason",
+          "assigned_to_user_id",
+          "duplicate_of_lead_id",
+          "outcome",
+          "first_name",
+          "last_name",
+          "normalized_email",
+          "normalized_phone",
+          "message",
+          "location_match_status"
+        ],
+        "title": "LeadContact",
+        "type": "object"
+      },
       "LeadConversion": {
         "additionalProperties": false,
         "properties": {
@@ -3665,6 +4147,205 @@
         "title": "LeadIntakeBySource",
         "type": "object"
       },
+      "LeadInventoryItem": {
+        "properties": {
+          "acknowledged_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acknowledged At"
+          },
+          "assigned_to_user_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assigned To User Id"
+          },
+          "attribution": {
+            "const": "source_identity_only_no_campaign_or_landing_page",
+            "default": "source_identity_only_no_campaign_or_landing_page",
+            "title": "Attribution",
+            "type": "string"
+          },
+          "converted_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Converted At"
+          },
+          "converted_value_cents": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Converted Value Cents"
+          },
+          "duplicate_of_lead_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duplicate Of Lead Id"
+          },
+          "first_delivered_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Delivered At"
+          },
+          "first_human_contact_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Human Contact At"
+          },
+          "first_outbound_attempt_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Outbound Attempt At"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "location_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location Id"
+          },
+          "loss_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loss Reason"
+          },
+          "outcome": {
+            "enum": [
+              "recorded_conversion",
+              "recorded_loss",
+              "unknown"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "received_at": {
+            "format": "date-time",
+            "title": "Received At",
+            "type": "string"
+          },
+          "source_id": {
+            "format": "uuid",
+            "title": "Source Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "urgency": {
+            "title": "Urgency",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "location_id",
+          "source_id",
+          "status",
+          "urgency",
+          "received_at",
+          "acknowledged_at",
+          "first_outbound_attempt_at",
+          "first_delivered_at",
+          "first_human_contact_at",
+          "converted_at",
+          "converted_value_cents",
+          "loss_reason",
+          "assigned_to_user_id",
+          "duplicate_of_lead_id",
+          "outcome"
+        ],
+        "title": "LeadInventoryItem",
+        "type": "object"
+      },
+      "LeadLocation": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "LeadLocation",
+        "type": "object"
+      },
       "LeadLoss": {
         "additionalProperties": false,
         "properties": {
@@ -3706,6 +4387,44 @@
           "body"
         ],
         "title": "LeadNoteCreate",
+        "type": "object"
+      },
+      "LeadNoteEvidence": {
+        "properties": {
+          "author_user_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Author User Id"
+          },
+          "body": {
+            "title": "Body",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "body",
+          "author_user_id",
+          "created_at"
+        ],
+        "title": "LeadNoteEvidence",
         "type": "object"
       },
       "LeadSourceCreate": {
@@ -3798,6 +4517,130 @@
           "name"
         ],
         "title": "LeadSourceCreate",
+        "type": "object"
+      },
+      "LeadSourceEvidence": {
+        "properties": {
+          "connection_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Connection Status"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "intake_recency": {
+            "enum": [
+              "recent",
+              "stale",
+              "unavailable"
+            ],
+            "title": "Intake Recency",
+            "type": "string"
+          },
+          "integration_connection_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Integration Connection Id"
+          },
+          "last_intake_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Intake At"
+          },
+          "lead_count": {
+            "title": "Lead Count",
+            "type": "integer"
+          },
+          "location_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location Id"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "quality": {
+            "const": "partial",
+            "default": "partial",
+            "title": "Quality",
+            "type": "string"
+          },
+          "recorded_conversions": {
+            "title": "Recorded Conversions",
+            "type": "integer"
+          },
+          "source_type": {
+            "title": "Source Type",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "sync_state": {
+            "const": "unavailable_no_canonical_sync_record",
+            "default": "unavailable_no_canonical_sync_record",
+            "title": "Sync State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "source_type",
+          "status",
+          "location_id",
+          "integration_connection_id",
+          "provider",
+          "connection_status",
+          "last_intake_at",
+          "intake_recency",
+          "lead_count",
+          "recorded_conversions"
+        ],
+        "title": "LeadSourceEvidence",
         "type": "object"
       },
       "LeadSourceUpdate": {
@@ -3899,6 +4742,60 @@
         "title": "LeadSourceUpdate",
         "type": "object"
       },
+      "LeadStateEvidence": {
+        "properties": {
+          "actor_type": {
+            "title": "Actor Type",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "from_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From Status"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "safe_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Safe Reason"
+          },
+          "to_status": {
+            "title": "To Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "from_status",
+          "to_status",
+          "actor_type",
+          "safe_reason",
+          "created_at"
+        ],
+        "title": "LeadStateEvidence",
+        "type": "object"
+      },
       "LeadStatusTransition": {
         "additionalProperties": false,
         "properties": {
@@ -3939,6 +4836,42 @@
           "to_status"
         ],
         "title": "LeadStatusTransition",
+        "type": "object"
+      },
+      "LeadSubmissionEvidence": {
+        "properties": {
+          "external_submission_id": {
+            "title": "External Submission Id",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "received_at": {
+            "format": "date-time",
+            "title": "Received At",
+            "type": "string"
+          },
+          "source_id": {
+            "format": "uuid",
+            "title": "Source Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "source_id",
+          "external_submission_id",
+          "received_at",
+          "status"
+        ],
+        "title": "LeadSubmissionEvidence",
         "type": "object"
       },
       "LeadTaskCreate": {
@@ -3991,6 +4924,305 @@
           "title"
         ],
         "title": "LeadTaskCreate",
+        "type": "object"
+      },
+      "LeadTaskEvidence": {
+        "properties": {
+          "assigned_to_user_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assigned To User Id"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "due_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due At"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "description",
+          "due_at",
+          "assigned_to_user_id",
+          "status",
+          "completed_at"
+        ],
+        "title": "LeadTaskEvidence",
+        "type": "object"
+      },
+      "LeadWorkspaceDetail": {
+        "properties": {
+          "assignees": {
+            "items": {
+              "$ref": "#/components/schemas/AssignableMemberData"
+            },
+            "title": "Assignees",
+            "type": "array"
+          },
+          "capabilities": {
+            "$ref": "#/components/schemas/LeadCapabilities"
+          },
+          "communications": {
+            "items": {
+              "$ref": "#/components/schemas/LeadCommunicationEvidence"
+            },
+            "title": "Communications",
+            "type": "array"
+          },
+          "consents": {
+            "items": {
+              "$ref": "#/components/schemas/LeadConsentEvidence"
+            },
+            "title": "Consents",
+            "type": "array"
+          },
+          "crm_mappings": {
+            "items": {
+              "$ref": "#/components/schemas/LeadCRMEvidence"
+            },
+            "title": "Crm Mappings",
+            "type": "array"
+          },
+          "downstream_outcomes": {
+            "const": "unavailable_no_booking_sales_jobs_or_revenue_source",
+            "default": "unavailable_no_booking_sales_jobs_or_revenue_source",
+            "title": "Downstream Outcomes",
+            "type": "string"
+          },
+          "history": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewHistory"
+            },
+            "title": "History",
+            "type": "array"
+          },
+          "history_limit": {
+            "const": 50,
+            "default": 50,
+            "title": "History Limit",
+            "type": "integer"
+          },
+          "history_quality": {
+            "const": "bounded_partial",
+            "default": "bounded_partial",
+            "title": "History Quality",
+            "type": "string"
+          },
+          "lead": {
+            "$ref": "#/components/schemas/LeadContact"
+          },
+          "notes": {
+            "items": {
+              "$ref": "#/components/schemas/LeadNoteEvidence"
+            },
+            "title": "Notes",
+            "type": "array"
+          },
+          "organization_id": {
+            "format": "uuid",
+            "title": "Organization Id",
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/components/schemas/LeadSourceEvidence"
+          },
+          "states": {
+            "items": {
+              "$ref": "#/components/schemas/LeadStateEvidence"
+            },
+            "title": "States",
+            "type": "array"
+          },
+          "submissions": {
+            "items": {
+              "$ref": "#/components/schemas/LeadSubmissionEvidence"
+            },
+            "title": "Submissions",
+            "type": "array"
+          },
+          "tasks": {
+            "items": {
+              "$ref": "#/components/schemas/LeadTaskEvidence"
+            },
+            "title": "Tasks",
+            "type": "array"
+          }
+        },
+        "required": [
+          "organization_id",
+          "lead",
+          "source",
+          "notes",
+          "tasks",
+          "consents",
+          "communications",
+          "submissions",
+          "states",
+          "crm_mappings",
+          "history",
+          "assignees",
+          "capabilities"
+        ],
+        "title": "LeadWorkspaceDetail",
+        "type": "object"
+      },
+      "LeadsWorkspace": {
+        "properties": {
+          "downstream_outcomes": {
+            "const": "unavailable_no_booking_sales_jobs_or_revenue_source",
+            "default": "unavailable_no_booking_sales_jobs_or_revenue_source",
+            "title": "Downstream Outcomes",
+            "type": "string"
+          },
+          "inventory_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inventory Count"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/LeadInventoryItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "location_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location Id"
+          },
+          "locations": {
+            "items": {
+              "$ref": "#/components/schemas/LeadLocation"
+            },
+            "title": "Locations",
+            "type": "array"
+          },
+          "next_offset": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Offset"
+          },
+          "organization_id": {
+            "format": "uuid",
+            "title": "Organization Id",
+            "type": "string"
+          },
+          "period": {
+            "const": "all_persisted_records",
+            "default": "all_persisted_records",
+            "title": "Period",
+            "type": "string"
+          },
+          "quality": {
+            "enum": [
+              "partial",
+              "unavailable"
+            ],
+            "title": "Quality",
+            "type": "string"
+          },
+          "recorded_conversions": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recorded Conversions"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/LeadSourceEvidence"
+            },
+            "title": "Sources",
+            "type": "array"
+          }
+        },
+        "required": [
+          "organization_id",
+          "location_id",
+          "locations",
+          "sources",
+          "items",
+          "inventory_count",
+          "recorded_conversions",
+          "next_offset",
+          "quality"
+        ],
+        "title": "LeadsWorkspace",
         "type": "object"
       },
       "LiveCheck": {
@@ -14781,6 +16013,148 @@
           }
         },
         "summary": "Integrations View",
+        "tags": [
+          "command-center"
+        ]
+      }
+    },
+    "/api/v1/organizations/{organization_id}/command-center/leads": {
+      "get": {
+        "operationId": "workspace_api_v1_organizations__organization_id__command_center_leads_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "location_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Location Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "maximum": 100000,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LeadsWorkspace"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Workspace",
+        "tags": [
+          "command-center"
+        ]
+      }
+    },
+    "/api/v1/organizations/{organization_id}/command-center/leads/{lead_id}": {
+      "get": {
+        "operationId": "detail_api_v1_organizations__organization_id__command_center_leads__lead_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "lead_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Lead Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "location_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Location Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LeadWorkspaceDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Detail",
         "tags": [
           "command-center"
         ]

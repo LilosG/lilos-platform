@@ -1,0 +1,172 @@
+---
+import { leadMetric, outcomeLabel } from "../../adapters/leads";
+import type { LeadsView } from "../../adapters/leads";
+interface Props {
+  view: LeadsView;
+  slug: string;
+  tab: string;
+}
+const { view: v, slug, tab } = Astro.props;
+const base = `/clients/${slug}/leads/`;
+const scope = v.location_id ? `?location_id=${v.location_id}` : "";
+---
+
+<nav class="sectiontabs" aria-label="Leads views">
+  <a href={base + scope} aria-current={!tab ? "page" : undefined}>Leads</a>
+  <a
+    href={base + "outcomes/" + scope}
+    aria-current={tab === "outcomes" ? "page" : undefined}>Outcomes</a
+  >
+</nav>
+<form method="get" class="filterbar">
+  <label for="lead-location">Location</label>
+  <select id="lead-location" name="location_id">
+    <option value="">All locations and unlocated leads</option>
+    {
+      v.locations.map((l) => (
+        <option value={l.id} selected={l.id === v.location_id}>
+          {l.name}
+        </option>
+      ))
+    }
+  </select><button type="submit">Apply location</button>
+</form>
+<div class="metrics" aria-label="Persisted lead metrics">
+  <div class="metric">
+    <span class="metricLabel">Recorded leads</span><strong
+      >{leadMetric(v.inventory_count)}</strong
+    >
+  </div>
+  <div class="metric">
+    <span class="metricLabel">Recorded lead conversions</span><strong
+      >{leadMetric(v.recorded_conversions)}</strong
+    >
+  </div>
+</div>
+<section class="panel contextual leads-banner">
+  <h2>
+    {tab === "outcomes" ? "Measured conversion outcomes" : "Lead inventory"}
+  </h2>
+  <p>
+    All persisted records in this scope · Quality: {v.quality}. Counts describe
+    the canonical lead store, including duplicate records; they do not establish
+    provider coverage or unique customers.
+  </p>
+  <p>
+    Conversions are recorded lead state, not confirmation of completed
+    reservations, sales, booked jobs or revenue. Those downstream outcomes are
+    unavailable without a canonical source.
+  </p>
+  <p>
+    Campaign and landing-page attribution are unavailable. Website CTA and
+    conversion-path behavior remains in <a
+      href={`/clients/${slug}/website-content/conversions/`}
+      >Website &amp; Content / Conversions</a
+    >.
+  </p>
+</section>
+<section
+  class="panel tablewrap"
+  tabindex="0"
+  role="region"
+  aria-label="Lead inventory table"
+>
+  <h2>Recent leads</h2>
+  <table>
+    <caption>Canonical lead inventory · contact information in detail</caption
+    ><thead
+      ><tr
+        ><th scope="col">Lead</th><th scope="col">Source / provider</th><th
+          scope="col">Received</th
+        ><th scope="col">Status</th><th scope="col">Outcome</th><th scope="col"
+          >Action</th
+        ></tr
+      ></thead
+    ><tbody>
+      {
+        v.items.map((l) => {
+          const s = v.sources.find((s) => s.id === l.source_id);
+          return (
+            <tr>
+              <>
+                <td>
+                  {l.id}
+                  <span class="sub">
+                    {l.duplicate_of_lead_id ? "Duplicate record" : ""}
+                  </span>
+                </td>
+                <td>
+                  {s?.name ?? "Source identity unavailable"}
+                  <span class="sub">
+                    {s?.provider ?? "Provider unknown"} ·{" "}
+                    {s?.source_type ?? "Unknown type"}
+                  </span>
+                </td>
+                <td>{l.received_at}</td>
+                <td>{l.status}</td>
+                <td>{outcomeLabel(l.outcome)}</td>
+                <td>
+                  <a href={base + l.id + "/" + scope}>View lead</a>
+                </td>
+              </>
+            </tr>
+          );
+        })
+      }
+    </tbody>
+  </table>
+  {
+    !v.items.length && (
+      <p>
+        {v.inventory_count === null
+          ? "Lead data unavailable: no source or intake evidence."
+          : "No recorded leads in this scope."}
+      </p>
+    )
+  }
+  {
+    v.next_offset !== null && (
+      <a
+        href={`?offset=${v.next_offset}${v.location_id ? `&location_id=${v.location_id}` : ""}`}
+      >
+        Next leads
+      </a>
+    )
+  }
+</section>
+<section class="panel tablewrap spaced-section">
+  <h2>Source evidence and freshness</h2><p>
+    Up to 100 configured sources; inventory counts include all persisted
+    records. Intake recency uses the last accepted submission (stale after 24
+    hours); it is not sync health. Last sync is unavailable because no canonical
+    lead sync record exists.
+  </p>
+  <a href={`/clients/${slug}/integrations/`}>Manage Integration</a>
+  {
+    v.sources.map((s) => (
+      <article class="listrow">
+        <div>
+          <>
+            <h3>{s.name}</h3>
+            <p>
+              {s.id} · {s.source_type} · {s.status}
+            </p>
+            <p>
+              Provider: {s.provider ?? "Unknown"} · Connection:{" "}
+              {s.connection_status ?? "Unavailable"}
+            </p>
+            <p>
+              Last intake: {s.last_intake_at ?? "Unavailable"} ·{" "}
+              {s.intake_recency} · partial
+            </p>
+            <p>
+              Recorded leads: {s.lead_count} · Recorded conversions:{" "}
+              {s.recorded_conversions}
+            </p>
+          </>
+        </div>
+      </article>
+    ))
+  }
+  {!v.sources.length && <p>Source evidence unavailable.</p>}
+</section>
