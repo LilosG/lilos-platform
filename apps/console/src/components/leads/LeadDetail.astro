@@ -1,0 +1,389 @@
+---
+import type { LeadDetailView } from "../../adapters/leads";
+import { outcomeLabel } from "../../adapters/leads";
+interface Props {
+  view: LeadDetailView;
+  slug: string;
+}
+const { view: v, slug } = Astro.props;
+const l = v.lead;
+const api = `/api/organizations/${v.organization_id}/leads/${l.id}/`;
+const c = v.capabilities;
+---
+
+<h1 id="lead-detail-title">Lead detail</h1>
+<p>
+  {
+    [l.first_name, l.last_name].filter(Boolean).join(" ") ||
+      "Contact name unavailable"
+  }
+</p>
+<p>
+  {l.normalized_email ?? "Email unavailable"} · {
+    l.normalized_phone ?? "Phone unavailable"
+  }
+</p>
+<p>{l.message ?? "Inquiry unavailable"}</p>
+<section class="panel">
+  <h2>Measured outcome and source</h2>
+  <p>
+    {outcomeLabel(l.outcome)} · Lead status: {l.status} · Received: {
+      l.received_at
+    }
+  </p>
+  <p>
+    Converted: {l.converted_at ?? "Unknown"} · Recorded value in cents: {
+      l.converted_value_cents ?? "Unavailable"
+    }. This operator-recorded value does not establish measured revenue.
+  </p>
+  <p>Loss reason: {l.loss_reason ?? "Not recorded"}</p>
+  <p>
+    Completed reservations, sales, booked jobs and revenue: unavailable without
+    a canonical source.
+  </p>
+  <p>
+    Source: {v.source.name} · {v.source.id} · {v.source.source_type} · {
+      v.source.status
+    }
+  </p>
+  <p>
+    Provider: {v.source.provider ?? "Unknown"} · Connection: {
+      v.source.connection_status ?? "Unavailable"
+    }
+  </p>
+  <p>
+    Last intake: {v.source.last_intake_at ?? "Unavailable"} · {
+      v.source.intake_recency
+    } · partial. Last sync: unavailable. Intake recency is not sync health.
+  </p>
+  <p>
+    Campaign / landing-page attribution: unavailable. Source identity is the
+    only intake attribution evidence.
+  </p>
+  <p>
+    Location: {l.location_id ?? "Unlocated"} · {l.location_match_status} · Duplicate
+    of: {l.duplicate_of_lead_id ?? "No duplicate recorded"}
+  </p>
+  <a href={`/clients/${slug}/integrations/`}>Manage Integration</a>
+</section>
+<section class="panel">
+  <h2>Contact and delivery evidence</h2>
+  <p>
+    Acknowledged: {l.acknowledged_at ?? "Not recorded"} · Outbound attempt: {
+      l.first_outbound_attempt_at ?? "Not recorded"
+    }
+  </p>
+  <p>
+    Human contact recorded: {l.first_human_contact_at ?? "Not recorded"} · Delivery
+    recorded: {l.first_delivered_at ?? "Not recorded"}
+  </p>
+  <p>
+    Lead contact state does not prove a message was sent. Planned, queued and
+    sent communications do not establish delivery.
+  </p>
+  {
+    v.communications.map((r) => (
+      <article class="listrow">
+        <div>
+          <>
+            <h3>
+              {r.channel} · {r.status}
+            </h3>
+            <p>
+              {r.direction} · Reference: {r.message_reference}
+            </p>
+            <p>
+              Provider message: {r.provider_message_id ?? "Unavailable"} · Sent:{" "}
+              {r.sent_at ?? "Unconfirmed"} · Delivered:{" "}
+              {r.delivered_at ?? "Unconfirmed"} · Failed:{" "}
+              {r.failed_at ?? "Not recorded"}
+            </p>
+            <p>
+              Workflow: {r.workflow_run_id} ·{" "}
+              {r.workflow_status ?? "Unavailable"}
+            </p>
+          </>
+        </div>
+      </article>
+    ))
+  }
+  {!v.communications.length && <p>No recorded communications.</p>}
+</section>
+<section class="panel">
+  <h2>Assignment and lead state</h2><p>
+    Assignee: {
+      v.assignees.find((a) => a.user_profile_id === l.assigned_to_user_id)
+        ?.display_name ??
+        l.assigned_to_user_id ??
+        "Unassigned"
+    }
+  </p>
+  <form inert data-lead-form="assign" data-action={api + "assign/"}>
+    <fieldset disabled={!c.can_assign}>
+      <legend>Assign lead</legend><label for="lead-assignee">Teammate</label
+      ><select id="lead-assignee" name="assigned_to_user_id" required
+        ><option value="">Choose teammate</option>{
+          v.assignees.map((a) => (
+            <option value={a.user_profile_id}>
+              {a.display_name ?? a.user_profile_id}
+            </option>
+          ))
+        }</select
+      ><button type="submit">Assign lead</button>
+    </fieldset>
+  </form>
+  <form inert data-lead-form="status" data-action={api + "status/"}>
+    <fieldset disabled={!c.allowed_statuses.length}>
+      <legend>Record lead state</legend><label for="lead-state">Status</label
+      ><select id="lead-state" name="to_status" required
+        >{
+          c.allowed_statuses.map((s) => (
+            <option value={s}>{s.replaceAll("_", " ")}</option>
+          ))
+        }</select
+      ><label for="lead-reason">Reason</label><input
+        id="lead-reason"
+        name="safe_reason"
+        maxlength="500"
+      /><button type="submit">Save lead status</button>
+    </fieldset>
+  </form>
+  <form inert data-lead-form="convert" data-action={api + "convert/"}>
+    <fieldset disabled={!c.can_record_outcome}>
+      <legend>Record lead conversion</legend><p>
+        Records an operator assertion in the canonical lead store. It does not
+        confirm a sale, booking or revenue.
+      </p><button type="submit">Record lead conversion</button>
+    </fieldset>
+  </form>
+  <form inert data-lead-form="loss" data-action={api + "loss/"}>
+    <fieldset disabled={!c.can_record_outcome}>
+      <legend>Record loss</legend><label for="lead-loss-state">Loss state</label
+      ><select id="lead-loss-state" name="to_status"
+        ><option value="lost">Lost</option><option value="disqualified"
+          >Disqualified</option
+        ><option value="spam">Spam</option><option value="cancelled"
+          >Cancelled</option
+        ></select
+      ><label for="lead-loss-reason">Loss reason</label><input
+        id="lead-loss-reason"
+        name="loss_reason"
+        required
+        maxlength="500"
+      /><button type="submit">Record loss</button>
+    </fieldset>
+  </form>
+</section>
+<section class="panel">
+  <h2>Notes and follow-up tasks</h2>
+  {
+    v.notes.map((n) => (
+      <p>
+        {n.created_at} · {n.body}
+      </p>
+    ))
+  }
+  <form inert data-lead-form="note" data-action={api + "notes/"}>
+    <fieldset disabled={!c.can_respond}>
+      <legend>Add note</legend><label for="lead-note">Note</label><textarea
+        id="lead-note"
+        name="body"
+        required
+        maxlength="5000"></textarea><button type="submit">Add note</button>
+    </fieldset>
+  </form>
+  {
+    v.tasks.map((t) => (
+      <article class="listrow">
+        <div>
+          <>
+            <h3>
+              {t.title} · {t.status}
+            </h3>
+            <p>
+              {t.description ?? ""} · Due: {t.due_at ?? "Not scheduled"} ·
+              Completed: {t.completed_at ?? "Not completed"}
+            </p>
+            <button
+              inert
+              data-lead-action={api + `tasks/${t.id}/complete/`}
+              disabled={!c.can_respond || t.status !== "open"}
+            >
+              Complete task
+            </button>
+          </>
+        </div>
+      </article>
+    ))
+  }
+  <form inert data-lead-form="task" data-action={api + "tasks/"}>
+    <fieldset disabled={!c.can_respond}>
+      <legend>Create follow-up task</legend><label for="lead-task-title"
+        >Task title</label
+      ><input
+        id="lead-task-title"
+        name="title"
+        required
+        maxlength="200"
+      /><label for="lead-task-description">Task description</label><textarea
+        id="lead-task-description"
+        name="description"
+        maxlength="5000"></textarea><button type="submit">Create task</button>
+    </fieldset>
+  </form>
+</section>
+<section class="panel">
+  <h2>Consent and communication</h2>
+  <p>
+    Consent eligibility and suppression are checked by the backend. Recording
+    consent requires AAL2 and actual evidence.
+  </p>
+  {
+    v.consents.map((r) => (
+      <p>
+        {r.channel} · {r.consent_type} · {r.status} · {r.captured_at} ·{" "}
+        {r.source} · {r.evidence_reference} · Disclosure: {r.disclosure_version}{" "}
+        · Withdrawn: {r.withdrawn_at ?? "Not recorded"}
+      </p>
+    ))
+  }
+  <form inert data-lead-form="consent" data-action={api + "consents/"}>
+    <fieldset disabled={!c.can_manage_consent}>
+      <legend>Record consent evidence</legend><label for="lead-consent-channel"
+        >Consent channel</label
+      ><select id="lead-consent-channel" name="channel"
+        ><option>email</option><option>sms</option><option>phone</option
+        ></select
+      ><label for="lead-consent-type">Consent type</label><select
+        id="lead-consent-type"
+        name="consent_type"
+        >{
+          [
+            "transactional_email",
+            "marketing_email",
+            "transactional_sms",
+            "marketing_sms",
+            "phone_call",
+            "automated_call",
+          ].map((s) => <option>{s}</option>)
+        }</select
+      ><label for="lead-consent-status">Consent status</label><select
+        id="lead-consent-status"
+        name="status"
+        >{
+          [
+            "unknown",
+            "granted",
+            "denied",
+            "not_required",
+            "withdrawn",
+            "expired",
+          ].map((s) => <option>{s}</option>)
+        }</select
+      ><label for="lead-consent-source">Evidence source</label><input
+        id="lead-consent-source"
+        name="source"
+        required
+        maxlength="64"
+      /><label for="lead-consent-disclosure">Disclosure version</label><input
+        id="lead-consent-disclosure"
+        name="disclosure_version"
+        required
+        maxlength="64"
+      /><label for="lead-consent-evidence">Evidence reference</label><input
+        id="lead-consent-evidence"
+        name="evidence_reference"
+        required
+        maxlength="500"
+      /><label for="lead-consent-time"
+        >Captured at (ISO timestamp with timezone)</label
+      ><input
+        id="lead-consent-time"
+        name="captured_at"
+        required
+        placeholder="2026-10-01T12:00:00Z"
+      /><button type="submit">Record consent</button>
+    </fieldset>
+  </form>
+  <form
+    inert
+    data-lead-form="communication"
+    data-action={api + "communications/"}
+  >
+    <fieldset disabled={!c.can_respond}>
+      <legend>Plan communication</legend><p>
+        Use an existing canonical message reference. Acceptance plans durable
+        work; sending and delivery remain unconfirmed until recorded.
+      </p><label for="lead-message-channel">Message channel</label><select
+        id="lead-message-channel"
+        name="channel"><option>email</option><option>sms</option></select
+      ><label for="lead-message-consent">Required consent type</label><select
+        id="lead-message-consent"
+        name="consent_type"
+        >{
+          [
+            "transactional_email",
+            "marketing_email",
+            "transactional_sms",
+            "marketing_sms",
+          ].map((s) => <option>{s}</option>)
+        }</select
+      ><label for="lead-message-reference">Message reference</label><input
+        id="lead-message-reference"
+        name="message_reference"
+        required
+        maxlength="500"
+      /><button type="submit">Plan communication</button>
+    </fieldset>
+  </form>
+  <a
+    href={`/mfa/?return=${encodeURIComponent(Astro.url.pathname + Astro.url.search)}`}
+    >Verify authenticator for protected actions</a
+  >
+</section>
+<section class="panel">
+  <h2>Intake, history and source evidence</h2><p>
+    Each section is limited to 50 persisted records; history is partial.
+    Repeated intake uses the canonical source/submission idempotency rules.
+  </p>
+  {
+    v.submissions.map((s) => (
+      <p>
+        Submission: {s.id} · {s.external_submission_id} · {s.source_id} ·{" "}
+        {s.status} · {s.received_at}
+      </p>
+    ))
+  }
+  {
+    v.states.map((s) => (
+      <p>
+        {s.created_at} · {s.from_status ?? "Intake"} → {s.to_status} ·{" "}
+        {s.actor_type} · {s.safe_reason ?? ""}
+      </p>
+    ))
+  }
+  {
+    v.crm_mappings.map((m) => (
+      <p>
+        CRM reference: {m.external_lead_id} · Connection: {m.connection_id} ·{" "}
+        {m.sync_status}. Mapping state does not confirm a downstream outcome.
+      </p>
+    ))
+  }
+  {
+    c.can_read_audit ? (
+      v.history.map((h) => (
+        <p>
+          {h.occurred_at} · {h.event_type} · {h.actor_type} · {h.result} ·{" "}
+          {h.summary}
+        </p>
+      ))
+    ) : (
+      <p>Audit permission unavailable.</p>
+    )
+  }
+</section>
+<p role="status" aria-live="polite" data-lead-status></p>
+<script>
+  import "../../lib/lead-actions";
+</script>

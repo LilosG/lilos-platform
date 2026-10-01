@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { leadRoutes } from "./lead-routes";
 import { websiteRoutes } from "./website-routes";
 import { reviewRoutes } from "./review-routes";
 import { searchRoutes } from "./search-routes";
@@ -31,6 +32,7 @@ type DecisionBody =
   paths["/api/v1/organizations/{organization_id}/seo/recommendations/{revision_id}/decision"]["post"]["requestBody"]["content"]["application/json"];
 export const routes = [
   ...searchRoutes,
+  ...leadRoutes,
   ...websiteRoutes,
   ...reviewRoutes,
   { pattern: /^me\/$/, method: "GET", upstream: "/api/v1/me", query: [] },

@@ -1732,3 +1732,8 @@ pre {
 .website-banner p {
   color: #526460;
 }
+
+/* Leads evidence panels retain AA contrast on the approved tinted canvas. */
+.leads-banner p {
+  color: #526460;
+}

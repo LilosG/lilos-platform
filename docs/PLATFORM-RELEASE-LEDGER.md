@@ -700,3 +700,21 @@ unavailable; no missing-to-zero conversion or new publishing engine.
 repository/synthetic checks, final sequencing, unsupported capabilities, adjacent work
 and `PENDING OWNER ACTION — LIVE STAGING ACCEPTANCE`. No live provider acceptance or
 real client/GitHub mutation is claimed. Leads/Phase 5 remain outside this packet.
+
+## Command Center Phase 5 — Leads / Conversion Outcomes
+
+State: `IMPLEMENTED_NOT_ACCEPTED` for live rollout.
+
+Canonical Leads inventory/detail/outcomes, source/provider/submission identity,
+location scope, persisted state/timestamps, duplicates, consent, assignment,
+notes/tasks, communications/workflows and permission-gated audit are integrated
+through additive typed reads and closed canonical BFF actions. Counts describe
+persisted records only; missing source data stays unavailable. Lead conversions are
+operator-recorded assertions, never inferred bookings/sales/jobs or measured revenue.
+Campaign/page attribution and source sync remain explicitly unavailable. Website
+conversion-path behavior remains in Website & Content.
+
+[Phase 5 acceptance](implementation/command-center/PHASE_05_ACCEPTANCE.md) records
+focused repository/synthetic evidence, Phase 4 merge/rebase sequencing, unsupported
+capabilities and `PENDING OWNER ACTION — LIVE STAGING ACCEPTANCE`. No live provider
+acceptance, real provider/client mutation or Phase 6 implementation is claimed.

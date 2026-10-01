@@ -135,3 +135,22 @@ steps. Phase 0 discovery and the approved architecture were not reopened.
 - D54 — OWNER ACTION REQUIRED: PHASE_04_ACCEPTANCE.md carries consolidated live staging
   prerequisites and explicit real-write authorization boundary. Phase 3 merge must be
   followed by actual-main rebase before final gates/Phase 4 PR. No Phase 5 work.
+
+## Phase 5 — Leads / Conversion Outcomes
+
+- D55 — IMPLEMENTED_NOT_ACCEPTED: bounded typed Leads workspace/detail reuse canonical
+  lead/source/submission/consent/task/communication/CRM/audit records, assignable members
+  and backend action permissions. All actions use existing LeadService/runtime/BFF;
+  no new store, provider, attribution engine or browser authority.
+- D56 — VERIFIED CURRENT FACT: lead conversions/values are operator-recorded states,
+  not confirmation of bookings/sales/jobs/revenue. Historical conversion timestamps
+  survive archive. Persisted counts include duplicate records; no-source null and
+  configured-source empty-store zero are distinguished without provider coverage claims.
+- D57 — VERIFIED CURRENT FACT: source/provider identity and submission receipt evidence
+  exist; campaign/page attribution and canonical lead sync records do not. Intake recency
+  (24-hour threshold) is explicitly separate from unavailable sync health. Website CTA/
+  path behavior remains Website & Content; Leads never substitutes GA4/GBP interactions.
+- D58 — OWNER ACTION REQUIRED: PHASE_05_ACCEPTANCE.md retains consolidated live staging
+  prerequisites and separate real-write authorization. Parallel implementation starts
+  from the supplied Phase 4 head; actual Phase 4 merge/rebase is required before broad
+  final gates and PR creation. Do not merge or begin Phase 6.

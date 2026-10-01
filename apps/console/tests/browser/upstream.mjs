@@ -9,6 +9,11 @@ const phase3 = JSON.parse(
 const phase4 = JSON.parse(
   readFileSync(new URL("../fixtures/phase4.json", import.meta.url), "utf8"),
 );
+const phase5 = JSON.parse(
+  readFileSync(new URL("../fixtures/phase5.json", import.meta.url), "utf8"),
+);
+const leadStates = new Map();
+let leadScenario = "inventory";
 const contentStates = new Map();
 const reviewStates = new Map();
 import { createServer } from "node:http";
@@ -83,6 +88,11 @@ createServer(async (req, res) => {
     res.writeHead(status, { "Content-Type": "application/json" });
     res.end(JSON.stringify(data));
   };
+  if (url.pathname === "/test/leads-scenario") {
+    leadScenario = parsed.mode;
+    leadStates.clear();
+    return reply({ ok: true });
+  }
   if (url.pathname === "/health") return reply({ ok: true });
   if (url.pathname === "/auth/v1/token") {
     if (parsed.refresh_token?.startsWith("race-")) {
@@ -188,6 +198,92 @@ createServer(async (req, res) => {
   if (!scoped || scoped[1] !== claims.sub)
     return reply({ code: "NOT_FOUND" }, 404);
   const path = scoped[2];
+  if (
+    path === "command-center/leads" ||
+    path === `command-center/leads/${phase5.detail.lead.id}`
+  ) {
+    if (leadScenario === "error")
+      return reply({ code: "SOURCE_UNAVAILABLE" }, 503);
+    const data = structuredClone(
+      path === "command-center/leads" ? phase5.workspace : phase5.detail,
+    );
+    if (
+      path === "command-center/leads" &&
+      ["zero", "unavailable"].includes(leadScenario)
+    ) {
+      data.items = [];
+      data.inventory_count = leadScenario === "zero" ? 0 : null;
+      data.recorded_conversions = leadScenario === "zero" ? 0 : null;
+      if (leadScenario === "unavailable") {
+        data.sources = [];
+        data.quality = "unavailable";
+      }
+    }
+    const location = url.searchParams.get("location_id");
+    if (location && location !== phase5.detail.lead.location_id)
+      return reply({ code: "NOT_FOUND" }, 404);
+    if (claims.sub !== ids.a) return reply({ code: "NOT_FOUND" }, 404);
+    if (path === "command-center/leads") {
+      data.location_id = location;
+      const saved = leadStates.get(claims.sub);
+      if (saved) {
+        data.items[0] = { ...data.items[0], ...saved.lead };
+        data.recorded_conversions = saved.lead.converted_at ? 1 : 0;
+      }
+    } else {
+      Object.assign(data, leadStates.get(claims.sub) ?? {});
+      data.capabilities.can_manage_consent = claims.aal === "aal2";
+    }
+    return reply(data);
+  }
+  if (
+    req.method === "POST" &&
+    path.startsWith(`leads/${phase5.detail.lead.id}/`)
+  ) {
+    const data = leadStates.get(claims.sub) ?? structuredClone(phase5.detail);
+    if (path.endsWith("/notes"))
+      data.notes.push({
+        id: ids.next,
+        body: parsed.body,
+        author_user_id: claims.sub,
+        created_at: "2026-10-01T00:00:00Z",
+      });
+    if (path.endsWith("/assign"))
+      data.lead.assigned_to_user_id = parsed.assigned_to_user_id;
+    if (path.endsWith("/tasks"))
+      data.tasks.push({
+        id: ids.next,
+        title: parsed.title,
+        description: parsed.description ?? null,
+        due_at: null,
+        assigned_to_user_id: null,
+        status: "open",
+        completed_at: null,
+      });
+    if (path.endsWith(`/tasks/${ids.next}/complete`)) {
+      data.tasks[0].status = "completed";
+      data.tasks[0].completed_at = "2026-10-01T00:00:00Z";
+    }
+    if (path.endsWith("/consents") && claims.aal === "aal2")
+      data.consents.push({ ...parsed, id: ids.next, withdrawn_at: null });
+    if (path.endsWith("/status")) data.lead.status = parsed.to_status;
+    if (path.endsWith("/convert")) {
+      data.lead.status = "converted";
+      data.lead.converted_at = "2026-10-01T00:00:00Z";
+      data.lead.outcome = "recorded_conversion";
+      data.capabilities.can_record_outcome = false;
+      data.capabilities.allowed_statuses = ["archived"];
+    }
+    if (path.endsWith("/communications"))
+      data.communications.push({
+        ...phase5.detail.communications[0],
+        id: ids.next,
+      });
+    if (path.endsWith("/consents") && claims.aal !== "aal2")
+      return reply({ code: "AUTH_AAL2_REQUIRED" }, 403);
+    leadStates.set(claims.sub, data);
+    return reply({ data: { id: ids.next } }, 200);
+  }
   if (path === "command-center/website-content") {
     const data = structuredClone(phase4.workspace);
     data.organization_id = claims.sub;

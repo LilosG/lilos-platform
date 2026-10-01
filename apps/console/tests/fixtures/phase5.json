@@ -1,0 +1,151 @@
+{
+  "workspace": {
+    "organization_id": "11111111-1111-4111-8111-111111111111",
+    "location_id": null,
+    "locations": [
+      {
+        "id": "00000091-1111-4111-8111-000000000091",
+        "name": "Synthetic location"
+      }
+    ],
+    "sources": [
+      {
+        "id": "00000092-1111-4111-8111-000000000092",
+        "name": "Canonical form source",
+        "source_type": "web_form",
+        "status": "active",
+        "location_id": "00000091-1111-4111-8111-000000000091",
+        "integration_connection_id": "00000095-1111-4111-8111-000000000095",
+        "provider": "synthetic_test_provider",
+        "connection_status": "reconnect_required",
+        "last_intake_at": "2026-09-20T00:00:00Z",
+        "intake_recency": "stale",
+        "sync_state": "unavailable_no_canonical_sync_record",
+        "quality": "partial",
+        "lead_count": 1,
+        "recorded_conversions": 0
+      }
+    ],
+    "items": [
+      {
+        "id": "00000093-1111-4111-8111-000000000093",
+        "location_id": "00000091-1111-4111-8111-000000000091",
+        "source_id": "00000092-1111-4111-8111-000000000092",
+        "status": "new",
+        "urgency": "unknown",
+        "received_at": "2026-09-20T00:00:00Z",
+        "acknowledged_at": null,
+        "first_outbound_attempt_at": null,
+        "first_delivered_at": null,
+        "first_human_contact_at": null,
+        "converted_at": null,
+        "converted_value_cents": null,
+        "loss_reason": null,
+        "assigned_to_user_id": null,
+        "duplicate_of_lead_id": null,
+        "outcome": "unknown",
+        "attribution": "source_identity_only_no_campaign_or_landing_page"
+      }
+    ],
+    "inventory_count": 1,
+    "recorded_conversions": 0,
+    "next_offset": null,
+    "period": "all_persisted_records",
+    "quality": "partial",
+    "downstream_outcomes": "unavailable_no_booking_sales_jobs_or_revenue_source"
+  },
+  "detail": {
+    "organization_id": "11111111-1111-4111-8111-111111111111",
+    "lead": {
+      "id": "00000093-1111-4111-8111-000000000093",
+      "location_id": "00000091-1111-4111-8111-000000000091",
+      "source_id": "00000092-1111-4111-8111-000000000092",
+      "status": "new",
+      "urgency": "unknown",
+      "received_at": "2026-09-20T00:00:00Z",
+      "acknowledged_at": null,
+      "first_outbound_attempt_at": null,
+      "first_delivered_at": null,
+      "first_human_contact_at": null,
+      "converted_at": null,
+      "converted_value_cents": null,
+      "loss_reason": null,
+      "assigned_to_user_id": null,
+      "duplicate_of_lead_id": null,
+      "outcome": "unknown",
+      "attribution": "source_identity_only_no_campaign_or_landing_page",
+      "first_name": "Synthetic",
+      "last_name": "Lead",
+      "normalized_email": "synthetic@example.test",
+      "normalized_phone": null,
+      "message": "Canonical inquiry",
+      "location_match_status": "matched"
+    },
+    "source": {
+      "id": "00000092-1111-4111-8111-000000000092",
+      "name": "Canonical form source",
+      "source_type": "web_form",
+      "status": "active",
+      "location_id": "00000091-1111-4111-8111-000000000091",
+      "integration_connection_id": "00000095-1111-4111-8111-000000000095",
+      "provider": "synthetic_test_provider",
+      "connection_status": "reconnect_required",
+      "last_intake_at": "2026-09-20T00:00:00Z",
+      "intake_recency": "stale",
+      "sync_state": "unavailable_no_canonical_sync_record",
+      "quality": "partial",
+      "lead_count": 1,
+      "recorded_conversions": 0
+    },
+    "notes": [],
+    "tasks": [],
+    "consents": [],
+    "communications": [
+      {
+        "id": "00000096-1111-4111-8111-000000000096",
+        "direction": "outbound",
+        "channel": "email",
+        "status": "planned",
+        "message_reference": "canonical-message",
+        "provider_message_id": null,
+        "workflow_run_id": "00000094-1111-4111-8111-000000000094",
+        "workflow_status": "queued",
+        "sent_at": null,
+        "delivered_at": null,
+        "failed_at": null
+      }
+    ],
+    "submissions": [
+      {
+        "id": "00000097-1111-4111-8111-000000000097",
+        "source_id": "00000092-1111-4111-8111-000000000092",
+        "external_submission_id": "canonical-submission",
+        "received_at": "2026-09-20T00:00:00Z",
+        "status": "accepted"
+      }
+    ],
+    "states": [],
+    "crm_mappings": [],
+    "assignees": [
+      {
+        "user_profile_id": "11111111-1111-4111-8111-111111111111",
+        "display_name": "Synthetic operator",
+        "membership_status": "active",
+        "membership_type": "client",
+        "role_keys": ["organization_owner"]
+      }
+    ],
+    "history": [],
+    "capabilities": {
+      "can_assign": true,
+      "can_respond": true,
+      "can_manage_consent": false,
+      "can_read_audit": true,
+      "allowed_statuses": ["acknowledged", "contacted", "archived"],
+      "can_record_outcome": true
+    },
+    "history_limit": 50,
+    "history_quality": "bounded_partial",
+    "downstream_outcomes": "unavailable_no_booking_sales_jobs_or_revenue_source"
+  }
+}
