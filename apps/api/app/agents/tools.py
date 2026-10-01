@@ -734,7 +734,8 @@ class AgentToolService:
         if unmatched:
             raise AgentToolDeniedError(
                 f"{label} cites references this run did not observe: "
-                f"{', '.join(unmatched[:10])}; " + cls._citable_summary(observed)
+                f"{', '.join(unmatched[:10])}; " + cls._citable_summary(observed),
+                code="EVIDENCE_NOT_OBSERVED",
             )
         return list(dict.fromkeys(resolved))
 

@@ -136,3 +136,22 @@ async def test_a_single_failure_leaves_the_run_active() -> None:
     assert await _loop(_service(once, audit), run, _Session(audit), calls=1) == 1
     assert run.status == "running"
     assert run.safe_error_code is None
+
+
+def test_the_route_returns_the_typed_code_and_problem_details() -> None:
+    import json
+
+    from apps.api.app.agents.tools import SiteChangeInvalidError
+    from apps.api.app.routes.hermes_tools import _tool_error
+
+    error = SiteChangeInvalidError(
+        "seo_title: [TOP_QUERY_TERM_REMOVED] drops 'italy'",
+        problems=[{"field": "seo_title", "code": "TOP_QUERY_TERM_REMOVED", "terms": ["italy"]}],
+    )
+    response = _tool_error(403, error.code, str(error), error.details)
+    body = json.loads(bytes(response.body))["error"]
+
+    assert body["code"] == "SITE_CHANGE_INVALID"
+    assert body["details"]["problems"] == [
+        {"field": "seo_title", "code": "TOP_QUERY_TERM_REMOVED", "terms": ["italy"]}
+    ]
