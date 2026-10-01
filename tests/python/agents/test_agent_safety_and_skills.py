@@ -734,8 +734,9 @@ def test_a_refused_tool_names_what_the_run_may_call_instead() -> None:
     """A bare refusal taught the model nothing and it kept probing.
 
     The runtime advertises every LILOs tool regardless of the bound skill, so a
-    GBP run is offered Reviews and Leads write tools it can never call. Production logs show it trying them one after another — each attempt
-    an iteration spent on a call that could only be denied.
+    GBP run is offered Reviews and Leads write tools it can never call.
+    Production logs show it trying them one after another, each attempt an
+    iteration spent on a call that could only be denied.
     """
     run = cast(AgentRun, SimpleNamespace(skill_key="gbp.operator"))
 
