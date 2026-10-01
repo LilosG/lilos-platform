@@ -16,7 +16,17 @@ What counts as stale (work tied to a live attributed opportunity is never touche
 * its source opportunity is live but `query_only`/`unresolved`, it has no live attributed
   successor, and the work was created before the attribution cutoff (newer work on such an
   opportunity is valid `new_page` content and is only reported);
-* a `failed` Growth action that is not tied to live attributed work.
+* a `failed` Growth action that is not tied to live attributed work;
+* a non-terminal Growth action with no SEO source created before the cutoff
+  (`pre_attribution_orphan`), or whose action type is outside the Growth action-type
+  vocabulary at any age (`unknown_action_type`);
+* a Growth initiative left with no live actions (`no_live_actions`);
+* a `publishing` Content item with no pull request, created before the cutoff
+  (`PUBLICATION_HAS_NO_PULL_REQUEST`);
+* Content items and opportunities sourced from a Growth action that no longer exists, created
+  before the cutoff (`orphaned_source`).
+
+Work created after the cutoff, and anything tied to a live attributed opportunity, is left alone.
 
 What happens to it:
 
@@ -46,6 +56,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from apps.api.app.config import Settings
 from apps.api.app.database.runtime import create_database_runtime
+from apps.api.app.growth.action_types import GrowthActionType
 from apps.api.app.growth.models import GrowthAction, GrowthInitiative
 from apps.api.app.growth.service import (
     CANCELLABLE_ACTION_STATUSES,
@@ -74,6 +85,7 @@ from scripts._cli import run_script
 ATTRIBUTION_CUTOFF = datetime(2026, 9, 30, 3, 27, 38, tzinfo=UTC)
 
 EXIT_NOT_RESOLVED = 4
+NO_PULL_REQUEST_REASON = "PUBLICATION_HAS_NO_PULL_REQUEST"
 
 RETIRABLE_ITEM_STATUSES = frozenset(
     {
@@ -88,6 +100,9 @@ RETIRABLE_ITEM_STATUSES = frozenset(
 )
 RETIRABLE_OPPORTUNITY_STATUSES = frozenset({"identified", "validated", "accepted"})
 LIVE_ATTRIBUTION = frozenset({"attributed", "shared"})
+KNOWN_ACTION_TYPES = frozenset(member.value for member in GrowthActionType)
+# Growth actions still doing (or about to do) work; everything else is terminal.
+LIVE_ACTION_STATUSES = frozenset({"proposed", "approved", "queued", "running", "waiting_approval"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -232,7 +247,14 @@ async def _action_verdict(session: AsyncSession, action: GrowthAction) -> Verdic
         return stale
     if action.status == "failed":
         return Verdict(stale=True, reason="failed_action_retired")
-    return next(iter(verdicts), UNKNOWN_SOURCE)
+    if action.action_type not in KNOWN_ACTION_TYPES:
+        # Not in the closed vocabulary LILOs acts on, so nothing can dispatch it.
+        return Verdict(stale=True, reason="unknown_action_type")
+    if not verdicts:
+        if action.created_at < ATTRIBUTION_CUTOFF:
+            return Verdict(stale=True, reason="pre_attribution_orphan")
+        return UNKNOWN_SOURCE
+    return verdicts[0]
 
 
 async def plan_organization(
@@ -255,6 +277,7 @@ async def plan_organization(
         )
     )
     action_verdicts: dict[UUID, Verdict] = {}
+    all_action_ids = {action.id for action in actions}
     planned_actions: set[UUID] = set()
     for action in actions:
         if action.status not in CANCELLABLE_ACTION_STATUSES and action.status != "cancelled":
@@ -288,8 +311,13 @@ async def plan_organization(
             verdict = await _seo_verdict(session, org_id, seo_id, opportunity.created_at)
         elif action_id is not None:
             action_verdict = action_verdicts.get(action_id)
-            if action_verdict is None:
-                verdict = Verdict(reason="source_action_not_found")
+            if action_verdict is None and action_id in all_action_ids:
+                verdict = Verdict(reason="source_action_not_actionable")
+            elif action_verdict is None:
+                if opportunity.created_at < ATTRIBUTION_CUTOFF:
+                    verdict = Verdict(stale=True, reason="orphaned_source")
+                else:
+                    verdict = Verdict(reason="source_action_not_found")
             elif action_verdict.stale:
                 verdict = Verdict(stale=True, reason=f"growth_action:{action_verdict.reason}")
             else:
@@ -311,14 +339,17 @@ async def plan_organization(
     def item_verdict(item: ContentItem) -> Verdict:
         if item.opportunity_id is None:
             return UNKNOWN_SOURCE
-        return opportunity_verdicts.get(item.opportunity_id, UNKNOWN_SOURCE)
+        verdict = opportunity_verdicts.get(item.opportunity_id, UNKNOWN_SOURCE)
+        if verdict.reason == "orphaned_source" and item.created_at >= ATTRIBUTION_CUTOFF:
+            return Verdict(reason="source_action_not_found")  # newer work is left alone
+        return verdict
 
     # --- Publishing items: reconcile with the provider before anything else.
     for item in items:
         if item.status != "publishing":
             continue
         verdict = item_verdict(item)
-        if not verdict.stale:
+        if verdict.live:
             continue
         publication = await session.scalar(
             select(ContentPublication)
@@ -329,8 +360,25 @@ async def plan_organization(
             .order_by(ContentPublication.created_at.desc())
             .limit(1)
         )
-        if publication is None:
-            plan.skipped.append(Skipped(org_id, "content_item", item.id, "no_publication"))
+        if publication is None or not publication.external_pull_request_id:
+            # Nothing to reconcile with: there is no pull request to merge or close.
+            if item.created_at < ATTRIBUTION_CUTOFF:
+                retired_items.add(item.id)
+                plan.add(
+                    Change(
+                        org_id,
+                        "content_item",
+                        item.id,
+                        "publishing",
+                        "archived",
+                        NO_PULL_REQUEST_REASON,
+                    ),
+                    _retire_item(content, item, NO_PULL_REQUEST_REASON),
+                )
+            else:
+                plan.skipped.append(Skipped(org_id, "content_item", item.id, "no_pull_request"))
+            continue
+        if not verdict.stale:
             continue
         try:
             observed = await observe_publication_pull_request(session, org_id, publication)
@@ -445,10 +493,22 @@ async def plan_organization(
         if initiative.status not in CANCELLABLE_INITIATIVE_STATUSES:
             continue
         siblings = [a for a in actions if a.initiative_id == initiative.id]
-        if not siblings or not any(a.id in planned_actions for a in siblings):
+        # Newer initiatives are left alone unless step 1 just cancelled one of their actions.
+        if initiative.created_at >= ATTRIBUTION_CUTOFF and not any(
+            a.id in planned_actions for a in siblings
+        ):
             continue
-        remaining = [a for a in siblings if a.status != "cancelled" and a.id not in planned_actions]
-        if remaining:
+        blockers = [
+            a
+            for a in siblings
+            if a.id not in planned_actions
+            and (
+                a.status in LIVE_ACTION_STATUSES
+                or a.status == "completed"
+                or action_verdicts.get(a.id, UNKNOWN_SOURCE).live
+            )
+        ]
+        if blockers:
             plan.skipped.append(
                 Skipped(org_id, "growth_initiative", initiative.id, "has_live_actions")
             )
@@ -460,7 +520,7 @@ async def plan_organization(
                 initiative.id,
                 initiative.status,
                 "cancelled",
-                "all_actions_stale",
+                "no_live_actions",
             ),
             _cancel_initiative(growth, initiative),
         )
@@ -479,7 +539,7 @@ def _cancel_action(growth: GrowthService, action: GrowthAction, reason: str) -> 
 def _cancel_initiative(growth: GrowthService, initiative: GrowthInitiative) -> Step:
     async def run(session: AsyncSession, correlation_id: str) -> None:
         await growth.cancel_initiative(
-            session, initiative, reason_code="all_actions_stale", correlation_id=correlation_id
+            session, initiative, reason_code="no_live_actions", correlation_id=correlation_id
         )
 
     return run
