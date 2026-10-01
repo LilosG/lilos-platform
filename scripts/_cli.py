@@ -8,6 +8,9 @@ The Render shell has no `uv`, so these are run as
 `LILOS_RELEASE`, or a Google connection that needs reconnecting -- into a single
 clear line and a distinct exit code instead of a traceback, and does the same for
 any other expected application error. Genuine bugs still raise.
+
+It also registers every ORM model before ``main`` runs, so each script gets a complete
+mapper registry without importing models itself.
 """
 
 from __future__ import annotations
@@ -21,6 +24,7 @@ from typing import Any
 from pydantic import ValidationError
 from sqlalchemy.exc import InterfaceError, OperationalError
 
+from apps.api.app.database.model_registry import load_all_models
 from apps.api.app.errors import ApiError
 from apps.api.app.integrations.errors import IntegrationReconnectRequiredError
 
@@ -43,6 +47,10 @@ def run_script(name: str, main: Callable[[], Coroutine[Any, Any, int]]) -> int:
             f'LILOS_RELEASE="$RENDER_GIT_COMMIT" python -m scripts.{name} <args>',
             EXIT_BAD_ENVIRONMENT,
         )
+    # A script imports only what it uses, which leaves the ORM registry incomplete (a foreign
+    # key to a model nobody imported fails at the first flush). Register every model once,
+    # here, so no script has to.
+    load_all_models()
     try:
         return asyncio.run(main())
     except IntegrationReconnectRequiredError:
