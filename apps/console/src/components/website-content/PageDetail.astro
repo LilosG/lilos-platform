@@ -1,0 +1,50 @@
+---
+import type { WebsitePageView } from "../../adapters/website-content";
+import PageIntelligence from "../local-search/PageIntelligence.astro";
+interface Props {
+  view: WebsitePageView;
+  slug: string;
+}
+const { view: v, slug } = Astro.props;
+---
+
+<h1 id="website-page-detail-title">Website page</h1>
+<PageIntelligence view={v.evidence} slug={slug} />
+<section class="panel">
+  <h2>Page repository mapping</h2><p>
+    State: {v.mapping.state} · {v.mapping.code ?? "Configured"}
+  </p><p>
+    Repository: {v.mapping.repository ?? "Unavailable"} · Branch: {
+      v.mapping.base_branch ?? "Unavailable"
+    }
+  </p><dl>
+    {
+      Object.entries(v.mapping.fields).map(([field, path]) => (
+        <div class="listrow">
+          <>
+            <dt>{field}</dt>
+            <dd>{path}</dd>
+          </>
+        </div>
+      ))
+    }
+  </dl><p>
+    Mapping is configuration evidence. The canonical executor rechecks
+    repository values and the exact approved revision before writing.
+  </p>
+</section>
+<section class="panel">
+  <h2>Page opportunities</h2>{
+    v.opportunities.length ? (
+      v.opportunities.map((o) => (
+        <p>
+          <a href={`/clients/${slug}/opportunities/${o.source_id}/`}>
+            {o.source_type.replaceAll("_", " ")} · {o.status}
+          </a>
+        </p>
+      ))
+    ) : (
+      <p>No canonical opportunities linked to this page.</p>
+    )
+  }
+</section>

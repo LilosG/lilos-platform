@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { websiteRoutes } from "./website-routes";
 import { reviewRoutes } from "./review-routes";
 import { searchRoutes } from "./search-routes";
 import { assertMutation, boundedBody, privateHeaders } from "./security";
@@ -30,6 +31,7 @@ type DecisionBody =
   paths["/api/v1/organizations/{organization_id}/seo/recommendations/{revision_id}/decision"]["post"]["requestBody"]["content"]["application/json"];
 export const routes = [
   ...searchRoutes,
+  ...websiteRoutes,
   ...reviewRoutes,
   { pattern: /^me\/$/, method: "GET", upstream: "/api/v1/me", query: [] },
   {
@@ -125,12 +127,13 @@ export async function forward(
   for (const [key, value] of query) {
     if (
       !(route.query as readonly string[]).includes(key) ||
-      (key === "website_id" || key === "location_id"
+      (key === "website_id" || key === "location_id" || key === "target_id"
         ? !z.uuid().safeParse(value).success
         : !/^\d+$/.test(value)) ||
       query.getAll(key).length !== 1 ||
       (key !== "website_id" &&
         key !== "location_id" &&
+        key !== "target_id" &&
         Number(value) > (key === "limit" ? 100 : 100000)) ||
       (key === "days" && ![7, 28, 90].includes(Number(value))) ||
       (key === "limit" && Number(value) < 1)
