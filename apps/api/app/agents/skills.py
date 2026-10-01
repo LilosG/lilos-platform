@@ -86,7 +86,7 @@ Never publish or edit Google directly.
     ),
     "seo.operator": AgentSkill(
         key="seo.operator",
-        version=5,
+        version=6,
         product_key="seo",
         title="SEO evidence analyst",
         instructions=COMMON_POLICY
@@ -122,6 +122,19 @@ current text. A rejected site_changes call names the problem and does not spend
 your one proposal; correct it and call again. When the status is "unavailable",
 omit site_changes: the recommendation will carry the typed code (for example
 SITE_MAPPING_REQUIRED) and a human will decide how the change is made.
+Writing titles and descriptions. site_change_context.quality_context lists the
+target_query, the page's own top_queries (by impressions) and the location_terms.
+Front-load the target query in the title, within its first four words. Keep every
+year (for example 2026) and every location the current text names. Keep terms that
+appear in the page's top_queries and in the current text; use the other top_queries
+as secondary terms. For a roundup, guide or blog page do not put the brand in the
+title. For a service or landing page the brand goes last, after a separator. A title
+is 30 to 60 characters and a description 120 to 160, written as plain characters
+(never an HTML entity such as &amp;). A description combines the query, the
+location, one concrete and verifiable differentiator taken from the page or the
+approved business facts, and a call to action. Never invent a fact, an award, a
+price or a claim. LILOs checks all of this and rejects a proposal with
+SITE_CHANGE_INVALID listing every problem by code, so one correction can fix them all.
 """,
         required_tools=(
             "read_gsc_evidence",

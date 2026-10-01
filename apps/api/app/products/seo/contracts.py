@@ -3,6 +3,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from apps.api.app.products.seo.change_set import SiteChangeField
 from apps.api.app.products.seo.crawl_limits import (
     DEFAULT_MAX_DEPTH,
     DEFAULT_MAX_PAGES,
@@ -65,6 +66,19 @@ class RecommendationCreate(BaseModel):
     # A `SiteChangeSet` (as JSON) when Hermes proposes exact page edits. Validated and
     # bound to the opportunity's own page when the recommendation is created.
     change_set: dict[str, object] | None = None
+
+
+class SiteChangeEdit(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    field: SiteChangeField
+    proposed_value: str = Field(min_length=1, max_length=10_000)
+
+
+class RecommendationRevise(BaseModel):
+    """An operator's edits to the proposed values of a pending site change."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    edits: list[SiteChangeEdit] = Field(min_length=1, max_length=20)
 
 
 class RecommendationDecision(BaseModel):

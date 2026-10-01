@@ -24,7 +24,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from apps.api.app.execution.models import WorkflowRun
 from apps.api.app.execution.service import ExecutionService
 from apps.api.app.integrations.models import IntegrationConnection
+from apps.api.app.locations.models import Location
 from apps.api.app.products.content.models import ContentPublication, PublishingTarget
+from apps.api.app.products.seo.change_quality import (
+    DESCRIPTION_MAX_LENGTH,
+    DESCRIPTION_MIN_LENGTH,
+    TITLE_MAX_LENGTH,
+    TITLE_MIN_LENGTH,
+    TOP_QUERY_LIMIT,
+    QualityContext,
+    location_phrases,
+)
 from apps.api.app.products.seo.change_set import (
     MAX_META_DESCRIPTION_LENGTH,
     MAX_SEO_TITLE_LENGTH,
@@ -34,7 +44,12 @@ from apps.api.app.products.seo.change_set import (
 from apps.api.app.products.seo.decision import SEOEvidenceInvalidError
 from apps.api.app.products.seo.errors import SEOSiteMappingRequiredError
 from apps.api.app.products.seo.limitation_codes import SEOLimitationCode
-from apps.api.app.products.seo.models import SEOOpportunity, SEOPage, SEORecommendationRevision
+from apps.api.app.products.seo.models import (
+    SEOOpportunity,
+    SEOPage,
+    SEORecommendationRevision,
+    SEOSearchObservation,
+)
 from apps.api.app.products.seo.site_change_codes import SiteChangeCode
 from apps.api.app.products.seo.site_map_resolver import (
     SiteMapLocator,
@@ -176,6 +191,71 @@ class SiteChangeService:
         job.max_attempts = SITE_CHANGE_JOB_ATTEMPTS
         return publication
 
+    async def quality_context(
+        self, session: AsyncSession, organization_id: UUID, opportunity: SEOOpportunity
+    ) -> QualityContext:
+        """The facts a proposed title/description is checked against. Database only.
+
+        The target query from the opportunity's evidence, the attributed page's top Search
+        Console queries by impressions (newest 28-day window), and the location profile's
+        city, region and service-area phrases. A missing source skips only its own checks.
+        """
+        query = opportunity.evidence.get("query")
+        top_queries: list[str] = []
+        if opportunity.page_id is not None:
+            rows = (
+                await session.execute(
+                    select(
+                        SEOSearchObservation.query,
+                        SEOSearchObservation.impressions,
+                        SEOSearchObservation.date_start,
+                        SEOSearchObservation.date_end,
+                    )
+                    .where(
+                        SEOSearchObservation.organization_id == organization_id,
+                        SEOSearchObservation.page_id == opportunity.page_id,
+                        SEOSearchObservation.quality_status == "valid",
+                        SEOSearchObservation.query.isnot(None),
+                        SEOSearchObservation.dimensions["observation_type"].astext == "page_query",
+                    )
+                    .order_by(SEOSearchObservation.date_end.desc())
+                    .limit(5000)
+                )
+            ).all()
+            if rows:
+                newest = rows[0].date_end
+                same_end = [row for row in rows if row.date_end == newest]
+                # Prefer the 28-day window ending on the newest date, else whatever ends there.
+                window = [
+                    row for row in same_end if (row.date_end - row.date_start).days == 28
+                ] or same_end
+                ranked = sorted(window, key=lambda row: int(row.impressions or 0), reverse=True)
+                for row in ranked:
+                    if row.query and row.query not in top_queries:
+                        top_queries.append(row.query)
+                    if len(top_queries) >= TOP_QUERY_LIMIT:
+                        break
+        location = await session.scalar(
+            select(Location).where(
+                Location.organization_id == organization_id,
+                *(
+                    [Location.id == opportunity.location_id]
+                    if opportunity.location_id is not None
+                    else [Location.is_primary.is_(True)]
+                ),
+            )
+        )
+        terms = (
+            location_phrases(location.city, location.region, location.service_area_description)
+            if location is not None
+            else ()
+        )
+        return QualityContext(
+            target_query=query if isinstance(query, str) and query else None,
+            top_queries=tuple(top_queries),
+            location_terms=terms,
+        )
+
     async def mapping_limitation(
         self, session: AsyncSession, organization_id: UUID, page_id: UUID
     ) -> str | None:
@@ -211,13 +291,25 @@ class SiteChangeService:
         """
         if opportunity.page_id is None or opportunity.attribution_state != "attributed":
             return {"status": "not_applicable"}
+        quality = await self.quality_context(session, organization_id, opportunity)
+        quality_document: dict[str, object] = {
+            "target_query": quality.target_query,
+            "top_queries": list(quality.top_queries),
+            "location_terms": list(quality.location_terms),
+            "title_length": [TITLE_MIN_LENGTH, TITLE_MAX_LENGTH],
+            "description_length": [DESCRIPTION_MIN_LENGTH, DESCRIPTION_MAX_LENGTH],
+        }
         page = await session.scalar(
             select(SEOPage).where(
                 SEOPage.organization_id == organization_id, SEOPage.id == opportunity.page_id
             )
         )
         if page is None:
-            return {"status": "unavailable", "code": SiteChangeCode.SITE_MAPPING_REQUIRED.value}
+            return {
+                "status": "unavailable",
+                "code": SiteChangeCode.SITE_MAPPING_REQUIRED.value,
+                "quality_context": quality_document,
+            }
         page_id, page_url = page.id, page.normalized_url
         result = await self.read_page_fields(session, organization_id, page)
         if isinstance(result, FieldsUnavailable):
@@ -225,6 +317,7 @@ class SiteChangeService:
                 "status": "unavailable",
                 "code": str(result.code),
                 "detail": result.detail[:300],
+                "quality_context": quality_document,
             }
         return {
             "status": "available",
@@ -235,6 +328,7 @@ class SiteChangeService:
                 SiteChangeField.SEO_TITLE.value: MAX_SEO_TITLE_LENGTH,
                 SiteChangeField.META_DESCRIPTION.value: MAX_META_DESCRIPTION_LENGTH,
             },
+            "quality_context": quality_document,
         }
 
     async def read_page_fields(

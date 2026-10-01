@@ -37,7 +37,7 @@ from apps.api.app.products.seo.decision import (
     SEOEvidenceInvalidError,
     resolve_decision,
 )
-from apps.api.app.products.seo.errors import SEOOpportunityNotFoundError
+from apps.api.app.products.seo.errors import SEOChangeQualityError, SEOOpportunityNotFoundError
 from apps.api.app.products.seo.limitation_codes import SEOLimitationCode
 from apps.api.app.products.seo.models import SEORecommendationRevision
 from apps.api.app.products.seo.service import SEOService
@@ -504,7 +504,7 @@ class AgentRuntimeService:
                                 recommendation_refs[0].removeprefix("seo-recommendation:")
                             )
                             opportunity_id = UUID(str(bound_id))
-                        except (ValueError, TypeError):
+                        except (ValueError, TypeError, SEOChangeQualityError):
                             safe_error = "SEO_RECOMMENDATION_INVALID"
                         else:
                             existing = await session.scalar(

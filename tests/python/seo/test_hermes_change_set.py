@@ -22,6 +22,7 @@ from apps.api.app.authentication.enums import UserStatus
 from apps.api.app.authentication.models import UserProfile
 from apps.api.app.execution import handlers
 from apps.api.app.products.content.models import PublishingTarget
+from apps.api.app.products.seo.change_quality import QualityContext
 from apps.api.app.products.seo.change_set import SiteChangeField, SiteChangeItem, SiteChangeSet
 from apps.api.app.products.seo.contracts import RecommendationCreate, RecommendationDecision
 from apps.api.app.products.seo.decision import SEOEvidenceInvalidError
@@ -117,7 +118,12 @@ def bound_tool_fixtures(
     async def get_opportunity(*_args: object) -> SEOOpportunity:
         return opportunity
 
+    async def no_quality_context(*_args: object) -> QualityContext:
+        # The tool asks the database for the quality context; these tests stub the session.
+        return QualityContext()
+
     monkeypatch.setattr("apps.api.app.agents.tools.resolve_decision", resolve)
+    monkeypatch.setattr(SiteChangeService, "quality_context", no_quality_context)
     tools = AgentToolService()
     monkeypatch.setattr(tools.seo, "get_opportunity", get_opportunity)
 
@@ -162,7 +168,7 @@ async def test_hermes_change_set_uses_repo_current_value(monkeypatch: pytest.Mon
             [
                 {
                     "field": "seo_title",
-                    "proposed_value": "Best Brunch in San Diego | Daily Until 3PM",
+                    "proposed_value": "Best Brunch Spots in San Diego | Little Italy Guide",
                     "rationale": "Lead with the query and the hours.",
                 }
             ]
@@ -174,7 +180,7 @@ async def test_hermes_change_set_uses_repo_current_value(monkeypatch: pytest.Mon
     item = change_set["items"][0]
     # The current value is the one read from the repo, not anything Hermes said.
     assert item["current_value"] == CURRENT_TITLE
-    assert item["proposed_value"] == "Best Brunch in San Diego | Daily Until 3PM"
+    assert item["proposed_value"] == "Best Brunch Spots in San Diego | Little Italy Guide"
     SiteChangeSet.model_validate(change_set)  # and it is a valid, fingerprintable set
 
 
@@ -238,7 +244,7 @@ async def test_hermes_change_set_rejects_overlong_or_unchanged_value(
             [
                 {
                     "field": "seo_title",
-                    "proposed_value": "A valid replacement title",
+                    "proposed_value": "A valid replacement title for SEO",
                     "rationale": "r",
                 }
             ]
@@ -448,7 +454,7 @@ async def test_change_set_is_bound_to_the_opportunity_page_and_fingerprinted_at_
                         page_id=target_page,
                         field=SiteChangeField.SEO_TITLE,
                         current_value=CURRENT_TITLE,
-                        proposed_value="Best Brunch in San Diego | Daily Until 3PM",
+                        proposed_value="Best Brunch Spots in San Diego | Little Italy Guide",
                         rationale="Lead with the query.",
                     )
                 ]

@@ -87,3 +87,19 @@ class SEOSiteMappingRequiredError(ConflictError):
     def __init__(self, reason: str) -> None:
         self.public_message = reason
         super().__init__(reason)
+
+
+class SEOChangeQualityError(ConflictError):
+    """A proposed title or description failed the deterministic quality gate.
+
+    Carries every problem (typed code plus the specific reason) so the caller -- Hermes
+    or an operator -- can correct them all at once.
+    """
+
+    code = "SEO_CHANGE_QUALITY_REJECTED"
+    public_message = "The proposed page text does not meet the quality rules."
+
+    def __init__(self, problems: list[str]) -> None:
+        self.problems = problems
+        self.public_message = "; ".join(problems)
+        super().__init__(self.public_message)
