@@ -116,3 +116,22 @@ steps. Phase 0 discovery and the approved architecture were not reopened.
 - D47 — IMPLEMENTED_NOT_ACCEPTED: Reviews BFF and SSR inbox/dialog use canonical draft/AI/approve/reserve/import actions only. Reservation replay is idempotent; stale review revisions and invalid grounding fail in the canonical service. Existing worker/provider/write-once/read-back/retry boundaries remain authoritative.
 - D48 — VERIFIED CURRENT FACT: no canonical review-request campaign source, provider-wide coverage/trend metrics, approval-free local policy or manual response retry/rejection/delete API exists. Explicit unavailable states retained; no duplicate workflow or policy system.
 - D49 — OWNER ACTION REQUIRED: Phase 3 repository/synthetic acceptance is separate from live staging. Consolidated inherited/deployed Reviews owner actions are in PHASE_03_ACCEPTANCE.md. Real provider writes require separate explicit authorization; stop at the Phase 3 PR, do not merge or start Phase 4.
+
+## Phase 4 — Website & Content
+
+- D50 — IMPLEMENTED_NOT_ACCEPTED: additive bounded Website workspace/page/Content
+  detail projections reuse canonical inventory, Page Intelligence, page-map resolver,
+  SEO Opportunity and Content operator services. Sources authorize independently;
+  Content is organization-scoped, never assigned to a selected website in Astro.
+- D51 — IMPLEMENTED_NOT_ACCEPTED: five SSR tabs and editor use closed canonical
+  brief/revision/AI/exact decision/publication/assets/recovery BFF actions. Phase 1
+  governed site-change detail is reused; no second publishing engine or direct repo edit.
+- D52 — VERIFIED CURRENT FACT: named CTA/path/funnel/friction sources and numerical
+  health/Google indexation remain unavailable. Page organic keyEvents retain their
+  canonical evidence; they do not establish completed business outcomes.
+- D53 — IMPLEMENTED_NOT_ACCEPTED: raw publication/workflow/PR/build/head/merge/deploy/
+  live-proof/failure states are independent. Unsupported manual merge/terminal retries
+  and fabricated deployment/read-back remain unavailable; canonical executor rechecks.
+- D54 — OWNER ACTION REQUIRED: PHASE_04_ACCEPTANCE.md carries consolidated live staging
+  prerequisites and explicit real-write authorization boundary. Phase 3 merge must be
+  followed by actual-main rebase before final gates/Phase 4 PR. No Phase 5 work.

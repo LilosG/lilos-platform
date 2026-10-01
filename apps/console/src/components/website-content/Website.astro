@@ -1,0 +1,317 @@
+---
+import type { WebsiteView } from "../../adapters/website-content";
+import { value } from "../../adapters/local-search";
+import OpportunityRow from "../opportunities/OpportunityRow.astro";
+interface Props {
+  view: WebsiteView;
+  slug: string;
+  tab: string;
+  offset: number;
+}
+const { view: v, slug, tab, offset } = Astro.props;
+const base = `/clients/${slug}/website-content/`;
+const api = `/api/organizations/${v.organization_id}/`;
+const query = v.website_id ? `website_id=${v.website_id}` : "";
+const tabs = [
+  ["Overview", ""],
+  ["Pages", "pages"],
+  ["Content", "content"],
+  ["Technical", "technical"],
+  ["Conversions", "conversions"],
+];
+const next = tab === "content" ? v.next_content_offset : v.next_page_offset;
+---
+
+<nav class="sectiontabs" aria-label="Website & Content tabs">
+  {
+    tabs.map(([label, path]) => (
+      <a
+        class:list={["tab", { active: tab === path }]}
+        aria-current={tab === path ? "page" : undefined}
+        href={`${base}${path ? path + "/" : ""}?${query}`}
+      >
+        {label}
+      </a>
+    ))
+  }
+</nav>
+{
+  v.websites.length > 0 && (
+    <form method="get" class="filterbar">
+      <>
+        <label>
+          Website
+          <select name="website_id">
+            {v.websites.map((w) => (
+              <option value={w.id} selected={w.id === v.website_id}>
+                {w.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button type="submit">Apply</button>
+      </>
+    </form>
+  )
+}
+<div class="banner website-banner">
+  <div>
+    <h2>Website work</h2><p>
+      Page evidence: {v.page_availability} · Content: {v.content_availability} · Content
+      scope: organization
+    </p>
+  </div><a class="control" href={`/clients/${slug}/integrations/`}
+    >Manage Integration</a
+  >
+</div>
+{
+  tab === "conversions" ? (
+    <section class="panel">
+      <>
+        <h2>Conversion paths unavailable</h2>
+        <p>
+          No canonical named CTA event, journey, funnel or page-friction
+          measurement source exists. Missing paths and event counts are
+          unavailable, not zero. Page intelligence can show sourced Organic
+          Search landing key events with its period, freshness and quality. Key
+          events do not establish business outcomes.
+        </p>
+        <a href={`${base}pages/?${query}`}>Inspect page evidence</a>
+      </>
+    </section>
+  ) : tab === "content" ? (
+    <>
+      <section class="panel">
+        <>
+          <h2>Content operations</h2>
+          <p>
+            These canonical items belong to the organization. Website
+            association is unavailable unless established by a canonical
+            publication target; selecting a website does not assign content to
+            it.
+          </p>
+          {v.content.length ? (
+            v.content.map((c) => (
+              <div class="listrow">
+                <div>
+                  <h3>{c.title}</h3>
+                  <p>
+                    {c.stage} · Revision:{" "}
+                    {c.latest_revision_status ?? "Unavailable"} · Publication:{" "}
+                    {c.publication_status ?? "Not started"} · Job:{" "}
+                    {c.publication_job_status ?? "Unavailable"}
+                  </p>
+                  <small>Published: {c.published_at ?? "Not confirmed"}</small>
+                </div>
+                <a class="control" href={`${base}content/${c.id}/`}>
+                  Inspect content
+                </a>
+              </div>
+            ))
+          ) : (
+            <p>No canonical content items in this page of the organization.</p>
+          )}
+        </>
+      </section>
+      {v.can_create && (
+        <section class="panel">
+          <h2>New content item</h2>
+          <form
+            inert
+            data-detail-base={base + "content/"}
+            data-content-form="create"
+            data-action={api + "content/"}
+          >
+            <label for="content-title">Title</label>
+            <input id="content-title" name="title" required maxlength="300" />
+            <label for="content-slug">Slug</label>
+            <input
+              id="content-slug"
+              name="slug"
+              required
+              maxlength="200"
+              pattern="[a-z0-9]+(-[a-z0-9]+)*"
+            />
+            <label for="content-type">Content type</label>
+            <input
+              id="content-type"
+              name="content_type"
+              required
+              maxlength="32"
+            />
+            <button type="submit">Create content item</button>
+          </form>
+        </section>
+      )}
+    </>
+  ) : (
+    <>
+      {tab === "" && (
+        <section class="panel">
+          <h2>Website overview</h2>
+          <p>
+            Observed pages, technical findings and governed changes below
+            describe persisted website evidence. Numeric health scores,
+            unsourced traffic totals and completed business outcomes are
+            unavailable here.
+          </p>
+          <a href={`${base}content/?${query}`}>View content operations</a>
+        </section>
+      )}
+      <section class="panel">
+        <>
+          <h2>
+            {tab === "technical" ? "Technical findings" : "Observed pages"}
+          </h2>
+          <p>
+            Crawler indexability is separate from Google indexation. Missing,
+            stale and partial evidence remain labeled.
+          </p>
+          <div
+            class="tablewrap"
+            tabindex="0"
+            role="region"
+            aria-label="Page inventory"
+          >
+            <table>
+              <>
+                <caption>Canonical page inventory</caption>
+                <thead>
+                  <tr>
+                    <>
+                      <th scope="col">Page</th>
+                      <th scope="col">HTTP / indexability</th>
+                      <th scope="col">Quality / observed</th>
+                      <th scope="col">Action</th>
+                    </>
+                  </tr>
+                </thead>
+                <tbody>
+                  {v.pages.map((p) => (
+                    <tr>
+                      <td>
+                        {p.title ?? "Untitled"}
+                        <span class="sub">{p.normalized_url}</span>
+                      </td>
+                      <td>
+                        {value(p.http_status)} · {value(p.indexability)}
+                      </td>
+                      <td>
+                        {p.quality_status}
+                        <span class="sub">
+                          {p.observed_at ?? "Unavailable"}
+                        </span>
+                      </td>
+                      <td>
+                        {tab === "technical" && (
+                          <p>
+                            {p.technical_issues.length
+                              ? p.technical_issues.map(value).join(" · ")
+                              : "No findings recorded; missing evidence does not prove health."}
+                          </p>
+                        )}
+                        <a href={`${base}pages/${p.website_id}/${p.id}/`}>
+                          Inspect page
+                        </a>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </>
+            </table>
+          </div>
+          {!v.pages.length && <p>No persisted pages in this scope.</p>}
+        </>
+      </section>
+      <section class="panel">
+        <>
+          <h2>Website checks</h2>
+          <button
+            inert
+            disabled={!v.can_crawl}
+            data-content-action={
+              v.website_id
+                ? api + `seo/websites/${v.website_id}/check/`
+                : undefined
+            }
+            data-body={JSON.stringify({ idempotency_key: crypto.randomUUID() })}
+          >
+            Run website check
+          </button>
+          <p>
+            Enqueue is not crawl completion. Refresh to inspect canonical
+            progress.
+          </p>
+          {v.crawls.length ? (
+            v.crawls.map((c) => (
+              <div class="listrow">
+                <div>
+                  <h3>{c.status}</h3>
+                  <p>
+                    Completed: {c.completed_at ?? "Unavailable"} · Stop reason:{" "}
+                    {c.stop_reason ?? "Unavailable"}
+                  </p>
+                  <details>
+                    <summary>Crawl evidence</summary>
+                    <p>{value(c.safe_result)}</p>
+                  </details>
+                </div>
+              </div>
+            ))
+          ) : (
+            <p>No crawl runs.</p>
+          )}
+        </>
+      </section>
+      <section class="panel">
+        <>
+          <h2>Site-change opportunities</h2>
+          <div
+            class="tablewrap"
+            tabindex="0"
+            role="region"
+            aria-label="Site-change opportunities"
+          >
+            <table>
+              <>
+                <caption>Selected website's governed opportunities</caption>
+                <thead>
+                  <tr>
+                    <>
+                      <th scope="col">Opportunity</th>
+                      <th scope="col">Priority</th>
+                      <th scope="col">Observed</th>
+                      <th scope="col">Action</th>
+                    </>
+                  </tr>
+                </thead>
+                <tbody>
+                  {v.opportunities.map((o) => (
+                    <OpportunityRow opportunity={o} slug={slug} />
+                  ))}
+                </tbody>
+              </>
+            </table>
+          </div>
+          {!v.opportunities.length && (
+            <p>No opportunities in this page of the selected website.</p>
+          )}
+          {v.next_opportunity_offset !== null && (
+            <a href={`?${query}&offset=${v.next_opportunity_offset}`}>
+              More site-change opportunities
+            </a>
+          )}
+        </>
+      </section>
+    </>
+  )
+}
+{
+  offset > 0 && (
+    <a href={`?${query}&offset=${Math.max(0, offset - 50)}`}>Previous page</a>
+  )
+}{next !== null && <a href={`?${query}&offset=${next}`}>Next page</a>}
+<p role="status" aria-live="polite" data-content-status></p>
+<script>
+  import "../../lib/content-actions";
+</script>

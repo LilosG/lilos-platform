@@ -1728,3 +1728,7 @@ pre {
 .phase2-surface footer {
   color: var(--muted);
 }
+
+.website-banner p {
+  color: #526460;
+}

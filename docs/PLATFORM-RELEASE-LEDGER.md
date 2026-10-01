@@ -683,3 +683,20 @@ consolidated `PENDING OWNER ACTION — LIVE STAGING ACCEPTANCE` checklist:
 [Phase 3 acceptance](implementation/command-center/PHASE_03_ACCEPTANCE.md).
 No live provider acceptance, real provider write authorization or Phase 4 implementation
 is claimed by this entry.
+
+## Command Center Phase 4 — Website & Content
+
+State: `IMPLEMENTED_NOT_ACCEPTED` for live rollout.
+
+Overview, Pages, Content, Technical and Conversions consume typed canonical persisted
+inventory/page evidence/mapping/SEO opportunities and organization-scoped Content
+briefs/revisions/workflows/publications. Closed BFF exact approvals/idempotent GitHub
+publication/asset reads/supported recovery reuse existing governed services and Phase 1
+site changes. PR/build/merge/deployment/live verification remain distinct. Unsourced
+CTA paths/funnels/friction, health scores/indexation and unsupported actions stay
+unavailable; no missing-to-zero conversion or new publishing engine.
+
+[Phase 4 acceptance](implementation/command-center/PHASE_04_ACCEPTANCE.md) records
+repository/synthetic checks, final sequencing, unsupported capabilities, adjacent work
+and `PENDING OWNER ACTION — LIVE STAGING ACCEPTANCE`. No live provider acceptance or
+real client/GitHub mutation is claimed. Leads/Phase 5 remain outside this packet.
