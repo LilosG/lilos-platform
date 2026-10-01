@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from apps.api.app.agents.models import AgentRun
 from apps.api.app.audit.contracts import AuditEventCreate
 from apps.api.app.audit.enums import AuditActorType, AuditResult
+from apps.api.app.audit.metadata import JsonValue
 from apps.api.app.audit.service import AuditEventService
 from apps.api.app.execution.models import WorkflowRun
 from apps.api.app.execution.service import ExecutionService
@@ -59,6 +60,10 @@ class GrowthStateError(ValueError):
     """A requested initiative transition is invalid for its current state."""
 
 
+CANCELLABLE_ACTION_STATUSES = frozenset({"proposed", "approved", "waiting_approval", "failed"})
+CANCELLABLE_INITIATIVE_STATUSES = frozenset({"proposed", "approved", "executing"})
+
+
 class GrowthService:
     """Coordinate product domains without bypassing their governed lifecycles."""
 
@@ -66,6 +71,95 @@ class GrowthService:
         self.audit = AuditEventService()
         self.execution = ExecutionService()
         self.content = ContentService()
+
+    async def cancel_action(
+        self,
+        session: AsyncSession,
+        action: GrowthAction,
+        *,
+        reason_code: str,
+        correlation_id: str,
+    ) -> GrowthAction:
+        """Cancel a stale action. A failed action keeps its error code on the row."""
+        if action.status not in CANCELLABLE_ACTION_STATUSES:
+            raise GrowthStateError(f"growth action in {action.status} cannot be cancelled")
+        previous_status = action.status
+        action.status = "cancelled"
+        action.completed_at = datetime.now(UTC)
+        await self._record_retirement(
+            session,
+            event_type="growth.action.cancelled",
+            organization_id=action.organization_id,
+            resource_type="growth_action",
+            resource_id=action.id,
+            correlation_id=correlation_id,
+            summary="Stale Growth action cancelled.",
+            metadata={
+                "reason_code": reason_code,
+                "from_status": previous_status,
+                "preserved_error_code": action.safe_error_code,
+            },
+        )
+        await session.flush()
+        return action
+
+    async def cancel_initiative(
+        self,
+        session: AsyncSession,
+        initiative: GrowthInitiative,
+        *,
+        reason_code: str,
+        correlation_id: str,
+    ) -> GrowthInitiative:
+        """Cancel an initiative whose every remaining action has been cancelled."""
+        if initiative.status not in CANCELLABLE_INITIATIVE_STATUSES:
+            raise GrowthStateError(f"growth initiative in {initiative.status} cannot be cancelled")
+        previous_status = initiative.status
+        initiative.status = "cancelled"
+        await self._record_retirement(
+            session,
+            event_type="growth.initiative.cancelled",
+            organization_id=initiative.organization_id,
+            location_id=initiative.location_id,
+            resource_type="growth_initiative",
+            resource_id=initiative.id,
+            correlation_id=correlation_id,
+            summary="Stale Growth initiative cancelled.",
+            metadata={"reason_code": reason_code, "from_status": previous_status},
+        )
+        await session.flush()
+        return initiative
+
+    async def _record_retirement(
+        self,
+        session: AsyncSession,
+        *,
+        event_type: str,
+        organization_id: UUID,
+        resource_type: str,
+        resource_id: UUID,
+        correlation_id: str,
+        summary: str,
+        metadata: dict[str, object],
+        location_id: UUID | None = None,
+    ) -> None:
+        await self.audit.record(
+            session,
+            AuditEventCreate(
+                event_type=event_type,
+                action=event_type,
+                result=AuditResult.SUCCEEDED,
+                actor_type=AuditActorType.SYSTEM,
+                organization_id=organization_id,
+                location_id=location_id,
+                product_key="growth",
+                resource_type=resource_type,
+                resource_id=resource_id,
+                correlation_id=correlation_id,
+                summary=summary,
+                metadata=cast(dict[str, JsonValue], metadata),
+            ),
+        )
 
     @staticmethod
     def _canonicalize_executor_bindings(command: GrowthPlanCreate) -> GrowthPlanCreate:
@@ -155,6 +249,7 @@ class GrowthService:
         if existing is not None:
             return existing
 
+        canonical_actions = []
         for action in command.actions:
             recommendation_refs = [
                 ref for ref in action.evidence_references if ref.startswith("seo-recommendation:")
@@ -162,6 +257,7 @@ class GrowthService:
             if len(recommendation_refs) > 1:
                 raise GrowthPlanValidationError("One Growth action may cite only one SEO decision")
             if not recommendation_refs:
+                canonical_actions.append(action)
                 continue
             try:
                 revision_id = UUID(recommendation_refs[0].split(":", 1)[1])
@@ -193,20 +289,30 @@ class GrowthService:
             if (
                 revision.status != "approved"
                 or context is None
-                or action.target_reference != expected_target
-                or action.expected_result_hypothesis != revision.expected_result_hypothesis
                 or action.product_key not in {"seo", "content"}
             ):
                 raise GrowthPlanValidationError(
                     "Growth action does not match the approved SEO decision"
                 )
-            if context.get("recommendation_class") == "growth_change":
-                target_metric = context.get("target_metric")
-                proposed_metric = action.verification_plan.get("metric")
-                if target_metric != proposed_metric:
-                    raise GrowthPlanValidationError(
-                        "Growth measurement metric differs from the approved SEO decision"
-                    )
+            # The approved decision owns the target, hypothesis and measurement
+            # metric. Growth actions are generated from those fields rather than
+            # rejected for paraphrasing them, so a correctly bound run cannot fail
+            # on a string that LILOs already knows.
+            action = action.model_copy(
+                update={
+                    "target_reference": expected_target,
+                    "expected_result_hypothesis": revision.expected_result_hypothesis,
+                    "verification_plan": {
+                        **action.verification_plan,
+                        **(
+                            {"metric": context["target_metric"]}
+                            if context.get("recommendation_class") == "growth_change"
+                            else {}
+                        ),
+                    },
+                }
+            )
+            canonical_actions.append(action)
             try:
                 current = await resolve_decision(
                     session,
@@ -226,6 +332,7 @@ class GrowthService:
             except (SEOEvidenceInvalidError, SEOActiveChangeError) as exc:
                 raise GrowthPlanValidationError(str(exc)) from exc
 
+        command = command.model_copy(update={"actions": canonical_actions})
         initiative = GrowthInitiative(
             organization_id=run.organization_id,
             location_id=run.location_id,

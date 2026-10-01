@@ -139,6 +139,8 @@ def test_dropped_top_query_terms_are_named() -> None:
     reason = " ".join(str(p) for p in problems)
     assert QualityCode.TOP_QUERY_TERM_REMOVED in codes(problems)
     assert "'little'" in reason and "'italy'" in reason
+    removed = next(p for p in problems if p.code is QualityCode.TOP_QUERY_TERM_REMOVED)
+    assert set(removed.terms) >= {"little", "italy"}
 
 
 def test_year_and_location_are_also_kept_in_the_meta_description() -> None:
@@ -217,6 +219,16 @@ def test_hermes_gets_every_problem_in_one_typed_error_it_can_retry_from() -> Non
     message = str(raised.value)
     assert message.startswith("SITE_CHANGE_INVALID: seo_title: [")
     assert "[YEAR_REMOVED]" in message and "[LOCATION_REMOVED]" in message
+    # The same problems arrive as data, with the offending terms, for the revision.
+    problems = raised.value.details["problems"]
+    assert isinstance(problems, list)
+    by_code = {problem["code"]: problem for problem in problems}
+    assert by_code["YEAR_REMOVED"] == {
+        "field": "seo_title",
+        "code": "YEAR_REMOVED",
+        "terms": ["2026"],
+    }
+    assert by_code["LOCATION_REMOVED"]["terms"]
 
     # Retrying inside the same run with the compliant title succeeds.
     staged = build_change_set(

@@ -33,6 +33,7 @@ from apps.api.app.organizations.models import Organization
 from apps.api.app.products.content.contracts import AIDraftCreate
 from apps.api.app.products.content.errors import ContentSEOTargetUnresolvedError
 from apps.api.app.products.content.models import (
+    ContentBrief,
     ContentOpportunity,
     ContentPublication,
     PublishingTarget,
@@ -527,7 +528,7 @@ def test_unattributed_seo_handoff_blocks_page_target_draft_and_publication(
     assert created.status_code == 201, created.text
     item_id = created.json()["data"]["id"]
 
-    def brief(target: str) -> Response:
+    def brief(target: str, kind: str = "existing_page") -> Response:
         return cast(
             Response,
             client.post(
@@ -536,6 +537,7 @@ def test_unattributed_seo_handoff_blocks_page_target_draft_and_publication(
                 json={
                     "audience": "Local visitors",
                     "intent": "research",
+                    "target_kind": kind,
                     "target_reference": target,
                     "approved_fact_revision_ids": [str(ids["approved_fact"])],
                 },
@@ -545,9 +547,41 @@ def test_unattributed_seo_handoff_blocks_page_target_draft_and_publication(
     invented = brief("https://example.invalid/brunch")
     assert invented.status_code == 409, invented.text
     assert invented.json()["error"]["code"] == "CONTENT_SEO_TARGET_UNRESOLVED"
-    unresolved_brief = brief(source_reference)
-    assert unresolved_brief.status_code == 201, unresolved_brief.text
-    brief_id = UUID(unresolved_brief.json()["data"]["id"])
+    placeholder = brief(source_reference)
+    assert placeholder.status_code == 409, placeholder.text
+    assert placeholder.json()["error"]["code"] == "CONTENT_SEO_TARGET_UNRESOLVED"
+    malformed_path = brief("brunch-research", "new_page")
+    assert malformed_path.status_code == 409, malformed_path.text
+    assert malformed_path.json()["error"]["code"] == "CONTENT_NEW_PAGE_TARGET_INVALID"
+    # A query-only opportunity can still produce new_page content.
+    new_page_brief = brief("/brunch-research", "new_page")
+    assert new_page_brief.status_code == 201, new_page_brief.text
+    assert new_page_brief.json()["data"]["id"]
+
+    async def legacy_unresolved_brief() -> UUID:
+        # Written before target_kind existed: an existing_page brief with no page.
+        async with content_session_factory.begin() as session:
+            legacy = ContentBrief(
+                organization_id=organization_id,
+                content_item_id=UUID(item_id),
+                revision_number=99,
+                audience="Local visitors",
+                intent="research",
+                target_kind="existing_page",
+                target_reference=source_reference,
+                approved_fact_revision_ids=[str(ids["approved_fact"])],
+                required_claims=[],
+                prohibited_claims=[],
+                required_local_references=[],
+                source_evidence_references=[],
+                validation_requirements={},
+                status="ready",
+            )
+            session.add(legacy)
+            await session.flush()
+            return legacy.id
+
+    brief_id = asyncio.run(legacy_unresolved_brief())
 
     async def check_draft_and_map_page() -> str:
         async with content_session_factory.begin() as session:

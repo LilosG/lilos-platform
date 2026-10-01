@@ -68,6 +68,9 @@ class QualityCode(StrEnum):
 class QualityProblem:
     code: QualityCode
     reason: str
+    # The offending words, as data: what was removed or must appear, so a caller can
+    # act on them without parsing `reason`.
+    terms: tuple[str, ...] = ()
 
     def __str__(self) -> str:
         return f"[{self.code}] {self.reason}"
@@ -156,6 +159,7 @@ def quality_problems(
                 QualityCode.HTML_ENTITY,
                 f"the {label} contains the unresolved HTML entity {entity.group(0)!r}; "
                 "write the plain character instead",
+                (entity.group(0),),
             )
         )
 
@@ -170,6 +174,7 @@ def quality_problems(
             QualityProblem(
                 QualityCode.YEAR_REMOVED,
                 f"the current {label} contains the year {year} and the proposal drops it; keep it",
+                (year,),
             )
         )
 
@@ -184,6 +189,7 @@ def quality_problems(
                     QualityCode.LOCATION_REMOVED,
                     f"the current {label} names the location {term!r} and the proposal "
                     "drops it; keep it",
+                    (str(term),),
                 )
             )
 
@@ -200,6 +206,7 @@ def quality_problems(
                 QualityProblem(
                     QualityCode.QUERY_MISSING,
                     f"the title must contain the target query's core phrase {shown!r}",
+                    (shown,),
                 )
             )
         elif start > QUERY_FRONT_LOAD_WORDS - 1:
@@ -208,6 +215,7 @@ def quality_problems(
                     QualityCode.QUERY_NOT_NEAR_START,
                     f"the target query's core phrase {shown!r} starts at word {start + 1}; "
                     f"front-load it within the first {QUERY_FRONT_LOAD_WORDS} words",
+                    (shown,),
                 )
             )
 
@@ -233,6 +241,7 @@ def quality_problems(
                 + ", ".join(repr(token) for token in dropped)
                 + ", which appear in this page's own top Search Console queries and in the "
                 "current title; keep them",
+                tuple(str(token) for token in dropped),
             )
         )
     return problems

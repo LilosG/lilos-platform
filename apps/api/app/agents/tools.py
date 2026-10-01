@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from hashlib import sha256
 from time import monotonic
@@ -13,7 +13,7 @@ from typing import Any, cast
 from uuid import UUID
 
 from pydantic import ValidationError
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.app.administration.knowledge_service import BusinessKnowledgeService
@@ -30,6 +30,7 @@ from apps.api.app.ai.errors import AIProviderError
 from apps.api.app.audit.contracts import AuditEventCreate
 from apps.api.app.audit.enums import AuditActorType, AuditResult
 from apps.api.app.audit.metadata import JsonValue
+from apps.api.app.audit.models import AuditEvent
 from apps.api.app.audit.service import AuditEventService
 from apps.api.app.config import Settings
 from apps.api.app.errors import ApiError
@@ -41,6 +42,7 @@ from apps.api.app.growth.service import GrowthPlanValidationError, GrowthService
 from apps.api.app.insights.aggregation_service import InsightsService
 from apps.api.app.products.analytics.service import AnalyticsService
 from apps.api.app.products.content.contracts import BriefCreate, ItemCreate
+from apps.api.app.products.content.enums import ContentTargetKind
 from apps.api.app.products.content.models import ContentBrief, ContentOpportunity
 from apps.api.app.products.content.service import ContentService
 from apps.api.app.products.gbp.models import GBPLocation, GBPProfileSnapshot
@@ -68,6 +70,11 @@ from apps.api.app.products.seo.site_change_service import SiteChangeService
 
 logger = logging.getLogger("lilos.agents.tools")
 
+# Same tool failing with the same typed code this many times ends the run.
+TOOL_FAILURE_LIMIT = 2
+RECENT_STOP_WINDOW = timedelta(minutes=10)
+ACTIVE_RUN_STATUSES = frozenset({"queued", "running", "waiting_approval"})
+
 
 class AgentToolDeniedError(ValueError):
     """A sanctioned tool refused a call; ``code`` is the typed reason shown to Hermes."""
@@ -88,8 +95,10 @@ class SiteChangeInvalidError(AgentToolDeniedError):
 
     code = "SITE_CHANGE_INVALID"
 
-    def __init__(self, reason: str) -> None:
+    def __init__(self, reason: str, *, problems: list[dict[str, object]] | None = None) -> None:
         super().__init__(f"{self.code}: {reason}")
+        # Typed gate output for Hermes: field, quality code and the offending terms.
+        self.details: dict[str, object] = {"problems": (problems or [])[:10]}
 
 
 class ToolAccess(StrEnum):
@@ -152,6 +161,7 @@ TOOL_SPECS: dict[str, ToolSpec] = {
                 "content_item_id",
                 "audience",
                 "intent",
+                "target_kind",
                 "target_reference",
                 "approved_fact_revision_ids",
                 "required_claims",
@@ -280,6 +290,7 @@ def build_change_set(
     items: list[SiteChangeItem] = []
     seen: set[SiteChangeField] = set()
     problems: list[str] = []
+    structured: list[dict[str, object]] = []
     for entry in raw[:20]:
         if not isinstance(entry, dict) or set(entry) != {"field", "proposed_value", "rationale"}:
             raise SiteChangeInvalidError(
@@ -312,14 +323,19 @@ def build_change_set(
             message = str(exc.errors()[0]["msg"]).removeprefix("Value error, ")
             raise SiteChangeInvalidError(message) from None
         # Deterministic quality gate: every problem at once, so one retry can fix them all.
-        problems.extend(
-            f"{field.value}: {problem}"
-            for problem in quality_problems(
-                field, current, items[-1].proposed_value, quality or QualityContext()
+        for problem in quality_problems(
+            field, current, items[-1].proposed_value, quality or QualityContext()
+        ):
+            problems.append(f"{field.value}: {problem}")
+            structured.append(
+                {
+                    "field": field.value,
+                    "code": problem.code.value,
+                    "terms": [term[:80] for term in problem.terms[:10]],
+                }
             )
-        )
     if problems:
-        raise SiteChangeInvalidError("; ".join(problems))
+        raise SiteChangeInvalidError("; ".join(problems), problems=structured)
     try:
         return SiteChangeSet(items=items).model_dump(mode="json")
     except ValidationError as exc:
@@ -352,6 +368,23 @@ class AgentToolService:
             )
         )
         if run is None:
+            stopped = await session.scalar(
+                select(AgentRun.safe_error_code)
+                .where(
+                    AgentRun.hermes_session_id == hermes_session_id,
+                    AgentRun.status == "failed",
+                    AgentRun.safe_error_code.is_not(None),
+                    AgentRun.completed_at >= datetime.now(UTC) - RECENT_STOP_WINDOW,
+                )
+                .order_by(AgentRun.completed_at.desc())
+                .limit(1)
+            )
+            if stopped is not None:
+                raise AgentToolDeniedError(
+                    f"Hermes session is not bound to an active LILOs run: it was stopped "
+                    f"({stopped}). Do not call more tools; report that failure code.",
+                    code="HERMES_RUN_STOPPED",
+                )
             raise AgentToolDeniedError("Hermes session is not bound to an active LILOs run")
         return run
 
@@ -484,6 +517,10 @@ class AgentToolService:
             outcome = "failed"
             error_code = exc.code
             raise
+        except ValidationError:
+            outcome = "failed"
+            error_code = "HERMES_TOOL_ARGUMENT_INVALID"
+            raise
         except Exception as exc:
             outcome = "failed"
             error_code = "HERMES_TOOL_FAILED"
@@ -559,6 +596,60 @@ class AgentToolService:
                     metadata=cast(dict[str, JsonValue], metadata),
                 ),
             )
+            if error_code is not None:
+                await self._trip_circuit_breaker(session, run, tool_name, error_code)
+
+    async def _trip_circuit_breaker(
+        self, session: AsyncSession, run: AgentRun, tool_name: str, error_code: str
+    ) -> None:
+        """End the run once one tool has failed twice with the same typed code.
+
+        Counting the audit trail keeps one source of truth: every call, including the
+        one just recorded, is already there. Further calls are refused because the run
+        is no longer active, and the operator sees the typed code on the failed run.
+        """
+        failures = await session.scalar(
+            select(func.count())
+            .select_from(AuditEvent)
+            .where(
+                AuditEvent.organization_id == run.organization_id,
+                AuditEvent.resource_type == "agent_run",
+                AuditEvent.resource_id == run.id,
+                AuditEvent.event_type == "agent.tool.invoked",
+                AuditEvent.event_metadata["tool_name"].as_string() == tool_name,
+                AuditEvent.event_metadata["error_code"].as_string() == error_code,
+            )
+        )
+        if (failures or 0) < TOOL_FAILURE_LIMIT or run.status not in ACTIVE_RUN_STATUSES:
+            return
+        run.status = "failed"
+        run.safe_error_code = error_code[:64]
+        run.completed_at = datetime.now(UTC)
+        if (run.final_output or {}).get("seo_pending_proposal"):
+            run.final_output = None
+        await self.audit.record(
+            session,
+            AuditEventCreate(
+                event_type="agent.run.circuit_open",
+                action="agent.run.stop",
+                result=AuditResult.FAILED,
+                actor_type=AuditActorType.SERVICE,
+                actor_display_reference="hermes-agent",
+                organization_id=run.organization_id,
+                location_id=run.location_id,
+                product_key=run.skill_key.split(".")[0],
+                resource_type="agent_run",
+                resource_id=run.id,
+                correlation_id=run.correlation_id,
+                workflow_execution_id=run.workflow_run_id,
+                summary=f"Hermes run stopped: {tool_name} failed {TOOL_FAILURE_LIMIT} times "
+                f"with {error_code}.",
+                metadata=cast(
+                    dict[str, JsonValue],
+                    {"tool_name": tool_name, "error_code": error_code, "failures": failures},
+                ),
+            ),
+        )
 
     async def _governed_fact_ids(self, session: AsyncSession, run: AgentRun) -> set[UUID]:
         facts = await self.administration.effective_facts(session, run.organization_id)
@@ -1345,6 +1436,14 @@ class AgentToolService:
     async def _tool_create_content_brief(
         self, session: AsyncSession, run: AgentRun, arguments: dict[str, Any]
     ) -> dict[str, object]:
+        try:
+            target_kind = ContentTargetKind(str(arguments.get("target_kind")))
+        except ValueError as exc:
+            raise AgentToolDeniedError(
+                "target_kind must be 'existing_page' (an attributed page) or 'new_page' "
+                "(a proposed site path)",
+                code="CONTENT_TARGET_KIND_REQUIRED",
+            ) from exc
         item_id = _uuid(arguments.get("content_item_id"), "content_item_id")
         item = await self.content.get_item(session, run.organization_id, item_id)
         if item.location_id is not None and item.location_id != run.location_id:
@@ -1374,6 +1473,7 @@ class AgentToolService:
             BriefCreate(
                 audience=str(arguments.get("audience") or "")[:500],
                 intent=str(arguments.get("intent") or "")[:500],
+                target_kind=target_kind,
                 target_reference=str(arguments.get("target_reference") or "")[:500],
                 approved_fact_revision_ids=requested,
                 required_claims=[

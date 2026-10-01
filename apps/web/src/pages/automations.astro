@@ -167,6 +167,7 @@ import "../styles/automations.css";
         type AgentRunSummary,
       } from "../lib/agents";
       import {
+        agentRunErrorLabel,
         actionableWorkflowFailureCount,
         agentRunIsActive,
         presentAgentEvent,
@@ -507,7 +508,7 @@ import "../styles/automations.css";
 
         const meta = document.createElement("p");
         meta.className = "agent-run__summary-meta";
-        meta.textContent = `${formatTime(detail.started_at ?? detail.created_at)}${detail.safe_error_code ? ` · ${detail.safe_error_code}` : ""}`;
+        meta.textContent = `${formatTime(detail.started_at ?? detail.created_at)}${detail.safe_error_code ? ` · ${agentRunErrorLabel(detail.safe_error_code)}` : ""}`;
         card.append(meta);
 
         const controls = document.createElement("div");
@@ -759,7 +760,8 @@ import "../styles/automations.css";
               {
                 key: "failure",
                 header: "Failure",
-                render: (run: AgentRunSummary) => run.safe_error_code ?? "—",
+                render: (run: AgentRunSummary) =>
+                  agentRunErrorLabel(run.safe_error_code),
               },
               {
                 key: "actions",

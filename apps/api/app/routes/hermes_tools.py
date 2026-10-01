@@ -36,11 +36,13 @@ def _authenticate(settings: Settings, authorization: str | None) -> None:
         raise HTTPException(status_code=401, detail="Hermes tool authentication required")
 
 
-def _tool_error(status_code: int, code: str, message: str) -> JSONResponse:
-    return JSONResponse(
-        status_code=status_code,
-        content={"error": {"code": code[:96], "message": message[:500]}},
-    )
+def _tool_error(
+    status_code: int, code: str, message: str, details: dict[str, object] | None = None
+) -> JSONResponse:
+    error: dict[str, object] = {"code": code[:96], "message": message[:500]}
+    if details:
+        error["details"] = details
+    return JSONResponse(status_code=status_code, content={"error": error})
 
 
 @router.post("/tools/{tool_name}", response_model=None)
@@ -76,7 +78,7 @@ async def invoke_tool(
             )
         result = await tools.invoke(session, run, tool_name, command.arguments)
     except AgentToolDeniedError as exc:
-        return _tool_error(403, exc.code, str(exc))
+        return _tool_error(403, exc.code, str(exc), getattr(exc, "details", None))
     except GBPProposalEnrichmentError as exc:
         return _tool_error(502, exc.safe_code, str(exc))
     except ApiError as exc:

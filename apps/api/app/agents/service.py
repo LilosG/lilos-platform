@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import UTC, datetime, timedelta
 from time import monotonic
 from typing import Any, cast
@@ -14,6 +14,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.app.administration.service import AdministrationService
+from apps.api.app.agents.bound_references import bound_source_references
 from apps.api.app.agents.hermes_client import (
     REQUIRED_FEATURES,
     HermesCapabilities,
@@ -22,7 +23,7 @@ from apps.api.app.agents.hermes_client import (
 )
 from apps.api.app.agents.models import AgentRun, AgentRunEvent, AgentSession
 from apps.api.app.agents.safety import has_secret_key, redact_text, safe_event_document
-from apps.api.app.agents.skills import AgentSkill, skill_for_workflow
+from apps.api.app.agents.skills import SKILLS, AgentSkill, skill_for_workflow
 from apps.api.app.ai.models import AIExecution, AITaskDefinition
 from apps.api.app.ai.routing import resolve_task_model
 from apps.api.app.audit.contracts import AuditEventCreate
@@ -310,6 +311,8 @@ class AgentRuntimeService:
         skill: AgentSkill,
         capabilities: HermesCapabilities,
         correlation_id: str,
+        *,
+        bound_references: Sequence[str] = (),
     ) -> tuple[AgentRun, AgentSession]:
         existing = await session.scalar(
             select(AgentRun).where(
@@ -368,7 +371,8 @@ class AgentRuntimeService:
             model_key=model_key,
             capability_snapshot=self._capability_snapshot(settings, capabilities, model_key),
             output_references=[],
-            source_references=[],
+            # Evidence LILOs itself bound this run to counts as observed at start.
+            source_references=list(bound_references),
             event_count=0,
         )
         session.add(run)
@@ -567,6 +571,22 @@ class AgentRuntimeService:
                     if safe_error is not None:
                         run.status = "failed"
                         run.safe_error_code = safe_error
+            else:
+                skill = SKILLS.get(run.skill_key)
+                prefix = skill.required_output_prefix if skill else None
+                if prefix is not None:
+                    bound_workflow = await session.get(WorkflowRun, run.workflow_run_id)
+                    bound = bool(
+                        bound_workflow
+                        and (bound_workflow.input_document or {}).get("context_reference")
+                    )
+                    if bound and not any(
+                        str(ref).startswith(prefix) for ref in run.output_references
+                    ):
+                        # Hermes finishing is not the same as the work being done: a bound
+                        # run that produced nothing must not read as completed.
+                        run.status = "failed"
+                        run.safe_error_code = "AGENT_REQUIRED_OUTPUT_MISSING"
         await session.flush()
         await session.commit()
 
@@ -654,6 +674,9 @@ class AgentRuntimeService:
                 skill,
                 capabilities,
                 correlation_id,
+                bound_references=await bound_source_references(
+                    session, organization_id, input_document
+                ),
             )
         except HermesRuntimeError as exc:
             return JobOutcome(

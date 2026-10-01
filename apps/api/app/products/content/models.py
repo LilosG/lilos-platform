@@ -99,6 +99,11 @@ class ContentBrief(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "content_briefs"
     __table_args__ = (
         UniqueConstraint("content_item_id", "revision_number", name="uq_content_brief_revision"),
+        CheckConstraint("target_kind IN ('existing_page','new_page')", name="target_kind"),
+        CheckConstraint(
+            "status IN ('ready','blocked','retired','superseded','rejected','failed')",
+            name="status",
+        ),
     )
     organization_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
@@ -109,6 +114,9 @@ class ContentBrief(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     revision_number: Mapped[int] = mapped_column(Integer, nullable=False)
     audience: Mapped[str] = mapped_column(String(500), nullable=False)
     intent: Mapped[str] = mapped_column(String(500), nullable=False)
+    target_kind: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default="existing_page"
+    )
     target_reference: Mapped[str] = mapped_column(String(500), nullable=False)
     approved_fact_revision_ids: Mapped[list[object]] = mapped_column(JSONB, nullable=False)
     required_claims: Mapped[list[object]] = mapped_column(JSONB, nullable=False)
@@ -118,6 +126,7 @@ class ContentBrief(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     validation_requirements: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
     approval_policy_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
     status: Mapped[str] = mapped_column(String(16), nullable=False)
+    blocked_reason_code: Mapped[str | None] = mapped_column(String(64))
 
 
 class ContentRevision(UUIDPrimaryKeyMixin, Base):

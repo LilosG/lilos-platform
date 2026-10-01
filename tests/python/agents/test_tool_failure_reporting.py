@@ -41,6 +41,9 @@ class _Session:
     async def get(self, *_args: object) -> None:
         return None
 
+    async def scalar(self, _statement: object) -> int:
+        return 1  # the failure just recorded; below the circuit breaker limit
+
 
 def _run(skill_key: str = "content.operator") -> Any:
     return SimpleNamespace(

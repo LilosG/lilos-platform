@@ -41,14 +41,17 @@ from apps.api.app.products.content.contracts import (
     RevisionCreate,
     TargetCreate,
 )
+from apps.api.app.products.content.enums import ContentTargetKind
 from apps.api.app.products.content.errors import (
     ContentApprovalStageConflictError,
     ContentBriefNotFoundError,
     ContentGitHubProviderNotConfiguredError,
     ContentItemNotFoundError,
+    ContentNewPageTargetInvalidError,
     ContentOpportunityNotDecidableError,
     ContentOpportunityNotFoundError,
     ContentPublicationIdempotencyConflictError,
+    ContentPublicationNotAdvanceableError,
     ContentPublicationRequiresApprovedRevisionError,
     ContentQueryInvalidError,
     ContentRevisionNotFoundError,
@@ -56,6 +59,7 @@ from apps.api.app.products.content.errors import (
     ContentSEOTargetUnresolvedError,
     ContentTargetNotConfiguredError,
 )
+from apps.api.app.products.content.evidence import content_opportunity_evidence_references
 from apps.api.app.products.content.models import (
     ContentBrief,
     ContentItem,
@@ -369,17 +373,41 @@ class ContentService:
         item: ContentItem,
         target_reference: str | None,
         *,
-        require_page: bool = False,
+        target_kind: ContentTargetKind = ContentTargetKind.EXISTING_PAGE,
     ) -> None:
+        """Validate a brief's target against the SEO opportunity that produced the item.
+
+        ``existing_page`` needs an attributed page and is the only case that can
+        return CONTENT_SEO_TARGET_UNRESOLVED. ``new_page`` proposes a new URL, so it
+        never needs an attributed page; it only needs a well-formed site path.
+        """
+        if target_kind is ContentTargetKind.NEW_PAGE:
+            path = (target_reference or "").strip()
+            if not path.startswith("/") or path.startswith("//") or len(path) < 2:
+                raise ContentNewPageTargetInvalidError
+            return
         seo_target = await self._seo_target_for_item(session, organization_id, item)
         if seo_target is None:
             return
-        source_reference, page = seo_target
+        _source_reference, page = seo_target
         if page is None:
-            if require_page or target_reference != source_reference:
-                raise ContentSEOTargetUnresolvedError
-        elif target_reference is not None and target_reference != page.normalized_url:
+            raise ContentSEOTargetUnresolvedError
+        if target_reference is not None and target_reference != page.normalized_url:
             raise ContentSEOTargetMismatchError
+
+    async def _latest_target_kind(
+        self, session: AsyncSession, organization_id: UUID, item_id: UUID
+    ) -> ContentTargetKind:
+        kind = await session.scalar(
+            select(ContentBrief.target_kind)
+            .where(
+                ContentBrief.organization_id == organization_id,
+                ContentBrief.content_item_id == item_id,
+            )
+            .order_by(ContentBrief.revision_number.desc())
+            .limit(1)
+        )
+        return ContentTargetKind(kind) if kind else ContentTargetKind.EXISTING_PAGE
 
     async def _audit(
         self,
@@ -629,7 +657,9 @@ class ContentService:
             "Convert the accepted Content opportunity into a complete, review-ready "
             "content artifact. Read current approved business facts, website knowledge, "
             "SEO evidence, and Content inventory first. Decide whether the opportunity "
-            "should improve an existing page or create a new page/article. Then create "
+            "should improve an existing attributed page (target_kind existing_page) or "
+            "create a new page/article (target_kind new_page, with a proposed path). "
+            "Then create "
             "the canonical Content item, a detailed evidence-backed brief, and a "
             "quality-validated draft through generate_content_draft_proposal. Do not "
             "stop after creating only an idea or brief."
@@ -752,7 +782,11 @@ class ContentService:
         if not item:
             raise ContentItemNotFoundError
         await self._validate_seo_target_reference(
-            session, organization_id, item, command.target_reference
+            session,
+            organization_id,
+            item,
+            command.target_reference,
+            target_kind=command.target_kind,
         )
         last = await session.scalar(
             select(ContentBrief.revision_number)
@@ -760,23 +794,37 @@ class ContentService:
             .order_by(ContentBrief.revision_number.desc())
             .limit(1)
         )
+        # A brief with no sources can never be drafted. Regenerate its sources from
+        # the opportunity's governed evidence; if there is none, block it with a typed
+        # reason instead of leaving a `ready` brief the draft tool must refuse.
+        sources = list(command.source_evidence_references)
+        regenerated = False
+        if not sources:
+            sources = await content_opportunity_evidence_references(
+                session, organization_id, item.opportunity_id
+            )
+            regenerated = bool(sources)
+        ready = bool(sources)
         brief = ContentBrief(
             organization_id=organization_id,
             content_item_id=item_id,
             revision_number=(last or 0) + 1,
             audience=command.audience,
             intent=command.intent,
+            target_kind=command.target_kind.value,
             target_reference=command.target_reference,
             approved_fact_revision_ids=[str(x) for x in command.approved_fact_revision_ids],
             required_claims=command.required_claims,
             prohibited_claims=command.prohibited_claims,
             required_local_references=command.required_local_references,
-            source_evidence_references=command.source_evidence_references,
+            source_evidence_references=sources,
             validation_requirements=command.validation_requirements,
-            status="ready",
+            status="ready" if ready else "blocked",
+            blocked_reason_code=None if ready else "CONTENT_BRIEF_SOURCES_MISSING",
         )
         session.add(brief)
-        item.status = "brief_ready"
+        if ready:
+            item.status = "brief_ready"
         await session.flush()
         await self._audit(
             session,
@@ -788,9 +836,239 @@ class ContentService:
             resource_id=item.id,
             correlation_id=correlation_id,
             summary="Content brief created.",
-            metadata={"brief_id": str(brief.id), "revision": brief.revision_number},
+            metadata={
+                "brief_id": str(brief.id),
+                "revision": brief.revision_number,
+                "status": brief.status,
+                "blocked_reason_code": brief.blocked_reason_code,
+                "sources_regenerated": regenerated,
+            },
         )
         return brief
+
+    # --- retirement of stale work (scripts.retire_stale_growth_work) ------------------
+
+    async def retire_opportunity(
+        self,
+        session: AsyncSession,
+        opportunity: ContentOpportunity,
+        *,
+        reason_code: str,
+        correlation_id: str,
+    ) -> ContentOpportunity:
+        if opportunity.status not in {"identified", "validated", "accepted"}:
+            raise ContentOpportunityNotDecidableError
+        previous = opportunity.status
+        opportunity.status = "archived"
+        await session.flush()
+        await self._audit(
+            session,
+            event="content.opportunity.retired",
+            organization_id=opportunity.organization_id,
+            location_id=opportunity.location_id,
+            actor_id=None,
+            resource_type="content_opportunity",
+            resource_id=opportunity.id,
+            correlation_id=correlation_id,
+            summary="Stale Content opportunity retired.",
+            metadata={"reason_code": reason_code, "from_status": previous},
+        )
+        return opportunity
+
+    async def retire_item(
+        self,
+        session: AsyncSession,
+        item: ContentItem,
+        *,
+        reason_code: str,
+        correlation_id: str,
+    ) -> ContentItem:
+        previous = item.status
+        item.status = "archived"
+        item.archived_at = datetime.now(UTC)
+        await session.flush()
+        await self._audit(
+            session,
+            event="content.item.retired",
+            organization_id=item.organization_id,
+            location_id=item.location_id,
+            actor_id=None,
+            resource_type="content_item",
+            resource_id=item.id,
+            correlation_id=correlation_id,
+            summary="Stale Content item retired.",
+            metadata={"reason_code": reason_code, "from_status": previous},
+        )
+        return item
+
+    async def retire_brief(
+        self,
+        session: AsyncSession,
+        brief: ContentBrief,
+        item: ContentItem,
+        *,
+        reason_code: str,
+        correlation_id: str,
+    ) -> ContentBrief:
+        previous = brief.status
+        brief.status = "retired"
+        await session.flush()
+        await self._audit(
+            session,
+            event="content.brief.retired",
+            organization_id=brief.organization_id,
+            location_id=item.location_id,
+            actor_id=None,
+            resource_type="content_item",
+            resource_id=item.id,
+            correlation_id=correlation_id,
+            summary="Stale Content brief retired.",
+            metadata={
+                "brief_id": str(brief.id),
+                "reason_code": reason_code,
+                "from_status": previous,
+            },
+        )
+        return brief
+
+    async def repair_brief_sources(
+        self,
+        session: AsyncSession,
+        brief: ContentBrief,
+        item: ContentItem,
+        *,
+        correlation_id: str,
+    ) -> ContentBrief:
+        """Give a `ready` brief with no sources real ones, or block it with a typed reason.
+
+        With governed evidence for the opportunity the brief is replaced by a new revision
+        that carries it (the old one becomes `superseded`); without any, the brief is
+        `blocked` so the draft tool can never be handed it.
+        """
+        sources = await content_opportunity_evidence_references(
+            session, brief.organization_id, item.opportunity_id
+        )
+        if not sources:
+            brief.status = "blocked"
+            brief.blocked_reason_code = "CONTENT_BRIEF_SOURCES_MISSING"
+            if item.status == "brief_ready":
+                item.status = "briefing"
+            await session.flush()
+            await self._audit(
+                session,
+                event="content.brief.blocked",
+                organization_id=brief.organization_id,
+                location_id=item.location_id,
+                actor_id=None,
+                resource_type="content_item",
+                resource_id=item.id,
+                correlation_id=correlation_id,
+                summary="Content brief blocked: it has no source evidence.",
+                metadata={
+                    "brief_id": str(brief.id),
+                    "reason_code": "CONTENT_BRIEF_SOURCES_MISSING",
+                },
+            )
+            return brief
+        latest = await session.scalar(
+            select(func.max(ContentBrief.revision_number)).where(
+                ContentBrief.content_item_id == item.id
+            )
+        )
+        replacement = ContentBrief(
+            organization_id=brief.organization_id,
+            content_item_id=brief.content_item_id,
+            revision_number=(latest or brief.revision_number) + 1,
+            audience=brief.audience,
+            intent=brief.intent,
+            target_kind=brief.target_kind,
+            target_reference=brief.target_reference,
+            approved_fact_revision_ids=list(brief.approved_fact_revision_ids),
+            required_claims=list(brief.required_claims),
+            prohibited_claims=list(brief.prohibited_claims),
+            required_local_references=list(brief.required_local_references),
+            source_evidence_references=sources,
+            validation_requirements=dict(brief.validation_requirements),
+            approval_policy_id=brief.approval_policy_id,
+            status="ready",
+        )
+        brief.status = "superseded"
+        session.add(replacement)
+        await session.flush()
+        await self._audit(
+            session,
+            event="content.brief.regenerated",
+            organization_id=brief.organization_id,
+            location_id=item.location_id,
+            actor_id=None,
+            resource_type="content_item",
+            resource_id=item.id,
+            correlation_id=correlation_id,
+            summary="Content brief regenerated from the opportunity's governed evidence.",
+            metadata={
+                "superseded_brief_id": str(brief.id),
+                "brief_id": str(replacement.id),
+                "revision": replacement.revision_number,
+            },
+        )
+        return replacement
+
+    async def reconcile_publishing_item(
+        self,
+        session: AsyncSession,
+        item: ContentItem,
+        publication: ContentPublication,
+        *,
+        pull_request_state: str,
+        merge_commit_sha: str | None,
+        correlation_id: str,
+    ) -> str:
+        """Settle a stuck `publishing` item from the provider's pull request state.
+
+        merged -> `published` (the deployment is not re-verified here, and the audit
+        event says so; the publication stays `merged` for the publish worker to verify);
+        closed -> the publication fails with CONTENT_PR_CLOSED and the item is archived.
+        Returns the item's new status.
+        """
+        previous = item.status
+        if pull_request_state == "merged":
+            now = datetime.now(UTC)
+            if merge_commit_sha:
+                publication.external_revision_id = merge_commit_sha
+            if publication.status not in {"verified", "deployed", "deployment_pending"}:
+                publication.status = "merged"
+            item.status = "published"
+            item.published_at = item.published_at or now
+            item.publishing_target_id = publication.publishing_target_id
+            outcome = "published"
+        elif pull_request_state == "closed":
+            publication.status = "failed"
+            publication.safe_error_code = "CONTENT_PR_CLOSED"
+            item.status = "archived"
+            item.archived_at = datetime.now(UTC)
+            outcome = "archived"
+        else:
+            raise ContentPublicationNotAdvanceableError
+        await session.flush()
+        await self._audit(
+            session,
+            event="content.item.publishing_reconciled",
+            organization_id=item.organization_id,
+            location_id=item.location_id,
+            actor_id=None,
+            resource_type="content_item",
+            resource_id=item.id,
+            correlation_id=correlation_id,
+            summary=f"Publishing item reconciled from pull request state: {pull_request_state}.",
+            metadata={
+                "from_status": previous,
+                "to_status": item.status,
+                "publication_id": str(publication.id),
+                "pull_request_state": pull_request_state,
+                "deployment_verified": False,
+            },
+        )
+        return outcome
 
     async def list_briefs(
         self, session: AsyncSession, organization_id: UUID, item_id: UUID
@@ -918,7 +1196,11 @@ class ContentService:
             raise ContentBriefNotFoundError
 
         await self._validate_seo_target_reference(
-            session, organization_id, item, brief.target_reference, require_page=True
+            session,
+            organization_id,
+            item,
+            brief.target_reference,
+            target_kind=ContentTargetKind(brief.target_kind),
         )
 
         task = await session.scalar(
@@ -1184,7 +1466,11 @@ class ContentService:
             raise ContentBriefNotFoundError
 
         await self._validate_seo_target_reference(
-            session, organization_id, item, brief.target_reference, require_page=True
+            session,
+            organization_id,
+            item,
+            brief.target_reference,
+            target_kind=ContentTargetKind(brief.target_kind),
         )
 
         task = await session.scalar(
@@ -1441,9 +1727,11 @@ class ContentService:
         correlation_id: str,
     ) -> ContentPublication:
         item = await self.get_item(session, organization_id, item_id)
-        await self._validate_seo_target_reference(
-            session, organization_id, item, None, require_page=True
-        )
+        if (
+            await self._latest_target_kind(session, organization_id, item_id)
+            is ContentTargetKind.EXISTING_PAGE
+        ):
+            await self._validate_seo_target_reference(session, organization_id, item, None)
         existing = await session.scalar(
             select(ContentPublication).where(
                 ContentPublication.organization_id == organization_id,

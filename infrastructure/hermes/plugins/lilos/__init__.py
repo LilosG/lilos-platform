@@ -88,6 +88,7 @@ SCHEMAS = {
             "content_item_id": STRING,
             "audience": STRING,
             "intent": STRING,
+            "target_kind": {"type": "string", "enum": ["existing_page", "new_page"]},
             "target_reference": STRING,
             "approved_fact_revision_ids": STRINGS,
             "required_claims": STRINGS,
@@ -99,6 +100,7 @@ SCHEMAS = {
             "content_item_id",
             "audience",
             "intent",
+            "target_kind",
             "target_reference",
             "approved_fact_revision_ids",
             "source_evidence_references",
@@ -323,9 +325,25 @@ def _safe_http_error(exc: HTTPError) -> str:
                 code = raw_code[:96]
             if isinstance(raw_message, str) and raw_message:
                 message = raw_message[:500]
+            message += _problem_summary(error.get("details"))
     except (ValueError, OSError):
         pass
     return f"LILOs tool error [{code}]: {message}"
+
+
+def _problem_summary(details: object) -> str:
+    """Render typed quality-gate problems so the model can revise from them."""
+    problems = details.get("problems") if isinstance(details, dict) else None
+    if not isinstance(problems, list):
+        return ""
+    parts = []
+    for problem in problems[:10]:
+        if not isinstance(problem, dict):
+            continue
+        terms = problem.get("terms")
+        shown = ", ".join(str(term)[:80] for term in terms[:10]) if isinstance(terms, list) else ""
+        parts.append(f"{str(problem.get('field'))[:40]}/{str(problem.get('code'))[:48]}[{shown}]")
+    return " | Fix once, then resubmit. Problems: " + "; ".join(parts) if parts else ""
 
 
 def _invoke(tool_name: str, args: dict) -> str:
