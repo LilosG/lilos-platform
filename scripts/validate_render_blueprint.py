@@ -66,19 +66,24 @@ SECRET_POLICY = {
 }
 PROHIBITED_ROOT_KEYS = {"databases", "projects"}
 PROHIBITED_SERVICE_TYPES = {"cron", "keyvalue", "redis"}
-STAGING_BRANCH = "worker/backend-closure-2026-08-10"
+STAGING_BRANCH = "main"
 STAGING_REPOSITORY = "https://github.com/LilosG/lilos-platform.git"
-STAGING_PROJECT = "lilos-platform-staging"
+STAGING_PROJECT = "lilos-command-center-staging"
 STAGING_ENVIRONMENT = "staging"
 STAGING_GROUP = "lilos-staging-runtime"
-STAGING_DATABASE = "lilos-staging-postgres"
+STAGING_HERMES = "lilos-command-center-staging-hermes"
 STAGING_SERVICE_POLICY = {
-    "lilos-staging-api": ("web", "/health/ready", "/app/scripts/render_start_api.sh", 30),
-    "lilos-staging-worker": ("worker", None, "/app/scripts/render_start_worker.sh", 300),
+    name.replace("lilos-", "lilos-command-center-staging-", 1): policy
+    for name, policy in SERVICE_POLICY.items()
 }
-STAGING_SECRET_POLICY: dict[str, set[str]] = {
-    "lilos-staging-api": set(),
-    "lilos-staging-worker": set(),
+STAGING_IDENTITY_KEYS = {
+    "LILOS_STAGING_SUPABASE_PROJECT_REF",
+    "LILOS_PRODUCTION_SUPABASE_PROJECT_REF",
+    "LILOS_STAGING_FORBIDDEN_SECRET_SHA256",
+    "LILOS_STAGING_GITHUB_REPOSITORY",
+    "LILOS_STAGING_GITHUB_INSTALLATION_ID",
+    "LILOS_STAGING_GITHUB_PATH_PREFIX",
+    "LILOS_STAGING_LIVE_GOOGLE_ORGANIZATION_IDS",
 }
 
 
@@ -391,143 +396,136 @@ def validate_blueprint(path: Path = BLUEPRINT) -> tuple[str, ...]:
 
 
 def validate_staging_blueprint(path: Path = STAGING_BLUEPRINT) -> tuple[str, ...]:
-    """Validate the isolated, manual-deploy staging projection."""
+    """Four-service manual staging, separate Supabase, and no production references."""
     blueprint = load_blueprint(path)
     errors: list[str] = []
     if blueprint.get("previews") != {"generation": "off"}:
         errors.append("staging:previews")
-
-    projects = blueprint.get("projects")
-    if not isinstance(projects, list) or len(projects) != 1:
-        return ("staging:project-exact-set",)
-    project = projects[0]
-    if not isinstance(projects[0], dict) or project.get("name") != STAGING_PROJECT:
-        errors.append("staging:project")
-    environments = project.get("environments", []) if isinstance(project, dict) else []
-    if not isinstance(environments, list) or len(environments) != 1:
-        return tuple(sorted({*errors, "staging:environment-exact-set"}))
+    projects = blueprint.get("projects", [])
+    if len(projects) != 1 or projects[0].get("name") != STAGING_PROJECT:
+        return ("staging:project",)
+    environments = projects[0].get("environments", [])
+    if len(environments) != 1 or environments[0].get("name") != STAGING_ENVIRONMENT:
+        return ("staging:environment",)
     environment = environments[0]
-    if not isinstance(environment, dict) or environment.get("name") != STAGING_ENVIRONMENT:
-        errors.append("staging:environment")
     if environment.get("networking") != {"isolation": "enabled"}:
         errors.append("staging:network-isolation")
     if environment.get("permissions") != {"protection": "enabled"}:
         errors.append("staging:protection")
-
-    databases = environment.get("databases", [])
-    if not isinstance(databases, list) or len(databases) != 1:
-        errors.append("staging:database-exact-set")
-        database: dict[str, Any] = {}
-    else:
-        database = databases[0] if isinstance(databases[0], dict) else {}
-    database_policy = {
-        "name": STAGING_DATABASE,
-        "plan": "basic-256mb",
-        "region": "oregon",
-        "postgresMajorVersion": "17",
-        "databaseName": "lilos_staging",
-        "user": "lilos_staging",
-        "diskSizeGB": 15,
-        "storageAutoscalingEnabled": False,
-        "ipAllowList": [],
-    }
-    if database != database_policy:
-        errors.append("staging:database-policy")
-
+    if "databases" in blueprint or "databases" in environment or "services" in blueprint:
+        errors.append("staging:prohibited-resource")
     groups = environment.get("envVarGroups", [])
-    if not isinstance(groups, list) or len(groups) != 1:
-        errors.append("staging:environment-group-exact-set")
-        group: dict[str, Any] = {}
-    else:
-        group = groups[0] if isinstance(groups[0], dict) else {}
-    if group.get("name") != STAGING_GROUP:
-        errors.append("staging:environment-group")
-    shared_values = {
-        item.get("key"): item.get("value")
-        for item in group.get("envVars", [])
-        if isinstance(item, dict)
-    }
-    if shared_values.get("LILOS_ENV") != "staging":
-        errors.append("staging:runtime-environment")
-    if shared_values.get("LILOS_INTERNAL_ADMIN_ROUTES_ENABLED") != "false":
-        errors.append("staging:internal-routes")
-    if shared_values.get("LILOS_PROVIDER_WRITES_ENABLED") != "false":
-        errors.append("staging:provider-writes")
-    shared_items = {
-        item.get("key"): item
-        for item in group.get("envVars", [])
-        if isinstance(item, dict) and isinstance(item.get("key"), str)
-    }
-    if shared_items.get("LILOS_SECRET_ENCRYPTION_KEY") != {
-        "key": "LILOS_SECRET_ENCRYPTION_KEY",
-        "generateValue": True,
-    }:
-        errors.append("staging:generated-encryption-key")
-    if any("sync" in item for item in group.get("envVars", []) if isinstance(item, dict)):
-        errors.append("staging:group-placeholder")
-
+    if len(groups) != 1 or groups[0].get("name") != STAGING_GROUP:
+        return (*errors, "staging:environment-group")
+    group = {item.get("key"): item for item in groups[0].get("envVars", [])}
+    for key, value in {
+        "LILOS_ENV": "staging",
+        "LILOS_GOOGLE_PROVIDER_MODE": "fixture",
+        "LILOS_INTERNAL_ADMIN_ROUTES_ENABLED": "false",
+        "LILOS_PROVIDER_WRITES_ENABLED": "false",
+        "LILOS_AI_PROVIDER": "hermes",
+    }.items():
+        if group.get(key) != {"key": key, "value": value}:
+            errors.append(
+                "staging:provider-writes"
+                if key == "LILOS_PROVIDER_WRITES_ENABLED"
+                else f"staging:{key}"
+            )
+    if any("sync" in item or "generateValue" in item for item in group.values()):
+        errors.append("staging:group-secrets")
     services = environment.get("services", [])
-    if not isinstance(services, list):
-        return tuple(sorted({*errors, "staging:services-missing"}))
-    by_name = {
-        service.get("name"): service
-        for service in services
-        if isinstance(service, dict) and isinstance(service.get("name"), str)
-    }
-    if set(by_name) != set(STAGING_SERVICE_POLICY):
+    by_name = {item.get("name"): item for item in services}
+    if len(services) != 4 or set(by_name) != {*STAGING_SERVICE_POLICY, STAGING_HERMES}:
         errors.append("staging:services-exact-set")
-
-    database_reference = {"name": STAGING_DATABASE, "property": "connectionString"}
-    for name, (
-        service_type,
-        health_path,
-        command_fragment,
-        shutdown_delay,
-    ) in STAGING_SERVICE_POLICY.items():
-        service = by_name.get(name, {})
-        if service.get("type") != service_type:
-            errors.append(f"{name}:type")
-        if service.get("runtime") != "docker" or service.get("region") != "oregon":
-            errors.append(f"{name}:runtime-region")
-        if service.get("plan") != "starter" or service.get("numInstances") != 1:
-            errors.append(f"{name}:capacity")
-        if service.get("repo") != STAGING_REPOSITORY:
-            errors.append(f"{name}:repository")
-        if service.get("branch") != STAGING_BRANCH or service.get("autoDeployTrigger") != "off":
+    for name, service in by_name.items():
+        if service.get("branch") != "main" or service.get("autoDeployTrigger") != "off":
             errors.append(f"{name}:deploy-governance")
-        if service.get("dockerContext") != "." or service.get("dockerfilePath") != DOCKERFILE:
-            errors.append(f"{name}:docker-paths")
-        if command_fragment not in str(service.get("dockerCommand", "")):
-            errors.append(f"{name}:command")
-        if service.get("maxShutdownDelaySeconds") != shutdown_delay:
-            errors.append(f"{name}:shutdown-delay")
-        if health_path is not None and service.get("healthCheckPath") != health_path:
-            errors.append(f"{name}:health")
-
-        env_vars = service.get("envVars", [])
-        if {"fromGroup": STAGING_GROUP} not in env_vars:
-            errors.append(f"{name}:shared-environment")
-        by_key = {
-            item.get("key"): item
-            for item in env_vars
-            if isinstance(item, dict) and isinstance(item.get("key"), str)
-        }
-        if by_key.get("LILOS_DATABASE_URL", {}).get("fromDatabase") != database_reference:
-            errors.append(f"{name}:application-database")
-        migration = by_key.get("LILOS_MIGRATION_DATABASE_URL")
-        if name == "lilos-staging-api":
-            if migration is None or migration.get("fromDatabase") != database_reference:
-                errors.append(f"{name}:migration-database")
-            if service.get("preDeployCommand") != "sh /app/scripts/render_predeploy.sh":
-                errors.append(f"{name}:predeploy")
-        elif migration is not None or "preDeployCommand" in service:
-            errors.append(f"{name}:worker-migration")
-
-        secret_keys = {key for key, item in by_key.items() if item.get("sync") is False}
-        if secret_keys != STAGING_SECRET_POLICY[name]:
-            errors.append(f"{name}:secret-policy")
-        for item in by_key.values():
-            if item.get("sync") is False and "value" in item:
-                errors.append(f"{name}:secret-value")
-
+        if (
+            service.get("repo") != STAGING_REPOSITORY
+            or service.get("region") != "oregon"
+            or service.get("runtime") != "docker"
+        ):
+            errors.append(f"{name}:runtime-repository-region")
+        env_items = service.get("envVars", [])
+        env = {item.get("key"): item for item in env_items if "key" in item}
+        for item in env_items:
+            if "fromDatabase" in item or (item.get("sync") is False and "value" in item):
+                errors.append(f"{name}:unsafe-resource-or-secret")
+            reference = item.get("fromService", {}).get("name")
+            if reference and reference not in {*STAGING_SERVICE_POLICY, STAGING_HERMES}:
+                errors.append(f"{name}:production-reference")
+        if name in STAGING_SERVICE_POLICY:
+            kind, health, command, shutdown = STAGING_SERVICE_POLICY[name]
+            if (
+                service.get("type") != kind
+                or service.get("dockerCommand") != f"sh {command}"
+                or service.get("maxShutdownDelaySeconds") != shutdown
+            ):
+                errors.append(f"{name}:process-contract")
+            if service.get("dockerfilePath") != DOCKERFILE or service.get("dockerContext") != ".":
+                errors.append(f"{name}:docker-paths")
+            if (
+                {"fromGroup": STAGING_GROUP} not in env_items
+                or service.get("plan") != "starter"
+                or service.get("numInstances") != 1
+            ):
+                errors.append(f"{name}:group-capacity")
+            required = {
+                "LILOS_DATABASE_URL",
+                "LILOS_SUPABASE_AUTH_ISSUER",
+                "LILOS_SUPABASE_AUTH_JWKS_URL",
+                *STAGING_IDENTITY_KEYS,
+            }
+            if name.endswith("-api"):
+                required |= {"LILOS_MIGRATION_DATABASE_URL", "LILOS_SECRET_ENCRYPTION_KEY"}
+                if (
+                    service.get("healthCheckPath") != health
+                    or service.get("preDeployCommand") != "sh /app/scripts/render_predeploy.sh"
+                ):
+                    errors.append(f"{name}:api-health-predeploy")
+            elif "preDeployCommand" in service or "LILOS_MIGRATION_DATABASE_URL" in env:
+                errors.append(f"{name}:worker-migration")
+            for key in required:
+                if env.get(key) != {"key": key, "sync": False}:
+                    errors.append(f"{name}:independent:{key}")
+            if name.endswith("-scheduler") and any(
+                key in env
+                for key in (
+                    "LILOS_HERMES_API_KEY",
+                    "LILOS_HERMES_TOOL_API_KEY",
+                    "LILOS_OPENROUTER_API_KEY",
+                )
+            ):
+                errors.append(f"{name}:least-privilege")
+        elif name == STAGING_HERMES:
+            if (
+                service.get("type") != "pserv"
+                or service.get("dockerfilePath") != HERMES_DOCKERFILE
+                or service.get("plan") != "standard"
+            ):
+                errors.append("staging:hermes-runtime")
+            if service.get("disk") != {
+                "name": "staging-hermes-data",
+                "mountPath": "/opt/data",
+                "sizeGB": 5,
+            }:
+                errors.append("staging:hermes-disk")
+            for key in ("API_SERVER_KEY", "LILOS_TOOL_API_KEY"):
+                if env.get(key) != {"key": key, "generateValue": True}:
+                    errors.append(f"staging:hermes:{key}")
+            if (
+                env.get("HERMES_RUNTIME_VERSION", {}).get("value") != "v2026.8.19"
+                or env.get("HERMES_MAX_ITERATIONS", {}).get("value") != "25"
+                or env.get("HERMES_YOLO_MODE", {}).get("value") != "0"
+            ):
+                errors.append("staging:hermes-bounds")
+            if env.get("LILOS_TOOL_BASE_URL") != {
+                "key": "LILOS_TOOL_BASE_URL",
+                "fromService": {
+                    "name": "lilos-command-center-staging-api",
+                    "type": "web",
+                    "property": "hostport",
+                },
+            }:
+                errors.append("staging:hermes-tools")
     return tuple(sorted(errors))

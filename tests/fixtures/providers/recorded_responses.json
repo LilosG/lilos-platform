@@ -1,0 +1,66 @@
+{
+  "provenance": "Sanitized provider response snapshots of the established adapter test shapes; synthetic identifiers, no live OAuth acceptance.",
+  "gsc_sites": {
+    "siteEntry": [
+      {
+        "siteUrl": "sc-domain:synthetic.invalid",
+        "permissionLevel": "siteOwner"
+      }
+    ]
+  },
+  "gsc_query": {
+    "rows": [
+      {
+        "keys": ["synthetic search"],
+        "clicks": 8,
+        "impressions": 80,
+        "ctr": 0.1,
+        "position": 4.0
+      }
+    ]
+  },
+  "ga4_accounts": {
+    "accountSummaries": [
+      {
+        "displayName": "Synthetic account",
+        "propertySummaries": [
+          {
+            "property": "properties/1001",
+            "displayName": "Synthetic analytics"
+          }
+        ]
+      }
+    ]
+  },
+  "ga4_report": {
+    "metricHeaders": [
+      { "name": "sessions" },
+      { "name": "totalUsers" },
+      { "name": "screenPageViews" },
+      { "name": "conversions" }
+    ],
+    "rows": [
+      {
+        "metricValues": [
+          { "value": "12" },
+          { "value": "12" },
+          { "value": "12" },
+          { "value": "12" }
+        ]
+      }
+    ]
+  },
+  "gbp_accounts": {
+    "accounts": [
+      { "name": "accounts/1001", "accountName": "Synthetic account" }
+    ]
+  },
+  "gbp_locations": {
+    "locations": [{ "name": "locations/1001", "title": "Synthetic location" }]
+  },
+  "gbp_location": {
+    "name": "locations/1001",
+    "title": "Synthetic location",
+    "profile": { "description": "Synthetic staging profile" }
+  }
+}

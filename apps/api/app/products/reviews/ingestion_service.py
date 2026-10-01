@@ -20,9 +20,10 @@ from apps.api.app.audit.enums import AuditActorType, AuditResult
 from apps.api.app.audit.metadata import JsonValue
 from apps.api.app.audit.service import AuditEventService
 from apps.api.app.config import Settings
+from apps.api.app.integrations.adapter_factory import gbp_adapter
 from apps.api.app.integrations.connection_service import GBPConnectionService
 from apps.api.app.integrations.models import ProviderResourceMapping
-from apps.api.app.products.gbp.adapter import GBPAdapter, GoogleBusinessProfileAdapter
+from apps.api.app.products.gbp.adapter import GBPAdapter
 from apps.api.app.products.gbp.models import GBPAccount, GBPLocation
 from apps.api.app.products.gbp.resource_names import v4_location_parent
 from apps.api.app.products.reviews.models import Review, ReviewResponseRevision, ReviewRevision
@@ -202,7 +203,7 @@ class IngestionReviewService(ReviewService):
 class ReviewIngestionService:
     """Pull reviews from GBP and ingest them through the governed review path."""
 
-    adapter: GBPAdapter = field(default_factory=GoogleBusinessProfileAdapter)
+    adapter: GBPAdapter = field(default_factory=gbp_adapter)
     connection: GBPConnectionService = field(default_factory=GBPConnectionService)
     reviews: ReviewService = field(default_factory=IngestionReviewService)
     audit: AuditEventService = field(default_factory=AuditEventService)

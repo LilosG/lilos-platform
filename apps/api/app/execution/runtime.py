@@ -57,7 +57,11 @@ def validate_process_runtime(settings: Settings, service_name: str) -> None:
     workers and the scheduler do not acquire unrelated provider requirements.
     """
     required = [("LILOS_DATABASE_URL", "database_url")]
-    if service_name == "lilos-worker" and settings.provider_writes_enabled:
+    if (
+        service_name == "lilos-worker"
+        and settings.provider_writes_enabled
+        and settings.environment.value != "staging"
+    ):
         required = list(WORKER_GOOGLE_WRITE_REQUIREMENTS)
     missing = [key for key, attribute in required if getattr(settings, attribute) is None]
     if missing:

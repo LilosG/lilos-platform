@@ -77,6 +77,8 @@ class GoogleSearchConsoleAdapter:
     http_client_factory: Callable[[], httpx.AsyncClient] = httpx.AsyncClient
 
     def _headers(self, access_token: str) -> dict[str, str]:
+        if access_token.startswith("fixture:") and type(self) is GoogleSearchConsoleAdapter:
+            raise ValueError("Live provider refuses fixture credentials")
         return {
             "Authorization": f"Bearer {access_token}",
             "Accept": "application/json",

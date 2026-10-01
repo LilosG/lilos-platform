@@ -145,6 +145,19 @@ async def load_publishing_context(
         await _fail(session, publication, "GITHUB_CONNECTION_REQUIRED")
         return JobOutcome(result="permanent_failure", safe_error="GITHUB_CONNECTION_REQUIRED")
 
+    from apps.api.app.staging.write_boundary import ProviderWriteDeniedError, require_github_scope
+
+    settings = Settings()
+    try:
+        require_github_scope(settings, target.repository_id)
+        if (
+            settings.environment.value == "staging"
+            and target.base_branch != settings.staging_github_base_branch
+        ):
+            raise ProviderWriteDeniedError("STAGING_GITHUB_BASE_BRANCH_DENIED")
+    except ProviderWriteDeniedError as exc:
+        await _fail(session, publication, str(exc))
+        return JobOutcome(result="permanent_failure", safe_error=str(exc))
     try:
         token = str(await _github_token_resolver(session, Settings(), connection))
     except Exception:
@@ -418,6 +431,11 @@ async def _prepare_pull_request(
         built = await build_files(publication.base_commit)
         if isinstance(built, JobOutcome):
             return built
+        from apps.api.app.staging.write_boundary import require_github_scope
+
+        settings = Settings()
+        for path in built:
+            require_github_scope(settings, repository_id, path=path, branch=branch_name)
         await publisher.create_branch(
             repository_id,
             target.base_branch,

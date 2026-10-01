@@ -188,7 +188,7 @@ async def handle_reviews_publish_response(
         return JobOutcome(result="permanent_failure", safe_error="GBP_ACCOUNT_NOT_FOUND")
 
     if initial_publish and (
-        not execution_handlers._provider_writes_enabled()
+        not execution_handlers._google_writes_enabled()
         or not gbp_location.write_enabled
         or gbp_location.mapping_status != "confirmed"
     ):
