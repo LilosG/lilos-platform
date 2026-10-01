@@ -1,6 +1,7 @@
 """Private, service-authenticated sanctioned tool surface for Hermes."""
 
 import hmac
+import logging
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
@@ -17,6 +18,7 @@ from apps.api.app.products.gbp.capability_backfill import (
 )
 from apps.api.app.products.gbp.proposal_enrichment import GBPProposalEnrichmentError
 
+logger = logging.getLogger("lilos.api.hermes_tools")
 router = APIRouter(prefix="/api/internal/hermes", tags=["hermes-internal"])
 Session = Annotated[AsyncSession, Depends(get_database_session)]
 tools = AgentToolService()
@@ -56,8 +58,10 @@ async def invoke_tool(
     _authenticate(settings, authorization)
     if not x_lilos_hermes_session or len(x_lilos_hermes_session) > 128:
         raise HTTPException(status_code=403, detail="Bound Hermes session required")
+    run_context: dict[str, Any] = {}
     try:
         run = await tools.bound_run(session, x_lilos_hermes_session)
+        run_context["run"] = run
         if tool_name == "create_gbp_optimization_proposal":
             # Production locations that were synced before capability snapshots
             # became automatic can still have a valid provider profile but no
@@ -72,7 +76,7 @@ async def invoke_tool(
             )
         result = await tools.invoke(session, run, tool_name, command.arguments)
     except AgentToolDeniedError as exc:
-        return _tool_error(403, "HERMES_TOOL_DENIED", str(exc))
+        return _tool_error(403, exc.code, str(exc))
     except GBPProposalEnrichmentError as exc:
         return _tool_error(502, exc.safe_code, str(exc))
     except ApiError as exc:
@@ -88,8 +92,21 @@ async def invoke_tool(
             "HERMES_TOOL_ARGUMENT_INVALID",
             "The sanctioned tool arguments did not pass the LILOs domain contract.",
         )
-    except Exception:
+    except Exception as exc:
         # AgentToolService records a safe failed audit event before raising.
-        # Keep provider/runtime internals out of the response.
+        # Keep provider/runtime internals out of the response, but never out of
+        # the server log: the generic code alone made production failures opaque.
+        logger.error(
+            "Sanctioned tool execution failed",
+            extra={
+                "event_name": "hermes.tool.failed",
+                "tool_name": tool_name,
+                "correlation_id": getattr(run_context.get("run"), "correlation_id", None),
+                "agent_run_id": str(getattr(run_context.get("run"), "id", "")) or None,
+                "exception_type": type(exc).__name__,
+                "exception_message": str(exc)[:500],
+            },
+            exc_info=True,
+        )
         return _tool_error(502, "HERMES_TOOL_FAILED", "Sanctioned tool execution failed")
     return {"data": result}

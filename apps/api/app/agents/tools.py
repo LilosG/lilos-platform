@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass
 from datetime import datetime
 from hashlib import sha256
@@ -30,6 +31,7 @@ from apps.api.app.audit.enums import AuditActorType, AuditResult
 from apps.api.app.audit.metadata import JsonValue
 from apps.api.app.audit.service import AuditEventService
 from apps.api.app.config import Settings
+from apps.api.app.errors import ApiError
 from apps.api.app.execution.models import WorkflowRun
 from apps.api.app.execution.service import ExecutionService
 from apps.api.app.growth.contracts import GrowthPlanCreate
@@ -63,9 +65,18 @@ from apps.api.app.products.seo.search_console_service import SearchConsoleServic
 from apps.api.app.products.seo.service import SEOService
 from apps.api.app.products.seo.site_change_service import SiteChangeService
 
+logger = logging.getLogger("lilos.agents.tools")
+
 
 class AgentToolDeniedError(ValueError):
-    pass
+    """A sanctioned tool refused a call; ``code`` is the typed reason shown to Hermes."""
+
+    code = "HERMES_TOOL_DENIED"
+
+    def __init__(self, message: str = "", *, code: str | None = None) -> None:
+        super().__init__(message)
+        if code is not None:
+            self.code = code
 
 
 class SiteChangeInvalidError(AgentToolDeniedError):
@@ -371,6 +382,7 @@ class AgentToolService:
     ) -> dict[str, object]:
         started = monotonic()
         outcome = "succeeded"
+        error_code: str | None = None
         result: dict[str, object] = {}
         result_hash: str | None = None
         result_bytes: int | None = None
@@ -412,7 +424,10 @@ class AgentToolService:
                                 "This Hermes run already submitted its recommendation proposal"
                             )
             handler = getattr(self, f"_tool_{tool_name}")
-            result = await handler(session, run, arguments)
+            # A savepoint keeps the session usable when a tool fails midway: its
+            # partial writes roll back and the failure audit below still persists.
+            async with session.begin_nested():
+                result = await handler(session, run, arguments)
             if has_secret_key(result):
                 raise AgentToolDeniedError("secret-bearing tool result rejected")
             if not spec.mutating:
@@ -437,11 +452,29 @@ class AgentToolService:
                 run.output_references = merged
             await session.flush()
             return result
-        except AgentToolDeniedError:
+        except AgentToolDeniedError as exc:
             outcome = "denied"
+            error_code = exc.code
             raise
-        except Exception:
+        except ApiError as exc:
             outcome = "failed"
+            error_code = exc.code
+            raise
+        except Exception as exc:
+            outcome = "failed"
+            error_code = "HERMES_TOOL_FAILED"
+            logger.error(
+                "Sanctioned tool raised an unexpected exception",
+                extra={
+                    "event_name": "agent.tool.unexpected_exception",
+                    "agent_run_id": str(run.id),
+                    "tool_name": tool_name,
+                    "correlation_id": run.correlation_id,
+                    "exception_type": type(exc).__name__,
+                    "exception_message": str(exc)[:500],
+                },
+                exc_info=True,
+            )
             raise
         finally:
             latency_ms = round((monotonic() - started) * 1000)
@@ -466,6 +499,7 @@ class AgentToolService:
                     "mutating": spec.mutating if spec else False,
                     "latency_ms": latency_ms,
                     "outcome": outcome,
+                    "error_code": error_code,
                     "result_hash": result_hash,
                     "result_bytes": result_bytes,
                     "source_references": [str(item)[:200] for item in source_references[:50]]
@@ -1390,16 +1424,24 @@ class AgentToolService:
                 "draft sources must be non-empty references from the ready brief"
             )
 
-        revision, execution = await self.content.execute_ai_draft_workflow(
-            session,
-            organization_id=run.organization_id,
-            item_id=item.id,
-            brief_id=brief.id,
-            idempotency_key=f"agent-content-draft:{run.id}:{brief.id}",
-            workflow_run_id=run.workflow_run_id,
-            user_id=None,
-            correlation_id=run.correlation_id,
-        )
+        try:
+            revision, execution = await self.content.execute_ai_draft_workflow(
+                session,
+                organization_id=run.organization_id,
+                item_id=item.id,
+                brief_id=brief.id,
+                idempotency_key=f"agent-content-draft:{run.id}:{brief.id}",
+                workflow_run_id=run.workflow_run_id,
+                user_id=None,
+                correlation_id=run.correlation_id,
+            )
+        except AIProviderError as exc:
+            # The gateway is not an ApiError, so this used to surface as the generic
+            # HERMES_TOOL_FAILED. Name the provider category so Hermes and the
+            # operator can act on it.
+            raise AgentToolDeniedError(
+                f"{exc.safe_message}", code=f"AI_PROVIDER_{exc.category.upper()}"
+            ) from exc
         execution.input_references = list(
             dict.fromkeys(
                 [
@@ -1467,7 +1509,8 @@ class AgentToolService:
             # blocks on the tool response. A timeout here points at that nesting
             # rather than at the client's data.
             raise AgentToolDeniedError(
-                f"AI_PROVIDER_{exc.category.upper()}: {exc.safe_message}"
+                f"AI_PROVIDER_{exc.category.upper()}: {exc.safe_message}",
+                code=f"AI_PROVIDER_{exc.category.upper()}",
             ) from exc
         except LookupError as exc:
             raise AgentToolDeniedError("GBP_LOCATION_NOT_FOUND") from exc
