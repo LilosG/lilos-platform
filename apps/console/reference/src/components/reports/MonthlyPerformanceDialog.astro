@@ -1,0 +1,93 @@
+---
+import type { ViewContext, Client } from "../../types/domain";
+import { reports } from "../../data/fixtures";
+
+import StatusBadge from "../ui/StatusBadge.astro";
+
+import DialogFrame from "../ui/DialogFrame.astro";
+
+import { required } from "../../lib/view";
+interface Props {
+  context: ViewContext;
+  c?: Client | null;
+}
+
+const c = required(
+  Astro.props.c ?? Astro.props.context.client,
+  "active client context",
+);
+const dialogId = "report-" + (Number(c.id) - 1);
+---
+
+<DialogFrame id={dialogId}>
+  <Fragment slot="body">
+    <div class="eyebrow">{c.name} · Monthly report</div>
+    <h2 id={dialogId + "-title"}>September performance summary</h2>
+    <p>
+      <span
+        data-entity="report"
+        data-record-id={Number(c.id) - 1}
+        data-field="status"
+      >
+        <StatusBadge text={reports[Number(c.id) - 1].status} />
+      </span>{" "}
+      · September 1–30, 2026 · Fixed monthly period
+    </p>
+    <div class="reportpreview">
+      <h3>Source-defined performance</h3>
+      <ul>
+        <li>GA4 organic sessions: 4,110 (+31%)</li>
+        <li>
+          Search Console: 1,386 clicks (+24%) · 27,720 impressions (+22%) · 5.0%
+          CTR
+        </li>
+        <li>
+          Local scan: 72% visibility · average rank 6.2 · 46% Top 3 · 78% Top 10
+        </li>
+        <li>
+          GBP interactions: 2,488 · 515 calls, 1,201 website clicks, 772
+          directions
+        </li>
+        <li>
+          Website action events: 132 reservation clicks (−8%), 48 form
+          submissions and 106 phone clicks
+        </li>
+        <li>Google reviews: 4.8 rating · 18 new · 342 total</li>
+      </ul>
+      <h3>What changed and why</h3>
+      <p>
+        Organic sessions rose while reservation clicks fell. The Menu generated
+        2,840 organic sessions and 45 Reserve clicks (1.6%). Improve the mobile
+        action before increasing traffic investment.
+      </p>
+      <h3>Measurement gap</h3>
+      <p>
+        Completed bookings are unavailable. Website events are not unique
+        guests; GBP calls are reported separately and are not added to website
+        actions.
+      </p>
+      <h3>Next work</h3>
+      <p>
+        Improve the reservation path, build brunch coverage and answer
+        private-event planning questions.
+      </p>
+    </div>
+  </Fragment>
+  <Fragment slot="footer">
+    <button data-close>Close</button>
+    <button
+      data-command="downloadReport"
+      data-args={JSON.stringify([Number(c.id) - 1])}
+    >
+      Download summary
+    </button>
+    <button
+      class="primary"
+      data-monthly-report-delivery={Number(c.id) - 1}
+      data-command="markReport"
+      data-args={JSON.stringify([Number(c.id) - 1, "Sent"])}
+    >
+      {reports[Number(c.id) - 1].status === "Sent" ? "Sent" : "Mark as sent"}
+    </button>
+  </Fragment>
+</DialogFrame>

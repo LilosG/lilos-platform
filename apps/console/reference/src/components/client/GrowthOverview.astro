@@ -1,0 +1,324 @@
+---
+import { growthOpportunityId } from "../../lib/workspace-data";
+import type { ViewContext, Client } from "../../types/domain";
+import { reports, automationRuns } from "../../data/fixtures";
+import {
+  fmt,
+  periodMultiplier,
+  scopedActions,
+  clientActivity,
+} from "../../lib/view";
+import { route } from "../../config/routes";
+
+import StatusBadge from "../ui/StatusBadge.astro";
+
+import OpportunityList from "../opportunities/OpportunityList.astro";
+import ActivityItem from "../app/ActivityItem.astro";
+import UpcomingWork from "../app/UpcomingWork.astro";
+import PerformanceSnapshot from "./PerformanceSnapshot.astro";
+import { requireClient } from "../../lib/view";
+interface Props {
+  context: ViewContext;
+  c?: Client | null;
+}
+const context = Astro.props.context;
+const state = context.state;
+const c = requireClient(context, Astro.props.c);
+import { growthWorkspace } from "../../lib/workspace-data";
+const { metrics: hospitalityMetrics, observations: hospitalityObservations } =
+  growthWorkspace(c);
+
+const mult = () => periodMultiplier(state.range);
+const periodLabel = (source: string) =>
+  source + " · Last " + state.range + " days";
+
+const items = scopedActions(c);
+
+const runs = automationRuns.filter((r) => r.client === c.id);
+const needs = runs.filter((r) => r.status === "Needs attention");
+
+import PeriodValue from "../ui/PeriodValue.astro";
+
+import SectionHeading from "../ui/SectionHeading.astro";
+
+import AttentionList from "../app/AttentionList.astro";
+
+import InsightPanel from "../ui/InsightPanel.astro";
+import DataTable from "../ui/DataTable.astro";
+---
+
+<div class="clientfocus">
+  <div>
+    <span class="eyebrow">Current growth focus</span>
+    <h2>Turn local discovery into brunch, reservations and private events.</h2>
+    <p>
+      Search demand is growing. This week’s work focuses on the pages and
+      actions that turn that demand into guests.
+    </p>
+  </div>
+  <a class="link" href={route("client", c.id, "Opportunities")}>
+    View growth plan
+  </a>
+</div>
+<InsightPanel class="insight contextinsight">
+  <b>Next:</b> Fix the mobile reservation path today; publish the brunch GBP
+  highlight tomorrow.{" "}
+  <a class="link" href={route("client", c.id, "Automations")}>
+    View upcoming work
+  </a>
+</InsightPanel>
+<div class="grid commandgrid">
+  <section class="panel">
+    <SectionHeading>
+      <Fragment slot="title">
+        Needs attention <span class="count">{items.length}</span>
+      </Fragment>
+      <Fragment slot="actions" />
+    </SectionHeading>
+    <AttentionList
+      context={context}
+      client={c}
+      limit={100}
+      emptyMode="growth"
+    />
+  </section>
+  <section class="panel">
+    <SectionHeading>
+      <Fragment slot="title">Next growth opportunities</Fragment>
+      <Fragment slot="actions">
+        <a class="link" href={route("client", c.id, "Opportunities")}>
+          All opportunities
+        </a>
+      </Fragment>
+    </SectionHeading>
+    <OpportunityList context={context} c={c} limit={3} />
+  </section>
+</div>
+<section class="panel snapshot">
+  <SectionHeading>
+    <Fragment slot="title">Performance snapshot</Fragment>
+    <Fragment slot="actions">
+      <span class="muted">
+        Last <span data-period-days>{state.range}</span> days · sample data
+      </span>
+    </Fragment>
+  </SectionHeading>
+  <PerformanceSnapshot client={c} />
+</section>
+<section class="panel contextual">
+  <SectionHeading>
+    <Fragment slot="title">What is driving performance</Fragment>
+    <Fragment slot="actions" />
+  </SectionHeading>
+  <div class="listrow">
+    <div>
+      <h3>Organic sessions grew 31%, while reservation clicks fell 8%.</h3>
+      <p>
+        The menu attracted{" "}
+        <PeriodValue base={hospitalityObservations.menuSessions} /> organic
+        sessions, but a 1.6% Reserve click rate. Improve the reservation path
+        before investing in more traffic.
+      </p>
+      <small>
+        <span data-period-label>{periodLabel("GA4")}</span> · reserve_click
+        events
+      </small>
+    </div>
+    <button
+      class="link"
+      data-command="openOpp"
+      data-args={JSON.stringify([growthOpportunityId(c, "reservation-path")])}
+    >
+      Review conversion opportunity
+    </button>
+  </div>
+  <div class="listrow">
+    <div>
+      <h3>Five brunch keywords are close to the Top 3.</h3>
+      <p>
+        The average brunch rank is 5.2. A dedicated brunch page and relevant GBP
+        category can reinforce existing demand.
+      </p>
+      <small>Local ranking scan + Search Console · Sep 28</small>
+    </div>
+    <button
+      class="link"
+      data-command="openOpp"
+      data-args={JSON.stringify([growthOpportunityId(c, "brunch-demand")])}
+    >
+      Inspect search demand
+    </button>
+  </div>
+</section>
+<section class="panel tablewrap">
+  <SectionHeading>
+    <Fragment slot="title">Guest journeys to improve</Fragment>
+    <Fragment slot="actions">
+      <a
+        class="link"
+        href={route("client", c.id, "Website & Content", "Conversions")}
+      >
+        Website & Content
+      </a>
+    </Fragment>
+  </SectionHeading>
+  <DataTable>
+    <thead>
+      <tr>
+        <th>Guest intent</th>
+        <th>Current signal</th>
+        <th>Gap</th>
+        <th>Recommended work</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Book a table</td>
+        <td>
+          <PeriodValue base={hospitalityObservations.menuSessions} /> menu
+          organic sessions · 1.6% Reserve clicks
+        </td>
+        <td>Mobile reservation action is difficult to find</td>
+        <td>
+          <button
+            class="link"
+            data-command="openOpp"
+            data-args={JSON.stringify([
+              growthOpportunityId(c, "reservation-path"),
+            ])}
+          >
+            Improve reservation path
+          </button>
+        </td>
+      </tr>
+      <tr>
+        <td>Find brunch in Little Italy</td>
+        <td>
+          <PeriodValue base={hospitalityObservations.brunchImpressions} />{" "}
+          impressions · average local rank 5.2
+        </td>
+        <td>Brunch demand lands on the general menu</td>
+        <td>
+          <button
+            class="link"
+            data-command="openOpp"
+            data-args={JSON.stringify([
+              growthOpportunityId(c, "brunch-demand"),
+            ])}
+          >
+            Build brunch coverage
+          </button>
+        </td>
+      </tr>
+      <tr>
+        <td>Plan a private event</td>
+        <td>
+          <PeriodValue base={hospitalityObservations.eventImpressions} />{" "}
+          impressions ·{" "}
+          <PeriodValue base={hospitalityObservations.eventInquiries} /> event
+          inquiries
+        </td>
+        <td>Group dining questions need clearer answers</td>
+        <td>
+          <button
+            class="link"
+            data-command="openOpp"
+            data-args={JSON.stringify([
+              growthOpportunityId(c, "private-event-content"),
+            ])}
+          >
+            Strengthen event content
+          </button>
+        </td>
+      </tr>
+    </tbody>
+  </DataTable>
+</section>
+<div class="bottomgrid">
+  <section class="panel" data-activity-feed data-activity-limit="4">
+    <SectionHeading>
+      <Fragment slot="title">Recent meaningful work</Fragment>
+      <Fragment slot="actions" />
+    </SectionHeading>
+    {clientActivity(c)
+      .slice(0, 4)
+      .map((item) => (
+        <ActivityItem context={context} a={item} />
+      ))}
+  </section>
+  <section class="panel">
+    <SectionHeading>
+      <Fragment slot="title">Coming next</Fragment>
+      <Fragment slot="actions" />
+    </SectionHeading>
+    <UpcomingWork context={context} c={c} />
+    <div class="listrow">
+      <div>
+        Reservation conversion check
+        <small>October 2 · Compare mobile Reserve clicks</small>
+      </div>
+      <a
+        class="link"
+        href={route("client", c.id, "Website & Content", "Conversions")}
+      >
+        View
+      </a>
+    </div>
+    <div class="listrow">
+      <div>
+        September report
+        <small>October 1 · Organic demand and lead gap summary</small>
+      </div>
+      <a class="link" href={route("client", c.id, "Reports")}>
+        <span
+          data-entity="report"
+          data-record-id={Number(c.id) - 1}
+          data-field="status"
+        >
+          <StatusBadge text={reports[Number(c.id) - 1].status} />
+        </span>
+      </a>
+    </div>
+  </section>
+  <section class="panel">
+    <SectionHeading>
+      <Fragment slot="title">Operational health</Fragment>
+      <Fragment slot="actions" />
+    </SectionHeading>
+    {[
+      [
+        "Search Console",
+        fmt(hospitalityMetrics.gscClicks * mult()) +
+          " clicks · " +
+          fmt(hospitalityMetrics.gscImpressions * mult()) +
+          " impressions",
+        "Local Search",
+      ],
+      [
+        "External connections",
+        "3 / 3 authorized · data synced 18 min ago",
+        "Integrations",
+      ],
+      ["Google reviews", "Included through GBP", "Reviews"],
+      [
+        "Automations",
+        needs.length
+          ? needs.length + " need attention"
+          : "5 operating normally",
+        "Automations",
+      ],
+    ].map(([l, n, a]) => (
+      <Fragment>
+        <div class="listrow">
+          <div>
+            {l}
+            <small>{n}</small>
+          </div>
+          <a class="link" href={route("client", c.id, a)}>
+            Details
+          </a>
+        </div>
+      </Fragment>
+    ))}
+  </section>
+</div>

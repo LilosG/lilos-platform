@@ -1,0 +1,162 @@
+---
+import type { ViewContext, Client } from "../../types/domain";
+import { systems, activity } from "../../data/fixtures";
+import { scopedActions } from "../../lib/view";
+import { route } from "../../config/routes";
+
+import StatusBadge from "../ui/StatusBadge.astro";
+
+import PageHeader from "../ui/PageHeader.astro";
+
+import OpportunityList from "../opportunities/OpportunityList.astro";
+import MetricStrip from "../ui/MetricStrip.astro";
+import ClientTable from "../portfolio/ClientTable.astro";
+import UpcomingWork from "../app/UpcomingWork.astro";
+import ActivityItem from "../app/ActivityItem.astro";
+interface Props {
+  context: ViewContext;
+  c?: Client | null;
+}
+const context = Astro.props.context;
+
+import { reportingAutomationHealth as operationalHealth } from "../../data/fixtures/systems";
+
+const open = scopedActions();
+
+import SectionHeading from "../ui/SectionHeading.astro";
+
+import { portfolioMetrics } from "../../data/fixtures/metrics";
+
+import AttentionList from "../app/AttentionList.astro";
+
+import InsightPanel from "../ui/InsightPanel.astro";
+---
+
+<PageHeader
+  context={context}
+  title={"Portfolio overview"}
+  subtitle={"Tuesday, September 29 · 12 active clients across 17 locations"}
+/>
+
+<div class="grid commandgrid">
+  <section class="panel">
+    <SectionHeading>
+      <Fragment slot="title">
+        Needs your attention <span class="count">{open.length}</span>
+      </Fragment>
+      <Fragment slot="actions">
+        <a class="link" href={route("attention")}>
+          View all
+        </a>
+      </Fragment>
+    </SectionHeading>
+    <AttentionList context={context} limit={3} emptyMode="portfolio" />
+    <InsightPanel class="insight">
+      {
+        open.filter((a) => a.severity === "Critical" || a.severity === "High")
+          .length
+      }{" "}
+      priority items · Fix data and tracking gaps before evaluating declines.
+    </InsightPanel>
+  </section>
+  <section class="panel">
+    <SectionHeading>
+      <Fragment slot="title">Opportunities</Fragment>
+      <Fragment slot="actions">
+        <a class="link" href={route("opportunities")}>
+          View all
+        </a>
+      </Fragment>
+    </SectionHeading>
+    <OpportunityList context={context} c={null} limit={3} />
+  </section>
+</div>
+
+<MetricStrip
+  kind="portfolioMetrics"
+  context={context}
+  items={portfolioMetrics()}
+/>
+
+<InsightPanel class="insight contextinsight">
+  <details>
+    <summary>
+      ✧ Three clients account for the portfolio’s local visibility declines.
+    </summary>
+    <p>
+      Pacific Restore, Coastline Home Co. and Summit Electrical are declining.
+      Investigate connection, service-page and conversion-tracking issues before
+      expanding their work.
+    </p>
+    <button class="link" data-filter="filter" data-value={`Declining`}>
+      Show declining clients
+    </button>
+  </details>
+</InsightPanel>
+
+<ClientTable context={context} />
+
+<div class="bottomgrid">
+  <section class="panel">
+    <SectionHeading>
+      <Fragment slot="title">Coming next</Fragment>
+      <Fragment slot="actions">
+        <a class="link" href={route("reports")}>
+          Reports
+        </a>
+      </Fragment>
+    </SectionHeading>
+    <UpcomingWork context={context} />
+  </section>
+  <section class="panel" data-activity-feed data-activity-limit="3">
+    <SectionHeading>
+      <Fragment slot="title">Meaningful activity</Fragment>
+      <Fragment slot="actions">
+        <a class="link" href={route("activity")}>
+          View all
+        </a>
+      </Fragment>
+    </SectionHeading>
+    {activity.slice(0, 3).map((item) => (
+      <ActivityItem context={context} a={item} />
+    ))}
+  </section>
+  <section class="panel">
+    <SectionHeading>
+      <Fragment slot="title">Operational health</Fragment>
+      <Fragment slot="actions">
+        <a class="link" href={route("automations")}>
+          Open console
+        </a>
+      </Fragment>
+    </SectionHeading>
+    {[systems[0], systems[2], operationalHealth].map((s) => (
+      <Fragment>
+        <div
+          class="listrow"
+          data-system={systems.indexOf(s) >= 0 ? systems.indexOf(s) : undefined}
+        >
+          <div>
+            {s[0]}
+            <small data-system-field="note">{s[4]}</small>
+          </div>
+          <button
+            class="link"
+            data-command-spec={
+              s === operationalHealth
+                ? JSON.stringify({ name: "nav", args: ["automations"] })
+                : JSON.stringify({
+                    name: "openSystem",
+                    args: [systems.indexOf(s)],
+                  })
+            }
+          >
+            <span data-system-field="status">
+              <StatusBadge text={s[2]} />
+            </span>
+          </button>
+        </div>
+      </Fragment>
+    ))}
+  </section>
+</div>

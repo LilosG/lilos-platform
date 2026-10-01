@@ -1,0 +1,279 @@
+---
+import type { ViewContext, Client, Automation } from "../../types/domain";
+import { clients, automationDefs } from "../../data/fixtures";
+import { automationNextAction as nextAction } from "../../lib/view";
+import { route } from "../../config/routes";
+import { filteredAutomations as selectAutomations } from "../../lib/selectors";
+
+import PageHeader from "../ui/PageHeader.astro";
+import Filters from "../automations/Filters.astro";
+import Inventory from "../automations/Inventory.astro";
+interface Props {
+  context: ViewContext;
+  c?: Client | null;
+  embedded?: boolean;
+}
+const context = Astro.props.context;
+const state = context.state;
+const c =
+  Astro.props.c === null ? undefined : (Astro.props.c ?? context.client);
+
+const filteredAutomations = (client?: Client) =>
+  selectAutomations(state, client);
+
+const automationNextAction = (r: Automation) =>
+  nextAction(r, clients[Number(r.client) - 1]);
+const embedded = Astro.props.embedded ?? false;
+const scope = filteredAutomations(c);
+const needs = scope.filter((r) => r.status === "Needs attention");
+const important = scope
+  .filter((r) => [0, 3, 4].includes(r.def))
+  .sort((a, b) => b.def - a.def);
+const recent = scope;
+
+import { automationViews } from "../../data/fixtures/presentation";
+
+import SectionHeading from "../ui/SectionHeading.astro";
+---
+
+{embedded ? (
+  ""
+) : (
+  <PageHeader
+    context={context}
+    title={"Automations"}
+    subtitle={
+      "Exceptions, important scheduled work, and meaningful outcomes across the portfolio."
+    }
+  />
+)}
+
+<div class="sectiontabs">
+  {automationViews().map((t) => (
+    <Fragment>
+      <button
+        class={state.automationView === t ? "active" : ""}
+        data-filter="automationView"
+        data-value={`${t}`}
+      >
+        {t}
+      </button>
+    </Fragment>
+  ))}
+</div>
+<Filters context={context} c={c} />
+{state.automationView === "All automations" ? (
+  <Inventory context={context} scope={scope} c={c} />
+) : (
+  <Fragment>
+    <section class="panel attentionstrip" data-automation-overview>
+      <SectionHeading>
+        <Fragment slot="title">
+          Requires attention{" "}
+          <span class="count" data-automation-attention-count>
+            {needs.length}
+          </span>
+        </Fragment>
+        <Fragment slot="actions">
+          <span class="muted">Human actions first</span>
+        </Fragment>
+      </SectionHeading>
+      {needs.map((r) => (
+        <Fragment>
+          <div
+            class="listrow"
+            data-automation-id={r.id}
+            data-automation-group="attention"
+            data-client-id={r.client}
+            data-type={r.def}
+            data-status={r.status}
+            data-outcome={r.lastStatus}
+          >
+            <span class="severity">!</span>
+            <div class="grow">
+              <h3>{automationDefs[r.def].name}</h3>
+              <p>
+                <a
+                  class="contextname"
+                  href={route("client", r.client, "Overview", "Overview")}
+                >
+                  {clients[+r.client - 1].name}
+                </a>{" "}
+                · {r.detail}
+              </p>
+              <small>Next action: {automationNextAction(r)}</small>
+            </div>
+            <button
+              class="primary"
+              data-command="openAutomation"
+              data-args={JSON.stringify([r.id])}
+            >
+              Investigate
+            </button>
+          </div>
+        </Fragment>
+      ))}
+      <div
+        class="clearstate"
+        data-automation-empty="attention"
+        hidden={needs.length > 0}
+      >
+        <span class="severity low">✓</span>
+        <div>
+          <h3>No automation exceptions in this view</h3>
+          <p>The selected client automations are operating normally.</p>
+        </div>
+      </div>
+    </section>
+    <div class="grid" data-automation-overview>
+      <section class="panel">
+        <SectionHeading>
+          <Fragment slot="title">Upcoming important runs</Fragment>
+          <Fragment slot="actions" />
+        </SectionHeading>
+        {important.map((r, index) => (
+          <Fragment>
+            <div
+              class="listrow"
+              data-automation-id={r.id}
+              data-automation-group="upcoming"
+              data-client-id={r.client}
+              data-type={r.def}
+              data-status={r.status}
+              data-outcome={r.lastStatus}
+              hidden={index >= (c ? 3 : 5)}
+            >
+              <div>
+                <h3>{automationDefs[r.def].name}</h3>
+                <p>
+                  <a
+                    class="contextname"
+                    href={route("client", r.client, "Overview", "Overview")}
+                  >
+                    {clients[+r.client - 1].name}
+                  </a>{" "}
+                  · {r.next}
+                </p>
+                <small>
+                  {r.status === "Needs attention"
+                    ? "Resolve missing data before this run"
+                    : r.def === 4
+                      ? "Deliver the monthly performance story"
+                      : r.def === 3
+                        ? "Check website and conversion health"
+                        : "Refresh GBP actions and review signals"}
+                </small>
+              </div>
+              <button
+                class="link"
+                data-command="openAutomation"
+                data-args={JSON.stringify([r.id])}
+              >
+                View schedule
+              </button>
+            </div>
+          </Fragment>
+        ))}
+        <div
+          class="empty"
+          data-automation-empty="upcoming"
+          hidden={important.length > 0}
+        >
+          No scheduled runs match these filters.
+        </div>
+      </section>
+      <section class="panel">
+        <SectionHeading>
+          <Fragment slot="title">Recent meaningful outcomes</Fragment>
+          <Fragment slot="actions" />
+        </SectionHeading>
+        {recent.map((r) => (
+          <Fragment>
+            <div
+              class="listrow feed"
+              data-automation-id={r.id}
+              data-automation-group="recent"
+              data-client-id={r.client}
+              data-type={r.def}
+              data-status={r.status}
+              data-outcome={r.lastStatus}
+              hidden={
+                !recent
+                  .filter((x) => x.lastStatus === "Completed")
+                  .slice(0, c ? 3 : 5)
+                  .some((x) => x.id === r.id)
+              }
+            >
+              <span class="activitydot">✓</span>
+              <div>
+                <h3>{automationDefs[r.def].name}</h3>
+                <p>{clients[+r.client - 1].name}</p>
+                <small>
+                  {r.def === 0
+                    ? "Profile performance refreshed"
+                    : r.def === 1
+                      ? "New reviews checked for responses"
+                      : r.def === 2
+                        ? "Priority local keywords scanned"
+                        : r.def === 3
+                          ? "Technical findings refreshed"
+                          : "Client report generated"}{" "}
+                  · {r.last}
+                </small>
+              </div>
+              <button
+                class="link"
+                data-command="openAutomation"
+                data-args={JSON.stringify([r.id])}
+              >
+                Details
+              </button>
+            </div>
+          </Fragment>
+        ))}
+        <div
+          class="empty"
+          data-automation-empty="recent"
+          hidden={recent.length > 0}
+        >
+          No completed runs match these filters.
+        </div>
+      </section>
+    </div>
+    <section class="panel" data-automation-overview>
+      <SectionHeading>
+        <Fragment slot="title">Operational health</Fragment>
+        <Fragment slot="actions">
+          <button data-filter="automationView" data-value={`All automations`}>
+            All automations
+          </button>
+        </Fragment>
+      </SectionHeading>
+      <div class="operationalstrip">
+        {[
+          [scope.length, "Active automations"],
+          [needs.length, "Require attention"],
+          [
+            scope.filter((r) => r.def === 3 && r.status === "Healthy").length,
+            "Website checks healthy",
+          ],
+          [
+            scope.filter((r) => r.def === 4 && r.status === "Healthy").length,
+            "Reporting jobs healthy",
+          ],
+        ].map(([n, l]) => (
+          <Fragment>
+            <div>
+              <strong>{n}</strong>
+              <span>{l}</span>
+            </div>
+          </Fragment>
+        ))}
+      </div>
+    </section>
+  </Fragment>
+)}
+
+<div data-automation-inventory hidden>
+  <Inventory context={context} c={c} scope={scope} />
+</div>

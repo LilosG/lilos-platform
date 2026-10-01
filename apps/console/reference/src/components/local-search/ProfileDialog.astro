@@ -1,0 +1,67 @@
+---
+import type { ViewContext, Client } from "../../types/domain";
+import { clients } from "../../data/fixtures";
+import { required } from "../../lib/view";
+import { route } from "../../config/routes";
+
+import StatusBadge from "../ui/StatusBadge.astro";
+
+import DialogFrame from "../ui/DialogFrame.astro";
+
+interface Props {
+  context: ViewContext;
+  c?: Client | null;
+  id: string;
+}
+
+const id = Astro.props.id;
+const dialogId = "profile" + "-" + id;
+const c = required(
+  clients.find((x) => x.id === id),
+  "Fixture record",
+);
+---
+
+<DialogFrame id={dialogId}>
+  <Fragment slot="body">
+    <div class="eyebrow">
+      <span data-entity="client" data-record-id={c.id} data-field="name">
+        {c.name}
+      </span>{" "}
+      · Google Business Profile
+    </div>
+    <h2 id={dialogId + "-title"}>Profile details</h2>
+    <div class="listrow">
+      Primary category{" "}
+      <b>
+        <span data-entity="client" data-record-id={c.id} data-field="category">
+          {c.category}
+        </span>
+      </b>
+    </div>
+    <div class="listrow">
+      Location{" "}
+      <b>
+        <span data-entity="client" data-record-id={c.id} data-field="location">
+          {c.location}
+        </span>
+      </b>
+    </div>
+    <div class="listrow">
+      Profile health{" "}
+      <span data-entity="client" data-record-id={c.id} data-field="gbp">
+        <StatusBadge text={c.gbp} />
+      </span>
+    </div>
+    <p>
+      Business information and categories are managed in the shared client
+      record.
+    </p>
+  </Fragment>
+  <Fragment slot="footer">
+    <button data-close>Close</button>
+    <a class="control primary" href={route("client", c.id, "Opportunities")}>
+      Review optimization opportunities
+    </a>
+  </Fragment>
+</DialogFrame>

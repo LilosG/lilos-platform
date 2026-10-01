@@ -1,0 +1,100 @@
+---
+import type { ViewContext, Client } from "../../types/domain";
+
+import { pct } from "../../lib/view";
+
+import StatusBadge from "../ui/StatusBadge.astro";
+
+import VisibilityChart from "../local-search/VisibilityChart.astro";
+interface Props {
+  context: ViewContext;
+  c?: Client | null;
+}
+const context = Astro.props.context;
+
+const c =
+  Astro.props.c === null ? undefined : (Astro.props.c ?? context.client);
+
+import SectionHeading from "../ui/SectionHeading.astro";
+
+import InsightPanel from "../ui/InsightPanel.astro";
+---
+
+<section class="panel">
+  <SectionHeading>
+    <Fragment slot="title">Local search momentum</Fragment>
+    <Fragment slot="actions">
+      <StatusBadge text={c ? c.status : "8 improving"} />
+    </Fragment>
+  </SectionHeading>
+  <div class="chartbody">
+    <div class="chartstats">
+      <div>
+        <small>Top 3 visibility</small>
+        <strong>{c ? c.top3 : 36.4}%</strong>{" "}
+        <span class={`trend ${c && c.change < 0 ? "negative" : "positive"}`}>
+          {c ? pct(Number((c.change * 0.6).toFixed(1))) : "+4.2"} pts
+        </span>
+      </div>
+      <div>
+        <small>Average local rank</small>
+        <strong>{c ? c.rank : 11.4}</strong>{" "}
+        <span class={`trend ${c && c.change < 0 ? "negative" : "positive"}`}>
+          {c && c.change < 0 ? "↓" : "↑"}{" "}
+          {c ? Math.abs(c.change / 4).toFixed(1) : "1.8"}
+        </span>
+      </div>
+      <div class="mobilehide">
+        <small>Not found</small>
+        <strong>{c ? c.notfound : 15.1}%</strong>
+      </div>
+    </div>
+    <VisibilityChart context={context} c={c} />
+    <div class="legend">
+      <span>
+        <i></i>Current period
+      </span>
+      <span>
+        <i class="prev"></i>Previous period
+      </span>
+    </div>
+  </div>
+  <InsightPanel class="insight">
+    <button data-disclosure>
+      ✧{" "}
+      {c ? (
+        <Fragment>
+          <span data-entity="client" data-record-id={c.id} data-field="name">
+            {c.name}
+          </span>
+          {":"}{" "}
+          {c.change > 0
+            ? "visibility is growing across priority queries."
+            : "ranking losses are concentrated in priority service queries."}
+        </Fragment>
+      ) : (
+        "Palm House leads portfolio growth. Three clients account for 71% of lost visibility."
+      )}{" "}
+      <b>Show insight +</b>
+    </button>
+    <InsightPanel class="insightdetail" hidden>
+      {c
+        ? "Compare the scan grid by query and location before adjusting content."
+        : "Palm House gained 15.6 visibility points after menu and GBP updates. Pacific Restore, Coastline Home Co. and Summit Electrical need targeted recovery work."}
+      <br />
+      <button
+        class="link"
+        data-command-spec={
+          c
+            ? JSON.stringify({
+                name: "nav",
+                args: ["client", c.id, "Local Search", "Rankings"],
+              })
+            : JSON.stringify({ name: "nav", args: ["clients"] })
+        }
+      >
+        {c ? "Explore rankings" : "Explore clients"}
+      </button>
+    </InsightPanel>
+  </InsightPanel>
+</section>

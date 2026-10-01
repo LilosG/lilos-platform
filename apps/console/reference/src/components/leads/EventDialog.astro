@@ -1,0 +1,62 @@
+---
+import type { ViewContext, Client } from "../../types/domain";
+
+import { route } from "../../config/routes";
+
+import DialogFrame from "../ui/DialogFrame.astro";
+
+interface Props {
+  context: ViewContext;
+  c?: Client | null;
+  eventName: string;
+}
+const context = Astro.props.context;
+const c = Astro.props.c ?? required(context.client, "active client context");
+
+const eventName = Astro.props.eventName;
+const dialogId = "outcome" + "-" + eventName;
+
+const event = required(
+  conversionEvents.find((e) => e.name === eventName),
+  "conversion event",
+);
+const d = [event.label, event.description, event.source, String(event.count)];
+import { conversionEvents } from "../../data/fixtures/conversionEvents";
+import PeriodValue from "../ui/PeriodValue.astro";
+import { required } from "../../lib/view";
+---
+
+<DialogFrame id={dialogId}>
+  <Fragment slot="body">
+    <div class="eyebrow">{c.name} · Outcome measurement</div>
+    <h2 id={dialogId + "-title"}>{d[0]}</h2>
+    <p>{d[1]}</p>
+    <div class="detailmetrics">
+      <div>
+        Selected-period events
+        <strong>
+          <PeriodValue base={Number(d[3])} />
+        </strong>
+      </div>
+      <div>
+        Data status<strong>Available</strong>
+      </div>
+    </div>
+    <p>
+      Source: {d[2]}
+      <br />
+      Last successful sync: 18 minutes ago
+      <br />
+      Sample data
+    </p>
+  </Fragment>
+  <Fragment slot="footer">
+    <button data-close>Close</button>
+    <a
+      class="control primary"
+      href={route("client", c.id, "Website & Content", "Conversions")}
+    >
+      Inspect conversion path
+    </a>
+  </Fragment>
+</DialogFrame>

@@ -1,0 +1,15 @@
+---
+import { fmt } from "../../lib/view";
+interface Props {
+  base: number;
+  format?: string;
+}
+const { base, format } = Astro.props;
+const text = format
+  ? format.replaceAll("{days}", "30").replaceAll("{value}", fmt(base))
+  : fmt(base);
+---
+
+<span data-period-base={base} data-period-format={format}>
+  {text}
+</span>

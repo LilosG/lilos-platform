@@ -1,0 +1,56 @@
+---
+import type { ViewContext, Client } from "../../types/domain";
+import { clients, actions } from "../../data/fixtures";
+import { required } from "../../lib/view";
+import { route } from "../../config/routes";
+
+import StatusBadge from "../ui/StatusBadge.astro";
+
+import DialogFrame from "../ui/DialogFrame.astro";
+
+interface Props {
+  context: ViewContext;
+  c?: Client | null;
+  id: number;
+}
+
+const id = Astro.props.id;
+const dialogId = "action" + "-" + id;
+const a = required(
+  actions.find((a) => a.id === id),
+  "Fixture record",
+);
+const c = clients[a.client];
+---
+
+<DialogFrame id={dialogId}>
+  <Fragment slot="body">
+    <div class="eyebrow">
+      <span data-entity="client" data-record-id={c.id} data-field="name">
+        {c.name}
+      </span>{" "}
+      · {a.type}
+    </div>
+    <h2 id={dialogId + "-title"}>{a.title}</h2>
+    <p>
+      <StatusBadge text={a.done ? "Resolved" : a.severity} />{" "}
+      <span class="muted">Detected {a.time.toLowerCase()}</span>
+    </p>
+    <p>{a.impact}</p>
+    <h3>Recommended next action</h3>
+    <p>{a.next}</p>
+  </Fragment>
+  <Fragment slot="footer">
+    <a href={route("client", c.id)} class="control">
+      Client workspace
+    </a>
+    <button
+      class="primary"
+      data-command="completeAction"
+      data-args={JSON.stringify([id])}
+      disabled={a.done}
+    >
+      {a.done ? "Resolved" : a.button}
+    </button>
+  </Fragment>
+</DialogFrame>

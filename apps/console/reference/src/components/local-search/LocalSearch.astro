@@ -1,0 +1,271 @@
+---
+import type { ViewContext, Client } from "../../types/domain";
+
+import { scopedActions } from "../../lib/view";
+import { route, localTabs } from "../../config/routes";
+
+import StatusBadge from "../ui/StatusBadge.astro";
+
+import TabNav from "../navigation/TabNav.astro";
+import MetricStrip from "../ui/MetricStrip.astro";
+import MomentumPanel from "../local-search/MomentumPanel.astro";
+import AttentionItem from "../app/AttentionItem.astro";
+import OpportunityList from "../opportunities/OpportunityList.astro";
+import PerformanceInsight from "../client/PerformanceInsight.astro";
+import RankingRows from "../local-search/RankingRows.astro";
+import PageTable from "../website-content/PageTable.astro";
+import Technical from "../website-content/Technical.astro";
+import SearchPerformance from "../local-search/SearchPerformance.astro";
+import { requireClient } from "../../lib/view";
+interface Props {
+  context: ViewContext;
+  c?: Client | null;
+}
+const context = Astro.props.context;
+const state = context.state;
+const c = requireClient(context, Astro.props.c);
+
+let t = localTabs.includes(state.subtab) ? state.subtab : "Overview";
+
+import PeriodValue from "../ui/PeriodValue.astro";
+
+import { organicSearchDemand } from "../../data/fixtures/clientPerformance";
+
+import SectionHeading from "../ui/SectionHeading.astro";
+
+import {
+  searchConsoleMetrics,
+  gbpMetrics,
+  rankingMetrics,
+  localSearchMetrics,
+} from "../../data/fixtures/metrics";
+
+import DataTable from "../ui/DataTable.astro";
+import InsightPanel from "../ui/InsightPanel.astro";
+---
+
+{c.workspaceProfile === "hospitality" ? (
+  <SearchPerformance context={context} c={c} />
+) : (
+  <Fragment>
+    <TabNav context={context} tabs={localTabs} />
+    {t === "Technical" ? (
+      <Technical context={context} c={c} />
+    ) : t === "Pages" ? (
+      <PageTable context={context} c={c} mode={"seo"} />
+    ) : t === "Search Console" ? (
+      <Fragment>
+        <MetricStrip
+          kind="searchConsoleMetrics"
+          context={context}
+          items={searchConsoleMetrics(c)}
+        />
+
+        <section class="panel tablewrap">
+          <SectionHeading>
+            <Fragment slot="title">Organic search demand</Fragment>
+            <Fragment slot="actions">
+              <span class="muted">Google Search Console · sample data</span>
+            </Fragment>
+          </SectionHeading>
+          <DataTable>
+            <thead>
+              <tr>
+                <th>Query</th>
+                <th>Clicks</th>
+                <th>Impressions</th>
+                <th>Position</th>
+                <th>Next action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {organicSearchDemand(c).map((q) => (
+                <Fragment>
+                  <tr>
+                    <td>{q.query}</td>
+                    <td>
+                      <PeriodValue base={q.clicks} />
+                    </td>
+                    <td>
+                      <PeriodValue base={q.impressions} />
+                    </td>
+                    <td>{q.position.toFixed(1)}</td>
+                    <td>
+                      <a
+                        class="link"
+                        href={route("client", c.id, "Local Search", "Pages")}
+                      >
+                        Inspect landing pages
+                      </a>
+                    </td>
+                  </tr>
+                </Fragment>
+              ))}
+            </tbody>
+          </DataTable>
+          <InsightPanel class="insight">
+            High-impression queries below position 10 are candidates for service
+            and content improvements.
+          </InsightPanel>
+        </section>
+      </Fragment>
+    ) : t === "Google Business Profile" ? (
+      <Fragment>
+        <div
+          data-client-condition="gbp-disconnected"
+          hidden={c.gbp !== "Disconnected"}
+          class="banner"
+        >
+          <span class="severity">!</span>
+          <div>
+            <h3>Google authorization expired</h3>
+            <p>
+              Calls, clicks and directions are unavailable until the profile
+              reconnects.
+            </p>
+          </div>
+          <button
+            class="primary"
+            data-command="openAction"
+            data-args={JSON.stringify([1])}
+          >
+            Reconnect
+          </button>
+        </div>
+        <div
+          data-client-condition="gbp-connected"
+          hidden={c.gbp === "Disconnected"}
+        >
+          <MetricStrip
+            kind="gbpMetrics"
+            context={context}
+            items={gbpMetrics(c)}
+          />
+        </div>
+
+        <section class="panel">
+          <SectionHeading>
+            <Fragment slot="title">Profile operations</Fragment>
+            <Fragment slot="actions">
+              <span data-entity="client" data-record-id={c.id} data-field="gbp">
+                <StatusBadge text={c.gbp} />
+              </span>
+            </Fragment>
+          </SectionHeading>
+          <div class="listrow">
+            <div>
+              <h3>Profile details and categories</h3>
+              <p>
+                <span
+                  data-entity="client"
+                  data-record-id={c.id}
+                  data-field="category"
+                >
+                  {c.category}
+                </span>{" "}
+                ·{" "}
+                <span
+                  data-entity="client"
+                  data-record-id={c.id}
+                  data-field="location"
+                >
+                  {c.location}
+                </span>{" "}
+                · {c.locations} managed locations
+              </p>
+            </div>
+            <button
+              data-command="showProfile"
+              data-args={JSON.stringify([c.id])}
+            >
+              View profile
+            </button>
+          </div>
+          <div class="listrow">
+            <div>
+              <h3>Upcoming GBP post</h3>
+              <p>Service highlight · September 30, 10:00 AM Pacific</p>
+            </div>
+            <button data-command="openPost" data-args={JSON.stringify([c.id])}>
+              View post
+            </button>
+          </div>
+          <InsightPanel class="insight">
+            {c.gbp === "Disconnected"
+              ? "Restore authorization before judging profile performance."
+              : "GBP clicks increased following the latest profile optimization. Monitor the next period to confirm the trend."}
+          </InsightPanel>
+        </section>
+      </Fragment>
+    ) : t === "Rankings" ? (
+      <Fragment>
+        <MetricStrip
+          kind="rankingMetrics"
+          context={context}
+          items={rankingMetrics(c)}
+        />
+
+        <section class="panel tablewrap">
+          <SectionHeading>
+            <Fragment slot="title">Priority keywords</Fragment>
+            <Fragment slot="actions">
+              <button
+                data-command="runRankScan"
+                data-args={JSON.stringify([c.id])}
+              >
+                Run sample scan
+              </button>
+            </Fragment>
+          </SectionHeading>
+          <InsightPanel class="insight">
+            {c.rank < 12
+              ? "Five ranking keywords are within striking distance of the Top 3."
+              : "Prioritize queries reaching the Top 10 before expanding coverage."}
+          </InsightPanel>
+          <DataTable>
+            <thead>
+              <tr>
+                <th>Keyword</th>
+                <th>Average rank</th>
+                <th>Top 3</th>
+                <th>Top 10</th>
+                <th>Change</th>
+              </tr>
+            </thead>
+            <tbody>
+              <RankingRows context={context} c={c} />
+            </tbody>
+          </DataTable>
+        </section>
+      </Fragment>
+    ) : t === "Overview" ? (
+      <Fragment>
+        <MetricStrip
+          kind="localSearchMetrics"
+          context={context}
+          items={localSearchMetrics(c)}
+        />
+
+        <div class="grid">
+          <MomentumPanel context={context} c={c} />
+          <section class="panel">
+            <SectionHeading>
+              <Fragment slot="title">Search priorities</Fragment>
+              <Fragment slot="actions" />
+            </SectionHeading>
+            {scopedActions(c)
+              .filter((a) => ["GBP", "Rankings"].includes(a.type))
+              .map((item) => (
+                <AttentionItem context={context} a={item} />
+              ))}
+            <OpportunityList context={context} c={c} limit={2} />
+          </section>
+        </div>
+
+        <section class="panel">
+          <PerformanceInsight context={context} c={c} />
+        </section>
+      </Fragment>
+    ) : null}
+  </Fragment>
+)}

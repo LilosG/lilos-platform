@@ -1,0 +1,158 @@
+---
+import type { ViewContext, Client } from "../../types/domain";
+
+import {
+  scopedActions,
+  scopedOpps,
+  clientReports,
+  clientActivity,
+} from "../../lib/view";
+import { route } from "../../config/routes";
+
+import StatusBadge from "../ui/StatusBadge.astro";
+
+import OpportunityList from "../opportunities/OpportunityList.astro";
+import PerformanceInsight from "../client/PerformanceInsight.astro";
+import ActivityItem from "../app/ActivityItem.astro";
+import UpcomingWork from "../app/UpcomingWork.astro";
+import GrowthOverview from "../client/GrowthOverview.astro";
+import PerformanceSnapshot from "./PerformanceSnapshot.astro";
+import { requireClient } from "../../lib/view";
+interface Props {
+  context: ViewContext;
+  c?: Client | null;
+}
+const context = Astro.props.context;
+
+const c = requireClient(context, Astro.props.c);
+
+const items = scopedActions(c);
+const opps = scopedOpps(c);
+
+import { clientOperationalHealthRows } from "../../data/fixtures/presentation";
+
+import SectionHeading from "../ui/SectionHeading.astro";
+
+import AttentionList from "../app/AttentionList.astro";
+
+import InsightPanel from "../ui/InsightPanel.astro";
+---
+
+{c.workspaceProfile === "hospitality" ? (
+  <GrowthOverview context={context} c={c} />
+) : (
+  <Fragment>
+    <div class="grid commandgrid">
+      <section class="panel">
+        <SectionHeading>
+          <Fragment slot="title">
+            Requires attention <span class="count">{items.length}</span>
+          </Fragment>
+          <Fragment slot="actions">
+            <button
+              class="link"
+              data-command="openClientAttention"
+              data-args={JSON.stringify([c.id])}
+            >
+              View all
+            </button>
+          </Fragment>
+        </SectionHeading>
+        <AttentionList
+          context={context}
+          client={c}
+          limit={2}
+          emptyMode="client"
+        />
+      </section>
+      <section class="panel">
+        <SectionHeading>
+          <Fragment slot="title">
+            Opportunities <span class="count">{opps.length}</span>
+          </Fragment>
+          <Fragment slot="actions">
+            <a class="link" href={route("client", c.id, "Opportunities")}>
+              View all
+            </a>
+          </Fragment>
+        </SectionHeading>
+        <OpportunityList context={context} c={c} limit={2} />
+      </section>
+    </div>
+    <section class="panel snapshot">
+      <SectionHeading>
+        <Fragment slot="title">Core performance</Fragment>
+        <Fragment slot="actions">
+          <span class="muted">vs previous period</span>
+        </Fragment>
+      </SectionHeading>
+      <PerformanceSnapshot client={c} />
+    </section>
+    <section class="panel contextual">
+      <SectionHeading>
+        <Fragment slot="title">What the numbers mean</Fragment>
+        <Fragment slot="actions" />
+      </SectionHeading>
+      <PerformanceInsight context={context} c={c} />
+      <InsightPanel class="insight">
+        <b>Next best action:</b>{" "}
+        {items[0]?.next ||
+          opps[0]?.next ||
+          "Maintain review velocity and monitor priority search queries."}
+      </InsightPanel>
+    </section>
+    <div class="bottomgrid">
+      <section class="panel" data-activity-feed data-activity-limit="3">
+        <SectionHeading>
+          <Fragment slot="title">Recent activity</Fragment>
+          <Fragment slot="actions" />
+        </SectionHeading>
+        {clientActivity(c).slice(0, 3).length > 0 ? (
+          clientActivity(c)
+            .slice(0, 3)
+            .map((item) => <ActivityItem context={context} a={item} />)
+        ) : (
+          <Fragment>
+            <div class="listrow">
+              <div>
+                {c.activity}
+                <small>September 28 · Client team</small>
+              </div>
+            </div>
+          </Fragment>
+        )}
+      </section>
+      <section class="panel">
+        <SectionHeading>
+          <Fragment slot="title">Coming next</Fragment>
+          <Fragment slot="actions" />
+        </SectionHeading>
+        <UpcomingWork context={context} c={c} />
+        <div class="listrow">
+          <div>
+            Monthly report<small>{clientReports(c)[0].note}</small>
+          </div>
+          <a class="link" href={route("client", c.id, "Reports")}>
+            <StatusBadge text={clientReports(c)[0].status} />
+          </a>
+        </div>
+      </section>
+      <section class="panel">
+        <SectionHeading>
+          <Fragment slot="title">Operational health</Fragment>
+          <Fragment slot="actions" />
+        </SectionHeading>
+        {clientOperationalHealthRows(c).map(([t, s, area]) => (
+          <Fragment>
+            <div class="listrow">
+              {t}
+              <a class="link" href={route("client", c.id, String(area))}>
+                <StatusBadge text={s} />
+              </a>
+            </div>
+          </Fragment>
+        ))}
+      </section>
+    </div>
+  </Fragment>
+)}

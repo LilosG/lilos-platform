@@ -1,0 +1,10 @@
+---
+interface Props {
+  value: number;
+}
+const { value } = Astro.props;
+---
+
+<span class={value < 0 ? "negative" : "positive"}>
+  {value < 0 ? "↘" : "↗"} {Math.abs(value)}%
+</span>

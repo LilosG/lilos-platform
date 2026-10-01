@@ -1,0 +1,21 @@
+---
+import type { ViewContext, MetricPresentation } from "../../types/domain";
+import MetricItem from "./MetricItem.astro";
+interface Props {
+  context: ViewContext;
+  kind?: string;
+  items?: readonly MetricPresentation[];
+  cls?: string;
+}
+const { context, kind, items = [], cls = "" } = Astro.props;
+---
+
+<div
+  data-metric-kind={kind}
+  data-metric-client={context.client?.id}
+  class:list={["metrics", cls]}
+>
+  {items.map(([label, value, description]) => (
+    <MetricItem label={label} value={value} description={description} />
+  ))}
+</div>

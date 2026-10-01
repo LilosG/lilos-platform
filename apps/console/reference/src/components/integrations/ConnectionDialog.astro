@@ -1,0 +1,88 @@
+---
+import type { ViewContext, Client } from "../../types/domain";
+import { clients, systems } from "../../data/fixtures";
+import { required } from "../../lib/view";
+
+import { connectionInfo } from "../../lib/selectors";
+import StatusBadge from "../ui/StatusBadge.astro";
+
+import DialogFrame from "../ui/DialogFrame.astro";
+
+interface Props {
+  context: ViewContext;
+  c?: Client | null;
+  i: number;
+  id: string;
+}
+
+const i = Astro.props.i;
+const id = Astro.props.id;
+const dialogId = "connection" + "-" + i + "-" + id;
+const c = required(
+  clients.find((c) => c.id === id),
+  "Fixture record",
+);
+const info = connectionInfo(c, i);
+---
+
+<DialogFrame id={dialogId}>
+  <Fragment slot="body">
+    <div class="eyebrow">
+      <span data-entity="client" data-record-id={c.id} data-field="name">
+        {c.name}
+      </span>{" "}
+      · External connection
+    </div>
+    <h2 id={dialogId + "-title"}>{systems[i][0]}</h2>
+    <p>
+      <span
+        data-connection-client={c.id}
+        data-connection-source={i}
+        data-connection-field="status"
+      >
+        <StatusBadge text={info.status} />
+      </span>
+    </p>
+    <div class="listrow">
+      Authorization{" "}
+      <span
+        data-connection-client={c.id}
+        data-connection-source={i}
+        data-connection-field="authorization"
+      >
+        <StatusBadge text={info.authorization} />
+      </span>
+    </div>
+    <div class="listrow">
+      Last successful sync{" "}
+      <b>
+        <span data-source-sync={i} data-source-client={c.id}>
+          {info.sync}
+        </span>
+      </b>
+    </div>
+    <div class="listrow">
+      Data freshness{" "}
+      <b
+        data-connection-client={c.id}
+        data-connection-source={i}
+        data-connection-field="freshness"
+      >
+        {info.freshness}
+      </b>
+    </div>
+    <h3 class="spaced-heading">Available capabilities</h3>
+    <p>{info.capabilities}</p>
+    <p>Source synchronization is simulated in this prototype.</p>
+  </Fragment>
+  <Fragment slot="footer">
+    <button data-close>Close</button>
+    <button
+      class="primary"
+      data-command="refreshConnection"
+      data-args={JSON.stringify([id, i])}
+    >
+      Refresh sample sync
+    </button>
+  </Fragment>
+</DialogFrame>

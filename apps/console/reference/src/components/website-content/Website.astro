@@ -1,0 +1,124 @@
+---
+import type { ViewContext, Client } from "../../types/domain";
+import { pageRecords } from "../../data/fixtures";
+import { scopedOpps } from "../../lib/view";
+import { route, websiteTabs } from "../../config/routes";
+
+import StatusBadge from "../ui/StatusBadge.astro";
+
+import TabNav from "../navigation/TabNav.astro";
+import MetricStrip from "../ui/MetricStrip.astro";
+import PerformanceInsight from "../client/PerformanceInsight.astro";
+import PageTable from "../website-content/PageTable.astro";
+import Technical from "../website-content/Technical.astro";
+import Conversions from "../website-content/Conversions.astro";
+import ContentOperations from "../website-content/ContentOperations.astro";
+import { requireClient } from "../../lib/view";
+interface Props {
+  context: ViewContext;
+  c?: Client | null;
+}
+const context = Astro.props.context;
+const state = context.state;
+const c = requireClient(context, Astro.props.c);
+
+const t = websiteTabs.includes(state.subtab) ? state.subtab : "Overview";
+
+import SectionHeading from "../ui/SectionHeading.astro";
+import EmptyState from "../ui/EmptyState.astro";
+
+import { websiteMetrics } from "../../data/fixtures/metrics";
+---
+
+{c.workspaceProfile === "hospitality" && state.subtab === "Content" ? (
+  <Fragment>
+    <TabNav context={context} tabs={websiteTabs} />
+    <ContentOperations context={context} c={c} />
+  </Fragment>
+) : (
+  <Fragment>
+    <TabNav context={context} tabs={websiteTabs} />
+    {t === "Conversions" ? (
+      <Conversions context={context} c={c} />
+    ) : t === "Technical" ? (
+      <Technical context={context} c={c} />
+    ) : t === "Pages" ? (
+      <PageTable context={context} c={c} />
+    ) : t === "Overview" ? (
+      <Fragment>
+        <MetricStrip
+          kind="websiteMetrics"
+          context={context}
+          items={websiteMetrics(c, state)}
+        />
+
+        <section class="panel contextual">
+          <PerformanceInsight context={context} c={c} />
+        </section>
+
+        <PageTable context={context} c={c} />
+      </Fragment>
+    ) : (
+      <Fragment>
+        <section class="panel">
+          <SectionHeading>
+            <Fragment slot="title">Content operations</Fragment>
+            <Fragment slot="actions">
+              <a class="link" href={route("client", c.id, "Opportunities")}>
+                View content opportunities
+              </a>
+            </Fragment>
+          </SectionHeading>
+          {pageRecords.filter((p) => p.client === c.id && p.status === "Draft")
+            .length > 0 ? (
+            pageRecords
+              .filter((p) => p.client === c.id && p.status === "Draft")
+              .map((p) => (
+                <Fragment>
+                  <div class="listrow">
+                    <div>
+                      <h3>{p.name}</h3>
+                      <p>
+                        Draft · Client template · Target publication October 2
+                      </p>
+                    </div>
+                    <button
+                      data-command="openContent"
+                      data-args={JSON.stringify([p.id])}
+                    >
+                      Edit draft
+                    </button>
+                  </div>
+                </Fragment>
+              ))
+          ) : (
+            <Fragment>
+              <EmptyState>No content drafts remain.</EmptyState>
+            </Fragment>
+          )}
+          {scopedOpps(c)
+            .filter((o) =>
+              ["Content gap", "Service page", "Location page"].includes(o.type),
+            )
+            .map((o) => (
+              <Fragment>
+                <div class="listrow">
+                  <div>
+                    <h3>{o.title}</h3>
+                    <p>{o.evidence}</p>
+                  </div>
+                  <StatusBadge text={o.started ? "In progress" : o.impact} />
+                  <button
+                    data-command="openOpp"
+                    data-args={JSON.stringify([o.id])}
+                  >
+                    Prepare work
+                  </button>
+                </div>
+              </Fragment>
+            ))}
+        </section>
+      </Fragment>
+    )}
+  </Fragment>
+)}

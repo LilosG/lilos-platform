@@ -1,0 +1,53 @@
+---
+import type { ViewContext } from "../types/domain";
+import Sidebar from "../components/app/Sidebar.astro";
+import TopBar from "../components/app/TopBar.astro";
+import Dialogs from "../components/app/Dialogs.astro";
+import "../styles/theme.css";
+import "../styles/app.css";
+interface Props {
+  context: ViewContext;
+}
+const { context } = Astro.props;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>LILOs Growth | Portfolio intelligence</title>
+    <meta
+      name="description"
+      content="LILOs Growth agency command center · Sample portfolio"
+    />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231e443c'/%3E%3Cpath d='M9 7v18h15v-5H14V7' fill='%23d6f26b'/%3E%3C/svg%3E"
+    />
+  </head>
+  <body
+    data-client-id={context.client?.id}
+    data-page={context.state.page}
+    data-area={context.state.tab}
+  >
+    <a class="skiplink" href="#main">
+      Skip to content
+    </a>
+    <Sidebar context={context} />
+    <div class="shell">
+      <TopBar context={context} />
+      <main id="main" tabindex="-1">
+        <slot />
+      </main>
+      <footer>
+        Sample portfolio · Prototype data · Updated September 29, 2026
+      </footer>
+    </div>
+    <Dialogs context={context} />
+    <div id="toast" role="status" aria-live="polite"></div>
+    <script>
+      import "../lib/interactions";
+    </script>
+  </body>
+</html>

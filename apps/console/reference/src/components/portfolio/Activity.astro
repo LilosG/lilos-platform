@@ -1,0 +1,27 @@
+---
+import type { ViewContext, Client } from "../../types/domain";
+import { activity } from "../../data/fixtures";
+
+import PageHeader from "../ui/PageHeader.astro";
+import ActivityItem from "../app/ActivityItem.astro";
+interface Props {
+  context: ViewContext;
+  c?: Client | null;
+}
+const context = Astro.props.context;
+const state = context.state;
+---
+
+<PageHeader
+  context={context}
+  title={"Portfolio activity"}
+  subtitle={"Meaningful work and changes across your client accounts."}
+/>
+
+<section class="panel" data-activity-feed data-activity-limit="100">
+  {activity
+    .filter((a) => !state.client || a.client === +state.client - 1)
+    .map((item) => (
+      <ActivityItem context={context} a={item} />
+    ))}
+</section>

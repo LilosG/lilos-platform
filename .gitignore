@@ -33,3 +33,7 @@ __pycache__/
 *.tmp
 *.swp
 apps/web/.playwright-visual-output/
+
+apps/console/.vercel/
+apps/console/test-results/
+apps/console/playwright-report/

@@ -1,0 +1,98 @@
+---
+import type { ViewContext, Client } from "../../types/domain";
+import { clients, pageRecords } from "../../data/fixtures";
+import { required } from "../../lib/view";
+
+import { pageSignals } from "../../data/fixtures/pageSignals";
+import StatusBadge from "../ui/StatusBadge.astro";
+
+import DialogFrame from "../ui/DialogFrame.astro";
+import LandingPageDialog from "../website-content/LandingPageDialog.astro";
+interface Props {
+  context: ViewContext;
+  c?: Client | null;
+  id: string;
+}
+const context = Astro.props.context;
+
+const id = Astro.props.id;
+const dialogId = "page" + "-" + id;
+const p = required(
+  pageRecords.find((p) => p.id === id),
+  "Fixture record",
+);
+const c = required(
+  clients.find((c) => c.id === p.client),
+  "Fixture record",
+);
+
+import PeriodValue from "../ui/PeriodValue.astro";
+---
+
+{c.workspaceProfile === "hospitality" ? (
+  <LandingPageDialog context={context} id={id} />
+) : (
+  <Fragment>
+    <DialogFrame id={dialogId}>
+      <Fragment slot="body">
+        <div class="eyebrow">
+          <span data-entity="client" data-record-id={c.id} data-field="name">
+            {c.name}
+          </span>{" "}
+          · {p.url}
+        </div>
+        <h2 id={dialogId + "-title"}>
+          <span data-entity="page" data-record-id={p.id} data-field="name">
+            {p.name}
+          </span>
+        </h2>
+        <p>
+          <span data-entity="page" data-record-id={p.id} data-field="status">
+            <StatusBadge text={p.status} />
+          </span>{" "}
+          · Last updated{" "}
+          <span data-entity="page" data-record-id={p.id} data-field="last">
+            {p.last}
+          </span>
+        </p>
+        <div class="detailmetrics">
+          <div>
+            Organic clicks
+            <strong>
+              <PeriodValue base={p.clicks} />
+            </strong>
+          </div>
+          <div>
+            SEO health
+            <strong>
+              <span
+                data-entity="page"
+                data-record-id={p.id}
+                data-field="health"
+              >
+                {p.health}
+              </span>
+              /100
+            </strong>
+          </div>
+        </div>
+        <h3>Page signals</h3>
+        <p data-page-signals={p.id}>{pageSignals(p, c)}</p>
+      </Fragment>
+      <Fragment slot="footer">
+        <button data-close>Close</button>
+        <button
+          class="primary"
+          data-command="updatePage"
+          data-args={JSON.stringify([id])}
+        >
+          {p.status === "Draft"
+            ? "Publish sample page"
+            : p.status === "Issue"
+              ? "Fix sample links"
+              : "Refresh sample check"}
+        </button>
+      </Fragment>
+    </DialogFrame>
+  </Fragment>
+)}

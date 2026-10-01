@@ -1,0 +1,191 @@
+---
+import type { ViewContext, Client } from "../../types/domain";
+import { reviewRecords } from "../../data/fixtures";
+
+import { route } from "../../config/routes";
+
+import StatusBadge from "../ui/StatusBadge.astro";
+
+import MetricStrip from "../ui/MetricStrip.astro";
+import ReviewOpportunities from "../reviews/ReviewOpportunities.astro";
+import ReviewRequests from "./ReviewRequests.astro";
+import { requireClient } from "../../lib/view";
+interface Props {
+  context: ViewContext;
+  c?: Client | null;
+}
+const context = Astro.props.context;
+const state = context.state;
+const c = requireClient(context, Astro.props.c);
+
+let a = reviewRecords.filter(
+  (r) =>
+    r.client === c.id &&
+    (state.reviewFilter === "All reviews" || r.status === state.reviewFilter),
+);
+
+import { reviewStatusFilters } from "../../data/fixtures/presentation";
+
+import SectionHeading from "../ui/SectionHeading.astro";
+import EmptyState from "../ui/EmptyState.astro";
+
+import { reviewMetrics } from "../../data/fixtures/metrics";
+
+import InsightPanel from "../ui/InsightPanel.astro";
+---
+
+<MetricStrip kind="reviewMetrics" context={context} items={reviewMetrics(c)} />
+{c.workspaceProfile === "hospitality" ? (
+  <Fragment>
+    <InsightPanel class="insight contextinsight">
+      Response workflow:{" "}
+      <span data-response-workflow>
+        {c.responsePreference === "review"
+          ? "Human approval requested by this client"
+          : c.responsePreference === "auto"
+            ? "Automatic publishing configured"
+            : "Publish when ready; approval is optional"}
+      </span>
+      {"."}{" "}
+      <a class="link" href={route("client", c.id, "Settings")}>
+        Change preference
+      </a>
+    </InsightPanel>
+  </Fragment>
+) : (
+  ""
+)}
+
+<div class="sectiontabs">
+  {reviewStatusFilters().map((t) => (
+    <Fragment>
+      <button
+        class={state.reviewFilter === t ? "active" : ""}
+        data-filter="reviewFilter"
+        data-value={`${t}`}
+      >
+        {t}
+      </button>
+    </Fragment>
+  ))}
+</div>
+
+{state.reviewFilter === "Review requests" ? (
+  <Fragment>
+    <section class="panel">
+      <SectionHeading>
+        <Fragment slot="title">Review requests</Fragment>
+        <Fragment slot="actions">
+          <button
+            class="primary"
+            data-command="openReviewRequest"
+            data-args={JSON.stringify([c.id])}
+          >
+            Create request
+          </button>
+        </Fragment>
+      </SectionHeading>
+      <div class="listrow">
+        <div>
+          <h3>
+            {c.workspaceProfile === "hospitality"
+              ? "Post-visit and event follow-up"
+              : "Post-service follow-up"}
+          </h3>
+          <p>
+            {c.requestCount || 0} sample requests staged this session · Email ·
+            After completed service
+          </p>
+        </div>
+        <StatusBadge text={"Active"} />
+      </div>
+      <div class="listrow">
+        <div>
+          <h3>Recent request performance</h3>
+          <p>24 requests · 9 new reviews · 37.5% response rate</p>
+        </div>
+        <button
+          data-command="openReviewRequest"
+          data-args={JSON.stringify([c.id])}
+        >
+          View template
+        </button>
+      </div>
+      <InsightPanel class="insight">
+        Ask after a completed service or visit. Review requests should reach
+        customers consistently, without filtering by sentiment.
+      </InsightPanel>
+    </section>
+  </Fragment>
+) : (
+  <Fragment>
+    <section class="panel" data-review-inbox>
+      <SectionHeading>
+        <Fragment slot="title">Review inbox</Fragment>
+        <Fragment slot="actions">
+          <button
+            class="link"
+            data-filter="reviewFilter"
+            data-value={`Review requests`}
+          >
+            Review requests
+          </button>
+        </Fragment>
+      </SectionHeading>
+      {a.length > 0 ? (
+        a.map((r) => (
+          <Fragment>
+            <div class="reviewrow" data-review-id={r.id} data-status={r.status}>
+              <div class="reviewtop">
+                <div>
+                  <b>{r.author}</b>{" "}
+                  <span class="reviewstars">
+                    {"★".repeat(r.stars)}
+                    {"☆".repeat(5 - r.stars)}
+                  </span>
+                  <small class="sub">
+                    {r.date} · Google · {r.sentiment} sentiment
+                  </small>
+                </div>
+                <StatusBadge text={r.status} />
+              </div>
+              <p>{r.text}</p>
+              {r.response ? (
+                <Fragment>
+                  <div class="savedresponse">
+                    <b>
+                      {r.status === "Published"
+                        ? "Published response"
+                        : "Response draft"}
+                    </b>
+                    <p>{String(r.response)}</p>
+                  </div>
+                </Fragment>
+              ) : (
+                ""
+              )}
+              <button
+                data-command="openReview"
+                data-args={JSON.stringify([r.id])}
+              >
+                {r.status === "Published" ? "View response" : "Respond"}
+              </button>
+            </div>
+          </Fragment>
+        ))
+      ) : (
+        <Fragment>
+          <EmptyState>No reviews match this view.</EmptyState>
+        </Fragment>
+      )}
+    </section>
+  </Fragment>
+)}
+
+{c.workspaceProfile === "hospitality" ? (
+  <ReviewOpportunities context={context} c={c} />
+) : (
+  ""
+)}
+
+<ReviewRequests client={c} />

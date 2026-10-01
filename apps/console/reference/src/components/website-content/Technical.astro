@@ -1,0 +1,64 @@
+---
+import type { ViewContext, Client } from "../../types/domain";
+
+import { route } from "../../config/routes";
+
+import StatusBadge from "../ui/StatusBadge.astro";
+
+import MetricStrip from "../ui/MetricStrip.astro";
+import TechnicalFindings from "../website-content/TechnicalFindings.astro";
+import { requireClient } from "../../lib/view";
+interface Props {
+  context: ViewContext;
+  c?: Client | null;
+}
+const context = Astro.props.context;
+
+const c = requireClient(context, Astro.props.c);
+
+import { technicalFindings } from "../../data/fixtures/presentation";
+
+import SectionHeading from "../ui/SectionHeading.astro";
+
+import { technicalMetrics } from "../../data/fixtures/metrics";
+---
+
+{c.workspaceProfile === "hospitality" ? (
+  <TechnicalFindings context={context} c={c} />
+) : (
+  <Fragment>
+    <MetricStrip
+      kind="technicalMetrics"
+      context={context}
+      items={technicalMetrics(c)}
+    />
+
+    <section class="panel">
+      <SectionHeading>
+        <Fragment slot="title">Technical findings</Fragment>
+        <Fragment slot="actions">
+          <button
+            data-command="runWebsiteCheck"
+            data-args={JSON.stringify([c.id])}
+          >
+            Run sample check
+          </button>
+        </Fragment>
+      </SectionHeading>
+      {technicalFindings(c).map((x) => (
+        <Fragment>
+          <div class="listrow">
+            <div>
+              <h3>{x.title}</h3>
+              <p>{x.text}</p>
+            </div>
+            <StatusBadge text={x.priority} />
+            <a class="link" href={route("client", c.id, "Opportunities")}>
+              Review action
+            </a>
+          </div>
+        </Fragment>
+      ))}
+    </section>
+  </Fragment>
+)}

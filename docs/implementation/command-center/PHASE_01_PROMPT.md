@@ -1,303 +1,359 @@
 # Phase 1 — Console Foundation + Opportunities/Attention Reference Slice
 
-## Preconditions
+## Authority
 
-Start only after Phase 0 and Phase 0.5 are merged and accepted.
+Repository: `LilosG/lilos-platform`
 
-Read:
+Authority, in order:
+1. current merged `main`
+2. repository `AGENTS.md` / `CLAUDE.md`
+3. `docs/implementation/command-center/MASTER_PLAN.md`
+4. `PHASE_00_INTEGRATION_CONTRACT.md`
+5. `ACCEPTANCE_MATRIX.md`
+6. `PHASE_00_5_ACCEPTANCE.md`
+7. `DECISION_LOG.md`
+8. this prompt
 
-- `MASTER_PLAN.md`
-- completed Phase 0 integration contract
-- acceptance matrix
-- decision log
-- Phase 0.5 acceptance
-- current merged `main`
-- current approved UI baseline
+This prompt REPLACES the earlier Phase 1 prompt.
+
+Approved UI source: `LilosG/lilos-command-center-astro`
+Approved UI baseline SHA: `d097c5255995b010f45b67a8ace90a80d00f090b`
+Do not silently use a later UI commit.
+
+## Starting condition
+
+Phase 0 and Phase 0.5 are merged.
+
+Phase 0.5 repository implementation is complete. External live staging is still pending owner-controlled setup. Current readiness is:
+
+`READY WITH OWNER ACTIONS BEFORE LIVE STAGING`
+
+Therefore:
+- begin Phase 1 repository implementation now
+- do not stop the whole phase because DNS/OAuth/Supabase/Render/Vercel/GitHub-test-repo setup is pending
+- use the merged Phase 0.5 synthetic/fixture/provider boundaries for deterministic acceptance
+- do not claim live staging acceptance until those external resources actually exist
+- mark only the specific live acceptance items as pending owner action
 
 ## Objective
 
-Create `apps/console` and complete one production-grade reference vertical slice:
+Create `apps/console` and complete one production-grade reference slice:
 
 ```text
-authenticated user
+authenticated console
 -> organization/client context
--> Opportunity/Attention
+-> OpportunityView / AttentionView
+-> canonical Opportunity detail
 -> evidence
 -> recommendation
--> deterministic quality state
+-> deterministic validation
 -> revise/edit
--> approve
--> workflow
--> PR
--> build gate
--> merge/deploy
--> live verification
+-> exact approval
+-> workflow/run state
+-> governed publication state
+-> PR/build/deploy/live-verification state
 ```
 
-This phase establishes the architecture pattern for all remaining product areas.
+This is an implementation phase, not another architecture audit.
 
-Do not begin unrelated Phase 2+ integration.
+## Execution discipline — mandatory
 
-## A. Import approved Command Center
+### One-pass verification only
+At the start, verify current branch/base, read the governing files, verify the exact approved UI SHA, and inspect only code directly required by Phase 1.
 
-Bring the approved Astro Command Center into:
+Do not repeat Phase 0 inventory.
+Do not re-audit all prototype routes.
+Do not re-audit every backend product.
+Do not re-open Phase 0.5 provider/staging design.
+If merged contracts already define the architecture and current code does not contradict them, implement them.
 
-```text
-apps/console
-```
+### No broad debugging loops
+During development run targeted tests for changed code and focused browser tests for changed console journeys.
+At the end run the required final gates once.
 
-Preserve the approved UI and route hierarchy.
+If an unrelated pre-existing failure appears:
+1. determine whether Phase 1 caused it
+2. if not caused by Phase 1 and not blocking this slice, record it
+3. do not debug it
+4. do not repeatedly rerun broad suites
 
-Do not redesign unrelated screens.
+Do not chase the standalone reference-repo Opportunity browser baseline failure unless the imported console reproduces it in a Phase 1 acceptance journey.
 
-Align monorepo dependencies/tooling only as needed.
+### Owner actions
+Do not stop at the first external dependency. Continue all repository-side work that can be completed safely. External resources are acceptance dependencies, not automatic implementation blockers.
 
-Do not preserve fixture-backed production behavior.
+## Branch
 
-## B. Workspace/CI integration
+Use exactly one branch: `command-center/phase-1`
 
-Add `apps/console` to the npm workspace.
+Do not create sub-branches.
 
-Create root scripts/CI needed for:
+# MUST COMPLETE
 
-- format
-- lint
-- typecheck
-- Astro check
-- unit
-- build
-- Playwright
-- axe
+## 1. Create `apps/console`
+Import the approved Command Center at exact SHA `d097c5255995b010f45b67a8ace90a80d00f090b` into `apps/console`.
 
-Keep `apps/web` gates running.
+Preserve approved information architecture, route hierarchy, components, and visual behavior. Do not redesign unrelated screens.
 
-## C. Astro SSR runtime
+Do not copy `.git`, build output, `node_modules`, or standalone deployment history.
 
-Configure the Phase 0-approved Vercel SSR runtime.
+Record the imported SHA in Phase 1 acceptance.
 
-Authenticated routes must not prerender.
+A missing published tag does NOT block import because the immutable commit SHA is authoritative.
 
-Use private/no-store caching where required.
+## 2. Monorepo/workspace integration
+Integrate `apps/console` into existing workspace/tooling for install, format, lint, typecheck, Astro check, unit tests, build, Playwright, and axe.
 
-## D. Auth/session/MFA
+Keep existing `apps/web` gates intact. Do not retire `apps/web`.
 
-Implement the approved Supabase SSR architecture.
+## 3. Astro SSR runtime
+Configure the approved Astro SSR/Vercel runtime.
 
-Prove:
+Requirements:
+- authenticated tenant pages are SSR
+- no authenticated tenant prerendering
+- authenticated responses use `Cache-Control: private, no-store`
+- no process-global user/session/tenant state
+- merged Phase 0.5 console prerequisite validation is actually invoked where appropriate
 
-- sign in
-- sign out
-- refresh
-- expiry
-- concurrent refresh
+## 4. Supabase SSR auth/MFA
+Implement server-mediated Supabase auth preserving existing valid behavior:
+- sign in/out
+- refresh/expiry
 - MFA/AAL2
-- invalid/valid TOTP
-- redirect after step-up
-- chunked cookies
+- verified-factor reuse
+- abandoned unverified enrollment cleanup
+- valid/invalid TOTP
+- safe post-MFA return
+- cookie chunk cleanup
 
-Do not expose raw tokens to page scripts.
+Requirements:
+- host-only secure cookies
+- HttpOnly session material
+- no raw access/refresh token in page JS
+- request-scoped Supabase server client
+- FastAPI remains final authz/AAL/action authority
+- focused tests for concurrent refresh/stale-cookie response ordering
 
-## E. Same-origin server endpoints
-
-Implement explicit BFF routes required by this slice.
+## 5. Same-origin BFF
+Implement only explicit server endpoints required by this slice.
 
 No generic proxy.
 
 Enforce:
-
-- fixed upstream
-- method/path allowlist
-- timeout
-- request size
-- origin/CSRF controls
-- header stripping
+- fixed FastAPI upstream
+- literal route/method allowlist
+- validated UUID/path/query/body inputs
+- request-size limits
+- bounded timeouts
+- no upstream redirects
+- unsafe/hop-by-hop header stripping
+- server-side Bearer attachment
 - correlation propagation
-- idempotency propagation where required
-- token non-logging
+- idempotency propagation only where backend supports it
+- token/cookie/TOTP redaction
 
-## F. Generated transport contracts
+Business logic stays in FastAPI.
 
-Implement the Phase 0-approved OpenAPI TypeScript generation.
+## 6. CSRF/host/cache isolation
+Implement expected Origin/host checks, session-bound CSRF, safe return targets, trusted preview-host validation, and private/no-store authenticated responses.
 
-Commit generated types.
+Add cross-tenant tests proving tenant A data cannot be served to tenant B through SSR, loaders, BFF responses, or caching.
 
-Add CI stale-contract failure.
+## 7. OpenAPI transport contracts
+Implement deterministic FastAPI OpenAPI export and generated TypeScript transport types:
 
-Build tested adapters from transport types to UI view models.
+```text
+FastAPI/Pydantic -> OpenAPI -> generated TS transport -> tested adapters -> UI view models
+```
 
-## G. Client context/routing
+Commit generated artifacts and add CI drift detection.
 
-Implement slug -> canonical org UUID resolution.
+Do not expose raw transport schemas throughout the UI.
 
-All domain/API operations use UUID after resolution.
+Where Phase 1 responses are too generic for safe typing, add the smallest additive typed backend read DTO needed while preserving `apps/web` compatibility.
 
-Implement server-side coarse route guards.
+## 8. Client context and slug -> UUID
+Implement:
 
-Use backend capability/permission data for actions.
+```text
+client slug -> authorized canonical organization -> UUID -> UUID-only downstream API calls
+```
 
-## H. OpportunityView
+No sample numeric client identity. No display-name authority. Backend remains final permission authority.
 
-Implement the canonical read projection.
+## 9. `OpportunityView`
+Implement the additive canonical read projection from Phase 0.
 
-Approved classifications:
-
+Approved classifications only:
 - Issue
 - Growth Opportunity
 - Optimization
 - Data & Tracking
 
-Do not create a duplicate write model.
+Do not create a universal Opportunity write model.
+Use stable namespaced source IDs and canonical underlying actions.
+Implement only sources required for this reference slice plus the minimal extensible projection framework.
 
-Use canonical source IDs and domain actions.
+## 10. `AttentionView`
+Implement operational attention separately from Opportunity.
 
-## I. AttentionView
+Use canonical typed states such as reconnect required, missing mapping, waiting approval, workflow failure, retry scheduled, publication/build blocked, and other verified states.
 
-Implement operational attention without collapsing workflow/automation records.
+Do not create local dismiss-as-resolved authority.
+Do not collapse WorkflowRun, Job, Schedule, AgentRun, ContentPublication, or provider records into a new write system.
 
-Use only verified attention states from current contracts.
+## 11. Remove fixture authority from production paths
+Imported prototype fixtures may remain for isolated tests only.
 
-Automations remain first-class elsewhere.
+Production console code must not import prototype fixture/sample-session modules.
+Add module-boundary/lint enforcement.
+No silent fixture fallback.
+No source -> explicit unavailable/empty state.
+Preserve null/stale/partial/unavailable distinctions.
 
-## J. Canonical Opportunity detail
+## 12. Canonical Opportunity list/detail
+All Phase 1 Opportunity entry points resolve to one canonical detail experience.
 
-All Opportunity entry points must resolve to the same canonical detail experience.
-
-Show verified available information including, as applicable:
-
+Render authoritative values only, including as available:
 - classification
 - priority
+- source
 - why discovered
 - why it matters
 - evidence
-- metrics
-- source
-- detection date/period
+- period/freshness/quality
 - page attribution
 - effort
+- expected gain only when authoritative/hypothesis-backed
 - next action
-- current recommendation revision
-- execution state
+- recommendation revision
+- workflow/publication state
 
-Do not invent missing fields.
+## 13. Recommendation and deterministic quality state
+Wire the current merged SEO recommendation/change-set contract.
 
-## K. Recommendation and quality review
+Show backend-authoritative current/proposed values, rationale, target page/field, protected query/location/year signals, deterministic quality result, repository-current-value verification, and typed blockers.
 
-Wire the current merged backend revision/change-set contract.
+Do not duplicate quality logic in Astro.
 
-For site-change proposals, expose a high-quality review UI showing, as supported:
+## 14. Revise/edit
+Wire the canonical revise endpoint. Editing creates a new audited revision. Do not mutate approved/superseded historical revisions in place.
 
-- current value
-- proposed value
-- rationale
-- target page
-- target field
-- protected query/location/year signals
-- deterministic validation state
-- repository-current-value verification
-- typed blocker states
+## 15. Approval
+Use canonical backend approval only. Do not add extra frontend approval systems or blanket approval gates.
 
-Do not recreate quality logic in the frontend.
+## 16. Workflow/run/publication state
+Render authoritative durable states. Do not infer completion from request acceptance.
+Preserve queued/running/waiting/waiting-approval/retry/blocked/failed/completed/verified/superseded/withdrawn/reconciliation distinctions where applicable.
 
-## L. Revise/edit
+## 17. GitHub/build/deploy/live-verification state
+The console surfaces canonical backend state; it does not orchestrate GitHub/Vercel directly.
 
-Wire the canonical revise endpoint.
+Show available mapping, PR URL/state, checks/build gate, merge/deployment state, live read-back, mismatch/blocker, verification state.
 
-Editing creates a new audited revision.
+If the external dedicated staging GitHub repo/App is not yet connected, complete repository integration and deterministic tests, then mark live publication acceptance pending owner action.
 
-Do not mutate an approved revision in place.
+Do not substitute a client repo or production LILOs Growth repo.
 
-The exact revised change set is what approval binds.
+## 18. Correlation/causation
+Propagate existing correlation through browser -> console -> FastAPI -> workflow/job -> Hermes where used -> publication.
+Add only missing causation references actually required by this slice.
 
-## M. Approval
+# ACCEPTANCE — TWO LEVELS
 
-Use canonical backend approval.
+## A. Repository/synthetic acceptance — REQUIRED FOR THIS PR
+Prove deterministically:
+1. console builds in monorepo
+2. SSR auth/session path works
+3. MFA/AAL2 behavior is preserved
+4. BFF allowlist/security works
+5. CSRF/origin/host protections work
+6. tenant/cache isolation works
+7. OpenAPI generation/drift works
+8. slug resolves once to org UUID
+9. OpportunityView uses canonical source IDs
+10. AttentionView uses canonical operational states
+11. Opportunity detail renders authoritative evidence
+12. recommendation quality state renders from backend
+13. revise creates a new revision
+14. approval binds exact revision
+15. workflow/run state displays from canonical records
+16. publication/PR/build/deploy/live-verification states render from canonical contracts
+17. fixture imports are blocked from production paths
+18. unauthorized/cross-tenant actions are rejected
+19. existing `apps/web` remains functional
 
-Do not introduce extra approval gates.
+Use merged Phase 0.5 fixtures/synthetic seed/provider boundaries where external services are unavailable.
 
-## N. Workflow/execution state
+## B. Live staging acceptance — REQUIRED BEFORE PRODUCTION ROLLOUT, NOT A REASON TO BLOCK REPOSITORY IMPLEMENTATION
+When owner-controlled staging resources exist, additionally prove:
+1. protected staging console login
+2. staging Supabase Auth/Postgres isolation
+3. synthetic staging org access
+4. independent Google read smoke
+5. dedicated GitHub test-repo publication
+6. real PR/check/deploy/live verification through staging test target
+7. live cookie/host/protection behavior
+8. measured staging performance
 
-Show authoritative async state.
+If unavailable because owner actions remain, record:
 
-Do not infer success before backend reconciliation.
+`PENDING OWNER ACTION — LIVE STAGING ACCEPTANCE`
 
-## O. PR/build/deploy/live verification
+Do not falsely mark these passed and do not block the repository implementation solely because they are pending.
 
-Surface canonical backend state for:
+# MUST NOT DO
 
-- mapping
-- PR URL
-- build gate
-- checks
-- merge
-- deploy
-- live read-back
-- observed mismatch
-- blocked code
+Do not:
+- repeat Phase 0 discovery
+- repeat Phase 0.5 design
+- provision paid resources without explicit approval
+- use production/client assets for staging
+- run the production canary
+- modify normal LILOs Growth business pages
+- copy production OAuth tokens into staging
+- add a generic proxy
+- move permission logic into Astro
+- create duplicate workflow/job/publication systems
+- create a universal Opportunity write model
+- invent missing metrics
+- treat missing as zero
+- redesign unrelated Command Center screens
+- migrate Phase 2+ product areas
+- perform unrelated dependency upgrades/cleanup
+- repeatedly run broad suites during development
+- debug unrelated pre-existing failures
+- begin Phase 2
+- merge automatically
 
-Do not implement GitHub/Vercel orchestration in Astro.
+# Validation discipline
 
-## P. Correlation/causation
+During development run targeted tests only for changed areas.
 
-Verify/propagate correlation through the entire slice.
-
-Add causation where the Phase 0 contract identified a gap.
-
-## Q. Fixtures
-
-Remove fixture imports from all production paths implemented by this slice.
-
-Add hard lint/module-boundary enforcement.
-
-## R. Required acceptance journeys
-
-At minimum prove in staging:
-
-1. authenticated operator loads client Opportunities
-2. Opportunity evidence loads from staging API
-3. Attention reflects authoritative state
-4. recommendation loads
-5. deterministic quality results display
-6. operator revises proposal
-7. new audited revision appears
-8. operator approves exact revision
-9. workflow is queued and shown
-10. worker executes
-11. staging GitHub PR opens only in approved test repo
-12. build gate state appears
-13. merge/deploy path completes according to staging contract
-14. live verification appears
-15. typed failure/retry/blocker states render correctly
-16. tenant isolation is proven
-17. unauthorized action is rejected by backend
-18. cross-tenant cache leakage test passes
-
-## S. Quality gates
-
-Run the full applicable suite:
-
+At the end run applicable required gates once:
 - format
 - lint
 - TypeScript
 - Astro check
 - console unit tests
 - affected backend tests
-- build
-- browser
+- console build
+- console browser tests required by repo CI
 - axe
-- auth
-- MFA
+- auth/MFA
 - CSRF
-- tenant isolation
-- cache isolation
+- tenant/cache isolation
 - OpenAPI drift
 - fixture-boundary
-- migration checks if schema changed
-- vulnerability audits
+- migration check only if schema changed
+- dependency/vulnerability checks if dependencies changed
 - existing `apps/web` tests
+- `git diff --check`
 
-Do not claim tests not run.
+If CI runs broader gates, let CI run them. Do not duplicate them repeatedly locally.
 
-## Required outputs
+# Required outputs
 
 Create/update:
 
@@ -306,20 +362,71 @@ docs/implementation/command-center/PHASE_01_ACCEPTANCE.md
 docs/implementation/command-center/DECISION_LOG.md
 ```
 
-Document:
-
-- exact implementation
-- API contracts used/added
-- view models/adapters
-- tests run
-- staging acceptance
+Separate clearly:
+- repository/synthetic acceptance
+- live staging acceptance
+- owner actions
+- tests actually run
+- tests not run
+- exact files changed
+- exact imported UI SHA
+- API/read-model contracts added
+- auth/security changes
 - known gaps
 - Phase 2 readiness
 
-## Definition of done
+Do not rewrite Phase 0 architecture documents.
 
-Phase 1 is complete only when the entire reference slice works in staging, end to end, without fixture production paths, frontend business logic, duplicate backend authority, or regression to `apps/web`.
+# STOP CONDITION
 
-Open one coherent PR.
+Phase 1 repository implementation is complete when:
+1. `apps/console` exists and builds
+2. auth/SSR/BFF/security foundations are implemented
+3. generated contracts/adapters are implemented
+4. OpportunityView/AttentionView are implemented
+5. canonical Opportunity detail/revise/approve/workflow/publication-state slice works under deterministic/synthetic acceptance
+6. production fixture imports are blocked
+7. required final gates pass
+8. `apps/web` remains intact
+9. external live staging items are passed or explicitly pending owner actions
+
+Final readiness must be one of:
+- `READY FOR LIVE STAGING ACCEPTANCE`
+- `READY FOR PHASE 2 WITH LIVE STAGING ACCEPTANCE PENDING`
+- `BLOCKED`
+
+Do not mark Phase 1 blocked solely because owner-controlled live staging resources are not yet provisioned if repository implementation and synthetic acceptance are complete.
+
+# Git / PR workflow
+
+At completion:
+
+```bash
+git status
+git diff --check
+git diff --stat
+```
+
+Review the complete diff, commit the complete Phase 1 scope on `command-center/phase-1`, push it, and open one PR against `main`.
+
+Do not merge it.
 Do not begin Phase 2.
-Do not merge automatically.
+
+# Completion report
+
+Report only:
+- branch
+- commit SHA
+- PR link
+- exact files changed
+- exact imported UI SHA
+- repository implementation completed
+- repository/synthetic acceptance results
+- live staging acceptance results or pending owner actions
+- final gates/results
+- one consolidated owner-action checklist
+- Phase 2 readiness classification
+- true blockers caused by Phase 1
+
+Do not include a long exploratory command log.
+Do not begin Phase 2.

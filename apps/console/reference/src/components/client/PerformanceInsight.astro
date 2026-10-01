@@ -1,0 +1,67 @@
+---
+import { growthOpportunityId } from "../../lib/workspace-data";
+import { hospitalityObservations } from "../../data/fixtures/measurements";
+import type { ViewContext, Client } from "../../types/domain";
+
+import { route } from "../../config/routes";
+
+import { requireClient } from "../../lib/view";
+interface Props {
+  context: ViewContext;
+  c?: Client | null;
+}
+const context = Astro.props.context;
+const state = context.state;
+const c = requireClient(context, Astro.props.c);
+
+const periodLabel = (source: string) =>
+  source + " · Last " + state.range + " days";
+
+const insight = clientInsight(c);
+const { title, description: text, area, section: sub } = insight;
+import { clientInsight } from "../../data/fixtures/insights";
+
+import PeriodValue from "../ui/PeriodValue.astro";
+---
+
+{c.workspaceProfile === "hospitality" ? (
+  <Fragment>
+    <div class="listrow">
+      <div>
+        <h3>
+          Organic sessions increased 31%, but reservation clicks declined 8%.
+        </h3>
+        <p>
+          The menu receives{" "}
+          <PeriodValue base={hospitalityObservations.menuSessions} /> organic
+          sessions with a 1.6% Reserve click rate (
+          <span data-period-label>{periodLabel("GA4")}</span>). Improve the
+          reservation action and track the next reporting period.
+        </p>
+      </div>
+      <button
+        class="link"
+        data-command="openOpp"
+        data-args={JSON.stringify([growthOpportunityId(c, "reservation-path")])}
+      >
+        Review evidence
+      </button>
+    </div>
+  </Fragment>
+) : (
+  <Fragment>
+    <div class="listrow">
+      <div>
+        <h3 data-client-insight="title">{title}</h3>
+        <p data-client-insight="description">{text}</p>
+      </div>
+      <a
+        data-client-insight="link"
+        class="link"
+        href={route("client", c.id, area, sub)}
+      >
+        Investigate
+      </a>
+    </div>
+  </Fragment>
+)}

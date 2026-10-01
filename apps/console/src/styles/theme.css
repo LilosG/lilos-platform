@@ -1,0 +1,15 @@
+@layer theme, base, components, utilities;
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+@theme {
+  --color-ink: #1c2929;
+  --color-muted: #697775;
+  --color-brand: #235448;
+  --color-accent: #d5ee86;
+  --color-line: #e2e7e4;
+  --color-canvas: #f5f7f6;
+  --font-sans: "DM Sans", sans-serif;
+  --font-display: "Manrope", sans-serif;
+  --spacing-panel: 22px;
+  --radius-panel: 8px;
+}

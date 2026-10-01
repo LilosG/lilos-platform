@@ -1,0 +1,21 @@
+---
+import type { ViewContext } from "../../types/domain";
+import { route } from "../../config/routes";
+interface Props {
+  context: ViewContext;
+  tabs?: string[];
+}
+const { context, tabs = [] } = Astro.props;
+---
+
+<nav class="sectiontabs" aria-label={`${context.state.tab} sections`}>
+  {tabs.map((tab) => (
+    <a
+      href={route("client", context.state.client, context.state.tab, tab)}
+      aria-current={context.state.subtab === tab ? "page" : undefined}
+      class:list={{ active: context.state.subtab === tab }}
+    >
+      {tab}
+    </a>
+  ))}
+</nav>

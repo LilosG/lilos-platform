@@ -1,0 +1,70 @@
+---
+import type { ViewContext, Client } from "../../types/domain";
+import { clients, systems } from "../../data/fixtures";
+
+import { route } from "../../config/routes";
+
+import StatusBadge from "../ui/StatusBadge.astro";
+
+import DialogFrame from "../ui/DialogFrame.astro";
+
+interface Props {
+  context: ViewContext;
+  c?: Client | null;
+  i: number;
+}
+
+const i = Astro.props.i;
+const dialogId = "system" + "-" + i;
+const s = systems[i];
+---
+
+<DialogFrame id={dialogId}>
+  <Fragment slot="body">
+    <div class="eyebrow">Integration health</div>
+    <h2 id={dialogId + "-title"}>{s[0]}</h2>
+    <p>
+      <StatusBadge text={s[2]} /> · {s[4]}
+    </p>
+    <p>{s[5]}</p>
+    <section class="panel">
+      {clients.map((c) => {
+        const status =
+          i === 0
+            ? c.gbp === "Healthy"
+              ? "Connected"
+              : "Disconnected"
+            : i === 2
+              ? c.integration
+              : i === 5 && c.id === "3"
+                ? "Error"
+                : "Connected";
+        return (
+          <Fragment>
+            <div class="listrow">
+              <a class="link" href={route("client", c.id, "Integrations")}>
+                <span
+                  data-entity="client"
+                  data-record-id={c.id}
+                  data-field="name"
+                >
+                  {c.name}
+                </span>
+              </a>
+              <span
+                data-connection-client={c.id}
+                data-connection-source={i}
+                data-connection-field="status"
+              >
+                <StatusBadge text={status} />
+              </span>
+            </div>
+          </Fragment>
+        );
+      })}
+    </section>
+  </Fragment>
+  <Fragment slot="footer">
+    <button data-close>Close</button>
+  </Fragment>
+</DialogFrame>

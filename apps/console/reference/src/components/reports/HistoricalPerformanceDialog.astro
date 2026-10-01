@@ -1,0 +1,56 @@
+---
+import type { ViewContext, Client } from "../../types/domain";
+import { reportHistory } from "../../data/fixtures";
+
+import StatusBadge from "../ui/StatusBadge.astro";
+
+import DialogFrame from "../ui/DialogFrame.astro";
+
+import { required } from "../../lib/view";
+interface Props {
+  context: ViewContext;
+  c?: Client | null;
+  i: number;
+}
+
+const c = required(
+  Astro.props.c ?? Astro.props.context.client,
+  "active client context",
+);
+const i = Astro.props.i;
+const dialogId = "history-" + c.id + "-" + i;
+const r = reportHistory.filter((r) => r.client === c.id)[i];
+---
+
+<DialogFrame id={dialogId}>
+  <Fragment slot="body">
+    <div class="eyebrow">{c.name} · Historical monthly report</div>
+    <h2 id={dialogId + "-title"}>{r.period}</h2>
+    <p>
+      <StatusBadge text={"Sent"} /> · Delivered {r.sent}, 2026
+    </p>
+    <div class="detailmetrics">
+      <div>
+        Local visibility<strong>{r.visibility.toFixed(1)}%</strong>
+        <small>Final local scan · {r.period}</small>
+      </div>
+      <div>
+        Website action events<strong>{r.leads}</strong>
+        <small>GA4 · {r.period}</small>
+      </div>
+    </div>
+    <p>
+      These are that month’s saved measurements, independent of the current date
+      selector. Website action events represent reservation intent, forms and
+      phone clicks; completed-booking data was unavailable.
+    </p>
+    <h3>Completed work</h3>
+    <p>
+      Profile review, ranking scan, website health checks and review response
+      monitoring.
+    </p>
+  </Fragment>
+  <Fragment slot="footer">
+    <button data-close>Close</button>
+  </Fragment>
+</DialogFrame>

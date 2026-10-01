@@ -1,0 +1,19 @@
+---
+import type { OpportunityView } from "../../adapters/opportunities";
+interface Props {
+  opportunity: OpportunityView;
+  slug: string;
+}
+const { opportunity: o, slug } = Astro.props;
+const href = `/clients/${slug}/opportunities/${o.source_id}/`;
+---
+
+<tr class="opportunity-row"
+  ><td
+    ><a href={href}><b>{o.source_type.replaceAll("_", " ")}</b></a><span
+      class="sub">{o.classification} · {o.status}</span
+    ></td
+  ><td>{o.priority === null ? "Priority unavailable" : o.priority}</td><td
+    >{o.observed_at}</td
+  ><td><a class="control" href={href}>Details</a></td></tr
+>

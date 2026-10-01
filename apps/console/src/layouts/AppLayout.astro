@@ -1,0 +1,122 @@
+---
+import "../styles/theme.css";
+import "../styles/app.css";
+import type { Organization } from "../server/context";
+interface Props {
+  title: string;
+  organizations?: Organization[];
+  client?: Organization;
+}
+const { title, organizations = [], client } = Astro.props;
+const base = client ? `/clients/${client.organization_slug}/` : "/";
+const portfolio = [
+  ["Dashboard", "/"],
+  ["Clients", "/clients/"],
+  ["Opportunities", "/opportunities/"],
+  ["Reports", "/reports/"],
+  ["Automations", "/automations/"],
+  ["Integrations", "/integrations/"],
+];
+const workspace = [
+  ["Overview", base],
+  ["Local Search", base + "local-search/"],
+  ["Reviews", base + "reviews/"],
+  ["Website & Content", base + "website-content/"],
+  ["Leads", base + "leads/"],
+  ["Opportunities", base + "opportunities/"],
+  ["Automations", base + "automations/"],
+  ["Reports", base + "reports/"],
+  ["Integrations", base + "integrations/"],
+  ["Settings", base + "settings/"],
+];
+---
+
+<!doctype html>
+<html lang="en">
+  <head
+    ><meta charset="utf-8" /><meta
+      name="viewport"
+      content="width=device-width,initial-scale=1"
+    /><title>{title} | LILOs Growth</title><meta
+      name="csrf-token"
+      content={Astro.locals.csrf}
+    /></head
+  >
+  <body
+    ><a class="skiplink" href="#main">Skip to content</a>
+    <aside id="sidebar" aria-label="Application navigation">
+      <a class="brand" href="/"
+        ><span class="logo">L</span><span>LILOs<small>GROWTH</small></span></a
+      >
+      <nav aria-label={client ? "Client workspace" : "Portfolio"}>
+        {
+          (client ? workspace : portfolio).map(([label, href]) => (
+            <a
+              class:list={["navitem", { active: Astro.url.pathname === href }]}
+              href={href}
+            >
+              {label}
+            </a>
+          ))
+        }
+        <a class="navitem" href={client ? base + "attention/" : "/attention/"}
+          >Requires attention</a
+        >
+      </nav>
+      <div class="sidebarbottom">
+        <form method="post" action="/auth/sign-out/">
+          <input type="hidden" name="csrf" value={Astro.locals.csrf} /><button
+            type="submit">Sign out</button
+          >
+        </form>
+      </div>
+    </aside>
+    <div class="shell">
+      <header id="topbar">
+        <div class="crumb">
+          <button
+            class="menu"
+            id="menu"
+            aria-label="Toggle navigation"
+            aria-controls="sidebar"
+            aria-expanded="false">☰</button
+          ><a href="/">LILOs Growth</a><span>/</span><select
+            aria-label="Switch client"
+            data-client-selector
+            ><option value="/" selected={!client}>Entire portfolio</option>{
+              organizations.map((org) => (
+                <option
+                  value={`/clients/${org.organization_slug}/opportunities/`}
+                  selected={client?.organization_id === org.organization_id}
+                >
+                  {org.organization_name}
+                </option>
+              ))
+            }</select
+          >
+        </div><div class="headerRight">
+          <a href={base + "attention/"}>Requires attention</a><a
+            href={`/mfa/?return=${encodeURIComponent(Astro.url.pathname)}`}
+            >Account security</a
+          >
+        </div>
+      </header>
+      <main id="main" tabindex="-1"><slot /></main><footer>
+        Source freshness and unavailable data are shown with each record.
+      </footer>
+    </div>
+    <script>
+      document
+        .querySelector<HTMLSelectElement>("[data-client-selector]")
+        ?.addEventListener("change", (event) => {
+          window.location.assign((event.target as HTMLSelectElement).value);
+        });
+      const menu = document.getElementById("menu");
+      menu?.addEventListener("click", () => {
+        const expanded = menu.getAttribute("aria-expanded") !== "true";
+        menu.setAttribute("aria-expanded", String(expanded));
+        document.body.classList.toggle("navopen", expanded);
+      });
+    </script></body
+  >
+</html>

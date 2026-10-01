@@ -1,0 +1,21 @@
+---
+interface Props {
+  id: string;
+}
+const { id } = Astro.props;
+---
+
+<dialog id={id} aria-labelledby={`${id}-title`}>
+  <div class="panelhead">
+    <span class="muted">LILOs Growth</span>
+    <button class="close" aria-label="Close details" data-close autofocus>
+      ×
+    </button>
+  </div>
+  <div class="body">
+    <slot name="body" />
+  </div>
+  <div class="dialogfoot">
+    <slot name="footer" />
+  </div>
+</dialog>

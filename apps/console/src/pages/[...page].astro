@@ -1,0 +1,57 @@
+---
+import AppLayout from "../layouts/AppLayout.astro";
+import { organizations } from "../server/context";
+const page = Astro.params.page ?? "";
+const rows = await organizations(Astro.locals);
+const labels: Record<string, string> = {
+  "": "Dashboard",
+  clients: "Client portfolio",
+  opportunities: "Opportunities",
+  attention: "Requires attention",
+  reports: "Reports",
+  automations: "Automations",
+  integrations: "Integrations",
+  activity: "Activity",
+  administration: "Administration",
+};
+if (!(page in labels)) return new Response("Page not found", { status: 404 });
+const title = labels[page];
+---
+
+<AppLayout title={title} organizations={rows}
+  ><div class="pagehead">
+    <div><h1>{title}</h1><p>Select an authorized client workspace.</p></div>
+  </div>
+  <div class="panel">
+    <h2>Client workspaces</h2>{
+      rows.length ? (
+        rows.map((client) => (
+          <div class="listrow">
+            <div>
+              <>
+                <a
+                  href={`/clients/${client.organization_slug}/${page === "opportunities" || page === "attention" ? page + "/" : ""}`}
+                >
+                  {client.organization_name}
+                </a>
+                <small>{client.organization_status}</small>
+              </>
+            </div>
+          </div>
+        ))
+      ) : (
+        <p>No active client workspaces are available to your account.</p>
+      )
+    }
+  </div>
+  {
+    !["", "clients", "opportunities", "attention"].includes(page) && (
+      <div class="panel">
+        <>
+          <h2>Source unavailable</h2>
+          <p>This product area is awaiting its integration phase.</p>
+        </>
+      </div>
+    )
+  }
+</AppLayout>

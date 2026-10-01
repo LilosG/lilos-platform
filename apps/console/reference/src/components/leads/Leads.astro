@@ -1,0 +1,108 @@
+---
+import type { ViewContext, Client } from "../../types/domain";
+
+import StatusBadge from "../ui/StatusBadge.astro";
+
+import MetricStrip from "../ui/MetricStrip.astro";
+import PerformanceInsight from "../client/PerformanceInsight.astro";
+import Outcomes from "../leads/Outcomes.astro";
+import { requireClient } from "../../lib/view";
+interface Props {
+  context: ViewContext;
+  c?: Client | null;
+}
+const context = Astro.props.context;
+
+const c = requireClient(context, Astro.props.c);
+
+import { leads } from "../../data/fixtures/leads";
+
+import SectionHeading from "../ui/SectionHeading.astro";
+
+import { leadsMetrics } from "../../data/fixtures/metrics";
+
+import ErrorState from "../ui/ErrorState.astro";
+import DataTable from "../ui/DataTable.astro";
+---
+
+{c.workspaceProfile === "hospitality" ? (
+  <Outcomes context={context} c={c} />
+) : (
+  <Fragment>
+    {c.website === "Tracking issue" ? (
+      <Fragment>
+        <ErrorState
+          condition="tracking-issue"
+          client={c}
+          title="Conversion tracking requires attention"
+        >
+          No lead events have arrived in 72 hours. Sample historical leads
+          remain available below.
+          <button
+            slot="action"
+            data-command="openAction"
+            data-args={JSON.stringify([2])}
+          >
+            Check tracking
+          </button>
+        </ErrorState>
+      </Fragment>
+    ) : (
+      ""
+    )}
+    <MetricStrip
+      kind="leadsMetrics"
+      context={context}
+      items={leadsMetrics(c)}
+    />
+
+    <section class="panel contextual">
+      <PerformanceInsight context={context} c={c} />
+    </section>
+    <section class="panel tablewrap">
+      <SectionHeading>
+        <Fragment slot="title">Recent leads</Fragment>
+        <Fragment slot="actions">
+          <span class="muted">Fictional sample inquiries</span>
+        </Fragment>
+      </SectionHeading>
+      <DataTable>
+        <thead>
+          <tr>
+            <th>Contact</th>
+            <th>Inquiry</th>
+            <th>Source</th>
+            <th>Received</th>
+            <th>Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {leads
+            .filter((lead) => lead.clientId === c.id)
+            .map((lead, i) => (
+              <Fragment>
+                <tr>
+                  <td>{lead.contact}</td>
+                  <td>{lead.inquiry}</td>
+                  <td>{lead.displaySource}</td>
+                  <td>{lead.received}</td>
+                  <td>
+                    <StatusBadge text={lead.status} />
+                  </td>
+                  <td>
+                    <button
+                      data-command="openLead"
+                      data-args={JSON.stringify([c.id, i])}
+                    >
+                      View lead
+                    </button>
+                  </td>
+                </tr>
+              </Fragment>
+            ))}
+        </tbody>
+      </DataTable>
+    </section>
+  </Fragment>
+)}

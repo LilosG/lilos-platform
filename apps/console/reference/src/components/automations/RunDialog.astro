@@ -1,0 +1,109 @@
+---
+import type { ViewContext, Client, Automation } from "../../types/domain";
+import { clients, automationDefs, automationRuns } from "../../data/fixtures";
+import { required, automationNextAction as nextAction } from "../../lib/view";
+import { route } from "../../config/routes";
+
+import StatusBadge from "../ui/StatusBadge.astro";
+
+import DialogFrame from "../ui/DialogFrame.astro";
+
+interface Props {
+  context: ViewContext;
+  c?: Client | null;
+  id: string;
+}
+
+const automationNextAction = (r: Automation) =>
+  nextAction(r, clients[Number(r.client) - 1]);
+const id = Astro.props.id;
+const dialogId = "automation" + "-" + id;
+const r = required(
+  automationRuns.find((r) => r.id === id),
+  "Fixture record",
+);
+const c = required(
+  clients.find((c) => c.id === r.client),
+  "Fixture record",
+);
+const d = automationDefs[r.def];
+---
+
+<DialogFrame id={dialogId}>
+  <Fragment slot="body">
+    <div class="eyebrow">
+      <span data-entity="client" data-record-id={c.id} data-field="name">
+        {c.name}
+      </span>{" "}
+      · Automation
+    </div>
+    <h2 id={dialogId + "-title"}>{d.name}</h2>
+    <p>
+      <span
+        data-entity="automation"
+        data-record-id={r.id}
+        data-field="lastStatus"
+      >
+        <StatusBadge text={r.lastStatus} />
+      </span>
+    </p>
+    <div class="listrow">
+      Latest run{" "}
+      <b>
+        <span data-entity="automation" data-record-id={r.id} data-field="last">
+          {r.last}
+        </span>
+      </b>
+    </div>
+    <div class="listrow">
+      Next run <b>{r.next}</b>
+    </div>
+    <div class="listrow">
+      Source <b>{d.source}</b>
+    </div>
+    <h3 data-automation-heading={r.id} class="spaced-heading">
+      {r.status === "Needs attention" ? "Human action required" : "Run outcome"}
+    </h3>
+    <p>
+      <span data-entity="automation" data-record-id={r.id} data-field="detail">
+        {r.detail}
+      </span>
+    </p>
+    {r.status === "Needs attention" ? (
+      <Fragment>
+        <p data-automation-advice={r.id}>{automationNextAction(r)}</p>
+      </Fragment>
+    ) : (
+      ""
+    )}
+  </Fragment>
+  <Fragment slot="footer">
+    <button data-close>Close</button>
+    {r.status === "Needs attention" && c.gbp === "Disconnected" ? (
+      <Fragment>
+        <button data-automation-recovery={r.id} data-dialog="action-1">
+          Reconnect GBP
+        </button>
+      </Fragment>
+    ) : r.status === "Needs attention" && r.def === 3 ? (
+      <Fragment>
+        <a
+          href={route("client", c.id, "Website & Content", "Technical")}
+          data-automation-recovery={r.id}
+          class="control"
+        >
+          Inspect findings
+        </a>
+      </Fragment>
+    ) : (
+      ""
+    )}
+    <button
+      class="primary"
+      data-command="runAutomation"
+      data-args={JSON.stringify([id])}
+    >
+      {r.status === "Needs attention" ? "Retry sample run" : "Run sample now"}
+    </button>
+  </Fragment>
+</DialogFrame>

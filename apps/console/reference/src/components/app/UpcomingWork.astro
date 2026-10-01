@@ -1,0 +1,70 @@
+---
+import type { ViewContext, Client } from "../../types/domain";
+import { clients } from "../../data/fixtures";
+import { scopedOpps } from "../../lib/view";
+import { route } from "../../config/routes";
+
+import StatusBadge from "../ui/StatusBadge.astro";
+
+interface Props {
+  context: ViewContext;
+  c?: Client | null;
+}
+const context = Astro.props.context;
+
+const c =
+  Astro.props.c === null ? undefined : (Astro.props.c ?? context.client);
+
+const a = c
+  ? [c]
+  : clients
+      .filter((c) => c.next.includes("Today") || c.next.includes("Tomorrow"))
+      .slice(0, 4);
+---
+
+<div data-upcoming-work data-work-client={c?.id || ""}></div>
+{a.map((c) => (
+  <Fragment>
+    <div class="listrow">
+      <div>
+        <a class="link" href={route("client", c.id)}>
+          {c.next.split(" · ")[0]}
+        </a>
+        <small>
+          <span data-entity="client" data-record-id={c.id} data-field="name">
+            {c.name}
+          </span>
+        </small>
+      </div>
+      <span>{c.next.split(" · ")[1]}</span>
+    </div>
+  </Fragment>
+))}
+{scopedOpps(c)
+  .filter((o) => o.started)
+  .slice(0, 2)
+  .map((o) => (
+    <Fragment>
+      <div class="listrow">
+        <div>
+          {o.title}
+          <small>Work started · {clients[o.client].name}</small>
+        </div>
+        <StatusBadge text={"In progress"} />
+      </div>
+    </Fragment>
+  ))}
+
+{(c ? c.tasks || [] : clients.flatMap((x) => x.tasks || []))
+  .slice(-2)
+  .map((t) => (
+    <Fragment>
+      <div class="listrow">
+        <div>
+          {String(t)}
+          <small>Recovery task · Due today</small>
+        </div>
+        <StatusBadge text={"Scheduled"} />
+      </div>
+    </Fragment>
+  ))}

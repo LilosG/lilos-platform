@@ -1,0 +1,265 @@
+---
+import type { ViewContext, Client } from "../../types/domain";
+import { clients, reports, reportHistory } from "../../data/fixtures";
+
+import { route } from "../../config/routes";
+
+import StatusBadge from "../ui/StatusBadge.astro";
+
+import PageHeader from "../ui/PageHeader.astro";
+import MetricStrip from "../ui/MetricStrip.astro";
+import ClientReport from "../reports/ClientReport.astro";
+interface Props {
+  context: ViewContext;
+  c?: Client | null;
+  embedded?: boolean;
+}
+const context = Astro.props.context;
+const state = context.state;
+const c =
+  Astro.props.c === null ? undefined : (Astro.props.c ?? context.client);
+
+const r = reports[c ? Number(c.id) - 1 : 0];
+const a = reports.filter(
+  (r) =>
+    state.reportFilter === "All reports" ||
+    (state.reportFilter === "Needs attention" &&
+      ["Missing data", "Needs review"].includes(r.status)) ||
+    r.status === state.reportFilter,
+);
+
+import { reportsAllReportsRows } from "../../data/fixtures/presentation";
+
+import SectionHeading from "../ui/SectionHeading.astro";
+
+import { portfolioReportMetrics } from "../../data/fixtures/metrics";
+
+import InsightPanel from "../ui/InsightPanel.astro";
+import DataTable from "../ui/DataTable.astro";
+---
+
+{c?.workspaceProfile === "hospitality" ? (
+  <ClientReport context={context} c={c} />
+) : (
+  <Fragment>
+    {c ? (
+      <Fragment>
+        <section class="panel currentreport">
+          <SectionHeading>
+            <Fragment slot="title">Current report · {r.period}</Fragment>
+            <Fragment slot="actions">
+              <span
+                data-entity="report"
+                data-record-id={r.id}
+                data-field="status"
+              >
+                <StatusBadge text={r.status} />
+              </span>
+            </Fragment>
+          </SectionHeading>
+          <div class="listrow">
+            <div>
+              <h3>
+                {r.status === "Missing data"
+                  ? "Complete reporting data"
+                  : r.status === "Needs review"
+                    ? "Report summary ready to review"
+                    : r.status === "Sent"
+                      ? "September report delivered"
+                      : "September reporting cycle"}
+              </h3>
+              <p>
+                <span
+                  data-entity="report"
+                  data-record-id={r.id}
+                  data-field="note"
+                >
+                  {r.note}
+                </span>{" "}
+                · {r.status === "Sent" ? "Sent" : "Scheduled delivery"}{" "}
+                <span
+                  data-entity="report"
+                  data-record-id={r.id}
+                  data-field="date"
+                >
+                  {r.date}
+                </span>
+              </p>
+            </div>
+            <button
+              class="primary"
+              data-command="openReport"
+              data-args={JSON.stringify([r.id])}
+            >
+              Open current report
+            </button>
+          </div>
+          {r.status === "Missing data" ? (
+            <Fragment>
+              <InsightPanel class="insight">
+                GBP actions are missing. Restore the integration, then refresh
+                the reporting automation.
+              </InsightPanel>
+            </Fragment>
+          ) : (
+            ""
+          )}
+        </section>
+        <section class="panel tablewrap spaced-section">
+          <SectionHeading>
+            <Fragment slot="title">Report history</Fragment>
+            <Fragment slot="actions" />
+          </SectionHeading>
+          <DataTable>
+            <thead>
+              <tr>
+                <th>Period</th>
+                <th>Status</th>
+                <th>Delivered</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {reportHistory
+                .filter((r) => r.client === c.id)
+                .map((r, i) => (
+                  <Fragment>
+                    <tr>
+                      <td>{r.period}</td>
+                      <td>
+                        <StatusBadge text={"Sent"} />
+                      </td>
+                      <td>{r.sent}, 2026</td>
+                      <td>
+                        <button
+                          data-command="openHistoricalReport"
+                          data-args={JSON.stringify([c.id, i])}
+                        >
+                          View summary
+                        </button>
+                      </td>
+                    </tr>
+                  </Fragment>
+                ))}
+            </tbody>
+          </DataTable>
+        </section>
+        <section class="panel spaced-section">
+          <SectionHeading>
+            <Fragment slot="title">Upcoming reporting activity</Fragment>
+            <Fragment slot="actions" />
+          </SectionHeading>
+          <div class="listrow">
+            <div>
+              <h3>October performance report</h3>
+              <p>
+                Data collection through October 31 · Generation November 1, 8:00
+                AM Pacific
+              </p>
+            </div>
+            <StatusBadge text={"Scheduled"} />
+          </div>
+          <div class="listrow">
+            <div>
+              <h3>September final data refresh</h3>
+              <p>
+                October 1, 6:00 AM Pacific · GBP, Search Console, analytics and
+                reviews
+              </p>
+            </div>
+            <a class="link" href={route("client", c.id, "Automations")}>
+              View automation
+            </a>
+          </div>
+        </section>
+      </Fragment>
+    ) : (
+      <Fragment>
+        <PageHeader
+          context={context}
+          title={"Reports"}
+          subtitle={
+            "Portfolio reporting readiness, upcoming delivery, and clients with incomplete data."
+          }
+        />
+        <MetricStrip
+          kind="portfolioReportMetrics"
+          context={context}
+          items={portfolioReportMetrics()}
+        />
+
+        <div class="sectiontabs">
+          {reportsAllReportsRows().map((t) => (
+            <Fragment>
+              <button
+                class={state.reportFilter === t ? "active" : ""}
+                data-filter="reportFilter"
+                data-value={`${t}`}
+              >
+                {t}
+              </button>
+            </Fragment>
+          ))}
+        </div>
+        <section class="panel tablewrap">
+          <DataTable>
+            <thead>
+              <tr>
+                <th>Client</th>
+                <th>Period</th>
+                <th>Status</th>
+                <th>Data readiness</th>
+                <th>Delivery</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {a.length > 0 ? (
+                a.map((r) => (
+                  <Fragment>
+                    <tr data-report-id={r.id} data-status={r.status}>
+                      <td>
+                        <a
+                          class="clientname"
+                          href={route(
+                            "client",
+                            clients[r.client].id,
+                            "Reports",
+                          )}
+                        >
+                          {clients[r.client].name}
+                        </a>
+                      </td>
+                      <td>{r.period}</td>
+                      <td>
+                        <StatusBadge text={r.status} />
+                      </td>
+                      <td>{r.note}</td>
+                      <td>{r.date}</td>
+                      <td>
+                        <button
+                          data-command="openReport"
+                          data-args={JSON.stringify([r.id])}
+                        >
+                          View report
+                        </button>
+                      </td>
+                    </tr>
+                  </Fragment>
+                ))
+              ) : (
+                <Fragment>
+                  <tr>
+                    <td colspan="6" class="empty">
+                      No reports match this view.
+                    </td>
+                  </tr>
+                </Fragment>
+              )}
+            </tbody>
+          </DataTable>
+        </section>
+      </Fragment>
+    )}
+  </Fragment>
+)}

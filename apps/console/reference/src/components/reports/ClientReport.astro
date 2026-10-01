@@ -1,0 +1,147 @@
+---
+import { growthOpportunityId } from "../../lib/workspace-data";
+import type { ViewContext, Client } from "../../types/domain";
+import { reports, reportHistory } from "../../data/fixtures";
+
+import { route } from "../../config/routes";
+
+import StatusBadge from "../ui/StatusBadge.astro";
+
+import { requireClient } from "../../lib/view";
+interface Props {
+  context: ViewContext;
+  c?: Client | null;
+}
+const context = Astro.props.context;
+
+const c = requireClient(context, Astro.props.c);
+
+const r = reports[Number(c.id) - 1];
+
+import SectionHeading from "../ui/SectionHeading.astro";
+
+import DataTable from "../ui/DataTable.astro";
+---
+
+<section class="panel currentreport">
+  <SectionHeading>
+    <Fragment slot="title">Current report · {r.period}</Fragment>
+    <Fragment slot="actions">
+      <span data-entity="report" data-record-id={r.id} data-field="status">
+        <StatusBadge text={r.status} />
+      </span>
+    </Fragment>
+  </SectionHeading>
+  <div class="listrow">
+    <div>
+      <h3>September performance and next actions</h3>
+      <p>
+        Delivery{" "}
+        <span data-entity="report" data-record-id={r.id} data-field="date">
+          {r.date}
+        </span>{" "}
+        · Restaurant demand, reservation intent and private-event opportunities
+      </p>
+    </div>
+    <button
+      class="primary"
+      data-command="openReport"
+      data-args={JSON.stringify([r.id])}
+    >
+      Open current report
+    </button>
+  </div>
+  <div class="listrow">
+    <div>
+      <h3>Data readiness</h3>
+      <p>
+        September 1–30: GA4 has 4,110 organic sessions; Search Console has 1,386
+        clicks and 27,720 impressions. GBP and Google review data are available.
+        Reservation intent is tracked; completed bookings are unavailable.
+      </p>
+    </div>
+    <StatusBadge text={"Ready with data note"} />
+  </div>
+  <div class="listrow">
+    <div>
+      <h3>Report attention note</h3>
+      <p>
+        Organic sessions grew 31%, while Reserve clicks fell 8%. Keep booking
+        intent separate from confirmed reservations.
+      </p>
+    </div>
+    <button
+      class="link"
+      data-command="openOpp"
+      data-args={JSON.stringify([
+        growthOpportunityId(c, "reservation-outcomes"),
+      ])}
+    >
+      Review measurement gap
+    </button>
+  </div>
+</section>
+<section class="panel tablewrap spaced-section">
+  <SectionHeading>
+    <Fragment slot="title">Historical reports</Fragment>
+    <Fragment slot="actions" />
+  </SectionHeading>
+  <DataTable>
+    <thead>
+      <tr>
+        <th>Report</th>
+        <th>Delivery status</th>
+        <th>Sent</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {reportHistory
+        .filter((r) => r.client === c.id)
+        .map((r, i) => (
+          <Fragment>
+            <tr>
+              <td>{r.period}</td>
+              <td>
+                <StatusBadge text={"Sent"} />
+              </td>
+              <td>{r.sent}, 2026</td>
+              <td>
+                <button
+                  data-command="openHistoricalReport"
+                  data-args={JSON.stringify([c.id, i])}
+                >
+                  Open summary
+                </button>
+              </td>
+            </tr>
+          </Fragment>
+        ))}
+    </tbody>
+  </DataTable>
+</section>
+<section class="panel spaced-section">
+  <SectionHeading>
+    <Fragment slot="title">Next reporting activity</Fragment>
+    <Fragment slot="actions" />
+  </SectionHeading>
+  <div class="listrow">
+    <div>
+      <h3>September final refresh</h3>
+      <p>October 1 · 6:00 AM Pacific · Refresh all connected source data</p>
+    </div>
+    <a href={route("client", c.id, "Automations")} class="control">
+      View scheduled work
+    </a>
+  </div>
+  <div class="listrow">
+    <div>
+      <h3>October monthly report</h3>
+      <p>
+        Generate November 1 · 8:00 AM Pacific · Compare brunch visibility and
+        reservation conversion
+      </p>
+    </div>
+    <StatusBadge text={"Scheduled"} />
+  </div>
+</section>

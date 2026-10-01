@@ -1,0 +1,113 @@
+---
+import type { ViewContext, Client } from "../../types/domain";
+
+import { filteredClients as selectClients } from "../../lib/selectors";
+
+import ClientRows from "../portfolio/ClientRows.astro";
+interface Props {
+  context: ViewContext;
+  c?: Client | null;
+}
+const context = Astro.props.context;
+const state = context.state;
+
+const filteredClients = () => selectClients(state);
+
+const filters = [
+  "All clients",
+  "Needs attention",
+  "Improving",
+  "Declining",
+  "New clients",
+  "Multi-location",
+  "Website issues",
+  "GBP issues",
+  "Review issues",
+  "Integration issues",
+];
+
+import DataTable from "../ui/DataTable.astro";
+---
+
+{
+  <Fragment>
+    <section class="panel">
+      <div class="panelhead">
+        <h2>
+          Client portfolio <span class="count">12</span>
+        </h2>
+        <span class="muted text-small">Compared with previous period</span>
+      </div>
+      <div class="toolbar">
+        <input
+          class="search"
+          id="search"
+          placeholder="Search clients, locations or categories…"
+          aria-label="Search clients"
+          value={String(state.query)}
+          data-client-search
+        />
+        <select aria-label="Sort clients" data-filter="sort">
+          {[
+            ["priority", "Sort: Attention first"],
+            ["name", "Sort: Client name"],
+            ["visibility", "Sort: Visibility"],
+            ["leads", "Sort: Leads"],
+            ["change", "Sort: Biggest gains"],
+          ].map(([v, t]) => (
+            <Fragment>
+              <option value={v} selected={state.sort === v}>
+                {t}
+              </option>
+            </Fragment>
+          ))}
+        </select>
+      </div>
+      <div class="chips">
+        {filters.map((f) => (
+          <Fragment>
+            <button
+              class={`chip ${state.filter === f ? "active" : ""}`}
+              data-filter="filter"
+              data-value={`${f}`}
+            >
+              {f}
+            </button>
+          </Fragment>
+        ))}
+      </div>
+      <div class="tablewrap">
+        <DataTable>
+          <thead>
+            <tr>
+              <th>Client / location</th>
+              <th>Visibility</th>
+              <th>Avg. rank</th>
+              <th>Organic traffic</th>
+              <th>Leads</th>
+              <th>Reviews</th>
+              <th>Health</th>
+              <th>Last activity / next work</th>
+            </tr>
+          </thead>
+          <tbody id="clientrows">
+            {
+              <>
+                <tr data-client-empty hidden>
+                  <td colspan="8" class="empty">
+                    No clients match. Try another search or filter.
+                  </td>
+                </tr>
+                <ClientRows context={context} />
+              </>
+            }
+          </tbody>
+        </DataTable>
+      </div>
+      <div class="tablefoot">
+        <span id="rowcount">{filteredClients().length} of 12 clients</span>
+        <span>17 locations managed</span>
+      </div>
+    </section>
+  </Fragment>
+}

@@ -1,0 +1,66 @@
+---
+import type { ViewContext, Client } from "../../types/domain";
+import { clients, automationDefs } from "../../data/fixtures";
+
+interface Props {
+  context: ViewContext;
+  c?: Client | null;
+}
+const context = Astro.props.context;
+const state = context.state;
+const c =
+  Astro.props.c === null ? undefined : (Astro.props.c ?? context.client);
+
+import { automationStatusFilters } from "../../data/fixtures/presentation";
+
+import FilterBar from "../ui/FilterBar.astro";
+---
+
+<FilterBar class="toolbar oppfilters">
+  <select
+    aria-label="Filter automations by status"
+    data-filter="automationStatus"
+  >
+    {automationStatusFilters().map((t) => (
+      <Fragment>
+        <option selected={state.automationStatus === t}>{t}</option>
+      </Fragment>
+    ))}
+  </select>
+  {!c ? (
+    <Fragment>
+      <select
+        aria-label="Filter automations by client"
+        data-filter="automationClient"
+      >
+        <option value="All clients">All clients</option>
+        {clients.map((c) => (
+          <Fragment>
+            <option value={c.id} selected={state.automationClient === c.id}>
+              {c.name}
+            </option>
+          </Fragment>
+        ))}
+      </select>
+    </Fragment>
+  ) : (
+    ""
+  )}
+  <select aria-label="Filter automation type" data-filter="automationType">
+    <option value="All types">All types</option>
+    {automationDefs.map((d, i) => (
+      <Fragment>
+        <option value={i} selected={state.automationType === String(i)}>
+          {d.name}
+        </option>
+      </Fragment>
+    ))}
+  </select>
+  <button
+    class="link"
+    data-command="resetAutomationFilters"
+    data-args={JSON.stringify([])}
+  >
+    Reset filters
+  </button>
+</FilterBar>

@@ -1,0 +1,67 @@
+---
+import type { ViewContext, Client } from "../../types/domain";
+import { clients, reportHistory } from "../../data/fixtures";
+import { required } from "../../lib/view";
+
+import StatusBadge from "../ui/StatusBadge.astro";
+
+import DialogFrame from "../ui/DialogFrame.astro";
+import HistoricalPerformanceDialog from "../reports/HistoricalPerformanceDialog.astro";
+interface Props {
+  context: ViewContext;
+  c?: Client | null;
+  id: string;
+  i: number;
+}
+const context = Astro.props.context;
+
+const id = Astro.props.id;
+const i = Astro.props.i;
+const dialogId = "history" + "-" + id + "-" + i;
+const c = required(
+  clients.find((c) => c.id === id),
+  "Fixture record",
+);
+const r = reportHistory.filter((r) => r.client === id)[i];
+---
+
+{c.workspaceProfile === "hospitality" ? (
+  <HistoricalPerformanceDialog context={context} c={c} i={i} />
+) : (
+  <Fragment>
+    <DialogFrame id={dialogId}>
+      <Fragment slot="body">
+        <div class="eyebrow">
+          <span data-entity="client" data-record-id={c.id} data-field="name">
+            {c.name}
+          </span>{" "}
+          · Monthly report
+        </div>
+        <h2 id={dialogId + "-title"}>{r.period}</h2>
+        <p>
+          <StatusBadge text={"Sent"} /> · Delivered {r.sent}, 2026
+        </p>
+        <div class="detailmetrics">
+          <div>
+            Local visibility<strong>{r.visibility.toFixed(1)}%</strong>
+          </div>
+          <div>
+            Website leads<strong>{r.leads}</strong>
+          </div>
+        </div>
+        <h3>Completed work</h3>
+        <p>
+          Profile review, priority ranking scan, website health check, and
+          review response monitoring.
+        </p>
+        <h3>Next priorities</h3>
+        <p>
+          Improve service query coverage and keep review requests consistent.
+        </p>
+      </Fragment>
+      <Fragment slot="footer">
+        <button data-close>Close</button>
+      </Fragment>
+    </DialogFrame>
+  </Fragment>
+)}

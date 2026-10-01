@@ -1,0 +1,9 @@
+---
+import type { HTMLAttributes } from "astro/types";
+type Props = HTMLAttributes<"div">;
+const { class: className = "insight", ...attributes } = Astro.props;
+---
+
+<div class={className} {...attributes}>
+  <slot />
+</div>

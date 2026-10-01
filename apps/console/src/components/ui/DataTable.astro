@@ -1,0 +1,9 @@
+---
+import type { HTMLAttributes } from "astro/types";
+type Props = HTMLAttributes<"table">;
+const attributes = Astro.props;
+---
+
+<table {...attributes}>
+  <slot />
+</table>

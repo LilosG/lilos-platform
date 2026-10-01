@@ -1,0 +1,83 @@
+---
+import type { ViewContext, Client } from "../../types/domain";
+
+import { route } from "../../config/routes";
+
+import MetricStrip from "../ui/MetricStrip.astro";
+import ConversionPaths from "../website-content/ConversionPaths.astro";
+import { requireClient } from "../../lib/view";
+interface Props {
+  context: ViewContext;
+  c?: Client | null;
+}
+const context = Astro.props.context;
+
+const c = requireClient(context, Astro.props.c);
+
+import PeriodValue from "../ui/PeriodValue.astro";
+
+import { pageConversions } from "../../data/fixtures/clientPerformance";
+
+import SectionHeading from "../ui/SectionHeading.astro";
+
+import { conversionMetrics } from "../../data/fixtures/metrics";
+
+import DataTable from "../ui/DataTable.astro";
+import InsightPanel from "../ui/InsightPanel.astro";
+---
+
+{c.workspaceProfile === "hospitality" ? (
+  <ConversionPaths context={context} c={c} />
+) : (
+  <Fragment>
+    <MetricStrip
+      kind="conversionMetrics"
+      context={context}
+      items={conversionMetrics(c)}
+    />
+
+    <section class="panel tablewrap">
+      <SectionHeading>
+        <Fragment slot="title">Conversion opportunities by page</Fragment>
+        <Fragment slot="actions" />
+      </SectionHeading>
+      <DataTable>
+        <thead>
+          <tr>
+            <th>Page</th>
+            <th>Organic visits</th>
+            <th>Leads / actions</th>
+            <th>Conversion</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {pageConversions(c).map((p) => (
+            <Fragment>
+              <tr>
+                <td>{p.name}</td>
+                <td>
+                  <PeriodValue base={p.organic} />
+                </td>
+                <td>
+                  <PeriodValue base={p.actions} />
+                </td>
+                <td>{p.rate}</td>
+                <td>
+                  <a class="link" href={route("client", c.id, "Opportunities")}>
+                    Inspect opportunity
+                  </a>
+                </td>
+              </tr>
+            </Fragment>
+          ))}
+        </tbody>
+      </DataTable>
+      <InsightPanel class="insight">
+        {c.website === "Tracking issue"
+          ? "Conversion events are incomplete. Restore tracking before evaluating the page conversion rates."
+          : "High-ranking pages with weak conversion deserve a clearer next action before more traffic investment."}
+      </InsightPanel>
+    </section>
+  </Fragment>
+)}

@@ -1,0 +1,94 @@
+---
+import type { ViewContext, Client } from "../../types/domain";
+
+import { scopedOpps } from "../../lib/view";
+
+import { requireClient } from "../../lib/view";
+interface Props {
+  context: ViewContext;
+  c?: Client | null;
+}
+const context = Astro.props.context;
+const state = context.state;
+const c = requireClient(context, Astro.props.c);
+
+const a = scopedOpps(c).filter(
+  (o) =>
+    (state.oppKind === "All classifications" || o.kind === state.oppKind) &&
+    (state.oppType === "All types" || o.type === state.oppType) &&
+    (state.oppPriority === "All priorities" || o.impact === state.oppPriority),
+);
+
+import {
+  findingsAllTypesRows,
+  findingsAllPrioritiesRows,
+  findingsAllClassificationsRows,
+} from "../../data/fixtures/presentation";
+
+import FilterBar from "../ui/FilterBar.astro";
+import OpportunityRow from "../opportunities/OpportunityRow.astro";
+
+import InsightPanel from "../ui/InsightPanel.astro";
+import DataTable from "../ui/DataTable.astro";
+---
+
+<InsightPanel class="insight contextinsight">
+  <b>Current priority:</b> Improve reservation conversion and capture existing
+  brunch demand. Every finding below includes a source, evidence and a concrete
+  next action.
+</InsightPanel>
+<FilterBar class="toolbar oppfilters">
+  <select aria-label="Filter opportunity type" data-filter="oppType">
+    {findingsAllTypesRows(c).map((t) => (
+      <Fragment>
+        <option selected={state.oppType === t}>{t}</option>
+      </Fragment>
+    ))}
+  </select>
+  <select aria-label="Filter priority" data-filter="oppPriority">
+    {findingsAllPrioritiesRows().map((t) => (
+      <Fragment>
+        <option selected={state.oppPriority === t}>{t}</option>
+      </Fragment>
+    ))}
+  </select>
+  <select aria-label="Filter opportunity classification" data-filter="oppKind">
+    {findingsAllClassificationsRows().map((k) => (
+      <Fragment>
+        <option selected={state.oppKind === k}>{k}</option>
+      </Fragment>
+    ))}
+  </select>
+  <span class="muted" data-opportunity-count>
+    {a.length} findings · {c.name}
+  </span>
+</FilterBar>
+<section class="panel tablewrap">
+  <DataTable>
+    <thead>
+      <tr>
+        <th>Opportunity</th>
+        <th>Evidence headline</th>
+        <th>Priority</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {a.length > 0 ? (
+        a.map((o) => (
+          <Fragment>
+            <OpportunityRow opportunity={o} mode="finding" />
+          </Fragment>
+        ))
+      ) : (
+        <Fragment>
+          <tr>
+            <td colspan="4" class="empty">
+              No opportunities match these filters.
+            </td>
+          </tr>
+        </Fragment>
+      )}
+    </tbody>
+  </DataTable>
+</section>

@@ -1,0 +1,74 @@
+---
+import type { ViewContext } from "../../types/domain";
+import { clients } from "../../data/fixtures";
+import { route } from "../../config/routes";
+import { scopedActions } from "../../lib/view";
+interface Props {
+  context: ViewContext;
+}
+const { context } = Astro.props;
+const c = context.client;
+---
+
+<header id="topbar">
+  <div class="crumb">
+    <button
+      class="menu"
+      data-menu
+      aria-label="Toggle navigation"
+      aria-controls="sidebar"
+      aria-expanded="false"
+    >
+      ☰
+    </button>
+    <a href={route()}>LILOs Growth</a>
+    <span>/</span>
+    {c ? (
+      <select
+        class="clientselector"
+        aria-label="Switch client"
+        data-client-selector
+      >
+        <option value={route()}>Entire portfolio</option>
+        {clients.map((x) => (
+          <option
+            data-entity="client"
+            data-record-id={x.id}
+            data-field="name"
+            value={route(
+              "client",
+              x.id,
+              context.state.tab,
+              context.state.subtab,
+            )}
+            selected={x.id === c.id}
+          >
+            {x.name}
+          </option>
+        ))}
+      </select>
+    ) : (
+      <strong>Entire portfolio</strong>
+    )}
+  </div>
+  <div class="headerRight">
+    <span class="demo">SAMPLE DATA</span>
+    {c ? (
+      <button
+        aria-label="Client attention items"
+        data-dialog="client-attention"
+      >
+        ⚑ {scopedActions(c).length}
+      </button>
+    ) : (
+      <a
+        class="control"
+        href={route("attention")}
+        aria-label="Portfolio attention items"
+      >
+        ⚑ {scopedActions().length}
+      </a>
+    )}
+    <span class="avatar mobilehide">MP</span>
+  </div>
+</header>

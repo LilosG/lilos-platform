@@ -1,0 +1,51 @@
+---
+import type { ViewContext, Client } from "../../types/domain";
+
+import { scopedOpps } from "../../lib/view";
+
+import StatusBadge from "../ui/StatusBadge.astro";
+
+import { requireClient } from "../../lib/view";
+interface Props {
+  context: ViewContext;
+  c?: Client | null;
+}
+const context = Astro.props.context;
+
+const c = requireClient(context, Astro.props.c);
+
+import SectionHeading from "../ui/SectionHeading.astro";
+
+import InsightPanel from "../ui/InsightPanel.astro";
+---
+
+<section class="panel spaced-section">
+  <SectionHeading>
+    <Fragment slot="title">Review opportunities</Fragment>
+    <Fragment slot="actions">
+      <span class="muted">Google review access through GBP</span>
+    </Fragment>
+  </SectionHeading>
+  {scopedOpps(c)
+    .filter((o) => o.type === "Reviews")
+    .map((o) => (
+      <Fragment>
+        <div class="listrow">
+          <div>
+            <h3>{o.title}</h3>
+            <p>{o.evidence}</p>
+            <small>{o.next}</small>
+          </div>
+          <StatusBadge text={o.impact + " priority"} />
+          <button data-command="openOpp" data-args={JSON.stringify([o.id])}>
+            Open opportunity
+          </button>
+        </div>
+      </Fragment>
+    ))}
+  <InsightPanel class="insight">
+    Recent review topics: brunch experience, cocktails, celebrations and
+    service. Use those topics to personalize responses without inventing
+    details.
+  </InsightPanel>
+</section>

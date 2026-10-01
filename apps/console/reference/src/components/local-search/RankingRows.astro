@@ -1,0 +1,28 @@
+---
+import type { ViewContext, Client } from "../../types/domain";
+
+import Trend from "../ui/Trend.astro";
+
+import { requireClient } from "../../lib/view";
+interface Props {
+  context: ViewContext;
+  c?: Client | null;
+}
+const context = Astro.props.context;
+
+const c = requireClient(context, Astro.props.c);
+
+import { clientRankings } from "../../data/fixtures/clientPerformance";
+---
+
+{clientRankings(c).map((ranking) => (
+  <tr>
+    <td>{ranking.query}</td>
+    <td>{ranking.rank}</td>
+    <td>{ranking.top3}%</td>
+    <td>{ranking.top10}%</td>
+    <td>
+      <Trend value={ranking.visibilityChange} />
+    </td>
+  </tr>
+))}

@@ -1,0 +1,45 @@
+{
+  "name": "@lilos/console",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "astro dev --host 127.0.0.1",
+    "build": "astro build",
+    "typecheck": "astro check && tsc --noEmit",
+    "test": "vitest run",
+    "browser:test": "playwright test",
+    "lint": "eslint . && node scripts/check-boundaries.mjs",
+    "format": "prettier --write src tests scripts *.mjs *.json *.ts",
+    "format:check": "prettier --check src tests scripts *.mjs *.json *.ts"
+  },
+  "dependencies": {
+    "@astrojs/vercel": "11.0.11",
+    "@supabase/ssr": "0.12.7",
+    "@supabase/supabase-js": "^2.112.0",
+    "@tailwindcss/vite": "^4.3.3",
+    "astro": "^7.3.2",
+    "tailwindcss": "^4.3.3",
+    "zod": "4.6.1"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.10",
+    "@axe-core/playwright": "^4.12.1",
+    "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.63.0",
+    "@types/node": "^22.20.2",
+    "eslint": "^10.8.0",
+    "eslint-plugin-astro": "^1.7.0",
+    "happy-dom": "^20.11.2",
+    "prettier": "^3.9.6",
+    "prettier-plugin-astro": "^0.14.1",
+    "stylelint": "^17.14.1",
+    "typescript": "^6.0.0",
+    "typescript-eslint": "^8.65.0",
+    "vitest": "^4.1.11"
+  },
+  "engines": {
+    "node": "22.x",
+    "npm": ">=10"
+  }
+}
