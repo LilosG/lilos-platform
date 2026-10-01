@@ -1338,6 +1338,42 @@
         "title": "AutomationWorkspace",
         "type": "object"
       },
+      "Blocker": {
+        "properties": {
+          "code": {
+            "enum": [
+              "NO_METRICS",
+              "INVALID_METRIC_REFERENCE",
+              "METRIC_UNDEFINED",
+              "DATA_MISSING",
+              "DATA_STALE",
+              "DATA_PARTIAL",
+              "SOURCE_UNAVAILABLE",
+              "DEFINITION_INACTIVE",
+              "UNSUPPORTED_SCOPE"
+            ],
+            "title": "Code",
+            "type": "string"
+          },
+          "metric_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metric Id"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "title": "Blocker",
+        "type": "object"
+      },
       "BlockerResolution": {
         "additionalProperties": false,
         "description": "Where a blocker is resolved, and by whom.\n\nCarried alongside the human sentence so the product can render a blocker as\nan action rather than a sentence the operator has to go hunting behind, and\nso a test can assert that everything shown to an operator is clearable by\nthat operator.",
@@ -2841,6 +2877,49 @@
           "decision"
         ],
         "title": "Decision",
+        "type": "object"
+      },
+      "DeliveryState": {
+        "properties": {
+          "artifact_reference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artifact Reference"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "sent",
+              "failed",
+              "unavailable"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "created_at",
+          "artifact_reference"
+        ],
+        "title": "DeliveryState",
         "type": "object"
       },
       "DenyData": {
@@ -8400,6 +8479,81 @@
         "title": "MetricComparison",
         "type": "object"
       },
+      "MetricState": {
+        "properties": {
+          "last_synced_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Synced At"
+          },
+          "metric_id": {
+            "format": "uuid",
+            "title": "Metric Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "period_end": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period End"
+          },
+          "period_start": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period Start"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "metric_id",
+          "name",
+          "state",
+          "source",
+          "period_start",
+          "period_end",
+          "last_synced_at"
+        ],
+        "title": "MetricState",
+        "type": "object"
+      },
       "MyOrganizationData": {
         "additionalProperties": false,
         "description": "Self-scoped organization-membership summary for the authenticated caller.",
@@ -12182,6 +12336,138 @@
         "title": "RecommendationView",
         "type": "object"
       },
+      "ReportItem": {
+        "properties": {
+          "artifact_reference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artifact Reference"
+          },
+          "blockers": {
+            "items": {
+              "$ref": "#/components/schemas/Blocker"
+            },
+            "title": "Blockers",
+            "type": "array"
+          },
+          "data_state": {
+            "enum": [
+              "ready",
+              "missing",
+              "stale",
+              "partial",
+              "unavailable"
+            ],
+            "title": "Data State",
+            "type": "string"
+          },
+          "definition_status": {
+            "title": "Definition Status",
+            "type": "string"
+          },
+          "deliveries": {
+            "items": {
+              "$ref": "#/components/schemas/DeliveryState"
+            },
+            "title": "Deliveries",
+            "type": "array"
+          },
+          "generation": {
+            "enum": [
+              "queued",
+              "generating",
+              "ready",
+              "sent",
+              "failed",
+              "unavailable"
+            ],
+            "title": "Generation",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "metrics": {
+            "items": {
+              "$ref": "#/components/schemas/MetricState"
+            },
+            "title": "Metrics",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "readiness": {
+            "enum": [
+              "ready",
+              "not_ready"
+            ],
+            "title": "Readiness",
+            "type": "string"
+          },
+          "revision_created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revision Created At"
+          },
+          "revision_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revision Id"
+          },
+          "revision_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revision Status"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "definition_status",
+          "readiness",
+          "data_state",
+          "blockers",
+          "metrics",
+          "generation",
+          "revision_id",
+          "revision_status",
+          "revision_created_at",
+          "artifact_reference",
+          "deliveries"
+        ],
+        "title": "ReportItem",
+        "type": "object"
+      },
       "ReportingRange": {
         "properties": {
           "days": {
@@ -12203,6 +12489,70 @@
           "days"
         ],
         "title": "ReportingRange",
+        "type": "object"
+      },
+      "ReportsEnvelope": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/ReportsWorkspace"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "ReportsEnvelope",
+        "type": "object"
+      },
+      "ReportsWorkspace": {
+        "properties": {
+          "generation_state": {
+            "const": "unavailable_no_canonical_report_workflow",
+            "title": "Generation State",
+            "type": "string"
+          },
+          "history_state": {
+            "const": "bounded_partial",
+            "title": "History State",
+            "type": "string"
+          },
+          "observed_at": {
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "organization_id": {
+            "format": "uuid",
+            "title": "Organization Id",
+            "type": "string"
+          },
+          "reports": {
+            "items": {
+              "$ref": "#/components/schemas/ReportItem"
+            },
+            "title": "Reports",
+            "type": "array"
+          },
+          "schedule_state": {
+            "const": "unavailable_no_canonical_report_schedule",
+            "title": "Schedule State",
+            "type": "string"
+          },
+          "source_state": {
+            "const": "canonical_reports_and_metrics",
+            "title": "Source State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "organization_id",
+          "observed_at",
+          "reports",
+          "schedule_state",
+          "generation_state",
+          "history_state",
+          "source_state"
+        ],
+        "title": "ReportsWorkspace",
         "type": "object"
       },
       "ResolvedCallToAction": {
@@ -17445,6 +17795,49 @@
           }
         },
         "summary": "Detail",
+        "tags": [
+          "command-center"
+        ]
+      }
+    },
+    "/api/v1/organizations/{organization_id}/command-center/reports/": {
+      "get": {
+        "operationId": "reports_workspace_api_v1_organizations__organization_id__command_center_reports__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportsEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reports Workspace",
         "tags": [
           "command-center"
         ]

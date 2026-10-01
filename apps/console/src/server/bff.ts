@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { reportRoutes } from "./report-routes";
 import { automationRoutes } from "./automation-routes";
 import { leadRoutes } from "./lead-routes";
 import { websiteRoutes } from "./website-routes";
@@ -34,6 +35,7 @@ type DecisionBody =
 export const routes = [
   ...searchRoutes,
   ...automationRoutes,
+  ...reportRoutes,
   ...leadRoutes,
   ...websiteRoutes,
   ...reviewRoutes,

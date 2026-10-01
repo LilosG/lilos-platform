@@ -12,7 +12,8 @@ interface Props {
     | "reviews"
     | "website-content"
     | "leads"
-    | "automations";
+    | "automations"
+    | "reports";
 }
 const { title, organizations = [], client, surface } = Astro.props;
 const base = client ? `/clients/${client.organization_slug}/` : "/";

@@ -1,4 +1,7 @@
 ---
+import Reports from "../../../components/reports/Reports.astro";
+import { adaptReports } from "../../../adapters/reports";
+import type { ReportsView } from "../../../adapters/reports";
 import Automations from "../../../components/automations/Automations.astro";
 import RunDetail from "../../../components/automations/RunDetail.astro";
 import {
@@ -72,6 +75,7 @@ try {
 const path = (Astro.params.workspace ?? "").replace(/\/$/, "");
 const section = path.split("/")[0];
 const sourceId = path.split("/")[1];
+let reports: ReportsView | undefined;
 let automations: AutomationsView | undefined;
 let automationDetail: AutomationDetailView | undefined;
 let leads: LeadsView | undefined;
@@ -114,7 +118,13 @@ if (!Number.isInteger(offset) || offset < 0 || offset > 100000)
   return new Response("Invalid page", { status: 400 });
 const scope = `organizations/${client.organization_id}/command-center/`;
 try {
-  if (section === "automations") {
+  if (section === "reports") {
+    if (sourceId) return new Response("Page not found", { status: 404 });
+    reports = adaptReports(
+      await read(Astro.locals, scope + "reports/"),
+      client.organization_id,
+    );
+  } else if (section === "automations") {
     if (segments.length === 3 && tab === "runs")
       automationDetail = adaptAutomationDetail(
         await read(Astro.locals, scope + `automations/runs/${segments[2]}/`),
@@ -291,7 +301,9 @@ try {
     "This source is temporarily unavailable. No sample data is substituted.";
 }
 const title =
-  section === "automations"
+  section === "reports"
+    ? "Reports"
+    : section === "automations"
     ? "Automations"
     : section === "website-content"
       ? "Website & Content"
@@ -321,7 +333,8 @@ const title =
   section === "reviews" ||
   section === "website-content" ||
   section === "leads" ||
-  section === "automations"
+  section === "automations" ||
+  section === "reports"
     ? section
     : undefined}
 >
@@ -433,6 +446,8 @@ const title =
         </div>
         {error ? (
           <p role="alert">{error}</p>
+        ) : reports ? (
+          <Reports view={reports} />
         ) : automations ? (
           <Automations
             view={automations}

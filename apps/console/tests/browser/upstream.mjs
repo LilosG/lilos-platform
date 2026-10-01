@@ -15,6 +15,10 @@ const phase5 = JSON.parse(
 const phase6 = JSON.parse(
   readFileSync(new URL("../fixtures/phase6.json", import.meta.url), "utf8"),
 );
+const phase7 = JSON.parse(
+  readFileSync(new URL("../fixtures/phase7.json", import.meta.url), "utf8"),
+);
+let reportMode = "inventory";
 let automationState = structuredClone(phase6);
 let automationMode = "inventory";
 const upstreamPort = Number(process.env.CONSOLE_TEST_UPSTREAM_PORT ?? 4455);
@@ -97,6 +101,10 @@ createServer(async (req, res) => {
   if (url.pathname === "/test/leads-scenario") {
     leadScenario = parsed.mode;
     leadStates.clear();
+    return reply({ ok: true });
+  }
+  if (url.pathname === "/test/reports-scenario") {
+    reportMode = parsed.mode;
     return reply({ ok: true });
   }
   if (url.pathname === "/test/automations-scenario") {
@@ -209,6 +217,12 @@ createServer(async (req, res) => {
   if (!scoped || scoped[1] !== claims.sub)
     return reply({ code: "NOT_FOUND" }, 404);
   const path = scoped[2];
+  if (path === "command-center/reports") {
+    if (claims.sub !== ids.a) return reply({ code: "NOT_FOUND" }, 404);
+    if (reportMode === "error") return reply({ code: "UNAVAILABLE" }, 503);
+    if (reportMode === "empty") return reply({ data: { ...phase7, reports: [] } });
+    return reply({ data: phase7 });
+  }
   if (
     path === "command-center/automations" ||
     path.startsWith("command-center/automations/runs/")

@@ -37,7 +37,7 @@ const title = labels[page];
             <div>
               <>
                 <a
-                  href={`/clients/${client.organization_slug}/${page === "opportunities" || page === "attention" || page === "integrations" || page === "automations" ? page + "/" : ""}`}
+                  href={`/clients/${client.organization_slug}/${page === "opportunities" || page === "attention" || page === "integrations" || page === "automations" || page === "reports" ? page + "/" : ""}`}
                 >
                   {client.organization_name}
                 </a>
@@ -59,6 +59,7 @@ const title = labels[page];
       "attention",
       "integrations",
       "automations",
+      "reports",
     ].includes(page) && (
       <div class="panel">
         <>

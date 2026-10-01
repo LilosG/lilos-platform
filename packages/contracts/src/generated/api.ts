@@ -764,6 +764,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/organizations/{organization_id}/command-center/reports/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Reports Workspace */
+        get: operations["reports_workspace_api_v1_organizations__organization_id__command_center_reports__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/organizations/{organization_id}/command-center/reviews": {
         parameters: {
             query?: never;
@@ -5635,6 +5652,16 @@ export interface components {
             /** Total Runs */
             total_runs: number;
         };
+        /** Blocker */
+        Blocker: {
+            /**
+             * Code
+             * @enum {string}
+             */
+            code: "NO_METRICS" | "INVALID_METRIC_REFERENCE" | "METRIC_UNDEFINED" | "DATA_MISSING" | "DATA_STALE" | "DATA_PARTIAL" | "SOURCE_UNAVAILABLE" | "DEFINITION_INACTIVE" | "UNSUPPORTED_SCOPE";
+            /** Metric Id */
+            metric_id?: string | null;
+        };
         /**
          * BlockerResolution
          * @description Where a blocker is resolved, and by whom.
@@ -6160,6 +6187,26 @@ export interface components {
              * @constant
              */
             expected_status: "awaiting_approval";
+        };
+        /** DeliveryState */
+        DeliveryState: {
+            /** Artifact Reference */
+            artifact_reference: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "queued" | "sent" | "failed" | "unavailable";
         };
         /** DenyData */
         DenyData: {
@@ -7921,6 +7968,26 @@ export interface components {
             /** Quality */
             quality: string;
         };
+        /** MetricState */
+        MetricState: {
+            /** Last Synced At */
+            last_synced_at: string | null;
+            /**
+             * Metric Id
+             * Format: uuid
+             */
+            metric_id: string;
+            /** Name */
+            name: string;
+            /** Period End */
+            period_end: string | null;
+            /** Period Start */
+            period_start: string | null;
+            /** Source */
+            source: string | null;
+            /** State */
+            state: string;
+        };
         /**
          * MyOrganizationData
          * @description Self-scoped organization-membership summary for the authenticated caller.
@@ -9149,6 +9216,47 @@ export interface components {
             /** Status */
             status: string;
         };
+        /** ReportItem */
+        ReportItem: {
+            /** Artifact Reference */
+            artifact_reference: string | null;
+            /** Blockers */
+            blockers: components["schemas"]["Blocker"][];
+            /**
+             * Data State
+             * @enum {string}
+             */
+            data_state: "ready" | "missing" | "stale" | "partial" | "unavailable";
+            /** Definition Status */
+            definition_status: string;
+            /** Deliveries */
+            deliveries: components["schemas"]["DeliveryState"][];
+            /**
+             * Generation
+             * @enum {string}
+             */
+            generation: "queued" | "generating" | "ready" | "sent" | "failed" | "unavailable";
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Metrics */
+            metrics: components["schemas"]["MetricState"][];
+            /** Name */
+            name: string;
+            /**
+             * Readiness
+             * @enum {string}
+             */
+            readiness: "ready" | "not_ready";
+            /** Revision Created At */
+            revision_created_at: string | null;
+            /** Revision Id */
+            revision_id: string | null;
+            /** Revision Status */
+            revision_status: string | null;
+        };
         /** ReportingRange */
         ReportingRange: {
             /** Days */
@@ -9157,6 +9265,45 @@ export interface components {
             end: string;
             /** Start */
             start: string;
+        };
+        /** ReportsEnvelope */
+        ReportsEnvelope: {
+            data: components["schemas"]["ReportsWorkspace"];
+        };
+        /** ReportsWorkspace */
+        ReportsWorkspace: {
+            /**
+             * Generation State
+             * @constant
+             */
+            generation_state: "unavailable_no_canonical_report_workflow";
+            /**
+             * History State
+             * @constant
+             */
+            history_state: "bounded_partial";
+            /**
+             * Observed At
+             * Format: date-time
+             */
+            observed_at: string;
+            /**
+             * Organization Id
+             * Format: uuid
+             */
+            organization_id: string;
+            /** Reports */
+            reports: components["schemas"]["ReportItem"][];
+            /**
+             * Schedule State
+             * @constant
+             */
+            schedule_state: "unavailable_no_canonical_report_schedule";
+            /**
+             * Source State
+             * @constant
+             */
+            source_state: "canonical_reports_and_metrics";
         };
         /** ResolvedCallToAction */
         ResolvedCallToAction: {
@@ -11617,6 +11764,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OpportunityDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reports_workspace_api_v1_organizations__organization_id__command_center_reports__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organization_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportsEnvelope"];
                 };
             };
             /** @description Validation Error */

@@ -1,0 +1,27 @@
+---
+import type { ReportsView } from "../../adapters/reports";
+interface Props { view: ReportsView }
+const { view } = Astro.props;
+---
+<p>Canonical report and metric records · Observed {view.observed_at}. Histories are bounded.</p>
+<section class="panel">
+  <h2>Report readiness</h2>
+  {view.reports.length ? view.reports.map((report) => (
+    <article class="listrow">
+      <div>
+        <h3>{report.name}</h3>
+        <p>Readiness: {report.readiness.replaceAll("_", " ")} · Data: {report.data_state} · Generation: {report.generation}</p>
+        <p>Definition: {report.definition_status} · Revision: {report.revision_status ?? "unavailable"}</p>
+        {report.blockers.length > 0 && <ul aria-label={`Blockers for ${report.name}`}>{report.blockers.map((blocker) => <li>{blocker.code.replaceAll("_", " ").toLowerCase()}{blocker.metric_id ? ` · ${blocker.metric_id}` : ""}</li>)}</ul>}
+        {report.metrics.length > 0 && <details><summary>Data readiness and freshness</summary><ul>{report.metrics.map((metric) => <li>{metric.name}: {metric.state} · Source {metric.source ?? "unavailable"} · Period {metric.period_start ?? "unavailable"} to {metric.period_end ?? "unavailable"} · Last sync {metric.last_synced_at ?? "unavailable"}</li>)}</ul></details>}
+        {report.revision_created_at && <p>Latest revision {report.revision_created_at} · {report.revision_id}</p>}
+        {report.artifact_reference && <p>Recorded artifact reference: {report.artifact_reference}</p>}
+        {report.deliveries.length > 0 && <details><summary>Delivery history</summary><ul>{report.deliveries.map((delivery) => <li>{delivery.created_at} · {delivery.status} · {delivery.artifact_reference ?? "No artifact reference"}</li>)}</ul></details>}
+      </div>
+    </article>
+  )) : <p>No canonical report definitions are recorded for this client.</p>}
+</section>
+<div class="grid">
+  <section class="panel"><h2>Upcoming reports</h2><p>Unavailable: no canonical report schedule exists. A definition’s delivery policy does not confirm an upcoming delivery.</p></section>
+  <section class="panel"><h2>Generation</h2><p>Unavailable: no canonical report generation workflow exists. Revision and delivery states above are persisted evidence only.</p></section>
+</div>
