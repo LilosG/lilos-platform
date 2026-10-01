@@ -95,13 +95,65 @@ corrected scoped source/components without weakening axe. Later added AI workflo
 projection required canonical workflow-definition joins, and new test fixture types
 were widened using the actual adapters. Focused affected checks passed afterward.
 
-Final gates: pending commit/rebase onto the actual Phase 3 merge before one full run.
-No full final suite was run while Phase 3 remained pending. Phase 3 PR #145 was
-confirmed merged at `8db3ff4f1eef4f9d3fb421e18422bc521aa48ec5` on 2026-10-01.
+## Post-rebase final gates
 
-The unchanged lockfile reports one high-severity `devalue` dependency advisory on
-install/audit. Classified once; no dependency upgrade or gate weakening in Phase 4.
-This remains a release validation risk requiring resolution in its owning packet.
+Phase 3 PR #145 was confirmed merged at
+`8db3ff4f1eef4f9d3fb421e18422bc521aa48ec5` on 2026-10-01. Phase 4 was committed,
+fetched and rebased cleanly onto that actual `origin/main`. The reviewed candidate is
+`2c0e0b3`; its diff contains only the 24 Phase 4 files below. No conflict resolution
+or unrelated Phase 3 change was required. Full final gates ran once only after rebase.
+
+| Gate                                                | Result                                                                                                                           |
+| --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `npm run format:check`                              | PASS                                                                                                                             |
+| `npm run lint`                                      | PASS; fixture/session boundaries retained                                                                                        |
+| `npm run typecheck`                                 | PASS; web/Python/console, four inherited deprecated-navigation hints                                                             |
+| `npm run test:web`                                  | PASS — 450 tests / 48 files                                                                                                      |
+| `npm run test:console`                              | PASS — 50 tests / seven files                                                                                                    |
+| `npm run build`                                     | PASS — existing web and separate console SSR                                                                                     |
+| `npm run check:console:browser`                     | PASS — 28 desktop/mobile journeys with axe                                                                                       |
+| `npm run check:browser`                             | Runner startup FAIL — existing port 4323 listener; scenarios NOT RUN locally. Classified once; existing process not touched      |
+| `npm run contracts:check`                           | PASS — byte drift; three additive paths/eleven schemas, zero changed or removed existing contracts                               |
+| `npm run check:secrets`                             | PASS                                                                                                                             |
+| `npm run check:release`                             | PASS — structural release package only                                                                                           |
+| `npm run check:render`                              | PASS — both existing Blueprints unchanged                                                                                        |
+| `npm run check:production-preflight`                | FAIL CLOSED — local environment, absent production DB/release/Auth issuer/JWKS/telemetry configuration; inherited owner boundary |
+| `npm run db:current`                                | PASS — disposable local DB at 20260930_0003 head                                                                                 |
+| `npm audit --audit-level=high` / `uv run pip-audit` | PASS — zero known vulnerabilities                                                                                                |
+| Full Python four shards                             | FAIL — 1,878 PASS / three SKIP / one unchanged crawl regression FAIL; all new Phase 4 cases PASS, details below                  |
+| `git diff --check` and full scope review            | PASS; final documentation-only evidence amendment also checked before commit                                                     |
+
+Four independent disposable PostgreSQL 17 clusters on ports 55510–55513 each host
+one `lilos_phase4_shardN_test` database, matching CI's independent-service isolation.
+Inventory: 220 files, four sets of 55, complete union/zero overlap. No test DB is
+Supabase or production. No migration/model changed. The clusters started for this
+packet are stopped after their test runs; no existing cluster setting was changed.
+
+Full Python shard results: shard 0, 429 PASS / one FAIL; shard 1, 438 PASS / three
+SKIP; shard 2, 503 PASS; shard 3, 508 PASS. Existing Starlette deprecation warning
+retained. Full Python acceptance is **not green**. No full-suite rerun.
+
+Unrelated failure classified once:
+`tests/python/seo/test_seo_api.py::test_crawl_survives_overlength_content_and_truncates_with_marker`
+expects the overlong landing page at `https://example.test/` to be persisted after a
+successful crawl; the row is absent. The test, SEOService and crawl engine are unchanged
+against actual merged main. Root cause is unproven; no fix, test weakening or broad
+debugging was performed. Clean CI must confirm this regression. All new Phase 4 API
+cases and the focused 69 canonical lifecycle regressions passed. This failed existing
+crawl check, the occupied old-web browser port and production configuration boundary
+remain visible limitations; no all-gates PASS or live acceptance is claimed.
+
+The initial unchanged Phase 3-head lockfile reported a high-severity `devalue`
+advisory. Actual merged Phase 3 includes its canonical dependency fix (`06c4b8d`);
+post-rebase reinstall and final audit report zero vulnerabilities. Phase 4 adds no
+dependency change. Local Node 22.17.1 install warns about undici's newer patch engine;
+deployment/CI pins remain unchanged and builds passed. No runtime/deployment claim
+is inferred from local build success.
+
+Desktop/mobile screenshots were visually inspected; the dialog is readable without
+clipping or overlap. Live deployed auth/provider/GitHub/AI/read-back/capacity/canary
+acceptance was not run. Existing-web browser acceptance requires a clean runner/CI;
+no full-suite repeat or broad unrelated debugging was performed.
 
 ## Unsupported capabilities retained
 
@@ -144,11 +196,12 @@ Decision log appends D50–D54. Release ledger appends only Phase 4,
 
 Leads/business outcomes, Automations, Reports, Portfolio aggregates, Administration,
 Settings/Onboarding and Phase 5 were intentionally not implemented. Missing conversion
-instrumentation, Content website attribution and dependency advisory remediation are
+instrumentation and Content website attribution are
 recorded adjacent work; no parallel systems introduced.
 
-Phase 5 readiness: repository scope implemented; review/CI/final gates and Phase 4
-merge required before Phase 5. Live staging remains pending. Do not merge this packet.
+Phase 5 readiness: repository scope implemented and post-rebase final gates executed;
+review/clean CI confirmation of the recorded failures and Phase 4 merge are required
+before Phase 5. Live staging remains pending. Do not merge this packet.
 
 ## Exact files changed
 
