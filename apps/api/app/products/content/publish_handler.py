@@ -171,6 +171,68 @@ async def load_publishing_context(
     )
 
 
+@dataclass(frozen=True, slots=True)
+class PullRequestObservation:
+    """The provider's pull request state, read without changing anything."""
+
+    state: str  # "open" | "merged" | "closed"
+    merge_commit_sha: str | None
+
+
+class PullRequestUnavailableError(Exception):
+    """The pull request could not be read; ``code`` says why, without secrets."""
+
+    def __init__(self, code: str) -> None:
+        super().__init__(code)
+        self.code = code
+
+
+async def observe_publication_pull_request(
+    session: AsyncSession,
+    organization_id: UUID,
+    publication: ContentPublication,
+) -> PullRequestObservation:
+    """Read a publication's pull request state. Unlike `load_publishing_context` this never
+    fails the publication, so an operator script can look without side effects.
+    """
+    if not publication.external_pull_request_id:
+        raise PullRequestUnavailableError("PUBLICATION_HAS_NO_PULL_REQUEST")
+    target = await session.scalar(
+        select(PublishingTarget).where(
+            PublishingTarget.organization_id == organization_id,
+            PublishingTarget.id == publication.publishing_target_id,
+            PublishingTarget.status == "active",
+        )
+    )
+    if target is None:
+        raise PullRequestUnavailableError("PUBLISHING_TARGET_NOT_CONFIGURED")
+    connection = await session.scalar(
+        select(IntegrationConnection).where(
+            IntegrationConnection.organization_id == organization_id,
+            IntegrationConnection.id == target.connection_id,
+            IntegrationConnection.status == "connected",
+        )
+    )
+    if connection is None:
+        raise PullRequestUnavailableError("GITHUB_CONNECTION_REQUIRED")
+    try:
+        token = str(await _github_token_resolver(session, Settings(), connection))
+    except Exception as exc:
+        raise PullRequestUnavailableError("GITHUB_CREDENTIAL_REQUIRED") from exc
+    try:
+        pr = await _content_publisher_factory(token).get_pull_request(
+            target.repository_id, publication.external_pull_request_id
+        )
+    except Exception as exc:
+        logger.warning("Pull request state lookup failed", exc_info=exc)
+        raise PullRequestUnavailableError("PULL_REQUEST_LOOKUP_FAILED") from exc
+    if bool(pr.get("merged")):
+        return PullRequestObservation("merged", str(pr.get("merge_commit_sha") or "") or None)
+    if pr.get("state") == "closed":
+        return PullRequestObservation("closed", None)
+    return PullRequestObservation("open", None)
+
+
 async def advance_publication(
     session: AsyncSession,
     publication: ContentPublication,

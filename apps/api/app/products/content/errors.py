@@ -64,6 +64,14 @@ class ContentSEOTargetUnresolvedError(ConflictError):
     )
 
 
+class ContentNewPageTargetInvalidError(ConflictError):
+    code = "CONTENT_NEW_PAGE_TARGET_INVALID"
+    public_message = (
+        "A new_page target must be the proposed site path, starting with '/', for example "
+        "'/services/water-heater-repair'."
+    )
+
+
 class ContentSEOTargetMismatchError(ConflictError):
     code = "CONTENT_SEO_TARGET_MISMATCH"
     public_message = "The Content target does not match the scoped SEO page."

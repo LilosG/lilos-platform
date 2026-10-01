@@ -3,6 +3,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from apps.api.app.products.content.enums import ContentTargetKind
+
 
 class GitHubConnectionCreate(BaseModel):
     """Register an application-side GitHub connection (PAT fallback).
@@ -62,6 +64,7 @@ class BriefCreate(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
     audience: str = Field(min_length=1, max_length=500)
     intent: str = Field(min_length=1, max_length=500)
+    target_kind: ContentTargetKind = ContentTargetKind.EXISTING_PAGE
     target_reference: str = Field(min_length=1, max_length=500)
     approved_fact_revision_ids: list[UUID] = Field(min_length=1, max_length=100)
     required_claims: list[str] = Field(default_factory=list, max_length=100)

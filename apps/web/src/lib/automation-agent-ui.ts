@@ -138,3 +138,25 @@ export function scheduleRowActions(
     canCancel: true,
   };
 }
+
+// Typed run-stop codes the runtime returns. The code is always shown; the label
+// only explains it. Unknown codes fall back to the code itself, never to guessed prose.
+const AGENT_RUN_ERROR_LABELS: Record<string, string> = {
+  CONTENT_SEO_TARGET_UNRESOLVED:
+    "Stopped: the draft needs an attributed page, or a new-page target",
+  CONTENT_NEW_PAGE_TARGET_INVALID:
+    "Stopped: a new-page target must be a site path starting with /",
+  CONTENT_BRIEF_SOURCES_MISSING: "Stopped: the content brief has no sources",
+  SITE_CHANGE_INVALID:
+    "Stopped: the proposed site change failed quality checks",
+  AGENT_REQUIRED_OUTPUT_MISSING:
+    "Finished without producing the required output",
+  HERMES_RUN_STOPPED: "Stopped after repeated tool failures",
+  HERMES_TOOL_FAILED: "Stopped: a tool failed unexpectedly",
+};
+
+export function agentRunErrorLabel(code: string | null): string {
+  if (!code) return "—";
+  const label = AGENT_RUN_ERROR_LABELS[code];
+  return label ? `${code} — ${label}` : code;
+}

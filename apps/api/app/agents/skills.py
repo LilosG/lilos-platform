@@ -16,6 +16,9 @@ class AgentSkill:
     title: str
     instructions: str
     required_tools: tuple[str, ...]
+    # A bound run (one started with a context reference) is only complete once it has
+    # produced an output reference of this kind; otherwise it ends as failed.
+    required_output_prefix: str | None = None
 
 
 COMMON_POLICY = """
@@ -86,7 +89,7 @@ Never publish or edit Google directly.
     ),
     "seo.operator": AgentSkill(
         key="seo.operator",
-        version=6,
+        version=7,
         product_key="seo",
         title="SEO evidence analyst",
         instructions=COMMON_POLICY
@@ -118,8 +121,10 @@ real current values (read from the client's repository) are listed under
 proposed_value and rationale, for fields that context lists. Never restate or
 invent a current value -- LILOs supplies it -- and keep a seo_title at most 60
 characters and a meta_description at most 160, non-empty and different from the
-current text. A rejected site_changes call names the problem and does not spend
-your one proposal; correct it and call again. When the status is "unavailable",
+current text. A rejected site_changes call returns SITE_CHANGE_INVALID with each
+problem's field, code and offending terms, and does not spend your one proposal;
+correct every listed problem and call again once. A second rejection ends the
+run. When the status is "unavailable",
 omit site_changes: the recommendation will carry the typed code (for example
 SITE_MAPPING_REQUIRED) and a human will decide how the change is made.
 Writing titles and descriptions. site_change_context.quality_context lists the
@@ -149,7 +154,7 @@ SITE_CHANGE_INVALID listing every problem by code, so one correction can fix the
     ),
     "content.operator": AgentSkill(
         key="content.operator",
-        version=5,
+        version=6,
         product_key="content",
         title="Grounded content operator",
         instructions=COMMON_POLICY
@@ -168,16 +173,18 @@ When the accepted SEO opportunity has an exact mapped SEO page, preserve that
 page's route/slug and treat the work as an optimization unless the evidence
 clearly justifies a distinct new asset. A website URL, crawl page, or relevant
 Content item does not prove which page ranks for a query. When SEO page mapping
-is unknown, keep the SEO opportunity reference as the target, state that page
-attribution is required, and do not assert an existing ranking page or choose
-a page-specific route from prose.
+is unknown (the opportunity is query-only or unresolved), do not assert an
+existing ranking page: create the brief with target_kind "new_page" and a
+proposed site path such as "/services/water-heater-repair" as target_reference.
+Use target_kind "existing_page" only when the opportunity has an exact
+attributed page, and then target_reference is that page's URL.
 
 An accepted Content opportunity with an exact target is an execution
 instruction. Carry it in one run through item creation, a complete
 evidence-backed brief, and generate_content_draft_proposal so the result lands
-in editorial review. When an SEO target is unresolved, report the attribution
-blocker; do not call the draft or submit tools. For resolved targets, do not
-stop after creating only an item, recommendation, or brief.
+in editorial review. A new_page target needs no attributed page and goes through
+the draft tool like any other. Do not stop after creating only an item,
+recommendation, or brief.
 For a new article, guide, service page, or landing page, create a brief complete
 enough that another editor could produce the page without guessing.
 
@@ -205,6 +212,7 @@ floor; GitHub publication remains exclusively controlled by LILOs workflows.
             "generate_content_draft_proposal",
             "submit_for_approval",
         ),
+        required_output_prefix="content-revision:",
     ),
     "reviews.operator": AgentSkill(
         key="reviews.operator",
@@ -376,6 +384,7 @@ guardrails before execution.
             "create_growth_plan",
             "submit_for_approval",
         ),
+        required_output_prefix="growth-initiative:",
     ),
 }
 

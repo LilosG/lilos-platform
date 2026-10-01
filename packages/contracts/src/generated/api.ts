@@ -5296,6 +5296,8 @@ export interface components {
             required_local_references?: string[];
             /** Source Evidence References */
             source_evidence_references?: string[];
+            /** @default existing_page */
+            target_kind: components["schemas"]["ContentTargetKind"];
             /** Target Reference */
             target_reference: string;
             /** Validation Requirements */
@@ -5611,6 +5613,12 @@ export interface components {
                 [key: string]: components["schemas"]["JsonValue"];
             };
         };
+        /**
+         * ContentTargetKind
+         * @description Whether a brief improves an attributed existing page or proposes a new URL.
+         * @enum {string}
+         */
+        ContentTargetKind: "existing_page" | "new_page";
         /** ContentTargetView */
         ContentTargetView: {
             /** Allowed Path Prefix */

@@ -73,8 +73,8 @@ def test_complete_product_skill_and_sanctioned_tool_plane() -> None:
         # Prompt versions are immutable execution provenance: a changed prompt
         # must receive a new version rather than rewriting what a prior run means.
         "gbp.operator": 5,
-        "seo.operator": 6,
-        "content.operator": 5,
+        "seo.operator": 7,
+        "content.operator": 6,
         "leads.operator": 1,
         "reviews.operator": 3,
         "insights.cross_product": 3,
@@ -734,26 +734,27 @@ def test_a_refused_tool_names_what_the_run_may_call_instead() -> None:
     """A bare refusal taught the model nothing and it kept probing.
 
     The runtime advertises every LILOs tool regardless of the bound skill, so a
-    GBP run is offered Reviews, SEO and workflow-inspection tools it can never
-    call. Production logs show it trying them one after another — each attempt
-    an iteration spent on a call that could only be denied.
+    GBP run is offered Reviews and Leads write tools it can never call.
+    Production logs show it trying them one after another, each attempt an
+    iteration spent on a call that could only be denied.
     """
     run = cast(AgentRun, SimpleNamespace(skill_key="gbp.operator"))
 
     with pytest.raises(AgentToolDeniedError) as denial:
-        AgentToolService._validate_skill_tool(run, "read_reviews_state")
+        AgentToolService._validate_skill_tool(run, "draft_review_response_proposal")
 
     message = str(denial.value)
     assert "this run may call only:" in message
     for sanctioned in SKILLS["gbp.operator"].required_tools:
         assert sanctioned in message
-    assert "read_reviews_state" not in message.split("this run may call only:")[1]
+    listed_tools = message.split("this run may call only:")[1]
+    assert "draft_review_response_proposal" not in listed_tools
 
 
 def test_the_named_set_is_exactly_the_skill_contract_not_the_whole_tool_plane() -> None:
     run = cast(AgentRun, SimpleNamespace(skill_key="gbp.operator"))
     with pytest.raises(AgentToolDeniedError) as denial:
-        AgentToolService._validate_skill_tool(run, "inspect_workflow")
+        AgentToolService._validate_skill_tool(run, "create_lead_followup_task")
 
     listed = str(denial.value).split("this run may call only:")[1]
     named = {item.strip() for item in listed.split(",")}

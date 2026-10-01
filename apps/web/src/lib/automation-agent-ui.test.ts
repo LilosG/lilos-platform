@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { AgentRunEvent, AgentRunSummary } from "./agents";
 import {
   actionableWorkflowFailureCount,
+  agentRunErrorLabel,
   presentAgentEvent,
   selectPendingAgentRun,
   scheduleRowActions,
@@ -139,5 +140,21 @@ describe("scheduleRowActions", () => {
       toggleLabel: null,
       canCancel: false,
     });
+  });
+});
+
+describe("agentRunErrorLabel", () => {
+  it("keeps the typed code visible beside its explanation", () => {
+    expect(agentRunErrorLabel("CONTENT_SEO_TARGET_UNRESOLVED")).toMatch(
+      /^CONTENT_SEO_TARGET_UNRESOLVED — /,
+    );
+  });
+
+  it("never invents prose for an unknown code", () => {
+    expect(agentRunErrorLabel("SOMETHING_NEW")).toBe("SOMETHING_NEW");
+  });
+
+  it("renders a dash when there is no error", () => {
+    expect(agentRunErrorLabel(null)).toBe("—");
   });
 });

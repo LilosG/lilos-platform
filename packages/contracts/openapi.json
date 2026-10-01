@@ -611,6 +611,10 @@
             "title": "Source Evidence References",
             "type": "array"
           },
+          "target_kind": {
+            "$ref": "#/components/schemas/ContentTargetKind",
+            "default": "existing_page"
+          },
           "target_reference": {
             "maxLength": 500,
             "minLength": 1,
@@ -1633,6 +1637,15 @@
         ],
         "title": "ContentRevisionView",
         "type": "object"
+      },
+      "ContentTargetKind": {
+        "description": "Whether a brief improves an attributed existing page or proposes a new URL.",
+        "enum": [
+          "existing_page",
+          "new_page"
+        ],
+        "title": "ContentTargetKind",
+        "type": "string"
       },
       "ContentTargetView": {
         "properties": {

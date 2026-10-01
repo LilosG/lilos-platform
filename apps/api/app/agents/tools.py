@@ -3,15 +3,17 @@
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
+from enum import StrEnum
 from hashlib import sha256
 from time import monotonic
 from typing import Any, cast
 from uuid import UUID
 
 from pydantic import ValidationError
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.app.administration.knowledge_service import BusinessKnowledgeService
@@ -28,8 +30,10 @@ from apps.api.app.ai.errors import AIProviderError
 from apps.api.app.audit.contracts import AuditEventCreate
 from apps.api.app.audit.enums import AuditActorType, AuditResult
 from apps.api.app.audit.metadata import JsonValue
+from apps.api.app.audit.models import AuditEvent
 from apps.api.app.audit.service import AuditEventService
 from apps.api.app.config import Settings
+from apps.api.app.errors import ApiError
 from apps.api.app.execution.models import WorkflowRun
 from apps.api.app.execution.service import ExecutionService
 from apps.api.app.growth.contracts import GrowthPlanCreate
@@ -38,6 +42,7 @@ from apps.api.app.growth.service import GrowthPlanValidationError, GrowthService
 from apps.api.app.insights.aggregation_service import InsightsService
 from apps.api.app.products.analytics.service import AnalyticsService
 from apps.api.app.products.content.contracts import BriefCreate, ItemCreate
+from apps.api.app.products.content.enums import ContentTargetKind
 from apps.api.app.products.content.models import ContentBrief, ContentOpportunity
 from apps.api.app.products.content.service import ContentService
 from apps.api.app.products.gbp.models import GBPLocation, GBPProfileSnapshot
@@ -63,9 +68,23 @@ from apps.api.app.products.seo.search_console_service import SearchConsoleServic
 from apps.api.app.products.seo.service import SEOService
 from apps.api.app.products.seo.site_change_service import SiteChangeService
 
+logger = logging.getLogger("lilos.agents.tools")
+
+# Same tool failing with the same typed code this many times ends the run.
+TOOL_FAILURE_LIMIT = 2
+RECENT_STOP_WINDOW = timedelta(minutes=10)
+ACTIVE_RUN_STATUSES = frozenset({"queued", "running", "waiting_approval"})
+
 
 class AgentToolDeniedError(ValueError):
-    pass
+    """A sanctioned tool refused a call; ``code`` is the typed reason shown to Hermes."""
+
+    code = "HERMES_TOOL_DENIED"
+
+    def __init__(self, message: str = "", *, code: str | None = None) -> None:
+        super().__init__(message)
+        if code is not None:
+            self.code = code
 
 
 class SiteChangeInvalidError(AgentToolDeniedError):
@@ -76,29 +95,48 @@ class SiteChangeInvalidError(AgentToolDeniedError):
 
     code = "SITE_CHANGE_INVALID"
 
-    def __init__(self, reason: str) -> None:
+    def __init__(self, reason: str, *, problems: list[dict[str, object]] | None = None) -> None:
         super().__init__(f"{self.code}: {reason}")
+        # Typed gate output for Hermes: field, quality code and the offending terms.
+        self.details: dict[str, object] = {"problems": (problems or [])[:10]}
+
+
+class ToolAccess(StrEnum):
+    """Whether a tool only reads LILOs state or can create/change it."""
+
+    READ = "read"
+    WRITE = "write"
 
 
 @dataclass(frozen=True, slots=True)
 class ToolSpec:
+    """One sanctioned tool. ``access`` is required so no tool is classified by default.
+
+    ``read`` tools are callable by every bound skill (organization-scoped as always);
+    ``write`` tools stay restricted to their skill's ``required_tools`` allowlist.
+    """
+
     allowed_arguments: frozenset[str]
-    mutating: bool = False
+    access: ToolAccess
+
+    @property
+    def mutating(self) -> bool:
+        return self.access is ToolAccess.WRITE
 
 
 TOOL_SPECS: dict[str, ToolSpec] = {
-    "read_client_business_facts": ToolSpec(frozenset()),
-    "read_website_knowledge": ToolSpec(frozenset({"query"})),
-    "read_gbp_state": ToolSpec(frozenset()),
-    "read_gbp_recent_posts": ToolSpec(frozenset({"limit"})),
-    "read_gsc_evidence": ToolSpec(frozenset({"days"})),
-    "read_ga4_evidence": ToolSpec(frozenset({"days"})),
-    "read_reviews_state": ToolSpec(frozenset({"limit"})),
-    "read_leads_state": ToolSpec(frozenset({"limit"})),
-    "read_content_inventory": ToolSpec(frozenset({"limit"})),
-    "read_cross_product_summary": ToolSpec(frozenset()),
-    "run_site_crawl": ToolSpec(frozenset(), mutating=True),
-    "analyze_seo_opportunities": ToolSpec(frozenset({"limit"})),
+    "read_client_business_facts": ToolSpec(frozenset(), access=ToolAccess.READ),
+    "read_website_knowledge": ToolSpec(frozenset({"query"}), access=ToolAccess.READ),
+    "read_gbp_state": ToolSpec(frozenset(), access=ToolAccess.READ),
+    "read_gbp_recent_posts": ToolSpec(frozenset({"limit"}), access=ToolAccess.READ),
+    "read_gsc_evidence": ToolSpec(frozenset({"days"}), access=ToolAccess.READ),
+    "read_ga4_evidence": ToolSpec(frozenset({"days"}), access=ToolAccess.READ),
+    "read_reviews_state": ToolSpec(frozenset({"limit"}), access=ToolAccess.READ),
+    "read_leads_state": ToolSpec(frozenset({"limit"}), access=ToolAccess.READ),
+    "read_content_inventory": ToolSpec(frozenset({"limit"}), access=ToolAccess.READ),
+    "read_cross_product_summary": ToolSpec(frozenset(), access=ToolAccess.READ),
+    "run_site_crawl": ToolSpec(frozenset(), access=ToolAccess.WRITE),
+    "analyze_seo_opportunities": ToolSpec(frozenset({"limit"}), access=ToolAccess.READ),
     "create_seo_recommendation_proposal": ToolSpec(
         frozenset(
             {
@@ -111,10 +149,11 @@ TOOL_SPECS: dict[str, ToolSpec] = {
                 "site_changes",
             }
         ),
-        mutating=True,
+        access=ToolAccess.WRITE,
     ),
     "create_content_proposal": ToolSpec(
-        frozenset({"content_opportunity_id", "content_type", "title", "slug"}), mutating=True
+        frozenset({"content_opportunity_id", "content_type", "title", "slug"}),
+        access=ToolAccess.WRITE,
     ),
     "create_content_brief": ToolSpec(
         frozenset(
@@ -122,6 +161,7 @@ TOOL_SPECS: dict[str, ToolSpec] = {
                 "content_item_id",
                 "audience",
                 "intent",
+                "target_kind",
                 "target_reference",
                 "approved_fact_revision_ids",
                 "required_claims",
@@ -130,7 +170,7 @@ TOOL_SPECS: dict[str, ToolSpec] = {
                 "source_evidence_references",
             }
         ),
-        mutating=True,
+        access=ToolAccess.WRITE,
     ),
     "generate_content_draft_proposal": ToolSpec(
         frozenset(
@@ -141,21 +181,21 @@ TOOL_SPECS: dict[str, ToolSpec] = {
                 "source_evidence_references",
             }
         ),
-        mutating=True,
+        access=ToolAccess.WRITE,
     ),
     "generate_gbp_post_proposal": ToolSpec(
         frozenset({"source_evidence_references", "review_id"}),
-        mutating=True,
+        access=ToolAccess.WRITE,
     ),
     "create_gbp_optimization_proposal": ToolSpec(
         frozenset({"capability_key", "field_changes", "evidence_references", "risk"}),
-        mutating=True,
+        access=ToolAccess.WRITE,
     ),
     "draft_review_response_proposal": ToolSpec(
-        frozenset({"review_id", "approved_fact_revision_ids"}), mutating=True
+        frozenset({"review_id", "approved_fact_revision_ids"}), access=ToolAccess.WRITE
     ),
     "create_lead_followup_task": ToolSpec(
-        frozenset({"lead_id", "title", "description", "due_at"}), mutating=True
+        frozenset({"lead_id", "title", "description", "due_at"}), access=ToolAccess.WRITE
     ),
     "create_growth_plan": ToolSpec(
         frozenset(
@@ -168,10 +208,10 @@ TOOL_SPECS: dict[str, ToolSpec] = {
                 "actions",
             }
         ),
-        mutating=True,
+        access=ToolAccess.WRITE,
     ),
-    "inspect_workflow": ToolSpec(frozenset()),
-    "submit_for_approval": ToolSpec(frozenset({"proposal_reference"}), mutating=True),
+    "inspect_workflow": ToolSpec(frozenset(), access=ToolAccess.READ),
+    "submit_for_approval": ToolSpec(frozenset({"proposal_reference"}), access=ToolAccess.WRITE),
 }
 
 
@@ -250,6 +290,7 @@ def build_change_set(
     items: list[SiteChangeItem] = []
     seen: set[SiteChangeField] = set()
     problems: list[str] = []
+    structured: list[dict[str, object]] = []
     for entry in raw[:20]:
         if not isinstance(entry, dict) or set(entry) != {"field", "proposed_value", "rationale"}:
             raise SiteChangeInvalidError(
@@ -282,14 +323,19 @@ def build_change_set(
             message = str(exc.errors()[0]["msg"]).removeprefix("Value error, ")
             raise SiteChangeInvalidError(message) from None
         # Deterministic quality gate: every problem at once, so one retry can fix them all.
-        problems.extend(
-            f"{field.value}: {problem}"
-            for problem in quality_problems(
-                field, current, items[-1].proposed_value, quality or QualityContext()
+        for problem in quality_problems(
+            field, current, items[-1].proposed_value, quality or QualityContext()
+        ):
+            problems.append(f"{field.value}: {problem}")
+            structured.append(
+                {
+                    "field": field.value,
+                    "code": problem.code.value,
+                    "terms": [term[:80] for term in problem.terms[:10]],
+                }
             )
-        )
     if problems:
-        raise SiteChangeInvalidError("; ".join(problems))
+        raise SiteChangeInvalidError("; ".join(problems), problems=structured)
     try:
         return SiteChangeSet(items=items).model_dump(mode="json")
     except ValidationError as exc:
@@ -322,6 +368,23 @@ class AgentToolService:
             )
         )
         if run is None:
+            stopped = await session.scalar(
+                select(AgentRun.safe_error_code)
+                .where(
+                    AgentRun.hermes_session_id == hermes_session_id,
+                    AgentRun.status == "failed",
+                    AgentRun.safe_error_code.is_not(None),
+                    AgentRun.completed_at >= datetime.now(UTC) - RECENT_STOP_WINDOW,
+                )
+                .order_by(AgentRun.completed_at.desc())
+                .limit(1)
+            )
+            if stopped is not None:
+                raise AgentToolDeniedError(
+                    f"Hermes session is not bound to an active LILOs run: it was stopped "
+                    f"({stopped}). Do not call more tools; report that failure code.",
+                    code="HERMES_RUN_STOPPED",
+                )
             raise AgentToolDeniedError("Hermes session is not bound to an active LILOs run")
         return run
 
@@ -355,6 +418,11 @@ class AgentToolService:
         skill = SKILLS.get(run.skill_key)
         if skill is None:
             raise AgentToolDeniedError("tool is not sanctioned for the bound agent skill")
+        spec = TOOL_SPECS.get(tool_name)
+        if spec is not None and spec.access is ToolAccess.READ:
+            # Reads are organization-scoped inside each handler, so every bound
+            # skill may use them; only writes are limited to the skill allowlist.
+            return
         if tool_name not in skill.required_tools:
             allowed = ", ".join(sorted(skill.required_tools))
             raise AgentToolDeniedError(
@@ -371,6 +439,7 @@ class AgentToolService:
     ) -> dict[str, object]:
         started = monotonic()
         outcome = "succeeded"
+        error_code: str | None = None
         result: dict[str, object] = {}
         result_hash: str | None = None
         result_bytes: int | None = None
@@ -384,7 +453,7 @@ class AgentToolService:
                     if tool_name not in {
                         "analyze_seo_opportunities",
                         "create_seo_recommendation_proposal",
-                    }:
+                    } and (spec is None or spec.access is ToolAccess.WRITE):
                         raise AgentToolDeniedError(
                             "Bound Search Intelligence reasoning may only read its decision "
                             "and propose a recommendation"
@@ -412,7 +481,10 @@ class AgentToolService:
                                 "This Hermes run already submitted its recommendation proposal"
                             )
             handler = getattr(self, f"_tool_{tool_name}")
-            result = await handler(session, run, arguments)
+            # A savepoint keeps the session usable when a tool fails midway: its
+            # partial writes roll back and the failure audit below still persists.
+            async with session.begin_nested():
+                result = await handler(session, run, arguments)
             if has_secret_key(result):
                 raise AgentToolDeniedError("secret-bearing tool result rejected")
             if not spec.mutating:
@@ -437,11 +509,33 @@ class AgentToolService:
                 run.output_references = merged
             await session.flush()
             return result
-        except AgentToolDeniedError:
+        except AgentToolDeniedError as exc:
             outcome = "denied"
+            error_code = exc.code
             raise
-        except Exception:
+        except ApiError as exc:
             outcome = "failed"
+            error_code = exc.code
+            raise
+        except ValidationError:
+            outcome = "failed"
+            error_code = "HERMES_TOOL_ARGUMENT_INVALID"
+            raise
+        except Exception as exc:
+            outcome = "failed"
+            error_code = "HERMES_TOOL_FAILED"
+            logger.error(
+                "Sanctioned tool raised an unexpected exception",
+                extra={
+                    "event_name": "agent.tool.unexpected_exception",
+                    "agent_run_id": str(run.id),
+                    "tool_name": tool_name,
+                    "correlation_id": run.correlation_id,
+                    "exception_type": type(exc).__name__,
+                    "exception_message": str(exc)[:500],
+                },
+                exc_info=True,
+            )
             raise
         finally:
             latency_ms = round((monotonic() - started) * 1000)
@@ -466,6 +560,7 @@ class AgentToolService:
                     "mutating": spec.mutating if spec else False,
                     "latency_ms": latency_ms,
                     "outcome": outcome,
+                    "error_code": error_code,
                     "result_hash": result_hash,
                     "result_bytes": result_bytes,
                     "source_references": [str(item)[:200] for item in source_references[:50]]
@@ -501,6 +596,60 @@ class AgentToolService:
                     metadata=cast(dict[str, JsonValue], metadata),
                 ),
             )
+            if error_code is not None:
+                await self._trip_circuit_breaker(session, run, tool_name, error_code)
+
+    async def _trip_circuit_breaker(
+        self, session: AsyncSession, run: AgentRun, tool_name: str, error_code: str
+    ) -> None:
+        """End the run once one tool has failed twice with the same typed code.
+
+        Counting the audit trail keeps one source of truth: every call, including the
+        one just recorded, is already there. Further calls are refused because the run
+        is no longer active, and the operator sees the typed code on the failed run.
+        """
+        failures = await session.scalar(
+            select(func.count())
+            .select_from(AuditEvent)
+            .where(
+                AuditEvent.organization_id == run.organization_id,
+                AuditEvent.resource_type == "agent_run",
+                AuditEvent.resource_id == run.id,
+                AuditEvent.event_type == "agent.tool.invoked",
+                AuditEvent.event_metadata["tool_name"].as_string() == tool_name,
+                AuditEvent.event_metadata["error_code"].as_string() == error_code,
+            )
+        )
+        if (failures or 0) < TOOL_FAILURE_LIMIT or run.status not in ACTIVE_RUN_STATUSES:
+            return
+        run.status = "failed"
+        run.safe_error_code = error_code[:64]
+        run.completed_at = datetime.now(UTC)
+        if (run.final_output or {}).get("seo_pending_proposal"):
+            run.final_output = None
+        await self.audit.record(
+            session,
+            AuditEventCreate(
+                event_type="agent.run.circuit_open",
+                action="agent.run.stop",
+                result=AuditResult.FAILED,
+                actor_type=AuditActorType.SERVICE,
+                actor_display_reference="hermes-agent",
+                organization_id=run.organization_id,
+                location_id=run.location_id,
+                product_key=run.skill_key.split(".")[0],
+                resource_type="agent_run",
+                resource_id=run.id,
+                correlation_id=run.correlation_id,
+                workflow_execution_id=run.workflow_run_id,
+                summary=f"Hermes run stopped: {tool_name} failed {TOOL_FAILURE_LIMIT} times "
+                f"with {error_code}.",
+                metadata=cast(
+                    dict[str, JsonValue],
+                    {"tool_name": tool_name, "error_code": error_code, "failures": failures},
+                ),
+            ),
+        )
 
     async def _governed_fact_ids(self, session: AsyncSession, run: AgentRun) -> set[UUID]:
         facts = await self.administration.effective_facts(session, run.organization_id)
@@ -585,7 +734,8 @@ class AgentToolService:
         if unmatched:
             raise AgentToolDeniedError(
                 f"{label} cites references this run did not observe: "
-                f"{', '.join(unmatched[:10])}; " + cls._citable_summary(observed)
+                f"{', '.join(unmatched[:10])}; " + cls._citable_summary(observed),
+                code="EVIDENCE_NOT_OBSERVED",
             )
         return list(dict.fromkeys(resolved))
 
@@ -1287,6 +1437,14 @@ class AgentToolService:
     async def _tool_create_content_brief(
         self, session: AsyncSession, run: AgentRun, arguments: dict[str, Any]
     ) -> dict[str, object]:
+        try:
+            target_kind = ContentTargetKind(str(arguments.get("target_kind")))
+        except ValueError as exc:
+            raise AgentToolDeniedError(
+                "target_kind must be 'existing_page' (an attributed page) or 'new_page' "
+                "(a proposed site path)",
+                code="CONTENT_TARGET_KIND_REQUIRED",
+            ) from exc
         item_id = _uuid(arguments.get("content_item_id"), "content_item_id")
         item = await self.content.get_item(session, run.organization_id, item_id)
         if item.location_id is not None and item.location_id != run.location_id:
@@ -1316,6 +1474,7 @@ class AgentToolService:
             BriefCreate(
                 audience=str(arguments.get("audience") or "")[:500],
                 intent=str(arguments.get("intent") or "")[:500],
+                target_kind=target_kind,
                 target_reference=str(arguments.get("target_reference") or "")[:500],
                 approved_fact_revision_ids=requested,
                 required_claims=[
@@ -1390,16 +1549,24 @@ class AgentToolService:
                 "draft sources must be non-empty references from the ready brief"
             )
 
-        revision, execution = await self.content.execute_ai_draft_workflow(
-            session,
-            organization_id=run.organization_id,
-            item_id=item.id,
-            brief_id=brief.id,
-            idempotency_key=f"agent-content-draft:{run.id}:{brief.id}",
-            workflow_run_id=run.workflow_run_id,
-            user_id=None,
-            correlation_id=run.correlation_id,
-        )
+        try:
+            revision, execution = await self.content.execute_ai_draft_workflow(
+                session,
+                organization_id=run.organization_id,
+                item_id=item.id,
+                brief_id=brief.id,
+                idempotency_key=f"agent-content-draft:{run.id}:{brief.id}",
+                workflow_run_id=run.workflow_run_id,
+                user_id=None,
+                correlation_id=run.correlation_id,
+            )
+        except AIProviderError as exc:
+            # The gateway is not an ApiError, so this used to surface as the generic
+            # HERMES_TOOL_FAILED. Name the provider category so Hermes and the
+            # operator can act on it.
+            raise AgentToolDeniedError(
+                f"{exc.safe_message}", code=f"AI_PROVIDER_{exc.category.upper()}"
+            ) from exc
         execution.input_references = list(
             dict.fromkeys(
                 [
@@ -1467,7 +1634,8 @@ class AgentToolService:
             # blocks on the tool response. A timeout here points at that nesting
             # rather than at the client's data.
             raise AgentToolDeniedError(
-                f"AI_PROVIDER_{exc.category.upper()}: {exc.safe_message}"
+                f"AI_PROVIDER_{exc.category.upper()}: {exc.safe_message}",
+                code=f"AI_PROVIDER_{exc.category.upper()}",
             ) from exc
         except LookupError as exc:
             raise AgentToolDeniedError("GBP_LOCATION_NOT_FOUND") from exc
