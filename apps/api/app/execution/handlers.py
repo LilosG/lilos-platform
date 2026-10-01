@@ -16,6 +16,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.app.execution.contracts import JobOutcome
+from apps.api.app.integrations.adapter_factory import gbp_adapter
 from apps.api.app.integrations.connection_service import GBPConnectionService
 from apps.api.app.integrations.errors import (
     IntegrationNotFoundError,
@@ -23,7 +24,7 @@ from apps.api.app.integrations.errors import (
 )
 from apps.api.app.integrations.models import IntegrationConnection
 from apps.api.app.integrations.secrets import SecretUnavailableError
-from apps.api.app.products.gbp.adapter import GBPAdapter, GoogleBusinessProfileAdapter
+from apps.api.app.products.gbp.adapter import GBPAdapter
 
 if TYPE_CHECKING:
     from apps.api.app.config import Settings
@@ -33,7 +34,14 @@ logger = logging.getLogger(__name__)
 # Adapter factory — production creates the real adapter; tests can override
 # via ``handlers._adapter_factory = lambda: FakeAdapter()`` to inject a
 # deterministic fake without touching the network.
-_adapter_factory: Callable[[], GBPAdapter] = GoogleBusinessProfileAdapter
+_adapter_factory: Callable[[], GBPAdapter] = gbp_adapter
+
+
+def _google_writes_enabled() -> bool:
+    from apps.api.app.config import Settings
+
+    settings = Settings()
+    return _provider_writes_enabled() and settings.environment.value != "staging"
 
 
 def _provider_writes_enabled() -> bool:
@@ -70,6 +78,13 @@ async def _production_github_token_resolver(
 
     # Normal production: a GitHub App installation. Mint a short-lived token.
     installation_id = installation_id_from_reference(connection.external_account_reference)
+    from apps.api.app.config import EnvironmentName
+    from apps.api.app.staging.write_boundary import ProviderWriteDeniedError
+
+    if settings.environment is EnvironmentName.STAGING and (
+        installation_id is None or str(installation_id) != settings.staging_github_installation_id
+    ):
+        raise ProviderWriteDeniedError("STAGING_GITHUB_INSTALLATION_DENIED")
     if installation_id is not None:
         app_service = GitHubAppService()
         token = await app_service.create_installation_token(settings, installation_id)
@@ -199,7 +214,7 @@ async def _handle_gbp_publish_change(
     if publication.status not in {"reserved", "dispatched", "reconciliation_required"}:
         return JobOutcome(result="permanent_failure", safe_error="PUBLICATION_NOT_RESERVABLE")
     initial_dispatch = publication.status == "reserved"
-    if initial_dispatch and not _provider_writes_enabled():
+    if initial_dispatch and not _google_writes_enabled():
         publication.status = "failed"
         publication.safe_error_code = "PROVIDER_WRITES_DISABLED"
         await session.commit()
@@ -458,7 +473,7 @@ async def _handle_gbp_publish_post(
         workflow_run_id=workflow_run_id,
         adapter_factory=_adapter_factory,
         token_resolver=_token_resolver,
-        provider_writes_enabled=_provider_writes_enabled,
+        provider_writes_enabled=_google_writes_enabled,
     )
 
 
@@ -727,9 +742,27 @@ async def _handle_content_publish(
         return JobOutcome(result="permanent_failure", safe_error="GITHUB_CREDENTIAL_REQUIRED")
 
     from apps.api.app.config import Settings
+    from apps.api.app.staging.write_boundary import ProviderWriteDeniedError, require_github_scope
 
+    settings = Settings()
     try:
-        token = str(await _github_token_resolver(session, Settings(), connection))
+        require_github_scope(
+            settings,
+            target.repository_id,
+            path=publication.target_path,
+            branch=f"lilos-content-{publication.id}",
+        )
+        if (
+            settings.environment.value == "staging"
+            and target.base_branch != settings.staging_github_base_branch
+        ):
+            raise ProviderWriteDeniedError("STAGING_GITHUB_BASE_BRANCH_DENIED")
+    except ProviderWriteDeniedError as exc:
+        publication.status = "failed"
+        publication.safe_error_code = str(exc)
+        return JobOutcome(result="permanent_failure", safe_error=str(exc))
+    try:
+        token = str(await _github_token_resolver(session, settings, connection))
     except Exception:
         publication.status = "failed"
         publication.safe_error_code = "GITHUB_CREDENTIAL_REQUIRED"
@@ -917,7 +950,7 @@ async def _handle_reviews_publish_response(
         return JobOutcome(result="succeeded", result_reference=f"response:{response.id}")
     if response.status != "publishing":
         return JobOutcome(result="permanent_failure", safe_error="RESPONSE_NOT_PUBLISHING")
-    if not _provider_writes_enabled():
+    if not _google_writes_enabled():
         response.status = "failed"
         response.safe_error_code = "PROVIDER_WRITES_DISABLED"
         return JobOutcome(result="permanent_failure", safe_error="PROVIDER_WRITES_DISABLED")
@@ -1100,7 +1133,7 @@ async def _handle_gbp_upload_media(
     except (ValueError, TypeError):
         return JobOutcome(result="permanent_failure", safe_error="MEDIA_ID_INVALID")
 
-    if not _provider_writes_enabled():
+    if not _google_writes_enabled():
         return JobOutcome(result="permanent_failure", safe_error="PROVIDER_WRITES_DISABLED")
 
     media = await session.scalar(

@@ -322,6 +322,8 @@ class GBPConnectionService:
         store = FernetSecretStore.create(session, settings)
         raw = await store.get(reference)
         payload = json.loads(raw)
+        settings.reject_production_secret(str(payload["access_token"]))
+        settings.reject_production_secret(str(payload["refresh_token"]))
         return {
             "access_token": str(payload["access_token"]),
             "refresh_token": str(payload["refresh_token"]),
@@ -342,6 +344,8 @@ class GBPConnectionService:
         removed. All operations use the caller's transaction-bound session, so
         a later failure rolls back both the reference update and secret changes.
         """
+        settings.reject_production_secret(access_token)
+        settings.reject_production_secret(refresh_token)
         old_reference = connection.credential_reference
         new_reference = await self._store_tokens(
             session,
@@ -622,6 +626,27 @@ class GBPConnectionService:
         access token; otherwise it carries the refresh token to exchange, and the
         caller does that HTTP call with no transaction open.
         """
+        if connection.credential_reference and connection.credential_reference.startswith(
+            "fixture:"
+        ):
+            if (
+                settings.google_provider_mode != "fixture"
+                or settings.environment.value == "production"
+            ):
+                raise IntegrationReconnectRequiredError
+            if settings.environment.value == "staging" and str(
+                connection.organization_id
+            ) in settings.staging_live_google_organization_ids.split(","):
+                raise IntegrationReconnectRequiredError
+            from apps.api.app.staging.provider_fixtures import fixture_token
+
+            return TokenRefreshPlan(
+                access_token=fixture_token(connection.credential_reference), refresh_token=None
+            )
+        if settings.environment.value == "staging" and str(
+            connection.organization_id
+        ) not in settings.staging_live_google_organization_ids.split(","):
+            raise IntegrationReconnectRequiredError
         if not connection.credential_reference:
             raise IntegrationReconnectRequiredError
         tokens = await self._read_tokens(session, settings, connection.credential_reference)

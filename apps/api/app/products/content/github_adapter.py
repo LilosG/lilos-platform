@@ -39,6 +39,40 @@ class GitHubRepositoryPublisher:
         expected_status: int | tuple[int, ...] = 200,
         **kwargs: Any,
     ) -> Any:
+        from apps.api.app.config import EnvironmentName, Settings
+        from apps.api.app.staging.write_boundary import (
+            ProviderWriteDeniedError,
+            require_github_scope,
+        )
+
+        settings = Settings()
+        if settings.environment is EnvironmentName.STAGING:
+            parts = path.split("/")
+            if len(parts) < 5 or parts[1] != "repos":
+                raise ProviderWriteDeniedError("STAGING_GITHUB_ROUTE_DENIED")
+            repository = "/".join(parts[2:4])
+            require_github_scope(settings, repository)
+            if method != "GET":
+                document = kwargs.get("json", {})
+                if parts[4] == "contents":
+                    require_github_scope(
+                        settings,
+                        repository,
+                        path="/".join(parts[5:]),
+                        branch=document.get("branch", ""),
+                    )
+                elif path.endswith("/git/refs"):
+                    require_github_scope(
+                        settings,
+                        repository,
+                        branch=str(document.get("ref", "")).removeprefix("refs/heads/"),
+                    )
+                elif parts[4] == "pulls" and method == "POST":
+                    require_github_scope(settings, repository, branch=document.get("head", ""))
+                    if document.get("base") != settings.staging_github_base_branch:
+                        raise ProviderWriteDeniedError("STAGING_GITHUB_BASE_BRANCH_DENIED")
+                elif not (parts[4] == "pulls" and path.endswith("/merge") and method == "PUT"):
+                    raise ProviderWriteDeniedError("STAGING_GITHUB_ROUTE_DENIED")
         accepted = (expected_status,) if isinstance(expected_status, int) else expected_status
         async with httpx.AsyncClient(
             timeout=self.timeout_seconds, follow_redirects=False
@@ -259,6 +293,44 @@ class GitHubRepositoryPublisher:
         self, repository_id: str, pr_number: str, expected_head_sha: str
     ) -> str:
         current = await self.get_pull_request(repository_id, pr_number)
+        from apps.api.app.config import Settings
+        from apps.api.app.staging.write_boundary import (
+            ProviderWriteDeniedError,
+            require_github_scope,
+        )
+
+        settings = Settings()
+        if settings.environment.value == "staging":
+            head_info = current.get("head", {})
+            base_info = current.get("base", {})
+            if not isinstance(head_info, dict) or not isinstance(base_info, dict):
+                raise ProviderWriteDeniedError("STAGING_GITHUB_PULL_REQUEST_INVALID")
+            require_github_scope(
+                settings,
+                str(head_info.get("repo", {}).get("full_name", "")),
+                branch=str(head_info.get("ref", "")),
+            )
+            if (
+                base_info.get("ref") != settings.staging_github_base_branch
+                or base_info.get("repo", {}).get("full_name") != settings.staging_github_repository
+            ):
+                raise ProviderWriteDeniedError("STAGING_GITHUB_BASE_BRANCH_DENIED")
+            files = await self._request_json(
+                "GET", f"/repos/{repository_id}/pulls/{pr_number}/files", params={"per_page": 100}
+            )
+            if (
+                not isinstance(files, list)
+                or not files
+                or len(files) >= 100
+                or current.get("changed_files") != len(files)
+            ):
+                raise ProviderWriteDeniedError("STAGING_GITHUB_FILES_INCOMPLETE")
+            for item in files:
+                require_github_scope(settings, repository_id, path=str(item.get("filename", "")))
+                if item.get("previous_filename"):
+                    require_github_scope(
+                        settings, repository_id, path=str(item["previous_filename"])
+                    )
         head = current.get("head")
         head_sha = str(head.get("sha") or "") if isinstance(head, dict) else ""
         if head_sha != expected_head_sha:

@@ -37,6 +37,7 @@ from apps.api.app.audit.metadata import JsonValue
 from apps.api.app.audit.service import AuditEventService
 from apps.api.app.config import Settings
 from apps.api.app.database.scope import TransactionScope
+from apps.api.app.integrations.adapter_factory import search_console_adapter
 from apps.api.app.integrations.connection_service import (
     SEARCH_CONSOLE_SCOPE,
     GBPConnectionService,
@@ -58,7 +59,6 @@ from apps.api.app.products.seo.models import SEOSearchObservation, SEOSearchProp
 from apps.api.app.products.seo.page_identity import RESOLVER_VERSION, PageResolver
 from apps.api.app.products.seo.search_console_adapter import (
     DiscoveredSearchProperty,
-    GoogleSearchConsoleAdapter,
     SearchAnalyticsRow,
     SearchConsoleAdapter,
 )
@@ -145,7 +145,7 @@ def _dimension_hash(dimensions: dict[str, object]) -> str:
 class SearchConsoleService:
     """Discover, map, and sync Search Console properties and observations."""
 
-    adapter: SearchConsoleAdapter = field(default_factory=GoogleSearchConsoleAdapter)
+    adapter: SearchConsoleAdapter = field(default_factory=search_console_adapter)
     connection: GBPConnectionService = field(default_factory=GBPConnectionService)
     audit: AuditEventService = field(default_factory=AuditEventService)
     http_client_factory: Callable[[], httpx.AsyncClient] = httpx.AsyncClient

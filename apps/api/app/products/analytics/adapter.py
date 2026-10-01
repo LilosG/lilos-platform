@@ -120,6 +120,8 @@ class GoogleAnalyticsAdminAdapter:
     http_client_factory: Callable[[], httpx.AsyncClient] = httpx.AsyncClient
 
     def _headers(self, access_token: str) -> dict[str, str]:
+        if access_token.startswith("fixture:") and type(self) is GoogleAnalyticsAdminAdapter:
+            raise ValueError("Live provider refuses fixture credentials")
         return {
             "Authorization": f"Bearer {access_token}",
             "Accept": "application/json",
@@ -239,28 +241,42 @@ class GoogleAnalyticsAdminAdapter:
             body,
             expected_status=200,
         )
-        rows = payload.get("rows") or []
-        metric_headers = [str(h.get("name", "")) for h in payload.get("metricHeaders") or []]
-        dimension_headers = [str(h.get("name", "")) for h in payload.get("dimensionHeaders") or []]
+        rows = payload.get("rows", [])
+        metric_headers = [str(h.get("name", "")) for h in payload.get("metricHeaders", [])]
+        dimension_headers = [str(h.get("name", "")) for h in payload.get("dimensionHeaders", [])]
+        if (
+            not isinstance(rows, list)
+            or set(metric_headers) != set(metrics)
+            or set(dimension_headers) != set(dimensions)
+        ):
+            raise RuntimeError("incomplete Analytics report headers")
         results: list[AnalyticsReportRow] = []
         for row in rows:
-            values = row.get("metricValues") or []
+            if not isinstance(row, dict):
+                raise RuntimeError("invalid Analytics report row")
+            values = row.get("metricValues", [])
+            dimensions_list = row.get("dimensionValues", [])
+            if (
+                not isinstance(values, list)
+                or len(values) != len(metric_headers)
+                or not isinstance(dimensions_list, list)
+                or len(dimensions_list) != len(dimension_headers)
+            ):
+                raise RuntimeError("incomplete Analytics report row")
             metric_values: dict[str, int] = {}
-            for header, value in zip(metric_headers, values, strict=False):
-                raw = value.get("value", "0") if isinstance(value, dict) else "0"
-                try:
-                    metric_values[header] = int(raw)
-                except (TypeError, ValueError):
-                    metric_values[header] = 0
-            dim_values_list = row.get("dimensionValues") or []
+            for header, value in zip(metric_headers, values, strict=True):
+                raw = value.get("value") if isinstance(value, dict) else None
+                if not isinstance(raw, str) or not raw.isdecimal():
+                    raise RuntimeError("invalid Analytics report metric")
+                metric_values[header] = int(raw)
             dim_values: dict[str, str] = {}
-            for header, value in zip(dimension_headers, dim_values_list, strict=False):
-                dim_values[header] = str(value.get("value", "")) if isinstance(value, dict) else ""
+            for header, value in zip(dimension_headers, dimensions_list, strict=True):
+                raw = value.get("value") if isinstance(value, dict) else None
+                if not isinstance(raw, str):
+                    raise RuntimeError("invalid Analytics report dimension")
+                dim_values[header] = raw
             results.append(
-                AnalyticsReportRow(
-                    metric_values=metric_values,
-                    dimension_values=dim_values,
-                )
+                AnalyticsReportRow(metric_values=metric_values, dimension_values=dim_values)
             )
         return results
 

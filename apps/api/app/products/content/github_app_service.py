@@ -235,10 +235,24 @@ class GitHubAppService:
     async def create_installation_token(
         self, settings: Settings, installation_id: str
     ) -> InstallationToken:
+        token_options: dict[str, Any] = {}
+        if settings.environment.value == "staging":
+            from apps.api.app.staging.write_boundary import ProviderWriteDeniedError
+
+            if (
+                installation_id != settings.staging_github_installation_id
+                or not settings.staging_github_repository
+            ):
+                raise ProviderWriteDeniedError("STAGING_GITHUB_INSTALLATION_DENIED")
+            token_options["json"] = {
+                "repositories": [settings.staging_github_repository.split("/", 1)[1]],
+                "permissions": {"contents": "write", "pull_requests": "write", "metadata": "read"},
+            }
         app_jwt = self.sign_app_jwt(settings)
         async with self.http_client_factory() as client:
             response = await client.post(
                 f"{GITHUB_API}/app/installations/{installation_id}/access_tokens",
+                **token_options,
                 headers={
                     "Authorization": f"Bearer {app_jwt}",
                     "Accept": "application/vnd.github+json",

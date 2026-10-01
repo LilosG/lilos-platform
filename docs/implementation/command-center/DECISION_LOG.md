@@ -54,3 +54,27 @@ PROPOSED DESIGN: adjacent unsupported product contracts and baseline browser
 diagnostics are recorded in these three Phase 0 artifacts; the release ledger is unchanged
 under the latest user scope instruction. They are not Phase 0 implementation
 tasks, and no extra phase or parallel architecture is introduced to solve them.
+
+## Phase 0.5 — safe environment implementation
+
+The replacement `PHASE_00_5_PROMPT.md` governs this execution. D27's blanket
+external block is superseded for repository-side work; paid provisioning,
+account/OAuth/DNS authorization and unavailable secrets remain individual owner
+steps. Phase 0 discovery and the approved architecture were not reopened.
+
+- D29 — IMPLEMENTED_NOT_ACCEPTED: four-service isolated manual staging Blueprint
+  uses reviewed main and separate Supabase, with independent identity/secret checks;
+  no Render Postgres or external resource purchase.
+- D30 — IMPLEMENTED_NOT_ACCEPTED: fixtures compose at canonical provider factories,
+  sharing real parsers and deterministic sanitized-response contracts. Partial GA4
+  parser evidence fails closed so missing requested metrics cannot aggregate as zero.
+- D31 — IMPLEMENTED_NOT_ACCEPTED: preserve global write switch, deny staging Google,
+  allow only the fixed GitHub installation/repo/branch/path and checked PR file set.
+  Token minting is repository scoped; production governance is preserved.
+- D32 — IMPLEMENTED_NOT_ACCEPTED: staging-only canonical seed, protected console
+  prerequisite configuration and existing daily GSC/GA4 read-smoke schedules/handlers.
+  No copied client data/tokens, fabricated live installation or parallel scheduler.
+- D33 — OWNER ACTION REQUIRED: consolidated remaining actions and exact validation
+  evidence are in `PHASE_00_5_ACCEPTANCE.md`; actual recurring cost introduced is $0.
+  Phase 1 is READY WITH OWNER ACTIONS BEFORE LIVE STAGING. Stop after the Phase 0.5
+  PR; no automatic merge, console import, live client write or production canary.

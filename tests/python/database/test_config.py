@@ -35,7 +35,7 @@ def test_plain_postgresql_url_is_normalized_for_asyncpg() -> None:
 
 def test_migration_database_url_can_be_separate() -> None:
     settings = Settings(
-        environment=EnvironmentName.STAGING,
+        environment=EnvironmentName.TEST,
         database_url=POSTGRES_DSN_ADAPTER.validate_python(
             "postgresql+asyncpg://app:password@db.example/lilos"
         ),

@@ -21,9 +21,10 @@ from apps.api.app.audit.enums import AuditActorType, AuditResult
 from apps.api.app.audit.metadata import JsonValue
 from apps.api.app.audit.service import AuditEventService
 from apps.api.app.config import Settings
+from apps.api.app.integrations.adapter_factory import gbp_adapter
 from apps.api.app.integrations.connection_service import GBPConnectionService
 from apps.api.app.integrations.contracts import MappingCreate
-from apps.api.app.products.gbp.adapter import GBPAdapter, GoogleBusinessProfileAdapter
+from apps.api.app.products.gbp.adapter import GBPAdapter
 from apps.api.app.products.gbp.freshness import profile_sync_is_stale
 from apps.api.app.products.gbp.models import GBPAccount, GBPLocation, GBPProfileSnapshot
 from apps.api.app.products.gbp.operations_models import GBPProviderPost
@@ -51,7 +52,7 @@ def _bounded_string(value: object, limit: int) -> str | None:
 class GBPDiscoveryService:
     """Discover GBP accounts/locations and synchronize profiles."""
 
-    adapter: GBPAdapter = field(default_factory=GoogleBusinessProfileAdapter)
+    adapter: GBPAdapter = field(default_factory=gbp_adapter)
     connection: GBPConnectionService = field(default_factory=GBPConnectionService)
     gbp_service: GBPService = field(default_factory=GBPService)
     audit: AuditEventService = field(default_factory=AuditEventService)

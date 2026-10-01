@@ -1,5 +1,6 @@
 """Narrow Google Business Profile adapter and deterministic contract."""
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Protocol, cast
 
@@ -76,15 +77,24 @@ class GBPAdapter(Protocol):
 @dataclass(slots=True)
 class GoogleBusinessProfileAdapter:
     timeout_seconds: float = 20.0
+    http_client_factory: Callable[[], httpx.AsyncClient] = httpx.AsyncClient
 
     async def _request(self, method: str, url: str, token: str, **kwargs: Any) -> dict[str, Any]:
+        from apps.api.app.config import EnvironmentName, Settings
+        from apps.api.app.staging.write_boundary import require_google_write
+
+        if token.startswith("fixture:") and type(self) is GoogleBusinessProfileAdapter:
+            raise ValueError("Live provider refuses fixture credentials")
+        settings = Settings()
+        if settings.environment is EnvironmentName.STAGING and method != "GET":
+            require_google_write(settings)
         extra_headers = kwargs.pop("headers", {})
-        async with httpx.AsyncClient(
-            timeout=self.timeout_seconds, follow_redirects=False
-        ) as client:
+        async with self.http_client_factory() as client:
             response = await client.request(
                 method,
                 url,
+                timeout=self.timeout_seconds,
+                follow_redirects=False,
                 headers={
                     "Authorization": f"Bearer {token}",
                     "Accept": "application/json",
@@ -330,12 +340,20 @@ class GoogleBusinessProfileAdapter:
 
     async def delete_media(self, access_token: str, media_name: str) -> None:
         """DELETE a media resource by name."""
-        async with httpx.AsyncClient(
-            timeout=self.timeout_seconds, follow_redirects=False
-        ) as client:
+        from apps.api.app.config import EnvironmentName, Settings
+        from apps.api.app.staging.write_boundary import require_google_write
+
+        settings = Settings()
+        if settings.environment is EnvironmentName.STAGING:
+            require_google_write(settings)
+        if access_token.startswith("fixture:") and type(self) is GoogleBusinessProfileAdapter:
+            raise ValueError("Live provider refuses fixture credentials")
+        async with self.http_client_factory() as client:
             response = await client.request(
                 "DELETE",
                 f"{MYBUSINESS_BASE}/{media_name}",
+                timeout=self.timeout_seconds,
+                follow_redirects=False,
                 headers={
                     "Authorization": f"Bearer {access_token}",
                     "Accept": "application/json",

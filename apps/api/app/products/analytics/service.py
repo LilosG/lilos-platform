@@ -43,6 +43,7 @@ from apps.api.app.insights.models import (
     MetricDefinition,
     MetricObservation,
 )
+from apps.api.app.integrations.adapter_factory import analytics_adapter
 from apps.api.app.integrations.connection_service import (
     ANALYTICS_SCOPE,
     GBPConnectionService,
@@ -60,7 +61,6 @@ from apps.api.app.products.analytics.adapter import (
     AnalyticsReportRow,
     DiscoveredAnalyticsProperty,
     GoogleAnalyticsAdapter,
-    GoogleAnalyticsAdminAdapter,
 )
 from apps.api.app.products.analytics.errors import (
     AnalyticsDiscoveryFailedError,
@@ -258,7 +258,7 @@ class OrganicPageFetch:
 class AnalyticsService:
     """Discover, map, and sync GA4 properties and metric observations."""
 
-    adapter: GoogleAnalyticsAdapter = field(default_factory=GoogleAnalyticsAdminAdapter)
+    adapter: GoogleAnalyticsAdapter = field(default_factory=analytics_adapter)
     connection: GBPConnectionService = field(default_factory=GBPConnectionService)
     audit: AuditEventService = field(default_factory=AuditEventService)
     http_client_factory: Callable[[], httpx.AsyncClient] = httpx.AsyncClient

@@ -13,6 +13,7 @@ import logging
 from typing import Any
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from apps.api.app.config import Settings
@@ -34,6 +35,52 @@ from apps.api.app.products.seo.search_console_service import SearchConsoleServic
 logger = logging.getLogger(__name__)
 
 DEFAULT_DAYS = 28
+
+
+async def scheduled_property_id(
+    session: AsyncSession, organization_id: UUID, input_document: dict[str, Any], *, analytics: bool
+) -> UUID | None:
+    """Schedules have no arbitrary input: resolve exactly one confirmed mapping in scope."""
+    if not input_document.get("schedule_id"):
+        return None
+    from apps.api.app.execution.models import Schedule
+    from apps.api.app.products.analytics.models import AnalyticsProperty
+    from apps.api.app.products.seo.models import SEOSearchProperty
+
+    schedule = await session.scalar(
+        select(Schedule).where(
+            Schedule.id == _uuid(input_document["schedule_id"]),
+            Schedule.organization_id == organization_id,
+            Schedule.status == "active",
+        )
+    )
+    if schedule is None:
+        return None
+    if analytics:
+        ids = list(
+            await session.scalars(
+                select(AnalyticsProperty.id).where(
+                    AnalyticsProperty.organization_id == organization_id,
+                    AnalyticsProperty.mapping_status == "mapped",
+                )
+            )
+        )
+    else:
+        ids = list(
+            await session.scalars(
+                select(SEOSearchProperty.id).where(
+                    SEOSearchProperty.organization_id == organization_id,
+                    SEOSearchProperty.mapping_status == "mapped",
+                )
+            )
+        )
+    return ids[0] if len(ids) == 1 else None
+
+
+def live_smoke_authorized(settings: Settings, organization_id: UUID) -> bool:
+    return settings.environment.value == "staging" and str(
+        organization_id
+    ) in settings.staging_live_google_organization_ids.split(",")
 
 
 def transaction_scope(session: AsyncSession) -> async_sessionmaker[AsyncSession]:
@@ -64,12 +111,21 @@ async def handle_search_console_sync(
     del location_id, workflow_run_id
     property_id = _uuid(input_document.get("search_property_id"))
     if property_id is None:
+        property_id = await scheduled_property_id(
+            session, organization_id, input_document, analytics=False
+        )
+    if property_id is None:
         return JobOutcome(result="permanent_failure", safe_error="SEARCH_PROPERTY_ID_INVALID")
     days = input_document.get("days")
     # Release anything this session auto-began: nothing may be open during Google calls.
     await session.rollback()
     try:
-        result = await SearchConsoleService().sync_observations(
+        service = SearchConsoleService()
+        if live_smoke_authorized(Settings(), organization_id):
+            from apps.api.app.products.seo.search_console_adapter import GoogleSearchConsoleAdapter
+
+            service.adapter = GoogleSearchConsoleAdapter()
+        result = await service.sync_observations(
             transaction_scope(session),
             Settings(),
             organization_id,
@@ -110,11 +166,20 @@ async def handle_analytics_sync(
     del location_id, workflow_run_id
     property_id = _uuid(input_document.get("analytics_property_id"))
     if property_id is None:
+        property_id = await scheduled_property_id(
+            session, organization_id, input_document, analytics=True
+        )
+    if property_id is None:
         return JobOutcome(result="permanent_failure", safe_error="ANALYTICS_PROPERTY_ID_INVALID")
     days = input_document.get("days")
     await session.rollback()
     try:
-        result = await AnalyticsService().sync_metrics(
+        service = AnalyticsService()
+        if live_smoke_authorized(Settings(), organization_id):
+            from apps.api.app.products.analytics.adapter import GoogleAnalyticsAdminAdapter
+
+            service.adapter = GoogleAnalyticsAdminAdapter()
+        result = await service.sync_metrics(
             transaction_scope(session),
             Settings(),
             organization_id,

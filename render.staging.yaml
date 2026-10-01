@@ -1,8 +1,7 @@
 previews:
   generation: "off"
-
 projects:
-  - name: lilos-platform-staging
+  - name: lilos-command-center-staging
     environments:
       - name: staging
         networking:
@@ -14,46 +13,81 @@ projects:
             envVars:
               - key: LILOS_ENV
                 value: staging
-              - key: LILOS_LOG_LEVEL
-                value: INFO
-              - key: LILOS_API_VERSION
-                value: 0.1.0
-              - key: LILOS_TRACE_SAMPLE_RATE
-                value: 0.1
-              - key: LILOS_DATABASE_CONNECT_TIMEOUT_SECONDS
-                value: 5
+              - key: LILOS_GOOGLE_PROVIDER_MODE
+                value: fixture
               - key: LILOS_INTERNAL_ADMIN_ROUTES_ENABLED
                 value: "false"
               - key: LILOS_PROVIDER_WRITES_ENABLED
                 value: "false"
-              - key: LILOS_SECRET_ENCRYPTION_KEY_VERSION
-                value: 1
-              - key: LILOS_SECRET_ENCRYPTION_KEY
-                generateValue: true
-              - key: UV_CACHE_DIR
-                value: /tmp/uv-cache
+              - key: LILOS_AI_PROVIDER
+                value: hermes
+              - key: LILOS_AI_DEFAULT_MODEL
+                value: deepseek/deepseek-v4-flash-0731
+              - key: LILOS_AI_MAXIMUM_COST_MICROUNITS
+                value: "200000"
               - key: LILOS_SUPABASE_AUTH_AUDIENCE
                 value: authenticated
               - key: LILOS_SUPABASE_AUTH_ALLOWED_ALGORITHMS
                 value: ES256,RS256
-        databases:
-          - name: lilos-staging-postgres
-            plan: basic-256mb
-            region: oregon
-            postgresMajorVersion: "17"
-            databaseName: lilos_staging
-            user: lilos_staging
-            diskSizeGB: 15
-            storageAutoscalingEnabled: false
-            ipAllowList: []
+              - key: UV_CACHE_DIR
+                value: /tmp/uv-cache
         services:
-          - name: lilos-staging-api
+          - name: lilos-command-center-staging-hermes
+            type: pserv
+            runtime: docker
+            region: oregon
+            plan: standard
+            branch: main
+            autoDeployTrigger: "off"
+            dockerContext: .
+            dockerfilePath: ./infrastructure/docker/hermes-render.Dockerfile
+            disk:
+              name: staging-hermes-data
+              mountPath: /opt/data
+              sizeGB: 5
+            envVars:
+              - key: PORT
+                value: "8642"
+              - key: API_SERVER_ENABLED
+                value: "true"
+              - key: API_SERVER_HOST
+                value: 0.0.0.0
+              - key: API_SERVER_PORT
+                value: "8642"
+              - key: API_SERVER_KEY
+                generateValue: true
+              - key: API_SERVER_MODEL_NAME
+                value: hermes-agent
+              - key: HERMES_RUNTIME_VERSION
+                value: v2026.8.19
+              - key: HERMES_INFERENCE_PROVIDER
+                value: openrouter
+              - key: HERMES_INFERENCE_MODEL
+                value: deepseek/deepseek-v4-flash-0731
+              - key: HERMES_AUXILIARY_MODEL
+                value: nvidia/nemotron-3-ultra-550b-a55b:free
+              - key: HERMES_AUXILIARY_VISION_MODEL
+                value: nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free
+              - key: HERMES_MAX_ITERATIONS
+                value: "25"
+              - key: HERMES_YOLO_MODE
+                value: "0"
+              - key: OPENROUTER_API_KEY
+                sync: false
+              - key: LILOS_TOOL_BASE_URL
+                fromService:
+                  name: lilos-command-center-staging-api
+                  type: web
+                  property: hostport
+              - key: LILOS_TOOL_API_KEY
+                generateValue: true
+            repo: https://github.com/LilosG/lilos-platform.git
+            numInstances: 1
+          - name: lilos-command-center-staging-api
             type: web
             runtime: docker
-            repo: https://github.com/LilosG/lilos-platform.git
-            plan: starter
             region: oregon
-            branch: worker/backend-closure-2026-08-10
+            branch: main
             autoDeployTrigger: "off"
             dockerContext: .
             dockerfilePath: ./infrastructure/docker/backend.Dockerfile
@@ -65,21 +99,87 @@ projects:
             envVars:
               - fromGroup: lilos-staging-runtime
               - key: LILOS_DATABASE_URL
-                fromDatabase:
-                  name: lilos-staging-postgres
-                  property: connectionString
+                sync: false
               - key: LILOS_MIGRATION_DATABASE_URL
-                fromDatabase:
-                  name: lilos-staging-postgres
-                  property: connectionString
-
-          - name: lilos-staging-worker
-            type: worker
-            runtime: docker
+                sync: false
+              - key: LILOS_SUPABASE_AUTH_ISSUER
+                sync: false
+              - key: LILOS_SUPABASE_AUTH_JWKS_URL
+                sync: false
+              - key: LILOS_TELEMETRY_EXPORT_ENDPOINT
+                sync: false
+              - key: LILOS_WEB_ORIGINS
+                sync: false
+              - key: LILOS_GOOGLE_OAUTH_CLIENT_ID
+                sync: false
+              - key: LILOS_GOOGLE_OAUTH_CLIENT_SECRET
+                sync: false
+              - key: LILOS_GOOGLE_OAUTH_REDIRECT_URI
+                sync: false
+              - key: LILOS_GOOGLE_PAGESPEED_API_KEY
+                sync: false
+              - key: LILOS_GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON
+                sync: false
+              - key: LILOS_DATAFORSEO_LOGIN
+                sync: false
+              - key: LILOS_DATAFORSEO_PASSWORD
+                sync: false
+              - key: LILOS_SECRET_ENCRYPTION_KEY
+                sync: false
+              - key: LILOS_GITHUB_APP_ID
+                sync: false
+              - key: LILOS_GITHUB_APP_CLIENT_ID
+                sync: false
+              - key: LILOS_GITHUB_APP_PRIVATE_KEY
+                sync: false
+              - key: LILOS_GITHUB_APP_INSTALLATION_REDIRECT_URI
+                sync: false
+              - key: LILOS_OPENROUTER_API_KEY
+                fromService:
+                  name: lilos-command-center-staging-hermes
+                  type: pserv
+                  envVarKey: OPENROUTER_API_KEY
+              - key: LILOS_HERMES_BASE_URL
+                fromService:
+                  name: lilos-command-center-staging-hermes
+                  type: pserv
+                  property: hostport
+              - key: LILOS_HERMES_API_KEY
+                fromService:
+                  name: lilos-command-center-staging-hermes
+                  type: pserv
+                  envVarKey: API_SERVER_KEY
+              - key: LILOS_HERMES_TOOL_API_KEY
+                fromService:
+                  name: lilos-command-center-staging-hermes
+                  type: pserv
+                  envVarKey: LILOS_TOOL_API_KEY
+              - key: LILOS_HERMES_RUNTIME_RELEASE
+                fromService:
+                  name: lilos-command-center-staging-hermes
+                  type: pserv
+                  envVarKey: HERMES_RUNTIME_VERSION
+              - key: LILOS_STAGING_SUPABASE_PROJECT_REF
+                sync: false
+              - key: LILOS_PRODUCTION_SUPABASE_PROJECT_REF
+                sync: false
+              - key: LILOS_STAGING_FORBIDDEN_SECRET_SHA256
+                sync: false
+              - key: LILOS_STAGING_GITHUB_REPOSITORY
+                sync: false
+              - key: LILOS_STAGING_GITHUB_INSTALLATION_ID
+                sync: false
+              - key: LILOS_STAGING_GITHUB_PATH_PREFIX
+                sync: false
+              - key: LILOS_STAGING_LIVE_GOOGLE_ORGANIZATION_IDS
+                sync: false
             repo: https://github.com/LilosG/lilos-platform.git
             plan: starter
+          - name: lilos-command-center-staging-worker
+            type: worker
+            runtime: docker
             region: oregon
-            branch: worker/backend-closure-2026-08-10
+            branch: main
             autoDeployTrigger: "off"
             dockerContext: .
             dockerfilePath: ./infrastructure/docker/backend.Dockerfile
@@ -89,6 +189,129 @@ projects:
             envVars:
               - fromGroup: lilos-staging-runtime
               - key: LILOS_DATABASE_URL
-                fromDatabase:
-                  name: lilos-staging-postgres
-                  property: connectionString
+                sync: false
+              - key: LILOS_SUPABASE_AUTH_ISSUER
+                sync: false
+              - key: LILOS_SUPABASE_AUTH_JWKS_URL
+                sync: false
+              - key: LILOS_TELEMETRY_EXPORT_ENDPOINT
+                sync: false
+              - key: LILOS_SECRET_ENCRYPTION_KEY
+                fromService:
+                  name: lilos-command-center-staging-api
+                  type: web
+                  envVarKey: LILOS_SECRET_ENCRYPTION_KEY
+              - key: LILOS_GOOGLE_OAUTH_CLIENT_ID
+                sync: false
+              - key: LILOS_GOOGLE_OAUTH_CLIENT_SECRET
+                sync: false
+              - key: LILOS_GOOGLE_OAUTH_REDIRECT_URI
+                sync: false
+              - key: LILOS_GOOGLE_PAGESPEED_API_KEY
+                sync: false
+              - key: LILOS_GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON
+                sync: false
+              - key: LILOS_DATAFORSEO_LOGIN
+                sync: false
+              - key: LILOS_DATAFORSEO_PASSWORD
+                sync: false
+              - key: LILOS_GITHUB_APP_ID
+                sync: false
+              - key: LILOS_GITHUB_APP_CLIENT_ID
+                sync: false
+              - key: LILOS_GITHUB_APP_PRIVATE_KEY
+                sync: false
+              - key: LILOS_GITHUB_APP_INSTALLATION_REDIRECT_URI
+                sync: false
+              - key: LILOS_OPENROUTER_API_KEY
+                fromService:
+                  name: lilos-command-center-staging-hermes
+                  type: pserv
+                  envVarKey: OPENROUTER_API_KEY
+              - key: LILOS_HERMES_BASE_URL
+                fromService:
+                  name: lilos-command-center-staging-hermes
+                  type: pserv
+                  property: hostport
+              - key: LILOS_HERMES_API_KEY
+                fromService:
+                  name: lilos-command-center-staging-hermes
+                  type: pserv
+                  envVarKey: API_SERVER_KEY
+              - key: LILOS_HERMES_RUNTIME_RELEASE
+                fromService:
+                  name: lilos-command-center-staging-hermes
+                  type: pserv
+                  envVarKey: HERMES_RUNTIME_VERSION
+              - key: LILOS_STAGING_SUPABASE_PROJECT_REF
+                sync: false
+              - key: LILOS_PRODUCTION_SUPABASE_PROJECT_REF
+                sync: false
+              - key: LILOS_STAGING_FORBIDDEN_SECRET_SHA256
+                sync: false
+              - key: LILOS_STAGING_GITHUB_REPOSITORY
+                sync: false
+              - key: LILOS_STAGING_GITHUB_INSTALLATION_ID
+                sync: false
+              - key: LILOS_STAGING_GITHUB_PATH_PREFIX
+                sync: false
+              - key: LILOS_STAGING_LIVE_GOOGLE_ORGANIZATION_IDS
+                sync: false
+            repo: https://github.com/LilosG/lilos-platform.git
+            plan: starter
+          - name: lilos-command-center-staging-scheduler
+            type: worker
+            runtime: docker
+            region: oregon
+            branch: main
+            autoDeployTrigger: "off"
+            dockerContext: .
+            dockerfilePath: ./infrastructure/docker/backend.Dockerfile
+            dockerCommand: sh /app/scripts/render_start_scheduler.sh
+            maxShutdownDelaySeconds: 60
+            numInstances: 1
+            envVars:
+              - fromGroup: lilos-staging-runtime
+              - key: LILOS_DATABASE_URL
+                sync: false
+              - key: LILOS_SUPABASE_AUTH_ISSUER
+                sync: false
+              - key: LILOS_SUPABASE_AUTH_JWKS_URL
+                sync: false
+              - key: LILOS_TELEMETRY_EXPORT_ENDPOINT
+                sync: false
+              - key: LILOS_SECRET_ENCRYPTION_KEY
+                fromService:
+                  name: lilos-command-center-staging-api
+                  type: web
+                  envVarKey: LILOS_SECRET_ENCRYPTION_KEY
+              - key: LILOS_GOOGLE_OAUTH_CLIENT_ID
+                sync: false
+              - key: LILOS_GOOGLE_OAUTH_CLIENT_SECRET
+                sync: false
+              - key: LILOS_GOOGLE_OAUTH_REDIRECT_URI
+                sync: false
+              - key: LILOS_GITHUB_APP_ID
+                sync: false
+              - key: LILOS_GITHUB_APP_CLIENT_ID
+                sync: false
+              - key: LILOS_GITHUB_APP_PRIVATE_KEY
+                sync: false
+              - key: LILOS_GITHUB_APP_INSTALLATION_REDIRECT_URI
+                sync: false
+              - key: LILOS_STAGING_SUPABASE_PROJECT_REF
+                sync: false
+              - key: LILOS_PRODUCTION_SUPABASE_PROJECT_REF
+                sync: false
+              - key: LILOS_STAGING_FORBIDDEN_SECRET_SHA256
+                sync: false
+              - key: LILOS_STAGING_GITHUB_REPOSITORY
+                sync: false
+              - key: LILOS_STAGING_GITHUB_INSTALLATION_ID
+                sync: false
+              - key: LILOS_STAGING_GITHUB_PATH_PREFIX
+                sync: false
+              - key: LILOS_STAGING_LIVE_GOOGLE_ORGANIZATION_IDS
+                sync: false
+            repo: https://github.com/LilosG/lilos-platform.git
+            plan: starter

@@ -63,6 +63,18 @@ class Settings(BaseSettings):
     database_max_overflow: Annotated[int, Field(ge=0, le=10)] = 0
     internal_admin_routes_enabled: bool = False
     provider_writes_enabled: bool = False
+    google_provider_mode: Annotated[str, Field(pattern=r"^(live|fixture)$")] = "live"
+    staging_supabase_project_ref: Annotated[str, Field(pattern=r"^[a-z0-9]{20}$")] | None = None
+    production_supabase_project_ref: Annotated[str, Field(pattern=r"^[a-z0-9]{20}$")] | None = None
+    staging_github_repository: (
+        Annotated[str, Field(pattern=r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")] | None
+    ) = None
+    staging_github_installation_id: Annotated[str, Field(pattern=r"^[1-9][0-9]*$")] | None = None
+    staging_github_path_prefix: str = ""
+    staging_github_base_branch: str = "main"
+    staging_live_google_organization_ids: str = ""
+    staging_forbidden_secret_sha256: str = ""
+
     web_origins: Annotated[str, Field(max_length=2_048)] = ""
     supabase_auth_issuer: HttpUrl | None = None
     supabase_auth_audience: Annotated[str, Field(min_length=1, max_length=128)] = "authenticated"
@@ -163,6 +175,97 @@ class Settings(BaseSettings):
     ai_maximum_cost_microunits: Annotated[int, Field(ge=0, le=10_000_000)] = 200_000
     service_name: ClassVar[str] = "lilos-api"
 
+    @model_validator(mode="after")
+    def reject_unsafe_internal_admin_routes(self) -> "Settings":
+        """Allow temporary bootstrap routes only in explicitly enabled local or test runtimes."""
+        if self.internal_admin_routes_enabled and self.environment not in {
+            EnvironmentName.LOCAL,
+            EnvironmentName.TEST,
+        }:
+            raise ValueError(
+                "Internal administrative routes may be enabled only in local or test environments"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def validate_environment_isolation(self) -> "Settings":
+        if (
+            self.environment is EnvironmentName.PRODUCTION
+            and self.google_provider_mode == "fixture"
+        ):
+            raise ValueError("Production refuses fixture providers")
+        if self.environment is EnvironmentName.STAGING:
+            from apps.api.app.staging.isolation import require_supabase_database
+
+            project = self.staging_supabase_project_ref
+            if (
+                not project
+                or not self.production_supabase_project_ref
+                or project == self.production_supabase_project_ref
+            ):
+                raise ValueError("Staging requires distinct approved Supabase project identities")
+            for value in (self.database_url, self.migration_database_url):
+                if value is not None:
+                    require_supabase_database(str(value), project)
+            if self.database_url is None:
+                raise ValueError("Staging database is required")
+            origin = f"https://{project}.supabase.co/auth/v1"
+            if (
+                str(self.supabase_auth_issuer).rstrip("/") != origin
+                or str(self.supabase_auth_jwks_url) != f"{origin}/.well-known/jwks.json"
+            ):
+                raise ValueError("Staging Auth must use the approved staging project")
+            if self.secret_encryption_key is None:
+                raise ValueError("Staging requires an independent encryption key")
+            import hashlib
+            import re
+            from uuid import UUID
+
+            forbidden = self.staging_forbidden_secret_sha256.split(",")
+            if not forbidden or any(not re.fullmatch(r"[0-9a-f]{64}", item) for item in forbidden):
+                raise ValueError(
+                    "Staging requires production secret fingerprints for reuse rejection"
+                )
+            for secret in (
+                self.secret_encryption_key,
+                self.google_oauth_client_secret,
+                self.github_app_private_key,
+                self.ai_hermes_api_key,
+                self.hermes_tool_api_key,
+                self.ai_openrouter_api_key,
+            ):
+                if secret and hashlib.sha256(secret.encode()).hexdigest() in forbidden:
+                    raise ValueError("Staging refuses production secret reuse")
+            for item in self.staging_live_google_organization_ids.split(","):
+                if item:
+                    UUID(item)
+
+            if self.provider_writes_enabled and not all(
+                (
+                    self.staging_github_repository,
+                    self.staging_github_installation_id,
+                    self.staging_github_path_prefix,
+                )
+            ):
+                raise ValueError(
+                    "Staging writes require a fixed GitHub repository/installation/path"
+                )
+            if (
+                self.staging_github_repository
+                and self.staging_github_repository.lower() == "lilosg/lilos-growth"
+            ):
+                raise ValueError("Production canary repository cannot be a staging target")
+            prefix = self.staging_github_path_prefix
+            if prefix and (
+                not prefix.endswith("/")
+                or prefix.startswith("/")
+                or any(part in {".", "..", ""} for part in prefix[:-1].split("/"))
+                or "%" in prefix
+                or "\\" in prefix
+            ):
+                raise ValueError("Staging path must be a normalized directory prefix")
+        return self
+
     @field_validator("web_origins")
     @classmethod
     def validate_web_origins(cls, value: str) -> str:
@@ -194,18 +297,6 @@ class Settings(BaseSettings):
         return self
 
     @model_validator(mode="after")
-    def reject_unsafe_internal_admin_routes(self) -> "Settings":
-        """Allow temporary bootstrap routes only in explicitly enabled local or test runtimes."""
-        if self.internal_admin_routes_enabled and self.environment not in {
-            EnvironmentName.LOCAL,
-            EnvironmentName.TEST,
-        }:
-            raise ValueError(
-                "Internal administrative routes may be enabled only in local or test environments"
-            )
-        return self
-
-    @model_validator(mode="after")
     def validate_production_web_origins(self) -> "Settings":
         if self.environment is EnvironmentName.PRODUCTION:
             for origin in self.allowed_web_origins():
@@ -234,6 +325,16 @@ class Settings(BaseSettings):
                 "LILOS_SECRET_ENCRYPTION_KEY must be a base64 urlsafe 32-byte Fernet key"
             ) from exc
         return value
+
+    def reject_production_secret(self, value: str) -> None:
+        """Reject known production credentials without logging their values."""
+        if self.environment is EnvironmentName.STAGING:
+            import hashlib
+
+            if hashlib.sha256(
+                value.encode()
+            ).hexdigest() in self.staging_forbidden_secret_sha256.split(","):
+                raise ValueError("Staging refuses production secret reuse")
 
     def application_database_url(self) -> str | None:
         """Return the application URL using SQLAlchemy's asyncpg dialect."""
