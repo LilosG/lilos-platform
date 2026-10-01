@@ -7,7 +7,12 @@ interface Props {
   organizations?: Organization[];
   client?: Organization;
   surface?:
-    "local-search" | "integrations" | "reviews" | "website-content" | "leads";
+    | "local-search"
+    | "integrations"
+    | "reviews"
+    | "website-content"
+    | "leads"
+    | "automations";
 }
 const { title, organizations = [], client, surface } = Astro.props;
 const base = client ? `/clients/${client.organization_slug}/` : "/";

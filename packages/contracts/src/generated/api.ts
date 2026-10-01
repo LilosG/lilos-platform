@@ -594,6 +594,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/organizations/{organization_id}/command-center/automations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Workspace */
+        get: operations["workspace_api_v1_organizations__organization_id__command_center_automations_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/organizations/{organization_id}/command-center/automations/runs/{run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Detail */
+        get: operations["detail_api_v1_organizations__organization_id__command_center_automations_runs__run_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/organizations/{organization_id}/command-center/integrations": {
         parameters: {
             query?: never;
@@ -5292,6 +5326,314 @@ export interface components {
         AuthenticatedPrincipalResponse: {
             data: components["schemas"]["AuthenticatedPrincipal"];
             meta: components["schemas"]["ResponseMeta"];
+        };
+        /** AutomationAttempt */
+        AutomationAttempt: {
+            /** Attempt Number */
+            attempt_number: number;
+            /** Completed At */
+            completed_at: string | null;
+            /** Error Category */
+            error_category: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Job Id
+             * Format: uuid
+             */
+            job_id: string;
+            /**
+             * Started At
+             * Format: date-time
+             */
+            started_at: string;
+            /** Status */
+            status: string;
+        };
+        /** AutomationAudit */
+        AutomationAudit: {
+            /** Action */
+            action: string;
+            /** Correlation Id */
+            correlation_id: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+            /** Result */
+            result: string;
+        };
+        /** AutomationDefinition */
+        AutomationDefinition: {
+            /** Agent Eligible */
+            agent_eligible?: boolean | null;
+            /** Definition Status */
+            definition_status: string;
+            /** Display Name */
+            display_name: string;
+            /** Eligibility Reason */
+            eligibility_reason?: string | null;
+            /** Key */
+            key: string;
+            /** Latest Version */
+            latest_version: number | null;
+            /** Product Key */
+            product_key: string;
+        };
+        /** AutomationDetail */
+        AutomationDetail: {
+            /** Approval Request */
+            approval_request?: string | null;
+            /** Attempts */
+            attempts: components["schemas"]["AutomationAttempt"][];
+            /**
+             * Can Respond Approval
+             * @default false
+             */
+            can_respond_approval: boolean;
+            /**
+             * Can Steer
+             * @default false
+             */
+            can_steer: boolean;
+            /**
+             * Can Stop
+             * @default false
+             */
+            can_stop: boolean;
+            /** History */
+            history: components["schemas"]["AutomationAudit"][];
+            /**
+             * History State
+             * @enum {string}
+             */
+            history_state: "bounded_partial" | "unavailable_permission";
+            /** Idempotency Key */
+            idempotency_key: string;
+            /** Jobs */
+            jobs: components["schemas"]["AutomationJob"][];
+            /**
+             * Organization Id
+             * Format: uuid
+             */
+            organization_id: string;
+            /**
+             * Quality
+             * @default bounded_partial
+             * @constant
+             */
+            quality: "bounded_partial";
+            /**
+             * Recovery
+             * @default domain_controls_only
+             * @constant
+             */
+            recovery: "domain_controls_only";
+            run: components["schemas"]["AutomationRun"];
+        };
+        /** AutomationJob */
+        AutomationJob: {
+            /** Attempt Count */
+            attempt_count: number;
+            /**
+             * Available At
+             * Format: date-time
+             */
+            available_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Job Type */
+            job_type: string;
+            /** Last Error Category */
+            last_error_category: string | null;
+            /** Max Attempts */
+            max_attempts: number;
+            /** Result Reference */
+            result_reference: string | null;
+            /** Status */
+            status: string;
+        };
+        /** AutomationLocation */
+        AutomationLocation: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+        };
+        /** AutomationRun */
+        AutomationRun: {
+            /** Agent Error */
+            agent_error?: string | null;
+            /** Agent Run Id */
+            agent_run_id?: string | null;
+            /** Agent Status */
+            agent_status?: string | null;
+            /** Attention */
+            attention?: ("failure" | "approval" | "waiting" | "retry" | "partial" | "stale" | "reconciliation") | null;
+            /** Completed At */
+            completed_at: string | null;
+            /** Correlation Id */
+            correlation_id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Failure Code */
+            failure_code: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Job Error Category */
+            job_error_category?: string | null;
+            /** Job Status */
+            job_status?: string | null;
+            /** Location Id */
+            location_id: string | null;
+            /**
+             * Outcome
+             * @enum {string}
+             */
+            outcome: "execution_only" | "recorded_result" | "verified_publication" | "unconfirmed_publication";
+            /** Output Reference */
+            output_reference: string | null;
+            /** Publication Error */
+            publication_error?: string | null;
+            /** Publication Status */
+            publication_status?: string | null;
+            /** Retry At */
+            retry_at?: string | null;
+            /** Started At */
+            started_at: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "created" | "queued" | "running" | "waiting" | "waiting_approval" | "retry_scheduled" | "completed" | "partially_completed" | "cancelled" | "expired" | "failed" | "escalated";
+            /** Workflow Key */
+            workflow_key: string;
+            /** Workflow Name */
+            workflow_name: string;
+        };
+        /** AutomationSchedule */
+        AutomationSchedule: {
+            /**
+             * Can Manage
+             * @default false
+             */
+            can_manage: boolean;
+            /** Cron Expression */
+            cron_expression: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Key */
+            key: string;
+            /** Last Run At */
+            last_run_at: string | null;
+            /** Location Id */
+            location_id: string | null;
+            /** Next Run At */
+            next_run_at: string | null;
+            /**
+             * Overdue
+             * @default false
+             */
+            overdue: boolean;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "active" | "paused" | "cancelled";
+            /** Timezone */
+            timezone: string;
+            /** Workflow Key */
+            workflow_key: string | null;
+            /** Workflow Name */
+            workflow_name: string | null;
+        };
+        /** AutomationWorkspace */
+        AutomationWorkspace: {
+            /** Attention */
+            attention: components["schemas"]["AutomationRun"][];
+            /**
+             * Attention Limit
+             * @default 50
+             * @constant
+             */
+            attention_limit: 50;
+            /** Can Execute */
+            can_execute: boolean;
+            /** Can Manage Schedules */
+            can_manage_schedules: boolean;
+            /** Definitions */
+            definitions: components["schemas"]["AutomationDefinition"][];
+            /** Location Id */
+            location_id: string | null;
+            /** Locations */
+            locations: components["schemas"]["AutomationLocation"][];
+            /** Next Offset */
+            next_offset: number | null;
+            /**
+             * Observed At
+             * Format: date-time
+             */
+            observed_at: string;
+            /**
+             * Organization Id
+             * Format: uuid
+             */
+            organization_id: string;
+            /** Outcomes */
+            outcomes: components["schemas"]["AutomationRun"][];
+            /**
+             * Outcomes Limit
+             * @default 10
+             * @constant
+             */
+            outcomes_limit: 10;
+            /**
+             * Quality
+             * @default partial
+             * @constant
+             */
+            quality: "partial";
+            /** Runs */
+            runs: components["schemas"]["AutomationRun"][];
+            /**
+             * Runtime Health
+             * @default unavailable_no_scoped_heartbeat
+             * @constant
+             */
+            runtime_health: "unavailable_no_scoped_heartbeat";
+            /** Schedules */
+            schedules: components["schemas"]["AutomationSchedule"][];
+            /**
+             * Schedules State
+             * @enum {string}
+             */
+            schedules_state: "available" | "unavailable_permission";
+            /** Total Runs */
+            total_runs: number;
         };
         /**
          * BlockerResolution
@@ -10943,6 +11285,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AttentionList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    workspace_api_v1_organizations__organization_id__command_center_automations_get: {
+        parameters: {
+            query?: {
+                location_id?: string | null;
+                offset?: number;
+            };
+            header?: never;
+            path: {
+                organization_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutomationWorkspace"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    detail_api_v1_organizations__organization_id__command_center_automations_runs__run_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organization_id: string;
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutomationDetail"];
                 };
             };
             /** @description Validation Error */

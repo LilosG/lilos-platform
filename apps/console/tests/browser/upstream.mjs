@@ -12,6 +12,12 @@ const phase4 = JSON.parse(
 const phase5 = JSON.parse(
   readFileSync(new URL("../fixtures/phase5.json", import.meta.url), "utf8"),
 );
+const phase6 = JSON.parse(
+  readFileSync(new URL("../fixtures/phase6.json", import.meta.url), "utf8"),
+);
+let automationState = structuredClone(phase6);
+let automationMode = "inventory";
+const upstreamPort = Number(process.env.CONSOLE_TEST_UPSTREAM_PORT ?? 4455);
 const leadStates = new Map();
 let leadScenario = "inventory";
 const contentStates = new Map();
@@ -69,7 +75,7 @@ const session = (id, aal = "aal1") => ({
   user: user(id),
 });
 createServer(async (req, res) => {
-  const url = new URL(req.url, "http://127.0.0.1:4455");
+  const url = new URL(req.url, `http://127.0.0.1:${upstreamPort}`);
   let body = "";
   for await (const chunk of req) body += chunk;
   const parsed = body ? JSON.parse(body) : {};
@@ -91,6 +97,11 @@ createServer(async (req, res) => {
   if (url.pathname === "/test/leads-scenario") {
     leadScenario = parsed.mode;
     leadStates.clear();
+    return reply({ ok: true });
+  }
+  if (url.pathname === "/test/automations-scenario") {
+    automationState = structuredClone(phase6);
+    automationMode = parsed.mode;
     return reply({ ok: true });
   }
   if (url.pathname === "/health") return reply({ ok: true });
@@ -198,6 +209,77 @@ createServer(async (req, res) => {
   if (!scoped || scoped[1] !== claims.sub)
     return reply({ code: "NOT_FOUND" }, 404);
   const path = scoped[2];
+  if (
+    path === "command-center/automations" ||
+    path.startsWith("command-center/automations/runs/")
+  ) {
+    if (claims.sub !== ids.a) return reply({ code: "NOT_FOUND" }, 404);
+    if (automationMode === "agent") {
+      automationState.detail.run.agent_run_id = ids.next;
+      automationState.detail.run.agent_status = "running";
+      automationState.detail.can_stop = true;
+      automationState.detail.can_steer = true;
+    }
+    if (automationMode === "error") return reply({ code: "UNAVAILABLE" }, 503);
+    const data = structuredClone(
+      path === "command-center/automations"
+        ? automationState.workspace
+        : automationState.detail,
+    );
+    if (
+      path !== "command-center/automations" &&
+      path.split("/").at(-1) !== data.run.id
+    )
+      return reply({ code: "NOT_FOUND" }, 404);
+    if (
+      automationMode === "unavailable" &&
+      path === "command-center/automations"
+    ) {
+      data.schedules = [];
+      data.schedules_state = "unavailable_permission";
+      data.can_execute = false;
+      data.outcomes = [];
+    }
+    const location = url.searchParams.get("location_id");
+    if (location) return reply({ code: "NOT_FOUND" }, 404);
+    return reply(data);
+  }
+  if (req.method === "POST" && path === "workflows/schedules") {
+    const schedule = {
+      ...automationState.workspace.schedules[0],
+      ...parsed,
+      id: ids.next,
+      status: "active",
+      last_run_at: null,
+      workflow_name: "New canonical schedule",
+    };
+    automationState.workspace.schedules.push(schedule);
+    return reply({ data: schedule }, 201);
+  }
+  if (req.method === "POST" && path.startsWith(`agents/runs/${ids.next}/`)) {
+    return reply({
+      data: {
+        id: ids.next,
+        status: path.endsWith("stop") ? "stopping" : "running",
+      },
+    });
+  }
+  if (req.method === "PATCH" && path.startsWith("workflows/schedules/")) {
+    const schedule = automationState.workspace.schedules.find(
+      (s) => s.id === path.split("/").at(-1),
+    );
+    if (!schedule) return reply({ code: "NOT_FOUND" }, 404);
+    schedule.status = parsed.status;
+    return reply({ data: schedule });
+  }
+  if (req.method === "POST" && path === "workflows/gbp.sync/runs") {
+    automationState.workspace.runs.unshift({
+      ...phase6.workspace.runs[1],
+      id: ids.run,
+    });
+    automationState.workspace.total_runs++;
+    return reply({ data: { workflow_run_id: ids.run, status: "queued" } }, 201);
+  }
   if (
     path === "command-center/leads" ||
     path === `command-center/leads/${phase5.detail.lead.id}`
@@ -604,4 +686,4 @@ createServer(async (req, res) => {
     });
   }
   return reply({ code: "NOT_FOUND" }, 404);
-}).listen(4455, "127.0.0.1");
+}).listen(upstreamPort, "127.0.0.1");

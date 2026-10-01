@@ -37,7 +37,7 @@ const title = labels[page];
             <div>
               <>
                 <a
-                  href={`/clients/${client.organization_slug}/${page === "opportunities" || page === "attention" || page === "integrations" ? page + "/" : ""}`}
+                  href={`/clients/${client.organization_slug}/${page === "opportunities" || page === "attention" || page === "integrations" || page === "automations" ? page + "/" : ""}`}
                 >
                   {client.organization_name}
                 </a>
@@ -52,9 +52,14 @@ const title = labels[page];
     }
   </div>
   {
-    !["", "clients", "opportunities", "attention", "integrations"].includes(
-      page,
-    ) && (
+    ![
+      "",
+      "clients",
+      "opportunities",
+      "attention",
+      "integrations",
+      "automations",
+    ].includes(page) && (
       <div class="panel">
         <>
           <h2>Source unavailable</h2>

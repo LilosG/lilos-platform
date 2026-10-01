@@ -505,6 +505,839 @@
         "title": "AuthenticatedPrincipalResponse",
         "type": "object"
       },
+      "AutomationAttempt": {
+        "properties": {
+          "attempt_number": {
+            "title": "Attempt Number",
+            "type": "integer"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "error_category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Category"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "job_id": {
+            "format": "uuid",
+            "title": "Job Id",
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "job_id",
+          "attempt_number",
+          "status",
+          "started_at",
+          "completed_at",
+          "error_category"
+        ],
+        "title": "AutomationAttempt",
+        "type": "object"
+      },
+      "AutomationAudit": {
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "correlation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Correlation Id"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "action",
+          "result",
+          "occurred_at",
+          "correlation_id"
+        ],
+        "title": "AutomationAudit",
+        "type": "object"
+      },
+      "AutomationDefinition": {
+        "properties": {
+          "agent_eligible": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Eligible"
+          },
+          "definition_status": {
+            "title": "Definition Status",
+            "type": "string"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "eligibility_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Eligibility Reason"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "latest_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Version"
+          },
+          "product_key": {
+            "title": "Product Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "display_name",
+          "product_key",
+          "definition_status",
+          "latest_version"
+        ],
+        "title": "AutomationDefinition",
+        "type": "object"
+      },
+      "AutomationDetail": {
+        "properties": {
+          "approval_request": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approval Request"
+          },
+          "attempts": {
+            "items": {
+              "$ref": "#/components/schemas/AutomationAttempt"
+            },
+            "title": "Attempts",
+            "type": "array"
+          },
+          "can_respond_approval": {
+            "default": false,
+            "title": "Can Respond Approval",
+            "type": "boolean"
+          },
+          "can_steer": {
+            "default": false,
+            "title": "Can Steer",
+            "type": "boolean"
+          },
+          "can_stop": {
+            "default": false,
+            "title": "Can Stop",
+            "type": "boolean"
+          },
+          "history": {
+            "items": {
+              "$ref": "#/components/schemas/AutomationAudit"
+            },
+            "title": "History",
+            "type": "array"
+          },
+          "history_state": {
+            "enum": [
+              "bounded_partial",
+              "unavailable_permission"
+            ],
+            "title": "History State",
+            "type": "string"
+          },
+          "idempotency_key": {
+            "title": "Idempotency Key",
+            "type": "string"
+          },
+          "jobs": {
+            "items": {
+              "$ref": "#/components/schemas/AutomationJob"
+            },
+            "title": "Jobs",
+            "type": "array"
+          },
+          "organization_id": {
+            "format": "uuid",
+            "title": "Organization Id",
+            "type": "string"
+          },
+          "quality": {
+            "const": "bounded_partial",
+            "default": "bounded_partial",
+            "title": "Quality",
+            "type": "string"
+          },
+          "recovery": {
+            "const": "domain_controls_only",
+            "default": "domain_controls_only",
+            "title": "Recovery",
+            "type": "string"
+          },
+          "run": {
+            "$ref": "#/components/schemas/AutomationRun"
+          }
+        },
+        "required": [
+          "organization_id",
+          "run",
+          "idempotency_key",
+          "jobs",
+          "attempts",
+          "history",
+          "history_state"
+        ],
+        "title": "AutomationDetail",
+        "type": "object"
+      },
+      "AutomationJob": {
+        "properties": {
+          "attempt_count": {
+            "title": "Attempt Count",
+            "type": "integer"
+          },
+          "available_at": {
+            "format": "date-time",
+            "title": "Available At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "job_type": {
+            "title": "Job Type",
+            "type": "string"
+          },
+          "last_error_category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error Category"
+          },
+          "max_attempts": {
+            "title": "Max Attempts",
+            "type": "integer"
+          },
+          "result_reference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result Reference"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "job_type",
+          "attempt_count",
+          "max_attempts",
+          "available_at",
+          "last_error_category",
+          "result_reference"
+        ],
+        "title": "AutomationJob",
+        "type": "object"
+      },
+      "AutomationLocation": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "AutomationLocation",
+        "type": "object"
+      },
+      "AutomationRun": {
+        "properties": {
+          "agent_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Error"
+          },
+          "agent_run_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Run Id"
+          },
+          "agent_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Status"
+          },
+          "attention": {
+            "anyOf": [
+              {
+                "enum": [
+                  "failure",
+                  "approval",
+                  "waiting",
+                  "retry",
+                  "partial",
+                  "stale",
+                  "reconciliation"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attention"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "correlation_id": {
+            "title": "Correlation Id",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "failure_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Code"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "job_error_category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Error Category"
+          },
+          "job_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Status"
+          },
+          "location_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location Id"
+          },
+          "outcome": {
+            "enum": [
+              "execution_only",
+              "recorded_result",
+              "verified_publication",
+              "unconfirmed_publication"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "output_reference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Reference"
+          },
+          "publication_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Publication Error"
+          },
+          "publication_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Publication Status"
+          },
+          "retry_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retry At"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "enum": [
+              "created",
+              "queued",
+              "running",
+              "waiting",
+              "waiting_approval",
+              "retry_scheduled",
+              "completed",
+              "partially_completed",
+              "cancelled",
+              "expired",
+              "failed",
+              "escalated"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "workflow_key": {
+            "title": "Workflow Key",
+            "type": "string"
+          },
+          "workflow_name": {
+            "title": "Workflow Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "workflow_key",
+          "workflow_name",
+          "location_id",
+          "status",
+          "failure_code",
+          "created_at",
+          "started_at",
+          "completed_at",
+          "correlation_id",
+          "output_reference",
+          "outcome"
+        ],
+        "title": "AutomationRun",
+        "type": "object"
+      },
+      "AutomationSchedule": {
+        "properties": {
+          "can_manage": {
+            "default": false,
+            "title": "Can Manage",
+            "type": "boolean"
+          },
+          "cron_expression": {
+            "title": "Cron Expression",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "last_run_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Run At"
+          },
+          "location_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location Id"
+          },
+          "next_run_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Run At"
+          },
+          "overdue": {
+            "default": false,
+            "title": "Overdue",
+            "type": "boolean"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "paused",
+              "cancelled"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "timezone": {
+            "title": "Timezone",
+            "type": "string"
+          },
+          "workflow_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Key"
+          },
+          "workflow_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Name"
+          }
+        },
+        "required": [
+          "id",
+          "key",
+          "workflow_key",
+          "workflow_name",
+          "cron_expression",
+          "timezone",
+          "status",
+          "next_run_at",
+          "last_run_at",
+          "location_id"
+        ],
+        "title": "AutomationSchedule",
+        "type": "object"
+      },
+      "AutomationWorkspace": {
+        "properties": {
+          "attention": {
+            "items": {
+              "$ref": "#/components/schemas/AutomationRun"
+            },
+            "title": "Attention",
+            "type": "array"
+          },
+          "attention_limit": {
+            "const": 50,
+            "default": 50,
+            "title": "Attention Limit",
+            "type": "integer"
+          },
+          "can_execute": {
+            "title": "Can Execute",
+            "type": "boolean"
+          },
+          "can_manage_schedules": {
+            "title": "Can Manage Schedules",
+            "type": "boolean"
+          },
+          "definitions": {
+            "items": {
+              "$ref": "#/components/schemas/AutomationDefinition"
+            },
+            "title": "Definitions",
+            "type": "array"
+          },
+          "location_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location Id"
+          },
+          "locations": {
+            "items": {
+              "$ref": "#/components/schemas/AutomationLocation"
+            },
+            "title": "Locations",
+            "type": "array"
+          },
+          "next_offset": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Offset"
+          },
+          "observed_at": {
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "organization_id": {
+            "format": "uuid",
+            "title": "Organization Id",
+            "type": "string"
+          },
+          "outcomes": {
+            "items": {
+              "$ref": "#/components/schemas/AutomationRun"
+            },
+            "title": "Outcomes",
+            "type": "array"
+          },
+          "outcomes_limit": {
+            "const": 10,
+            "default": 10,
+            "title": "Outcomes Limit",
+            "type": "integer"
+          },
+          "quality": {
+            "const": "partial",
+            "default": "partial",
+            "title": "Quality",
+            "type": "string"
+          },
+          "runs": {
+            "items": {
+              "$ref": "#/components/schemas/AutomationRun"
+            },
+            "title": "Runs",
+            "type": "array"
+          },
+          "runtime_health": {
+            "const": "unavailable_no_scoped_heartbeat",
+            "default": "unavailable_no_scoped_heartbeat",
+            "title": "Runtime Health",
+            "type": "string"
+          },
+          "schedules": {
+            "items": {
+              "$ref": "#/components/schemas/AutomationSchedule"
+            },
+            "title": "Schedules",
+            "type": "array"
+          },
+          "schedules_state": {
+            "enum": [
+              "available",
+              "unavailable_permission"
+            ],
+            "title": "Schedules State",
+            "type": "string"
+          },
+          "total_runs": {
+            "title": "Total Runs",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "organization_id",
+          "location_id",
+          "observed_at",
+          "locations",
+          "can_manage_schedules",
+          "can_execute",
+          "schedules_state",
+          "definitions",
+          "schedules",
+          "runs",
+          "attention",
+          "outcomes",
+          "total_runs",
+          "next_offset"
+        ],
+        "title": "AutomationWorkspace",
+        "type": "object"
+      },
       "BlockerResolution": {
         "additionalProperties": false,
         "description": "Where a blocker is resolved, and by whom.\n\nCarried alongside the human sentence so the product can render a blocker as\nan action rather than a sentence the operator has to go hunting behind, and\nso a test can assert that everything shown to an operator is clearable by\nthat operator.",
@@ -15970,6 +16803,131 @@
           }
         },
         "summary": "Attention",
+        "tags": [
+          "command-center"
+        ]
+      }
+    },
+    "/api/v1/organizations/{organization_id}/command-center/automations": {
+      "get": {
+        "operationId": "workspace_api_v1_organizations__organization_id__command_center_automations_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "location_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Location Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "maximum": 100000,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AutomationWorkspace"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Workspace",
+        "tags": [
+          "command-center"
+        ]
+      }
+    },
+    "/api/v1/organizations/{organization_id}/command-center/automations/runs/{run_id}": {
+      "get": {
+        "operationId": "detail_api_v1_organizations__organization_id__command_center_automations_runs__run_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AutomationDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Detail",
         "tags": [
           "command-center"
         ]

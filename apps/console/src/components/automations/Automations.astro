@@ -1,0 +1,435 @@
+---
+import type { AutomationsView } from "../../adapters/automations";
+import { outcomeLabel, when } from "../../adapters/automations";
+interface Props {
+  view: AutomationsView;
+  slug: string;
+  tab: string;
+}
+const { view, slug, tab } = Astro.props;
+const base = `/clients/${slug}/automations/`;
+const api = `/api/organizations/${view.organization_id}/`;
+const upcoming = view.schedules
+  .filter((s) => s.status === "active")
+  .sort((a, b) => (a.next_run_at ?? "").localeCompare(b.next_run_at ?? ""));
+---
+
+<nav class="sectiontabs" aria-label="Automation views">
+  <a href={base} class={tab === "" ? "active" : ""}>Overview</a><a
+    href={base + "all/"}
+    class={tab === "all" ? "active" : ""}>All Automations</a
+  >
+</nav>
+<p>
+  Source: durable workflow, schedule and job records · Observed {
+    view.observed_at
+  } · Partial: bounded histories; no runtime heartbeat or complete provider health
+  evidence.
+</p>
+<form method="get" aria-label="Automation scope">
+  <label for="automation-location">Location</label><select
+    id="automation-location"
+    name="location_id"
+    ><option value="">Organization scope</option>{
+      view.locations.map((l) => (
+        <option value={l.id} selected={l.id === view.location_id}>
+          {l.name}
+        </option>
+      ))
+    }</select
+  ><button type="submit">Select scope</button>
+</form>
+<p data-automation-status role="status" aria-live="polite"></p>
+{
+  tab !== "all" && (
+    <>
+      <section class="panel attentionstrip">
+        <div class="panelhead">
+          <>
+            <h2>Requires Attention</h2>
+            <span class="muted">
+              Human actions first · up to {view.attention_limit} runs
+            </span>
+          </>
+        </div>
+        {view.attention.map((r) => (
+          <div class="listrow">
+            <div class="grow">
+              <h3>{r.workflow_name}</h3>
+              <p>
+                {r.attention} · {r.status} ·{" "}
+                {r.failure_code ??
+                  r.agent_error ??
+                  r.publication_error ??
+                  "No failure code recorded"}
+              </p>
+              <small>
+                {r.job_status ?? "No job state"}
+                {r.retry_at ? ` · Retry scheduled ${r.retry_at}` : ""}
+              </small>
+            </div>
+            <a class="control" href={base + `runs/${r.id}/`}>
+              Investigate
+            </a>
+          </div>
+        ))}
+        {view.schedules
+          .filter((s) => s.overdue)
+          .map((s) => (
+            <div class="listrow">
+              <div>
+                <h3>{s.workflow_name ?? s.key}</h3>
+                <p>
+                  Schedule overdue · persisted next run {when(s.next_run_at)} ·{" "}
+                  {s.timezone}
+                </p>
+                <p>
+                  Inspect scheduler state; this is not confirmation of an outage
+                  or a missed provider write.
+                </p>
+              </div>
+            </div>
+          ))}
+        {!view.attention.length && !view.schedules.some((s) => s.overdue) && (
+          <p>
+            No exceptions in the bounded records returned. Runtime and provider
+            health remain unconfirmed.
+          </p>
+        )}
+      </section>
+      <div class="grid">
+        <section class="panel">
+          <div class="panelhead">
+            <h2>Upcoming Important Runs</h2>
+          </div>
+          <p>Persisted active schedules, ordered by backend next-run time.</p>
+          {upcoming.map((s) => (
+            <div class="listrow">
+              <div>
+                <h3>{s.workflow_name ?? s.key}</h3>
+                <p>
+                  {when(s.next_run_at)} · {s.timezone} ·{" "}
+                  {s.overdue ? "Overdue" : "Scheduled"}
+                </p>
+                <small>
+                  {s.cron_expression} · Last dispatch {when(s.last_run_at)}
+                </small>
+              </div>
+            </div>
+          ))}
+          {!upcoming.length && (
+            <p>
+              {view.schedules_state === "available"
+                ? "No active schedules recorded."
+                : "Schedules unavailable: read permission required."}
+            </p>
+          )}
+        </section>
+        <section class="panel">
+          <div class="panelhead">
+            <h2>Recent Meaningful Outcomes</h2>
+          </div>
+          <p>
+            Up to ten recent completed execution records with persisted results.
+            Execution results do not establish provider or business success.
+          </p>
+          {view.outcomes.map((r) => (
+            <div class="listrow">
+              <div>
+                <h3>{r.workflow_name}</h3>
+                <p>{outcomeLabel(r.outcome)}</p>
+                <small>
+                  {when(r.completed_at)} ·{" "}
+                  {r.output_reference ?? "No output reference"}
+                </small>
+                <a href={base + `runs/${r.id}/`}>Outcome details</a>
+              </div>
+            </div>
+          ))}
+          {!view.outcomes.length && (
+            <p>No confirmed execution results in this bounded view.</p>
+          )}
+        </section>
+      </div>
+      <section class="panel">
+        <>
+          <h2>Operational Health</h2>
+          <p>
+            Worker and scheduler health: unavailable. No scoped heartbeat source
+            exists in this contract.
+          </p>
+          <p>
+            Schedule evidence: {view.schedules_state} · Run history:{" "}
+            {view.total_runs} persisted records in scope · Source quality:
+            partial
+          </p>
+          <p>
+            Paused and cancelled schedules do not run. Queued, running, retry
+            scheduled, partial and failed records remain distinct.
+          </p>
+          <a href={base + "all/"}>All Automations</a>
+        </>
+      </section>
+    </>
+  )
+}
+{
+  tab === "all" && (
+    <>
+      <section class="panel tablewrap">
+        <>
+          <h2>All Automations</h2>
+          <table>
+            <>
+              <caption>
+                Registered workflow definitions; definition activation is shared
+                runtime state, not a client enable switch
+              </caption>
+              <thead>
+                <tr>
+                  <>
+                    <th scope="col">Automation</th>
+                    <th scope="col">Definition</th>
+                    <th scope="col">Scheduling</th>
+                    <th scope="col">Action</th>
+                  </>
+                </tr>
+              </thead>
+              <tbody>
+                {view.definitions.map((d) => (
+                  <tr>
+                    <td>
+                      <b>{d.display_name}</b>
+                      <span class="sub">{d.product_key}</span>
+                    </td>
+                    <td>
+                      {d.definition_status === "active"
+                        ? "Enabled definition"
+                        : d.definition_status === "not_persisted"
+                          ? "Not activated"
+                          : `Disabled / ${d.definition_status}`}
+                      <span class="sub">
+                        Approved version {d.latest_version ?? "unavailable"}
+                      </span>
+                    </td>
+                    <td>
+                      {view.schedules_state !== "available"
+                        ? "Schedule state unavailable"
+                        : view.schedules.some((s) => s.workflow_key === d.key)
+                          ? "Recorded schedules below"
+                          : "Unscheduled"}
+                    </td>
+                    <td>
+                      {["gbp.sync", "reviews.ingest"].includes(d.key) && (
+                        <button
+                          inert
+                          disabled={!view.can_execute}
+                          data-automation-action={
+                            api + `workflows/${d.key}/runs/`
+                          }
+                          data-command="run"
+                          data-location={view.location_id ?? ""}
+                        >
+                          Run now: {d.display_name}
+                        </button>
+                      )}
+                      {d.key.startsWith("agent.") && (
+                        <>
+                          <p>
+                            {d.eligibility_reason ??
+                              (d.agent_eligible
+                                ? "Eligible in selected location"
+                                : "Select a location to check canonical eligibility")}
+                          </p>
+                          {d.agent_eligible && view.location_id && (
+                            <form
+                              inert
+                              data-automation-form="agent"
+                              data-action={api + `agents/${d.key}/runs/`}
+                            >
+                              <input
+                                type="hidden"
+                                name="location_id"
+                                value={view.location_id}
+                              />
+                              <label for={`objective-${d.key}`}>
+                                Objective for {d.display_name}
+                              </label>
+                              <textarea
+                                id={`objective-${d.key}`}
+                                name="objective"
+                                required
+                                maxlength="4000"
+                              />
+                              <button
+                                disabled={!view.can_execute}
+                                type="submit"
+                              >
+                                Start {d.display_name}
+                              </button>
+                            </form>
+                          )}
+                        </>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </>
+          </table>
+        </>
+      </section>
+      <section class="panel">
+        <h2>Schedules</h2>
+        {view.schedules.map((s) => (
+          <div class="listrow">
+            <div class="grow">
+              <h3>{s.workflow_name ?? s.key}</h3>
+              <p>
+                {s.status === "active"
+                  ? "Enabled schedule"
+                  : "Disabled schedule"}{" "}
+                · {s.status} · {s.cron_expression} · {s.timezone}
+              </p>
+              <p>
+                Next recorded dispatch: {when(s.next_run_at)}
+                {s.status !== "active" ? " (inactive; will not run)" : ""} ·
+                Last dispatch: {when(s.last_run_at)}
+              </p>
+              <small>
+                {s.location_id
+                  ? `Location ${s.location_id}`
+                  : "Organization scope"}
+              </small>
+            </div>
+            {s.status !== "cancelled" && (
+              <button
+                inert
+                disabled={!s.can_manage}
+                data-automation-action={api + `workflows/schedules/${s.id}/`}
+                data-command={s.status === "active" ? "paused" : "active"}
+                data-method="PATCH"
+              >
+                {s.status === "active" ? "Pause schedule" : "Resume schedule"}
+              </button>
+            )}
+          </div>
+        ))}
+        {!view.schedules.length && (
+          <p>
+            {view.schedules_state === "available"
+              ? "No schedules recorded. Next run unavailable for unscheduled automations."
+              : "Schedules unavailable: read permission required."}
+          </p>
+        )}
+        {view.can_manage_schedules && (
+          <form
+            inert
+            data-automation-form="schedule"
+            data-action={api + "workflows/schedules/"}
+            aria-label="Create canonical schedule"
+          >
+            <h3>Create Schedule</h3>
+            <label for="schedule-workflow">Workflow</label>
+            <select id="schedule-workflow" name="workflow_key">
+              <option value="gbp.sync">Business Profile sync</option>
+              <option value="reviews.ingest">Reviews ingestion</option>
+            </select>
+            <label for="schedule-key">Schedule key</label>
+            <input
+              id="schedule-key"
+              name="key"
+              required
+              minlength="3"
+              maxlength="128"
+            />
+            <label for="schedule-cron">Cron expression</label>
+            <input
+              id="schedule-cron"
+              name="cron_expression"
+              required
+              minlength="5"
+              maxlength="100"
+            />
+            <label for="schedule-timezone">Timezone</label>
+            <input
+              id="schedule-timezone"
+              name="timezone"
+              required
+              maxlength="64"
+            />
+            <label for="schedule-next">
+              First dispatch (ISO timestamp with timezone)
+            </label>
+            <input
+              id="schedule-next"
+              name="next_run_at"
+              required
+              placeholder="YYYY-MM-DDTHH:mm:ssZ"
+            />
+            <input
+              type="hidden"
+              name="location_id"
+              value={view.location_id ?? ""}
+            />
+            <button type="submit">Create schedule</button>
+          </form>
+        )}
+        <p>
+          First dispatch must be explicitly supplied. The backend scheduler owns
+          subsequent dispatch times; the console computes none.
+        </p>
+      </section>
+    </>
+  )
+}
+<section class="panel tablewrap">
+  <h2>Run History</h2><table>
+    <caption
+      >Persisted runs · {view.total_runs} in scope · latest 50 per page</caption
+    ><thead
+      ><tr
+        ><th scope="col">Automation</th><th scope="col">Execution</th><th
+          scope="col">Outcome</th
+        ><th scope="col">Details</th></tr
+      ></thead
+    ><tbody
+      >{
+        view.runs.map((r) => (
+          <tr>
+            <>
+              <td>
+                {r.workflow_name}
+                <span class="sub">{r.created_at}</span>
+              </td>
+              <td>
+                {r.status}
+                <span class="sub">Job: {r.job_status ?? "unavailable"}</span>
+              </td>
+              <td>
+                {outcomeLabel(r.outcome)}
+                <span class="sub">
+                  {r.failure_code ?? r.publication_error ?? r.agent_error ?? ""}
+                </span>
+              </td>
+              <td>
+                <a href={base + `runs/${r.id}/`}>View run</a>
+              </td>
+            </>
+          </tr>
+        ))
+      }</tbody
+    >
+  </table>{!view.runs.length && <p>No workflow runs recorded.</p>}{
+    view.next_offset !== null && (
+      <a
+        href={`?offset=${view.next_offset}${view.location_id ? `&location_id=${view.location_id}` : ""}`}
+      >
+        Next page of runs
+      </a>
+    )
+  }
+</section>
+<script>
+  import "../../lib/automation-actions";
+</script>
