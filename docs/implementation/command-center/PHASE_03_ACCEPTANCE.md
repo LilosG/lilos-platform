@@ -91,6 +91,13 @@ PASS for all listed Reviews repository/synthetic scenarios after the focused cor
 
 The broad final gates ran once; only Phase 3 corrections received focused follow-up.
 
+PR #145 CI dependency correction: its sole reported failure was the high-severity
+`devalue <=5.9.2` audit finding. Updated only the transitive lockfile entry from
+5.9.2 to 5.9.4 within Astro 7.3.2's existing `^5.8.1` range; no manifest or
+application changes. Follow-up `npm audit --audit-level=high` PASS (zero
+vulnerabilities), `npm run build:console` PASS, and `npm run test:console` PASS
+(45 tests across six files). Broader gates were not rerun for this correction.
+
 | Gate                                                  | Result                                                                                                                                                                                                                                                                                                        |
 | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `npm run format:check`                                | PASS; final amended source/docs additionally formatted and checked                                                                                                                                                                                                                                            |
