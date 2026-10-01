@@ -1,0 +1,126 @@
+---
+import type { ReviewsView } from "../../adapters/reviews";
+import { metric } from "../../adapters/reviews";
+interface Props {
+  view: ReviewsView;
+  slug: string;
+  offset: number;
+}
+const { view: v, slug, offset } = Astro.props;
+const base = `/clients/${slug}/reviews/`;
+---
+
+<div class="metrics">
+  <div class="metric">
+    <div class="metricLabel">Persisted reviews</div><strong
+      >{metric(v.inventory_count)}</strong
+    ><small>All stored reviews</small>
+  </div>
+  <div class="metric">
+    <div class="metricLabel">Average rating</div><strong
+      >{metric(v.average_rating)}</strong
+    ><small>All stored ratings</small>
+  </div>
+  <div class="metric">
+    <div class="metricLabel">Restricted cases</div><strong
+      >{metric(v.open_restricted_cases)}</strong
+    ><small>Open canonical cases</small>
+  </div>
+</div>
+<section class="panel">
+  <h2>Source health</h2>
+  <form method="get">
+    <label
+      >Location<select name="location_id"
+        >{
+          v.locations.map((l) => (
+            <option value={l.id} selected={l.id === v.location_id}>
+              {l.name}
+            </option>
+          ))
+        }</select
+      ></label
+    ><button type="submit">View location</button>
+  </form>
+  <p>
+    Google authorization: {v.source?.connection_status ?? "Unavailable"} · Mapping:
+    {v.source?.mapping_status ?? "Unavailable"}
+  </p>
+  <p>
+    Last review import: {v.source?.last_ingested_at ?? "Unavailable"} · Freshness:
+    {v.source?.freshness ?? "unavailable"} · Quality: {
+      v.source?.quality ?? "unavailable"
+    }
+  </p>
+  <p>
+    These metrics describe the persisted inventory. Provider-wide totals,
+    complete coverage, trend comparisons and response-rate metrics are
+    unavailable.
+  </p>
+  <a href={`/clients/${slug}/integrations/`}>Manage Integration</a>
+  <button
+    inert
+    data-review-action={`/api/organizations/${v.organization_id}/locations/${v.location_id}/reviews/ingest/`}
+    disabled={!v.can_ingest}
+    >Import reviews and read back provider replies</button
+  >
+</section>
+<div class="sectiontabs">
+  <a href={base} aria-current="page">All reviews</a><a href={base + "requests/"}
+    >Review requests</a
+  >
+</div>
+<section class="panel" data-review-inbox>
+  <h2>Review inbox</h2>
+  {
+    v.items.length ? (
+      v.items.map((r) => (
+        <article class="reviewrow">
+          <div class="reviewtop">
+            <>
+              <b>{r.reviewer_reference ?? "Reviewer identity unavailable"}</b>
+              <span>
+                {metric(r.rating)} stars · {r.provider}
+              </span>
+            </>
+          </div>
+          <small>
+            {r.created_at} · Last synced: {r.last_synced_at}
+          </small>
+          <p>
+            {r.title}
+            {r.body ?? "Review text unavailable"}
+          </p>
+          <p>
+            Review: {r.status} · Response:{" "}
+            {r.response_status ?? "No persisted response"} · Risk:{" "}
+            {r.risk_level} · Sentiment: {r.sentiment}
+          </p>
+          <a
+            class="control"
+            href={base + `locations/${r.location_id}/${r.id}/`}
+          >
+            View response and history
+          </a>
+        </article>
+      ))
+    ) : (
+      <p>
+        No persisted reviews in this view. Missing provider evidence is not a
+        zero review total.
+      </p>
+    )
+  }
+  {
+    v.next_offset !== null && (
+      <a href={`?location_id=${v.location_id}&offset=${v.next_offset}`}>
+        Next reviews
+      </a>
+    )
+  }
+  {offset > 0 && <a href={`?location_id=${v.location_id}`}>First reviews</a>}
+</section>
+<p role="status" aria-live="polite" data-review-status></p>
+<script>
+  import "../../lib/review-actions";
+</script>

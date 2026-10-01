@@ -359,7 +359,7 @@ def test_manual_and_ai_draft_full_flow_produces_audit_and_notification(
             "review_revision_id": str(revision_id),
             "response_text": "Thank you so much for your kind words!",
             "generated_by_type": "user",
-            "approved_fact_revision_ids": [str(uuid4())],
+            "approved_fact_revision_ids": [_approved_fact(client, org)],
         },
     )
     assert manual.status_code == 201
@@ -470,7 +470,7 @@ def test_restricted_review_cannot_auto_publish_and_generates_notification(
             "review_revision_id": str(revision_id),
             "response_text": "We are so sorry to hear this and want to help.",
             "generated_by_type": "user",
-            "approved_fact_revision_ids": [str(uuid4())],
+            "approved_fact_revision_ids": [_approved_fact(client, org)],
         },
     )
     response_id = draft.json()["data"]["id"]
@@ -523,3 +523,213 @@ def test_ingest_route_maps_to_ingest_handler_not_get_review_by_id(
     body = response.json()
     assert body["error"]["code"] == "REVIEW_INGESTION_UNAVAILABLE"
     assert "Google Business Profile" in body["error"]["message"]
+
+
+def _approved_fact(client: TestClient, org: UUID) -> str:
+    result = client.post(
+        f"/api/v1/organizations/{org}/business-facts",
+        headers=HEADERS,
+        json={
+            "fact_key": "business.name",
+            "value": "Synthetic Reviews Business",
+            "value_type": "string",
+            "source": "organization_profile",
+            "authority": "system_derived",
+            "change_reason": "Reviews test grounding",
+        },
+    )
+    assert result.status_code == 201
+    fact_id = result.json()["data"]["id"]
+    assert (
+        client.post(
+            f"/api/v1/organizations/{org}/business-facts/{fact_id}/decision",
+            headers=HEADERS,
+            json={"decision": "approve"},
+        ).status_code
+        == 200
+    )
+    return str(fact_id)
+
+
+def test_command_center_reviews_missing_zero_scoping_and_private(
+    postgresql_test_url: str,
+    reviews_client: tuple[TestClient, dict[str, UUID]],
+) -> None:
+    client, ids = reviews_client
+    org, location = ids["organization"], ids["location"]
+    path = f"/api/v1/organizations/{org}/command-center/reviews"
+    missing = client.get(path, headers=HEADERS, params={"location_id": str(location)})
+    assert missing.status_code == 200
+    assert missing.headers["Cache-Control"] == "private, no-store"
+    assert missing.json()["inventory_count"] is None
+    assert missing.json()["average_rating"] is None
+    assert missing.json()["items"] == []
+    assert missing.json()["campaigns"] == "unavailable_no_canonical_source"
+    assert client.get(path).status_code == 401
+    assert (
+        client.get(path, headers=HEADERS, params={"location_id": str(uuid4())}).status_code == 404
+    )
+    assert (
+        client.get(
+            f"/api/v1/organizations/{ids['other_organization']}/command-center/reviews",
+            headers=HEADERS,
+        ).status_code
+        == 404
+    )
+    # A completed empty ingestion is real evidence; absent source is not zero.
+    from apps.api.app.routes.reviews import service
+
+    async def completed(session: AsyncSession) -> None:
+        async with session.begin():
+            await service._audit(
+                session,
+                event="reviews.ingest.completed",
+                organization_id=org,
+                location_id=location,
+                actor_id=None,
+                resource_type="location",
+                resource_id=location,
+                correlation_id="phase3-empty",
+                summary="Empty synthetic import",
+                metadata={"total": 0},
+            )
+
+    run_db(postgresql_test_url, completed)
+    zero = client.get(path, headers=HEADERS, params={"location_id": str(location)}).json()
+    assert zero["inventory_count"] == 0
+    assert zero["average_rating"] is None
+    assert zero["source"]["freshness"] == "fresh"
+    assert zero["source"]["quality"] == "partial"
+
+
+def test_command_center_reviews_exact_revision_dispatch_and_audit(
+    postgresql_test_url: str,
+    reviews_client: tuple[TestClient, dict[str, UUID]],
+) -> None:
+    client, ids = reviews_client
+    org, location = ids["organization"], ids["location"]
+    _ingest(postgresql_test_url, ids, body="Good visit", rating=5, external_id="phase3-review")
+    review, revision = _fetch_review_and_revision(postgresql_test_url, org, location)
+    base = f"/api/v1/organizations/{org}/locations/{location}/reviews/{review}/responses"
+    payload = {
+        "review_revision_id": str(revision),
+        "response_text": "Thank you for visiting.",
+        "generated_by_type": "user",
+        "approved_fact_revision_ids": [_approved_fact(client, org)],
+    }
+    draft = client.post(base, headers=HEADERS, json=payload)
+    assert draft.status_code == 201
+    response_id = draft.json()["data"]["id"]
+    projection = f"/api/v1/organizations/{org}/command-center/reviews/locations/{location}/{review}"
+    view = client.get(projection, headers=HEADERS).json()
+    assert view["can_draft"] is True
+    response = view["responses"][0]
+    assert response["approval_required"] is True
+    assert response["can_publish"] is False
+    assert response["history"][0]["event_type"] == "reviews.response.drafted"
+    assert (
+        client.get(
+            projection.replace(str(location), str(ids["sibling_location"])), headers=HEADERS
+        ).status_code
+        == 404
+    )
+    key = {"idempotency_key": "phase3-review-dispatch-key"}
+    assert (
+        client.post(f"{base}/{response_id}/publish", headers=HEADERS, json=key).status_code == 409
+    )
+    assert client.post(f"{base}/{response_id}/approve", headers=HEADERS).status_code == 200
+    assert (
+        client.post(f"{base}/{response_id}/publish", headers=HEADERS, json=key).status_code == 202
+    )
+    assert (
+        client.post(f"{base}/{response_id}/publish", headers=HEADERS, json=key).status_code == 202
+    )
+    response = client.get(projection, headers=HEADERS).json()["responses"][0]
+    assert response["status"] == "publishing"
+    assert response["workflow_status"] == "queued"
+    assert response["published_at"] is None
+    assert response["external_response_id"] is None
+    assert response["can_publish"] is False
+    assert (
+        sum(
+            event["event_type"] == "reviews.response.publication_reserved"
+            for event in response["history"]
+        )
+        == 1
+    )
+
+
+def test_approved_response_refuses_changed_review_at_dispatch(
+    postgresql_test_url: str,
+    reviews_client: tuple[TestClient, dict[str, UUID]],
+) -> None:
+    client, ids = reviews_client
+    org, location = ids["organization"], ids["location"]
+    _ingest(postgresql_test_url, ids, body="First review", rating=4, external_id="phase3-drift")
+    review, revision = _fetch_review_and_revision(postgresql_test_url, org, location)
+    base = f"/api/v1/organizations/{org}/locations/{location}/reviews/{review}/responses"
+    payload = {
+        "review_revision_id": str(revision),
+        "response_text": "Thanks for sharing.",
+        "approved_fact_revision_ids": [_approved_fact(client, org)],
+    }
+    draft = client.post(base, headers=HEADERS, json=payload).json()["data"]["id"]
+    assert client.post(f"{base}/{draft}/approve", headers=HEADERS).status_code == 200
+    _ingest(postgresql_test_url, ids, body="Updated review", rating=2, external_id="phase3-drift")
+    rejected = client.post(
+        f"{base}/{draft}/publish",
+        headers=HEADERS,
+        json={"idempotency_key": "phase3-drift-dispatch"},
+    )
+    assert rejected.status_code == 409
+    assert rejected.json()["error"]["code"] == "REVIEW_RESPONSE_NOT_PUBLISH_ELIGIBLE"
+
+
+def test_provider_observed_response_needs_no_local_approval(
+    postgresql_test_url: str,
+    reviews_client: tuple[TestClient, dict[str, UUID]],
+) -> None:
+    from apps.api.app.products.reviews.service import ProviderReplyObservation
+
+    client, ids = reviews_client
+    org, location = ids["organization"], ids["location"]
+
+    async def observed(session: AsyncSession) -> UUID:
+        async with session.begin():
+            review, _, _ = await ReviewService().ingest(
+                session,
+                organization_id=org,
+                location_id=location,
+                integration_resource_id=ids["integration_resource"],
+                external_review_id="provider-observed-phase3",
+                provider="google_business_profile",
+                rating=5,
+                title=None,
+                body="Synthetic visit",
+                created_at=datetime.now(UTC),
+                updated_at=None,
+                correlation_id="phase3-provider-observed",
+                provider_reply=ProviderReplyObservation(
+                    comment="Existing provider reply",
+                    updated_at=datetime.now(UTC),
+                    state="APPROVED",
+                    policy_violation=None,
+                    external_response_id="synthetic-provider-review",
+                ),
+            )
+            return review.id
+
+    review = run_db(postgresql_test_url, observed)
+    result = client.get(
+        f"/api/v1/organizations/{org}/command-center/reviews/locations/{location}/{review}",
+        headers=HEADERS,
+    )
+    assert result.status_code == 200
+    response = result.json()["responses"][0]
+    assert response["approval_required"] is False
+    assert response["approved_at"] is None
+    assert response["status"] == "published"
+    assert response["published_at"] is not None
+    assert response["workflow_status"] is None
+    assert response["can_approve"] is False
+    assert response["can_publish"] is False

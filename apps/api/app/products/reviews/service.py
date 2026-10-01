@@ -22,7 +22,7 @@ from apps.api.app.audit.service import AuditEventService
 from apps.api.app.execution.service import ExecutionService
 from apps.api.app.notifications.models import NotificationTemplate
 from apps.api.app.notifications.service import NotificationService
-from apps.api.app.products.content.service import resolve_governed_facts
+from apps.api.app.products.content.service import FactResolutionError, resolve_governed_facts
 from apps.api.app.products.reviews.errors import (
     GroundingRequiredError,
     InvalidReviewQueryError,
@@ -736,6 +736,14 @@ class ReviewService:
         )
         if not review_revision:
             raise ReviewRevisionNotFoundError
+        try:
+            await resolve_governed_facts(
+                session, organization_id, fact_ids, location_id=location_id
+            )
+        except FactResolutionError:
+            raise GroundingRequiredError from None
+        if review_revision.revision_number != review.current_revision_number:
+            raise ReviewChangedAfterDraftError
         status = "awaiting_approval"
         last = await session.scalar(
             select(ReviewResponseRevision.revision_number)
@@ -999,6 +1007,14 @@ class ReviewService:
         )
         if not item:
             raise ReviewResponseNotFoundError
+        if item.idempotency_key == idempotency_key and item.status in (
+            "publishing",
+            "published",
+            "reconciliation_required",
+            "failed",
+            "rejected",
+        ):
+            return item
         if item.status != "approved":
             raise ResponseNotPublishEligibleError
         review = await session.scalar(
@@ -1008,7 +1024,16 @@ class ReviewService:
                 Review.id == review_id,
             )
         )
-        if review and review.status == "escalated":
+        revision_number = await session.scalar(
+            select(ReviewRevision.revision_number).where(
+                ReviewRevision.organization_id == organization_id,
+                ReviewRevision.review_id == review_id,
+                ReviewRevision.id == item.review_revision_id,
+            )
+        )
+        if not review or revision_number != review.current_revision_number:
+            raise ReviewChangedAfterDraftError
+        if review.status == "escalated":
             raise RestrictedReviewCannotAutoPublishError
         item.status = "publishing"
         item.idempotency_key = idempotency_key
