@@ -5211,6 +5211,8 @@ export interface components {
             required_local_references?: string[];
             /** Source Evidence References */
             source_evidence_references?: string[];
+            /** @default existing_page */
+            target_kind: components["schemas"]["ContentTargetKind"];
             /** Target Reference */
             target_reference: string;
             /** Validation Requirements */
@@ -5398,6 +5400,12 @@ export interface components {
              */
             status: "granted" | "denied" | "unknown" | "not_required" | "withdrawn" | "expired";
         };
+        /**
+         * ContentTargetKind
+         * @description Whether a brief improves an attributed existing page or proposes a new URL.
+         * @enum {string}
+         */
+        ContentTargetKind: "existing_page" | "new_page";
         /**
          * ControlState
          * @enum {string}
