@@ -3,6 +3,14 @@ import { readFileSync } from "node:fs";
 const phase2 = JSON.parse(
   readFileSync(new URL("../fixtures/phase2.json", import.meta.url), "utf8"),
 );
+const phase3 = JSON.parse(
+  readFileSync(new URL("../fixtures/phase3.json", import.meta.url), "utf8"),
+);
+const phase4 = JSON.parse(
+  readFileSync(new URL("../fixtures/phase4.json", import.meta.url), "utf8"),
+);
+const contentStates = new Map();
+const reviewStates = new Map();
 import { createServer } from "node:http";
 const ids = {
   a: "11111111-1111-4111-8111-111111111111",
@@ -98,6 +106,8 @@ createServer(async (req, res) => {
       return reply(
         session(parsed.refresh_token?.includes(ids.b) ? ids.b : ids.a),
       );
+    reviewStates.delete(ids.run);
+    contentStates.delete(ids.run);
     if (parsed.password !== "synthetic-password")
       return reply(
         { msg: "Invalid login credentials", code: "invalid_credentials" },
@@ -178,6 +188,139 @@ createServer(async (req, res) => {
   if (!scoped || scoped[1] !== claims.sub)
     return reply({ code: "NOT_FOUND" }, 404);
   const path = scoped[2];
+  if (path === "command-center/website-content") {
+    const data = structuredClone(phase4.workspace);
+    data.organization_id = claims.sub;
+    if (
+      url.searchParams.has("website_id") &&
+      url.searchParams.get("website_id") !== data.website_id
+    )
+      return reply({ code: "NOT_FOUND" }, 404);
+    return reply(data);
+  }
+  if (path.startsWith("command-center/website-content/websites/")) {
+    const data = structuredClone(phase4.page);
+    if (
+      path !==
+      `command-center/website-content/websites/${data.evidence.identity.website_id}/pages/${data.evidence.identity.page_id}`
+    )
+      return reply({ code: "NOT_FOUND" }, 404);
+    data.evidence.identity.organization_id = claims.sub;
+    return reply(data);
+  }
+  if (path === `command-center/website-content/content/${phase4.detail.id}`) {
+    const data = structuredClone(phase4.detail);
+    data.organization_id = claims.sub;
+    const state = contentStates.get(claims.session_id) ?? "awaiting_editorial";
+    data.revisions[0].status = state;
+    data.can_approve = claims.aal === "aal2";
+    data.can_publish = claims.aal === "aal2";
+    if (state === "approved") data.stage = "ready_to_publish";
+    if (state === "publishing") {
+      data.stage = "publishing";
+      data.revisions[0].status = "approved";
+      data.publications = [
+        {
+          id: ids.run,
+          status: "pull_request_created",
+          target_path: "src/content/blog/synthetic-article.mdx",
+          external_pull_request_id: "1",
+          published_url: null,
+          build_status: "checks_running",
+          deployment_status: null,
+          verified_at: null,
+          safe_error_code: null,
+          revision_id: ids.rev,
+          workflow_id: ids.run,
+          workflow_status: "queued",
+          workflow_failure: null,
+          correlation_id: req.headers["x-correlation-id"],
+          approved_head_sha: null,
+          external_revision_id: null,
+          verification_status: null,
+          verification_evidence: null,
+          can_recover: true,
+        },
+      ];
+    }
+    return reply(data);
+  }
+  if (path === "content" && req.method === "POST")
+    return reply({ data: { id: phase4.detail.id } }, 201);
+  if (path.includes("content-operations/") && req.method === "POST") {
+    if (claims.aal !== "aal2") return reply({ code: "AAL2_REQUIRED" }, 403);
+    if (path.endsWith("/decision"))
+      contentStates.set(
+        claims.session_id,
+        parsed.stage === "editorial" ? "awaiting_client" : "approved",
+      );
+    if (path.endsWith("/publish"))
+      contentStates.set(claims.session_id, "publishing");
+    return reply(
+      { data: { id: ids.run, status: contentStates.get(claims.session_id) } },
+      202,
+    );
+  }
+  if (
+    path.includes("content-operations/") &&
+    path.endsWith("/publishing-assets")
+  )
+    return reply({
+      data: [{ path: "/synthetic.webp", name: "synthetic.webp" }],
+    });
+  if (path.startsWith("content/") && req.method === "POST")
+    return reply({ data: { id: ids.next, status: "awaiting_editorial" } }, 201);
+  if (path === "command-center/reviews") {
+    const data = structuredClone(phase3.workspace);
+    data.organization_id = claims.sub;
+    if (
+      url.searchParams.has("location_id") &&
+      url.searchParams.get("location_id") !== data.location_id
+    )
+      return reply({ code: "NOT_FOUND" }, 404);
+    return reply(data);
+  }
+  if (path.startsWith("command-center/reviews/locations/")) {
+    const data = structuredClone(phase3.detail);
+    data.organization_id = claims.sub;
+    if (
+      path !==
+      `command-center/reviews/locations/${data.location_id}/${data.review.id}`
+    )
+      return reply({ code: "NOT_FOUND" }, 404);
+    const state = reviewStates.get(claims.session_id) ?? "awaiting_approval";
+    const r = data.responses[0];
+    r.status = state;
+    r.can_approve = state === "awaiting_approval" && claims.aal === "aal2";
+    r.can_publish = state === "approved" && claims.aal === "aal2";
+    if (state === "publishing") {
+      r.workflow_status = "queued";
+      r.workflow_id = data.review.id;
+    }
+    return reply(data);
+  }
+  if (path.includes("/reviews/") && req.method === "POST") {
+    if (path.endsWith("/approve") || path.endsWith("/publish")) {
+      if (claims.aal !== "aal2") return reply({ code: "AAL2_REQUIRED" }, 403);
+      reviewStates.set(
+        claims.session_id,
+        path.endsWith("/approve") ? "approved" : "publishing",
+      );
+      return reply(
+        { data: { status: reviewStates.get(claims.session_id) } },
+        path.endsWith("/publish") ? 202 : 200,
+      );
+    }
+    return reply(
+      {
+        data: {
+          id: phase3.detail.responses[0].id,
+          status: "awaiting_approval",
+        },
+      },
+      201,
+    );
+  }
   const phase2Payload = (key) => {
     const data = structuredClone(phase2[key]);
     data.organization_id = claims.sub;

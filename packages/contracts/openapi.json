@@ -1199,6 +1199,445 @@
         "title": "ConsentRecord",
         "type": "object"
       },
+      "ContentBriefView": {
+        "properties": {
+          "approved_fact_revision_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Approved Fact Revision Ids",
+            "type": "array"
+          },
+          "audience": {
+            "title": "Audience",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "intent": {
+            "title": "Intent",
+            "type": "string"
+          },
+          "revision_number": {
+            "title": "Revision Number",
+            "type": "integer"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "target_reference": {
+            "title": "Target Reference",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "revision_number",
+          "audience",
+          "intent",
+          "target_reference",
+          "approved_fact_revision_ids",
+          "status"
+        ],
+        "title": "ContentBriefView",
+        "type": "object"
+      },
+      "ContentDraftRun": {
+        "properties": {
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "correlation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Correlation Id"
+          },
+          "failure_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Code"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "failure_code",
+          "correlation_id",
+          "started_at",
+          "completed_at"
+        ],
+        "title": "ContentDraftRun",
+        "type": "object"
+      },
+      "ContentPublicationView": {
+        "properties": {
+          "approved_head_sha": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approved Head Sha"
+          },
+          "build_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Build Status"
+          },
+          "can_recover": {
+            "title": "Can Recover",
+            "type": "boolean"
+          },
+          "correlation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Correlation Id"
+          },
+          "deployment_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deployment Status"
+          },
+          "external_pull_request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Pull Request Id"
+          },
+          "external_revision_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Revision Id"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "published_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published Url"
+          },
+          "revision_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revision Id"
+          },
+          "safe_error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Safe Error Code"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "target_path": {
+            "title": "Target Path",
+            "type": "string"
+          },
+          "verification_evidence": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verification Evidence"
+          },
+          "verification_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verification Status"
+          },
+          "verified_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verified At"
+          },
+          "workflow_failure": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Failure"
+          },
+          "workflow_id": {
+            "format": "uuid",
+            "title": "Workflow Id",
+            "type": "string"
+          },
+          "workflow_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Status"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "target_path",
+          "external_pull_request_id",
+          "published_url",
+          "build_status",
+          "deployment_status",
+          "verified_at",
+          "safe_error_code",
+          "revision_id",
+          "workflow_id",
+          "workflow_status",
+          "workflow_failure",
+          "correlation_id",
+          "approved_head_sha",
+          "external_revision_id",
+          "verification_status",
+          "verification_evidence",
+          "can_recover"
+        ],
+        "title": "ContentPublicationView",
+        "type": "object"
+      },
+      "ContentRequirementsView": {
+        "properties": {
+          "file_extensions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "File Extensions",
+            "type": "array"
+          },
+          "missing": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Missing",
+            "type": "array"
+          },
+          "requires_image": {
+            "title": "Requires Image",
+            "type": "boolean"
+          },
+          "requires_image_alt": {
+            "title": "Requires Image Alt",
+            "type": "boolean"
+          },
+          "target_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Id"
+          },
+          "target_selected": {
+            "title": "Target Selected",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "target_selected",
+          "missing",
+          "requires_image",
+          "requires_image_alt",
+          "file_extensions"
+        ],
+        "title": "ContentRequirementsView",
+        "type": "object"
+      },
+      "ContentRevisionView": {
+        "properties": {
+          "approved_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approved At"
+          },
+          "body": {
+            "title": "Body",
+            "type": "string"
+          },
+          "created_by_type": {
+            "title": "Created By Type",
+            "type": "string"
+          },
+          "frontmatter": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Frontmatter",
+            "type": "object"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "revision_number": {
+            "title": "Revision Number",
+            "type": "integer"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "validation_document": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Validation Document",
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "revision_number",
+          "body",
+          "frontmatter",
+          "created_by_type",
+          "status",
+          "validation_document",
+          "approved_at"
+        ],
+        "title": "ContentRevisionView",
+        "type": "object"
+      },
       "ContentTargetKind": {
         "description": "Whether a brief improves an attributed existing page or proposes a new URL.",
         "enum": [
@@ -1207,6 +1646,53 @@
         ],
         "title": "ContentTargetKind",
         "type": "string"
+      },
+      "ContentTargetView": {
+        "properties": {
+          "allowed_path_prefix": {
+            "title": "Allowed Path Prefix",
+            "type": "string"
+          },
+          "base_branch": {
+            "title": "Base Branch",
+            "type": "string"
+          },
+          "file_extensions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "File Extensions",
+            "type": "array"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "repository_id": {
+            "title": "Repository Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "key",
+          "repository_id",
+          "base_branch",
+          "allowed_path_prefix",
+          "file_extensions",
+          "status"
+        ],
+        "title": "ContentTargetView",
+        "type": "object"
       },
       "ControlState": {
         "enum": [
@@ -8195,6 +8681,70 @@
         "title": "PageIntelligenceView",
         "type": "object"
       },
+      "PageRepositoryMapping": {
+        "properties": {
+          "base_branch": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Branch"
+          },
+          "code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          },
+          "fields": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "default": {},
+            "title": "Fields",
+            "type": "object"
+          },
+          "repository": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Repository"
+          },
+          "state": {
+            "enum": [
+              "mapped",
+              "unavailable"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "verification": {
+            "const": "executor_rechecks_before_write",
+            "default": "executor_rechecks_before_write",
+            "title": "Verification",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state"
+        ],
+        "title": "PageRepositoryMapping",
+        "type": "object"
+      },
       "PageSummary": {
         "properties": {
           "http_status": {
@@ -9628,6 +10178,653 @@
           "correlation_id"
         ],
         "title": "ResponseMeta",
+        "type": "object"
+      },
+      "ResponseState": {
+        "properties": {
+          "approval_required": {
+            "title": "Approval Required",
+            "type": "boolean"
+          },
+          "approved_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approved At"
+          },
+          "can_approve": {
+            "title": "Can Approve",
+            "type": "boolean"
+          },
+          "can_publish": {
+            "title": "Can Publish",
+            "type": "boolean"
+          },
+          "external_response_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Response Id"
+          },
+          "generated_by": {
+            "title": "Generated By",
+            "type": "string"
+          },
+          "history": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewHistory"
+            },
+            "title": "History",
+            "type": "array"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "policy_code": {
+            "enum": [
+              "canonical_local_response_approval",
+              "provider_observation_no_local_approval"
+            ],
+            "title": "Policy Code",
+            "type": "string"
+          },
+          "published_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published At"
+          },
+          "review_revision_id": {
+            "format": "uuid",
+            "title": "Review Revision Id",
+            "type": "string"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
+          },
+          "safe_error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Safe Error Code"
+          },
+          "status": {
+            "enum": [
+              "draft",
+              "generated",
+              "awaiting_approval",
+              "approved",
+              "publishing",
+              "published",
+              "failed",
+              "rejected",
+              "superseded",
+              "reconciliation_required"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "workflow_failure": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Failure"
+          },
+          "workflow_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Id"
+          },
+          "workflow_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Status"
+          }
+        },
+        "required": [
+          "id",
+          "revision",
+          "review_revision_id",
+          "text",
+          "status",
+          "generated_by",
+          "approved_at",
+          "published_at",
+          "external_response_id",
+          "safe_error_code",
+          "workflow_id",
+          "workflow_status",
+          "workflow_failure",
+          "approval_required",
+          "policy_code",
+          "can_approve",
+          "can_publish",
+          "history"
+        ],
+        "title": "ResponseState",
+        "type": "object"
+      },
+      "ReviewDetail": {
+        "properties": {
+          "can_ai_draft": {
+            "title": "Can Ai Draft",
+            "type": "boolean"
+          },
+          "can_draft": {
+            "title": "Can Draft",
+            "type": "boolean"
+          },
+          "can_read_audit": {
+            "title": "Can Read Audit",
+            "type": "boolean"
+          },
+          "facts": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewFact"
+            },
+            "title": "Facts",
+            "type": "array"
+          },
+          "history": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewHistory"
+            },
+            "title": "History",
+            "type": "array"
+          },
+          "location_id": {
+            "format": "uuid",
+            "title": "Location Id",
+            "type": "string"
+          },
+          "organization_id": {
+            "format": "uuid",
+            "title": "Organization Id",
+            "type": "string"
+          },
+          "policy_override": {
+            "const": "unavailable_no_approval_free_local_policy",
+            "default": "unavailable_no_approval_free_local_policy",
+            "title": "Policy Override",
+            "type": "string"
+          },
+          "recovery": {
+            "const": "canonical_worker_retry_and_ingestion_readback_no_manual_retry_endpoint",
+            "default": "canonical_worker_retry_and_ingestion_readback_no_manual_retry_endpoint",
+            "title": "Recovery",
+            "type": "string"
+          },
+          "responses": {
+            "items": {
+              "$ref": "#/components/schemas/ResponseState"
+            },
+            "title": "Responses",
+            "type": "array"
+          },
+          "review": {
+            "$ref": "#/components/schemas/ReviewInventoryItem"
+          },
+          "source": {
+            "$ref": "#/components/schemas/ReviewSource"
+          }
+        },
+        "required": [
+          "organization_id",
+          "location_id",
+          "review",
+          "source",
+          "facts",
+          "can_draft",
+          "can_ai_draft",
+          "responses",
+          "history",
+          "can_read_audit"
+        ],
+        "title": "ReviewDetail",
+        "type": "object"
+      },
+      "ReviewFact": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "value": {
+            "$ref": "#/components/schemas/JsonValue"
+          }
+        },
+        "required": [
+          "id",
+          "key",
+          "value"
+        ],
+        "title": "ReviewFact",
+        "type": "object"
+      },
+      "ReviewHistory": {
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "actor_type": {
+            "title": "Actor Type",
+            "type": "string"
+          },
+          "event_type": {
+            "title": "Event Type",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "result": {
+            "title": "Result",
+            "type": "string"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "event_type",
+          "action",
+          "result",
+          "occurred_at",
+          "summary",
+          "actor_type"
+        ],
+        "title": "ReviewHistory",
+        "type": "object"
+      },
+      "ReviewInventoryItem": {
+        "properties": {
+          "body": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "external_review_id": {
+            "title": "External Review Id",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "last_synced_at": {
+            "format": "date-time",
+            "title": "Last Synced At",
+            "type": "string"
+          },
+          "location_id": {
+            "format": "uuid",
+            "title": "Location Id",
+            "type": "string"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "rating": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rating"
+          },
+          "response_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Response Status"
+          },
+          "reviewer_reference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewer Reference"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
+          },
+          "revision_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revision Id"
+          },
+          "risk_level": {
+            "title": "Risk Level",
+            "type": "string"
+          },
+          "sentiment": {
+            "title": "Sentiment",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "required": [
+          "id",
+          "location_id",
+          "revision_id",
+          "revision",
+          "provider",
+          "external_review_id",
+          "reviewer_reference",
+          "rating",
+          "body",
+          "title",
+          "status",
+          "sentiment",
+          "risk_level",
+          "created_at",
+          "last_synced_at",
+          "response_status"
+        ],
+        "title": "ReviewInventoryItem",
+        "type": "object"
+      },
+      "ReviewLocation": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "ReviewLocation",
+        "type": "object"
+      },
+      "ReviewSource": {
+        "properties": {
+          "connection_status": {
+            "title": "Connection Status",
+            "type": "string"
+          },
+          "freshness": {
+            "enum": [
+              "fresh",
+              "stale",
+              "unavailable"
+            ],
+            "title": "Freshness",
+            "type": "string"
+          },
+          "last_ingested_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Ingested At"
+          },
+          "limitation": {
+            "const": "persisted_inventory_not_provider_total",
+            "default": "persisted_inventory_not_provider_total",
+            "title": "Limitation",
+            "type": "string"
+          },
+          "mapping_status": {
+            "title": "Mapping Status",
+            "type": "string"
+          },
+          "provider": {
+            "const": "google_business_profile",
+            "default": "google_business_profile",
+            "title": "Provider",
+            "type": "string"
+          },
+          "quality": {
+            "enum": [
+              "partial",
+              "unavailable"
+            ],
+            "title": "Quality",
+            "type": "string"
+          }
+        },
+        "required": [
+          "connection_status",
+          "mapping_status",
+          "last_ingested_at",
+          "freshness",
+          "quality"
+        ],
+        "title": "ReviewSource",
+        "type": "object"
+      },
+      "ReviewsWorkspace": {
+        "properties": {
+          "average_rating": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Average Rating"
+          },
+          "campaigns": {
+            "const": "unavailable_no_canonical_source",
+            "default": "unavailable_no_canonical_source",
+            "title": "Campaigns",
+            "type": "string"
+          },
+          "can_ingest": {
+            "title": "Can Ingest",
+            "type": "boolean"
+          },
+          "inventory_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inventory Count"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewInventoryItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "location_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location Id"
+          },
+          "locations": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewLocation"
+            },
+            "title": "Locations",
+            "type": "array"
+          },
+          "next_offset": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Offset"
+          },
+          "open_restricted_cases": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Open Restricted Cases"
+          },
+          "organization_id": {
+            "format": "uuid",
+            "title": "Organization Id",
+            "type": "string"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReviewSource"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "organization_id",
+          "locations",
+          "location_id",
+          "source",
+          "inventory_count",
+          "average_rating",
+          "open_restricted_cases",
+          "items",
+          "next_offset",
+          "can_ingest"
+        ],
+        "title": "ReviewsWorkspace",
         "type": "object"
       },
       "RevisionCreate": {
@@ -11165,6 +12362,303 @@
         "title": "WebsiteCheckRequest",
         "type": "object"
       },
+      "WebsiteContentDetail": {
+        "properties": {
+          "briefs": {
+            "items": {
+              "$ref": "#/components/schemas/ContentBriefView"
+            },
+            "title": "Briefs",
+            "type": "array"
+          },
+          "can_approve": {
+            "title": "Can Approve",
+            "type": "boolean"
+          },
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "can_publish": {
+            "title": "Can Publish",
+            "type": "boolean"
+          },
+          "content_type": {
+            "title": "Content Type",
+            "type": "string"
+          },
+          "draft_runs": {
+            "items": {
+              "$ref": "#/components/schemas/ContentDraftRun"
+            },
+            "title": "Draft Runs",
+            "type": "array"
+          },
+          "facts": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewFact"
+            },
+            "title": "Facts",
+            "type": "array"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "latest_revision_number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Revision Number"
+          },
+          "latest_revision_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Revision Status"
+          },
+          "next_action": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Next Action",
+            "type": "object"
+          },
+          "organization_id": {
+            "format": "uuid",
+            "title": "Organization Id",
+            "type": "string"
+          },
+          "publication_job_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Publication Job Status"
+          },
+          "publication_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Publication Status"
+          },
+          "publications": {
+            "items": {
+              "$ref": "#/components/schemas/ContentPublicationView"
+            },
+            "title": "Publications",
+            "type": "array"
+          },
+          "published_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published At"
+          },
+          "publishing_requirements": {
+            "$ref": "#/components/schemas/ContentRequirementsView"
+          },
+          "publishing_requirements_by_target": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ContentRequirementsView"
+            },
+            "title": "Publishing Requirements By Target",
+            "type": "object"
+          },
+          "publishing_targets": {
+            "items": {
+              "$ref": "#/components/schemas/ContentTargetView"
+            },
+            "title": "Publishing Targets",
+            "type": "array"
+          },
+          "revisions": {
+            "items": {
+              "$ref": "#/components/schemas/ContentRevisionView"
+            },
+            "title": "Revisions",
+            "type": "array"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "stage": {
+            "title": "Stage",
+            "type": "string"
+          },
+          "technical_site_change": {
+            "title": "Technical Site Change",
+            "type": "boolean"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "slug",
+          "content_type",
+          "stage",
+          "next_action",
+          "published_at",
+          "latest_revision_status",
+          "latest_revision_number",
+          "publication_status",
+          "publication_job_status",
+          "technical_site_change",
+          "organization_id",
+          "briefs",
+          "revisions",
+          "publications",
+          "publishing_targets",
+          "publishing_requirements",
+          "publishing_requirements_by_target",
+          "facts",
+          "draft_runs",
+          "can_edit",
+          "can_approve",
+          "can_publish"
+        ],
+        "title": "WebsiteContentDetail",
+        "type": "object"
+      },
+      "WebsiteContentItem": {
+        "properties": {
+          "content_type": {
+            "title": "Content Type",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "latest_revision_number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Revision Number"
+          },
+          "latest_revision_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Revision Status"
+          },
+          "next_action": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Next Action",
+            "type": "object"
+          },
+          "publication_job_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Publication Job Status"
+          },
+          "publication_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Publication Status"
+          },
+          "published_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published At"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "stage": {
+            "title": "Stage",
+            "type": "string"
+          },
+          "technical_site_change": {
+            "title": "Technical Site Change",
+            "type": "boolean"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "slug",
+          "content_type",
+          "stage",
+          "next_action",
+          "published_at",
+          "latest_revision_status",
+          "latest_revision_number",
+          "publication_status",
+          "publication_job_status",
+          "technical_site_change"
+        ],
+        "title": "WebsiteContentItem",
+        "type": "object"
+      },
       "WebsiteCreate": {
         "additionalProperties": false,
         "properties": {
@@ -11247,6 +12741,187 @@
           "status"
         ],
         "title": "WebsiteOption",
+        "type": "object"
+      },
+      "WebsitePageDetail": {
+        "properties": {
+          "evidence": {
+            "$ref": "#/components/schemas/PageIntelligenceView"
+          },
+          "mapping": {
+            "$ref": "#/components/schemas/PageRepositoryMapping"
+          },
+          "opportunities": {
+            "items": {
+              "$ref": "#/components/schemas/OpportunityView"
+            },
+            "title": "Opportunities",
+            "type": "array"
+          }
+        },
+        "required": [
+          "evidence",
+          "mapping",
+          "opportunities"
+        ],
+        "title": "WebsitePageDetail",
+        "type": "object"
+      },
+      "WebsiteWorkspace": {
+        "properties": {
+          "can_crawl": {
+            "title": "Can Crawl",
+            "type": "boolean"
+          },
+          "can_create": {
+            "title": "Can Create",
+            "type": "boolean"
+          },
+          "content": {
+            "items": {
+              "$ref": "#/components/schemas/WebsiteContentItem"
+            },
+            "title": "Content",
+            "type": "array"
+          },
+          "content_availability": {
+            "enum": [
+              "available",
+              "permission_required"
+            ],
+            "title": "Content Availability",
+            "type": "string"
+          },
+          "content_scope": {
+            "const": "organization",
+            "default": "organization",
+            "title": "Content Scope",
+            "type": "string"
+          },
+          "conversions": {
+            "const": "unavailable_no_canonical_path_source",
+            "default": "unavailable_no_canonical_path_source",
+            "title": "Conversions",
+            "type": "string"
+          },
+          "crawls": {
+            "items": {
+              "$ref": "#/components/schemas/CrawlView"
+            },
+            "title": "Crawls",
+            "type": "array"
+          },
+          "next_content_offset": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Content Offset"
+          },
+          "next_opportunity_offset": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Opportunity Offset"
+          },
+          "next_page_offset": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Page Offset"
+          },
+          "opportunities": {
+            "items": {
+              "$ref": "#/components/schemas/OpportunityView"
+            },
+            "title": "Opportunities",
+            "type": "array"
+          },
+          "organization_id": {
+            "format": "uuid",
+            "title": "Organization Id",
+            "type": "string"
+          },
+          "page_availability": {
+            "enum": [
+              "available",
+              "permission_required",
+              "unavailable"
+            ],
+            "title": "Page Availability",
+            "type": "string"
+          },
+          "pages": {
+            "items": {
+              "$ref": "#/components/schemas/PageSummary"
+            },
+            "title": "Pages",
+            "type": "array"
+          },
+          "unsupported": {
+            "default": [
+              "named_cta_events",
+              "conversion_funnels",
+              "page_health_score",
+              "google_indexation"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "title": "Unsupported",
+            "type": "array"
+          },
+          "website_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Website Id"
+          },
+          "websites": {
+            "items": {
+              "$ref": "#/components/schemas/WebsiteOption"
+            },
+            "title": "Websites",
+            "type": "array"
+          }
+        },
+        "required": [
+          "organization_id",
+          "websites",
+          "website_id",
+          "pages",
+          "next_page_offset",
+          "crawls",
+          "opportunities",
+          "next_opportunity_offset",
+          "content",
+          "next_content_offset",
+          "page_availability",
+          "content_availability",
+          "can_create",
+          "can_crawl"
+        ],
+        "title": "WebsiteWorkspace",
         "type": "object"
       },
       "WorkflowRunStart": {
@@ -13438,6 +15113,329 @@
           }
         },
         "summary": "Detail",
+        "tags": [
+          "command-center"
+        ]
+      }
+    },
+    "/api/v1/organizations/{organization_id}/command-center/reviews": {
+      "get": {
+        "operationId": "workspace_api_v1_organizations__organization_id__command_center_reviews_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "location_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Location Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "maximum": 100000,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewsWorkspace"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Workspace",
+        "tags": [
+          "command-center"
+        ]
+      }
+    },
+    "/api/v1/organizations/{organization_id}/command-center/reviews/locations/{location_id}/{review_id}": {
+      "get": {
+        "operationId": "detail_api_v1_organizations__organization_id__command_center_reviews_locations__location_id___review_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "location_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Location Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "review_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Review Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Detail",
+        "tags": [
+          "command-center"
+        ]
+      }
+    },
+    "/api/v1/organizations/{organization_id}/command-center/website-content": {
+      "get": {
+        "operationId": "workspace_api_v1_organizations__organization_id__command_center_website_content_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "website_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Website Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "maximum": 100000,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebsiteWorkspace"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Workspace",
+        "tags": [
+          "command-center"
+        ]
+      }
+    },
+    "/api/v1/organizations/{organization_id}/command-center/website-content/content/{item_id}": {
+      "get": {
+        "operationId": "content_detail_api_v1_organizations__organization_id__command_center_website_content_content__item_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Item Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebsiteContentDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Content Detail",
+        "tags": [
+          "command-center"
+        ]
+      }
+    },
+    "/api/v1/organizations/{organization_id}/command-center/website-content/websites/{website_id}/pages/{page_id}": {
+      "get": {
+        "operationId": "page_detail_api_v1_organizations__organization_id__command_center_website_content_websites__website_id__pages__page_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "website_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Website Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "page_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Page Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebsitePageDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Page Detail",
         "tags": [
           "command-center"
         ]

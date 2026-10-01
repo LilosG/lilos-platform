@@ -1,0 +1,331 @@
+---
+import Publication from "./Publication.astro";
+import type { ContentView } from "../../adapters/website-content";
+import { value } from "../../adapters/local-search";
+interface Props {
+  view: ContentView;
+  slug: string;
+}
+const { view: v, slug } = Astro.props;
+const api = `/api/organizations/${v.organization_id}/`;
+const revision = v.revisions[0];
+const brief = v.briefs[0];
+---
+
+<h1 id="content-detail-title">Content: {v.title}</h1><p>
+  {v.content_type} · {v.slug} · {v.stage}
+</p>
+<p>
+  Publication target selection uses canonical repository contracts. Deployment
+  and live success require their own recorded evidence.
+</p>
+{
+  v.technical_site_change && (
+    <section class="panel">
+      <>
+        <h2>Governed site change required</h2>
+        <p>
+          This typed technical item cannot publish through the Content engine.
+        </p>
+        <a href={`/clients/${slug}/opportunities/`}>
+          Inspect site-change opportunities
+        </a>
+      </>
+    </section>
+  )
+}
+<section class="panel">
+  <h2>Draft workflows</h2>
+  {
+    v.draft_runs.length ? (
+      v.draft_runs.map((r) => (
+        <p>
+          Run {r.id} · {r.status} · Failure: {r.failure_code ?? "None recorded"}{" "}
+          · Completed: {r.completed_at ?? "Not completed"} · Correlation:{" "}
+          {r.correlation_id ?? "Unavailable"}
+        </p>
+      ))
+    ) : (
+      <p>No canonical AI draft workflow in this item.</p>
+    )
+  }
+</section>
+<section class="panel">
+  <h2>Briefs and grounding</h2>{
+    v.briefs.length ? (
+      v.briefs.map((b) => (
+        <details open={b.id === brief?.id}>
+          <Fragment>
+            <>
+              <summary>
+                Brief {b.revision_number} · {b.status}
+              </summary>
+              <p>
+                Audience: {b.audience} · Intent: {b.intent}
+              </p>
+              <p>Target: {b.target_reference}</p>
+            </>
+            <p>Approved facts: {b.approved_fact_revision_ids.join(", ")}</p>
+            {v.can_edit && (
+              <button
+                inert
+                data-content-action={
+                  api + `content/${v.id}/revisions/ai-draft/`
+                }
+                data-body={JSON.stringify({
+                  brief_id: b.id,
+                  idempotency_key: crypto.randomUUID(),
+                })}
+              >
+                Queue AI draft from brief {b.revision_number}
+              </button>
+            )}
+          </Fragment>
+        </details>
+      ))
+    ) : (
+      <p>No canonical brief.</p>
+    )
+  }
+  {
+    v.can_edit && (
+      <form
+        inert
+        data-content-form="brief"
+        data-action={api + `content/${v.id}/briefs/`}
+      >
+        <Fragment>
+          <>
+            <h3>New brief</h3>
+            <label for="brief-audience">Audience</label>
+            <input
+              id="brief-audience"
+              name="audience"
+              required
+              maxlength="500"
+            />
+            <label for="brief-intent">Intent</label>
+            <input id="brief-intent" name="intent" required maxlength="500" />
+            <label for="brief-target">Target reference</label>
+            <input
+              id="brief-target"
+              name="target_reference"
+              required
+              maxlength="500"
+            />
+          </>
+          <fieldset>
+            <legend>Approved grounding facts</legend>
+            {v.facts.map((f) => (
+              <label>
+                <input type="checkbox" name="fact" value={f.id} />
+                {f.key}: {value(f.value)}
+              </label>
+            ))}
+          </fieldset>
+          {!v.facts.length && (
+            <p>No approved facts available; brief creation is unavailable.</p>
+          )}
+          <button disabled={!v.facts.length} type="submit">
+            Save new brief
+          </button>
+        </Fragment>
+      </form>
+    )
+  }
+</section>
+<section class="panel">
+  <h2>Immutable revisions</h2>{
+    !revision && <p>No revision. Create a grounded draft before review.</p>
+  }{
+    v.revisions.map((r) => (
+      <article>
+        <Fragment>
+          <h3>
+            Revision {r.revision_number} · {r.status}
+          </h3>
+          <details open={r.id === revision?.id}>
+            <>
+              <summary>Exact content and validation</summary>
+              <pre style="white-space:pre-wrap">{r.body}</pre>
+              <p>Frontmatter: {value(r.frontmatter)}</p>
+              <p>Validation: {value(r.validation_document)}</p>
+              <p>Approved: {r.approved_at ?? "Not approved"}</p>
+            </>
+          </details>
+          {["awaiting_editorial", "awaiting_client"].includes(r.status) && (
+            <>
+              <button
+                inert
+                disabled={!v.can_approve}
+                data-content-action={
+                  api + `content-operations/${v.id}/revisions/${r.id}/decision/`
+                }
+                data-body={JSON.stringify({
+                  stage:
+                    r.status === "awaiting_client" ? "client" : "editorial",
+                  approve: true,
+                })}
+              >
+                Approve exact revision {r.revision_number}
+              </button>
+              <button
+                inert
+                disabled={!v.can_approve}
+                data-content-action={
+                  api + `content-operations/${v.id}/revisions/${r.id}/decision/`
+                }
+                data-body={JSON.stringify({
+                  stage:
+                    r.status === "awaiting_client" ? "client" : "editorial",
+                  approve: false,
+                })}
+              >
+                Reject exact revision {r.revision_number}
+              </button>
+            </>
+          )}
+        </Fragment>
+      </article>
+    ))
+  }
+</section>
+{
+  v.can_edit && (
+    <section class="panel">
+      <>
+        <h2>Save a new revision</h2>
+        <p>
+          Saving creates a separate revision. Approval remains bound to exact
+          canonical content.
+        </p>
+        <form
+          inert
+          data-content-form="revision"
+          data-action={api + `content/${v.id}/revisions/`}
+        >
+          <>
+            <label for="revision-body">Body</label>
+            <textarea
+              id="revision-body"
+              name="body"
+              required
+              maxlength="200000"
+            >
+              {revision?.body ?? ""}
+            </textarea>
+            <label for="revision-frontmatter">Frontmatter JSON</label>
+            <textarea id="revision-frontmatter" name="frontmatter" required>
+              {JSON.stringify(revision?.frontmatter ?? {}, null, 2)}
+            </textarea>
+            <fieldset>
+              <legend>Approved facts for revision</legend>
+              {v.facts.map((f) => (
+                <label>
+                  <input type="checkbox" name="fact" value={f.id} />
+                  {f.key}: {value(f.value)}
+                </label>
+              ))}
+            </fieldset>
+            <button type="submit" disabled={!v.facts.length}>
+              Save new content revision
+            </button>
+          </>
+        </form>
+      </>
+    </section>
+  )
+}
+<section class="panel">
+  <h2>Governed GitHub publishing</h2><a href={`/clients/${slug}/integrations/`}
+    >Manage Integration</a
+  ><p>
+    Missing requirements: {
+      v.publishing_requirements.missing.join(", ") || "None recorded"
+    }
+  </p>{
+    v.publishing_targets.length ? (
+      <form
+        inert
+        data-content-form="publish"
+        data-action={api + `content-operations/${v.id}/publish/`}
+        data-key={crypto.randomUUID()}
+      >
+        <>
+          <label for="publish-target">Publishing target</label>
+          <select id="publish-target" name="target">
+            {v.publishing_targets.map((t) => (
+              <option
+                value={t.id}
+                selected={t.id === v.publishing_requirements.target_id}
+              >
+                {t.key} · {t.repository_id} · {t.base_branch} ·{" "}
+                {t.allowed_path_prefix}
+              </option>
+            ))}
+          </select>
+          <details>
+            <summary>Target requirements</summary>
+            {Object.entries(v.publishing_requirements_by_target).map(
+              ([id, r]) => (
+                <p>
+                  {v.publishing_targets.find((t) => t.id === id)?.key ?? id}:
+                  missing {r.missing.join(", ") || "None recorded"} · Extensions{" "}
+                  {r.file_extensions.join(", ")}
+                </p>
+              ),
+            )}
+          </details>
+          <label for="publish-image">Image path (if required)</label>
+          <input id="publish-image" name="image" maxlength="1000" />
+          <label for="publish-image-alt">Image alt text (if required)</label>
+          <input id="publish-image-alt" name="image_alt" maxlength="500" />
+          <button
+            inert
+            type="button"
+            data-content-assets={
+              api + `content-operations/${v.id}/publishing-assets/`
+            }
+          >
+            Load canonical image assets
+          </button>
+          <p role="status" data-assets-result />
+          <button
+            type="submit"
+            disabled={
+              !v.can_publish ||
+              v.technical_site_change ||
+              v.stage !== "ready_to_publish"
+            }
+          >
+            Dispatch approved content
+          </button>
+        </>
+      </form>
+    ) : (
+      <p>No active canonical publishing target. Publishing is unavailable.</p>
+    )
+  }<p>
+    Approval and publishing require backend authorization and account security
+    step-up. Refresh after actions to read canonical state.
+  </p>
+</section>
+<section class="panel">
+  <h2>Publication history</h2>{
+    v.publications.length ? (
+      v.publications.map((p) => (
+        <Publication
+          publication={p}
+          itemId={v.id}
+          organizationId={v.organization_id}
+        />
+      ))
+    ) : (
+      <p>No publication reserved.</p>
+    )
+  }
+</section>
+<p role="status" aria-live="polite" data-content-status></p>
+<script>
+  import "../../lib/content-actions";
+</script>

@@ -1063,6 +1063,31 @@ def test_provider_reply_supersedes_local_draft_without_fabricating_approval(
                     select(ReviewRevision).where(ReviewRevision.review_id == review.id)
                 )
             ).one()
+            from apps.api.app.administration.models import BusinessFactRevision
+            from apps.api.app.authentication.enums import UserStatus
+            from apps.api.app.authentication.models import UserProfile
+
+            actor = UserProfile(auth_user_id=uuid4(), status=UserStatus.ACTIVE, version=1)
+            session.add(actor)
+            await session.flush()
+            fact = BusinessFactRevision(
+                organization_id=organization_id,
+                location_id=location_id,
+                fact_identity=uuid4(),
+                fact_key="business.name",
+                value_type="string",
+                value="Synthetic Business",
+                source="test",
+                authority="operator_verified",
+                status="approved",
+                revision=1,
+                proposed_by=actor.id,
+                approved_by=actor.id,
+                approved_at=datetime.now(UTC),
+                change_reason="Ground canonical response draft",
+            )
+            session.add(fact)
+            await session.flush()
             await ReviewService().draft(
                 session,
                 organization_id=organization_id,
@@ -1071,7 +1096,7 @@ def test_provider_reply_supersedes_local_draft_without_fabricating_approval(
                 review_revision_id=revision.id,
                 text="Unpublished local work",
                 generated_by_type="user",
-                fact_ids=[uuid4()],
+                fact_ids=[fact.id],
                 actor_id=None,
                 correlation_id="local-draft",
             )

@@ -1,4 +1,21 @@
 ---
+import Website from "../../../components/website-content/Website.astro";
+import ContentDetail from "../../../components/website-content/ContentDetail.astro";
+import WebsitePageDetail from "../../../components/website-content/PageDetail.astro";
+import {
+  adaptWebsite,
+  adaptWebsitePage,
+  adaptContent,
+} from "../../../adapters/website-content";
+import type {
+  WebsiteView,
+  WebsitePageView,
+  ContentView,
+} from "../../../adapters/website-content";
+import Reviews from "../../../components/reviews/Reviews.astro";
+import ResponseDetail from "../../../components/reviews/ResponseDetail.astro";
+import { adaptReviews, adaptReviewDetail } from "../../../adapters/reviews";
+import type { ReviewsView, ReviewDetailView } from "../../../adapters/reviews";
 import Integrations from "../../../components/integrations/Integrations.astro";
 import LocalSearch from "../../../components/local-search/LocalSearch.astro";
 import PageIntelligence from "../../../components/local-search/PageIntelligence.astro";
@@ -41,6 +58,11 @@ try {
 const path = (Astro.params.workspace ?? "").replace(/\/$/, "");
 const section = path.split("/")[0];
 const sourceId = path.split("/")[1];
+let website: WebsiteView | undefined;
+let websitePage: WebsitePageView | undefined;
+let contentDetail: ContentView | undefined;
+let reviews: ReviewsView | undefined;
+let reviewDetail: ReviewDetailView | undefined;
 let integrations: IntegrationsView | undefined;
 let localSearch: LocalSearchView | undefined;
 let pageView: PageView | undefined;
@@ -74,7 +96,69 @@ if (!Number.isInteger(offset) || offset < 0 || offset > 100000)
   return new Response("Invalid page", { status: 400 });
 const scope = `organizations/${client.organization_id}/command-center/`;
 try {
-  if (section === "integrations") {
+  if (section === "website-content") {
+    if (segments.length === 4 && tab === "pages")
+      websitePage = adaptWebsitePage(
+        await read(
+          Astro.locals,
+          scope +
+            `website-content/websites/${segments[2]}/pages/${segments[3]}/`,
+        ),
+        client.organization_id,
+        segments[2],
+        segments[3],
+      );
+    else if (segments.length === 3 && tab === "content")
+      contentDetail = adaptContent(
+        await read(
+          Astro.locals,
+          scope + `website-content/content/${segments[2]}/`,
+        ),
+        client.organization_id,
+        segments[2],
+      );
+    else {
+      if (
+        segments.length > 2 ||
+        !["", "pages", "content", "technical", "conversions"].includes(tab)
+      )
+        return new Response("Page not found", { status: 404 });
+      const params = new URLSearchParams({
+        offset: String(offset),
+        ...(websiteId ? { website_id: websiteId } : {}),
+      });
+      website = adaptWebsite(
+        await read(Astro.locals, scope + `website-content/?${params}`),
+        client.organization_id,
+        websiteId,
+      );
+    }
+  } else if (section === "reviews") {
+    if (segments.length === 4 && tab === "locations")
+      reviewDetail = adaptReviewDetail(
+        await read(
+          Astro.locals,
+          scope + `reviews/locations/${segments[2]}/${segments[3]}/`,
+        ),
+        client.organization_id,
+        segments[2],
+        segments[3],
+      );
+    else {
+      if (segments.length > 2 || !["", "requests"].includes(tab))
+        return new Response("Page not found", { status: 404 });
+      const location = Astro.url.searchParams.get("location_id") ?? undefined;
+      const params = new URLSearchParams({
+        offset: String(offset),
+        ...(location ? { location_id: location } : {}),
+      });
+      reviews = adaptReviews(
+        await read(Astro.locals, scope + `reviews/?${params}`),
+        client.organization_id,
+        location,
+      );
+    }
+  } else if (section === "integrations") {
     if (sourceId) return new Response("Page not found", { status: 404 });
     integrations = adaptIntegrations(
       await read(Astro.locals, scope + "integrations/"),
@@ -146,29 +230,72 @@ try {
     "This source is temporarily unavailable. No sample data is substituted.";
 }
 const title =
-  section === "local-search"
-    ? "Local Search"
-    : section === "integrations"
-      ? "Integrations"
-      : section === "opportunities"
-        ? "Opportunities"
-        : section === "attention"
-          ? "Requires attention"
-          : section
-            ? section.replaceAll("-", " ")
-            : client.organization_name;
+  section === "website-content"
+    ? "Website & Content"
+    : section === "reviews"
+      ? "Reviews"
+      : section === "local-search"
+        ? "Local Search"
+        : section === "integrations"
+          ? "Integrations"
+          : section === "opportunities"
+            ? "Opportunities"
+            : section === "attention"
+              ? "Requires attention"
+              : section
+                ? section.replaceAll("-", " ")
+                : client.organization_name;
 ---
 
 <AppLayout
   title={title}
   organizations={rows}
   client={client}
-  surface={section === "local-search" || section === "integrations"
+  surface={section === "local-search" ||
+  section === "integrations" ||
+  section === "reviews" ||
+  section === "website-content"
     ? section
     : undefined}
 >
   {
-    pageView ? (
+    contentDetail ? (
+      <DialogFrame
+        id="content-detail"
+        returnLabel="All content"
+        returnTo={`/clients/${client.organization_slug}/website-content/content/`}
+      >
+        <ContentDetail
+          slot="body"
+          view={contentDetail}
+          slug={client.organization_slug}
+        />
+      </DialogFrame>
+    ) : websitePage ? (
+      <DialogFrame
+        id="website-page-detail"
+        returnLabel="All pages"
+        returnTo={`/clients/${client.organization_slug}/website-content/pages/?website_id=${websitePage.evidence.identity.website_id}`}
+      >
+        <WebsitePageDetail
+          slot="body"
+          view={websitePage}
+          slug={client.organization_slug}
+        />
+      </DialogFrame>
+    ) : reviewDetail ? (
+      <DialogFrame
+        id="review-detail"
+        returnLabel="All reviews"
+        returnTo={`/clients/${client.organization_slug}/reviews/?location_id=${reviewDetail.location_id}`}
+      >
+        <ResponseDetail
+          slot="body"
+          view={reviewDetail}
+          slug={client.organization_slug}
+        />
+      </DialogFrame>
+    ) : pageView ? (
       <DialogFrame
         id="page-intelligence"
         returnLabel="All pages"
@@ -215,6 +342,33 @@ const title =
         </div>
         {error ? (
           <p role="alert">{error}</p>
+        ) : website ? (
+          <Website
+            view={website}
+            slug={client.organization_slug}
+            tab={tab}
+            offset={offset}
+          />
+        ) : reviews ? (
+          tab === "requests" ? (
+            <section class="panel">
+              <h2>Review requests unavailable</h2>
+              <p>
+                No canonical persisted campaign, delivery, template or
+                performance source exists. Request creation and sending are
+                unavailable.
+              </p>
+              <a href={`/clients/${client.organization_slug}/reviews/`}>
+                All reviews
+              </a>
+            </section>
+          ) : (
+            <Reviews
+              view={reviews}
+              slug={client.organization_slug}
+              offset={offset}
+            />
+          )
         ) : integrations ? (
           <Integrations view={integrations} slug={client.organization_slug} />
         ) : localSearch ? (
