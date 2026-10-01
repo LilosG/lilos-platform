@@ -1,5 +1,6 @@
 """Transport generation and drift rejection with isolated output paths."""
 
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -37,7 +38,7 @@ def test_drift_rejects_missing_or_changed_artifact(
         assert check is True
         Path(command[-1]).write_text("export type Synthetic = string;\n")
 
-    monkeypatch.setattr(check_contracts.subprocess, "run", generate)
+    monkeypatch.setattr(subprocess, "run", generate)
     monkeypatch.setattr(check_contracts, "ROOT", tmp_path)
     target = contracts / artifact
     if failure == "missing":
