@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 
 from apps.api.app.access_control.enums import ScopeType
-from apps.api.app.authentication.dependencies import Authenticated
+from apps.api.app.authentication.dependencies import Authenticated, get_authenticated_principal
 from apps.api.app.authentication.enums import AssuranceLevel
 from apps.api.app.authorization.contracts import AuthorizationRequest
 from apps.api.app.authorization.service import AuthorizationService
@@ -27,7 +27,7 @@ from apps.api.app.routes.seo import Session, meta, no_store, policy, recommendat
 router = APIRouter(
     prefix="/api/v1/organizations/{organization_id}/command-center",
     tags=["command-center"],
-    dependencies=[Depends(no_store)],
+    dependencies=[Depends(get_authenticated_principal), Depends(no_store)],
 )
 authorization = AuthorizationService()
 

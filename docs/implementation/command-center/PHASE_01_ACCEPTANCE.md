@@ -155,6 +155,13 @@ refresh ordering, changed-file static checks and console SSR build. Initial deve
 failures in new loader/test configuration were corrected. The evidence-panel contrast
 failure (4.37:1) was fixed locally without weakening axe. No unrelated failures debugged.
 
+PR #143 CI correction: Command Center now requires the canonical authenticated
+principal at router level before database processing, retaining no-store and policies.
+The Python drift negative test mocks generator output and covers missing/changed
+schema and type artifacts; dedicated console CI retains the real byte-for-byte
+generator check. Targeted auth-order, authentication API, Command Center and contract
+tests passed (12 tests); changed-file Ruff/format and `git diff --check` passed.
+
 No schema/migration or Python dependency changed. Full repository Python shards,
 production preflight/release/live provider/canary and staging performance checks are
 not run locally for this phase. CI retains its broader original gates. No live assets,

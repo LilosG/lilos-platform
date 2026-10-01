@@ -21,13 +21,28 @@ def test_public_schema_is_deterministic_and_contains_typed_projection(tmp_path: 
     assert not any(path.startswith(("/internal", "/api/internal")) for path in schema["paths"])
 
 
+@pytest.mark.parametrize("artifact", ["openapi.json", "src/generated/api.ts"])
+@pytest.mark.parametrize("failure", ["missing", "changed"])
 def test_drift_rejects_missing_or_changed_artifact(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, artifact: str, failure: str
 ) -> None:
-    # Use the real exporter/generator in a disposable contract root.
-    (tmp_path / "node_modules").symlink_to(
-        check_contracts.ROOT / "node_modules", target_is_directory=True
-    )
+    # Isolate unit-level drift rejection from the Node generator exercised by console CI.
+    contracts = tmp_path / "packages/contracts"
+    export(contracts / "openapi.json")
+    types = contracts / "src/generated/api.ts"
+    types.parent.mkdir(parents=True)
+    types.write_text("export type Synthetic = string;\n")
+
+    def generate(command: list[str], *, check: bool) -> None:
+        assert check is True
+        Path(command[-1]).write_text("export type Synthetic = string;\n")
+
+    monkeypatch.setattr(check_contracts.subprocess, "run", generate)
     monkeypatch.setattr(check_contracts, "ROOT", tmp_path)
+    target = contracts / artifact
+    if failure == "missing":
+        target.unlink()
+    else:
+        target.write_text("changed artifact\n")
     with pytest.raises(SystemExit, match="Transport artifact drift"):
         check_contracts.check()
