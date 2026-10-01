@@ -6,6 +6,7 @@ import json
 import logging
 from dataclasses import dataclass
 from datetime import datetime
+from enum import StrEnum
 from hashlib import sha256
 from time import monotonic
 from typing import Any, cast
@@ -91,25 +92,42 @@ class SiteChangeInvalidError(AgentToolDeniedError):
         super().__init__(f"{self.code}: {reason}")
 
 
+class ToolAccess(StrEnum):
+    """Whether a tool only reads LILOs state or can create/change it."""
+
+    READ = "read"
+    WRITE = "write"
+
+
 @dataclass(frozen=True, slots=True)
 class ToolSpec:
+    """One sanctioned tool. ``access`` is required so no tool is classified by default.
+
+    ``read`` tools are callable by every bound skill (organization-scoped as always);
+    ``write`` tools stay restricted to their skill's ``required_tools`` allowlist.
+    """
+
     allowed_arguments: frozenset[str]
-    mutating: bool = False
+    access: ToolAccess
+
+    @property
+    def mutating(self) -> bool:
+        return self.access is ToolAccess.WRITE
 
 
 TOOL_SPECS: dict[str, ToolSpec] = {
-    "read_client_business_facts": ToolSpec(frozenset()),
-    "read_website_knowledge": ToolSpec(frozenset({"query"})),
-    "read_gbp_state": ToolSpec(frozenset()),
-    "read_gbp_recent_posts": ToolSpec(frozenset({"limit"})),
-    "read_gsc_evidence": ToolSpec(frozenset({"days"})),
-    "read_ga4_evidence": ToolSpec(frozenset({"days"})),
-    "read_reviews_state": ToolSpec(frozenset({"limit"})),
-    "read_leads_state": ToolSpec(frozenset({"limit"})),
-    "read_content_inventory": ToolSpec(frozenset({"limit"})),
-    "read_cross_product_summary": ToolSpec(frozenset()),
-    "run_site_crawl": ToolSpec(frozenset(), mutating=True),
-    "analyze_seo_opportunities": ToolSpec(frozenset({"limit"})),
+    "read_client_business_facts": ToolSpec(frozenset(), access=ToolAccess.READ),
+    "read_website_knowledge": ToolSpec(frozenset({"query"}), access=ToolAccess.READ),
+    "read_gbp_state": ToolSpec(frozenset(), access=ToolAccess.READ),
+    "read_gbp_recent_posts": ToolSpec(frozenset({"limit"}), access=ToolAccess.READ),
+    "read_gsc_evidence": ToolSpec(frozenset({"days"}), access=ToolAccess.READ),
+    "read_ga4_evidence": ToolSpec(frozenset({"days"}), access=ToolAccess.READ),
+    "read_reviews_state": ToolSpec(frozenset({"limit"}), access=ToolAccess.READ),
+    "read_leads_state": ToolSpec(frozenset({"limit"}), access=ToolAccess.READ),
+    "read_content_inventory": ToolSpec(frozenset({"limit"}), access=ToolAccess.READ),
+    "read_cross_product_summary": ToolSpec(frozenset(), access=ToolAccess.READ),
+    "run_site_crawl": ToolSpec(frozenset(), access=ToolAccess.WRITE),
+    "analyze_seo_opportunities": ToolSpec(frozenset({"limit"}), access=ToolAccess.READ),
     "create_seo_recommendation_proposal": ToolSpec(
         frozenset(
             {
@@ -122,10 +140,11 @@ TOOL_SPECS: dict[str, ToolSpec] = {
                 "site_changes",
             }
         ),
-        mutating=True,
+        access=ToolAccess.WRITE,
     ),
     "create_content_proposal": ToolSpec(
-        frozenset({"content_opportunity_id", "content_type", "title", "slug"}), mutating=True
+        frozenset({"content_opportunity_id", "content_type", "title", "slug"}),
+        access=ToolAccess.WRITE,
     ),
     "create_content_brief": ToolSpec(
         frozenset(
@@ -141,7 +160,7 @@ TOOL_SPECS: dict[str, ToolSpec] = {
                 "source_evidence_references",
             }
         ),
-        mutating=True,
+        access=ToolAccess.WRITE,
     ),
     "generate_content_draft_proposal": ToolSpec(
         frozenset(
@@ -152,21 +171,21 @@ TOOL_SPECS: dict[str, ToolSpec] = {
                 "source_evidence_references",
             }
         ),
-        mutating=True,
+        access=ToolAccess.WRITE,
     ),
     "generate_gbp_post_proposal": ToolSpec(
         frozenset({"source_evidence_references", "review_id"}),
-        mutating=True,
+        access=ToolAccess.WRITE,
     ),
     "create_gbp_optimization_proposal": ToolSpec(
         frozenset({"capability_key", "field_changes", "evidence_references", "risk"}),
-        mutating=True,
+        access=ToolAccess.WRITE,
     ),
     "draft_review_response_proposal": ToolSpec(
-        frozenset({"review_id", "approved_fact_revision_ids"}), mutating=True
+        frozenset({"review_id", "approved_fact_revision_ids"}), access=ToolAccess.WRITE
     ),
     "create_lead_followup_task": ToolSpec(
-        frozenset({"lead_id", "title", "description", "due_at"}), mutating=True
+        frozenset({"lead_id", "title", "description", "due_at"}), access=ToolAccess.WRITE
     ),
     "create_growth_plan": ToolSpec(
         frozenset(
@@ -179,10 +198,10 @@ TOOL_SPECS: dict[str, ToolSpec] = {
                 "actions",
             }
         ),
-        mutating=True,
+        access=ToolAccess.WRITE,
     ),
-    "inspect_workflow": ToolSpec(frozenset()),
-    "submit_for_approval": ToolSpec(frozenset({"proposal_reference"}), mutating=True),
+    "inspect_workflow": ToolSpec(frozenset(), access=ToolAccess.READ),
+    "submit_for_approval": ToolSpec(frozenset({"proposal_reference"}), access=ToolAccess.WRITE),
 }
 
 
@@ -366,6 +385,11 @@ class AgentToolService:
         skill = SKILLS.get(run.skill_key)
         if skill is None:
             raise AgentToolDeniedError("tool is not sanctioned for the bound agent skill")
+        spec = TOOL_SPECS.get(tool_name)
+        if spec is not None and spec.access is ToolAccess.READ:
+            # Reads are organization-scoped inside each handler, so every bound
+            # skill may use them; only writes are limited to the skill allowlist.
+            return
         if tool_name not in skill.required_tools:
             allowed = ", ".join(sorted(skill.required_tools))
             raise AgentToolDeniedError(
@@ -396,7 +420,7 @@ class AgentToolService:
                     if tool_name not in {
                         "analyze_seo_opportunities",
                         "create_seo_recommendation_proposal",
-                    }:
+                    } and (spec is None or spec.access is ToolAccess.WRITE):
                         raise AgentToolDeniedError(
                             "Bound Search Intelligence reasoning may only read its decision "
                             "and propose a recommendation"

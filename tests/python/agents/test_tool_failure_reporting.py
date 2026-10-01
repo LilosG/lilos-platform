@@ -59,7 +59,7 @@ def _service(handler: Callable[..., Any]) -> tuple[AgentToolService, _Audit]:
     service = AgentToolService()
     audit = _Audit()
     service.audit = audit  # type: ignore[assignment]
-    service._tool_read_client_business_facts = handler  # type: ignore[attr-defined]
+    setattr(service, "_tool_read_client_business_facts", handler)  # noqa: B010
     return service, audit
 
 
