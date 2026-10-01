@@ -49,6 +49,7 @@ from apps.api.app.products.gbp.post_generation_models import GBPPostAsset
 from apps.api.app.products.gbp.service import GBPService
 from apps.api.app.products.leads.service import LeadService
 from apps.api.app.products.reviews.service import ReviewService
+from apps.api.app.products.seo.change_quality import QualityContext, quality_problems
 from apps.api.app.products.seo.change_set import SiteChangeField, SiteChangeItem, SiteChangeSet
 from apps.api.app.products.seo.contracts import CrawlRequest, RecommendationCreate
 from apps.api.app.products.seo.decision import (
@@ -60,6 +61,7 @@ from apps.api.app.products.seo.decision import (
 from apps.api.app.products.seo.limitation_codes import SEOLimitationCode
 from apps.api.app.products.seo.search_console_service import SearchConsoleService
 from apps.api.app.products.seo.service import SEOService
+from apps.api.app.products.seo.site_change_service import SiteChangeService
 
 
 class AgentToolDeniedError(ValueError):
@@ -218,7 +220,12 @@ def _is_truncated(text: str | None, limit: int = REVIEW_BODY_EXCERPT_CHARACTERS)
     return len(" ".join(str(text).split())) > limit
 
 
-def build_change_set(raw: object, opportunity: Any, context: object) -> dict[str, object]:
+def build_change_set(
+    raw: object,
+    opportunity: Any,
+    context: object,
+    quality: QualityContext | None = None,
+) -> dict[str, object]:
     """Turn Hermes' proposed replacements into a validated `SiteChangeSet`.
 
     `current_value` is taken from the repo-read context the run was started with --
@@ -242,6 +249,7 @@ def build_change_set(raw: object, opportunity: Any, context: object) -> dict[str
 
     items: list[SiteChangeItem] = []
     seen: set[SiteChangeField] = set()
+    problems: list[str] = []
     for entry in raw[:20]:
         if not isinstance(entry, dict) or set(entry) != {"field", "proposed_value", "rationale"}:
             raise SiteChangeInvalidError(
@@ -273,6 +281,15 @@ def build_change_set(raw: object, opportunity: Any, context: object) -> dict[str
         except ValidationError as exc:
             message = str(exc.errors()[0]["msg"]).removeprefix("Value error, ")
             raise SiteChangeInvalidError(message) from None
+        # Deterministic quality gate: every problem at once, so one retry can fix them all.
+        problems.extend(
+            f"{field.value}: {problem}"
+            for problem in quality_problems(
+                field, current, items[-1].proposed_value, quality or QualityContext()
+            )
+        )
+    if problems:
+        raise SiteChangeInvalidError("; ".join(problems))
     try:
         return SiteChangeSet(items=items).model_dump(mode="json")
     except ValidationError as exc:
@@ -1185,6 +1202,9 @@ class AgentToolService:
                     arguments["site_changes"],
                     opportunity,
                     workflow.input_document.get("site_change_context"),
+                    await SiteChangeService().quality_context(
+                        session, run.organization_id, opportunity
+                    ),
                 )
             run.final_output = {"seo_pending_proposal": pending}
             return {

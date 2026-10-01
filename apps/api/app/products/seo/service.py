@@ -32,7 +32,8 @@ from apps.api.app.notifications.models import NotificationTemplate
 from apps.api.app.notifications.service import NotificationService
 from apps.api.app.products.analytics.models import AnalyticsProperty
 from apps.api.app.products.analytics.service import DEFAULT_FRESHNESS_STALE_SECONDS
-from apps.api.app.products.seo.change_set import SiteChangeSet
+from apps.api.app.products.seo.change_quality import quality_problems
+from apps.api.app.products.seo.change_set import SiteChangeItem, SiteChangeSet
 from apps.api.app.products.seo.contracts import (
     CrawlRequest,
     ImplementationTaskCreate,
@@ -40,6 +41,7 @@ from apps.api.app.products.seo.contracts import (
     OutcomeRecord,
     RecommendationCreate,
     RecommendationDecision,
+    RecommendationRevise,
     SearchPropertyCreate,
     WebsiteCreate,
 )
@@ -58,6 +60,7 @@ from apps.api.app.products.seo.decision import (
     revision_decision,
 )
 from apps.api.app.products.seo.errors import (
+    SEOChangeQualityError,
     SEOImplementationTaskNotFoundError,
     SEOOpportunityNotFoundError,
     SEOQueryInvalidError,
@@ -1302,6 +1305,16 @@ class SEOService:
             ):
                 # A change set may only edit the page this opportunity is attributed to.
                 raise SEOEvidenceInvalidError(SEOLimitationCode.PAGE_OUT_OF_SCOPE)
+            quality = await self.site_changes.quality_context(session, organization_id, opportunity)
+            problems = [
+                f"{item.field.value}: {problem}"
+                for item in proposed.items
+                for problem in quality_problems(
+                    item.field, item.current_value, item.proposed_value, quality
+                )
+            ]
+            if problems:
+                raise SEOChangeQualityError(problems)
             change_set = proposed.model_dump(mode="json")
         elif opportunity.page_id is not None and opportunity.attribution_state == "attributed":
             # No exact change was proposed. If the page could not be edited through a page
@@ -1499,6 +1512,70 @@ class SEOService:
                 )
                 .order_by(SEORecommendationRevision.revision_number.desc())
             )
+        )
+
+    async def revise_site_change(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        revision_id: UUID,
+        command: RecommendationRevise,
+        *,
+        actor_id: UUID | None,
+        correlation_id: str,
+    ) -> SEORecommendationRevision:
+        """Create a new revision whose site-change values are the operator's edits.
+
+        Only the proposed values can change. The page, field, current value and rationale
+        are carried over from the revision being edited, so an edit can never retarget a
+        change, and the edited values pass the same quality gate as Hermes' proposal. The
+        new revision awaits approval like any other; approving it executes exactly it.
+        """
+        previous = await session.scalar(
+            select(SEORecommendationRevision).where(
+                SEORecommendationRevision.organization_id == organization_id,
+                SEORecommendationRevision.id == revision_id,
+            )
+        )
+        if previous is None:
+            raise SEORecommendationNotFoundError
+        if previous.status != "awaiting_approval" or previous.change_set is None:
+            raise SEORecommendationNotDecidableError
+        original = SiteChangeSet.model_validate(previous.change_set)
+        edited = {edit.field: edit.proposed_value for edit in command.edits}
+        unknown = set(edited) - {item.field for item in original.items}
+        if unknown:
+            raise SEOChangeQualityError(
+                [f"{field.value}: is not part of this change set" for field in sorted(unknown)]
+            )
+        revised = SiteChangeSet(
+            items=[
+                SiteChangeItem(
+                    page_id=item.page_id,
+                    field=item.field,
+                    current_value=item.current_value,
+                    proposed_value=edited.get(item.field, item.proposed_value),
+                    rationale=item.rationale,
+                )
+                for item in original.items
+            ]
+        )
+        return await self.create_recommendation(
+            session,
+            organization_id,
+            previous.opportunity_id,
+            RecommendationCreate(
+                proposed_action=previous.proposed_action,
+                evidence_references=[
+                    ref for ref in previous.evidence_references if isinstance(ref, str)
+                ],
+                expected_result_hypothesis=previous.expected_result_hypothesis,
+                risk=cast(Any, previous.risk),
+                effort=cast(Any, previous.effort),
+                change_set=revised.model_dump(mode="json"),
+            ),
+            actor_id=actor_id,
+            correlation_id=correlation_id,
         )
 
     async def withdraw_recommendation(

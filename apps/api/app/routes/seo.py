@@ -34,6 +34,7 @@ from apps.api.app.products.seo.contracts import (
     OutcomeRecord,
     RecommendationCreate,
     RecommendationDecision,
+    RecommendationRevise,
     SearchConsoleSyncRequest,
     SearchPropertyCreate,
     WebsiteCreate,
@@ -1290,6 +1291,33 @@ async def create_recommendation(
         session,
         organization_id,
         opportunity_id,
+        command,
+        actor_id=principal.platform_user_id,
+        correlation_id=request_correlation_id(request),
+    )
+    states = await load_site_change_states(session, organization_id, [item])
+    return {"data": recommendation_row(item, states.get(item.id)), "meta": meta(request)}
+
+
+@router.post(
+    "/recommendations/{revision_id}/revise",
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(no_store)],
+)
+async def revise_recommendation(
+    request: Request,
+    organization_id: UUID,
+    revision_id: UUID,
+    command: RecommendationRevise,
+    session: Session,
+    principal: Authenticated,
+    _: Annotated[AuthorizationDecision, policy("seo.recommend")],
+) -> dict[str, object]:
+    """Edit the proposed values of a pending site change; creates a new revision to approve."""
+    item = await service.revise_site_change(
+        session,
+        organization_id,
+        revision_id,
         command,
         actor_id=principal.platform_user_id,
         correlation_id=request_correlation_id(request),

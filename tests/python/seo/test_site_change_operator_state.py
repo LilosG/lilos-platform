@@ -37,7 +37,7 @@ from .test_hermes_change_set import (
 from .test_orchestration import FakePageSpeedService, _seed_attributed_query
 from .test_site_change_executor import FakeGitHub, live_html
 
-NEW_TITLE = "Best Brunch in San Diego | Daily Until 3PM"
+NEW_TITLE = "Best Brunch Spots in San Diego | Little Italy Guide"
 
 
 def revision(*, change_set: bool = True, limitation: str | None = None) -> Any:
