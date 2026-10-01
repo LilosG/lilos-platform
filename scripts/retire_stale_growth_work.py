@@ -54,6 +54,7 @@ from apps.api.app.growth.service import (
 )
 from apps.api.app.organizations.enums import OrganizationStatus
 from apps.api.app.organizations.models import Organization
+from apps.api.app.products.content.evidence import content_opportunity_evidence_references
 from apps.api.app.products.content.models import (
     ContentBrief,
     ContentItem,
@@ -375,14 +376,17 @@ async def plan_organization(
                 _retire_brief(content, brief, item, verdict.reason),
             )
         elif not brief.source_evidence_references and item.status not in {"publishing"}:
+            regenerable = await content_opportunity_evidence_references(
+                session, org_id, item.opportunity_id
+            )
             plan.add(
                 Change(
                     org_id,
                     "content_brief",
                     brief.id,
                     "ready",
-                    "superseded|blocked",
-                    "empty_sources",
+                    "superseded" if regenerable else "blocked",
+                    "empty_sources_regenerated" if regenerable else "empty_sources_blocked",
                 ),
                 _repair_brief(content, brief, item),
             )
@@ -584,7 +588,7 @@ def format_report(report: RetirementReport) -> list[str]:
         if not counts:
             lines.append("  no stale work")
         for (model, from_state, to_state, reason), count in sorted(counts.items()):
-            lines.append(f"  {model:<20} {from_state} -> {to_state:<18} {count:>4}  [{reason}]")
+            lines.append(f"  {model:<20} {from_state:<18} -> {to_state:<12} {count:>4}  [{reason}]")
         for item in plan.skipped:
             lines.append(f"  SKIPPED {item.model} {item.row_id} reason={item.reason}")
     total = sum(len(plan.changes) for plan in report.plans)
