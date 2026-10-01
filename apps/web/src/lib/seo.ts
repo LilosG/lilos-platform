@@ -127,6 +127,18 @@ export type SEORecommendation = {
   site_change: SEOSiteChangeState | null;
 };
 
+/** Revisions a newer one replaced, or that were withdrawn, are history, never the live proposal. */
+const ENDED_REVISION_STATUSES = new Set(["superseded", "withdrawn"]);
+
+/** The newest revision that is still in play, or undefined when none is. */
+export function latestLiveRecommendation(
+  revisions: SEORecommendation[],
+): SEORecommendation | undefined {
+  return revisions
+    .filter((revision) => !ENDED_REVISION_STATUSES.has(revision.status))
+    .sort((a, b) => b.revision_number - a.revision_number)[0];
+}
+
 export type SEOHermesRun = {
   workflow_run_id: string;
   agent_run_id: string | null;

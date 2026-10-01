@@ -479,6 +479,10 @@ async def test_new_material_text_creates_another_revision(monkeypatch: pytest.Mo
         async def scalar(self, _query: object) -> int:
             return len(self.revisions)
 
+        async def scalars(self, _query: object) -> list[Any]:
+            # The older revisions a new one supersedes (`list_recommendations`).
+            return list(self.revisions)
+
         def add(self, revision: object) -> None:
             self.revisions.append(revision)
 
@@ -514,6 +518,8 @@ async def test_new_material_text_creates_another_revision(monkeypatch: pytest.Mo
     )
     assert (first.revision_number, first.proposed_action) == (1, "Fix title")
     assert (second.revision_number, second.proposed_action) == (2, "Fix canonical")
+    # Only the newest revision is live: the older one was superseded by the newer one.
+    assert (first.status, second.status) == ("superseded", "awaiting_approval")
     assert revision_decision(first.evidence_references) == {
         "recommendation_class": "technical_regression",
         "contract_version": "seo_decision.v1",

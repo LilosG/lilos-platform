@@ -10,7 +10,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any, cast
 from urllib.parse import quote, unquote, urlsplit, urlunsplit
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import httpx
 from sqlalchemy import Select, Table, bindparam, func, or_, select, update
@@ -89,7 +89,7 @@ from apps.api.app.reporting_periods import GA4_SYNC_TAIL_EXCLUSION_DAYS, reporti
 
 BUSINESS_POLICY_VERSION = "business_importance.v1"
 # A recommendation in any other status can still be acted on, so it can be withdrawn.
-TERMINAL_RECOMMENDATION_STATUSES = frozenset({"rejected", "implemented", "withdrawn"})
+TERMINAL_RECOMMENDATION_STATUSES = frozenset({"rejected", "implemented", "withdrawn", "superseded"})
 SCORE_POLICY_VERSION = "opportunity_score.v2"
 SCORE_VERSION = 2
 BUSINESS_METRIC_KEY = "ga4.organicLanding.keyEvents"
@@ -1322,7 +1322,19 @@ class SEOService:
             limitation_code = await self.site_changes.mapping_limitation(
                 session, organization_id, opportunity.page_id
             )
+        # Only the newest proposal is live: every older non-terminal revision is superseded
+        # in this same transaction, before the new one exists, so two can never wait at once.
+        new_revision_id = uuid4()
+        for older in await self.list_recommendations(session, organization_id, opportunity_id):
+            await self.supersede_recommendation(
+                session,
+                organization_id,
+                older,
+                superseded_by=new_revision_id,
+                correlation_id=correlation_id,
+            )
         revision = SEORecommendationRevision(
+            id=new_revision_id,
             organization_id=organization_id,
             opportunity_id=opportunity_id,
             revision_number=(last or 0) + 1,
@@ -1577,6 +1589,48 @@ class SEOService:
             actor_id=actor_id,
             correlation_id=correlation_id,
         )
+
+    async def supersede_recommendation(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        revision: SEORecommendationRevision,
+        *,
+        superseded_by: UUID,
+        correlation_id: str,
+    ) -> bool:
+        """Retire a recommendation a newer revision replaces: terminal, audited, kept.
+
+        Returns False (and does nothing) if it already reached a terminal status.
+        """
+        if revision.status in TERMINAL_RECOMMENDATION_STATUSES:
+            return False
+        previous_status = revision.status
+        revision.status = "superseded"
+        await session.flush()
+        location_id = await session.scalar(
+            select(SEOOpportunity.location_id).where(
+                SEOOpportunity.organization_id == organization_id,
+                SEOOpportunity.id == revision.opportunity_id,
+            )
+        )
+        await self._audit(
+            session,
+            event="seo.recommendation.superseded",
+            organization_id=organization_id,
+            location_id=location_id,
+            actor_id=None,
+            resource_type="seo_opportunity",
+            resource_id=revision.opportunity_id,
+            correlation_id=correlation_id,
+            summary="SEO recommendation superseded by a newer revision.",
+            metadata={
+                "revision_id": str(revision.id),
+                "superseded_by": str(superseded_by),
+                "previous_status": previous_status,
+            },
+        )
+        return True
 
     async def withdraw_recommendation(
         self,

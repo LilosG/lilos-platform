@@ -491,7 +491,8 @@ async def test_edit_then_approve_opens_a_pull_request_with_the_edited_values(
         assert publication is not None
         assert publication.seo_recommendation_revision_id == edited_id
         original = await session.get(SEORecommendationRevision, hermes_id)
-        assert original is not None and original.status == "awaiting_approval"
+        # The operator's edit superseded Hermes' proposal: only one revision is ever live.
+        assert original is not None and original.status == "superseded"
         publication_id = publication.id
 
     async with seo_session_factory() as session:

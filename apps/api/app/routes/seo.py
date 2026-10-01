@@ -310,8 +310,8 @@ async def search_intelligence_workspace(
                 .where(
                     SEORecommendationRevision.organization_id == organization_id,
                     SEORecommendationRevision.opportunity_id.in_(opportunity_ids),
-                    # A withdrawn recommendation is out of play; it is history, not work.
-                    SEORecommendationRevision.status != "withdrawn",
+                    # Withdrawn and superseded recommendations are out of play: history, not work.
+                    SEORecommendationRevision.status.not_in(("withdrawn", "superseded")),
                 )
                 .order_by(
                     SEORecommendationRevision.created_at.desc(), SEORecommendationRevision.id.desc()
