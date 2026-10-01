@@ -393,4 +393,39 @@ describe("Search Intelligence workspace", () => {
     );
     panel.remove();
   });
+
+  it("shows a failing section as a visible error and still renders every other section", () => {
+    const growth = approvedSiteChange(null);
+    // A malformed payload makes the Decision section throw while it renders.
+    (growth.recommendation as unknown as { change_set: unknown }).change_set =
+      null;
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+    const panel = openDetail(growth);
+
+    const failure = panel.querySelector<HTMLElement>("[data-section-error]");
+    expect(failure?.dataset.sectionError).toBe("Decision");
+    expect(failure?.textContent).toContain(
+      "The “Decision” section could not be displayed",
+    );
+    expect(failure?.textContent).toContain(
+      "The rest of this view is unaffected",
+    );
+    expect(consoleError).toHaveBeenCalled();
+    // Nothing half-built from the failed section is left behind...
+    expect(panel.textContent).not.toContain("Proposed change");
+    // ...and the sections after it are all still there.
+    expect(panel.textContent).toContain("Implementation and verification");
+    expect(panel.textContent).toContain("Measurement and observed outcome");
+    expect(panel.textContent).toContain("Hermes reasoning");
+    panel.remove();
+    consoleError.mockRestore();
+  });
+
+  it("renders no error banner when every section renders", () => {
+    const panel = openDetail(approvedSiteChange(null));
+    expect(panel.querySelector("[data-section-error]")).toBeNull();
+    panel.remove();
+  });
 });

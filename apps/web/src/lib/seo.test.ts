@@ -1,3 +1,4 @@
+import { latestLiveRecommendation, type SEORecommendation } from "./seo";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -57,5 +58,59 @@ describe("describeCrawlResult", () => {
         safe_result: {},
       }),
     ).toBe("Status: Partial");
+  });
+});
+
+function revision(revision_number: number, status: string): SEORecommendation {
+  return {
+    id: `rev-${revision_number}`,
+    revision_number,
+    proposed_action: "x",
+    expected_result_hypothesis: "y",
+    risk: "low",
+    effort: "low",
+    status,
+    approved_by_user_id: null,
+    evidence_references: [],
+    decision_context: null,
+    change_set: [],
+    change_set_limitation_code: null,
+    site_change: null,
+  };
+}
+
+describe("latestLiveRecommendation", () => {
+  it("returns the newest revision that is still in play", () => {
+    const live = latestLiveRecommendation([
+      revision(3, "awaiting_approval"),
+      revision(2, "superseded"),
+      revision(1, "superseded"),
+    ]);
+    expect(live?.id).toBe("rev-3");
+  });
+
+  it("never returns a superseded or withdrawn revision, whatever its number", () => {
+    const live = latestLiveRecommendation([
+      revision(9, "superseded"),
+      revision(8, "withdrawn"),
+      revision(4, "approved"),
+    ]);
+    expect(live?.id).toBe("rev-4");
+    expect(
+      latestLiveRecommendation([
+        revision(2, "superseded"),
+        revision(1, "withdrawn"),
+      ]),
+    ).toBeUndefined();
+    expect(latestLiveRecommendation([])).toBeUndefined();
+  });
+
+  it("keeps a rejected revision visible as the latest decision", () => {
+    expect(
+      latestLiveRecommendation([
+        revision(2, "rejected"),
+        revision(1, "superseded"),
+      ])?.id,
+    ).toBe("rev-2");
   });
 });

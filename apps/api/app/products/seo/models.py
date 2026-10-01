@@ -16,6 +16,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
@@ -414,6 +415,13 @@ class SEORecommendationRevision(UUIDPrimaryKeyMixin, Base):
         UniqueConstraint("organization_id", "id", name="uq_seo_recommendation_revisions_org_id"),
         UniqueConstraint(
             "opportunity_id", "revision_number", name="uq_seo_recommendation_revision"
+        ),
+        # At most one proposal per opportunity can be waiting for a human decision.
+        Index(
+            "uq_seo_one_pending_revision",
+            "opportunity_id",
+            unique=True,
+            postgresql_where=text("status = 'awaiting_approval'"),
         ),
     )
     organization_id: Mapped[UUID] = mapped_column(

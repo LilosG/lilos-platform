@@ -3,6 +3,7 @@ import {
   decideRecommendation,
   fetchPageIntelligence,
   fetchRecommendations,
+  latestLiveRecommendation,
   fetchOpportunityHermesRun,
   startOpportunityHermesRun,
   verifyImplementationTask,
@@ -578,6 +579,55 @@ function renderPass(
   return card;
 }
 
+/**
+ * Run one section of the detail view in isolation.
+ *
+ * A render error used to abort the whole function and leave the rest of the page
+ * silently missing. A failing section now removes whatever it half-built, says which
+ * section failed and why, and every other section still renders.
+ */
+function showSectionError(
+  panel: HTMLElement,
+  title: string,
+  error: unknown,
+): void {
+  console.error(`Search Intelligence section failed: ${title}`, error);
+  const reason = error instanceof Error ? error.message : "unexpected error";
+  const alert = errorAlert(
+    `The “${title}” section could not be displayed (${reason}). The rest of this view is unaffected.`,
+  );
+  alert.dataset.sectionError = title;
+  panel.append(alert);
+}
+
+function guardedSection(
+  panel: HTMLElement,
+  title: string,
+  build: () => void,
+): void {
+  const marker = panel.childNodes.length;
+  try {
+    build();
+  } catch (error) {
+    while (panel.childNodes.length > marker) panel.lastChild?.remove();
+    showSectionError(panel, title, error);
+  }
+}
+
+async function guardedSectionAsync(
+  panel: HTMLElement,
+  title: string,
+  build: () => Promise<void>,
+): Promise<void> {
+  const marker = panel.childNodes.length;
+  try {
+    await build();
+  } catch (error) {
+    while (panel.childNodes.length > marker) panel.lastChild?.remove();
+    showSectionError(panel, title, error);
+  }
+}
+
 async function renderDetail(
   panel: HTMLElement,
   item: SearchIntelligenceItem,
@@ -586,412 +636,442 @@ async function renderDetail(
 ): Promise<void> {
   panel.replaceChildren();
   panel.append(actionButton("Back to workspace", back));
-  const intro = sectionCard(
-    pageName(item),
-    "Canonical evidence and governed decision history for this work item.",
-  );
-  const introBody = intro.querySelector<HTMLElement>(".ui-card__body")!;
-  introBody.append(
-    statusBadge(
-      statusTone(item.opportunity.status),
-      statusLabel(item.opportunity.status),
-    ),
-    detailFact("Opportunity", statusLabel(item.opportunity.opportunity_type)),
-    detailFact("Class", statusLabel(item.opportunity.recommendation_class)),
-    detailFact("Priority", String(item.opportunity.priority_score)),
-    detailFact("Search evidence", evidenceSummary(item)),
-  );
-  if (!item.page)
+  guardedSection(panel, "Overview", () => {
+    const intro = sectionCard(
+      pageName(item),
+      "Canonical evidence and governed decision history for this work item.",
+    );
+    const introBody = intro.querySelector<HTMLElement>(".ui-card__body")!;
     introBody.append(
-      emptyState(
-        "Page attribution unavailable",
-        "Query-only demand remains website scoped. No landing page has been inferred.",
+      statusBadge(
+        statusTone(item.opportunity.status),
+        statusLabel(item.opportunity.status),
       ),
+      detailFact("Opportunity", statusLabel(item.opportunity.opportunity_type)),
+      detailFact("Class", statusLabel(item.opportunity.recommendation_class)),
+      detailFact("Priority", String(item.opportunity.priority_score)),
+      detailFact("Search evidence", evidenceSummary(item)),
     );
-  panel.append(intro);
-
-  const reasoning = sectionCard(
-    "Hermes reasoning",
-    "Hermes uses the selected opportunity's persisted evidence. A governed recommendation still requires human approval.",
-  );
-  const reasoningBody = reasoning.querySelector<HTMLElement>(".ui-card__body")!;
-  const runStatus = document.createElement("p");
-  runStatus.setAttribute("role", "status");
-  const ask = actionButton(
-    item.recommendation ? "Ask Hermes to revise" : "Ask Hermes",
-    () => void startReasoning(),
-  );
-  const active = (status: string) =>
-    [
-      "created",
-      "queued",
-      "running",
-      "waiting",
-      "waiting_approval",
-      "retry_scheduled",
-      "stopping",
-    ].includes(status);
-  const showRun = (run: SEOHermesRun | null) => {
-    ask.disabled = run !== null && active(run.status);
-    if (!run) {
-      runStatus.textContent =
-        "Hermes has not reasoned about this opportunity yet.";
-    } else if (active(run.status)) {
-      runStatus.textContent = `Hermes reasoning: ${statusLabel(run.status === "created" ? "queued" : run.status)}.`;
-    } else if (run.status === "completed" && run.proposal_references.length) {
-      runStatus.textContent =
-        "Hermes reasoning complete. The current recommendation is available for human review.";
-    } else {
-      const reason =
-        run.safe_error_code === "SEO_RECOMMENDATION_MISSING"
-          ? "No valid recommendation was created for this opportunity. Review the evidence and ask Hermes again."
-          : run.safe_error_code === "SEO_EVIDENCE_INVALID"
-            ? "The opportunity evidence changed during reasoning. Refresh the workspace and ask Hermes again."
-            : run.safe_error_code
-              ? statusLabel(run.safe_error_code)
-              : "No governed recommendation is available.";
-      runStatus.textContent = `Hermes reasoning ${statusLabel(run.status)}: ${reason}`;
-    }
-  };
-  let polling = false;
-  const pollRun = async () => {
-    if (polling || !panel.contains(reasoning)) return;
-    polling = true;
-    const result = await fetchOpportunityHermesRun(
-      organizationId,
-      item.opportunity.id,
-    );
-    polling = false;
-    if (!panel.contains(reasoning)) return;
-    if (result.kind === "ok") {
-      showRun(result.data);
-      const proposal = result.data?.proposal_references.find((reference) =>
-        reference.startsWith("seo-recommendation:"),
+    if (!item.page)
+      introBody.append(
+        emptyState(
+          "Page attribution unavailable",
+          "Query-only demand remains website scoped. No landing page has been inferred.",
+        ),
       );
-      if (
-        result.data?.status === "completed" &&
-        proposal &&
-        proposal !== `seo-recommendation:${item.recommendation?.id}`
-      ) {
-        const revisions = await fetchRecommendations(
-          organizationId,
-          item.opportunity.id,
+    panel.append(intro);
+  });
+
+  guardedSection(panel, "Hermes reasoning", () => {
+    const reasoning = sectionCard(
+      "Hermes reasoning",
+      "Hermes uses the selected opportunity's persisted evidence. A governed recommendation still requires human approval.",
+    );
+    const reasoningBody =
+      reasoning.querySelector<HTMLElement>(".ui-card__body")!;
+    const runStatus = document.createElement("p");
+    runStatus.setAttribute("role", "status");
+    const ask = actionButton(
+      item.recommendation ? "Ask Hermes to revise" : "Ask Hermes",
+      () => void startReasoning(),
+    );
+    const active = (status: string) =>
+      [
+        "created",
+        "queued",
+        "running",
+        "waiting",
+        "waiting_approval",
+        "retry_scheduled",
+        "stopping",
+      ].includes(status);
+    const showRun = (run: SEOHermesRun | null) => {
+      ask.disabled = run !== null && active(run.status);
+      if (!run) {
+        runStatus.textContent =
+          "Hermes has not reasoned about this opportunity yet.";
+      } else if (active(run.status)) {
+        runStatus.textContent = `Hermes reasoning: ${statusLabel(run.status === "created" ? "queued" : run.status)}.`;
+      } else if (run.status === "completed" && run.proposal_references.length) {
+        runStatus.textContent =
+          "Hermes reasoning complete. The current recommendation is available for human review.";
+      } else {
+        const reason =
+          run.safe_error_code === "SEO_RECOMMENDATION_MISSING"
+            ? "No valid recommendation was created for this opportunity. Review the evidence and ask Hermes again."
+            : run.safe_error_code === "SEO_EVIDENCE_INVALID"
+              ? "The opportunity evidence changed during reasoning. Refresh the workspace and ask Hermes again."
+              : run.safe_error_code
+                ? statusLabel(run.safe_error_code)
+                : "No governed recommendation is available.";
+        runStatus.textContent = `Hermes reasoning ${statusLabel(run.status)}: ${reason}`;
+      }
+    };
+    let polling = false;
+    const pollRun = async () => {
+      if (polling || !panel.contains(reasoning)) return;
+      polling = true;
+      const result = await fetchOpportunityHermesRun(
+        organizationId,
+        item.opportunity.id,
+      );
+      polling = false;
+      if (!panel.contains(reasoning)) return;
+      if (result.kind === "ok") {
+        showRun(result.data);
+        const proposal = result.data?.proposal_references.find((reference) =>
+          reference.startsWith("seo-recommendation:"),
         );
-        if (!panel.contains(reasoning)) return;
-        if (revisions.kind === "ok") {
-          const latest = revisions.data[0];
-          if (latest && proposal === `seo-recommendation:${latest.id}`) {
-            void renderDetail(
-              panel,
-              { ...item, recommendation: latest },
-              organizationId,
-              back,
-            );
-            return;
+        if (
+          result.data?.status === "completed" &&
+          proposal &&
+          proposal !== `seo-recommendation:${item.recommendation?.id}`
+        ) {
+          const revisions = await fetchRecommendations(
+            organizationId,
+            item.opportunity.id,
+          );
+          if (!panel.contains(reasoning)) return;
+          if (revisions.kind === "ok") {
+            const latest = latestLiveRecommendation(revisions.data);
+            if (latest && proposal === `seo-recommendation:${latest.id}`) {
+              void renderDetail(
+                panel,
+                { ...item, recommendation: latest },
+                organizationId,
+                back,
+              );
+              return;
+            }
           }
         }
+        if (result.data && active(result.data.status))
+          window.setTimeout(() => void pollRun(), 2500);
+      } else runStatus.textContent = describeFailure(result, "Hermes run");
+    };
+    const startReasoning = async () => {
+      ask.disabled = true;
+      runStatus.textContent = "Submitting Hermes reasoning…";
+      const result = await startOpportunityHermesRun(
+        organizationId,
+        item.opportunity.id,
+      );
+      if (!panel.contains(reasoning)) return;
+      if (result.kind === "ok") {
+        showRun(result.data);
+        window.setTimeout(() => void pollRun(), 1500);
+      } else {
+        ask.disabled = false;
+        runStatus.textContent = describeFailure(result, "Hermes reasoning");
       }
-      if (result.data && active(result.data.status))
-        window.setTimeout(() => void pollRun(), 2500);
-    } else runStatus.textContent = describeFailure(result, "Hermes run");
-  };
-  const startReasoning = async () => {
-    ask.disabled = true;
-    runStatus.textContent = "Submitting Hermes reasoning…";
-    const result = await startOpportunityHermesRun(
-      organizationId,
-      item.opportunity.id,
-    );
-    if (!panel.contains(reasoning)) return;
-    if (result.kind === "ok") {
-      showRun(result.data);
-      window.setTimeout(() => void pollRun(), 1500);
-    } else {
-      ask.disabled = false;
-      runStatus.textContent = describeFailure(result, "Hermes reasoning");
-    }
-  };
-  if (
-    item.active_change &&
-    item.opportunity.recommendation_class === "growth_change"
-  ) {
-    ask.disabled = true;
-    runStatus.textContent = `A page change is ${statusLabel(item.active_change.state)}. Finish its measurement before asking Hermes for another growth recommendation.`;
-  } else if (!item.website.location_id) {
-    ask.disabled = true;
-    runStatus.textContent =
-      "Hermes reasoning requires a location-scoped website.";
-  }
-  if (item.governed_eligibility.eligible) reasoningBody.append(ask, runStatus);
-  else {
-    runStatus.textContent = eligibilityAction(
-      item.governed_eligibility.limitation,
-      item.governed_eligibility.limitation_code,
-    );
-    reasoningBody.append(runStatus);
-  }
-  panel.append(reasoning);
-  if (
-    item.governed_eligibility.eligible &&
-    item.website.location_id &&
-    !(
+    };
+    if (
       item.active_change &&
       item.opportunity.recommendation_class === "growth_change"
-    )
-  )
-    void pollRun();
-
-  if (item.page) {
-    const result = await fetchPageIntelligence(
-      organizationId,
-      item.website.id,
-      item.page.id,
-    );
-    if (result.kind === "ok") {
-      const grid = document.createElement("div");
-      grid.className = "ui-card-grid ui-card-grid--lg";
-      grid.append(...renderPageIntelligence(result.data));
-      panel.append(grid);
-    } else
-      panel.append(
-        errorAlert("Page Intelligence is unavailable in this scope."),
+    ) {
+      ask.disabled = true;
+      runStatus.textContent = `A page change is ${statusLabel(item.active_change.state)}. Finish its measurement before asking Hermes for another growth recommendation.`;
+    } else if (!item.website.location_id) {
+      ask.disabled = true;
+      runStatus.textContent =
+        "Hermes reasoning requires a location-scoped website.";
+    }
+    if (item.governed_eligibility.eligible)
+      reasoningBody.append(ask, runStatus);
+    else {
+      runStatus.textContent = eligibilityAction(
+        item.governed_eligibility.limitation,
+        item.governed_eligibility.limitation_code,
       );
-  }
+      reasoningBody.append(runStatus);
+    }
+    panel.append(reasoning);
+    if (
+      item.governed_eligibility.eligible &&
+      item.website.location_id &&
+      !(
+        item.active_change &&
+        item.opportunity.recommendation_class === "growth_change"
+      )
+    )
+      void pollRun();
+  });
+
+  // Only await when there is a page to load: with none, later sections must still
+  // render synchronously, exactly as before.
+  if (item.page)
+    await guardedSectionAsync(panel, "Page intelligence", async () => {
+      if (item.page) {
+        const result = await fetchPageIntelligence(
+          organizationId,
+          item.website.id,
+          item.page.id,
+        );
+        if (result.kind === "ok") {
+          const grid = document.createElement("div");
+          grid.className = "ui-card-grid ui-card-grid--lg";
+          grid.append(...renderPageIntelligence(result.data));
+          panel.append(grid);
+        } else
+          panel.append(
+            errorAlert("Page Intelligence is unavailable in this scope."),
+          );
+      }
+    });
 
   const decision = item.recommendation?.decision_context;
-  const decisionCard = sectionCard(
-    "Decision",
-    "Approved evidence and recommendation revisions remain authoritative.",
-  );
-  const decisionBody =
-    decisionCard.querySelector<HTMLElement>(".ui-card__body")!;
-  decisionBody.append(
-    detailFact(
-      "Business importance",
-      statusLabel(decision?.business_importance_state),
-    ),
-    detailFact("Business value", text(decision?.business_importance_value)),
-    detailFact("Business policy", text(decision?.business_importance_version)),
-    detailFact(
-      "Score policy",
-      text(decision?.opportunity_score_policy_version),
-    ),
-    detailFact("Evidence quality", text(decision?.evidence_quality)),
-    detailFact("Evidence freshness", text(decision?.evidence_freshness)),
-    detailFact(
-      "Evidence references",
-      decision?.evidence_references.join(", ") ?? "Unavailable",
-    ),
-  );
-  if (decision?.evidence_limitation)
-    appendLines(decisionBody, [decision.evidence_limitation]);
-  if (item.active_change)
-    appendLines(decisionBody, [
-      `Active page change ${item.active_change.revision_id}: ${statusLabel(item.active_change.state)}.`,
-    ]);
-  if (item.recommendation) {
-    decisionBody.append(
-      detailFact("Revision", String(item.recommendation.revision_number)),
-      detailFact("Hypothesis", item.recommendation.expected_result_hypothesis),
-      detailFact("Proposed change", item.recommendation.proposed_action),
-      detailFact(
-        "Risk / effort",
-        `${statusLabel(item.recommendation.risk)} / ${statusLabel(item.recommendation.effort)}`,
-      ),
-      detailFact("Approval", statusLabel(item.recommendation.status)),
+  guardedSection(panel, "Decision", () => {
+    const decisionCard = sectionCard(
+      "Decision",
+      "Approved evidence and recommendation revisions remain authoritative.",
     );
-    if (item.recommendation.status === "awaiting_approval") {
-      const actions = document.createElement("div");
-      actions.className = "ui-inline ui-inline--center";
-      for (const [label, approve] of [
-        ["Approve", true],
-        ["Reject", false],
-      ] as const) {
-        const button = actionButton(label, () => {
-          button.disabled = true;
-          void decideRecommendation(
-            organizationId,
-            item.recommendation!.id,
-            approve,
-          ).then((result) => {
+    const decisionBody =
+      decisionCard.querySelector<HTMLElement>(".ui-card__body")!;
+    decisionBody.append(
+      detailFact(
+        "Business importance",
+        statusLabel(decision?.business_importance_state),
+      ),
+      detailFact("Business value", text(decision?.business_importance_value)),
+      detailFact(
+        "Business policy",
+        text(decision?.business_importance_version),
+      ),
+      detailFact(
+        "Score policy",
+        text(decision?.opportunity_score_policy_version),
+      ),
+      detailFact("Evidence quality", text(decision?.evidence_quality)),
+      detailFact("Evidence freshness", text(decision?.evidence_freshness)),
+      detailFact(
+        "Evidence references",
+        decision?.evidence_references.join(", ") ?? "Unavailable",
+      ),
+    );
+    if (decision?.evidence_limitation)
+      appendLines(decisionBody, [decision.evidence_limitation]);
+    if (item.active_change)
+      appendLines(decisionBody, [
+        `Active page change ${item.active_change.revision_id}: ${statusLabel(item.active_change.state)}.`,
+      ]);
+    if (item.recommendation) {
+      decisionBody.append(
+        detailFact("Revision", String(item.recommendation.revision_number)),
+        detailFact(
+          "Hypothesis",
+          item.recommendation.expected_result_hypothesis,
+        ),
+        detailFact("Proposed change", item.recommendation.proposed_action),
+        detailFact(
+          "Risk / effort",
+          `${statusLabel(item.recommendation.risk)} / ${statusLabel(item.recommendation.effort)}`,
+        ),
+        detailFact("Approval", statusLabel(item.recommendation.status)),
+      );
+      if (item.recommendation.status === "awaiting_approval") {
+        const actions = document.createElement("div");
+        actions.className = "ui-inline ui-inline--center";
+        for (const [label, approve] of [
+          ["Approve", true],
+          ["Reject", false],
+        ] as const) {
+          const button = actionButton(label, () => {
+            button.disabled = true;
+            void decideRecommendation(
+              organizationId,
+              item.recommendation!.id,
+              approve,
+            ).then((result) => {
+              if (result.kind === "ok") back();
+              else {
+                button.disabled = false;
+                decisionBody.append(
+                  errorAlert(
+                    describeFailure(result, "Recommendation decision"),
+                  ),
+                );
+              }
+            });
+          });
+          actions.append(button);
+        }
+        decisionBody.append(actions);
+      }
+    } else {
+      const link = document.createElement("a");
+      link.href = "/automations?agent=agent.seo";
+      link.className = "ui-button ui-button--secondary ui-button--sm";
+      link.textContent = "Run SEO analysis";
+      decisionBody.append(link);
+      const form = document.createElement("form");
+      form.className = "ui-form-grid";
+      const action = document.createElement("textarea");
+      action.required = true;
+      action.rows = 3;
+      action.setAttribute("aria-label", "Proposed change");
+      const hypothesis = document.createElement("textarea");
+      hypothesis.required = true;
+      hypothesis.rows = 2;
+      hypothesis.setAttribute("aria-label", "Expected result hypothesis");
+      const risk = document.createElement("select");
+      const effort = document.createElement("select");
+      for (const value of ["low", "medium", "high"]) {
+        const riskOption = document.createElement("option");
+        riskOption.value = value;
+        riskOption.textContent = statusLabel(value);
+        risk.add(riskOption);
+        const effortOption = document.createElement("option");
+        effortOption.value = value;
+        effortOption.textContent = statusLabel(value);
+        effort.add(effortOption);
+      }
+      risk.setAttribute("aria-label", "Risk");
+      effort.setAttribute("aria-label", "Effort");
+      const submit = document.createElement("button");
+      submit.type = "submit";
+      submit.className = "ui-button ui-button--primary ui-button--sm";
+      submit.textContent = "Submit recommendation for approval";
+      form.append(action, hypothesis, risk, effort, submit);
+      form.addEventListener("submit", (event) => {
+        event.preventDefault();
+        submit.disabled = true;
+        void createRecommendation(organizationId, item.opportunity.id, {
+          proposedAction: action.value,
+          expectedResultHypothesis: hypothesis.value,
+          risk: risk.value as "low" | "medium" | "high",
+          effort: effort.value as "low" | "medium" | "high",
+        }).then((result) => {
+          if (result.kind === "ok") back();
+          else {
+            submit.disabled = false;
+            form.append(
+              errorAlert(
+                "Recommendation could not be created. Review the evidence limitation or active page change.",
+              ),
+            );
+          }
+        });
+      });
+      decisionBody.append(form);
+    }
+    panel.append(decisionCard);
+    const siteChange = siteChangeView(item.recommendation);
+    if (siteChange) panel.append(renderSiteChangeCard(siteChange));
+  });
+
+  guardedSection(panel, "Reasoning passes", () => {
+    const passes = decision?.passes;
+    const passGrid = document.createElement("div");
+    passGrid.className = "ui-card-grid ui-card-grid--lg";
+    for (const [key, name] of [
+      ["access", "Access"],
+      ["competition", "Competition"],
+      ["answer_engines", "Answer Engines"],
+      ["conversion", "Conversion"],
+    ] as const)
+      passGrid.append(renderPass(name, passes?.[key]));
+    panel.append(passGrid);
+  });
+
+  guardedSection(panel, "Implementation and verification", () => {
+    const task = item.task;
+    const verification = record(task?.verification_evidence);
+    const expected = record(verification.expected_change);
+    const actual = record(verification.actual);
+    const implementation = pageEvidenceCard(
+      "Implementation and verification",
+      [
+        ["Task", task ? statusLabel(task.status) : "Not delegated"],
+        ["Workflow", text(task?.workflow_run_id)],
+        ["Target", text(task?.target_reference)],
+        ["Verified at", date(task?.verified_at)],
+        ["Verification result", statusLabel(text(verification.result))],
+        ["Verification source", text(verification.verification_method)],
+        [
+          "Expected change",
+          text(expected.issue_absent, text(expected.target_reference)),
+        ],
+        ["Observed target", text(actual.title, text(actual.http_status))],
+        [
+          "Evidence references",
+          Array.isArray(verification.evidence_references)
+            ? verification.evidence_references
+                .map((value) => text(value))
+                .join(", ")
+            : "Unavailable",
+        ],
+      ],
+      Array.isArray(verification.limitations)
+        ? verification.limitations.map((value) => text(value)).join(" ")
+        : undefined,
+    );
+    const implementationBody =
+      implementation.querySelector<HTMLElement>(".ui-card__body")!;
+    if (needsPageAttribution(item))
+      appendLines(implementationBody, [pageAttributionAction]);
+    if (task && !task.verified_at) {
+      const verify = actionButton("Check implementation evidence", () => {
+        verify.disabled = true;
+        void verifyImplementationTask(organizationId, task.id).then(
+          (result) => {
             if (result.kind === "ok") back();
             else {
-              button.disabled = false;
-              decisionBody.append(
-                errorAlert(describeFailure(result, "Recommendation decision")),
+              verify.disabled = false;
+              implementationBody.append(
+                errorAlert("Verification could not be checked."),
               );
             }
-          });
-        });
-        actions.append(button);
-      }
-      decisionBody.append(actions);
+          },
+        );
+      });
+      implementationBody.append(verify);
     }
-  } else {
-    const link = document.createElement("a");
-    link.href = "/automations?agent=agent.seo";
-    link.className = "ui-button ui-button--secondary ui-button--sm";
-    link.textContent = "Run SEO analysis";
-    decisionBody.append(link);
-    const form = document.createElement("form");
-    form.className = "ui-form-grid";
-    const action = document.createElement("textarea");
-    action.required = true;
-    action.rows = 3;
-    action.setAttribute("aria-label", "Proposed change");
-    const hypothesis = document.createElement("textarea");
-    hypothesis.required = true;
-    hypothesis.rows = 2;
-    hypothesis.setAttribute("aria-label", "Expected result hypothesis");
-    const risk = document.createElement("select");
-    const effort = document.createElement("select");
-    for (const value of ["low", "medium", "high"]) {
-      const riskOption = document.createElement("option");
-      riskOption.value = value;
-      riskOption.textContent = statusLabel(value);
-      risk.add(riskOption);
-      const effortOption = document.createElement("option");
-      effortOption.value = value;
-      effortOption.textContent = statusLabel(value);
-      effort.add(effortOption);
-    }
-    risk.setAttribute("aria-label", "Risk");
-    effort.setAttribute("aria-label", "Effort");
-    const submit = document.createElement("button");
-    submit.type = "submit";
-    submit.className = "ui-button ui-button--primary ui-button--sm";
-    submit.textContent = "Submit recommendation for approval";
-    form.append(action, hypothesis, risk, effort, submit);
-    form.addEventListener("submit", (event) => {
-      event.preventDefault();
-      submit.disabled = true;
-      void createRecommendation(organizationId, item.opportunity.id, {
-        proposedAction: action.value,
-        expectedResultHypothesis: hypothesis.value,
-        risk: risk.value as "low" | "medium" | "high",
-        effort: effort.value as "low" | "medium" | "high",
-      }).then((result) => {
-        if (result.kind === "ok") back();
-        else {
-          submit.disabled = false;
-          form.append(
-            errorAlert(
-              "Recommendation could not be created. Review the evidence limitation or active page change.",
+    panel.append(implementation);
+  });
+
+  guardedSection(panel, "Measurement and observed outcome", () => {
+    const outcome = item.outcome ?? item.latest_measured?.outcome;
+    const measurement = item.measurement;
+    const baselineValues = record(outcome?.metrics.baseline);
+    const measurementValues = record(outcome?.metrics.measurement);
+    panel.append(
+      pageEvidenceCard(
+        "Measurement and observed outcome",
+        [
+          [
+            "Metric",
+            text(
+              measurement?.metric ??
+                record(outcome?.metrics.measurement).metric,
             ),
-          );
-        }
-      });
-    });
-    decisionBody.append(form);
-  }
-  panel.append(decisionCard);
-  const siteChange = siteChangeView(item.recommendation);
-  if (siteChange) panel.append(renderSiteChangeCard(siteChange));
-
-  const passes = decision?.passes;
-  const passGrid = document.createElement("div");
-  passGrid.className = "ui-card-grid ui-card-grid--lg";
-  for (const [key, name] of [
-    ["access", "Access"],
-    ["competition", "Competition"],
-    ["answer_engines", "Answer Engines"],
-    ["conversion", "Conversion"],
-  ] as const)
-    passGrid.append(renderPass(name, passes?.[key]));
-  panel.append(passGrid);
-
-  const task = item.task;
-  const verification = record(task?.verification_evidence);
-  const expected = record(verification.expected_change);
-  const actual = record(verification.actual);
-  const implementation = pageEvidenceCard(
-    "Implementation and verification",
-    [
-      ["Task", task ? statusLabel(task.status) : "Not delegated"],
-      ["Workflow", text(task?.workflow_run_id)],
-      ["Target", text(task?.target_reference)],
-      ["Verified at", date(task?.verified_at)],
-      ["Verification result", statusLabel(text(verification.result))],
-      ["Verification source", text(verification.verification_method)],
-      [
-        "Expected change",
-        text(expected.issue_absent, text(expected.target_reference)),
-      ],
-      ["Observed target", text(actual.title, text(actual.http_status))],
-      [
-        "Evidence references",
-        Array.isArray(verification.evidence_references)
-          ? verification.evidence_references
-              .map((value) => text(value))
-              .join(", ")
-          : "Unavailable",
-      ],
-    ],
-    Array.isArray(verification.limitations)
-      ? verification.limitations.map((value) => text(value)).join(" ")
-      : undefined,
-  );
-  const implementationBody =
-    implementation.querySelector<HTMLElement>(".ui-card__body")!;
-  if (needsPageAttribution(item))
-    appendLines(implementationBody, [pageAttributionAction]);
-  if (task && !task.verified_at) {
-    const verify = actionButton("Check implementation evidence", () => {
-      verify.disabled = true;
-      void verifyImplementationTask(organizationId, task.id).then((result) => {
-        if (result.kind === "ok") back();
-        else {
-          verify.disabled = false;
-          implementationBody.append(
-            errorAlert("Verification could not be checked."),
-          );
-        }
-      });
-    });
-    implementationBody.append(verify);
-  }
-  panel.append(implementation);
-
-  const outcome = item.outcome ?? item.latest_measured?.outcome;
-  const measurement = item.measurement;
-  const baselineValues = record(outcome?.metrics.baseline);
-  const measurementValues = record(outcome?.metrics.measurement);
-  panel.append(
-    pageEvidenceCard(
-      "Measurement and observed outcome",
-      [
-        [
-          "Metric",
-          text(
-            measurement?.metric ?? record(outcome?.metrics.measurement).metric,
-          ),
+          ],
+          [
+            "Maturity",
+            outcome ? "Outcome recorded" : statusLabel(measurement?.maturity),
+          ],
+          [
+            "Baseline",
+            outcome
+              ? `${date(outcome.baseline_start)} to ${date(outcome.baseline_end)}`
+              : `${date(measurement?.baseline_start)} to ${date(measurement?.baseline_end)}`,
+          ],
+          [
+            "Measurement",
+            outcome
+              ? `${date(outcome.measurement_start)} to ${date(outcome.measurement_end)}`
+              : `${date(measurement?.measurement_start)} to ${date(measurement?.measurement_end)}`,
+          ],
+          [
+            "Observed after this change",
+            outcome ? statusLabel(outcome.classification) : "Pending",
+          ],
+          ["Baseline value", text(baselineValues.value)],
+          ["Observed value", text(measurementValues.value)],
         ],
-        [
-          "Maturity",
-          outcome ? "Outcome recorded" : statusLabel(measurement?.maturity),
-        ],
-        [
-          "Baseline",
-          outcome
-            ? `${date(outcome.baseline_start)} to ${date(outcome.baseline_end)}`
-            : `${date(measurement?.baseline_start)} to ${date(measurement?.baseline_end)}`,
-        ],
-        [
-          "Measurement",
-          outcome
-            ? `${date(outcome.measurement_start)} to ${date(outcome.measurement_end)}`
-            : `${date(measurement?.measurement_start)} to ${date(measurement?.measurement_end)}`,
-        ],
-        [
-          "Observed after this change",
-          outcome ? statusLabel(outcome.classification) : "Pending",
-        ],
-        ["Baseline value", text(baselineValues.value)],
-        ["Observed value", text(measurementValues.value)],
-      ],
-      outcome?.limitations.join(" ") ?? measurement?.limitation ?? undefined,
-    ),
-  );
+        outcome?.limitations.join(" ") ?? measurement?.limitation ?? undefined,
+      ),
+    );
+  });
 }
 
 export function renderSearchIntelligenceWorkspace(
