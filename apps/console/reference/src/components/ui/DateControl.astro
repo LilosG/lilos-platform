@@ -1,0 +1,18 @@
+---
+import type { ViewContext } from "../../types/domain";
+interface Props {
+  context: ViewContext;
+}
+---
+
+<select aria-label="Reporting date range" data-filter="range">
+  <option value="7" selected={Astro.props.context.state.range === "7"}>
+    Last 7 days
+  </option>
+  <option value="30" selected={Astro.props.context.state.range === "30"}>
+    Last 30 days
+  </option>
+  <option value="90" selected={Astro.props.context.state.range === "90"}>
+    Last 90 days
+  </option>
+</select>

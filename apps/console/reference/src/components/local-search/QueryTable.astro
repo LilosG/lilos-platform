@@ -1,0 +1,133 @@
+---
+import type { ViewContext, Client } from "../../types/domain";
+
+import { route } from "../../config/routes";
+
+import { requireClient } from "../../lib/view";
+interface Props {
+  context: ViewContext;
+  c?: Client | null;
+  mode?: string;
+  limit?: number;
+}
+const context = Astro.props.context;
+const state = context.state;
+const c = requireClient(context, Astro.props.c);
+import { growthWorkspace } from "../../lib/workspace-data";
+const { queries: hospitalitySearchQueries } = growthWorkspace(c);
+
+const periodLabel = (source: string) =>
+  source + " · Last " + state.range + " days";
+
+const mode = Astro.props.mode ?? "rankings";
+const limit = Astro.props.limit ?? 6;
+const selectedQueries =
+  mode === "rankings" && limit < 6
+    ? [
+        hospitalitySearchQueries[0],
+        hospitalitySearchQueries[1],
+        hospitalitySearchQueries[5],
+      ]
+    : hospitalitySearchQueries.slice(0, limit);
+
+import PeriodValue from "../ui/PeriodValue.astro";
+
+import SectionHeading from "../ui/SectionHeading.astro";
+
+import DataTable from "../ui/DataTable.astro";
+import InsightPanel from "../ui/InsightPanel.astro";
+---
+
+<section class="panel tablewrap">
+  <SectionHeading>
+    <Fragment slot="title">
+      {mode === "rankings"
+        ? "Important ranking movements"
+        : "Organic search queries"}
+    </Fragment>
+    <Fragment slot="actions">
+      <a
+        class="link"
+        href={route(
+          "client",
+          c.id,
+          "Local Search",
+          mode === "rankings" ? "Rankings" : "Search Console",
+        )}
+      >
+        {limit < 6 ? "View all" : "View source"}
+      </a>
+    </Fragment>
+  </SectionHeading>
+  <DataTable>
+    <thead>
+      <tr>
+        <th>Query</th>
+        {mode === "rankings" ? (
+          <Fragment>
+            <th>Local rank</th>
+            <th>Previous</th>
+            <th>Movement</th>
+          </Fragment>
+        ) : (
+          <Fragment>
+            <th>
+              Search clicks
+              <span class="sub">
+                <span data-period-label>{periodLabel("Search Console")}</span>
+              </span>
+            </th>
+            <th>Impressions</th>
+            <th>Organic position</th>
+          </Fragment>
+        )}
+        <th>Landing page</th>
+      </tr>
+    </thead>
+    <tbody>
+      {selectedQueries.map((q) => (
+        <Fragment>
+          <tr>
+            <td>{q.query}</td>
+            {mode === "rankings" ? (
+              <Fragment>
+                <td>{q.rank}</td>
+                <td>{q.prior}</td>
+                <td class={q.prior >= q.rank ? "positive" : "negative"}>
+                  {q.prior >= q.rank ? "↑" : "↓"}{" "}
+                  {Math.abs(q.prior - q.rank).toFixed(1)}
+                </td>
+              </Fragment>
+            ) : (
+              <Fragment>
+                <td>
+                  <PeriodValue base={q.clicks} />
+                </td>
+                <td>
+                  <PeriodValue base={q.impressions} />
+                </td>
+                <td>{q.position}</td>
+              </Fragment>
+            )}
+            <td>
+              <button
+                class="link"
+                data-command="openPage"
+                data-args={JSON.stringify([
+                  q.page === "Menu" ? c.id + "-1" : c.id + "-2",
+                ])}
+              >
+                {q.page}
+              </button>
+            </td>
+          </tr>
+        </Fragment>
+      ))}
+    </tbody>
+  </DataTable>
+  <InsightPanel class="insight">
+    {mode === "rankings"
+      ? "Five brunch queries rank between 4.2 and 6.7. Strengthen their landing page before expanding to new keywords."
+      : "Brunch queries land on the general menu. Separate organic positions from local grid rankings when comparing search performance."}
+  </InsightPanel>
+</section>

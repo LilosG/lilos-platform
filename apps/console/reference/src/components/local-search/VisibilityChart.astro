@@ -1,0 +1,87 @@
+---
+import type { ViewContext, Client } from "../../types/domain";
+
+interface Props {
+  context: ViewContext;
+  c?: Client | null;
+}
+const context = Astro.props.context;
+const state = context.state;
+const c =
+  Astro.props.c === null ? undefined : (Astro.props.c ?? context.client);
+
+import { visibilitySeries, chartSample } from "../../lib/visibility";
+const sample = chartSample(c);
+const {
+  values,
+  path,
+  previous: prev,
+  labels,
+} = visibilitySeries(sample.current, sample.declining, state.range);
+
+import { visibilityGridLines } from "../../data/fixtures/presentation";
+---
+
+<svg
+  class="chart"
+  data-visibility-chart
+  data-current={sample.current}
+  data-declining={String(sample.declining)}
+  viewBox="0 0 580 170"
+  role="img"
+  aria-label="Local visibility trend across the selected period"
+>
+  {visibilityGridLines().map((y, i) => (
+    <Fragment>
+      <line
+        x1="30"
+        y1={y}
+        x2="560"
+        y2={y}
+        stroke="#e7ece8"
+        stroke-dasharray="3 5"
+      />
+      <text x="0" y={y + 4}>
+        {80 - i * 20}
+      </text>
+    </Fragment>
+  ))}
+  <path data-chart-area d={`${path} L535 140 L35 140 Z`} fill="#edf4ec" />
+  <path
+    data-chart-previous
+    d={prev}
+    fill="none"
+    stroke="#a6b6ac"
+    stroke-width="2"
+    stroke-dasharray="5 5"
+  />
+  <path
+    data-chart-current
+    d={path}
+    fill="none"
+    stroke="#35684e"
+    stroke-width="3"
+  />
+  {values.map((v, i) => (
+    <Fragment>
+      <circle
+        data-chart-point
+        cx={35 + i * 100}
+        cy={150 - (v - 20) * 1.8}
+        r="4"
+        fill="#fff"
+        stroke="#35684e"
+        stroke-width="2"
+      />
+    </Fragment>
+  ))}
+  <text data-chart-label="0" x="35" y="163">
+    {labels[0]}
+  </text>
+  <text data-chart-label="1" x="235" y="163">
+    {labels[1]}
+  </text>
+  <text x="510" y="163">
+    Sep 29
+  </text>
+</svg>

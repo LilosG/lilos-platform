@@ -1,0 +1,28 @@
+---
+import type { Client } from "../../types/domain";
+interface Props {
+  condition?: string;
+  client?: Client;
+  title: string;
+  heading?: "h2" | "h3";
+}
+const { title, condition, client, heading: Heading = "h2" } = Astro.props;
+---
+
+<div
+  data-client-condition={condition}
+  data-condition-client={client?.id}
+  class="banner"
+  role="alert"
+>
+  <span class="severity" aria-hidden="true">
+    !
+  </span>
+  <div>
+    <Heading class="body-title">{title}</Heading>
+    <p>
+      <slot />
+    </p>
+  </div>
+  <slot name="action" />
+</div>

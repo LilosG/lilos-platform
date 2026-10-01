@@ -648,3 +648,16 @@ The **Implementation** column uses the formal status vocabulary. The **Live acce
 - Approved SEO opportunity `3a7e70d0-5cc1-4609-b2b5-67c029a28a83` remains priority 89 and page-unattributed. Recommendation `9242d3b0-93f7-4d0d-a25e-c0311225e08a` revision 2 is approved with actor and audit history; revision 1 remains historical. Hermes Access is limited; Competition, Answer Engines, and Conversion are unavailable with persisted limitations. The exact revision-bound implementation task remains `verification_pending`, with unavailable proof and no verified timestamp, measurement, or outcome. Its Growth handoff targets the SEO opportunity, not a page. The historical Content item and unsupported `/brunch` brief remain unrewritten, with no revision or publication; they are not implementation proof.
 - Concrete operator defects found in production: Requires Attention omitted the authoritative page-attribution action because it checked an optional opportunity evidence field instead of the canonical absent page; older invalid opportunities displayed resolver wording without a next action; and an observed page could not be opened in Page Intelligence unless it also had a page-backed opportunity. This packet corrects those UI paths using the existing resolver result, crawl inventory, and Page Intelligence renderer. The production acceptance harness now accepts truthful unavailable sources and independently checks the approved unattributed work and a canonical crawl page.
 - Post-merge production Search Intelligence acceptance passed both existing read-only browser journeys for Coco Maya at `a97c955e11b8f8d693a56c9b522c67d1d00a05db`. The deployed workspace shows all five sections, the authoritative target-resolution action in Requires Attention, and Page Intelligence for a canonical crawl page without requiring a page-backed opportunity. The approved revision 2 and exact downstream handoff remain page-unattributed; implementation proof and verification remain unavailable, and measurement is ineligible. Source limitations, governed eligibility, role and tenant scope, and the no-write guard passed. Two acceptance-only Playwright locator errors discovered during this run were corrected in the existing journey. No new Hermes run, approval, implementation, client write, or provider write was performed. The unresolved Coco Maya page is an expected governed blocker for that change, not a pilot release blocker.
+
+## Command Center Phase 1
+
+State: `IMPLEMENTED_NOT_ACCEPTED` for live rollout. Repository/synthetic acceptance
+and exact path/gate evidence are recorded in
+`implementation/command-center/PHASE_01_ACCEPTANCE.md`. Separate SSR console,
+server-mediated auth/MFA, explicit BFF/CSRF/cache isolation, generated contracts and
+canonical SEO Opportunity/Attention/revise/approve/workflow/publication reference
+slice are implemented. Existing web and canonical backend write governance remain.
+Live staging acceptance is pending owner setup; no live provider acceptance or
+production readiness is asserted. Adjacent portfolio aggregates, other source
+families, Integrations/Local Search and later product surfaces remain in their
+existing phases and were intentionally not implemented here.

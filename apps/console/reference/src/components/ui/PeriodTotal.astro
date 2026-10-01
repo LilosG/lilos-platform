@@ -1,0 +1,11 @@
+---
+import { fmt } from "../../lib/view";
+interface Props {
+  parts: number[];
+}
+const { parts } = Astro.props;
+---
+
+<span data-period-components={JSON.stringify(parts)}>
+  {fmt(parts.reduce((sum, value) => sum + Math.round(value), 0))}
+</span>

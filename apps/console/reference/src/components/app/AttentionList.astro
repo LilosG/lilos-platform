@@ -1,0 +1,44 @@
+---
+import type { ViewContext, Client } from "../../types/domain";
+import { scopedActions } from "../../lib/view";
+import AttentionItem from "./AttentionItem.astro";
+import EmptyState from "../ui/EmptyState.astro";
+interface Props {
+  context: ViewContext;
+  client?: Client;
+  limit?: number;
+  emptyMode?: "portfolio" | "client" | "growth";
+}
+const { context, client, limit = 100, emptyMode = "portfolio" } = Astro.props;
+const items = scopedActions(client);
+---
+
+{items.map((a, index) => (
+  <AttentionItem
+    context={context}
+    a={a}
+    hidden={index >= limit}
+    limit={limit}
+  />
+))}
+<div data-attention-empty hidden={items.length > 0}>
+  {emptyMode === "portfolio" ? (
+    <EmptyState>No open attention items.</EmptyState>
+  ) : (
+    <div class="clearstate">
+      <span class="severity low">✓</span>
+      <div>
+        <h3>
+          {emptyMode === "growth"
+            ? "Attention items completed"
+            : "No urgent issues"}
+        </h3>
+        <p>
+          {emptyMode === "growth"
+            ? "Monitor the next reporting period to confirm the outcome."
+            : "Priority sources are connected. Next monitoring check is tomorrow."}
+        </p>
+      </div>
+    </div>
+  )}
+</div>

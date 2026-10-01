@@ -1,0 +1,143 @@
+---
+import type { ViewContext, Client } from "../../types/domain";
+import { systems } from "../../data/fixtures";
+
+import { route } from "../../config/routes";
+import { connectionInfo } from "../../lib/selectors";
+import StatusBadge from "../ui/StatusBadge.astro";
+
+import { requireClient } from "../../lib/view";
+interface Props {
+  context: ViewContext;
+  c?: Client | null;
+}
+const context = Astro.props.context;
+
+const c = requireClient(context, Astro.props.c);
+
+import SectionHeading from "../ui/SectionHeading.astro";
+
+import DataTable from "../ui/DataTable.astro";
+import InsightPanel from "../ui/InsightPanel.astro";
+---
+
+<section class="panel tablewrap">
+  <SectionHeading>
+    <Fragment slot="title">Current external connections</Fragment>
+    <Fragment slot="actions">
+      <span class="muted">Live connection state · sample sources</span>
+    </Fragment>
+  </SectionHeading>
+  <DataTable>
+    <thead>
+      <tr>
+        <th>Connection / capabilities</th>
+        <th>Status</th>
+        <th>Authorization</th>
+        <th>Last successful sync</th>
+        <th>Data freshness</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {systems.map((s, i) => {
+        const info = connectionInfo(c, i);
+        return (
+          <Fragment>
+            <tr>
+              <td>
+                <b>{s[0]}</b>
+                <span class="sub">{info.capabilities}</span>
+              </td>
+              <td>
+                <span
+                  data-connection-client={c.id}
+                  data-connection-source={i}
+                  data-connection-field="status"
+                >
+                  <StatusBadge text={info.status} />
+                </span>
+              </td>
+              <td>
+                <span
+                  data-connection-client={c.id}
+                  data-connection-source={i}
+                  data-connection-field="authorization"
+                >
+                  <StatusBadge text={info.authorization} />
+                </span>
+              </td>
+              <td>
+                <span data-source-sync={i} data-source-client={c.id}>
+                  {info.sync}
+                </span>
+              </td>
+              <td
+                data-connection-client={c.id}
+                data-connection-source={i}
+                data-connection-field="freshness"
+              >
+                {info.freshness}
+              </td>
+              <td>
+                <button
+                  data-connection-action={c.id}
+                  data-connection-source={i}
+                  data-command-spec={
+                    c.id === "3" && i === 0
+                      ? JSON.stringify({ name: "openAction", args: [1] })
+                      : c.id === "11" && i === 2
+                        ? JSON.stringify({ name: "openAction", args: [7] })
+                        : c.id === "9" && i === 2
+                          ? JSON.stringify({
+                              name: "openAction",
+                              args: [2],
+                            })
+                          : JSON.stringify({
+                              name: "openClientConnection",
+                              args: [i, c.id],
+                            })
+                  }
+                >
+                  {info.status === "Disconnected"
+                    ? "Reconnect"
+                    : info.status === "Not configured"
+                      ? "Configure"
+                      : "View connection"}
+                </button>
+              </td>
+            </tr>
+          </Fragment>
+        );
+      })}
+    </tbody>
+  </DataTable>
+</section>
+<section class="panel spaced-section">
+  <SectionHeading>
+    <Fragment slot="title">Google review access</Fragment>
+    <Fragment slot="actions">
+      <StatusBadge
+        text={c.gbp === "Healthy" ? "Available" : "Needs attention"}
+      />
+    </Fragment>
+  </SectionHeading>
+  <div class="listrow">
+    <div>
+      <h3>Included with Google Business Profile</h3>
+      <p>
+        Review monitoring, response publishing and review links share the
+        profile’s authorization.
+      </p>
+    </div>
+    <a href={route("client", c.id, "Reviews")} class="control">
+      Open Reviews
+    </a>
+  </div>
+</section>
+<InsightPanel class="insight contextinsight spaced-section">
+  Website checks and report generation are operational jobs.{" "}
+  <a class="link" href={route("client", c.id, "Automations")}>
+    View client automations
+  </a>
+</InsightPanel>

@@ -1,0 +1,38 @@
+---
+import type { ViewContext } from "../../types/domain";
+import DateControl from "./DateControl.astro";
+interface Props {
+  context: ViewContext;
+  title: string;
+  subtitle: string;
+  extra?: string;
+}
+const { context, title, subtitle, extra } = Astro.props;
+---
+
+<div class="pagehead">
+  <div>
+    <div class="eyebrow">
+      {context.client ? "Client workspace" : "Portfolio intelligence"}
+    </div>
+    <h1
+      data-client-title={
+        context.client && context.state.tab === "Overview"
+          ? context.client.id
+          : undefined
+      }
+    >
+      {title}
+    </h1>
+    <p>{subtitle}</p>
+  </div>
+  <div class="controls">
+    {extra}
+    <slot name="actions" />
+    {title === "Integrations" ? (
+      <span class="muted currentstate">Current connection state</span>
+    ) : (
+      <DateControl context={context} />
+    )}
+  </div>
+</div>

@@ -1,0 +1,33 @@
+---
+interface Props {
+  id: string;
+  returnTo: string;
+}
+const { id, returnTo } = Astro.props;
+---
+
+<dialog id={id} aria-labelledby={`${id}-title`} open data-return={returnTo}>
+  <div class="panelhead">
+    <span class="muted">LILOs Growth</span><a
+      class="close"
+      aria-label="Close details"
+      href={returnTo}
+      autofocus>×</a
+    >
+  </div>
+  <div class="body"><slot name="body" /></div><div class="dialogfoot">
+    <a class="control" href={returnTo}>All opportunities</a>
+  </div>
+</dialog>
+<script>
+  document
+    .querySelectorAll<HTMLDialogElement>("dialog[data-return]")
+    .forEach((dialog) => {
+      dialog.removeAttribute("open");
+      dialog.showModal();
+      dialog.addEventListener("cancel", (event) => {
+        event.preventDefault();
+        window.location.assign(dialog.dataset.return!);
+      });
+    });
+</script>

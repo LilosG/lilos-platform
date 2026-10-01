@@ -1,0 +1,134 @@
+---
+import type { ViewContext, Client } from "../../types/domain";
+import { pageRecords } from "../../data/fixtures";
+
+import { requireClient } from "../../lib/view";
+interface Props {
+  context: ViewContext;
+  c?: Client | null;
+  mode?: string;
+}
+const context = Astro.props.context;
+const state = context.state;
+const c = requireClient(context, Astro.props.c);
+import { growthWorkspace } from "../../lib/workspace-data";
+const { metrics: hospitalityMetrics } = growthWorkspace(c);
+
+const mode = Astro.props.mode ?? "pages";
+const a = pageRecords.filter((p) => p.client === c.id);
+
+import PeriodValue from "../ui/PeriodValue.astro";
+
+import SectionHeading from "../ui/SectionHeading.astro";
+
+import DataTable from "../ui/DataTable.astro";
+import InsightPanel from "../ui/InsightPanel.astro";
+---
+
+<section class="panel tablewrap">
+  <SectionHeading>
+    <Fragment slot="title">
+      {mode === "seo" ? "Page search health" : "Website pages"}
+    </Fragment>
+    <Fragment slot="actions">
+      <span class="muted">
+        Last <span data-period-days>{state.range}</span> days · sample data
+      </span>
+    </Fragment>
+  </SectionHeading>
+  <DataTable>
+    <thead>
+      <tr>
+        <th>Page / status</th>
+        <th>
+          Organic sessions<span class="sub">GA4</span>
+        </th>
+        <th>
+          Search clicks<span class="sub">Search Console</span>
+        </th>
+        <th>Technical health</th>
+        <th>Updated</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {a.map((p) => (
+        <Fragment>
+          <tr data-page-id={p.id}>
+            <td>
+              <b>
+                <span
+                  data-entity="page"
+                  data-record-id={p.id}
+                  data-field="name"
+                >
+                  {p.name}
+                </span>
+              </b>
+              <span class="sub">
+                {p.url} ·{" "}
+                <span
+                  data-entity="page"
+                  data-record-id={p.id}
+                  data-field="status"
+                >
+                  {p.status}
+                </span>
+              </span>
+            </td>
+            <td>
+              <PeriodValue base={p.sessions ?? 0} />
+            </td>
+            <td>
+              <PeriodValue base={p.clicks} />
+            </td>
+            <td>
+              <span
+                data-entity="page"
+                data-record-id={p.id}
+                data-field="health"
+              >
+                {p.health}
+              </span>
+              /100
+            </td>
+            <td>
+              <span data-entity="page" data-record-id={p.id} data-field="last">
+                {p.last}
+              </span>
+            </td>
+            <td>
+              <button
+                data-command="openPage"
+                data-args={JSON.stringify([p.id])}
+              >
+                Inspect
+              </button>
+            </td>
+          </tr>
+        </Fragment>
+      ))}
+    </tbody>
+    <tfoot>
+      <tr>
+        <td>
+          <b>Tracked landing pages</b>
+        </td>
+        <td>
+          <PeriodValue base={hospitalityMetrics.ga4OrganicSessions} />
+        </td>
+        <td>
+          <PeriodValue base={hospitalityMetrics.gscClicks} />
+        </td>
+        <td colspan="3">
+          Sessions and search clicks are distinct measurements.
+        </td>
+      </tr>
+    </tfoot>
+  </DataTable>
+  <InsightPanel class="insight">
+    GA4 measures organic-search sessions on the website. Search Console counts
+    clicks from Google search results. The two sources do not measure the same
+    activity. Draft pages have no traffic.
+  </InsightPanel>
+</section>

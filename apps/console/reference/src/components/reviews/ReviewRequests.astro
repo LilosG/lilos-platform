@@ -1,0 +1,60 @@
+---
+import type { Client } from "../../types/domain";
+import StatusBadge from "../ui/StatusBadge.astro";
+interface Props {
+  client: Client;
+}
+const { client: c } = Astro.props;
+
+import SectionHeading from "../ui/SectionHeading.astro";
+
+import InsightPanel from "../ui/InsightPanel.astro";
+---
+
+<section class="panel" data-review-requests hidden>
+  <SectionHeading>
+    <Fragment slot="title">Review requests</Fragment>
+    <Fragment slot="actions">
+      <button
+        class="primary"
+        data-command="openReviewRequest"
+        data-args={JSON.stringify([c.id])}
+      >
+        Create request
+      </button>
+    </Fragment>
+  </SectionHeading>
+  <div class="listrow">
+    <div>
+      <h3>
+        {c.workspaceProfile === "hospitality"
+          ? "Post-visit and event follow-up"
+          : "Post-service follow-up"}
+      </h3>
+      <p>
+        <span
+          data-entity="client"
+          data-record-id={c.id}
+          data-field="requestCount"
+        >
+          {c.requestCount || 0}
+        </span>{" "}
+        sample requests staged this session · Email · After completed service
+      </p>
+    </div>
+    <StatusBadge text="Active" />
+  </div>
+  <div class="listrow">
+    <div>
+      <h3>Recent request performance</h3>
+      <p>24 requests · 9 new reviews · 37.5% response rate</p>
+    </div>
+    <button data-command="openReviewRequest" data-args={JSON.stringify([c.id])}>
+      View template
+    </button>
+  </div>
+  <InsightPanel class="insight">
+    Ask after a completed service or visit. Review requests should reach
+    customers consistently, without filtering by sentiment.
+  </InsightPanel>
+</section>

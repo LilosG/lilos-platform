@@ -1,0 +1,31 @@
+---
+import type { ViewContext, Client, Activity } from "../../types/domain";
+import { clients } from "../../data/fixtures";
+
+import { route } from "../../config/routes";
+
+interface Props {
+  context: ViewContext;
+  c?: Client | null;
+  a: Activity;
+}
+
+let a = Astro.props.a;
+---
+
+<div class="listrow feed" data-activity-fixture>
+  <span class="activitydot">✓</span>
+  <div>
+    {a.text}
+    <small>
+      <a
+        class="link compact-link"
+
+        href={route("client", clients[a.client].id)}
+      >
+        {clients[a.client].name}
+      </a>
+    </small>
+  </div>
+  <time>{a.time}</time>
+</div>

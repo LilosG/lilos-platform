@@ -81,6 +81,18 @@ def site_change_state(
         blocked_code(publication.safe_error_code) if publication is not None else None
     ) or limitation
     return {
+        **{
+            key: getattr(publication, key, None)
+            for key in (
+                "workflow_run_id",
+                "deployment_status",
+                "approved_head_sha",
+                "external_revision_id",
+                "published_url",
+                "verified_at",
+            )
+        },
+        "publication_id": getattr(publication, "id", None),
         "mapping_state": (
             "required"
             if blocked == SiteChangeCode.SITE_MAPPING_REQUIRED

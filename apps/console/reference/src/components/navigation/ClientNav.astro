@@ -1,0 +1,49 @@
+---
+import type { Client } from "../../types/domain";
+import { clientNavigation, route } from "../../config/routes";
+interface Props {
+  client: Client;
+  area: string;
+}
+const { client, area } = Astro.props;
+---
+
+<div class="contextlabel">
+  <span class="clientmark">
+    {client.name
+      .split(" ")
+      .map((x) => x[0])
+      .slice(0, 2)
+      .join("")}
+  </span>
+  <div>
+    <strong data-context-client={client.id}>{client.name}</strong>
+    <small>Client workspace</small>
+  </div>
+</div>
+<a class="backlink" href={route()}>
+  ‹ Entire Portfolio
+</a>
+{clientNavigation.map((group) => (
+  <Fragment>
+    {group.label && <div class="navlabel">{group.label}</div>}
+    <nav
+      aria-label={
+        group.label ? `Client ${group.label.toLowerCase()}` : "Client overview"
+      }
+    >
+      {group.items.map(([label, icon]) => (
+        <a
+          href={route("client", client.id, label)}
+          class:list={{ active: label === area }}
+          aria-current={label === area ? "page" : undefined}
+        >
+          <span class="navicon" aria-hidden="true">
+            {icon}
+          </span>
+          {label}
+        </a>
+      ))}
+    </nav>
+  </Fragment>
+))}

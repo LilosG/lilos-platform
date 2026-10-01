@@ -78,3 +78,25 @@ steps. Phase 0 discovery and the approved architecture were not reopened.
   evidence are in `PHASE_00_5_ACCEPTANCE.md`; actual recurring cost introduced is $0.
   Phase 1 is READY WITH OWNER ACTIONS BEFORE LIVE STAGING. Stop after the Phase 0.5
   PR; no automatic merge, console import, live client write or production canary.
+
+## Phase 1 — console foundation and canonical reference slice
+
+- D34 — IMPLEMENTED_NOT_ACCEPTED: immutable UI `d097c5255995b010f45b67a8ace90a80d00f090b`
+  imported in the separate console workspace; original source isolated under reference,
+  approved shell/styles/dialog adapted to SSR, old web retained. Missing remote tag
+  does not block the replacement Phase 1 prompt's SHA-authoritative import.
+- D35 — IMPLEMENTED_NOT_ACCEPTED: request-scoped server-only Supabase SSR/MFA,
+  buffered verified cookie writes, opposite-order stale-refresh refusal, same-origin
+  recovery, bound CSRF, exact host/preview isolation and private/no-store responses.
+- D36 — IMPLEMENTED_NOT_ACCEPTED: closed BFF method/path/body registry forwards
+  only current server Bearer and correlation; canonical revise/decision remain the
+  sole audited write gates. No unsupported idempotency forwarding or automatic replay.
+- D37 — IMPLEMENTED_NOT_ACCEPTED: additive typed SEO Opportunity/Attention/detail
+  projections reuse canonical evidence, quality, revisions, authorization, tasks,
+  runs and publication state; no universal write model, migration or duplicate engine.
+- D38 — IMPLEMENTED_NOT_ACCEPTED: deterministic OpenAPI/TS exports, byte drift CI,
+  adapter/source-scope tests and production fixture boundaries. Reference fixtures are
+  test-only; no unsourced metrics or sample-state fallback reaches production.
+- D39 — OWNER ACTION REQUIRED: live staging's eight scenarios remain pending the
+  consolidated checklist in `PHASE_01_ACCEPTANCE.md`. Repository acceptance does not
+  certify a live provider or production rollout. Stop at one PR; do not begin Phase 2.

@@ -1,0 +1,167 @@
+---
+import DialogFrame from "../../../components/ui/DialogFrame.astro";
+import AppLayout from "../../../layouts/AppLayout.astro";
+import OpportunityRow from "../../../components/opportunities/OpportunityRow.astro";
+import OpportunityDetail from "../../../components/opportunities/OpportunityDetail.astro";
+import { organizations, resolveSlug } from "../../../server/context";
+import { read, APIError } from "../../../server/bff";
+import {
+  adaptOpportunities,
+  adaptAttention,
+  adaptDetail,
+} from "../../../adapters/opportunities";
+import type {
+  OpportunityView,
+  AttentionView,
+  OpportunityDetail as Detail,
+} from "../../../adapters/opportunities";
+const rows = await organizations(Astro.locals);
+let client;
+try {
+  client = resolveSlug(rows, Astro.params.clientSlug ?? "");
+} catch {
+  return new Response("Client not found", { status: 404 });
+}
+const path = (Astro.params.workspace ?? "").replace(/\/$/, "");
+const section = path.split("/")[0];
+const sourceId = path.split("/")[1];
+let opportunities: OpportunityView[] = [];
+let attention: AttentionView[] = [];
+let detail: Detail | undefined;
+let error: string | undefined;
+let next: number | null = null;
+const offset = Number(Astro.url.searchParams.get("offset") ?? 0);
+if (!Number.isInteger(offset) || offset < 0 || offset > 100000)
+  return new Response("Invalid page", { status: 400 });
+const scope = `organizations/${client.organization_id}/command-center/`;
+try {
+  if (section === "opportunities") {
+    if (sourceId)
+      detail = adaptDetail(
+        await read(Astro.locals, scope + `opportunities/${sourceId}/`),
+        client.organization_id,
+        sourceId,
+      );
+    else {
+      const payload = await read<{
+        data: unknown[];
+        next_offset: number | null;
+      }>(Astro.locals, scope + `opportunities/?offset=${offset}`);
+      opportunities = adaptOpportunities(payload, client.organization_id);
+      next = payload.next_offset;
+    }
+  } else if (section === "attention") {
+    const payload = await read<{ data: unknown[]; next_offset: number | null }>(
+      Astro.locals,
+      scope + `attention/?offset=${offset}`,
+    );
+    attention = adaptAttention(payload);
+    next = payload.next_offset;
+  }
+} catch (e) {
+  if (e instanceof APIError && [403, 404].includes(e.status))
+    return new Response("Source not found", { status: 404 });
+  error =
+    "This source is temporarily unavailable. No sample data is substituted.";
+}
+const title =
+  section === "opportunities"
+    ? "Opportunities"
+    : section === "attention"
+      ? "Requires attention"
+      : section
+        ? section.replaceAll("-", " ")
+        : client.organization_name;
+---
+
+<AppLayout title={title} organizations={rows} client={client}>
+  {
+    detail ? (
+      <DialogFrame
+        id="opportunity-detail"
+        returnTo={`/clients/${client.organization_slug}/opportunities/`}
+      >
+        <OpportunityDetail
+          slot="body"
+          detail={detail}
+          slug={client.organization_slug}
+        />
+      </DialogFrame>
+    ) : (
+      <Fragment>
+        <div class="pagehead">
+          <div>
+            <>
+              <h1>{title}</h1>
+              <p>{client.organization_name}</p>
+            </>
+          </div>
+        </div>
+        {error ? (
+          <p role="alert">{error}</p>
+        ) : section === "opportunities" ? (
+          opportunities.length ? (
+            <div class="panel">
+              <table>
+                <caption>Canonical SEO opportunities</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Opportunity</th>
+                    <th scope="col">Priority</th>
+                    <th scope="col">Observed</th>
+                    <th scope="col">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {opportunities.map((o) => (
+                    <OpportunityRow
+                      opportunity={o}
+                      slug={client.organization_slug}
+                    />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div class="panel">
+              <h2>No opportunities</h2>
+              <p>No canonical opportunities are available in this scope.</p>
+            </div>
+          )
+        ) : section === "attention" ? (
+          <div class="panel">
+            <h2>Operational attention</h2>
+            {attention.length ? (
+              attention.map((item) => (
+                <div class="listrow">
+                  <div>
+                    <a
+                      href={`/clients/${client.organization_slug}/opportunities/${item.opportunity_id}/`}
+                    >
+                      {item.reason.replaceAll("_", " ")}
+                    </a>
+                    <small>
+                      {item.status}
+                      {item.code ? ` · ${item.code}` : ""}
+                    </small>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <p>No attention items in this page of canonical SEO work.</p>
+            )}
+          </div>
+        ) : (
+          <div class="panel">
+            <h2>Source unavailable</h2>
+            <p>This product area is awaiting its integration phase.</p>
+            <a href={`/clients/${client.organization_slug}/opportunities/`}>
+              View opportunities
+            </a>
+          </div>
+        )}
+        {next !== null && <a href={`?offset=${next}`}>Next page</a>}
+      </Fragment>
+    )
+  }
+</AppLayout>

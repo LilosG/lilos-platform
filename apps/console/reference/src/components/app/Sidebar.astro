@@ -1,0 +1,35 @@
+---
+import type { ViewContext } from "../../types/domain";
+import { route } from "../../config/routes";
+import PortfolioNav from "../navigation/PortfolioNav.astro";
+import ClientNav from "../navigation/ClientNav.astro";
+interface Props {
+  context: ViewContext;
+}
+const { context } = Astro.props;
+---
+
+<aside id="sidebar" aria-label="Application navigation">
+  <a class="brand" href={route()}>
+    <span class="logo">L</span>
+    <span>
+      LILOs<small>GROWTH</small>
+    </span>
+  </a>
+  {context.client ? (
+    <ClientNav client={context.client} area={context.state.tab} />
+  ) : (
+    <PortfolioNav page={context.state.page} />
+  )}
+  <div class="sidebarbottom">
+    <div class="person">
+      <span class="avatar">MP</span>
+      <div>
+        Mike Prickett<small data-role-label>Agency owner</small>
+      </div>
+    </div>
+    <button class="rolepreview" data-dialog="role-preview">
+      Preview navigation by role
+    </button>
+  </div>
+</aside>

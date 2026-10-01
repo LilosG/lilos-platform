@@ -50,6 +50,38 @@ jobs:
       - name: Dependency audit
         run: npm audit --audit-level=high
 
+  console:
+    name: Console contracts, security and reference slice
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      CI: "true"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22.22.3
+          cache: npm
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: "0.9.28"
+      - run: npm ci
+      - run: uv sync --locked
+      - name: OpenAPI drift
+        run: npm run contracts:check
+      - run: npm run format:check:console
+      - run: npm run lint:console
+      - run: npm run typecheck:console
+      - run: npm run test:console
+      - run: npm run build:console
+      - run: npx playwright install --with-deps chromium
+      - name: SSR auth, MFA, CSRF, tenant isolation, reference slice and axe
+        run: npm run check:console:browser
+      - run: npm audit --audit-level=high
+
   python-static-policy:
     name: Python static and policy validation
     runs-on: ubuntu-latest

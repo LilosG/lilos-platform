@@ -1,0 +1,148 @@
+---
+import type { ViewContext, Client } from "../../types/domain";
+import { clients, reports } from "../../data/fixtures";
+import { fmt, pct, scopedOpps } from "../../lib/view";
+import { route } from "../../config/routes";
+
+import StatusBadge from "../ui/StatusBadge.astro";
+
+import DialogFrame from "../ui/DialogFrame.astro";
+import MonthlyPerformanceDialog from "../reports/MonthlyPerformanceDialog.astro";
+interface Props {
+  context: ViewContext;
+  c?: Client | null;
+  id: number;
+}
+const context = Astro.props.context;
+const state = context.state;
+
+const id = Astro.props.id;
+const dialogId = "report" + "-" + id;
+const r = reports[id];
+const c = clients[r.client];
+const incomplete =
+  r.status === "Missing data" || c.website === "Tracking issue";
+---
+
+{state.client === c.id && c.workspaceProfile === "hospitality" ? (
+  <MonthlyPerformanceDialog context={context} c={c} />
+) : (
+  <Fragment>
+    <DialogFrame id={dialogId}>
+      <Fragment slot="body">
+        <div class="eyebrow">Monthly client report · {r.period}</div>
+        <h2 id={dialogId + "-title"}>
+          <span data-entity="client" data-record-id={c.id} data-field="name">
+            {c.name}
+          </span>
+        </h2>
+        <p>
+          <span data-entity="report" data-record-id={r.id} data-field="status">
+            <StatusBadge text={r.status} />
+          </span>{" "}
+          ·{" "}
+          <span data-entity="report" data-record-id={r.id} data-field="note">
+            {r.note}
+          </span>
+        </p>
+        <div class="reportpreview">
+          <h3>Performance summary</h3>
+          <p>
+            {c.change > 0
+              ? "Search visibility and organic demand improved this month."
+              : "Local visibility declined this month and requires focused recovery work."}
+          </p>
+          <ul>
+            <li>
+              Local visibility: {c.visibility}% ({pct(c.change)} points)
+            </li>
+            <li>
+              Organic visits: {fmt(c.organic)} ({pct(c.traffic)})
+            </li>
+            <li>
+              Website leads:{" "}
+              {c.website === "Tracking issue"
+                ? "Incomplete — conversion tracking stopped"
+                : c.leads}
+            </li>
+            <li>
+              New reviews: {c.newReviews} · Google rating: {c.rating}
+            </li>
+          </ul>
+          <h3>Next priorities</h3>
+          <p>
+            {c.next}.{" "}
+            {scopedOpps(c)[0]?.next ||
+              "Maintain profile health and monitor priority queries"}
+            .
+          </p>
+        </div>
+        {incomplete ? (
+          <Fragment>
+            <p>
+              Data gaps are called out in this report so the summary can still
+              be reviewed.
+            </p>
+          </Fragment>
+        ) : (
+          ""
+        )}
+      </Fragment>
+      <Fragment slot="footer">
+        <button data-command="downloadReport" data-args={JSON.stringify([id])}>
+          Download summary
+        </button>
+        <button
+          data-report-state="Sent"
+          data-report-record={r.id}
+          hidden={r.status !== "Sent"}
+          disabled
+        >
+          Sent{" "}
+          <span data-entity="report" data-record-id={r.id} data-field="date">
+            {r.date}
+          </span>
+        </button>
+        <a
+          data-report-state="Missing data"
+          data-report-record={r.id}
+          hidden={r.status !== "Missing data"}
+          href={route("client", c.id, "Integrations")}
+          class="control"
+        >
+          Review data gap
+        </a>
+        <button
+          data-report-state="Missing data"
+          data-report-record={r.id}
+          hidden={r.status !== "Missing data"}
+          class="primary"
+          data-command="markReport"
+          data-args={JSON.stringify([id, "Sent"])}
+        >
+          Mark sent with data note
+        </button>
+        <button
+          data-report-state="Needs review"
+          data-report-record={r.id}
+          hidden={r.status !== "Needs review"}
+          class="primary"
+          data-command="markReport"
+          data-args={JSON.stringify([id, "Ready"])}
+        >
+          Mark ready
+        </button>
+        <button
+          data-report-state="default"
+          data-report-record={r.id}
+          hidden={["Sent", "Missing data", "Needs review"].includes(r.status)}
+          class="primary"
+          data-command="markReport"
+          data-args={JSON.stringify([id, "Sent"])}
+        >
+          Mark as sent
+        </button>
+      </Fragment>
+    </DialogFrame>
+  </Fragment>
+)}

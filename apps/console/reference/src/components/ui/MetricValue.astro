@@ -1,0 +1,14 @@
+---
+import type { DisplayValue } from "../../types/domain";
+import PeriodValue from "./PeriodValue.astro";
+interface Props {
+  value: DisplayValue;
+}
+const { value } = Astro.props;
+---
+
+{typeof value === "object" ? (
+  <PeriodValue base={value.base} format={value.format} />
+) : (
+  value
+)}

@@ -1,0 +1,60 @@
+---
+import type { ViewContext, Client, Attention } from "../../types/domain";
+import { clients } from "../../data/fixtures";
+import { evidenceText } from "../../lib/view";
+import { route } from "../../config/routes";
+
+interface Props {
+  context: ViewContext;
+  c?: Client | null;
+  a: Attention;
+  hidden?: boolean;
+  limit?: number;
+}
+const context = Astro.props.context;
+
+let a = Astro.props.a;
+if (
+  context.client?.workspaceProfile === "hospitality" &&
+  a.client === Number(context.client.id) - 1
+)
+  a = {
+    ...a,
+    impact: evidenceText(a.impact),
+    title: a.workspaceTitle || a.title,
+  };
+---
+
+<div
+  hidden={Astro.props.hidden}
+  data-attention-limit={Astro.props.limit}
+  data-attention-id={a.id}
+  data-attention-type={a.type}
+  data-type={a.type}
+  class={`actionrow ${a.done ? "resolved" : ""}`}
+>
+  <span
+    class={`severity ${a.severity === "Medium" ? "medium" : a.severity === "Low" ? "low" : ""}`}
+  >
+    {a.done ? "✓" : a.severity === "Critical" ? "!" : "⚑"}
+  </span>
+  <div>
+    <button
+      class="link actiontitle"
+      data-command="openAction"
+      data-args={JSON.stringify([a.id])}
+    >
+      <strong>{a.title}</strong>
+    </button>
+    <p>
+      <a
+        class="clientcontextentry"
+        href={route("client", clients[a.client].id, "Overview", "Overview")}
+      >
+        {clients[a.client].name}
+      </a>{" "}
+      · {a.done ? "Resolved" : a.severity}
+    </p>
+  </div>
+  <span class="time">{a.time}</span>
+</div>

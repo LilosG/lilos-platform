@@ -1,0 +1,77 @@
+---
+import { growthOpportunityId } from "../../lib/workspace-data";
+import type { ViewContext, Client } from "../../types/domain";
+
+import StatusBadge from "../ui/StatusBadge.astro";
+
+import MetricStrip from "../ui/MetricStrip.astro";
+import { requireClient } from "../../lib/view";
+interface Props {
+  context: ViewContext;
+  c?: Client | null;
+}
+const context = Astro.props.context;
+
+const c = requireClient(context, Astro.props.c);
+
+import { legacyLinkFinding } from "../../data/fixtures/pageSignals";
+const finding = legacyLinkFinding(c);
+import SectionHeading from "../ui/SectionHeading.astro";
+
+import { hospitalityTechnicalMetrics } from "../../data/fixtures/metrics";
+---
+
+<MetricStrip
+  kind="hospitalityTechnicalMetrics"
+  context={context}
+  items={hospitalityTechnicalMetrics(c)}
+/>
+
+<section class="panel">
+  <SectionHeading>
+    <Fragment slot="title">Technical findings</Fragment>
+    <Fragment slot="actions">
+      <button data-command="runWebsiteCheck" data-args={JSON.stringify([c.id])}>
+        Run sample check
+      </button>
+    </Fragment>
+  </SectionHeading>
+  <div class="listrow">
+    <div>
+      <h3 data-legacy-link="title">{finding.title}</h3>
+      <p data-legacy-link="description">{finding.description}</p>
+    </div>
+    <span data-legacy-link="status">
+      <StatusBadge text={finding.status} />
+    </span>
+    <button data-command="openPage" data-args={JSON.stringify([c.id + "-2"])}>
+      Inspect affected page
+    </button>
+  </div>
+  <div class="listrow">
+    <div>
+      <h3>Restaurant entity fields need consistent coverage</h3>
+      <p>
+        Two landing pages omit shared restaurant identity fields. Extend the
+        centralized markup template.
+      </p>
+    </div>
+    <StatusBadge text={"Optimization"} />
+    <button
+      data-command="openOpp"
+      data-args={JSON.stringify([growthOpportunityId(c, "restaurant-markup")])}
+    >
+      View opportunity
+    </button>
+  </div>
+  <div class="listrow">
+    <div>
+      <h3>Canonical and indexing signals are consistent</h3>
+      <p>
+        24 indexable pages use the intended canonical URLs. Two utility pages
+        are intentionally excluded.
+      </p>
+    </div>
+    <StatusBadge text={"Healthy"} />
+  </div>
+</section>

@@ -1,0 +1,96 @@
+---
+import type { ViewContext, Client } from "../../types/domain";
+import { pageRecords } from "../../data/fixtures";
+import { required } from "../../lib/view";
+
+import { pageSignals } from "../../data/fixtures/pageSignals";
+import StatusBadge from "../ui/StatusBadge.astro";
+
+import DialogFrame from "../ui/DialogFrame.astro";
+
+interface Props {
+  context: ViewContext;
+  c?: Client | null;
+  id: string;
+}
+const context = Astro.props.context;
+const c = Astro.props.c ?? context.client!;
+const state = context.state;
+
+const periodLabel = (source: string) =>
+  source + " · Last " + state.range + " days";
+
+const id = Astro.props.id;
+const dialogId = "page" + "-" + id;
+const p = required(
+  pageRecords.find((x) => x.id === id),
+  "Fixture record",
+);
+
+import PeriodValue from "../ui/PeriodValue.astro";
+---
+
+<DialogFrame id={dialogId}>
+  <Fragment slot="body">
+    <div class="eyebrow">
+      {c.name} · {p.url}
+    </div>
+    <h2 id={dialogId + "-title"}>
+      <span data-entity="page" data-record-id={p.id} data-field="name">
+        {p.name}
+      </span>
+    </h2>
+    <p>
+      <span data-entity="page" data-record-id={p.id} data-field="status">
+        <StatusBadge text={p.status} />
+      </span>{" "}
+      · Updated{" "}
+      <span data-entity="page" data-record-id={p.id} data-field="last">
+        {p.last}
+      </span>
+    </p>
+    <div class="detailmetrics">
+      <div>
+        Organic sessions
+        <strong>
+          <PeriodValue base={p.sessions ?? 0} />
+        </strong>
+        <small>
+          <span data-period-label>{periodLabel("GA4")}</span>
+        </small>
+      </div>
+      <div>
+        Search clicks
+        <strong>
+          <PeriodValue base={p.clicks} />
+        </strong>
+        <small>
+          <span data-period-label>{periodLabel("Search Console")}</span>
+        </small>
+      </div>
+    </div>
+    <h3>Page signals</h3>
+    <p data-page-signals={p.id}>{pageSignals(p, c)}</p>
+    <p>
+      Technical health:{" "}
+      <span data-entity="page" data-record-id={p.id} data-field="health">
+        {p.health}
+      </span>
+      /100 · Latest website check
+    </p>
+  </Fragment>
+  <Fragment slot="footer">
+    <button data-close>Close</button>
+    <button
+      class="primary"
+      data-command="updatePage"
+      data-args={JSON.stringify([id])}
+    >
+      {p.status === "Draft"
+        ? "Publish sample page"
+        : p.status === "Issue"
+          ? "Fix sample links"
+          : "Refresh sample check"}
+    </button>
+  </Fragment>
+</DialogFrame>

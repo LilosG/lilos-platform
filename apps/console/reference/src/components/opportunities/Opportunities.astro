@@ -1,0 +1,127 @@
+---
+import type { ViewContext, Client } from "../../types/domain";
+import { clients } from "../../data/fixtures";
+import { scopedOpps } from "../../lib/view";
+
+import PageHeader from "../ui/PageHeader.astro";
+import Findings from "../opportunities/Findings.astro";
+interface Props {
+  context: ViewContext;
+  c?: Client | null;
+  embedded?: boolean;
+}
+const context = Astro.props.context;
+const state = context.state;
+const c =
+  Astro.props.c === null ? undefined : (Astro.props.c ?? context.client);
+
+const embedded = Astro.props.embedded ?? false;
+const a = scopedOpps(c).filter(
+  (o) =>
+    (state.oppType === "All types" || o.type === state.oppType) &&
+    (state.oppPriority === "All priorities" ||
+      o.impact === state.oppPriority) &&
+    (c ||
+      state.oppClient === "All clients" ||
+      clients[o.client].id === state.oppClient),
+);
+
+import {
+  opportunitiesAllTypesRows,
+  opportunitiesAllPrioritiesRows,
+} from "../../data/fixtures/presentation";
+
+import FilterBar from "../ui/FilterBar.astro";
+import OpportunityRow from "../opportunities/OpportunityRow.astro";
+
+import DataTable from "../ui/DataTable.astro";
+---
+
+{c?.workspaceProfile === "hospitality" ? (
+  <Findings context={context} c={c} />
+) : (
+  <Fragment>
+    {embedded ? (
+      ""
+    ) : (
+      <PageHeader
+        context={context}
+        title={"Opportunities"}
+        subtitle={
+          "Evidence-backed issues and growth opportunities, ready for action."
+        }
+      />
+    )}
+
+    <FilterBar class="toolbar oppfilters">
+      {!c ? (
+        <Fragment>
+          <select
+            aria-label="Filter opportunities by client"
+            data-filter="oppClient"
+          >
+            <option value="All clients">All clients</option>
+            {clients.map((c) => (
+              <Fragment>
+                <option value={c.id} selected={state.oppClient === c.id}>
+                  {c.name}
+                </option>
+              </Fragment>
+            ))}
+          </select>
+        </Fragment>
+      ) : (
+        ""
+      )}
+      <select aria-label="Filter opportunity type" data-filter="oppType">
+        {opportunitiesAllTypesRows().map((t) => (
+          <Fragment>
+            <option selected={state.oppType === t}>{t}</option>
+          </Fragment>
+        ))}
+      </select>
+      <select aria-label="Filter priority" data-filter="oppPriority">
+        {opportunitiesAllPrioritiesRows().map((t) => (
+          <Fragment>
+            <option selected={state.oppPriority === t}>{t}</option>
+          </Fragment>
+        ))}
+      </select>
+      <span class="muted" data-opportunity-count>
+        {a.length} opportunities
+      </span>
+    </FilterBar>
+    <section class="panel opportunitytable">
+      <div class="tablewrap">
+        <DataTable>
+          <thead>
+            <tr>
+              <th>Opportunity / client</th>
+              <th>Evidence</th>
+              <th>Priority</th>
+              <th>Recommended next action</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {a.length > 0 ? (
+              a.map((o) => (
+                <Fragment>
+                  <OpportunityRow opportunity={o} mode="table" />
+                </Fragment>
+              ))
+            ) : (
+              <Fragment>
+                <tr>
+                  <td colspan="5" class="empty">
+                    No opportunities match these filters.
+                  </td>
+                </tr>
+              </Fragment>
+            )}
+          </tbody>
+        </DataTable>
+      </div>
+    </section>
+  </Fragment>
+)}

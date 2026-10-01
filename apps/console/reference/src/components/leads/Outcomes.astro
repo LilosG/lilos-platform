@@ -1,0 +1,223 @@
+---
+import { growthOpportunityId } from "../../lib/workspace-data";
+import type { ViewContext, Client } from "../../types/domain";
+
+import { route } from "../../config/routes";
+
+import StatusBadge from "../ui/StatusBadge.astro";
+import Trend from "../ui/Trend.astro";
+
+import MetricStrip from "../ui/MetricStrip.astro";
+import { leads } from "../../data/fixtures/leads";
+import PeriodTotal from "../ui/PeriodTotal.astro";
+import { requireClient } from "../../lib/view";
+interface Props {
+  context: ViewContext;
+  c?: Client | null;
+}
+const context = Astro.props.context;
+const state = context.state;
+const c = requireClient(context, Astro.props.c);
+import { growthWorkspace } from "../../lib/workspace-data";
+const { metrics: hospitalityMetrics, observations: hospitalityObservations } =
+  growthWorkspace(c);
+
+const periodLabel = (source: string) =>
+  source + " · Last " + state.range + " days";
+
+import PeriodValue from "../ui/PeriodValue.astro";
+
+import { outcomeChannelRows } from "../../data/fixtures/presentation";
+
+import SectionHeading from "../ui/SectionHeading.astro";
+
+import { outcomeMetrics } from "../../data/fixtures/metrics";
+
+import InsightPanel from "../ui/InsightPanel.astro";
+import DataTable from "../ui/DataTable.astro";
+---
+
+<MetricStrip
+  kind="outcomeMetrics"
+  context={context}
+  items={outcomeMetrics(state)}
+/>
+
+<section class="panel contextual">
+  <SectionHeading>
+    <Fragment slot="title">Are search gains producing guest demand?</Fragment>
+    <Fragment slot="actions" />
+  </SectionHeading>
+  <div class="listrow">
+    <div>
+      <h3>
+        Organic sessions increased 31%, but reservation clicks declined 8%.
+      </h3>
+      <p>
+        Local visibility improved 12.4 points. The menu attracts{" "}
+        <PeriodValue base={hospitalityObservations.menuSessions} /> organic
+        sessions, with{" "}
+        <PeriodValue base={hospitalityObservations.menuReservationClicks} />{" "}
+        Reserve clicks. Fix the mobile reservation path before adding more
+        traffic.
+      </p>
+      <small>
+        <span data-period-label>{periodLabel("GA4")}</span> + latest local scan
+      </small>
+    </div>
+    <button
+      class="link"
+      data-command="openOpp"
+      data-args={JSON.stringify([growthOpportunityId(c, "reservation-path")])}
+    >
+      Inspect opportunity
+    </button>
+  </div>
+  <InsightPanel class="insight">
+    <PeriodTotal
+      parts={[
+        hospitalityMetrics.reservationClicks,
+        hospitalityMetrics.formSubmissions,
+        hospitalityMetrics.phoneClicks,
+      ]}
+    />{" "}
+    tracked website actions include reservation clicks, forms and phone clicks.
+    They are not unique guests or confirmed bookings. GBP calls are reported
+    separately.
+  </InsightPanel>
+</section>
+<section class="panel tablewrap">
+  <SectionHeading>
+    <Fragment slot="title">Outcomes by channel and landing page</Fragment>
+    <Fragment slot="actions">
+      <span class="muted">
+        Last <span data-period-days>{state.range}</span> days · GA4 / GBP
+      </span>
+      <a
+        class="link"
+        href={route("client", c.id, "Website & Content", "Conversions")}
+      >
+        Inspect conversion paths
+      </a>
+    </Fragment>
+  </SectionHeading>
+  <DataTable>
+    <thead>
+      <tr>
+        <th>Outcome / event</th>
+        <th>Source</th>
+        <th>Landing page</th>
+        <th>Count</th>
+        <th>Trend</th>
+        <th>Measurement</th>
+      </tr>
+    </thead>
+    <tbody>
+      {outcomeChannelRows().map(([o, s, p, n, t, e]) => (
+        <Fragment>
+          <tr>
+            <td>
+              {o}
+              <span class="sub">{e}</span>
+            </td>
+            <td>{s}</td>
+            <td>{p}</td>
+            <td>
+              <PeriodValue base={Number(n)} />
+            </td>
+            <td>
+              <Trend value={Number(t)} />
+            </td>
+            <td>
+              <button
+                class="link"
+                data-command="openOutcome"
+                data-args={JSON.stringify([e])}
+              >
+                Event details
+              </button>
+            </td>
+          </tr>
+        </Fragment>
+      ))}
+    </tbody>
+  </DataTable>
+  <InsightPanel class="insight">
+    Channel attribution is based on available source data. GBP call interactions
+    can overlap with website activity and are not added to website conversion
+    totals.
+  </InsightPanel>
+</section>
+<section class="panel spaced-section">
+  <SectionHeading>
+    <Fragment slot="title">Measurement gaps</Fragment>
+    <Fragment slot="actions">
+      <StatusBadge text={"Data & Tracking"} />
+    </Fragment>
+  </SectionHeading>
+  <div class="listrow">
+    <div>
+      <h3>Reservation intent is visible; completed bookings are not.</h3>
+      <p>
+        The reservation provider has no completed-booking outcome in the sample
+        reporting sources.
+      </p>
+    </div>
+    <button
+      data-command="openOpp"
+      data-args={JSON.stringify([
+        growthOpportunityId(c, "reservation-outcomes"),
+      ])}
+    >
+      Review tracking opportunity
+    </button>
+  </div>
+</section>
+<section class="panel tablewrap spaced-section">
+  <SectionHeading>
+    <Fragment slot="title">Recent private-event inquiries</Fragment>
+    <Fragment slot="actions">
+      <span class="muted">Fictional sample guests</span>
+    </Fragment>
+  </SectionHeading>
+  <DataTable>
+    <thead>
+      <tr>
+        <th>Guest</th>
+        <th>Inquiry</th>
+        <th>Source / page</th>
+        <th>Received</th>
+        <th>Status</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {leads
+        .filter((lead) => lead.clientId === c.id)
+        .map((lead, i) => (
+          <Fragment>
+            <tr>
+              <td>{lead.contact}</td>
+              <td>{lead.inquiry}</td>
+              <td>
+                {lead.displaySource}
+                <span class="sub">Private events</span>
+              </td>
+              <td>{lead.received}</td>
+              <td>
+                <StatusBadge text={lead.status} />
+              </td>
+              <td>
+                <button
+                  data-command="openLead"
+                  data-args={JSON.stringify([c.id, i])}
+                >
+                  View inquiry
+                </button>
+              </td>
+            </tr>
+          </Fragment>
+        ))}
+    </tbody>
+  </DataTable>
+</section>

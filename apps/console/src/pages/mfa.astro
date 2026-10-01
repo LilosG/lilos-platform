@@ -1,0 +1,122 @@
+---
+import AppLayout from "../layouts/AppLayout.astro";
+import { assertMutation, boundedBody, safeReturn } from "../server/security";
+const client = Astro.locals.auth.client;
+const target = safeReturn(Astro.url.searchParams.get("return"));
+const { data: assurance } =
+  await client.auth.mfa.getAuthenticatorAssuranceLevel();
+let factorId: string | undefined;
+let secret: string | undefined;
+let qr: string | undefined;
+let error: string | undefined;
+const { data: factors, error: factorError } =
+  await client.auth.mfa.listFactors();
+if (factorError) error = "MFA is temporarily unavailable.";
+factorId = factors?.totp.find((f) => f.status === "verified")?.id;
+if (Astro.request.method === "POST") {
+  try {
+    if (
+      Astro.request.headers.get("content-type")?.split(";", 1)[0] !==
+      "application/x-www-form-urlencoded"
+    )
+      throw new Error("FORM_INVALID");
+    const form = new URLSearchParams(await boundedBody(Astro.request, 16384));
+    assertMutation(
+      Astro.request,
+      form.get("csrf") ?? "",
+      Astro.locals.binding,
+      Astro.locals.userId,
+      Astro.locals.settings,
+    );
+    if (!factorId) {
+      for (const factor of factors?.all ?? [])
+        if (factor.factor_type === "totp" && factor.status === "unverified") {
+          const { error } = await client.auth.mfa.unenroll({
+            factorId: factor.id,
+          });
+          if (error) throw error;
+        }
+      const { data, error } = await client.auth.mfa.enroll({
+        factorType: "totp",
+      });
+      if (error) throw error;
+      factorId = data.id;
+      secret = data.totp.secret;
+      qr =
+        "data:image/svg+xml;base64," +
+        Buffer.from(data.totp.qr_code).toString("base64");
+    }
+  } catch {
+    Astro.response.status = 403;
+    error = "Enrollment request denied.";
+  }
+}
+---
+
+<AppLayout title="Account security"
+  ><div class="pagehead">
+    <div>
+      <h1>Account security</h1><p>
+        Verify your authenticator before approving an exact change.
+      </p>
+    </div>
+  </div>
+  {error && <p role="alert">{error}</p>}
+  {
+    Astro.url.searchParams.has("error") && (
+      <p role="alert">Invalid authenticator code. Try again.</p>
+    )
+  }
+  {
+    assurance?.currentLevel === "aal2" ? (
+      <p>
+        Authenticator verified. <a href={target}>Return to workspace</a>
+      </p>
+    ) : factorId ? (
+      <section class="panel">
+        {qr && (
+          <img
+            src={qr}
+            alt="Scan this code with your authenticator"
+            width="200"
+            height="200"
+          />
+        )}
+        {secret && (
+          <p>
+            Setup key: <code>{secret}</code>
+          </p>
+        )}
+        <form method="post" action="/auth/mfa-verify/">
+          <>
+            <input type="hidden" name="csrf" value={Astro.locals.csrf} />
+            <input type="hidden" name="factor_id" value={factorId} />
+            <input type="hidden" name="return" value={target} />
+            <label>
+              Authenticator code
+              <input
+                name="code"
+                inputmode="numeric"
+                autocomplete="one-time-code"
+                pattern="[0-9]{6}"
+                required
+              />
+            </label>
+            <button type="submit">Verify</button>
+          </>
+        </form>
+      </section>
+    ) : (
+      <form
+        method="post"
+        action={Astro.url.pathname + Astro.url.search}
+        class="panel"
+      >
+        <>
+          <input type="hidden" name="csrf" value={Astro.locals.csrf} />
+          <button type="submit">Set up authenticator</button>
+        </>
+      </form>
+    )
+  }
+</AppLayout>

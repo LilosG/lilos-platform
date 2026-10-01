@@ -1,0 +1,91 @@
+---
+import type { ViewContext, Client } from "../../types/domain";
+import { systems } from "../../data/fixtures";
+
+import { route } from "../../config/routes";
+
+import StatusBadge from "../ui/StatusBadge.astro";
+
+import PageHeader from "../ui/PageHeader.astro";
+interface Props {
+  context: ViewContext;
+  c?: Client | null;
+}
+const context = Astro.props.context;
+
+import InsightPanel from "../ui/InsightPanel.astro";
+---
+
+<PageHeader
+  context={context}
+  title={"Integrations"}
+  subtitle={"External connections and the data available from each source."}
+/>
+
+<div class="healthgrid">
+  {systems.map((s, i) => (
+    <Fragment>
+      <section class="panel health" data-system={i}>
+        <div class="controls">
+          <span class="bigicon">{s[1]}</span>
+          <span class="push-end">
+            <span data-system-field="status">
+              <StatusBadge text={s[2]} />
+            </span>
+          </span>
+        </div>
+        <h2>{s[0]}</h2>
+        <p>{s[5]}</p>
+        <div class="progress">
+          <i
+            data-system-field="progress"
+            style={`width:${(s[3] / 12) * 100}%`}
+          ></i>
+        </div>
+        <p>
+          <b data-system-field="count">{s[3]} / 12</b> clients connected
+        </p>
+        <small class="sub" data-system-field="note">
+          {s[4]}
+        </small>
+        <small class="sub">Last successful sync: 18 minutes ago</small>
+        <small class="sub" data-system-field="authorization">
+          Authorization:{" "}
+          {s[2] === "Connected"
+            ? "Authorized"
+            : i === 0
+              ? "1 account expired"
+              : "Authorized · event setup needs attention"}
+        </small>
+        <small class="sub" data-system-field="freshness">
+          Data freshness:{" "}
+          {s[2] === "Connected"
+            ? "Fresh"
+            : "Connected sources fresh; flagged clients incomplete"}
+        </small>
+        <button data-command="openSystem" data-args={JSON.stringify([i])}>
+          View connections
+        </button>
+        {i === 0 ? (
+          <Fragment>
+            <div class="capability">
+              <b>Included capabilities</b>
+              <small>
+                Profile performance · Posts · Google reviews and responses
+              </small>
+            </div>
+          </Fragment>
+        ) : (
+          ""
+        )}
+      </section>
+    </Fragment>
+  ))}
+</div>
+<InsightPanel class="insight contextinsight spaced-section">
+  Website checks and reporting schedules are managed in{" "}
+  <a class="link" href={route("automations")}>
+    Automations
+  </a>
+  {"."} Google review access comes from the Google Business Profile connection.
+</InsightPanel>

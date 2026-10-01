@@ -1,0 +1,28 @@
+---
+import type { ViewContext, Client } from "../../types/domain";
+import { scopedOpps } from "../../lib/view";
+import OpportunityRow from "./OpportunityRow.astro";
+import EmptyState from "../ui/EmptyState.astro";
+interface Props {
+  context: ViewContext;
+  c?: Client | null;
+  limit?: number;
+}
+const { context, c = context.client, limit = 3 } = Astro.props;
+const records = scopedOpps(c).filter((o) => !o.started);
+---
+
+{records.map((opportunity, index) => (
+  <OpportunityRow
+    opportunity={opportunity}
+    mode="compact"
+    client={c ?? undefined}
+    hidden={index >= limit}
+    limit={limit}
+  />
+))}
+<div data-opportunity-empty hidden={records.length > 0}>
+  <EmptyState>
+    No new opportunities. Work in progress is available in Opportunities.
+  </EmptyState>
+</div>

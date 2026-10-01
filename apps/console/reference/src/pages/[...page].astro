@@ -1,0 +1,72 @@
+---
+import { createContext } from "../lib/view";
+import AppLayout from "../layouts/AppLayout.astro";
+import Dashboard from "../components/portfolio/Dashboard.astro";
+import ClientTable from "../components/portfolio/ClientTable.astro";
+import Opportunities from "../components/opportunities/Opportunities.astro";
+import Reports from "../components/reports/Reports.astro";
+import Automations from "../components/automations/Automations.astro";
+import PortfolioIntegrations from "../components/integrations/PortfolioIntegrations.astro";
+import Administration from "../components/portfolio/Administration.astro";
+import Attention from "../components/portfolio/Attention.astro";
+import Activity from "../components/portfolio/Activity.astro";
+import PageHeader from "../components/ui/PageHeader.astro";
+export function getStaticPaths() {
+  return [
+    "dashboard",
+    "clients",
+    "opportunities",
+    "reports",
+    "automations",
+    "integrations",
+    "administration",
+    "attention",
+    "activity",
+  ]
+    .map((page) => ({
+      params: { page: page === "dashboard" ? undefined : page },
+      props: { page, adminTab: "Clients / organizations" },
+    }))
+    .concat(
+      ["Onboarding", "Users", "Platform / system"].map((adminTab) => ({
+        params: {
+          page:
+            "administration/" +
+            (adminTab === "Platform / system"
+              ? "platform"
+              : adminTab.toLowerCase()),
+        },
+        props: { page: "administration", adminTab },
+      })),
+    );
+}
+const { page, adminTab } = Astro.props;
+const context = createContext(page);
+context.state.adminTab = adminTab;
+const views = {
+  dashboard: Dashboard,
+  opportunities: Opportunities,
+  reports: Reports,
+  automations: Automations,
+  integrations: PortfolioIntegrations,
+  administration: Administration,
+  attention: Attention,
+  activity: Activity,
+};
+const View = views[page as keyof typeof views];
+---
+
+<AppLayout context={context}>
+  {page === "clients" ? (
+    <Fragment>
+      <PageHeader
+        context={context}
+        title="Client portfolio"
+        subtitle="Every client, one operational view."
+      />
+      <ClientTable context={context} />
+    </Fragment>
+  ) : (
+    <View context={context} />
+  )}
+</AppLayout>

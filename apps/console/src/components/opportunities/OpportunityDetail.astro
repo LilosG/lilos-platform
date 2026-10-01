@@ -1,0 +1,283 @@
+---
+import type { OpportunityDetail } from "../../adapters/opportunities";
+import { displayEvidence } from "../../adapters/opportunities";
+interface Props {
+  detail: OpportunityDetail;
+  slug: string;
+}
+const { detail: d } = Astro.props;
+const o = d.data;
+const current = d.recommendations[0];
+const scope = `/api/organizations/${o.organization_id}/seo/`;
+---
+
+<div class="pagehead">
+  <div>
+    <span class="eyebrow">{o.classification}</span><h1
+      id="opportunity-detail-title"
+    >
+      {o.source_type.replaceAll("_", " ")}
+    </h1><p>{o.status} · Priority {o.priority ?? "unavailable"}</p>
+  </div><a href={`/clients/${Astro.props.slug}/opportunities/`}
+    >All opportunities</a
+  >
+</div>
+<div class="reportpreview">
+  <h2>Evidence</h2><p>
+    Source: {o.evidence_context.source ?? "Unavailable"} · Quality: {
+      o.evidence_context.quality ?? "Unavailable"
+    }
+  </p><p>
+    Observed: {o.evidence_context.freshness_at ?? "Unavailable"} · Period: {
+      o.evidence_context.period_start ?? "Unavailable"
+    } – {o.evidence_context.period_end ?? "Unavailable"}
+  </p><p>Target page: {d.page_url ?? "No attributed page"}</p>
+  <h3>Why it was discovered</h3><p>
+    {
+      typeof o.evidence.issue === "string"
+        ? o.evidence.issue.replaceAll("_", " ")
+        : typeof o.evidence.query === "string"
+          ? `Search query: ${o.evidence.query}`
+          : "Discovery explanation unavailable."
+    }
+  </p>
+  {
+    [
+      "clicks",
+      "impressions",
+      "ctr",
+      "position",
+      "http_status",
+      "indexability",
+      "evidence_limitation",
+    ].map(
+      (key) =>
+        o.evidence[key] != null && (
+          <p>
+            {key.replaceAll("_", " ")}: {displayEvidence(o.evidence[key])}
+          </p>
+        ),
+    )
+  }
+  <h3>Why it matters</h3><p>
+    {
+      typeof o.score_explanation.reason === "string"
+        ? o.score_explanation.reason
+        : typeof o.score_explanation.business_evidence_limitation === "string"
+          ? o.score_explanation.business_evidence_limitation
+          : "Business importance evidence is unavailable."
+    }
+  </p>
+  {
+    o.evidence_context.limitation_code && (
+      <p role="status">
+        Evidence availability: {o.evidence_context.limitation_code}
+      </p>
+    )
+  }
+</div>
+{
+  !current && (
+    <section class="panel">
+      <>
+        <h2>Recommendation</h2>
+        <p>No recommendation has been created.</p>
+        <button
+          disabled={!d.can_recommend}
+          data-start={scope + `opportunities/${o.source_id}/hermes-run/`}
+        >
+          Request recommendation
+        </button>
+      </>
+    </section>
+  )
+}
+{
+  d.recommendations.map((r, index) => (
+    <section class="panel" data-revision-id={r.id}>
+      <h2>Recommendation revision {r.revision_number}</h2>
+      <p>Status: {r.status}</p>
+      <p>{r.proposed_action}</p>
+      <p>Expected result: {r.expected_result_hypothesis}</p>
+      <p>
+        Risk: {r.risk} · Effort: {r.effort}
+      </p>
+      <p>Deterministic quality: {r.quality.state}</p>
+      <p>
+        Protected query: {r.quality.target_query ?? "Unavailable"} · Top
+        queries: {r.quality.top_queries.join(", ") || "Unavailable"} ·
+        Locations: {r.quality.location_terms.join(", ") || "Unavailable"}
+      </p>
+      {r.quality.problems.map((p) => (
+        <p>
+          {p.code}: {p.reason}
+        </p>
+      ))}
+      <p>
+        Current repository values and the approved fingerprint are rechecked by
+        the executor before writing. A displayed proposal alone is not live
+        verification.
+      </p>
+      {r.change_set.map((edit) => (
+        <div>
+          <h3>{edit.field}</h3>
+          <p>Target page: {d.page_url ?? "Unavailable"}</p>
+          <div class="beforeafter">
+            <div>
+              <h4>Current value</h4>
+              <pre>{edit.current_value || "(empty)"}</pre>
+            </div>
+            <div>
+              <h4>Proposed value</h4>
+              <pre>{edit.proposed_value}</pre>
+            </div>
+          </div>
+          <p>{edit.rationale}</p>
+        </div>
+      ))}
+      {index === 0 && r.status === "awaiting_approval" && (
+        <Fragment>
+          {d.can_recommend && r.change_set.length > 0 && (
+            <form data-revise={scope + `recommendations/${r.id}/revise/`}>
+              {r.change_set.map((edit) => (
+                <label>
+                  {edit.field}
+                  <textarea name={edit.field} required>
+                    {edit.proposed_value}
+                  </textarea>
+                </label>
+              ))}
+              <button type="submit">Save new revision</button>
+            </form>
+          )}
+          {!d.can_approve && (
+            <a href={`/mfa/?return=${encodeURIComponent(Astro.url.pathname)}`}>
+              Verify authenticator to request approval access
+            </a>
+          )}
+          <button
+            data-decision={scope + `recommendations/${r.id}/decision/`}
+            disabled={!d.can_approve || r.quality.state === "blocked"}
+          >
+            Approve exact revision {r.revision_number}
+          </button>
+          <button
+            data-reject={scope + `recommendations/${r.id}/decision/`}
+            disabled={!d.can_approve}
+          >
+            Reject revision
+          </button>
+        </Fragment>
+      )}
+      {r.change_set_limitation_code && (
+        <p role="status">{r.change_set_limitation_code}</p>
+      )}
+      {r.site_change && (
+        <div>
+          <h3>Publication</h3>
+          <p>Deployment: {r.site_change.deployment_status ?? "Unavailable"}</p>
+          <p>
+            Live verification observed:{" "}
+            {r.site_change.verified_at ?? "Unavailable"}
+          </p>
+          <p>
+            Mapping: {r.site_change.mapping_state ?? "Unavailable"} · State:{" "}
+            {r.site_change.publication_status ?? "Not reserved"}
+          </p>
+          <p>
+            Build: {r.site_change.build_gate ?? "Unavailable"} /{" "}
+            {r.site_change.build_state ?? "Unavailable"} · Verification:{" "}
+            {r.site_change.verification_state ?? "Unavailable"}
+          </p>
+          {r.site_change.pull_request_url && (
+            <a href={r.site_change.pull_request_url} rel="noreferrer">
+              Open pull request
+            </a>
+          )}
+          {r.site_change.blocked_code && (
+            <p role="status">{r.site_change.blocked_code}</p>
+          )}
+          <h4>Live read-back</h4>
+          {r.site_change.live_checks.length ? (
+            r.site_change.live_checks.map((check) => (
+              <p>
+                {check.field}: {check.state} · Expected{" "}
+                {displayEvidence(check.expected)} · Observed{" "}
+                {displayEvidence(check.observed)}
+              </p>
+            ))
+          ) : (
+            <p>Live read-back unavailable.</p>
+          )}
+        </div>
+      )}
+    </section>
+  ))
+}
+<section class="panel">
+  <h2>Workflow and implementation</h2>{
+    d.runs.length ? (
+      d.runs.map((run) => (
+        <p>
+          Workflow: {run.status} · Implementation: {run.task_status}
+        </p>
+      ))
+    ) : (
+      <p>No implementation run has been reserved.</p>
+    )
+  }
+</section>
+<p id="action-status" role="status" aria-live="polite"></p>
+<script>
+  async function mutate(url: string, body: unknown) {
+    const status = document.getElementById("action-status")!;
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRF-Token":
+            document.querySelector<HTMLMetaElement>('meta[name="csrf-token"]')
+              ?.content ?? "",
+          "X-Correlation-ID": crypto.randomUUID(),
+        },
+        body: JSON.stringify(body),
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        status.textContent = `Action unavailable (${error.code ?? error.error?.code ?? response.status}). Refresh to inspect current state.`;
+        return;
+      }
+      window.location.reload();
+    } catch {
+      status.textContent =
+        "Action outcome uncertain. Refresh to inspect current state before trying again.";
+    }
+  }
+  document
+    .querySelectorAll<HTMLButtonElement>(
+      "[data-decision],[data-reject],[data-start]",
+    )
+    .forEach((button) =>
+      button.addEventListener("click", () => {
+        button.disabled = true;
+        void mutate(
+          button.dataset.decision ??
+            button.dataset.reject ??
+            button.dataset.start!,
+          button.dataset.start ? {} : { approve: !!button.dataset.decision },
+        );
+      }),
+    );
+  document.querySelectorAll<HTMLFormElement>("[data-revise]").forEach((form) =>
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      void mutate(form.dataset.revise!, {
+        edits: [...new FormData(form)].map(([field, proposed_value]) => ({
+          field,
+          proposed_value,
+        })),
+      });
+    }),
+  );
+</script>

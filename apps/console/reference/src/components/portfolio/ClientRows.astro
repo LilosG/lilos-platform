@@ -1,0 +1,139 @@
+---
+import type { ViewContext, Client } from "../../types/domain";
+
+import { pct } from "../../lib/view";
+import { route } from "../../config/routes";
+import { filteredClients as selectClients } from "../../lib/selectors";
+import StatusBadge from "../ui/StatusBadge.astro";
+import Trend from "../ui/Trend.astro";
+
+interface Props {
+  context: ViewContext;
+  c?: Client | null;
+}
+const context = Astro.props.context;
+const state = context.state;
+
+const filteredClients = () => selectClients(state);
+
+let a = filteredClients();
+
+import PeriodValue from "../ui/PeriodValue.astro";
+---
+
+{a.length ? (
+  a.map((c) => (
+    <Fragment>
+      <tr
+        data-client-row={c.id}
+        data-client-record={c.id}
+        data-row-href={route("client", c.id)}
+        class="clientrow"
+        aria-label={`Open ${c.name} workspace`}
+      >
+        <td>
+          <div class="clientcell">
+            <span class="clientmark">
+              {c.name
+                .split(" ")
+                .map((x) => x[0])
+                .slice(0, 2)}
+            </span>
+            <div>
+              <a class="clientname" href={route("client", c.id)}>
+                <span
+                  data-entity="client"
+                  data-record-id={c.id}
+                  data-field="name"
+                >
+                  {c.name}
+                </span>
+              </a>
+              <span class="sub">
+                <span
+                  data-entity="client"
+                  data-record-id={c.id}
+                  data-field="location"
+                >
+                  {c.location}
+                </span>{" "}
+                ·{" "}
+                {c.locations > 1 ? (
+                  <Fragment>
+                    {c.locations}
+                    {" locations"}
+                  </Fragment>
+                ) : (
+                  c.category
+                )}
+              </span>
+            </div>
+          </div>
+        </td>
+        <td>
+          <b>{c.visibility}%</b>
+          <svg class="spark" viewBox="0 0 65 24" aria-hidden="true">
+            <path
+              d={
+                c.change > 0
+                  ? "M0 20L10 15L20 17L30 9L40 12L50 6L65 3"
+                  : "M0 3L10 7L20 6L30 13L40 10L50 18L65 21"
+              }
+              fill="none"
+              stroke={c.change > 0 ? "#4c8560" : "#b16857"}
+              stroke-width="2"
+            />
+          </svg>
+          <span class={`sub ${c.change < 0 ? "negative" : "positive"}`}>
+            {pct(c.change)} pts
+          </span>
+        </td>
+        <td>{c.rank}</td>
+        <td>
+          <PeriodValue base={c.organic} />
+          <span class="sub">
+            <Trend value={c.traffic} />
+          </span>
+        </td>
+        <td>
+          <b>
+            <PeriodValue base={c.leads} />
+          </b>
+        </td>
+        <td>
+          {c.rating.toFixed(1)} <span class="reviewstar-tone">★</span>
+          <span class="sub">
+            {c.reviews} total · +<PeriodValue base={c.newReviews} />
+          </span>
+        </td>
+        <td>
+          <span data-entity="client" data-record-id={c.id} data-field="status">
+            <StatusBadge text={c.status} />
+          </span>
+          <span class="sub">
+            {c.gbp !== "Healthy"
+              ? "GBP disconnected"
+              : c.website !== "Healthy"
+                ? c.website
+                : c.integration !== "Connected"
+                  ? c.integration
+                  : "GBP · Web · Data healthy"}
+          </span>
+        </td>
+        <td>
+          <span class="sub lastactivity">{c.activity}</span>
+          <b class="weight-medium">{c.next.split(" · ")[0]}</b>
+          <span class="sub">{c.next.split(" · ")[1]}</span>
+        </td>
+      </tr>
+    </Fragment>
+  ))
+) : (
+  <Fragment>
+    <tr>
+      <td colspan="8" class="empty">
+        No clients match. Try another search or filter.
+      </td>
+    </tr>
+  </Fragment>
+)}

@@ -1,0 +1,444 @@
+---
+import { growthOpportunityId } from "../../lib/workspace-data";
+import type { ViewContext, Client } from "../../types/domain";
+import { pageRecords } from "../../data/fixtures";
+
+import { route, localTabs } from "../../config/routes";
+
+import StatusBadge from "../ui/StatusBadge.astro";
+
+import TabNav from "../navigation/TabNav.astro";
+import MetricStrip from "../ui/MetricStrip.astro";
+import RankingDistribution from "../local-search/RankingDistribution.astro";
+import QueryTable from "../local-search/QueryTable.astro";
+import OpportunityList from "../opportunities/OpportunityList.astro";
+import PageTable from "../website-content/PageTable.astro";
+import TechnicalFindings from "../website-content/TechnicalFindings.astro";
+
+import MetricValue from "../ui/MetricValue.astro";
+import { requireClient } from "../../lib/view";
+interface Props {
+  context: ViewContext;
+  c?: Client | null;
+}
+const context = Astro.props.context;
+const state = context.state;
+const c = requireClient(context, Astro.props.c);
+import { growthWorkspace } from "../../lib/workspace-data";
+const { observations: hospitalityObservations } = growthWorkspace(c);
+
+const t = localTabs.includes(state.subtab) ? state.subtab : "Overview";
+
+import PeriodValue from "../ui/PeriodValue.astro";
+
+import { profileAndSearchRows } from "../../data/fixtures/presentation";
+
+import SectionHeading from "../ui/SectionHeading.astro";
+import FilterBar from "../ui/FilterBar.astro";
+
+import {
+  hospitalitySearchConsoleMetrics,
+  hospitalityGbpMetrics,
+  hospitalityRankingMetrics,
+  hospitalityLocalSearchMetrics,
+} from "../../data/fixtures/metrics";
+
+import InsightPanel from "../ui/InsightPanel.astro";
+---
+
+<TabNav context={context} tabs={localTabs} />
+{t === "Technical" ? (
+  <TechnicalFindings context={context} c={c} />
+) : t === "Pages" ? (
+  <PageTable context={context} c={c} mode={"seo"} />
+) : t === "Search Console" ? (
+  <Fragment>
+    <MetricStrip
+      kind="hospitalitySearchConsoleMetrics"
+      context={context}
+      items={hospitalitySearchConsoleMetrics(state)}
+    />
+    <QueryTable context={context} mode={"organic"} />
+
+    <section class="panel spaced-section">
+      <SectionHeading>
+        <Fragment slot="title">Search landing pages</Fragment>
+        <Fragment slot="actions">
+          <a class="link" href={route("client", c.id, "Local Search", "Pages")}>
+            Inspect pages
+          </a>
+        </Fragment>
+      </SectionHeading>
+      <div class="listrow">
+        <div>
+          <h3>Menu: growing brunch demand</h3>
+          <p>
+            Five query clusters feed the menu. A dedicated brunch page can
+            better match that intent.
+          </p>
+        </div>
+        <button
+          data-command="openOpp"
+          data-args={JSON.stringify([growthOpportunityId(c, "brunch-demand")])}
+        >
+          View finding
+        </button>
+      </div>
+      <div class="listrow">
+        <div>
+          <h3>Private events: unanswered planning questions</h3>
+          <p>
+            <PeriodValue base={hospitalityObservations.eventImpressions} />{" "}
+            Search Console impressions and{" "}
+            <PeriodValue base={hospitalityObservations.eventInquiries} /> GA4
+            inquiries support clearer group-dining content.
+          </p>
+        </div>
+        <button
+          data-command="openOpp"
+          data-args={JSON.stringify([
+            growthOpportunityId(c, "private-event-content"),
+          ])}
+        >
+          View finding
+        </button>
+      </div>
+    </section>
+  </Fragment>
+) : t === "Google Business Profile" ? (
+  <Fragment>
+    <MetricStrip
+      kind="hospitalityGbpMetrics"
+      context={context}
+      items={hospitalityGbpMetrics()}
+    />
+
+    <section class="panel">
+      <SectionHeading>
+        <Fragment slot="title">Google Business Profile operations</Fragment>
+        <Fragment slot="actions">
+          <StatusBadge text={"Connected"} />
+        </Fragment>
+      </SectionHeading>
+      <div class="listrow">
+        <div>
+          <h3>Profile and categories</h3>
+          <p>
+            {c.name} · {c.category} · {c.location.replace(", CA", "")}
+          </p>
+        </div>
+        <button data-command="showProfile" data-args={JSON.stringify([c.id])}>
+          Profile details
+        </button>
+        <button
+          class="link"
+          data-command="openOpp"
+          data-args={JSON.stringify([
+            growthOpportunityId(c, "brunch-category"),
+          ])}
+        >
+          Review category opportunity
+        </button>
+      </div>
+      <div class="listrow">
+        <div>
+          <h3>Brunch highlight post</h3>
+          <p>September 30 · 10:00 AM Pacific</p>
+        </div>
+        <button data-command="openPost" data-args={JSON.stringify([c.id])}>
+          Edit scheduled post
+        </button>
+      </div>
+      <div class="listrow">
+        <div>
+          <h3>Google reviews and responses</h3>
+          <p>
+            4.8 rating ·{" "}
+            <PeriodValue base={hospitalityObservations.newReviews} /> new
+            reviews · Last <span data-period-days>{state.range}</span> days ·
+            GBP authorization
+          </p>
+        </div>
+        <a href={route("client", c.id, "Reviews")} class="control">
+          Open review inbox
+        </a>
+      </div>
+      <InsightPanel class="insight">
+        GBP actions increased after the September 27 profile refresh. Compare
+        the next period before attributing the full change to that work.
+      </InsightPanel>
+    </section>
+  </Fragment>
+) : t === "Rankings" ? (
+  <Fragment>
+    <MetricStrip
+      kind="hospitalityRankingMetrics"
+      context={context}
+      items={hospitalityRankingMetrics()}
+    />
+    <RankingDistribution context={context} />
+
+    <div class="spaced-section">
+      <QueryTable context={context} mode={"rankings"} />
+    </div>
+    <FilterBar class="toolbar">
+      <button data-command="runRankScan" data-args={JSON.stringify([c.id])}>
+        Run sample ranking scan
+      </button>
+      <button
+        class="link"
+        data-command="openOpp"
+        data-args={JSON.stringify([growthOpportunityId(c, "brunch-demand")])}
+      >
+        Review brunch growth opportunity
+      </button>
+    </FilterBar>
+  </Fragment>
+) : t === "Overview" ? (
+  <Fragment>
+    <MetricStrip
+      kind="hospitalityLocalSearchMetrics"
+      context={context}
+      items={hospitalityLocalSearchMetrics(state)}
+    />
+
+    <div class="grid">
+      <RankingDistribution context={context} />
+      <section class="panel">
+        <SectionHeading>
+          <Fragment slot="title">What is driving search performance</Fragment>
+          <Fragment slot="actions" />
+        </SectionHeading>
+        <div class="listrow">
+          <div>
+            <h3>Brunch demand is outrunning its landing page.</h3>
+            <p>
+              <PeriodValue base={hospitalityObservations.brunchImpressions} />{" "}
+              Search Console impressions across five brunch queries lead to the
+              broad menu. Build focused coverage to convert existing demand.
+            </p>
+          </div>
+          <button
+            class="link"
+            data-command="openOpp"
+            data-args={JSON.stringify([
+              growthOpportunityId(c, "brunch-demand"),
+            ])}
+          >
+            Inspect
+          </button>
+        </div>
+        <div class="listrow">
+          <div>
+            <h3>GBP activity grew after the latest optimization.</h3>
+            <p>
+              Calls, website clicks and directions increased 22%. Check category
+              relevance and review momentum next.
+            </p>
+          </div>
+          <a
+            class="link"
+            href={route(
+              "client",
+              c.id,
+              "Local Search",
+              "Google Business Profile",
+            )}
+          >
+            GBP details
+          </a>
+        </div>
+      </section>
+    </div>
+    <QueryTable context={context} mode={"rankings"} limit={3} />
+    <div class="grid spaced-section">
+      <section class="panel">
+        <SectionHeading>
+          <Fragment slot="title">Profile and organic search</Fragment>
+          <Fragment slot="actions" />
+        </SectionHeading>
+        {profileAndSearchRows(state).map(([l, n, a]) => (
+          <Fragment>
+            <div class="listrow">
+              <div>
+                {l}
+                <small>{a}</small>
+              </div>
+              <b>
+                <MetricValue value={n} />
+              </b>
+            </div>
+          </Fragment>
+        ))}
+        <InsightPanel class="insight">
+          Profile actions are intent signals, not completed reservations.
+        </InsightPanel>
+      </section>
+      <section class="panel">
+        <SectionHeading>
+          <Fragment slot="title">Indexing and technical health</Fragment>
+          <Fragment slot="actions">
+            <a
+              class="link"
+              href={route("client", c.id, "Local Search", "Technical")}
+            >
+              Inspect
+            </a>
+          </Fragment>
+        </SectionHeading>
+        <div class="listrow">
+          <div>
+            Indexed pages<small>Search Console · latest sync</small>
+          </div>
+          <b>24</b>
+        </div>
+        <div class="listrow">
+          <div>
+            Excluded utility pages
+            <small>Intentional noindex · no action needed</small>
+          </div>
+          <b>2</b>
+        </div>
+        <div class="listrow">
+          <div>
+            Website technical health
+            <small>
+              {c.website === "SEO issue"
+                ? "Four legacy private-event links need repair"
+                : "Legacy links repaired"}
+            </small>
+          </div>
+          <StatusBadge text={c.health + "/100"} />
+        </div>
+        <div class="listrow">
+          <div>
+            Structured data
+            <small>Restaurant fields complete on 22 of 24 pages</small>
+          </div>
+          <b>22 / 24</b>
+        </div>
+      </section>
+    </div>
+    <QueryTable context={context} mode={"organic"} limit={3} />
+    <div class="grid spaced-section">
+      <section class="panel">
+        <SectionHeading>
+          <Fragment slot="title">Priority landing pages</Fragment>
+          <Fragment slot="actions">
+            <a
+              class="link"
+              href={route("client", c.id, "Local Search", "Pages")}
+            >
+              All pages
+            </a>
+          </Fragment>
+        </SectionHeading>
+        {pageRecords
+          .filter(
+            (p) =>
+              p.client === c.id && ["Menu", "Private events"].includes(p.name),
+          )
+          .map((p) => (
+            <Fragment>
+              <div class="listrow">
+                <div>
+                  <button
+                    class="link"
+                    data-command="openPage"
+                    data-args={JSON.stringify([p.id])}
+                  >
+                    <span
+                      data-entity="page"
+                      data-record-id={p.id}
+                      data-field="name"
+                    >
+                      {p.name}
+                    </span>
+                  </button>
+                  <small>
+                    {p.name === "Menu"
+                      ? "Brunch queries · 1.6% Reserve click rate"
+                      : "Private dining demand · ${fmt(12*mult())} event inquiries"}
+                  </small>
+                </div>
+                <span
+                  data-entity="page"
+                  data-record-id={p.id}
+                  data-field="status"
+                >
+                  <StatusBadge text={p.status} />
+                </span>
+              </div>
+            </Fragment>
+          ))}
+        <InsightPanel class="insight">
+          <button
+            class="link"
+            data-command="openOpp"
+            data-args={JSON.stringify([
+              growthOpportunityId(c, "reservation-path"),
+            ])}
+          >
+            Organic sessions +31%, reservation clicks −8%: inspect the
+            reservation path.
+          </button>
+        </InsightPanel>
+      </section>
+      <section class="panel">
+        <SectionHeading>
+          <Fragment slot="title">Competitor and search gaps</Fragment>
+          <Fragment slot="actions" />
+        </SectionHeading>
+        <div class="listrow">
+          <div>
+            <h3>Brunch competitors offer dedicated landing pages.</h3>
+            <p>
+              Two sampled competitors rank in the Top 3 while {c.name}’s brunch
+              queries average 5.2.
+            </p>
+            <small>Local scan + landing page review · Sample competitors</small>
+          </div>
+          <button
+            class="link"
+            data-command="openOpp"
+            data-args={JSON.stringify([
+              growthOpportunityId(c, "brunch-demand"),
+            ])}
+          >
+            Compare gap
+          </button>
+        </div>
+        <div class="listrow">
+          <div>
+            <h3>Group dining questions lack concise answers.</h3>
+            <p>
+              <PeriodValue base={hospitalityObservations.eventImpressions} />{" "}
+              Search Console impressions show private-event demand. Clarify
+              group size, formats and inquiry steps.
+            </p>
+          </div>
+          <button
+            class="link"
+            data-command="openOpp"
+            data-args={JSON.stringify([
+              growthOpportunityId(c, "private-event-content"),
+            ])}
+          >
+            Review content gap
+          </button>
+        </div>
+      </section>
+    </div>
+    <section class="panel">
+      <SectionHeading>
+        <Fragment slot="title">Relevant opportunities</Fragment>
+        <Fragment slot="actions">
+          <a class="link" href={route("client", c.id, "Opportunities")}>
+            All findings
+          </a>
+        </Fragment>
+      </SectionHeading>
+      <OpportunityList context={context} c={c} limit={3} />
+    </section>
+  </Fragment>
+) : null}

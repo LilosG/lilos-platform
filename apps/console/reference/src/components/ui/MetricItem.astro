@@ -1,0 +1,22 @@
+---
+import MetricValue from "./MetricValue.astro";
+import type { DisplayValue } from "../../types/domain";
+interface Props {
+  label: DisplayValue;
+  value: DisplayValue;
+  description: DisplayValue;
+}
+const { label, value, description } = Astro.props;
+---
+
+<div class="metric">
+  <div class="metricLabel">
+    <MetricValue value={label} />
+  </div>
+  <strong>
+    <MetricValue value={value} />
+  </strong>
+  <small data-period-label>
+    <MetricValue value={description} />
+  </small>
+</div>

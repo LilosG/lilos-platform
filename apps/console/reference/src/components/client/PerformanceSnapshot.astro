@@ -1,0 +1,34 @@
+---
+import type { Client } from "../../types/domain";
+import { snapshotMetrics } from "../../data/fixtures/snapshots";
+import { route } from "../../config/routes";
+import MetricValue from "../ui/MetricValue.astro";
+import PeriodValue from "../ui/PeriodValue.astro";
+interface Props {
+  client: Client;
+}
+const { client } = Astro.props;
+---
+
+<div class="snapshotgrid">
+  {snapshotMetrics(client).map((metric, index) => (
+    <a
+      class="snapshotmetric"
+      data-snapshot-client={client.id}
+      data-snapshot-index={index}
+      href={route("client", client.id, metric.area, metric.section)}
+    >
+      <span>{metric.label}</span>
+      <strong>
+        {typeof metric.value === "object" ? (
+          <PeriodValue base={metric.value.base} />
+        ) : (
+          metric.value
+        )}
+      </strong>
+      <small data-period-label>
+        <MetricValue value={metric.description} />
+      </small>
+    </a>
+  ))}
+</div>

@@ -1,0 +1,41 @@
+---
+import type { ViewContext } from "../../types/domain";
+import { rankingDistribution } from "../../data/fixtures/rankingDistribution";
+import SectionHeading from "../ui/SectionHeading.astro";
+interface Props {
+  context: ViewContext;
+}
+---
+
+<section class="panel" data-client-id={Astro.props.context.client?.id}>
+  <SectionHeading>
+    <Fragment slot="title">Ranking distribution</Fragment>
+    <span slot="actions" class="muted">
+      Local scan grid · Sep 28
+    </span>
+  </SectionHeading>
+  <div class="distributionbody">
+    <div
+      class="distribution"
+      role="img"
+      aria-label="46 percent Top 3, 32 percent ranks 4 to 10, 12 percent below Top 10, 10 percent not found"
+    >
+      {rankingDistribution.map((item) => (
+        <i class={item.tone} style={`width:${item.value}%`}>
+          {item.value}%
+        </i>
+      ))}
+    </div>
+    <div class="distributionlegend">
+      {rankingDistribution.map((item) => (
+        <span>
+          {item.label} <b>{item.value}%</b>
+        </span>
+      ))}
+    </div>
+    <p>
+      78% of scan points are in the Top 10. The highest-value near-term gains
+      are in brunch queries.
+    </p>
+  </div>
+</section>

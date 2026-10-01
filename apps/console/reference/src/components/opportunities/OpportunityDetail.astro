@@ -1,0 +1,122 @@
+---
+import type { Opportunity } from "../../types/domain";
+import { clients } from "../../data/fixtures";
+import { route } from "../../config/routes";
+import { evidenceText } from "../../lib/view";
+import DialogFrame from "../ui/DialogFrame.astro";
+import StatusBadge from "../ui/StatusBadge.astro";
+interface Props {
+  opportunity: Opportunity;
+}
+const { opportunity: o } = Astro.props;
+const client = clients[o.client];
+const hospitality = client.workspaceProfile === "hospitality";
+const text = (value: string) => (hospitality ? evidenceText(value) : value);
+const id = `opportunity-${o.id}`;
+---
+
+<DialogFrame id={id}>
+  <Fragment slot="body">
+    <div class="eyebrow">
+      <span data-entity="client" data-record-id={client.id} data-field="name">
+        {client.name}
+      </span>{" "}
+      · {o.type}
+    </div>
+    <h2 id={`${id}-title`}>{o.title}</h2>
+    <p>
+      <span class="badge neutral">{o.kind}</span>{" "}
+      <StatusBadge text={`${o.impact} priority`} />
+      <span data-opportunity-status={o.id} hidden={!o.started}>
+        <StatusBadge text="In progress" />
+      </span>
+    </p>
+    {(hospitality || o.discovered) && (
+      <Fragment>
+        <h3>Why it was discovered</h3>
+        <p>{text(o.discovered || o.detail)}</p>
+      </Fragment>
+    )}
+    <h3>Why it matters</h3>
+    <p>{o.why}</p>
+    <div class="reportpreview">
+      <h3>Supporting evidence</h3>
+      <p>{text(o.evidence)}</p>
+      {(hospitality || o.metrics.length > 0) && (
+        <div class="evidencemetrics">
+          {o.metrics.map(([label, value]) => (
+            <div>
+              <strong>{value}</strong>
+              <small>
+                {hospitality && label === "Menu visits"
+                  ? "Menu organic sessions"
+                  : label}
+              </small>
+            </div>
+          ))}
+        </div>
+      )}
+      <small class="sub">
+        {hospitality ? (
+          <Fragment>
+            Sources:{" "}
+            {o.sources.length ? o.sources.join(" · ") : "Client monitoring"}
+            <br />
+            {o.detected} · Sample data · September 1–30, 2026 baseline
+          </Fragment>
+        ) : (
+          <Fragment>
+            {o.sources.length
+              ? "Sources: " + o.sources.join(" · ")
+              : "Sample monitoring data"}{" "}
+            · {o.detected}
+          </Fragment>
+        )}
+      </small>
+    </div>
+    <h3 class={hospitality ? "spaced-heading" : "mt-panel"}>
+      {hospitality ? "Recommended action" : "Recommended next action"}
+    </h3>
+    <p>{text(o.next)}</p>
+    <small class="sub">Estimated effort · {o.effort}</small>
+    {hospitality && (
+      <a
+        class="link mt-4 inline-block"
+        href={route("client", client.id, o.area, o.section)}
+      >
+        Inspect the relevant product area
+      </a>
+    )}
+  </Fragment>
+  <Fragment slot="footer">
+    {hospitality ? (
+      <Fragment>
+        <a class="control" href={route()}>
+          Entire portfolio
+        </a>
+        <a class="control" href={route("client", client.id)}>
+          Back to{" "}
+          <span
+            data-entity="client"
+            data-record-id={client.id}
+            data-field="name"
+          >
+            {client.name}
+          </span>
+        </a>
+      </Fragment>
+    ) : (
+      <a class="control" href={route("client", client.id, o.area, o.section)}>
+        Open source area
+      </a>
+    )}
+    <button
+      class="primary"
+      disabled={o.started}
+      data-command="startOpp"
+      data-args={JSON.stringify([o.id])}
+    >
+      {o.started ? "In progress" : "Start work"}
+    </button>
+  </Fragment>
+</DialogFrame>

@@ -16,6 +16,7 @@ from apps.api.app.routes.administration import router as administration_router
 from apps.api.app.routes.agents import router as agents_router
 from apps.api.app.routes.api_v1 import router as api_v1_router
 from apps.api.app.routes.client_onboarding import router as client_onboarding_router
+from apps.api.app.routes.command_center import router as command_center_router
 from apps.api.app.routes.content import router as content_router
 from apps.api.app.routes.content_operations import router as content_operations_router
 from apps.api.app.routes.gbp import organization_router as gbp_organization_router
@@ -103,6 +104,7 @@ def create_app(
     application.include_router(content_router)
     application.include_router(content_operations_router)
     application.include_router(seo_router)
+    application.include_router(command_center_router)
     application.include_router(insights_router)
     application.include_router(growth_router)
     application.include_router(platform_administration_router)

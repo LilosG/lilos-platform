@@ -1,0 +1,110 @@
+---
+import type { Opportunity, Client } from "../../types/domain";
+import { clients } from "../../data/fixtures";
+import { route } from "../../config/routes";
+import { evidenceText } from "../../lib/view";
+import StatusBadge from "../ui/StatusBadge.astro";
+interface Props {
+  opportunity: Opportunity;
+  mode: "compact" | "finding" | "table";
+  client?: Client;
+  hidden?: boolean;
+  limit?: number;
+}
+const { opportunity: o, mode, client } = Astro.props;
+const owner = clients[o.client];
+const rowArgs = JSON.stringify([o.id]);
+---
+
+{mode === "compact" ? (
+  <div
+    class="listrow opportunitycard"
+    data-opportunity-id={o.id}
+    data-opportunity-mode="compact"
+    data-opportunity-limit={Astro.props.limit}
+    hidden={Astro.props.hidden}
+  >
+    <div>
+      <button
+        class="link opportunity-activation"
+        data-command="openOpp"
+        data-args={rowArgs}
+      >
+        {o.title}
+      </button>
+      <small>
+        {client ? (
+          o.type
+        ) : (
+          <a class="contextname" href={route("client", owner.id)}>
+            {owner.name}
+          </a>
+        )}{" "}
+        · {o.gain}
+      </small>
+    </div>
+    <StatusBadge text={`${o.impact} priority`} />
+  </div>
+) : (
+  <tr
+    class="opportunity-row"
+    tabindex="0"
+    data-opportunity-row="true"
+    data-args={rowArgs}
+    data-opportunity-id={o.id}
+    data-opportunity-mode={mode}
+    data-type={o.type}
+    data-priority={o.impact}
+    data-kind={o.kind}
+    data-client-id={owner.id}
+    aria-label={`Open opportunity: ${o.title}`}
+  >
+    <td>
+      <b>{o.title}</b>
+      <span class="sub">
+        {mode === "finding" ? (
+          `${o.kind} · ${o.type}`
+        ) : (
+          <Fragment>
+            <a class="contextname" href={route("client", owner.id)}>
+              {owner.name}
+            </a>{" "}
+            · {o.type} · {o.kind}
+          </Fragment>
+        )}
+      </span>
+      <p class="opwhy">{o.why}</p>
+    </td>
+    <td>
+      {mode === "finding" ? evidenceText(o.evidence) : o.evidence}
+      <span class="sub">
+        {mode === "finding"
+          ? `September 1–30 baseline · ${o.sources.join(" · ")}`
+          : `Detected Sep 29 · ${o.type.includes("ranking") ? "Local scan" : "Portfolio monitoring"}`}
+      </span>
+    </td>
+    <td>
+      <StatusBadge text={o.impact} />
+      <span class="sub" data-opportunity-effort={o.id}>
+        {o.started ? "In progress" : o.effort}
+      </span>
+    </td>
+    {mode === "table" && <td class="nextaction">{o.next}</td>}
+    <td>
+      <button data-command="openOpp" data-args={rowArgs}>
+        {mode === "finding" ? "Inspect" : "Details"}
+      </button>
+    </td>
+  </tr>
+)}
+
+<style>
+  .opportunity-row {
+    cursor: pointer;
+  }
+
+  .opportunity-row:focus-visible {
+    outline: 3px solid #81a78d;
+    outline-offset: -3px;
+  }
+</style>

@@ -1,0 +1,40 @@
+---
+import AppLayout from "../layouts/AppLayout.astro";
+import { safeReturn } from "../server/security";
+const target = safeReturn(Astro.url.searchParams.get("return"));
+---
+
+<AppLayout title="Sign in"
+  ><div class="pagehead">
+    <div><h1>Sign in</h1><p>Access your LILOs workspace.</p></div>
+  </div>
+  {
+    Astro.url.searchParams.has("error") && (
+      <p role="alert">
+        Sign in was denied. Check your credentials and try again.
+      </p>
+    )
+  }
+  <form method="post" action="/auth/sign-in/" class="panel">
+    <input type="hidden" name="csrf" value={Astro.locals.csrf} /><input
+      type="hidden"
+      name="return"
+      value={target}
+    />
+    <label
+      >Email<input
+        type="email"
+        name="email"
+        autocomplete="username"
+        required
+      /></label
+    ><label
+      >Password<input
+        type="password"
+        name="password"
+        autocomplete="current-password"
+        required
+      /></label
+    ><button type="submit">Sign in</button>
+  </form></AppLayout
+>

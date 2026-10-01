@@ -1,0 +1,122 @@
+---
+import type { ViewContext, Client } from "../../types/domain";
+import { pageRecords } from "../../data/fixtures";
+
+import StatusBadge from "../ui/StatusBadge.astro";
+
+import LandingPages from "../website-content/LandingPages.astro";
+import { requireClient } from "../../lib/view";
+interface Props {
+  context: ViewContext;
+  c?: Client | null;
+  mode?: string;
+}
+const context = Astro.props.context;
+
+const c = requireClient(context, Astro.props.c);
+
+const mode = Astro.props.mode ?? "pages";
+const a = pageRecords.filter((p) => p.client === c.id);
+
+import PeriodValue from "../ui/PeriodValue.astro";
+
+import SectionHeading from "../ui/SectionHeading.astro";
+
+import DataTable from "../ui/DataTable.astro";
+import InsightPanel from "../ui/InsightPanel.astro";
+---
+
+{c.workspaceProfile === "hospitality" ? (
+  <LandingPages context={context} mode={mode} />
+) : (
+  <Fragment>
+    <section class="panel tablewrap">
+      <SectionHeading>
+        <Fragment slot="title">
+          {mode === "seo" ? "Page search health" : "Website pages"}
+        </Fragment>
+        <Fragment slot="actions">
+          <span class="muted">
+            {a.filter((p) => p.status === "Indexed").length} indexed ·{" "}
+            {a.filter((p) => p.status === "Draft").length} draft
+          </span>
+        </Fragment>
+      </SectionHeading>
+      <DataTable>
+        <thead>
+          <tr>
+            <th>Page</th>
+            <th>Status</th>
+            <th>Organic clicks</th>
+            <th>SEO health</th>
+            <th>Updated</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {a.map((p) => (
+            <Fragment>
+              <tr data-page-id={p.id}>
+                <td>
+                  <b>
+                    <span
+                      data-entity="page"
+                      data-record-id={p.id}
+                      data-field="name"
+                    >
+                      {p.name}
+                    </span>
+                  </b>
+                  <span class="sub">{p.url}</span>
+                </td>
+                <td>
+                  <span
+                    data-entity="page"
+                    data-record-id={p.id}
+                    data-field="status"
+                  >
+                    <StatusBadge text={p.status} />
+                  </span>
+                </td>
+                <td>
+                  <PeriodValue base={p.clicks} />
+                </td>
+                <td>
+                  <span
+                    data-entity="page"
+                    data-record-id={p.id}
+                    data-field="health"
+                  >
+                    {p.health}
+                  </span>
+                  /100
+                </td>
+                <td>
+                  <span
+                    data-entity="page"
+                    data-record-id={p.id}
+                    data-field="last"
+                  >
+                    {p.last}
+                  </span>
+                </td>
+                <td>
+                  <button
+                    data-command="openPage"
+                    data-args={JSON.stringify([p.id])}
+                  >
+                    Inspect
+                  </button>
+                </td>
+              </tr>
+            </Fragment>
+          ))}
+        </tbody>
+      </DataTable>
+      <InsightPanel class="insight">
+        Service and location pages are managed through shared templates. Review
+        query demand before creating new pages.
+      </InsightPanel>
+    </section>
+  </Fragment>
+)}

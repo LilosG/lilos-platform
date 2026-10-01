@@ -1,6 +1,9 @@
 {
   "name": "@lilos/contracts",
-  "version": "0.0.0",
   "private": true,
-  "type": "module"
+  "version": "0.0.0",
+  "type": "module",
+  "exports": {
+    "./api": "./src/generated/api.ts"
+  }
 }

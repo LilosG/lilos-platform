@@ -1,0 +1,79 @@
+---
+import type { Client } from "../../../types/domain";
+import { clients } from "../../../data/fixtures";
+import {
+  clientNavigation,
+  localTabs,
+  websiteTabs,
+  slugify,
+} from "../../../config/routes";
+import { createContext } from "../../../lib/view";
+import AppLayout from "../../../layouts/AppLayout.astro";
+import PageHeader from "../../../components/ui/PageHeader.astro";
+import Overview from "../../../components/client/Overview.astro";
+import LocalSearch from "../../../components/local-search/LocalSearch.astro";
+import Reviews from "../../../components/reviews/Reviews.astro";
+import Website from "../../../components/website-content/Website.astro";
+import Leads from "../../../components/leads/Leads.astro";
+import Opportunities from "../../../components/opportunities/Opportunities.astro";
+import Automations from "../../../components/automations/Automations.astro";
+import Reports from "../../../components/reports/Reports.astro";
+import ClientIntegrations from "../../../components/integrations/ClientIntegrations.astro";
+import Settings from "../../../components/client/Settings.astro";
+export function getStaticPaths() {
+  return clients.flatMap((client) =>
+    clientNavigation.flatMap((group) =>
+      group.items.flatMap(([area]) =>
+        (area === "Local Search"
+          ? localTabs
+          : area === "Website & Content"
+            ? websiteTabs
+            : ["Overview"]
+        ).map((section) => ({
+          params: {
+            clientSlug: client.slug,
+            workspace:
+              [
+                area === "Overview" ? "" : slugify(area),
+                section === "Overview" ? "" : slugify(section),
+              ]
+                .filter(Boolean)
+                .join("/") || undefined,
+          },
+          props: { client, area, section },
+        })),
+      ),
+    ),
+  );
+}
+interface Props {
+  client: Client;
+  area: import("../../../types/domain").ProductArea;
+  section: string;
+}
+const { client, area, section } = Astro.props;
+const context = createContext("client", client, area, section);
+const c = context.client!;
+const views = {
+  Overview: Overview,
+  "Local Search": LocalSearch,
+  Reviews: Reviews,
+  "Website & Content": Website,
+  Leads: Leads,
+  Opportunities: Opportunities,
+  Automations: Automations,
+  Reports: Reports,
+  Integrations: ClientIntegrations,
+  Settings: Settings,
+};
+const View = views[area];
+---
+
+<AppLayout context={context}>
+  <PageHeader
+    context={context}
+    title={area === "Overview" ? c.name : area}
+    subtitle={`${area === "Overview" ? c.category + " · " : c.name + " · "}${c.location} · ${c.locations} ${c.locations === 1 ? "location" : "locations"}`}
+  />
+  <View context={context} c={c} embedded />
+</AppLayout>

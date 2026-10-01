@@ -1,0 +1,224 @@
+---
+import type { ViewContext, Client } from "../../types/domain";
+import { administrationUsers } from "../../data/fixtures/administration";
+import { clients } from "../../data/fixtures";
+
+import { route, administrationRoute } from "../../config/routes";
+
+import StatusBadge from "../ui/StatusBadge.astro";
+
+import PageHeader from "../ui/PageHeader.astro";
+interface Props {
+  context: ViewContext;
+  c?: Client | null;
+}
+const context = Astro.props.context;
+const state = context.state;
+
+const authorizedAdmin = () => state.role === "owner";
+
+const t = state.adminTab;
+
+import {
+  administrativeSections,
+  platformSettings,
+} from "../../data/fixtures/presentation";
+
+import EmptyState from "../ui/EmptyState.astro";
+import SectionHeading from "../ui/SectionHeading.astro";
+
+import DataTable from "../ui/DataTable.astro";
+import InsightPanel from "../ui/InsightPanel.astro";
+---
+
+{!authorizedAdmin() ? (
+  <Fragment>
+    <PageHeader
+      context={context}
+      title={"Administration"}
+      subtitle={"Administration is available to agency owners."}
+    />
+
+    <EmptyState>
+      Use the agency navigation to return to your portfolio.
+    </EmptyState>
+  </Fragment>
+) : (
+  <Fragment>
+    <PageHeader
+      context={context}
+      title={"Administration"}
+      subtitle={"Organizations, onboarding, users, and platform management."}
+    />
+
+    <div class="sectiontabs">
+      {administrativeSections().map((x) => (
+        <Fragment>
+          <a class={x === t ? "active" : ""} href={administrationRoute(x)}>
+            {x}
+          </a>
+        </Fragment>
+      ))}
+    </div>
+
+    {t === "Users" ? (
+      <Fragment>
+        <section class="panel tablewrap">
+          <DataTable>
+            <thead>
+              <tr>
+                <th>User</th>
+                <th>Role</th>
+                <th>Access</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {administrationUsers.map((user) => (
+                <tr>
+                  <td>{user.name}</td>
+                  <td>{user.role}</td>
+                  <td>{user.access}</td>
+                  <td>
+                    <StatusBadge text={user.status} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </DataTable>
+          <InsightPanel class="insight">
+            Role preview demonstrates navigation visibility. This prototype does
+            not provision real user accounts.
+          </InsightPanel>
+        </section>
+      </Fragment>
+    ) : t === "Onboarding" ? (
+      <Fragment>
+        <section class="panel">
+          <SectionHeading>
+            <Fragment slot="title">Client onboarding</Fragment>
+            <Fragment slot="actions">
+              <span class="muted">1 new client</span>
+            </Fragment>
+          </SectionHeading>
+          <div class="listrow">
+            <div>
+              <h3>Juniper Living</h3>
+              <p>
+                Organization created · Search Console connected · GA4 not
+                configured
+              </p>
+            </div>
+            <a href={route("client", "11", "Integrations")} class="control">
+              Continue setup
+            </a>
+          </div>
+          <div class="listrow">
+            <div>
+              <h3>Client setup checklist</h3>
+              <p>
+                Business details, locations, reporting contact and source
+                connections are managed from the client workspace.
+              </p>
+            </div>
+            <a href={route("client", "11", "Settings")} class="control">
+              View settings
+            </a>
+          </div>
+        </section>
+      </Fragment>
+    ) : t === "Clients / organizations" ? (
+      <Fragment>
+        <section class="panel tablewrap">
+          <DataTable>
+            <thead>
+              <tr>
+                <th>Organization</th>
+                <th>Locations</th>
+                <th>Owner</th>
+                <th>Status</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {clients.map((c) => (
+                <Fragment>
+                  <tr>
+                    <td>
+                      <span
+                        data-entity="client"
+                        data-record-id={c.id}
+                        data-field="name"
+                      >
+                        {c.name}
+                      </span>
+                      <span class="sub">
+                        <span
+                          data-entity="client"
+                          data-record-id={c.id}
+                          data-field="category"
+                        >
+                          {c.category}
+                        </span>
+                      </span>
+                    </td>
+                    <td>{c.locations}</td>
+                    <td>Mike Prickett</td>
+                    <td>
+                      <StatusBadge
+                        text={
+                          c.status === "New client" ? "Onboarding" : "Active"
+                        }
+                      />
+                    </td>
+                    <td>
+                      <a
+                        href={route("client", c.id, "Settings")}
+                        class="control"
+                      >
+                        Manage
+                      </a>
+                    </td>
+                  </tr>
+                </Fragment>
+              ))}
+            </tbody>
+          </DataTable>
+        </section>
+      </Fragment>
+    ) : (
+      <Fragment>
+        <section class="panel">
+          <SectionHeading>
+            <Fragment slot="title">Platform / system administration</Fragment>
+            <Fragment slot="actions">
+              <StatusBadge text={"Healthy"} />
+            </Fragment>
+          </SectionHeading>
+          {platformSettings().map(([l, d]) => (
+            <Fragment>
+              <div class="listrow">
+                <div>
+                  <h3>{l}</h3>
+                  <p>{d}</p>
+                </div>
+              </div>
+            </Fragment>
+          ))}
+          <div class="listrow">
+            <div>
+              <h3>Integration and authorization health</h3>
+              <p>
+                Operational recovery is available without leaving the main
+                console.
+              </p>
+            </div>
+            <a href={route("integrations")} class="control">
+              Open integrations
+            </a>
+          </div>
+        </section>
+      </Fragment>
+    )}
+  </Fragment>
+)}

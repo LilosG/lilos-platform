@@ -1,0 +1,144 @@
+---
+import type { ViewContext } from "../../types/domain";
+import {
+  actions,
+  opportunities,
+  systems,
+  pageRecords,
+  reviewRecords,
+  automationRuns,
+  reports,
+  reportHistory,
+} from "../../data/fixtures";
+import { scopedActions } from "../../lib/view";
+import DialogFrame from "../ui/DialogFrame.astro";
+import OpportunityDetail from "../opportunities/OpportunityDetail.astro";
+import AttentionDialog from "./AttentionDialog.astro";
+import ConnectionsDialog from "../integrations/ConnectionsDialog.astro";
+import ProfileDialog from "../local-search/ProfileDialog.astro";
+import PostDialog from "../local-search/PostDialog.astro";
+import PageDialog from "../website-content/PageDialog.astro";
+import ContentDialog from "../website-content/ContentDialog.astro";
+import LeadDialog from "../leads/LeadDialog.astro";
+import ResponseDialog from "../reviews/ResponseDialog.astro";
+import RequestDialog from "../reviews/RequestDialog.astro";
+import RunDialog from "../automations/RunDialog.astro";
+import HistoryDialog from "../reports/HistoryDialog.astro";
+import ReportDialog from "../reports/ReportDialog.astro";
+import ConnectionDialog from "../integrations/ConnectionDialog.astro";
+import EventDialog from "../leads/EventDialog.astro";
+interface Props {
+  context: ViewContext;
+}
+const { context } = Astro.props;
+const c = context.client;
+const isArea = (area: string) => context.state.tab === area;
+
+import {
+  sampleInquiryIndexes,
+  trackedOutcomeNames,
+} from "../../data/fixtures/presentation";
+
+import EmptyState from "../ui/EmptyState.astro";
+---
+
+{opportunities.map((opportunity) => (
+  <OpportunityDetail opportunity={opportunity} />
+))}
+{actions.map((a) => (
+  <AttentionDialog context={context} id={a.id} />
+))}
+{systems.map((_, i) => (
+  <ConnectionsDialog context={context} i={i} />
+))}
+<DialogFrame id="role-preview">
+  <Fragment slot="body">
+    <div class="eyebrow">Prototype navigation preview</div>
+    <h2 id="role-preview-title">View as a different role</h2>
+    <p>
+      The owner sees Administration. Account managers use the operational tools
+      without administrative navigation. This preview changes the interface
+      only.
+    </p>
+  </Fragment>
+  <Fragment slot="footer">
+    <button data-command="setDemoRole" data-args='["manager"]'>
+      Account manager
+    </button>
+    <button class="primary" data-command="setDemoRole" data-args='["owner"]'>
+      Agency owner
+    </button>
+  </Fragment>
+</DialogFrame>
+{c && (
+  <Fragment>
+    <DialogFrame id="client-attention">
+      <Fragment slot="body">
+        <div class="eyebrow">
+          <span data-entity="client" data-record-id={c.id} data-field="name">
+            {c.name}
+          </span>
+        </div>
+        <h2 id="client-attention-title">Attention items</h2>
+        <section class="panel mt-4">
+          {scopedActions(c).map((a) => (
+            <div class="listrow">
+              <div>
+                <h3>{a.title}</h3>
+                <p>{a.next}</p>
+              </div>
+              <button data-dialog={`action-${a.id}`}>Open</button>
+            </div>
+          ))}
+          {!scopedActions(c).length && (
+            <EmptyState>No open attention items.</EmptyState>
+          )}
+        </section>
+      </Fragment>
+      <button slot="footer" data-close>
+        Close
+      </button>
+    </DialogFrame>
+    <ProfileDialog context={context} id={c.id} />
+    <PostDialog context={context} id={c.id} />
+    {pageRecords
+      .filter((p) => p.client === c.id)
+      .map((p) => (
+        <Fragment>
+          <PageDialog context={context} id={p.id} />
+          <ContentDialog context={context} id={p.id} />
+        </Fragment>
+      ))}
+    {sampleInquiryIndexes().map((i) => (
+      <LeadDialog context={context} id={c.id} i={i} />
+    ))}
+    {reviewRecords
+      .filter((r) => r.client === c.id)
+      .map((r) => (
+        <ResponseDialog context={context} id={r.id} />
+      ))}
+    <RequestDialog context={context} id={c.id} />
+    {systems.map((_, i) => (
+      <ConnectionDialog context={context} id={c.id} i={i} />
+    ))}
+    {c.workspaceProfile === "hospitality" &&
+      trackedOutcomeNames().map((eventName) => (
+        <EventDialog context={context} eventName={eventName} />
+      ))}
+  </Fragment>
+)}
+{(context.state.page === "automations" || isArea("Automations")
+  ? automationRuns.filter((r) => !c || r.client === c.id)
+  : automationRuns.filter((r) => r.id === "3-a0")
+).map((r) => (
+  <RunDialog context={context} id={r.id} />
+))}
+{(c ? reports.filter((r) => r.client === Number(c.id) - 1) : reports).map(
+  (r) => (
+    <ReportDialog context={context} id={r.id} />
+  ),
+)}
+{c &&
+  reportHistory
+    .filter((r) => r.client === c.id)
+    .map((_, i) => <HistoryDialog context={context} id={c.id} i={i} />)}

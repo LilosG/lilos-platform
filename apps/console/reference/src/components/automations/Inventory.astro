@@ -1,0 +1,88 @@
+---
+import type { ViewContext, Client, Automation } from "../../types/domain";
+import { clients, automationDefs } from "../../data/fixtures";
+
+import StatusBadge from "../ui/StatusBadge.astro";
+
+interface Props {
+  context: ViewContext;
+  c?: Client | null;
+  scope?: Automation[];
+}
+const context = Astro.props.context;
+
+const c =
+  Astro.props.c === null ? undefined : (Astro.props.c ?? context.client);
+
+const scope = Astro.props.scope ?? [];
+
+import SectionHeading from "../ui/SectionHeading.astro";
+
+import DataTable from "../ui/DataTable.astro";
+---
+
+<section class="panel tablewrap">
+  <SectionHeading>
+    <Fragment slot="title">
+      All automations <span class="count">{scope.length}</span>
+    </Fragment>
+    <Fragment slot="actions" />
+  </SectionHeading>
+  <DataTable>
+    <thead>
+      <tr>
+        <th>Automation{c ? "" : " / client"}</th>
+        <th>Latest run</th>
+        <th>Outcome</th>
+        <th>Next scheduled run</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {scope.length > 0 ? (
+        scope.map((r) => (
+          <Fragment>
+            <tr
+              data-automation-id={r.id}
+              data-client-id={r.client}
+              data-type={r.def}
+              data-status={r.status}
+              data-outcome={r.lastStatus}
+            >
+              <td>
+                <b>{automationDefs[r.def].name}</b>
+                <span class="sub">
+                  {c
+                    ? automationDefs[r.def].source
+                    : clients[+r.client - 1].name}
+                </span>
+              </td>
+              <td>{r.last}</td>
+              <td>
+                <StatusBadge text={r.lastStatus} />
+                <span class="sub">{r.detail}</span>
+              </td>
+              <td>{r.next}</td>
+              <td>
+                <button
+                  data-command="openAutomation"
+                  data-args={JSON.stringify([r.id])}
+                >
+                  {r.status === "Needs attention" ? "Investigate" : "View run"}
+                </button>
+              </td>
+            </tr>
+          </Fragment>
+        ))
+      ) : (
+        <Fragment>
+          <tr>
+            <td colspan="5" class="empty">
+              No automations match these filters.
+            </td>
+          </tr>
+        </Fragment>
+      )}
+    </tbody>
+  </DataTable>
+</section>

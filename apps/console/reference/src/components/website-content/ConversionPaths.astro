@@ -1,0 +1,121 @@
+---
+import { growthOpportunityId } from "../../lib/workspace-data";
+import { hospitalityObservations } from "../../data/fixtures/measurements";
+import type { ViewContext, Client } from "../../types/domain";
+
+import { route } from "../../config/routes";
+
+import MetricStrip from "../ui/MetricStrip.astro";
+import PerformanceInsight from "../client/PerformanceInsight.astro";
+import { requireClient } from "../../lib/view";
+interface Props {
+  context: ViewContext;
+  c?: Client | null;
+}
+const context = Astro.props.context;
+const state = context.state;
+const c = requireClient(context, Astro.props.c);
+
+const periodLabel = (source: string) =>
+  source + " · Last " + state.range + " days";
+
+import PeriodValue from "../ui/PeriodValue.astro";
+
+import SectionHeading from "../ui/SectionHeading.astro";
+
+import { conversionPathMetrics } from "../../data/fixtures/metrics";
+
+import DataTable from "../ui/DataTable.astro";
+import InsightPanel from "../ui/InsightPanel.astro";
+---
+
+<MetricStrip
+  kind="conversionPathMetrics"
+  context={context}
+  items={conversionPathMetrics()}
+/>
+
+<section class="panel contextual">
+  <PerformanceInsight context={context} c={c} />
+</section>
+<section class="panel tablewrap">
+  <SectionHeading>
+    <Fragment slot="title">Website conversion paths</Fragment>
+    <Fragment slot="actions">
+      <span class="muted">
+        <span data-period-label>{periodLabel("GA4")}</span>
+      </span>
+    </Fragment>
+  </SectionHeading>
+  <DataTable>
+    <thead>
+      <tr>
+        <th>Path / friction</th>
+        <th>Organic sessions</th>
+        <th>Action events</th>
+        <th>Action rate</th>
+        <th>UX improvement</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>
+          Menu → Reserve
+          <span class="sub">Mobile action below long menu section</span>
+        </td>
+        <td>
+          <PeriodValue base={hospitalityObservations.menuSessions} />
+        </td>
+        <td>
+          <PeriodValue base={hospitalityObservations.menuReservationClicks} />{" "}
+          reserve_click
+        </td>
+        <td>1.6%</td>
+        <td>
+          <button
+            class="link"
+            data-command="openOpp"
+            data-args={JSON.stringify([
+              growthOpportunityId(c, "reservation-path"),
+            ])}
+          >
+            Improve CTA placement
+          </button>
+        </td>
+      </tr>
+      <tr>
+        <td>
+          Private events → Inquiry
+          <span class="sub">Pricing and group-size questions unanswered</span>
+        </td>
+        <td>
+          <PeriodValue base={hospitalityObservations.eventSessions} />
+        </td>
+        <td>
+          <PeriodValue base={hospitalityObservations.eventInquiries} />{" "}
+          private_event_submit
+        </td>
+        <td>2.4%</td>
+        <td>
+          <button
+            class="link"
+            data-command="openOpp"
+            data-args={JSON.stringify([
+              growthOpportunityId(c, "private-event-content"),
+            ])}
+          >
+            Reduce planning friction
+          </button>
+        </td>
+      </tr>
+    </tbody>
+  </DataTable>
+  <InsightPanel class="insight">
+    This area evaluates website paths and action rates.{" "}
+    <a class="link" href={route("client", c.id, "Leads")}>
+      Leads
+    </a>{" "}
+    shows measured reservation intent, calls, forms and inquiries by source.
+    Click events are not confirmed bookings.
+  </InsightPanel>
+</section>

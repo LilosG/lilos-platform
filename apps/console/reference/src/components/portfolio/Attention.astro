@@ -1,0 +1,89 @@
+---
+import type { ViewContext, Client } from "../../types/domain";
+import { actions } from "../../data/fixtures";
+
+import PageHeader from "../ui/PageHeader.astro";
+import AttentionItem from "../app/AttentionItem.astro";
+interface Props {
+  context: ViewContext;
+  c?: Client | null;
+}
+const context = Astro.props.context;
+const state = context.state;
+
+import EmptyState from "../ui/EmptyState.astro";
+---
+
+<PageHeader
+  context={context}
+  title={"Attention center"}
+  subtitle={
+    "Prioritize the work that protects performance and keeps clients moving."
+  }
+/>
+
+<div class="banner">
+  <span class="severity">!</span>
+  <div>
+    <h2 class="body-title">
+      {
+        actions.filter(
+          (a) => !a.done && ["Critical", "High"].includes(a.severity),
+        ).length
+      }{" "}
+      priority items
+    </h2>
+    <p>
+      Resolve missing data and tracking before reviewing performance changes.
+    </p>
+  </div>
+</div>
+<div class="sectiontabs">
+  {[
+    "All items",
+    "GBP",
+    "Rankings",
+    "Analytics",
+    "Reviews",
+    "Reports",
+    "Automations",
+    "Integrations",
+  ].map((t) => (
+    <Fragment>
+      <button
+        class={
+          state.tab === t || (state.tab === "Overview" && t === "All items")
+            ? "active"
+            : ""
+        }
+        data-filter="tab"
+        data-value={`${t}`}
+      >
+        {t}
+      </button>
+    </Fragment>
+  ))}
+</div>
+<section class="panel">
+  {actions.filter(
+    (a) =>
+      (!state.client || a.client === +state.client - 1) &&
+      (state.tab === "Overview" ||
+        state.tab === "All items" ||
+        a.type === state.tab),
+  ).length > 0 ? (
+    actions
+      .filter(
+        (a) =>
+          (!state.client || a.client === +state.client - 1) &&
+          (state.tab === "Overview" ||
+            state.tab === "All items" ||
+            a.type === state.tab),
+      )
+      .map((item) => <AttentionItem context={context} a={item} />)
+  ) : (
+    <Fragment>
+      <EmptyState>No open items in this view.</EmptyState>
+    </Fragment>
+  )}
+</section>

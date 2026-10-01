@@ -1,0 +1,92 @@
+---
+import type { ViewContext, Client } from "../../types/domain";
+
+import StatusBadge from "../ui/StatusBadge.astro";
+
+import { requireClient } from "../../lib/view";
+interface Props {
+  context: ViewContext;
+  c?: Client | null;
+}
+const context = Astro.props.context;
+
+const c = requireClient(context, Astro.props.c);
+
+import SectionHeading from "../ui/SectionHeading.astro";
+---
+
+<section class="panel">
+  <SectionHeading>
+    <Fragment slot="title">Client settings</Fragment>
+    <Fragment slot="actions">
+      <StatusBadge text={"Active"} />
+    </Fragment>
+  </SectionHeading>
+  <form class="settingsform" data-form="settings">
+    <label>
+      Business name
+      <input id="settingname" value={String(c.name)} required />
+    </label>
+    <label>
+      Primary location
+      <input id="settinglocation" value={String(c.location)} required />
+    </label>
+    <label>
+      Category
+      <input id="settingcategory" value={String(c.category)} required />
+    </label>
+    <label>
+      Reporting contact
+      <input
+        id="settingemail"
+        type="email"
+        value={String(c.contactEmail || "client@example.com")}
+        required
+      />
+    </label>
+    <label>
+      Review response preference
+      <select id="settingapproval">
+        {c.workspaceProfile === "hospitality" ? (
+          <Fragment>
+            <option value="auto" selected={c.responsePreference === "auto"}>
+              Automatic publishing
+            </option>
+          </Fragment>
+        ) : (
+          ""
+        )}
+        <option
+          value="direct"
+          selected={
+            !["review", "auto"].includes(c.responsePreference ?? "direct")
+          }
+        >
+          Publish when ready
+        </option>
+        <option value="review" selected={c.responsePreference === "review"}>
+          Client review requested
+        </option>
+      </select>
+    </label>
+    <label>
+      Time zone
+      <select id="settingtimezone">
+        <option selected={c.timezone !== "America/New_York"}>
+          America/Los_Angeles
+        </option>
+        <option selected={c.timezone === "America/New_York"}>
+          America/New_York
+        </option>
+      </select>
+    </label>
+    <div class="formfooter">
+      <small class="muted">
+        Settings changes apply to this prototype session.
+      </small>
+      <button class="primary" type="submit">
+        Save settings
+      </button>
+    </div>
+  </form>
+</section>

@@ -1,0 +1,89 @@
+---
+import { growthOpportunityId } from "../../lib/workspace-data";
+import type { ViewContext, Client } from "../../types/domain";
+import { pageRecords } from "../../data/fixtures";
+import { required } from "../../lib/view";
+import { route } from "../../config/routes";
+
+import StatusBadge from "../ui/StatusBadge.astro";
+
+import { requireClient } from "../../lib/view";
+interface Props {
+  context: ViewContext;
+  c?: Client | null;
+}
+const context = Astro.props.context;
+
+const c = requireClient(context, Astro.props.c);
+
+const draft = required(
+  pageRecords.find((p) => p.id === c.id + "-4"),
+  "Fixture record",
+);
+
+import SectionHeading from "../ui/SectionHeading.astro";
+
+import InsightPanel from "../ui/InsightPanel.astro";
+---
+
+<section class="panel">
+  <SectionHeading>
+    <Fragment slot="title">Content work</Fragment>
+    <Fragment slot="actions">
+      <a class="link" href={route("client", c.id, "Opportunities")}>
+        Growth opportunities
+      </a>
+    </Fragment>
+  </SectionHeading>
+  <div class="listrow">
+    <div>
+      <h3>{draft.name}</h3>
+      <p>
+        {draft.status === "Draft"
+          ? "Draft · publication target October 2"
+          : "Published · monitor search demand after indexing"}
+      </p>
+      <small>
+        Five non-branded brunch terms · 1,240 impressions · shared page template
+      </small>
+    </div>
+    <StatusBadge text={draft.status} />
+    <button
+      data-command-spec={
+        draft.status === "Draft"
+          ? JSON.stringify({ name: "openContent", args: [draft.id] })
+          : JSON.stringify({ name: "openPage", args: [draft.id] })
+      }
+    >
+      {draft.status === "Draft" ? "Edit brief" : "Inspect page"}
+    </button>
+  </div>
+  <div class="listrow">
+    <div>
+      <h3>Private-events page answers</h3>
+      <p>Explain confirmed group sizes, pricing approach and event options.</p>
+      <small>Search Console · guest inquiry themes · target October 3</small>
+    </div>
+    <button
+      data-command="openOpp"
+      data-args={JSON.stringify([
+        growthOpportunityId(c, "private-event-content"),
+      ])}
+    >
+      Open content brief
+    </button>
+  </div>
+  <div class="listrow">
+    <div>
+      <h3>Recently updated: Menu</h3>
+      <p>September 28 · Menu content and shared Restaurant details checked</p>
+    </div>
+    <button data-command="openPage" data-args={JSON.stringify([c.id + "-1"])}>
+      Inspect performance
+    </button>
+  </div>
+  <InsightPanel class="insight">
+    Content changes use existing page data and templates. Prioritize demand
+    already reaching the site.
+  </InsightPanel>
+</section>
