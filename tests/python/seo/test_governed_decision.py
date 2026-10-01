@@ -620,12 +620,14 @@ async def test_attributable_growth_action_also_reserves_page() -> None:
 
 
 @pytest.mark.anyio
-async def test_growth_plan_rejects_target_different_from_approved_seo_page() -> None:
+async def test_growth_plan_rejects_a_decision_that_is_not_approved() -> None:
     organization_id, location_id, page_id = uuid4(), uuid4(), uuid4()
     revision = SEORecommendationRevision(
         id=uuid4(),
         organization_id=organization_id,
-        status="approved",
+        # The target and hypothesis are taken from the decision, so a paraphrase is not an
+        # error; an unapproved decision still is.
+        status="awaiting_approval",
         expected_result_hypothesis="Increase relevant clicks",
         evidence_references=[
             "seo-opportunity:source",
