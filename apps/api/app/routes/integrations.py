@@ -109,22 +109,27 @@ def _frontend_return_url(
     organization_id: UUID | None = None,
     connected: bool,
     reason: str | None = None,
+    console_return: bool = False,
 ) -> str:
     """Best-effort absolute redirect target for the browser after the callback.
 
-    No dedicated frontend-base-URL setting exists; the exact environment
-    contract for this feature is limited to the four Google/secret variables.
-    The first configured `LILOS_WEB_ORIGINS` entry is reused as the frontend
-    origin. If none is configured (only plausible in an incomplete local
+    Console intents return only to the configured bare HTTPS console origin.
+    Existing web intents retain the first configured LILOS_WEB_ORIGINS entry.
+    If none is configured (only plausible in an incomplete local
     setup), this falls back to a same-origin relative path, which will not
     reach the real frontend -- a documented limitation, not a silent failure.
     """
     origins = settings.allowed_web_origins()
-    base = origins[0] if origins else ""
+    base = (
+        str(settings.console_origin).rstrip("/")
+        if console_return and settings.console_origin
+        else (origins[0] if origins else "")
+    )
     params = {"connected": "1"} if connected else {"connected": "0", "reason": reason or "error"}
     if organization_id is not None:
         params["org"] = str(organization_id)
-    return f"{base}/integrations?{urlencode(params)}"
+    route = "/integrations/" if console_return and settings.console_origin else "/integrations"
+    return f"{base}{route}?{urlencode(params)}"
 
 
 @router.post(
@@ -151,6 +156,7 @@ async def connect(
         actor_id=principal.platform_user_id,
         correlation_id=request_correlation_id(request),
         products=products,
+        console_return=command is not None and command.return_app == "console",
     )
     return {
         "data": {"authorization_url": url},
@@ -313,6 +319,8 @@ async def callback(
             url=_frontend_return_url(settings, connected=False, reason="invalid_state"),
             status_code=status.HTTP_302_FOUND,
         )
+    # The marker is part of the persisted state hash: it cannot be added to an existing intent.
+    console_return = state.startswith("console.")
     if error or not code:
         await service.fail_connection(
             session,
@@ -325,6 +333,7 @@ async def callback(
             url=_frontend_return_url(
                 settings,
                 organization_id=organization_id,
+                console_return=console_return,
                 connected=False,
                 reason=error or "missing_code",
             ),
@@ -349,6 +358,7 @@ async def callback(
             url=_frontend_return_url(
                 settings,
                 organization_id=organization_id,
+                console_return=console_return,
                 connected=False,
                 reason=type(exc).__name__.lower(),
             ),
@@ -358,6 +368,7 @@ async def callback(
         url=_frontend_return_url(
             settings,
             organization_id=organization_id,
+            console_return=console_return,
             connected=True,
         ),
         status_code=status.HTTP_302_FOUND,

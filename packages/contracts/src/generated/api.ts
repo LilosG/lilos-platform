@@ -594,6 +594,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/organizations/{organization_id}/command-center/integrations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Integrations View */
+        get: operations["integrations_view_api_v1_organizations__organization_id__command_center_integrations_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/organizations/{organization_id}/command-center/local-search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Local Search View */
+        get: operations["local_search_view_api_v1_organizations__organization_id__command_center_local_search_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/organizations/{organization_id}/command-center/local-search/locations/{location_id}/profiles/{profile_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Profile View */
+        get: operations["profile_view_api_v1_organizations__organization_id__command_center_local_search_locations__location_id__profiles__profile_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/organizations/{organization_id}/command-center/local-search/websites/{website_id}/pages/{page_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Page Intelligence View */
+        get: operations["page_intelligence_view_api_v1_organizations__organization_id__command_center_local_search_websites__website_id__pages__page_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/organizations/{organization_id}/command-center/opportunities": {
         parameters: {
             query?: never;
@@ -2716,6 +2784,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/organizations/{organization_id}/locations/{location_id}/gbp/operations/posts/{revision_id}/dispatch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Dispatch Post */
+        post: operations["dispatch_post_api_v1_organizations__organization_id__locations__location_id__gbp_operations_posts__revision_id__dispatch_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/organizations/{organization_id}/locations/{location_id}/gbp/operations/posts/{revision_id}/publish": {
         parameters: {
             query?: never;
@@ -3781,6 +3866,23 @@ export interface paths {
         get: operations["website_audit_api_v1_organizations__organization_id__seo_websites__website_id__audit_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/organizations/{organization_id}/seo/websites/{website_id}/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Check Website */
+        post: operations["check_website_api_v1_organizations__organization_id__seo_websites__website_id__check_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -5301,6 +5403,50 @@ export interface components {
          * @enum {string}
          */
         ControlState: "allowed" | "degraded" | "paused" | "disabled";
+        /** CrawlQueuedData */
+        CrawlQueuedData: {
+            /** Completed At */
+            completed_at: string | null;
+            /** Crawl Delay Seconds */
+            crawl_delay_seconds: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Max Depth */
+            max_depth: number;
+            /** Max Pages */
+            max_pages: number;
+            /** Safe Result */
+            safe_result: {
+                [key: string]: unknown;
+            };
+            /** Started At */
+            started_at: string | null;
+            /** Status */
+            status: string;
+            /** Stop Reason */
+            stop_reason: string | null;
+            /**
+             * Website Id
+             * Format: uuid
+             */
+            website_id: string;
+        };
+        /** CrawlQueuedResponse */
+        CrawlQueuedResponse: {
+            data: components["schemas"]["CrawlQueuedData"];
+            /** Meta */
+            meta: {
+                [key: string]: unknown;
+            };
+        };
         /** CrawlRequest */
         CrawlRequest: {
             /**
@@ -5352,6 +5498,31 @@ export interface components {
              * Format: uuid
              */
             workflow_run_id: string;
+        };
+        /** CrawlView */
+        CrawlView: {
+            /** Completed At */
+            completed_at: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Safe Result */
+            safe_result: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /** Started At */
+            started_at: string | null;
+            /** Status */
+            status: string;
+            /** Stop Reason */
+            stop_reason: string | null;
+            /**
+             * Website Id
+             * Format: uuid
+             */
+            website_id: string;
         };
         /** DataResponse */
         DataResponse: {
@@ -5527,6 +5698,59 @@ export interface components {
              */
             scope_type: "organization" | "location";
         };
+        /** Freshness */
+        Freshness: {
+            /** Last Synced At */
+            last_synced_at: string | null;
+            /** Status */
+            status: string;
+        };
+        /** GBPDetailView */
+        GBPDetailView: {
+            /** Can Approve */
+            can_approve: boolean;
+            /** Can Propose */
+            can_propose: boolean;
+            /** Can Publish */
+            can_publish: boolean;
+            /** Completeness */
+            completeness: {
+                [key: string]: components["schemas"]["JsonValue"];
+            } | null;
+            /** Completeness Code */
+            completeness_code: string | null;
+            /** Health */
+            health: {
+                [key: string]: components["schemas"]["JsonValue"];
+            } | null;
+            /**
+             * Location Id
+             * Format: uuid
+             */
+            location_id: string;
+            /** Observed At */
+            observed_at: string | null;
+            /**
+             * Organization Id
+             * Format: uuid
+             */
+            organization_id: string;
+            /** Posts */
+            posts: components["schemas"]["PostRevisionView"][];
+            /** Profile */
+            profile: {
+                [key: string]: components["schemas"]["JsonValue"];
+            } | null;
+            /**
+             * Profile Id
+             * Format: uuid
+             */
+            profile_id: string;
+            /** Provider Posts */
+            provider_posts: components["schemas"]["ProviderPostView"][];
+            /** Snapshot Id */
+            snapshot_id: string | null;
+        };
         /**
          * GitHubConnectionCreate
          * @description Register an application-side GitHub connection (PAT fallback).
@@ -5542,6 +5766,15 @@ export interface components {
             access_token: string;
             /** External Account Reference */
             external_account_reference?: string | null;
+        };
+        /** GoogleCapability */
+        GoogleCapability: {
+            /** Enabled */
+            enabled: boolean;
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
         };
         /**
          * GoogleConnectRequest
@@ -5560,6 +5793,57 @@ export interface components {
              *     ]
              */
             products: ("gbp" | "search_console" | "analytics")[];
+            /**
+             * Return App
+             * @default web
+             * @enum {string}
+             */
+            return_app: "web" | "console";
+        };
+        /** GoogleMapping */
+        GoogleMapping: {
+            /** Display Name */
+            display_name: string | null;
+            /** External Resource Id */
+            external_resource_id: string;
+            /** Gbp Location Id */
+            gbp_location_id: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Last Synced At */
+            last_synced_at: string | null;
+            /** Mapping Status */
+            mapping_status: string | null;
+            /** Platform Resource Id */
+            platform_resource_id: string | null;
+            /** Resource Type */
+            resource_type: string;
+            /** Status */
+            status: string;
+            /** Sync Freshness */
+            sync_freshness: string;
+            /** Write Enabled */
+            write_enabled: boolean | null;
+        };
+        /** GoogleState */
+        GoogleState: {
+            /** Capabilities */
+            capabilities: components["schemas"]["GoogleCapability"][];
+            /** Connection Id */
+            connection_id: string | null;
+            /** Connection Status */
+            connection_status: string;
+            /** Last Verified At */
+            last_verified_at: string | null;
+            /** Mapped Resources */
+            mapped_resources: components["schemas"]["GoogleMapping"][];
+            /** Token Expires At */
+            token_expires_at: string | null;
+            /** Unmapped Count */
+            unmapped_count: number;
         };
         /** GrowthActionOutcomeRecord */
         GrowthActionOutcomeRecord: {
@@ -5634,6 +5918,41 @@ export interface components {
          * @enum {string}
          */
         IndustryStatus: "active" | "deprecated" | "archived";
+        /** IntegrationView */
+        IntegrationView: {
+            /** Analytics Properties */
+            analytics_properties: components["schemas"]["SearchMapping"][];
+            /** Can Connect */
+            can_connect: boolean;
+            /** Can Manage Analytics */
+            can_manage_analytics: boolean;
+            /** Can Manage Search */
+            can_manage_search: boolean;
+            /**
+             * Github Limitation
+             * @default publishing_configuration_remains_in_existing_control_plane
+             * @constant
+             */
+            github_limitation: "publishing_configuration_remains_in_existing_control_plane";
+            /** Github Status */
+            github_status: string | null;
+            google: components["schemas"]["GoogleState"];
+            /** Locations */
+            locations: components["schemas"]["LocationOption"][];
+            /**
+             * Organization Id
+             * Format: uuid
+             */
+            organization_id: string;
+            /** Search Properties */
+            search_properties: components["schemas"]["SearchMapping"][];
+            /** Syncs */
+            syncs: components["schemas"]["SyncState"][];
+            /** Unmapped Profiles */
+            unmapped_profiles: components["schemas"]["UnmappedProfile"][];
+            /** Websites */
+            websites: components["schemas"]["WebsiteOption"][];
+        };
         /** InvitationAccept */
         InvitationAccept: {
             /** Token */
@@ -5732,6 +6051,7 @@ export interface components {
             /** Title */
             title: string;
         };
+        JsonValue: unknown;
         /** LeadAssignment */
         LeadAssignment: {
             /**
@@ -6203,6 +6523,18 @@ export interface components {
             meta: components["schemas"]["ResponseMeta"];
             pagination: components["schemas"]["LocationPagination"];
         };
+        /** LocationOption */
+        LocationOption: {
+            /** Can Map */
+            can_map: boolean;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+        };
         /** LocationPagination */
         LocationPagination: {
             /** Has More */
@@ -6528,6 +6860,21 @@ export interface components {
          * @enum {string}
          */
         MembershipType: "internal" | "client" | "partner" | "support";
+        /** MetricComparison */
+        MetricComparison: {
+            /** Current */
+            current: number | null;
+            /** Delta */
+            delta: number | null;
+            /** Label */
+            label?: string | null;
+            /** Percent Delta */
+            percent_delta: number | null;
+            /** Previous */
+            previous: number | null;
+            /** Quality */
+            quality: string;
+        };
         /**
          * MyOrganizationData
          * @description Self-scoped organization-membership summary for the authenticated caller.
@@ -7205,6 +7552,109 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** PageIdentity */
+        PageIdentity: {
+            /** Canonical Url */
+            canonical_url: string | null;
+            /** Normalized Url */
+            normalized_url: string;
+            /** Observed Url */
+            observed_url: string;
+            /**
+             * Organization Id
+             * Format: uuid
+             */
+            organization_id: string;
+            /**
+             * Page Id
+             * Format: uuid
+             */
+            page_id: string;
+            /**
+             * Website Id
+             * Format: uuid
+             */
+            website_id: string;
+        };
+        /** PageIntelligenceView */
+        PageIntelligenceView: {
+            /** Change */
+            change: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /** Content */
+            content: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /** Crawl */
+            crawl: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /** Current Page */
+            current_page: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /** Ga4 Organic Landing */
+            ga4_organic_landing: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /** Gsc */
+            gsc: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            identity: components["schemas"]["PageIdentity"];
+            /** Internal Links */
+            internal_links: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /** Version */
+            version: string;
+            /** Workflow */
+            workflow: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+        };
+        /** PageSummary */
+        PageSummary: {
+            /** Http Status */
+            http_status: number | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Indexability */
+            indexability: string | null;
+            /** Normalized Url */
+            normalized_url: string;
+            /** Observed At */
+            observed_at: string | null;
+            /** Quality Status */
+            quality_status: string;
+            /** Technical Issues */
+            technical_issues: components["schemas"]["JsonValue"][];
+            /** Title */
+            title: string | null;
+            /**
+             * Website Id
+             * Format: uuid
+             */
+            website_id: string;
+        };
+        /** PerformanceProperty */
+        PerformanceProperty: {
+            /** External Property Id */
+            external_property_id: string;
+            /** Freshness Status */
+            freshness_status: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Last Synced At */
+            last_synced_at: string | null;
+        };
         /** PermissionData */
         PermissionData: {
             /** Action */
@@ -7298,6 +7748,39 @@ export interface components {
             /** Approve */
             approve: boolean;
         };
+        /** PostDispatchRequest */
+        PostDispatchRequest: {
+            /** Idempotency Key */
+            idempotency_key: string;
+        };
+        /** PostDispatchResponse */
+        PostDispatchResponse: {
+            data: components["schemas"]["PostPublicationData"];
+            /** Meta */
+            meta: {
+                [key: string]: unknown;
+            };
+        };
+        /** PostPublicationData */
+        PostPublicationData: {
+            /** Dispatched At */
+            dispatched_at: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Provider Post Id */
+            provider_post_id: string | null;
+            /** Recovery Allowed */
+            recovery_allowed: boolean;
+            /** Scheduled For */
+            scheduled_for: string | null;
+            /** Status */
+            status: string;
+            /** Verified At */
+            verified_at: string | null;
+        };
         /** PostPublishRequest */
         PostPublishRequest: {
             /** Idempotency Key */
@@ -7328,6 +7811,36 @@ export interface components {
              */
             post_type: "standard" | "event" | "offer" | "alert";
         };
+        /** PostRevisionView */
+        PostRevisionView: {
+            /** Call To Action */
+            call_to_action: {
+                [key: string]: components["schemas"]["JsonValue"];
+            } | null;
+            /** Content */
+            content: string;
+            /** Event Or Offer */
+            event_or_offer: {
+                [key: string]: components["schemas"]["JsonValue"];
+            } | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Post Key
+             * Format: uuid
+             */
+            post_key: string;
+            /** Post Type */
+            post_type: string;
+            publication: components["schemas"]["PostPublicationData"] | null;
+            /** Revision */
+            revision: number;
+            /** Status */
+            status: string;
+        };
         /** ProfileChangeCreate */
         ProfileChangeCreate: {
             /** Approved Fact Revision Ids */
@@ -7341,6 +7854,50 @@ export interface components {
             desired_fields: {
                 [key: string]: unknown;
             };
+        };
+        /** ProfileSummary */
+        ProfileSummary: {
+            /** Business Name */
+            business_name: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Last Synced At */
+            last_synced_at: string | null;
+            /**
+             * Location Id
+             * Format: uuid
+             */
+            location_id: string;
+            /** Mapping Status */
+            mapping_status: string;
+            /** Write Enabled */
+            write_enabled: boolean;
+        };
+        /** ProviderPostView */
+        ProviderPostView: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Observed At
+             * Format: date-time
+             */
+            observed_at: string;
+            /** Post Type */
+            post_type: string;
+            /** Provider Post Name */
+            provider_post_name: string;
+            /** State */
+            state: string | null;
+            /** Status */
+            status: string;
+            /** Summary */
+            summary: string | null;
         };
         /** PublicationCreate */
         PublicationCreate: {
@@ -7519,6 +8076,15 @@ export interface components {
             /** Status */
             status: string;
         };
+        /** ReportingRange */
+        ReportingRange: {
+            /** Days */
+            days: number;
+            /** End */
+            end: string;
+            /** Start */
+            start: string;
+        };
         /** ResolvedCallToAction */
         ResolvedCallToAction: {
             source: components["schemas"]["ScalarSource"];
@@ -7682,6 +8248,74 @@ export interface components {
              */
             days: number;
         };
+        /** SearchLanding */
+        SearchLanding: {
+            /** Clicks */
+            clicks: number | null;
+            /** Ctr */
+            ctr: number | null;
+            /** Impressions */
+            impressions: number | null;
+            /** Page */
+            page: string;
+            /** Position */
+            position: number | null;
+        };
+        /** SearchMapping */
+        SearchMapping: {
+            /**
+             * Can Sync
+             * @default false
+             */
+            can_sync: boolean;
+            /** Display Name */
+            display_name?: string | null;
+            /** External Property Id */
+            external_property_id: string;
+            /** Freshness Status */
+            freshness_status: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Last Synced At */
+            last_synced_at: string | null;
+            /** Mapping Status */
+            mapping_status: string;
+            /** Property Type */
+            property_type?: string | null;
+            /** Website Id */
+            website_id: string | null;
+        };
+        /** SearchPerformance */
+        SearchPerformance: {
+            comparison_range: components["schemas"]["ReportingRange"] | null;
+            /** Connected */
+            connected: boolean;
+            freshness: components["schemas"]["Freshness"];
+            /** Metrics */
+            metrics: {
+                [key: string]: components["schemas"]["MetricComparison"];
+            };
+            /** Properties */
+            properties: components["schemas"]["PerformanceProperty"][];
+            range: components["schemas"]["ReportingRange"] | null;
+            /** Series */
+            series: {
+                [key: string]: components["schemas"]["JsonValue"];
+            }[];
+            /**
+             * Top Pages
+             * @default []
+             */
+            top_pages: components["schemas"]["SearchLanding"][];
+            /**
+             * Top Queries
+             * @default []
+             */
+            top_queries: components["schemas"]["SearchQuery"][];
+        };
         /** SearchPropertyCreate */
         SearchPropertyCreate: {
             /**
@@ -7711,6 +8345,68 @@ export interface components {
              * Format: uuid
              */
             website_id: string;
+        };
+        /** SearchQuery */
+        SearchQuery: {
+            /** Clicks */
+            clicks: number | null;
+            /** Ctr */
+            ctr: number | null;
+            /** Impressions */
+            impressions: number | null;
+            /** Position */
+            position: number | null;
+            /** Query */
+            query: string;
+        };
+        /** SearchView */
+        SearchView: {
+            analytics: components["schemas"]["SearchPerformance"] | null;
+            /**
+             * Analytics Availability
+             * @enum {string}
+             */
+            analytics_availability: "available" | "permission_required";
+            /**
+             * Analytics Scope
+             * @default organization_all_channels
+             * @constant
+             */
+            analytics_scope: "organization_all_channels";
+            /** Can Crawl */
+            can_crawl: boolean;
+            /** Crawls */
+            crawls: components["schemas"]["CrawlView"][];
+            /** Google Status */
+            google_status: string | null;
+            /** Next Offset */
+            next_offset: number | null;
+            /**
+             * Organization Id
+             * Format: uuid
+             */
+            organization_id: string;
+            /** Pages */
+            pages: components["schemas"]["PageSummary"][];
+            /** Profiles */
+            profiles: components["schemas"]["ProfileSummary"][];
+            search_console: components["schemas"]["SearchPerformance"] | null;
+            /** Syncs */
+            syncs: components["schemas"]["SyncState"][];
+            /**
+             * Unsupported
+             * @default [
+             *       "geographic_rank_grid",
+             *       "rank_scan",
+             *       "gbp_performance_metrics",
+             *       "google_indexation"
+             *     ]
+             */
+            unsupported: string[];
+            /** Website Id */
+            website_id: string | null;
+            /** Websites */
+            websites: components["schemas"]["WebsiteOption"][];
         };
         /** ServiceAssignmentCreate */
         ServiceAssignmentCreate: {
@@ -7831,6 +8527,29 @@ export interface components {
             /** Provider Status */
             provider_status: string;
         };
+        /** SyncState */
+        SyncState: {
+            /** Completed At */
+            completed_at: string | null;
+            /** Failure Code */
+            failure_code: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "search_console" | "analytics";
+            /** Source Id */
+            source_id: string | null;
+            /** Started At */
+            started_at: string | null;
+            /** Status */
+            status: string;
+        };
         /**
          * TargetCreate
          * @description Configure a repository publishing target that references a GitHub connection.
@@ -7865,6 +8584,18 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** UnmappedProfile */
+        UnmappedProfile: {
+            /** Business Name */
+            business_name: string;
+            /** External Location Id */
+            external_location_id: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+        };
         /** UserProfileCreate */
         UserProfileCreate: {
             /**
@@ -7895,6 +8626,14 @@ export interface components {
             /** Error Type */
             type: string;
         };
+        /**
+         * WebsiteCheckRequest
+         * @description Reserve and queue the canonical crawl in one transaction.
+         */
+        WebsiteCheckRequest: {
+            /** Idempotency Key */
+            idempotency_key: string;
+        };
         /** WebsiteCreate */
         WebsiteCreate: {
             /** Canonical Origin */
@@ -7905,6 +8644,22 @@ export interface components {
             location_id?: string | null;
             /** Name */
             name: string;
+        };
+        /** WebsiteOption */
+        WebsiteOption: {
+            /** Canonical Origin */
+            canonical_origin: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Location Id */
+            location_id: string | null;
+            /** Name */
+            name: string;
+            /** Status */
+            status: string;
         };
         /** WorkflowRunStart */
         WorkflowRunStart: {
@@ -9053,6 +9808,138 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AttentionList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    integrations_view_api_v1_organizations__organization_id__command_center_integrations_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organization_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IntegrationView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    local_search_view_api_v1_organizations__organization_id__command_center_local_search_get: {
+        parameters: {
+            query?: {
+                website_id?: string | null;
+                days?: 7 | 28 | 90;
+                offset?: number;
+            };
+            header?: never;
+            path: {
+                organization_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    profile_view_api_v1_organizations__organization_id__command_center_local_search_locations__location_id__profiles__profile_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organization_id: string;
+                location_id: string;
+                profile_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GBPDetailView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    page_intelligence_view_api_v1_organizations__organization_id__command_center_local_search_websites__website_id__pages__page_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organization_id: string;
+                website_id: string;
+                page_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageIntelligenceView"];
                 };
             };
             /** @description Validation Error */
@@ -14146,6 +15033,43 @@ export interface operations {
             };
         };
     };
+    dispatch_post_api_v1_organizations__organization_id__locations__location_id__gbp_operations_posts__revision_id__dispatch_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organization_id: string;
+                location_id: string;
+                revision_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PostDispatchRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PostDispatchResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     publish_post_api_v1_organizations__organization_id__locations__location_id__gbp_operations_posts__revision_id__publish_post: {
         parameters: {
             query?: never;
@@ -16637,6 +17561,42 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    check_website_api_v1_organizations__organization_id__seo_websites__website_id__check_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organization_id: string;
+                website_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WebsiteCheckRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CrawlQueuedResponse"];
                 };
             };
             /** @description Validation Error */

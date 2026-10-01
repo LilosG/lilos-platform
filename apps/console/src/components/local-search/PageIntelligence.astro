@@ -1,0 +1,46 @@
+---
+import type { PageIntelligence } from "../../adapters/local-search";
+import { value } from "../../adapters/local-search";
+interface Props {
+  view: PageIntelligence;
+  slug: string;
+}
+const { view: v, slug } = Astro.props;
+const sections = [
+  ["Current page", v.current_page],
+  ["Crawl evidence", v.crawl],
+  ["Changes", v.change],
+  ["Search Console evidence", v.gsc],
+  ["GA4 Organic Search landing evidence", v.ga4_organic_landing],
+  ["Internal links", v.internal_links],
+  ["Content evidence", v.content],
+  ["Governed work", v.workflow],
+] as const;
+---
+
+<h1 id="page-intelligence-title">Page intelligence</h1><p>
+  {v.identity.normalized_url}
+</p>
+{
+  sections.map(([title, data]) => (
+    <section class="panel">
+      <>
+        <h2>{title}</h2>
+        <dl>
+          {Object.entries(data).map(([key, val]) => (
+            <div class="listrow">
+              <dt>{key.replaceAll("_", " ")}</dt>
+              <dd>{value(val)}</dd>
+            </div>
+          ))}
+        </dl>
+      </>
+    </section>
+  ))
+}
+<p>
+  Google indexation and numeric page health are unavailable. Repairs use exact
+  governed recommendations.
+</p><a href={`/clients/${slug}/opportunities/`}
+  >Inspect opportunities and recommendations</a
+>

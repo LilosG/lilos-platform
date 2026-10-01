@@ -1,0 +1,117 @@
+import { z } from "zod";
+const uuid =
+  "([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})";
+const org = `organizations/${uuid}`;
+const location = `${org}/locations/${uuid}`;
+const route = (
+  pattern: string,
+  method: "GET" | "POST" | "DELETE",
+  body?: z.ZodType,
+  query: string[] = [],
+) => ({
+  pattern: new RegExp(`^${pattern}/$`),
+  method,
+  upstream: "",
+  query,
+  ...(body ? { body } : {}),
+});
+const empty = z.object({}).strict();
+const sync = z.object({ days: z.number().int().min(7).max(365) }).strict();
+const key = z.object({ idempotency_key: z.string().min(8).max(128) }).strict();
+export const searchRoutes = [
+  route(`${org}/command-center/integrations`, "GET"),
+  route(`${org}/command-center/local-search`, "GET", undefined, [
+    "website_id",
+    "days",
+    "offset",
+  ]),
+  route(
+    `${org}/command-center/local-search/websites/${uuid}/pages/${uuid}`,
+    "GET",
+  ),
+  route(
+    `${org}/command-center/local-search/locations/${uuid}/profiles/${uuid}`,
+    "GET",
+  ),
+  route(
+    `${org}/integrations/google/connect`,
+    "POST",
+    z
+      .object({
+        products: z
+          .array(z.enum(["gbp", "search_console", "analytics"]))
+          .min(1)
+          .max(3),
+        return_app: z.literal("console"),
+      })
+      .strict(),
+  ),
+  route(`${org}/integrations/google/(disconnect|discover)`, "POST", empty),
+  route(`${org}/integrations/google/locations/${uuid}/sync`, "POST", empty),
+  route(`${org}/seo/websites/${uuid}/search-console/discover`, "GET"),
+  route(
+    `${org}/insights/analytics/discover`,
+    "POST",
+    z.object({ website_id: z.uuid() }).strict(),
+  ),
+  route(
+    `${org}/integrations/google/search-console/properties/map`,
+    "POST",
+    z
+      .object({
+        website_id: z.uuid(),
+        external_property_id: z.string().min(1).max(1000),
+        property_type: z.enum(["domain", "url_prefix"]),
+      })
+      .strict(),
+  ),
+  route(
+    `${org}/integrations/google/analytics/properties/map`,
+    "POST",
+    z
+      .object({
+        website_id: z.uuid(),
+        external_property_id: z.string().min(1).max(500),
+        property_number: z.string().min(1).max(64),
+        display_name: z.string().min(1).max(300),
+      })
+      .strict(),
+  ),
+  route(
+    `${location}/gbp-mapping/${uuid}/confirm`,
+    "POST",
+    z.object({ location_id: z.uuid(), write_enabled: z.boolean() }).strict(),
+  ),
+  route(`${location}/gbp-mapping/${uuid}`, "DELETE"),
+  route(
+    `${org}/seo/websites/${uuid}/search-properties/${uuid}/sync`,
+    "POST",
+    sync,
+  ),
+  route(`${org}/insights/analytics/properties/${uuid}/sync`, "POST", sync),
+  route(`${org}/seo/websites/${uuid}/check`, "POST", key),
+  route(
+    `${location}/gbp/operations/locations/${uuid}/posts`,
+    "POST",
+    z
+      .object({
+        post_key: z.uuid().nullable().optional(),
+        post_type: z.enum(["standard", "event", "offer", "alert"]),
+        content: z.string().min(1).max(1500),
+        call_to_action: z.record(z.string(), z.json()).nullable().optional(),
+        event_or_offer: z.record(z.string(), z.json()).nullable().optional(),
+      })
+      .strict(),
+  ),
+  route(
+    `${location}/gbp/operations/posts/${uuid}/decision`,
+    "POST",
+    z.object({ approve: z.boolean() }).strict(),
+  ),
+  route(`${location}/gbp/operations/posts/${uuid}/dispatch`, "POST", key),
+  route(
+    `${location}/gbp/operations/posts/publications/${uuid}/recover`,
+    "POST",
+    empty,
+  ),
+];

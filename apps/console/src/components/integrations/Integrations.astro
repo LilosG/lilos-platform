@@ -1,0 +1,285 @@
+---
+import type { IntegrationsView } from "../../adapters/local-search";
+interface Props {
+  view: IntegrationsView;
+  slug: string;
+}
+const { view: v, slug } = Astro.props;
+const api = `/api/organizations/${v.organization_id}/`;
+const g = api + "integrations/google/";
+---
+
+<section class="panel tablewrap">
+  <h2>Current external connections</h2><table>
+    <caption>Canonical provider authorization and capabilities</caption><thead
+      ><tr
+        ><th scope="col">Connection / capabilities</th><th scope="col"
+          >Status</th
+        ><th scope="col">Authorization</th><th scope="col">Action</th></tr
+      ></thead
+    ><tbody>
+      <tr
+        ><td
+          >Google<span class="sub"
+            >{
+              v.google.capabilities
+                .map(
+                  (c) => `${c.label}: ${c.enabled ? "Granted" : "Not granted"}`,
+                )
+                .join(" · ")
+            }</span
+          ></td
+        ><td>{v.google.connection_status}</td><td
+          >Verified: {v.google.last_verified_at ?? "Unavailable"}<span
+            class="sub"
+            >Access token expiry: {
+              v.google.token_expires_at ?? "Unavailable"
+            }</span
+          ></td
+        ><td
+          ><button
+            inert
+            disabled={!v.can_connect}
+            data-action={g + "connect/"}
+            data-body={JSON.stringify({
+              products: ["gbp", "search_console", "analytics"],
+              return_app: "console",
+            })}
+            data-oauth>Connect / reconnect Google</button
+          ><button
+            inert
+            disabled={!v.can_connect || !v.google.connection_id}
+            data-action={g + "disconnect/"}
+            data-body="{}"
+            data-confirm="Disconnect Google access for this organization?"
+            >Disconnect</button
+          ></td
+        ></tr
+      >
+      <tr
+        ><td>GitHub</td><td>{v.github_status ?? "Permission required"}</td><td
+          >Publishing configuration remains in the existing control plane.</td
+        ><td>Publishing setup unavailable in this workspace.</td></tr
+      >
+    </tbody>
+  </table>
+</section>
+<section class="panel">
+  <h2>Confirmed resources and freshness</h2>
+  {
+    v.google.mapped_resources.map((m) => (
+      <div class="listrow">
+        <div>
+          <>
+            <h3>{m.display_name ?? m.external_resource_id}</h3>
+            <p>
+              {m.resource_type} · {m.status} · Mapping:{" "}
+              {m.mapping_status ?? "Unavailable"} · Freshness:{" "}
+              {m.sync_freshness} · Last sync:{" "}
+              {m.last_synced_at ?? "Never synced"}
+            </p>
+            <p>Platform resource: {m.platform_resource_id ?? "Unmapped"}</p>
+          </>
+        </div>
+        {m.gbp_location_id && (
+          <button
+            inert
+            data-action={g + `locations/${m.gbp_location_id}/sync/`}
+            data-body="{}"
+            disabled={!v.can_connect}
+          >
+            Sync profile
+          </button>
+        )}
+        {m.gbp_location_id && m.platform_resource_id && (
+          <button
+            inert
+            disabled={
+              !v.locations.some(
+                (l) => l.id === m.platform_resource_id && l.can_map,
+              )
+            }
+            data-action={
+              api +
+              `locations/${m.platform_resource_id}/gbp-mapping/${m.gbp_location_id}/`
+            }
+            data-method="DELETE"
+            data-confirm="Remove this confirmed profile mapping?"
+          >
+            Remove mapping
+          </button>
+        )}
+      </div>
+    ))
+  }
+  {
+    !v.google.mapped_resources.length && (
+      <p>No confirmed Google location mappings.</p>
+    )
+  }
+  {
+    [
+      ...v.search_properties.map((p) => ({ ...p, source: "Search Console" })),
+      ...v.analytics_properties.map((p) => ({ ...p, source: "GA4" })),
+    ].map((p) => (
+      <div class="listrow">
+        <>
+          <div>
+            <>
+              <h3>
+                {p.source} · {p.display_name ?? p.external_property_id}
+              </h3>
+              <p>
+                Website: {p.website_id ?? "Unmapped"} · Mapping:{" "}
+                {p.mapping_status} · Freshness: {p.freshness_status} · Last
+                sync: {p.last_synced_at ?? "Never synced"}
+              </p>
+            </>
+          </div>
+          <button
+            inert
+            disabled={
+              !p.can_sync || !p.website_id || p.mapping_status !== "mapped"
+            }
+            data-action={
+              p.source === "GA4"
+                ? api + `insights/analytics/properties/${p.id}/sync/`
+                : api +
+                  `seo/websites/${p.website_id}/search-properties/${p.id}/sync/`
+            }
+            data-body={JSON.stringify({ days: 28 })}
+          >
+            Queue {p.source} sync
+          </button>
+        </>
+      </div>
+    ))
+  }
+  {!v.search_properties.length && <p>No authorized Search Console mapping.</p>}{
+    !v.analytics_properties.length && <p>No authorized GA4 mapping.</p>
+  }
+</section>
+<section class="panel">
+  <h2>Recent sync state</h2>{
+    v.syncs.length ? (
+      v.syncs.map((s) => (
+        <p>
+          {s.source} · {s.status} · {s.failure_code ?? "No failure code"} ·{" "}
+          {s.completed_at ?? s.started_at ?? "Not started"} · Run {s.id}
+        </p>
+      ))
+    ) : (
+      <p>No recorded source sync runs.</p>
+    )
+  }
+</section>
+<section class="panel">
+  <h2>Resource mapping</h2><p>
+    Choose a website, discover accessible provider properties, then explicitly
+    confirm the exact property. Discovery never confirms a mapping
+    automatically.
+  </p>
+  {
+    ["search_console", "analytics"].map((source) => (
+      <form inert data-discovery data-source={source} data-api={api}>
+        <>
+          <label>
+            Website for {source === "analytics" ? "GA4" : "Search Console"}
+            <select
+              name="website_id"
+              required
+              disabled={
+                source === "analytics"
+                  ? !v.can_manage_analytics
+                  : !v.can_manage_search
+              }
+            >
+              {v.websites.map((w) => (
+                <option value={w.id}>
+                  {w.name} · {w.canonical_origin}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            disabled={
+              !v.websites.length ||
+              (source === "analytics"
+                ? !v.can_manage_analytics
+                : !v.can_manage_search)
+            }
+            type="submit"
+          >
+            Discover {source === "analytics" ? "GA4" : "Search Console"}{" "}
+            properties
+          </button>
+          <div data-discovered />
+        </>
+      </form>
+    ))
+  }
+</section>
+<section class="panel">
+  <h2>Business Profile discovery and mapping</h2><p>
+    {v.google.unmapped_count} discovered resources awaiting confirmation.
+  </p><button
+    inert
+    disabled={!v.can_connect}
+    data-action={g + "discover/"}
+    data-body="{}">Discover Business Profiles</button
+  >
+  {
+    v.unmapped_profiles.map((p) => (
+      <form
+        inert
+        class="listrow"
+        data-mapping
+        data-api={api}
+        data-profile={p.id}
+      >
+        <div>
+          <>
+            <h3>{p.business_name}</h3>
+            <p>{p.external_location_id}</p>
+            <label>
+              Platform location
+              <select name="location_id" required>
+                {v.locations
+                  .filter((l) => l.can_map)
+                  .map((l) => (
+                    <option value={l.id}>{l.name}</option>
+                  ))}
+              </select>
+            </label>
+            <label>
+              <input type="checkbox" name="write_enabled" /> Enable governed
+              provider writes
+            </label>
+            <button
+              type="submit"
+              disabled={!v.locations.some((l) => l.can_map)}
+            >
+              Confirm exact profile mapping
+            </button>
+          </>
+        </div>
+      </form>
+    ))
+  }
+  {
+    !v.locations.some((l) => l.can_map) && (
+      <p>
+        Mapping requires the canonical location permission and verified
+        authenticator.{" "}
+        <a href={`/mfa/?return=${encodeURIComponent(Astro.url.pathname)}`}>
+          Verify authenticator
+        </a>
+      </p>
+    )
+  }
+</section>
+<p><a href={`/clients/${slug}/local-search/`}>Open Local Search</a></p>
+<p role="status" aria-live="polite" data-search-status></p>
+<script>
+  import "../../lib/search-actions";
+</script>

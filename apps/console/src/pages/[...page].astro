@@ -15,6 +15,13 @@ const labels: Record<string, string> = {
   administration: "Administration",
 };
 if (!(page in labels)) return new Response("Page not found", { status: 404 });
+if (page === "integrations" && Astro.url.searchParams.has("org")) {
+  const org = rows.find(
+    (row) => row.organization_id === Astro.url.searchParams.get("org"),
+  );
+  if (!org) return new Response("Client not found", { status: 404 });
+  return Astro.redirect(`/clients/${org.organization_slug}/integrations/`);
+}
 const title = labels[page];
 ---
 
@@ -30,7 +37,7 @@ const title = labels[page];
             <div>
               <>
                 <a
-                  href={`/clients/${client.organization_slug}/${page === "opportunities" || page === "attention" ? page + "/" : ""}`}
+                  href={`/clients/${client.organization_slug}/${page === "opportunities" || page === "attention" || page === "integrations" ? page + "/" : ""}`}
                 >
                   {client.organization_name}
                 </a>
@@ -45,7 +52,9 @@ const title = labels[page];
     }
   </div>
   {
-    !["", "clients", "opportunities", "attention"].includes(page) && (
+    !["", "clients", "opportunities", "attention", "integrations"].includes(
+      page,
+    ) && (
       <div class="panel">
         <>
           <h2>Source unavailable</h2>

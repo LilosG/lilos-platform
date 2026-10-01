@@ -404,6 +404,7 @@ class GBPConnectionService:
         actor_id: UUID | None,
         correlation_id: str,
         products: Sequence[str] = ("gbp",),
+        console_return: bool = False,
     ) -> str:
         """Begin (or re-consent) a Google OAuth connection for the given products.
 
@@ -415,6 +416,8 @@ class GBPConnectionService:
         Google retains the previously granted ones.
         """
         client_id, _, redirect_uri = self.require_configured(settings)
+        if console_return and not settings.console_origin:
+            raise IntegrationNotConfiguredError
         provider = await self.get_provider(session)
         connection = await self.get_or_create_pending_connection(session, organization_id, provider)
         wanted_scopes: set[str] = set()
@@ -432,7 +435,9 @@ class GBPConnectionService:
         if not existing_scopes:
             wanted_scopes.add(BUSINESS_MANAGE_SCOPE)
         scopes = tuple(sorted(wanted_scopes)) or (BUSINESS_MANAGE_SCOPE,)
-        _, state = await self.intents.create(session, organization_id, connection.id, redirect_uri)
+        _, state = await self.intents.create(
+            session, organization_id, connection.id, redirect_uri, console_return=console_return
+        )
         url = self.authorization_url(client_id, redirect_uri, state, scopes)
         await self._audit(
             session,

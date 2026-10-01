@@ -1,6 +1,6 @@
 """Typed GBP operations (categories, hours, media, posts, suspension) contracts."""
 
-from datetime import date
+from datetime import date, datetime
 from typing import Any, Literal
 from uuid import UUID
 
@@ -83,3 +83,18 @@ class MediaPublishRequest(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
     workflow_run_id: UUID
     idempotency_key: str = Field(min_length=8, max_length=128)
+
+
+class PostPublicationData(BaseModel):
+    id: UUID
+    status: str
+    scheduled_for: datetime | None
+    dispatched_at: datetime | None
+    provider_post_id: str | None
+    verified_at: datetime | None
+    recovery_allowed: bool
+
+
+class PostDispatchResponse(BaseModel):
+    data: PostPublicationData
+    meta: dict[str, object]

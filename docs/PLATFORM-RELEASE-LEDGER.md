@@ -661,3 +661,8 @@ Live staging acceptance is pending owner setup; no live provider acceptance or
 production readiness is asserted. Adjacent portfolio aggregates, other source
 families, Integrations/Local Search and later product surfaces remain in their
 existing phases and were intentionally not implemented here.
+
+
+## Command Center Phase 2
+
+State: `IMPLEMENTED_NOT_ACCEPTED` for live rollout. Repository/synthetic evidence and exact final gates are in `implementation/command-center/PHASE_02_ACCEPTANCE.md`. Integrations and all Local Search tabs/detail routes consume typed canonical connection/mapping/freshness, GSC/authorized GA4, confirmed GBP, crawl/pages/Page Intelligence projections. Atomic crawl and approved GBP post dispatch reuse existing workflows/jobs/idempotency/reconciliation. OAuth returns to a fixed state-bound console origin; old web remains compatible. Geographic rank-grid/scan, GBP performance and Google indexation remain explicitly unavailable. No live provider acceptance is asserted. Owner staging setup and deployed read/write-boundary/capacity acceptance remain pending; later products and GitHub publishing configuration remain in their existing phases.

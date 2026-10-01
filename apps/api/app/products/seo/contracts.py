@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
@@ -107,3 +108,22 @@ class OutcomeRecord(BaseModel):
     classification: Literal["improved", "unchanged", "regressed", "inconclusive"]
     metrics: dict[str, object] = Field(default_factory=dict)
     limitations: list[str] = Field(default_factory=list, max_length=20)
+
+
+class CrawlQueuedData(BaseModel):
+    id: UUID
+    website_id: UUID
+    status: str
+    max_pages: int
+    max_depth: int
+    crawl_delay_seconds: float
+    stop_reason: str | None
+    safe_result: dict[str, object]
+    started_at: datetime | None
+    completed_at: datetime | None
+    created_at: datetime
+
+
+class CrawlQueuedResponse(BaseModel):
+    data: CrawlQueuedData
+    meta: dict[str, object]
