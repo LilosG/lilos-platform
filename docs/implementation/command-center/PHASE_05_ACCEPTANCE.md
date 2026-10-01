@@ -134,15 +134,50 @@ were corrected with focused checks. Two early DB commands accidentally shared on
 migration fixture database; catalog/missing-table collisions were a harness error.
 Sequential targeted rerun passed; no product repair or test weakening was required.
 `agent-browser` is unavailable; repository Playwright/axe supplies browser verification.
-No broad repository suite has run before the Phase 4 merge prerequisite.
+Broad final gates were run once, after the Phase 4 merge and rebase prerequisite.
 
 ## Final sequencing
 
-Phase 4 merge/rebase and broad final gates are pending verification at commit time.
-Do not claim final acceptance or open a Phase 5 PR until Phase 4 PR #146 is confirmed
-merged, the branch is rebased onto actual `origin/main`, and the Phase 5-only diff is
-reviewed. If Phase 4 is unmerged, push the committed branch and stop with
-`WAITING FOR PHASE 4 MERGE`. Never merge or begin Phase 6.
+Phase 4 PR #146 was confirmed merged at `2026-10-01T18:07:47Z`, merge commit
+`f3c352facec4f3b84f9dde742a1a96832b17fe44`. `git fetch origin` and
+`git rebase origin/main` completed without conflicts. Rebased Phase 5 implementation
+commit: `2749914e2804496617406daad5251fcd2998074f`. The 21-file diff against
+actual `origin/main` contains only Phase 5 work; `git diff --check` passed.
+Final documentation evidence is committed separately. During these gates, main
+advanced to `3e69f81a564cc610035536bc40d7e880254fcf25` (separate Hermes PR #147).
+A second fetch/rebase onto that actual main completed without conflicts; rebased
+Phase 5 implementation commit is `eb0123f`. The current-main diff still contains
+exactly the same 21 Phase 5 files. No merge or Phase 6 work.
+
+Final gates, each invoked once after the Phase 4 rebase at `2749914`:
+
+| Gate                                                     | Result                                                                                                                               |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| Format, lint, typecheck                                  | PASS                                                                                                                                 |
+| Existing-web unit tests / console unit tests             | PASS — 450 / 55 tests                                                                                                                |
+| Both application builds                                  | PASS                                                                                                                                 |
+| Generated contract drift, secret, release, Render checks | PASS                                                                                                                                 |
+| npm and Python dependency audits                         | PASS                                                                                                                                 |
+| Full Python suite (four isolated PostgreSQL shards)      | PASS — 1,881 passed, 3 skipped; shard counts 438 / 523 / 409 / 511                                                                   |
+| Python shard inventory                                   | PASS — 221 files, complete union, zero overlap                                                                                       |
+| Migration head (`npm run db:current`)                    | PASS — `20260930_0003`                                                                                                               |
+| Production preflight                                     | FAIL CLOSED — invalid/missing `LILOS_ENV`, database URL, release, Supabase issuer/JWKS and telemetry export configuration            |
+| Existing-web browser                                     | BLOCKED — runner could not start because `127.0.0.1:4323` was already occupied; existing listener left untouched                     |
+| Full console browser                                     | FAIL — 3 PASS / 35 FAIL; synthetic upstream became unavailable (`ECONNREFUSED 127.0.0.1:4455`) across inherited and Phase 5 journeys |
+
+The full console failure began in inherited Reviews scenarios after three Phase 2
+passes. Later Phase 5 scenario setup explicitly failed to connect to the test
+upstream. The process-loss cause is unproven; this is not a passing regression gate
+or evidence of live acceptance. Focused Phase 5 desktop/mobile proof above remains
+10 distinct passing scenarios. No repeated full suite, unrelated product repair,
+configuration bypass, listener termination or gate weakening was performed.
+A narrow post-rebase Phase 5 browser attempt was also blocked at startup by an
+already-occupied `127.0.0.1:4455/health`. Existing listeners were left untouched.
+After the second rebase, targeted canonical Leads regressions again passed **23
+cases**, Leads adapter tests passed **5 cases**, and generated contract drift passed.
+Structural comparison against current main confirms exactly two added paths and 14
+added schemas, with no existing transport changed/removed. Full gates were not repeated.
+Clean CI/browser confirmation and owner production configuration remain required.
 
 ## Unsupported capabilities and live staging
 
