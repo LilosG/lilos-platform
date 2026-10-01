@@ -101,7 +101,6 @@ steps. Phase 0 discovery and the approved architecture were not reopened.
   consolidated checklist in `PHASE_01_ACCEPTANCE.md`. Repository acceptance does not
   certify a live provider or production rollout. Stop at one PR; do not begin Phase 2.
 
-
 ## Phase 2 implementation decisions
 
 - D40 — IMPLEMENTED_NOT_ACCEPTED: bounded typed Integrations/Local Search/Page Intelligence/GBP projections consume existing canonical services and scoped persisted sources. Astro never computes provider metrics or selects mapping authority.
@@ -109,3 +108,11 @@ steps. Phase 0 discovery and the approved architecture were not reopened.
 - D42 — IMPLEMENTED_NOT_ACCEPTED: console OAuth return uses a configured bare HTTPS origin and a marker bound into persisted OAuth state before hashing. Existing callers retain their web return. No provider redirect registration changed.
 - D43 — VERIFIED CURRENT FACT: no persisted geographic rank-grid/scan or GBP performance source exists. Explicit unavailable states remain; crawler indexability is not Google confirmed indexation. GA4 overview is organization-wide/all channels, with page organic evidence only from canonical Page Intelligence.
 - D44 — OWNER ACTION REQUIRED: repository/synthetic evidence does not establish live provider acceptance. Phase 2 acceptance carries forward Phase 0.5/1 owner prerequisites and adds backend console origin plus deployed Integrations/Local Search/OAuth source-state journeys. Phase 3 requires review/merge; no Phase 3 work performed.
+
+## Phase 3 — Reviews implementation decisions
+
+- D45 — IMPLEMENTED_NOT_ACCEPTED: additive scoped Reviews workspace/detail projections consume canonical inventory, revisions, Google connection/mapping, import audit freshness, facts, workflows and permission-gated histories. Persisted metrics never claim provider-wide coverage; missing evidence remains null.
+- D46 — VERIFIED CURRENT FACT: canonical local drafts require exact approval and AAL2 publication; no implemented client/industry approval-free local override exists. Provider-imported observations require no local approval. Backend per-response policy codes expose this distinction without prototype preference authority.
+- D47 — IMPLEMENTED_NOT_ACCEPTED: Reviews BFF and SSR inbox/dialog use canonical draft/AI/approve/reserve/import actions only. Reservation replay is idempotent; stale review revisions and invalid grounding fail in the canonical service. Existing worker/provider/write-once/read-back/retry boundaries remain authoritative.
+- D48 — VERIFIED CURRENT FACT: no canonical review-request campaign source, provider-wide coverage/trend metrics, approval-free local policy or manual response retry/rejection/delete API exists. Explicit unavailable states retained; no duplicate workflow or policy system.
+- D49 — OWNER ACTION REQUIRED: Phase 3 repository/synthetic acceptance is separate from live staging. Consolidated inherited/deployed Reviews owner actions are in PHASE_03_ACCEPTANCE.md. Real provider writes require separate explicit authorization; stop at the Phase 3 PR, do not merge or start Phase 4.

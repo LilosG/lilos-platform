@@ -3,6 +3,10 @@ import { readFileSync } from "node:fs";
 const phase2 = JSON.parse(
   readFileSync(new URL("../fixtures/phase2.json", import.meta.url), "utf8"),
 );
+const phase3 = JSON.parse(
+  readFileSync(new URL("../fixtures/phase3.json", import.meta.url), "utf8"),
+);
+const reviewStates = new Map();
 import { createServer } from "node:http";
 const ids = {
   a: "11111111-1111-4111-8111-111111111111",
@@ -98,6 +102,7 @@ createServer(async (req, res) => {
       return reply(
         session(parsed.refresh_token?.includes(ids.b) ? ids.b : ids.a),
       );
+    reviewStates.delete(ids.run);
     if (parsed.password !== "synthetic-password")
       return reply(
         { msg: "Invalid login credentials", code: "invalid_credentials" },
@@ -178,6 +183,57 @@ createServer(async (req, res) => {
   if (!scoped || scoped[1] !== claims.sub)
     return reply({ code: "NOT_FOUND" }, 404);
   const path = scoped[2];
+  if (path === "command-center/reviews") {
+    const data = structuredClone(phase3.workspace);
+    data.organization_id = claims.sub;
+    if (
+      url.searchParams.has("location_id") &&
+      url.searchParams.get("location_id") !== data.location_id
+    )
+      return reply({ code: "NOT_FOUND" }, 404);
+    return reply(data);
+  }
+  if (path.startsWith("command-center/reviews/locations/")) {
+    const data = structuredClone(phase3.detail);
+    data.organization_id = claims.sub;
+    if (
+      path !==
+      `command-center/reviews/locations/${data.location_id}/${data.review.id}`
+    )
+      return reply({ code: "NOT_FOUND" }, 404);
+    const state = reviewStates.get(claims.session_id) ?? "awaiting_approval";
+    const r = data.responses[0];
+    r.status = state;
+    r.can_approve = state === "awaiting_approval" && claims.aal === "aal2";
+    r.can_publish = state === "approved" && claims.aal === "aal2";
+    if (state === "publishing") {
+      r.workflow_status = "queued";
+      r.workflow_id = data.review.id;
+    }
+    return reply(data);
+  }
+  if (path.includes("/reviews/") && req.method === "POST") {
+    if (path.endsWith("/approve") || path.endsWith("/publish")) {
+      if (claims.aal !== "aal2") return reply({ code: "AAL2_REQUIRED" }, 403);
+      reviewStates.set(
+        claims.session_id,
+        path.endsWith("/approve") ? "approved" : "publishing",
+      );
+      return reply(
+        { data: { status: reviewStates.get(claims.session_id) } },
+        path.endsWith("/publish") ? 202 : 200,
+      );
+    }
+    return reply(
+      {
+        data: {
+          id: phase3.detail.responses[0].id,
+          status: "awaiting_approval",
+        },
+      },
+      201,
+    );
+  }
   const phase2Payload = (key) => {
     const data = structuredClone(phase2[key]);
     data.organization_id = claims.sub;

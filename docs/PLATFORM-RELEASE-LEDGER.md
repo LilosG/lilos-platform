@@ -662,7 +662,24 @@ production readiness is asserted. Adjacent portfolio aggregates, other source
 families, Integrations/Local Search and later product surfaces remain in their
 existing phases and were intentionally not implemented here.
 
-
 ## Command Center Phase 2
 
 State: `IMPLEMENTED_NOT_ACCEPTED` for live rollout. Repository/synthetic evidence and exact final gates are in `implementation/command-center/PHASE_02_ACCEPTANCE.md`. Integrations and all Local Search tabs/detail routes consume typed canonical connection/mapping/freshness, GSC/authorized GA4, confirmed GBP, crawl/pages/Page Intelligence projections. Atomic crawl and approved GBP post dispatch reuse existing workflows/jobs/idempotency/reconciliation. OAuth returns to a fixed state-bound console origin; old web remains compatible. Geographic rank-grid/scan, GBP performance and Google indexation remain explicitly unavailable. No live provider acceptance is asserted. Owner staging setup and deployed read/write-boundary/capacity acceptance remain pending; later products and GitHub publishing configuration remain in their existing phases.
+
+## Command Center Phase 3 — Reviews
+
+State: `IMPLEMENTED_NOT_ACCEPTED` for live rollout.
+
+Scoped canonical Reviews workspace/detail projections and production SSR inbox,
+response revisions, grounded manual/AI drafting, exact backend policy/approval,
+idempotent workflow dispatch, provider reconciliation state and permission-gated audit
+history are implemented. No browser/provider publishing or duplicate engine added.
+Persisted inventory aggregates preserve null versus zero and partial coverage.
+Review campaigns, approval-free local overrides, provider-wide trend metrics and
+unsupported manual response recovery/actions remain explicitly unavailable.
+
+Repository/synthetic results, final gate evidence, adjacent deferred capabilities and
+consolidated `PENDING OWNER ACTION — LIVE STAGING ACCEPTANCE` checklist:
+[Phase 3 acceptance](implementation/command-center/PHASE_03_ACCEPTANCE.md).
+No live provider acceptance, real provider write authorization or Phase 4 implementation
+is claimed by this entry.
