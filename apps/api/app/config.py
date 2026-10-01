@@ -176,6 +176,18 @@ class Settings(BaseSettings):
     service_name: ClassVar[str] = "lilos-api"
 
     @model_validator(mode="after")
+    def reject_unsafe_internal_admin_routes(self) -> "Settings":
+        """Allow temporary bootstrap routes only in explicitly enabled local or test runtimes."""
+        if self.internal_admin_routes_enabled and self.environment not in {
+            EnvironmentName.LOCAL,
+            EnvironmentName.TEST,
+        }:
+            raise ValueError(
+                "Internal administrative routes may be enabled only in local or test environments"
+            )
+        return self
+
+    @model_validator(mode="after")
     def validate_environment_isolation(self) -> "Settings":
         if (
             self.environment is EnvironmentName.PRODUCTION
@@ -282,18 +294,6 @@ class Settings(BaseSettings):
         ):
             if value is not None and value.scheme != "https":
                 raise ValueError(f"{name} must use HTTPS")
-        return self
-
-    @model_validator(mode="after")
-    def reject_unsafe_internal_admin_routes(self) -> "Settings":
-        """Allow temporary bootstrap routes only in explicitly enabled local or test runtimes."""
-        if self.internal_admin_routes_enabled and self.environment not in {
-            EnvironmentName.LOCAL,
-            EnvironmentName.TEST,
-        }:
-            raise ValueError(
-                "Internal administrative routes may be enabled only in local or test environments"
-            )
         return self
 
     @model_validator(mode="after")
