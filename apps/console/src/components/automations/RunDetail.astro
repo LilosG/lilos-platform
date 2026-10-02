@@ -1,0 +1,145 @@
+---
+import type { AutomationDetailView } from "../../adapters/automations";
+import { outcomeLabel, when } from "../../adapters/automations";
+interface Props {
+  view: AutomationDetailView;
+  slug: string;
+}
+const { view, slug } = Astro.props;
+const r = view.run;
+const agent = `/api/organizations/${view.organization_id}/agents/runs/${r.agent_run_id}/`;
+---
+
+<h2 id="automation-detail-title">{r.workflow_name}</h2>
+<p>
+  Execution: {r.status} · Job: {r.job_status ?? "Unavailable"} · Agent: {
+    r.agent_status ?? "Not an agent run"
+  }
+</p><p>{outcomeLabel(r.outcome)}</p>
+<p>
+  Publication: {r.publication_status ?? "No publication evidence"} · Attention: {
+    r.attention ?? "No classified attention"
+  }
+</p>
+<p>
+  Failure/blocker: {
+    r.failure_code ?? r.publication_error ?? r.agent_error ?? "No code recorded"
+  } · Category: {r.job_error_category ?? "Unavailable"}
+</p>
+<p>
+  Started: {when(r.started_at)} · Completed: {when(r.completed_at)} · Backend retry
+  time: {when(r.retry_at)}
+</p>
+<p>Output reference: {r.output_reference ?? "Unavailable"}</p>
+<p data-automation-status role="status" aria-live="polite"></p>
+{
+  r.agent_run_id && (
+    <section aria-label="Governed agent controls">
+      <p>
+        Hermes reasons; durable workflow state and exact product approvals
+        remain backend authority.
+      </p>
+      {view.can_stop && (
+        <button
+          inert
+          data-automation-action={agent + "stop/"}
+          data-command="stop"
+        >
+          Stop agent
+        </button>
+      )}
+      {view.can_steer && (
+        <form inert data-automation-form="steer" data-action={agent + "steer/"}>
+          <label for="steer">Steering instruction</label>
+          <textarea id="steer" name="text" required maxlength="4000" />
+          <button type="submit">Send instruction</button>
+        </form>
+      )}
+      {view.can_respond_approval && (
+        <>
+          <p>{view.approval_request ?? "Approval request unavailable"}</p>
+          <button
+            inert
+            data-automation-action={agent + "approval/"}
+            data-command="once"
+          >
+            Allow once
+          </button>
+          <button
+            inert
+            data-automation-action={agent + "approval/"}
+            data-command="deny"
+          >
+            Deny request
+          </button>
+        </>
+      )}
+      {!view.can_stop && !view.can_steer && !view.can_respond_approval && (
+        <p>No canonical agent control is currently available.</p>
+      )}
+    </section>
+  )
+}
+<section>
+  <h3>Recovery</h3><p>
+    Automatic retries follow persisted worker budgets. Generic manual retry is
+    unavailable. Inspect the owning product for supported reconciliation or
+    recovery; do not replay a provider write.
+  </p><a href={`/clients/${slug}/integrations/`}>Manage Integration</a><p>
+    <a href={`/clients/${slug}/website-content/`}>Website & Content recovery</a> ·
+    <a href={`/clients/${slug}/reviews/`}>Reviews</a> · <a
+      href={`/clients/${slug}/local-search/`}>Local Search</a
+    > · <a href={`/clients/${slug}/leads/`}>Leads</a>
+  </p>
+</section>
+<section>
+  <h3>Jobs and Attempts</h3><p>
+    Bounded to 50 jobs and 100 attempts; unavailable is not zero or success.
+  </p>{
+    view.jobs.map((j) => (
+      <div class="listrow">
+        <div>
+          <Fragment>
+            <>
+              <h4>
+                {j.job_type} · {j.status}
+              </h4>
+              <p>
+                Attempts {j.attempt_count} / {j.max_attempts} ·{" "}
+                {j.last_error_category ?? "No error category"}
+              </p>
+            </>
+          </Fragment>
+          <small>
+            Available {j.available_at} · Result{" "}
+            {j.result_reference ?? "Unavailable"}
+          </small>
+          {view.attempts
+            .filter((a) => a.job_id === j.id)
+            .map((a) => (
+              <p>
+                Attempt {a.attempt_number}: {a.status} ·{" "}
+                {a.error_category ?? "No category"} · {a.started_at}
+              </p>
+            ))}
+        </div>
+      </div>
+    ))
+  }{!view.jobs.length && <p>No job evidence recorded.</p>}
+</section>
+<details>
+  <summary>Execution evidence and audit history</summary><p>
+    Workflow ID {r.id} · Correlation {r.correlation_id} · Idempotency {
+      view.idempotency_key
+    }
+  </p><p>History: {view.history_state}</p>{
+    view.history.map((h) => (
+      <p>
+        {h.occurred_at} · {h.action} · {h.result}
+      </p>
+    ))
+  }
+</details>
+<script>
+  import "../../lib/automation-actions";
+</script>

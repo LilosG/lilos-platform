@@ -1,4 +1,14 @@
 ---
+import Automations from "../../../components/automations/Automations.astro";
+import RunDetail from "../../../components/automations/RunDetail.astro";
+import {
+  adaptAutomations,
+  adaptAutomationDetail,
+} from "../../../adapters/automations";
+import type {
+  AutomationsView,
+  AutomationDetailView,
+} from "../../../adapters/automations";
 import Leads from "../../../components/leads/Leads.astro";
 import LeadDetail from "../../../components/leads/LeadDetail.astro";
 import { adaptLeads, adaptLeadDetail } from "../../../adapters/leads";
@@ -62,6 +72,8 @@ try {
 const path = (Astro.params.workspace ?? "").replace(/\/$/, "");
 const section = path.split("/")[0];
 const sourceId = path.split("/")[1];
+let automations: AutomationsView | undefined;
+let automationDetail: AutomationDetailView | undefined;
 let leads: LeadsView | undefined;
 let leadDetail: LeadDetailView | undefined;
 let website: WebsiteView | undefined;
@@ -102,7 +114,28 @@ if (!Number.isInteger(offset) || offset < 0 || offset > 100000)
   return new Response("Invalid page", { status: 400 });
 const scope = `organizations/${client.organization_id}/command-center/`;
 try {
-  if (section === "leads") {
+  if (section === "automations") {
+    if (segments.length === 3 && tab === "runs")
+      automationDetail = adaptAutomationDetail(
+        await read(Astro.locals, scope + `automations/runs/${segments[2]}/`),
+        client.organization_id,
+        segments[2],
+      );
+    else {
+      if (segments.length > 2 || !["", "all"].includes(tab))
+        return new Response("Page not found", { status: 404 });
+      const location = Astro.url.searchParams.get("location_id") || undefined;
+      const params = new URLSearchParams({
+        offset: String(offset),
+        ...(location ? { location_id: location } : {}),
+      });
+      automations = adaptAutomations(
+        await read(Astro.locals, scope + `automations/?${params}`),
+        client.organization_id,
+        location,
+      );
+    }
+  } else if (section === "leads") {
     const location = Astro.url.searchParams.get("location_id") || undefined;
     const params = new URLSearchParams(
       location ? { location_id: location } : {},
@@ -258,23 +291,25 @@ try {
     "This source is temporarily unavailable. No sample data is substituted.";
 }
 const title =
-  section === "website-content"
-    ? "Website & Content"
-    : section === "leads"
-      ? "Leads"
-      : section === "reviews"
-        ? "Reviews"
-        : section === "local-search"
-          ? "Local Search"
-          : section === "integrations"
-            ? "Integrations"
-            : section === "opportunities"
-              ? "Opportunities"
-              : section === "attention"
-                ? "Requires attention"
-                : section
-                  ? section.replaceAll("-", " ")
-                  : client.organization_name;
+  section === "automations"
+    ? "Automations"
+    : section === "website-content"
+      ? "Website & Content"
+      : section === "leads"
+        ? "Leads"
+        : section === "reviews"
+          ? "Reviews"
+          : section === "local-search"
+            ? "Local Search"
+            : section === "integrations"
+              ? "Integrations"
+              : section === "opportunities"
+                ? "Opportunities"
+                : section === "attention"
+                  ? "Requires attention"
+                  : section
+                    ? section.replaceAll("-", " ")
+                    : client.organization_name;
 ---
 
 <AppLayout
@@ -285,12 +320,25 @@ const title =
   section === "integrations" ||
   section === "reviews" ||
   section === "website-content" ||
-  section === "leads"
+  section === "leads" ||
+  section === "automations"
     ? section
     : undefined}
 >
   {
-    leadDetail ? (
+    automationDetail ? (
+      <DialogFrame
+        id="automation-detail"
+        returnLabel="All Automations"
+        returnTo={`/clients/${client.organization_slug}/automations/all/`}
+      >
+        <RunDetail
+          slot="body"
+          view={automationDetail}
+          slug={client.organization_slug}
+        />
+      </DialogFrame>
+    ) : leadDetail ? (
       <DialogFrame
         id="lead-detail"
         returnLabel="All leads"
@@ -385,6 +433,12 @@ const title =
         </div>
         {error ? (
           <p role="alert">{error}</p>
+        ) : automations ? (
+          <Automations
+            view={automations}
+            slug={client.organization_slug}
+            tab={tab}
+          />
         ) : leads ? (
           <Leads view={leads} slug={client.organization_slug} tab={tab} />
         ) : website ? (

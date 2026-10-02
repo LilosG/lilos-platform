@@ -718,3 +718,21 @@ conversion-path behavior remains in Website & Content.
 focused repository/synthetic evidence, Phase 4 merge/rebase sequencing, unsupported
 capabilities and `PENDING OWNER ACTION — LIVE STAGING ACCEPTANCE`. No live provider
 acceptance, real provider/client mutation or Phase 6 implementation is claimed.
+
+## Command Center Phase 6 — Automations
+
+State: `IMPLEMENTED_NOT_ACCEPTED` for live rollout.
+
+Exception-first Automation workspace/run detail consumes canonical definitions,
+schedules, workflow/job/attempt/agent state, publication verification and governed
+audit evidence. Closed BFF schedule/standalone sync/ingest/eligible agent controls
+reuse existing services; durable execution remains worker/scheduler authority.
+Queued/running/retry/partial/failed/unconfirmed results are not completed provider
+outcomes. Missing heartbeat, rank/report workflow sources, generic safe retry and
+client definition activation remain unavailable; no duplicate automation model.
+
+[Phase 6 acceptance](implementation/command-center/PHASE_06_ACCEPTANCE.md) records
+focused repository/synthetic checks, Phase 5 merge/rebase evidence, GitHub CI as the
+final full-repository gate, unsupported sources and
+`PENDING OWNER ACTION — LIVE STAGING ACCEPTANCE`. No live provider acceptance or
+real provider/client mutation is claimed. Phase 7 is not started.

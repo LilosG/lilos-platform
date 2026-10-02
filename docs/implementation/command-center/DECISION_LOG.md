@@ -154,3 +154,21 @@ steps. Phase 0 discovery and the approved architecture were not reopened.
   prerequisites and separate real-write authorization. Parallel implementation starts
   from the supplied Phase 4 head; actual Phase 4 merge/rebase is required before broad
   final gates and PR creation. Do not merge or begin Phase 6.
+
+## Phase 6 — Automations
+
+- D59 — IMPLEMENTED_NOT_ACCEPTED: two typed scoped Automation reads compose the
+  canonical registry/definition/version/schedule/run/job/attempt/agent/publication
+  and permission-gated audit records; no model, scheduler or orchestration duplicate.
+- D60 — IMPLEMENTED_NOT_ACCEPTED: approved exception-first SSR screen/run dialog and
+  closed canonical schedule, standalone sync/ingest and eligible native agent controls.
+  Shared definition activation remains distinct from client schedule state; no
+  browser dispatch calculation, generic retry or provider replay.
+- D61 — VERIFIED CURRENT FACT: execution completion is not provider success;
+  canonical publication verified/read-back timestamp is required for that claim.
+  Missing heartbeat, rank/report workflow sources, client definition activation and
+  generic safe retry remain explicit unavailable capabilities.
+- D62 — OWNER ACTION REQUIRED: PHASE_06_ACCEPTANCE.md records focused local proof and
+  inherited live staging prerequisites. The owner's acceleration directive makes
+  GitHub CI the final full-repository gate after actual Phase 5 merge/rebase; do not
+  claim its result before execution, merge this PR or begin Phase 7.

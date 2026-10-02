@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { automationRoutes } from "./automation-routes";
 import { leadRoutes } from "./lead-routes";
 import { websiteRoutes } from "./website-routes";
 import { reviewRoutes } from "./review-routes";
@@ -32,6 +33,7 @@ type DecisionBody =
   paths["/api/v1/organizations/{organization_id}/seo/recommendations/{revision_id}/decision"]["post"]["requestBody"]["content"]["application/json"];
 export const routes = [
   ...searchRoutes,
+  ...automationRoutes,
   ...leadRoutes,
   ...websiteRoutes,
   ...reviewRoutes,
@@ -143,7 +145,11 @@ export async function forward(
       return response("QUERY_INVALID", 400);
   }
   let body: string | undefined;
-  if (request.method === "POST" || request.method === "DELETE") {
+  if (
+    request.method === "POST" ||
+    request.method === "PATCH" ||
+    request.method === "DELETE"
+  ) {
     try {
       assertMutation(
         request,
@@ -153,7 +159,7 @@ export async function forward(
         locals.settings,
       );
       if (
-        request.method === "POST" &&
+        (request.method === "POST" || request.method === "PATCH") &&
         request.headers.get("content-type")?.split(";", 1)[0] !==
           "application/json"
       )
