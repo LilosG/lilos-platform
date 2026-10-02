@@ -53,6 +53,7 @@ test("Attention dialog, period control and filters", async ({ page }) => {
   ).toBeVisible();
   await expect(page.locator("#rowcount")).toHaveText("0 of 1 clients");
   await page.getByLabel("Reporting date range").selectOption("28");
+  await expect(page).toHaveURL(/days=28/);
   await page.goto("/?days=30");
   await expect(page.locator("body")).toContainText("Invalid period");
 });
