@@ -12,9 +12,26 @@ from typing import Any
 
 import httpx
 
+from apps.api.app.products.content.adapter import (
+    DEPLOYMENT_RATE_LIMITED,
+    VERCEL_BUILD_RATE_LIMIT_MARKER,
+)
+
 GITHUB_API = "https://api.github.com"
 GITHUB_PAGE_SIZE = 100
 MAX_GITHUB_PAGES = 1_000
+
+
+class GitHubPermissionError(RuntimeError):
+    """The installation token is valid but lacks a permission the call needs.
+
+    Retrying cannot help: someone has to grant the permission on the GitHub App. GitHub
+    answers 403 for this and for rate limiting, so it is told apart by the response body's
+    message, read here at the provider boundary and nowhere else.
+    """
+
+
+GITHUB_INTEGRATION_FORBIDDEN_MESSAGE = "Resource not accessible by integration"
 
 
 @dataclass(slots=True)
@@ -80,6 +97,16 @@ class GitHubRepositoryPublisher:
             response = await client.request(
                 method, f"{GITHUB_API}{path}", headers=self._headers(), **kwargs
             )
+        if response.status_code == 403 and 403 not in accepted:
+            try:
+                message = response.json().get("message")
+            except ValueError:
+                message = None
+            if message == GITHUB_INTEGRATION_FORBIDDEN_MESSAGE:
+                raise GitHubPermissionError(
+                    f"GitHub API {method} {path} returned 403: the app installation lacks "
+                    "the permission this call needs"
+                )
         if response.status_code not in accepted:
             raise RuntimeError(
                 f"GitHub API {method} {path} returned {response.status_code}: {response.text[:200]}"
@@ -397,6 +424,8 @@ class GitHubRepositoryPublisher:
             ]
             if vercel_failures:
                 target_url = str(vercel_failures[0].get("target_url") or "")
+                if VERCEL_BUILD_RATE_LIMIT_MARKER in target_url:
+                    return {"state": DEPLOYMENT_RATE_LIMITED, "url": target_url}
                 return {"state": "failure", "url": target_url}
             return {"state": "none", "url": ""}
         deployment_id = production[0].get("id")

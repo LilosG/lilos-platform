@@ -122,7 +122,7 @@ async def test_preview_only_deployment_does_not_satisfy_production_publish() -> 
 
 
 @pytest.mark.anyio
-async def test_failed_vercel_status_without_production_deployment_is_terminal() -> None:
+async def test_rate_limited_vercel_status_without_production_deployment_is_not_a_failure() -> None:
     target_url = "https://vercel.com/team?upgradeToPro=build-rate-limit"
     publisher = StubGitHubPublisher(
         check_pages=[],
@@ -133,7 +133,7 @@ async def test_failed_vercel_status_without_production_deployment_is_terminal() 
     )
 
     assert await publisher.deployment("owner/repo", "revision") == {
-        "state": "failure",
+        "state": "rate_limited",
         "url": target_url,
     }
 
@@ -273,3 +273,72 @@ async def test_get_file_decodes_content_and_reports_missing_file() -> None:
     assert await FilePublisher(None).get_file("owner/repo", "abc123", "missing.json") is None
     with pytest.raises(RuntimeError):
         await FilePublisher({"type": "dir"}).get_file("owner/repo", "abc123", "src")
+
+
+@pytest.mark.anyio
+async def test_vercel_build_rate_limit_is_reported_apart_from_a_failed_deployment() -> None:
+    limited = StubGitHubPublisher(
+        check_pages=[],
+        deployment_pages=[[]],
+        commit_status={
+            "statuses": [
+                {
+                    "context": "Vercel",
+                    "state": "failure",
+                    "description": "Deployment rate limited — retry in 24 hours.",
+                    "target_url": "https://vercel.com/team?upgradeToPro=build-rate-limit",
+                }
+            ]
+        },
+    )
+    failed = StubGitHubPublisher(
+        check_pages=[],
+        deployment_pages=[[]],
+        commit_status={
+            "statuses": [
+                {
+                    "context": "Vercel",
+                    "state": "failure",
+                    "description": "Deployment has failed",
+                    "target_url": "https://vercel.com/team/site/dpl_123",
+                }
+            ]
+        },
+    )
+
+    assert (await limited.deployment("owner/repo", "revision"))["state"] == "rate_limited"
+    assert (await failed.deployment("owner/repo", "revision"))["state"] == "failure"
+
+
+@pytest.mark.anyio
+async def test_integration_permission_403_is_typed_and_other_403s_are_not(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import httpx
+
+    from apps.api.app.products.content import github_adapter
+
+    bodies = {
+        "permission": {"message": "Resource not accessible by integration", "status": "403"},
+        "rate": {"message": "You have exceeded a secondary rate limit.", "status": "403"},
+    }
+    real_client = httpx.AsyncClient
+
+    def client_for(body: dict[str, str]) -> Any:
+        def factory(**kwargs: Any) -> httpx.AsyncClient:
+            return real_client(
+                transport=httpx.MockTransport(lambda request: httpx.Response(403, json=body)),
+                **kwargs,
+            )
+
+        return factory
+
+    publisher = GitHubRepositoryPublisher(access_token="token")
+    monkeypatch.setattr(httpx, "AsyncClient", client_for(bodies["permission"]))
+    with pytest.raises(github_adapter.GitHubPermissionError):
+        await publisher.checks("owner/repo", "revision")
+
+    monkeypatch.setattr(httpx, "AsyncClient", client_for(bodies["rate"]))
+    with pytest.raises(RuntimeError) as other:
+        await publisher.checks("owner/repo", "revision")
+    assert not isinstance(other.value, github_adapter.GitHubPermissionError)

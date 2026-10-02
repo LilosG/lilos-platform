@@ -75,6 +75,10 @@ const BLOCKED_COPY: Record<string, string> = {
   CONTENT_PR_CLOSED: "The pull request was closed without merging.",
   CONTENT_PR_HEAD_CHANGED:
     "The pull request was changed after approval, so it was not merged.",
+  GITHUB_APP_PERMISSION_MISSING:
+    "GitHub refused a read this change needs: the LILOs GitHub App lacks the Checks or Commit statuses permission. Grant it on the app; the change resumes from its pull request.",
+  CONTENT_DEPLOYMENT_RATE_LIMITED:
+    "The change merged, but the host refused to build it because its build limit was reached. It deploys once the limit clears or when it is redeployed.",
 };
 
 const BUILD_GATE_LABELS: Record<string, string> = {

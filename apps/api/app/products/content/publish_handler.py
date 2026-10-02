@@ -27,12 +27,13 @@ from apps.api.app.execution.handlers import (
     _provider_writes_enabled,
 )
 from apps.api.app.integrations.models import IntegrationConnection
-from apps.api.app.products.content.adapter import RepositoryPublisher
+from apps.api.app.products.content.adapter import DEPLOYMENT_RATE_LIMITED, RepositoryPublisher
 from apps.api.app.products.content.file_format import ContentFileFormatError, build_content_file
 from apps.api.app.products.content.frontmatter_contract import (
     FrontmatterContract,
     FrontmatterContractError,
 )
+from apps.api.app.products.content.github_adapter import GitHubPermissionError
 from apps.api.app.products.content.models import (
     ContentItem,
     ContentPublication,
@@ -187,16 +188,12 @@ class PullRequestUnavailableError(Exception):
         self.code = code
 
 
-async def observe_publication_pull_request(
+async def _read_only_publisher(
     session: AsyncSession,
     organization_id: UUID,
     publication: ContentPublication,
-) -> PullRequestObservation:
-    """Read a publication's pull request state. Unlike `load_publishing_context` this never
-    fails the publication, so an operator script can look without side effects.
-    """
-    if not publication.external_pull_request_id:
-        raise PullRequestUnavailableError("PUBLICATION_HAS_NO_PULL_REQUEST")
+) -> tuple[PublishingTarget, RepositoryPublisher]:
+    """The publication's target and a provider client, without changing anything."""
     target = await session.scalar(
         select(PublishingTarget).where(
             PublishingTarget.organization_id == organization_id,
@@ -219,10 +216,26 @@ async def observe_publication_pull_request(
         token = str(await _github_token_resolver(session, Settings(), connection))
     except Exception as exc:
         raise PullRequestUnavailableError("GITHUB_CREDENTIAL_REQUIRED") from exc
+    return target, _content_publisher_factory(token)
+
+
+async def observe_publication_pull_request(
+    session: AsyncSession,
+    organization_id: UUID,
+    publication: ContentPublication,
+) -> PullRequestObservation:
+    """Read a publication's pull request state. Unlike `load_publishing_context` this never
+    fails the publication, so an operator script can look without side effects.
+    """
+    if not publication.external_pull_request_id:
+        raise PullRequestUnavailableError("PUBLICATION_HAS_NO_PULL_REQUEST")
+    target, publisher = await _read_only_publisher(session, organization_id, publication)
     try:
-        pr = await _content_publisher_factory(token).get_pull_request(
+        pr = await publisher.get_pull_request(
             target.repository_id, publication.external_pull_request_id
         )
+    except GitHubPermissionError as exc:
+        raise PullRequestUnavailableError("GITHUB_APP_PERMISSION_MISSING") from exc
     except Exception as exc:
         logger.warning("Pull request state lookup failed", exc_info=exc)
         raise PullRequestUnavailableError("PULL_REQUEST_LOOKUP_FAILED") from exc
@@ -231,6 +244,24 @@ async def observe_publication_pull_request(
     if pr.get("state") == "closed":
         return PullRequestObservation("closed", None)
     return PullRequestObservation("open", None)
+
+
+async def observe_publication_checks(
+    session: AsyncSession,
+    organization_id: UUID,
+    publication: ContentPublication,
+) -> dict[str, str]:
+    """Read the checks the merge gate reads, for the publication's pinned head commit."""
+    if not publication.approved_head_sha:
+        raise PullRequestUnavailableError("PULL_REQUEST_HEAD_MISSING")
+    target, publisher = await _read_only_publisher(session, organization_id, publication)
+    try:
+        return await publisher.checks(target.repository_id, publication.approved_head_sha)
+    except GitHubPermissionError as exc:
+        raise PullRequestUnavailableError("GITHUB_APP_PERMISSION_MISSING") from exc
+    except Exception as exc:
+        logger.warning("Checks lookup failed", exc_info=exc)
+        raise PullRequestUnavailableError("CHECKS_REREAD_FAILED") from exc
 
 
 async def advance_publication(
@@ -566,6 +597,15 @@ async def _wait_for_pull_request_checks(
         if not publication.external_revision_id:
             raise RuntimeError("pull request head SHA is unavailable")
         checks = await publisher.checks(repository_id, publication.external_revision_id)
+    except GitHubPermissionError as exc:
+        # Every retry would hit the same 403 until someone grants the GitHub App the missing
+        # permission (Checks / Commit statuses: read). Say so and stop; the publication stays
+        # resumable from the pull request once the permission exists.
+        logger.warning("Content check reconciliation lacks a GitHub permission", exc_info=exc)
+        publication.status = "reconciliation_required"
+        publication.safe_error_code = "GITHUB_APP_PERMISSION_MISSING"
+        await session.commit()
+        return JobOutcome(result="permanent_failure", safe_error="GITHUB_APP_PERMISSION_MISSING")
     except Exception as exc:
         logger.warning("Content check reconciliation failed", exc_info=exc)
         publication.status = "reconciliation_required"
@@ -682,24 +722,6 @@ async def _verify_merged_deployment(
         return JobOutcome(result="retryable_failure", safe_error="MERGE_REVISION_MISSING")
     try:
         deployment = await publisher.deployment(repository_id, revision_id)
-        state = deployment.get("state", "none").lower()
-        publication.deployment_status = state
-        if state in {"success", "active"}:
-            return await subject.finish(deployment.get("url"))
-        if state in {"error", "failure", "inactive"}:
-            publication.status = "failed"
-            publication.safe_error_code = "CONTENT_DEPLOYMENT_FAILED"
-            subject.set_state("failed")
-            await session.commit()
-            return JobOutcome(result="permanent_failure", safe_error="CONTENT_DEPLOYMENT_FAILED")
-
-        # A successful CI check can include a preview build or unrelated tests.
-        # Only a production deployment bound to this merged commit proves delivery.
-        publication.status = "deployment_pending"
-        publication.safe_error_code = None
-        subject.set_state("publishing")
-        await session.commit()
-        return JobOutcome(result="retryable_failure", safe_error="CONTENT_DEPLOYMENT_PENDING")
     except Exception as exc:
         logger.warning("Content deployment verification failed", exc_info=exc)
         publication.status = "reconciliation_required"
@@ -707,6 +729,37 @@ async def _verify_merged_deployment(
         subject.set_state("reconciliation_required")
         await session.commit()
         return JobOutcome(result="retryable_failure", safe_error="DEPLOYMENT_REREAD_FAILED")
+
+    # Only the provider read is guarded above. Persisting the outcome below is not a "reread"
+    # failure: a database error there must surface as itself, not as a second failing commit
+    # inside an except block that the worker reports as HANDLER_EXCEPTION.
+    state = deployment.get("state", "none").lower()
+    publication.deployment_status = state
+    if state in {"success", "active"}:
+        return await subject.finish(deployment.get("url"))
+    if state in {"error", "failure", "inactive"}:
+        publication.status = "failed"
+        publication.safe_error_code = "CONTENT_DEPLOYMENT_FAILED"
+        subject.set_state("failed")
+        await session.commit()
+        return JobOutcome(result="permanent_failure", safe_error="CONTENT_DEPLOYMENT_FAILED")
+    if state == DEPLOYMENT_RATE_LIMITED:
+        # The merge is on the base branch but the host refused to build it for 24 hours, so
+        # retrying within this run is pointless. Nothing is wrong with the change: the run
+        # ends with its own code and the publication stays resumable, not failed.
+        publication.status = "deployment_pending"
+        publication.safe_error_code = "CONTENT_DEPLOYMENT_RATE_LIMITED"
+        subject.set_state("publishing")
+        await session.commit()
+        return JobOutcome(result="permanent_failure", safe_error="CONTENT_DEPLOYMENT_RATE_LIMITED")
+
+    # A successful CI check can include a preview build or unrelated tests.
+    # Only a production deployment bound to this merged commit proves delivery.
+    publication.status = "deployment_pending"
+    publication.safe_error_code = None
+    subject.set_state("publishing")
+    await session.commit()
+    return JobOutcome(result="retryable_failure", safe_error="CONTENT_DEPLOYMENT_PENDING")
 
 
 async def _mark_published(
@@ -722,7 +775,8 @@ async def _mark_published(
     publication.safe_error_code = None
     if deployment_url:
         publication.published_url = deployment_url
-    revision.status = "published"
+    # An approved revision is immutable (database trigger content_revisions_approved_immutable
+    # allows only approved -> superseded). Which revision is live is recorded on the item.
     item.status = "published"
     item.approved_revision_id = revision.id
     item.publishing_target_id = publication.publishing_target_id

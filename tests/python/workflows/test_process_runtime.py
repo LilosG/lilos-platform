@@ -282,6 +282,10 @@ async def test_postgresql_worker_scheduler_and_heartbeat_contracts(
     now = datetime.now(UTC)
     try:
         async with engine.begin() as connection:
+            # A worker claims the oldest queued job and the scheduler the first due schedule, so
+            # rows another test committed and left behind would be taken instead of this test's.
+            await connection.execute(text("TRUNCATE TABLE jobs CASCADE"))
+            await connection.execute(text("TRUNCATE TABLE workflow_schedules CASCADE"))
             await connection.execute(
                 text(
                     """

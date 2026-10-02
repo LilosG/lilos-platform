@@ -86,13 +86,31 @@ async def _handle_seo_analysis(
     correlation_id: str,
     workflow_run_id: UUID,
 ) -> JobOutcome:
-    del input_document, workflow_run_id
+    del workflow_run_id
+    return await _analyze_website(
+        session,
+        organization_id=organization_id,
+        location_id=location_id,
+        correlation_id=correlation_id,
+        website_id=None,
+    )
+
+
+async def _analyze_website(
+    session: AsyncSession,
+    *,
+    organization_id: UUID,
+    location_id: UUID | None,
+    correlation_id: str,
+    website_id: UUID | None,
+) -> JobOutcome:
     try:
         result = await SEOOrchestrationService().analyze(
             session,
             organization_id,
             location_id=location_id,
             correlation_id=correlation_id,
+            website_id=website_id,
         )
     except Exception as exc:
         logger.exception(
@@ -118,6 +136,68 @@ async def _handle_seo_analysis(
 
 
 async def _handle_seo_crawl_and_analysis(
+    session: AsyncSession,
+    *,
+    organization_id: UUID,
+    location_id: UUID | None,
+    input_document: dict[str, Any],
+    correlation_id: str,
+    workflow_run_id: UUID,
+) -> JobOutcome:
+    """Crawl and analyze either one reserved crawl run or, on a schedule, every active website.
+
+    A schedule carries no crawl run (its input is only the schedule id), so a scheduled run
+    creates one crawl run per active website in its scope and handles each like a reserved one.
+    """
+    if input_document.get("crawl_run_id") or not input_document.get("schedule_id"):
+        return await _crawl_then_analyze(
+            session,
+            organization_id=organization_id,
+            location_id=location_id,
+            input_document=input_document,
+            correlation_id=correlation_id,
+            workflow_run_id=workflow_run_id,
+        )
+
+    from sqlalchemy import or_, select
+
+    from apps.api.app.products.seo.models import SEOWebsite
+    from apps.api.app.products.seo.service import SEOService
+
+    conditions = [SEOWebsite.organization_id == organization_id, SEOWebsite.status == "active"]
+    if location_id is not None:
+        conditions.append(
+            or_(SEOWebsite.location_id == location_id, SEOWebsite.location_id.is_(None))
+        )
+    websites = list(
+        await session.scalars(select(SEOWebsite).where(*conditions).order_by(SEOWebsite.created_at))
+    )
+    if not websites:
+        return JobOutcome(result="permanent_failure", safe_error="SEO_ACTIVE_WEBSITE_MISSING")
+    first_failure: JobOutcome | None = None
+    references: list[str] = []
+    for website in websites:
+        crawl_run = await SEOService().ensure_scheduled_crawl_run(
+            session, organization_id, website.id, workflow_run_id
+        )
+        outcome = await _crawl_then_analyze(
+            session,
+            organization_id=organization_id,
+            location_id=location_id,
+            input_document={"crawl_run_id": str(crawl_run.id)},
+            correlation_id=correlation_id,
+            workflow_run_id=workflow_run_id,
+        )
+        if outcome.result == "succeeded":
+            references.append(outcome.result_reference or "")
+        elif first_failure is None:
+            first_failure = outcome
+    if first_failure is not None:
+        return first_failure
+    return JobOutcome(result="succeeded", result_reference="|".join(references)[:500])
+
+
+async def _crawl_then_analyze(
     session: AsyncSession,
     *,
     organization_id: UUID,
@@ -208,13 +288,12 @@ async def _handle_seo_crawl_and_analysis(
     elif website.status != "active":
         return JobOutcome(result="permanent_failure", safe_error="SEO_WEBSITE_NOT_ACTIVE")
 
-    analysis = await _handle_seo_analysis(
+    analysis = await _analyze_website(
         session,
         organization_id=organization_id,
         location_id=location_id,
-        input_document={},
         correlation_id=correlation_id,
-        workflow_run_id=workflow_run_id,
+        website_id=website.id,
     )
     if analysis.result != "succeeded":
         return analysis

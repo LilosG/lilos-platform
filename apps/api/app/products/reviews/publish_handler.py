@@ -108,6 +108,76 @@ def _provider_observation(
     )
 
 
+class ReviewReplyUnavailableError(Exception):
+    """The provider's reply state could not be read; ``code`` says why, without secrets."""
+
+    def __init__(self, code: str) -> None:
+        super().__init__(code)
+        self.code = code
+
+
+async def observe_review_reply(
+    session: AsyncSession,
+    organization_id: UUID,
+    response: ReviewResponseRevision,
+) -> ProviderReplyObservation | None:
+    """Read what Google currently shows for a response's review, changing nothing.
+
+    Returns None when Google shows no reply. Unlike the publish handler this never writes
+    to the provider and never moves the response, so an operator script can look safely.
+    """
+    from apps.api.app.execution import handlers as execution_handlers
+
+    review = await session.scalar(
+        select(Review).where(
+            Review.organization_id == organization_id,
+            Review.id == response.review_id,
+        )
+    )
+    if review is None:
+        raise ReviewReplyUnavailableError("REVIEW_NOT_FOUND")
+    mapping = await session.scalar(
+        select(ProviderResourceMapping).where(
+            ProviderResourceMapping.organization_id == organization_id,
+            ProviderResourceMapping.id == review.integration_resource_id,
+            ProviderResourceMapping.status == "active",
+        )
+    )
+    if mapping is None:
+        raise ReviewReplyUnavailableError("PROVIDER_MAPPING_NOT_FOUND")
+    gbp_location = await session.scalar(
+        select(GBPLocation).where(
+            GBPLocation.organization_id == organization_id,
+            GBPLocation.integration_resource_id == mapping.id,
+        )
+    )
+    if gbp_location is None:
+        raise ReviewReplyUnavailableError("GBP_LOCATION_NOT_FOUND")
+    gbp_account = await session.get(GBPAccount, gbp_location.account_id)
+    if gbp_account is None:
+        raise ReviewReplyUnavailableError("GBP_ACCOUNT_NOT_FOUND")
+    review_name = v4_review_name(
+        gbp_account.external_account_id,
+        gbp_location.external_location_id,
+        review.external_review_id,
+    )
+    try:
+        token, _connection = await execution_handlers._token_resolver(session, organization_id)
+    except IntegrationNotFoundError as exc:
+        raise ReviewReplyUnavailableError("NO_CONNECTED_INTEGRATION") from exc
+    except IntegrationReconnectRequiredError as exc:
+        raise ReviewReplyUnavailableError("TOKEN_REFRESH_FAILED") from exc
+    try:
+        raw = await execution_handlers._adapter_factory().get_review(token, review_name)
+    except Exception as exc:
+        logger.warning("Review reply lookup failed", exc_info=exc)
+        raise ReviewReplyUnavailableError("VERIFICATION_REREAD_FAILED") from exc
+    observation = _provider_observation(raw, review_name=review_name)
+    if observation is None or not observation.comment.strip():
+        return None
+    return observation
+
+
 async def handle_reviews_publish_response(
     session: AsyncSession,
     *,
