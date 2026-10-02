@@ -19,7 +19,7 @@ from sqlalchemy.pool import NullPool
 
 from apps.api.app.config import Settings
 from apps.api.app.integrations.connection_service import GBPConnectionService
-from apps.api.app.integrations.errors import IntegrationTokenExchangeFailedError
+from apps.api.app.integrations.errors import IntegrationTokenRejectedError
 
 
 class SharedSessionScope:
@@ -68,7 +68,7 @@ class ProbedConnectionService(GBPConnectionService):
     async def refresh_token_pair(self, settings: Settings, refresh_token: str) -> dict[str, object]:
         await self.probe.record()
         if self.reject:
-            raise IntegrationTokenExchangeFailedError
+            raise IntegrationTokenRejectedError
         return {
             "access_token": "refreshed-access",
             "refresh_token": refresh_token,

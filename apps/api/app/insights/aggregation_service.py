@@ -14,6 +14,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.app.execution.models import WorkflowRun
 from apps.api.app.growth.models import GrowthAction, GrowthInitiative, GrowthOutcome
+from apps.api.app.integrations.connection_service import GBP_PROVIDER_KEY
+from apps.api.app.integrations.models import IntegrationConnection, Provider
 from apps.api.app.products.analytics.service import AnalyticsService
 from apps.api.app.products.content.models import ContentItem, ContentPublication
 from apps.api.app.products.gbp.models import GBPLocation, GBPProfileSnapshot, GBPPublication
@@ -130,6 +132,17 @@ class InsightsService:
         leads = await self._status_counts(session, Lead, scoped(Lead))
         growth = await self._growth_summary(session, organization_id, location_id=location_id)
         ga4 = await self.analytics.summary(session, organization_id, location_id=location_id)
+        google_connection_status = await session.scalar(
+            select(IntegrationConnection.status)
+            .join(Provider, Provider.id == IntegrationConnection.provider_id)
+            .where(
+                IntegrationConnection.organization_id == organization_id,
+                Provider.key == GBP_PROVIDER_KEY,
+                IntegrationConnection.status != "disconnected",
+            )
+            .order_by(IntegrationConnection.created_at.desc())
+            .limit(1)
+        )
         return {
             "workflow_runs": workflow_runs,
             "gbp": {
@@ -146,6 +159,7 @@ class InsightsService:
             },
             "leads": leads,
             "ga4": ga4,
+            "google_connection": {"status": google_connection_status},
             "growth": growth,
         }
 

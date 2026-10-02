@@ -100,6 +100,7 @@ import "../styles/global.css";
         dashboardMetrics,
         hasRecordedActivity,
         requiresAttention,
+        googleReconnectRequired,
         todaysWork,
         type WorkItem,
       } from "../lib/operating-dashboard";
@@ -160,7 +161,7 @@ import "../styles/global.css";
           insightsResult.kind === "ok" ? insightsResult.data : null;
         const activityRecorded = hasRecordedActivity(insightData);
         document.getElementById("attention-section")!.hidden =
-          !activityRecorded;
+          !activityRecorded && !googleReconnectRequired(insightData);
         document.getElementById("work-section")!.hidden = !activityRecorded;
         document.getElementById("activity-section")!.hidden = !activityRecorded;
         renderKPIs(insightData);
@@ -238,7 +239,10 @@ import "../styles/global.css";
           );
           return;
         }
-        if (!hasRecordedActivity(insightData)) {
+        if (
+          !hasRecordedActivity(insightData) &&
+          !googleReconnectRequired(insightData)
+        ) {
           document.getElementById("attention-section")!.hidden = true;
           panel.append(
             overviewEmptyState(

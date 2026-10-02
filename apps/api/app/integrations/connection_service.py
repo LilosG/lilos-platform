@@ -21,7 +21,7 @@ from uuid import UUID
 import httpx
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from apps.api.app.audit.contracts import AuditEventCreate
 from apps.api.app.audit.enums import AuditActorType, AuditResult
@@ -35,6 +35,7 @@ from apps.api.app.integrations.errors import (
     IntegrationReconnectRequiredError,
     IntegrationStateInvalidError,
     IntegrationTokenExchangeFailedError,
+    IntegrationTokenRejectedError,
 )
 from apps.api.app.integrations.models import (
     IntegrationConnection,
@@ -300,6 +301,8 @@ class GBPConnectionService:
                 )
         except httpx.HTTPError as exc:
             raise IntegrationTokenExchangeFailedError from exc
+        if response.status_code in (400, 401):
+            raise IntegrationTokenRejectedError
         if response.status_code >= 400:
             raise IntegrationTokenExchangeFailedError
         payload = response.json()
@@ -617,8 +620,8 @@ class GBPConnectionService:
         assert plan.refresh_token is not None
         try:
             payload = await self.refresh_token_pair(settings, plan.refresh_token)
-        except IntegrationTokenExchangeFailedError:
-            await self.fail_token_refresh(session, connection)
+        except IntegrationTokenRejectedError:
+            await self.fail_token_refresh_durably(session, connection)
             raise IntegrationReconnectRequiredError from None
         return await self.complete_token_refresh(session, settings, connection, plan, payload)
 
@@ -671,6 +674,8 @@ class GBPConnectionService:
         Persisting this in its own short transaction keeps the `reconnect_required`
         status and its audit row from being lost when the error unwinds the caller.
         """
+        if connection.status == "reconnect_required":
+            return
         connection.status = "reconnect_required"
         await session.flush()
         await self._audit(
@@ -685,6 +690,26 @@ class GBPConnectionService:
             metadata={"status": connection.status},
             result=AuditResult.FAILED,
         )
+
+    async def fail_token_refresh_durably(
+        self, session: AsyncSession, connection: IntegrationConnection
+    ) -> None:
+        """Persist `reconnect_required` in its own transaction, then return.
+
+        `ensure_fresh_token` raises straight after a rejected refresh, and every caller
+        unwinds its session on that error, so a status written only into the caller's
+        transaction was rolled back and the dead connection kept showing "connected".
+        This commits the status and its audit row independently of the caller.
+        """
+        bind = session.bind
+        if bind is None:
+            raise RuntimeError("the session is not bound to an engine")
+        connection_id = connection.id
+        async with async_sessionmaker(bind=bind, expire_on_commit=False).begin() as own:
+            stale = await own.get(IntegrationConnection, connection_id)
+            if stale is not None:
+                await self.fail_token_refresh(own, stale)
+        connection.status = "reconnect_required"
 
     async def complete_token_refresh(
         self,
