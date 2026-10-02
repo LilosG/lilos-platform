@@ -631,13 +631,10 @@ async def test_ensure_fresh_token_refreshes_when_near_expiry(
 
 @pytest.mark.integration
 @pytest.mark.anyio
-@pytest.mark.parametrize(
-    ("status", "body"), [(400, {"error": "invalid_grant"}), (401, {"error": "invalid_client"})]
-)
-async def test_ensure_fresh_token_marks_reconnect_required_when_google_rejects_the_token(
+@pytest.mark.parametrize("status", [400, 401])
+async def test_ensure_fresh_token_marks_reconnect_required_on_invalid_grant(
     integrations_session_factory: async_sessionmaker[AsyncSession],
     status: int,
-    body: dict[str, str],
 ) -> None:
     async with integrations_session_factory.begin() as session:
         await ProviderCatalogSeeder().run(session)
@@ -667,7 +664,7 @@ async def test_ensure_fresh_token_marks_reconnect_required_when_google_rejects_t
         connection_id = connection.id
 
     def failing_refresh_handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(status, json=body)
+        return httpx.Response(status, json={"error": "invalid_grant"})
 
     service.http_client_factory = mock_client_factory(failing_refresh_handler)
     # Every caller unwinds its transaction on this error. The status must survive that.
@@ -709,7 +706,18 @@ async def test_ensure_fresh_token_marks_reconnect_required_when_google_rejects_t
 
 @pytest.mark.integration
 @pytest.mark.anyio
-@pytest.mark.parametrize("failure", ["http_500", "http_503", "timeout", "network"])
+@pytest.mark.parametrize(
+    "failure",
+    [
+        "invalid_client_401",
+        "invalid_request_400",
+        "no_body_403",
+        "http_500",
+        "http_503",
+        "timeout",
+        "network",
+    ],
+)
 async def test_a_transient_refresh_failure_leaves_the_connection_status_unchanged(
     integrations_session_factory: async_sessionmaker[AsyncSession],
     failure: str,
@@ -746,6 +754,11 @@ async def test_a_transient_refresh_failure_leaves_the_connection_status_unchange
             raise httpx.ReadTimeout("timed out", request=request)
         if failure == "network":
             raise httpx.ConnectError("no route", request=request)
+        if failure.startswith("invalid_"):
+            name, _, status = failure.rpartition("_")
+            return httpx.Response(int(status), json={"error": name})
+        if failure == "no_body_403":
+            return httpx.Response(403, content=b"Forbidden")
         return httpx.Response(int(failure.removeprefix("http_")), json={"error": "backend_error"})
 
     service.http_client_factory = mock_client_factory(failing_refresh_handler)

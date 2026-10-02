@@ -11,6 +11,7 @@ Google connection records are created.
 """
 
 import json
+import logging
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -48,6 +49,8 @@ from apps.api.app.integrations.service import OAuthIntentService
 GOOGLE_AUTHORIZATION_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token"
 GOOGLE_REVOKE_ENDPOINT = "https://oauth2.googleapis.com/revoke"
+logger = logging.getLogger(__name__)
+
 GBP_PROVIDER_KEY = "google_business_profile"
 BUSINESS_MANAGE_SCOPE = "https://www.googleapis.com/auth/business.manage"
 SEARCH_CONSOLE_SCOPE = "https://www.googleapis.com/auth/webmasters.readonly"
@@ -125,6 +128,16 @@ def missing_scopes_for(
         wanted.update(scopes_for_product(product))
     granted = granted_scopes(connection)
     return tuple(sorted(wanted - granted))
+
+
+def _google_error_code(response: httpx.Response) -> str | None:
+    """Google's OAuth `error` code from a token-endpoint failure body, if it has one."""
+    try:
+        body = response.json()
+    except ValueError:
+        return None
+    code = body.get("error") if isinstance(body, dict) else None
+    return code[:64] if isinstance(code, str) else None
 
 
 @dataclass(slots=True)
@@ -301,9 +314,21 @@ class GBPConnectionService:
                 )
         except httpx.HTTPError as exc:
             raise IntegrationTokenExchangeFailedError from exc
-        if response.status_code in (400, 401):
-            raise IntegrationTokenRejectedError
         if response.status_code >= 400:
+            google_error = _google_error_code(response)
+            if google_error == "invalid_grant":
+                # The only definitive "this credential is dead": the user must reconnect.
+                raise IntegrationTokenRejectedError
+            # Anything else (invalid_client, invalid_request, 5xx, ...) is a platform or
+            # provider fault, not proof the user's grant is gone. Status stays unchanged.
+            logger.error(
+                "Google token endpoint refused the request",
+                extra={
+                    "event_name": "integrations.token_endpoint.platform_error",
+                    "http_status": response.status_code,
+                    "google_error": google_error,
+                },
+            )
             raise IntegrationTokenExchangeFailedError
         payload = response.json()
         if not isinstance(payload, dict) or "access_token" not in payload:
