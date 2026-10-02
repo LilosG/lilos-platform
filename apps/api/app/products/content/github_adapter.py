@@ -22,6 +22,18 @@ GITHUB_PAGE_SIZE = 100
 MAX_GITHUB_PAGES = 1_000
 
 
+class GitHubPermissionError(RuntimeError):
+    """The installation token is valid but lacks a permission the call needs.
+
+    Retrying cannot help: someone has to grant the permission on the GitHub App. GitHub
+    answers 403 for this and for rate limiting, so it is told apart by the response body's
+    message, read here at the provider boundary and nowhere else.
+    """
+
+
+GITHUB_INTEGRATION_FORBIDDEN_MESSAGE = "Resource not accessible by integration"
+
+
 @dataclass(slots=True)
 class GitHubRepositoryPublisher:
     """Concrete repository publisher backed by the GitHub REST API."""
@@ -85,6 +97,16 @@ class GitHubRepositoryPublisher:
             response = await client.request(
                 method, f"{GITHUB_API}{path}", headers=self._headers(), **kwargs
             )
+        if response.status_code == 403 and 403 not in accepted:
+            try:
+                message = response.json().get("message")
+            except ValueError:
+                message = None
+            if message == GITHUB_INTEGRATION_FORBIDDEN_MESSAGE:
+                raise GitHubPermissionError(
+                    f"GitHub API {method} {path} returned 403: the app installation lacks "
+                    "the permission this call needs"
+                )
         if response.status_code not in accepted:
             raise RuntimeError(
                 f"GitHub API {method} {path} returned {response.status_code}: {response.text[:200]}"

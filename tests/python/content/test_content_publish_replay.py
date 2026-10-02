@@ -17,6 +17,7 @@ from apps.api.app.integrations.models import IntegrationConnection, Provider
 from apps.api.app.organizations.enums import OrganizationStatus, OrganizationType
 from apps.api.app.organizations.models import Organization
 from apps.api.app.products.content import publish_handler
+from apps.api.app.products.content.github_adapter import GitHubPermissionError
 from apps.api.app.products.content.models import (
     ContentItem,
     ContentPublication,
@@ -55,6 +56,7 @@ class FakeRepository:
         self.files: dict[str, str] = {}
         self.calls: list[str] = []
         self.deployment_state: dict[str, str] = {"state": "success", "url": "https://site.test"}
+        self.checks_error: Exception | None = None
 
     async def get_base_commit(self, repository_id: str, base_branch: str) -> str:
         return "base-commit"
@@ -87,6 +89,8 @@ class FakeRepository:
         return {"head": {"sha": "head-sha"}, "merged": False, "state": "open"}
 
     async def checks(self, repository_id: str, revision_id: str) -> dict[str, str]:
+        if self.checks_error is not None:
+            raise self.checks_error
         return {"state": "success", "gate": "vercel_preview"}
 
     async def merge_pull_request(
@@ -385,6 +389,40 @@ async def test_build_rate_limited_deployment_keeps_the_publication_resumable(
 
     assert again == ("succeeded", None)
     assert repository.calls.count("merge") == 1
+    publication, item, _ = await _states(content_session_factory, pub_id, item_id, rev_id)
+    assert (publication.status, item.status) == ("verified", "published")
+
+
+@pytest.mark.integration
+@pytest.mark.anyio
+async def test_missing_github_app_permission_stops_retrying_and_resumes_once_granted(
+    content_session_factory: async_sessionmaker[AsyncSession], repository: FakeRepository
+) -> None:
+    # Production run 9056999c (site change, PR 26): GET /commits/{sha}/status answered 403
+    # "Resource not accessible by integration" on all 30 attempts over 19 hours.
+    async with content_session_factory.begin() as session:
+        org_id, pub_id, item_id, rev_id = await _seed(
+            session,
+            contract=COCO_MAYA_CONTRACT,
+            target_path="src/content/blog/brunch.mdx",
+            frontmatter={"title": "Brunch | Coco Maya", "description": "Daily brunch."},
+        )
+    overrides = {"image": "/a.webp", "image_alt": "a"}
+    repository.checks_error = GitHubPermissionError("403: the app installation lacks permission")
+
+    first = await _publish(content_session_factory, org_id, pub_id, overrides)
+
+    assert first == ("permanent_failure", "GITHUB_APP_PERMISSION_MISSING")
+    publication, item, _ = await _states(content_session_factory, pub_id, item_id, rev_id)
+    assert publication.status == "reconciliation_required"
+    assert publication.safe_error_code == "GITHUB_APP_PERMISSION_MISSING"
+    assert repository.calls.count("create_pull_request") == 1
+
+    repository.checks_error = None  # the permission was granted
+    again = await _publish(content_session_factory, org_id, pub_id, overrides)
+
+    assert again == ("succeeded", None)
+    assert repository.calls.count("create_pull_request") == 1  # resumed, never recreated
     publication, item, _ = await _states(content_session_factory, pub_id, item_id, rev_id)
     assert (publication.status, item.status) == ("verified", "published")
 

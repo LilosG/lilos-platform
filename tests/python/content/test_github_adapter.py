@@ -308,3 +308,37 @@ async def test_vercel_build_rate_limit_is_reported_apart_from_a_failed_deploymen
 
     assert (await limited.deployment("owner/repo", "revision"))["state"] == "rate_limited"
     assert (await failed.deployment("owner/repo", "revision"))["state"] == "failure"
+
+
+@pytest.mark.anyio
+async def test_integration_permission_403_is_typed_and_other_403s_are_not(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import httpx
+
+    from apps.api.app.products.content import github_adapter
+
+    bodies = {
+        "permission": {"message": "Resource not accessible by integration", "status": "403"},
+        "rate": {"message": "You have exceeded a secondary rate limit.", "status": "403"},
+    }
+    real_client = httpx.AsyncClient
+
+    def client_for(body: dict[str, str]) -> Any:
+        def factory(**kwargs: Any) -> httpx.AsyncClient:
+            return real_client(
+                transport=httpx.MockTransport(lambda request: httpx.Response(403, json=body)),
+                **kwargs,
+            )
+
+        return factory
+
+    publisher = GitHubRepositoryPublisher(access_token="token")
+    monkeypatch.setattr(httpx, "AsyncClient", client_for(bodies["permission"]))
+    with pytest.raises(github_adapter.GitHubPermissionError):
+        await publisher.checks("owner/repo", "revision")
+
+    monkeypatch.setattr(httpx, "AsyncClient", client_for(bodies["rate"]))
+    with pytest.raises(RuntimeError) as other:
+        await publisher.checks("owner/repo", "revision")
+    assert not isinstance(other.value, github_adapter.GitHubPermissionError)
