@@ -477,22 +477,29 @@ async def portfolio_overview(
                         completed_at=run.completed_at or run.updated_at,
                     )
                 )
-            schedule = await session.scalar(
-                select(Schedule)
-                .where(Schedule.organization_id == oid, Schedule.status == "active")
-                .order_by(Schedule.next_run_at)
-                .limit(1)
-            )
-            if schedule:
+            scheduled = (
+                await session.execute(
+                    select(Schedule, WorkflowDefinition.key)
+                    .join(WorkflowVersion, WorkflowVersion.id == Schedule.workflow_version_id)
+                    .join(
+                        WorkflowDefinition, WorkflowDefinition.id == WorkflowVersion.definition_id
+                    )
+                    .where(Schedule.organization_id == oid, Schedule.status == "active")
+                    .order_by(Schedule.next_run_at)
+                    .limit(1)
+                )
+            ).first()
+            if scheduled:
+                schedule, scheduled_key = scheduled
                 next_work = WorkItem(
-                    workflow_key=schedule.key, status="scheduled", at=schedule.next_run_at
+                    workflow_key=scheduled_key, status="scheduled", at=schedule.next_run_at
                 )
                 upcoming.append(
                     UpcomingItem(
                         organization_id=oid,
                         organization_name=org.name,
                         organization_slug=org.slug,
-                        workflow_key=schedule.key,
+                        workflow_key=scheduled_key,
                         next_run_at=schedule.next_run_at,
                     )
                 )
