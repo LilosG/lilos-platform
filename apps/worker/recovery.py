@@ -25,6 +25,7 @@ from apps.api.app.agents.service import (
 )
 from apps.api.app.ai.models import AIExecution
 from apps.api.app.config import Settings
+from apps.api.app.execution.contracts import JobOutcome
 from apps.api.app.execution.models import (
     Job,
     JobAttempt,
@@ -32,7 +33,9 @@ from apps.api.app.execution.models import (
     WorkflowRun,
     WorkflowVersion,
 )
+from apps.api.app.execution.service import ExecutionService
 from apps.api.app.products.reviews.models import ReviewResponseRevision
+from apps.api.app.products.reviews.publish_handler import VERIFY_ONLY_SAFE_ERRORS
 from apps.api.app.products.seo.models import SEOCrawlRun, SEOWebsite
 
 ACTIVE_JOB_STATUSES = {
@@ -46,6 +49,9 @@ TERMINAL_JOB_STATUSES = {"completed", "cancelled", "failed", "dead_lettered"}
 REVIEW_VERIFICATION_FAILURES = {
     "VERIFICATION_REREAD_FAILED",
     "VERIFICATION_CONTENT_MISMATCH",
+    # Google had not shown the reply yet when the retries ran out. Verification is read-only,
+    # so asking again later is safe, and a reply that never appears keeps the run failed.
+    "VERIFICATION_CONTENT_PENDING",
 }
 RECOVERABLE_FAILURES = {
     "HERMES_SCOPED_SESSION_BUSY",
@@ -157,6 +163,64 @@ async def reconcile_exhausted_workflows(
 
     await session.flush()
     return changed
+
+
+async def settle_confirmed_review_replies(
+    session: AsyncSession,
+    *,
+    limit: int = 200,
+) -> int:
+    """Complete failed review-reply runs whose reply Google later confirmed.
+
+    A reply can show up after the run's retries ran out: the run ended `failed` with a
+    verification code, and a later pass (ingestion, a read-only re-verification, an operator
+    action) then confirmed the reply and published the response. The run must end with the
+    real outcome, so a failed run whose response is now `published` is completed. A run whose
+    reply did not publish is left failed.
+    """
+    runs = (
+        await session.scalars(
+            select(WorkflowRun)
+            .join(WorkflowVersion, WorkflowVersion.id == WorkflowRun.workflow_version_id)
+            .join(WorkflowDefinition, WorkflowDefinition.id == WorkflowVersion.definition_id)
+            .where(
+                WorkflowDefinition.key == "reviews.publish_response",
+                WorkflowRun.status == "failed",
+                WorkflowRun.failure_code.in_(VERIFY_ONLY_SAFE_ERRORS),
+            )
+            .order_by(WorkflowRun.updated_at)
+            .with_for_update(skip_locked=True, of=WorkflowRun)
+            .limit(limit)
+        )
+    ).all()
+    settled = 0
+    now = datetime.now(UTC)
+    for run in runs:
+        raw = run.input_document.get("response_id")
+        try:
+            response_id = UUID(str(raw))
+        except (TypeError, ValueError):
+            continue
+        published = await session.scalar(
+            select(ReviewResponseRevision.id).where(
+                ReviewResponseRevision.organization_id == run.organization_id,
+                ReviewResponseRevision.id == response_id,
+                ReviewResponseRevision.status == "published",
+            )
+        )
+        if published is None:
+            continue
+        outcome = JobOutcome(result="succeeded", result_reference=f"response:{response_id}")
+        run.status = "completed"
+        run.completed_at = now
+        run.output_reference = outcome.result_reference
+        run.failure_code = None
+        await ExecutionService().record_run_outcome(
+            session, run, "reviews.publish_response", outcome
+        )
+        settled += 1
+    await session.flush()
+    return settled
 
 
 async def reconcile_orphaned_crawl_runs(
@@ -593,6 +657,7 @@ async def reconcile_worker_state(
     """Run all bounded recovery passes in dependency order."""
     async with sessions() as session, session.begin():
         workflows = await reconcile_exhausted_workflows(session)
+        workflows += await settle_confirmed_review_replies(session)
         crawl_runs = await reconcile_orphaned_crawl_runs(session)
 
     agents = await reconcile_orphaned_agent_runs(sessions, settings)
@@ -601,6 +666,7 @@ async def reconcile_worker_state(
     # workflow state once more, then safely requeue only the whitelisted cases.
     async with sessions() as session, session.begin():
         workflows += await reconcile_exhausted_workflows(session)
+        workflows += await settle_confirmed_review_replies(session)
         requeued = await requeue_recoverable_failures(session)
 
     return {
