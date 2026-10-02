@@ -22,10 +22,11 @@ from typing import Literal
 
 import httpx
 
-# Provider rejected the request on its own terms. No resource was created.
-_REJECTED_STATUSES = frozenset({400, 401, 403, 404, 405, 409, 412, 422})
+from apps.api.app.products.gbp.adapter import ProviderRequestInvalidError
+
 # Provider refused to process it. Not applied, and worth trying again later.
 _THROTTLED_STATUSES = frozenset({408, 429})
+_MAX_DETAIL_CHARS = 300
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,7 +54,8 @@ def classify_provider_write_failure(error: BaseException) -> ProviderWriteOutcom
     """Return how to record ``error`` raised by a state-changing provider call."""
     if isinstance(error, httpx.HTTPStatusError):
         status = error.response.status_code
-        if status in _REJECTED_STATUSES:
+        # Any other 4xx is Google refusing the request on its own terms: nothing was created.
+        if 400 <= status < 500 and status not in _THROTTLED_STATUSES:
             return ProviderWriteOutcome(
                 applied="not_applied",
                 safe_error_code=f"PROVIDER_REJECTED_{status}",
@@ -69,6 +71,14 @@ def classify_provider_write_failure(error: BaseException) -> ProviderWriteOutcom
         # before failing to report it.
         return _AMBIGUOUS
 
+    # The body failed local validation before any request was made.
+    if isinstance(error, ProviderRequestInvalidError):
+        return ProviderWriteOutcome(
+            applied="not_applied",
+            safe_error_code="PROVIDER_REQUEST_INVALID",
+            job_result="permanent_failure",
+        )
+
     # Connect-phase failures happen before the request body is delivered, so the
     # provider never saw it. Read/write/pool timeouts are NOT in this set: those
     # occur after the request went out and are genuinely ambiguous.
@@ -80,3 +90,34 @@ def classify_provider_write_failure(error: BaseException) -> ProviderWriteOutcom
         )
 
     return _AMBIGUOUS
+
+
+def provider_error_log_fields(error: BaseException) -> dict[str, object]:
+    """Structured, secret-free facts about a failed provider call, for the log line.
+
+    Records the exception type and, for an HTTP response, Google's status code, status
+    string and reason. The request (and its bearer token) is never read.
+    """
+    fields: dict[str, object] = {"error_type": type(error).__name__}
+    if not isinstance(error, httpx.HTTPStatusError):
+        fields["error_detail"] = str(error)[:_MAX_DETAIL_CHARS]
+        return fields
+    fields["http_status"] = error.response.status_code
+    try:
+        body = error.response.json()
+    except ValueError:
+        return fields
+    google_error = body.get("error") if isinstance(body, dict) else None
+    if not isinstance(google_error, dict):
+        return fields
+    if isinstance(google_error.get("status"), str):
+        fields["google_status"] = google_error["status"][:64]
+    if isinstance(google_error.get("message"), str):
+        fields["google_message"] = google_error["message"][:_MAX_DETAIL_CHARS]
+    details = google_error.get("details")
+    if isinstance(details, list):
+        for detail in details:
+            if isinstance(detail, dict) and isinstance(detail.get("reason"), str):
+                fields["google_reason"] = detail["reason"][:128]
+                break
+    return fields

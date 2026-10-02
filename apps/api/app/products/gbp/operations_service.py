@@ -18,6 +18,7 @@ from apps.api.app.audit.service import AuditEventService
 from apps.api.app.config import Settings
 from apps.api.app.execution.models import Job, JobAttempt
 from apps.api.app.execution.service import ExecutionService
+from apps.api.app.integrations.errors import IntegrationReconnectRequiredError
 from apps.api.app.notifications.models import NotificationTemplate
 from apps.api.app.notifications.service import NotificationService
 from apps.api.app.products.gbp.models import GBPLocation, GBPProfileSnapshot
@@ -47,6 +48,7 @@ from apps.api.app.products.gbp.operations_errors import (
     GBPMediaNotPublishEligibleError,
     GBPPostNotPublishEligibleError,
     GBPPostPublicationExistsError,
+    GBPPostPublicationNotActionableError,
     GBPPostRevisionNotFoundError,
     GBPSpecialHoursNotFoundError,
 )
@@ -60,6 +62,7 @@ from apps.api.app.products.gbp.operations_models import (
     GBPSpecialHours,
     GBPSuspensionCase,
 )
+from apps.api.app.products.gbp.post_generation_models import GBPPostAsset
 
 NOTIFICATION_TEMPLATES = {
     "gbp.suspension_case.reported": ("in_app", "A Business Profile suspension case was reported."),
@@ -77,6 +80,19 @@ PRE_DISPATCH_SAFE_ERRORS = frozenset(
 )
 LEGACY_PRE_DISPATCH_FOLLOWUP_ERRORS = PRE_DISPATCH_SAFE_ERRORS | {"AMBIGUOUS_PROVIDER_RESULT"}
 ACTIVE_JOB_STATUSES = ("queued", "claimed", "running", "retry_scheduled")
+
+# An ambiguous write is only judged once Google has had time to list the new post.
+AMBIGUOUS_POST_REREAD_DELAY = timedelta(minutes=5)
+AMBIGUOUS_POST_CODES = frozenset(
+    {
+        "PROVIDER_WRITE_AMBIGUOUS",
+        "PROVIDER_RETURNED_NO_RESOURCE_NAME",
+        "AMBIGUOUS_PROVIDER_RESULT",
+    }
+)
+POST_NOT_ON_GOOGLE = "POST_NOT_ON_GOOGLE"
+POST_REPOSTED = "REPOSTED_AS_NEW_REVISION"
+POST_DISCARDED = "DISCARDED_BY_OPERATOR"
 
 
 @dataclass(frozen=True, slots=True)
@@ -1081,6 +1097,291 @@ class GBPOperationsService:
             publication=publication,
             recovery_mode=recovery_mode,
         )
+
+    async def ambiguous_post_publication_ids(
+        self, session: AsyncSession, *, limit: int = 50
+    ) -> list[tuple[UUID, UUID]]:
+        """Publications whose Google result is still unknown and old enough to re-read."""
+        rows = await session.execute(
+            select(GBPPostPublication.organization_id, GBPPostPublication.id)
+            .where(
+                GBPPostPublication.status == "reconciliation_required",
+                GBPPostPublication.safe_error_code.in_(AMBIGUOUS_POST_CODES),
+                GBPPostPublication.provider_post_id.is_(None),
+                GBPPostPublication.dispatched_at.is_not(None),
+                GBPPostPublication.dispatched_at <= datetime.now(UTC) - AMBIGUOUS_POST_REREAD_DELAY,
+            )
+            .order_by(GBPPostPublication.dispatched_at)
+            .limit(limit)
+        )
+        return [(row[0], row[1]) for row in rows.all()]
+
+    async def auto_reconcile_ambiguous_post(
+        self,
+        session: AsyncSession,
+        settings: Settings,
+        organization_id: UUID,
+        publication_id: UUID,
+    ) -> str:
+        """Re-read Google for one ambiguous post and settle it, without a person.
+
+        Exactly one matching post: the post is on Google, so the publication resumes
+        and verifies it. No matching post: it is `not_published`. Several matches, or
+        Google cannot be read: it stays for a person, with a plain reason code. Only an
+        ambiguous publication is touched, so running this twice is a no-op.
+        """
+        correlation_id = f"gbp.post.auto_reconcile:{publication_id}"
+        publication = await session.scalar(
+            select(GBPPostPublication)
+            .where(
+                GBPPostPublication.organization_id == organization_id,
+                GBPPostPublication.id == publication_id,
+                GBPPostPublication.status == "reconciliation_required",
+                GBPPostPublication.safe_error_code.in_(AMBIGUOUS_POST_CODES),
+                GBPPostPublication.provider_post_id.is_(None),
+            )
+            .with_for_update(skip_locked=True)
+        )
+        if publication is None:
+            return "skipped"
+        revision = await session.get(GBPPostRevision, publication.post_revision_id)
+        if revision is None or revision.organization_id != organization_id:
+            return "skipped"
+
+        from apps.api.app.products.gbp.discovery_service import GBPDiscoveryService
+
+        try:
+            await GBPDiscoveryService().reconcile_local_posts(
+                session,
+                settings,
+                organization_id,
+                revision.gbp_location_id,
+                actor_id=None,
+                correlation_id=correlation_id,
+            )
+        except IntegrationReconnectRequiredError:
+            return await self._park_ambiguous_post(
+                session, publication, "GOOGLE_RECONNECT_REQUIRED", correlation_id
+            )
+        except Exception:
+            return await self._park_ambiguous_post(
+                session, publication, "GOOGLE_READ_FAILED", correlation_id
+            )
+
+        provider_posts = list(
+            await session.scalars(
+                select(GBPProviderPost).where(
+                    GBPProviderPost.organization_id == organization_id,
+                    GBPProviderPost.gbp_location_id == revision.gbp_location_id,
+                )
+            )
+        )
+        matches = [
+            post
+            for post in provider_posts
+            if self._provider_post_matches_publication(post, revision, publication)
+        ]
+        if len(matches) > 1:
+            return await self._park_ambiguous_post(
+                session, publication, "AMBIGUOUS_PROVIDER_MATCH", correlation_id
+            )
+        if len(matches) == 1:
+            publication.provider_post_id = matches[0].provider_post_name
+            publication.safe_error_code = "POST_RECOVERY_PROVIDER_MATCHED"
+            await self.execution.enqueue_recovery_run(
+                session,
+                organization_id,
+                publication.workflow_run_id,
+                recovery_reference=f"gbp-post-publication:{publication.id}",
+                actor_id=None,
+                correlation_id=correlation_id,
+            )
+            await self._audit(
+                session,
+                event="gbp.post.auto_reconciled_published",
+                organization_id=organization_id,
+                location_id=None,
+                actor_id=None,
+                resource_type="gbp_post_publication",
+                resource_id=publication.id,
+                correlation_id=correlation_id,
+                summary="Google shows this post exactly once; verification resumed.",
+                metadata={"provider_post_name": matches[0].provider_post_name},
+            )
+            return "published"
+        publication.status = "not_published"
+        publication.safe_error_code = POST_NOT_ON_GOOGLE
+        await self._audit(
+            session,
+            event="gbp.post.auto_reconciled_not_published",
+            organization_id=organization_id,
+            location_id=None,
+            actor_id=None,
+            resource_type="gbp_post_publication",
+            resource_id=publication.id,
+            correlation_id=correlation_id,
+            summary="Google does not show this post; it was not published.",
+            metadata={"previous_code": "PROVIDER_WRITE_AMBIGUOUS"},
+        )
+        return "not_published"
+
+    async def _park_ambiguous_post(
+        self,
+        session: AsyncSession,
+        publication: GBPPostPublication,
+        code: str,
+        correlation_id: str,
+    ) -> str:
+        """Keep the post for a person with a reason code; this ends automatic retries."""
+        publication.safe_error_code = code
+        await self._audit(
+            session,
+            event="gbp.post.auto_reconcile_needs_operator",
+            organization_id=publication.organization_id,
+            location_id=None,
+            actor_id=None,
+            resource_type="gbp_post_publication",
+            resource_id=publication.id,
+            correlation_id=correlation_id,
+            summary="Google could not settle this post automatically.",
+            metadata={"reason": code},
+            result=AuditResult.FAILED,
+        )
+        return "needs_operator"
+
+    async def repost_publication(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        location_id: UUID,
+        publication_id: UUID,
+        *,
+        actor_id: UUID,
+        correlation_id: str,
+    ) -> GBPPostRevision:
+        """Start a fresh post from a `not_published` one, through the normal approval gate.
+
+        This creates a new revision awaiting approval; nothing is sent to Google until a
+        person approves and publishes it. Repeating the request returns that same revision.
+        """
+        scoped = await self._scoped_post_publication(
+            session, organization_id, location_id, publication_id, for_update=True
+        )
+        if scoped is None:
+            raise GBPPostRevisionNotFoundError
+        publication, source = scoped
+        if publication.status == "discarded" and publication.safe_error_code == POST_REPOSTED:
+            reposted = await session.scalar(
+                select(GBPPostRevision)
+                .where(
+                    GBPPostRevision.organization_id == organization_id,
+                    GBPPostRevision.post_key == source.post_key,
+                    GBPPostRevision.revision > source.revision,
+                )
+                .order_by(GBPPostRevision.revision)
+                .limit(1)
+            )
+            if reposted is not None:
+                return reposted
+        if publication.status != "not_published":
+            raise GBPPostPublicationNotActionableError
+        last = await session.scalar(
+            select(GBPPostRevision.revision)
+            .where(GBPPostRevision.post_key == source.post_key)
+            .order_by(GBPPostRevision.revision.desc())
+            .limit(1)
+        )
+        new_revision = GBPPostRevision(
+            organization_id=organization_id,
+            gbp_location_id=source.gbp_location_id,
+            post_key=source.post_key,
+            revision=(last or source.revision) + 1,
+            post_type=source.post_type,
+            content=source.content,
+            call_to_action=source.call_to_action,
+            event_or_offer=source.event_or_offer,
+            publication_requirements=source.publication_requirements,
+            status="awaiting_approval",
+            created_at=datetime.now(UTC),
+        )
+        session.add(new_revision)
+        await session.flush()
+        asset = await session.scalar(
+            select(GBPPostAsset).where(
+                GBPPostAsset.organization_id == organization_id,
+                GBPPostAsset.post_revision_id == source.id,
+                GBPPostAsset.status == "selected",
+            )
+        )
+        if asset is not None:
+            session.add(
+                GBPPostAsset(
+                    organization_id=organization_id,
+                    post_revision_id=new_revision.id,
+                    source_type=asset.source_type,
+                    source_reference=asset.source_reference,
+                    provider_fetch_url=asset.provider_fetch_url,
+                    metadata_document=asset.metadata_document,
+                    status="selected",
+                )
+            )
+        publication.status = "discarded"
+        publication.safe_error_code = POST_REPOSTED
+        await session.flush()
+        await self._audit(
+            session,
+            event="gbp.post.reposted",
+            organization_id=organization_id,
+            location_id=location_id,
+            actor_id=actor_id,
+            resource_type="gbp_post_publication",
+            resource_id=publication.id,
+            correlation_id=correlation_id,
+            summary="A post Google does not show was reposted as a new revision awaiting approval.",
+            metadata={
+                "source_revision_id": str(source.id),
+                "new_revision_id": str(new_revision.id),
+            },
+        )
+        return new_revision
+
+    async def discard_publication(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        location_id: UUID,
+        publication_id: UUID,
+        *,
+        actor_id: UUID,
+        correlation_id: str,
+    ) -> GBPPostPublication:
+        """Retire a `not_published` post for good. Discarding twice changes nothing."""
+        scoped = await self._scoped_post_publication(
+            session, organization_id, location_id, publication_id, for_update=True
+        )
+        if scoped is None:
+            raise GBPPostRevisionNotFoundError
+        publication, source = scoped
+        if publication.status == "discarded" and publication.safe_error_code == POST_DISCARDED:
+            return publication
+        if publication.status != "not_published":
+            raise GBPPostPublicationNotActionableError
+        publication.status = "discarded"
+        publication.safe_error_code = POST_DISCARDED
+        await session.flush()
+        await self._audit(
+            session,
+            event="gbp.post.discarded",
+            organization_id=organization_id,
+            location_id=location_id,
+            actor_id=actor_id,
+            resource_type="gbp_post_publication",
+            resource_id=publication.id,
+            correlation_id=correlation_id,
+            summary="A post Google does not show was discarded.",
+            metadata={"revision_id": str(source.id)},
+        )
+        return publication
 
     async def report_suspension_case(
         self,

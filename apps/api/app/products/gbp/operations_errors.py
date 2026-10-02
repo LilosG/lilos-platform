@@ -66,6 +66,11 @@ class GBPPostPublicationExistsError(ConflictError):
     public_message = "This approved post revision already has a publication record."
 
 
+class GBPPostPublicationNotActionableError(ConflictError):
+    code = "GBP_POST_PUBLICATION_NOT_ACTIONABLE"
+    public_message = "Only a post that Google does not show can be reposted or discarded."
+
+
 class GBPSuspensionCaseNotFoundError(NotFoundError):
     code = "GBP_SUSPENSION_CASE_NOT_FOUND"
     public_message = "The requested suspension case was not found."

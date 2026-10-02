@@ -41,6 +41,10 @@ SUPPORTED_CTA_TYPES = frozenset({"BOOK", "ORDER", "SHOP", "LEARN_MORE", "SIGN_UP
 SUPPORTED_MEDIA_FORMATS = frozenset({"PHOTO", "VIDEO"})
 
 
+class ProviderRequestInvalidError(ValueError):
+    """The request body failed local validation, so nothing was sent to Google."""
+
+
 class GBPAdapter(Protocol):
     async def list_accounts(self, access_token: str) -> list[dict[str, Any]]: ...
     async def list_locations(
@@ -282,7 +286,10 @@ class GoogleBusinessProfileAdapter:
         self, access_token: str, location_name: str, post_body: dict[str, Any]
     ) -> dict[str, Any]:
         """POST {location_name}/localPosts using Google's canonical LocalPost fields."""
-        provider_body = self._local_post_provider_body(post_body)
+        try:
+            provider_body = self._local_post_provider_body(post_body)
+        except ValueError as exc:
+            raise ProviderRequestInvalidError(str(exc)) from exc
         return await self._request(
             "POST",
             f"{MYBUSINESS_BASE}/{location_name}/localPosts",

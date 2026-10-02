@@ -10,6 +10,11 @@ from apps.api.app.context import current_correlation_id
 from apps.api.app.observability.telemetry import redact
 
 APPLICATION_LOGGER_NAME = "lilos"
+# Modules log under `logging.getLogger(__name__)`, so their records belong to the `apps`
+# and `scripts` packages, not to `lilos`. Without a handler there, Python's last-resort
+# handler printed only the bare message and every structured field (event name, status,
+# error code) was lost in production.
+STRUCTURED_LOGGER_NAMES: Final = (APPLICATION_LOGGER_NAME, "apps", "scripts")
 
 _RESERVED_FIELDS: Final = frozenset(
     {
@@ -82,11 +87,14 @@ class JsonFormatter(logging.Formatter):
 
 
 def configure_logging(settings: Settings, service_name: str = "lilos-api") -> None:
-    """Configure the LILOs application logger without changing third-party loggers."""
-    logger = logging.getLogger(APPLICATION_LOGGER_NAME)
-    logger.handlers.clear()
-    handler = logging.StreamHandler()
-    handler.setFormatter(JsonFormatter(settings, service_name))
-    logger.addHandler(handler)
-    logger.setLevel(settings.log_level.value)
-    logger.propagate = False
+    """Configure the LILOs application loggers without changing third-party loggers."""
+    for name in STRUCTURED_LOGGER_NAMES:
+        logger = logging.getLogger(name)
+        logger.handlers.clear()
+        handler = logging.StreamHandler()
+        handler.setFormatter(JsonFormatter(settings, service_name))
+        logger.addHandler(handler)
+        logger.setLevel(settings.log_level.value)
+        # Package loggers keep propagating (the root logger has no handler in production, so
+        # nothing prints twice) so test capture and any host-level handler still see them.
+        logger.propagate = name != APPLICATION_LOGGER_NAME

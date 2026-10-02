@@ -131,7 +131,10 @@ import "../styles/global.css";
         publishPost,
         reconcileProviderPosts,
         recoverPostPublication,
+        repostPostPublication,
+        discardPostPublication,
       } from "../lib/gbp-operations";
+      import type { ApiOutcome } from "../lib/api-client";
       import {
         bootWorkspace,
         applyBootResult,
@@ -1341,6 +1344,61 @@ import "../styles/global.css";
                 }
               });
               item.append(recoverBtn);
+            }
+            if (presentation.canRepostOrDiscard && post.publication) {
+              const publicationId = post.publication.id;
+              const action = (
+                label: string,
+                busyLabel: string,
+                className: string,
+                run: () => Promise<ApiOutcome<unknown>>,
+                doneMessage: string,
+              ): HTMLButtonElement => {
+                const button = document.createElement("button");
+                button.type = "button";
+                button.className = className;
+                button.textContent = label;
+                button.addEventListener("click", async () => {
+                  button.disabled = true;
+                  button.textContent = busyLabel;
+                  const result = await run();
+                  if (result.kind === "ok") {
+                    postsStatusMessage = doneMessage;
+                    await renderPosts();
+                    return;
+                  }
+                  actionStatus.textContent = describeFailure(result, label);
+                  button.disabled = false;
+                  button.textContent = label;
+                });
+                return button;
+              };
+              item.append(
+                action(
+                  "Repost",
+                  "Reposting…",
+                  "ui-button ui-button--secondary ui-button--sm",
+                  () =>
+                    repostPostPublication(
+                      organizationId,
+                      selectedPlatformLocationId!,
+                      publicationId,
+                    ),
+                  "A new draft was created. Approve it to send it to Google.",
+                ),
+                action(
+                  "Discard",
+                  "Discarding…",
+                  "ui-button ui-button--ghost ui-button--sm",
+                  () =>
+                    discardPostPublication(
+                      organizationId,
+                      selectedPlatformLocationId!,
+                      publicationId,
+                    ),
+                  "Post discarded.",
+                ),
+              );
             }
             list.append(item);
           }

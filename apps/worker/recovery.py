@@ -8,7 +8,8 @@ without weakening the one-active-Hermes-run safety invariant.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+import logging
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -34,9 +35,14 @@ from apps.api.app.execution.models import (
     WorkflowVersion,
 )
 from apps.api.app.execution.service import ExecutionService
+from apps.api.app.products.content.models import ContentPublication
+from apps.api.app.products.gbp.operations_service import GBPOperationsService
 from apps.api.app.products.reviews.models import ReviewResponseRevision
 from apps.api.app.products.reviews.publish_handler import VERIFY_ONLY_SAFE_ERRORS
+from apps.api.app.products.reviews.service import ReviewService
 from apps.api.app.products.seo.models import SEOCrawlRun, SEOWebsite
+
+logger = logging.getLogger(__name__)
 
 ACTIVE_JOB_STATUSES = {
     "queued",
@@ -58,6 +64,14 @@ RECOVERABLE_FAILURES = {
     "SEO_ACTIVE_WEBSITE_MISSING",
     *REVIEW_VERIFICATION_FAILURES,
 }
+
+
+# Vercel refuses to build for 24 hours after its deployment limit is hit; the extra minutes
+# keep the one resume from landing just inside the window.
+CONTENT_DEPLOY_RATE_LIMIT_WINDOW = timedelta(hours=24, minutes=5)
+REVIEW_REPLY_SUPERSEDED = "REVIEW_REPLY_SUPERSEDED"
+CONTENT_DEPLOY_RESUME_KEY = "content-deploy-rate-limit"
+CONTENT_DEPLOY_RESUME_MAX_ATTEMPTS = 30  # same budget as an operator-initiated resume
 
 
 def _hermes_run_missing(exc: HermesRuntimeError) -> bool:
@@ -176,7 +190,8 @@ async def settle_confirmed_review_replies(
     verification code, and a later pass (ingestion, a read-only re-verification, an operator
     action) then confirmed the reply and published the response. The run must end with the
     real outcome, so a failed run whose response is now `published` is completed. A run whose
-    reply did not publish is left failed.
+    reply did not publish is left failed. A run whose reply was superseded by a published
+    revision of the same review is completed with `REVIEW_REPLY_SUPERSEDED`.
     """
     runs = (
         await session.scalars(
@@ -201,16 +216,33 @@ async def settle_confirmed_review_replies(
             response_id = UUID(str(raw))
         except (TypeError, ValueError):
             continue
-        published = await session.scalar(
-            select(ReviewResponseRevision.id).where(
+        response = await session.scalar(
+            select(ReviewResponseRevision).where(
                 ReviewResponseRevision.organization_id == run.organization_id,
                 ReviewResponseRevision.id == response_id,
-                ReviewResponseRevision.status == "published",
+                ReviewResponseRevision.status.in_(("published", "superseded")),
             )
         )
-        if published is None:
+        if response is None:
             continue
-        outcome = JobOutcome(result="succeeded", result_reference=f"response:{response_id}")
+        safe_error: str | None = None
+        if response.status == "superseded":
+            # Retired because another revision of the same review is published: the review is
+            # answered, so this run is settled with its own typed code rather than left failed.
+            answered = await session.scalar(
+                select(ReviewResponseRevision.id).where(
+                    ReviewResponseRevision.organization_id == run.organization_id,
+                    ReviewResponseRevision.review_id == response.review_id,
+                    ReviewResponseRevision.id != response.id,
+                    ReviewResponseRevision.status == "published",
+                )
+            )
+            if answered is None:
+                continue
+            safe_error = REVIEW_REPLY_SUPERSEDED
+        outcome = JobOutcome(
+            result="succeeded", result_reference=f"response:{response_id}", safe_error=safe_error
+        )
         run.status = "completed"
         run.completed_at = now
         run.output_reference = outcome.result_reference
@@ -220,6 +252,92 @@ async def settle_confirmed_review_replies(
         )
         settled += 1
     await session.flush()
+    return settled
+
+
+async def resume_rate_limited_content_deploys(
+    session: AsyncSession,
+    *,
+    limit: int = 50,
+    now: datetime | None = None,
+) -> int:
+    """Resume each rate-limited content deploy once, after the provider's window.
+
+    A run that ended `CONTENT_DEPLOYMENT_RATE_LIMITED` is waiting on Vercel, not broken.
+    Once the window has passed it gets exactly one automatic resume (the job key makes
+    that permanent). If Vercel limits it again, the run stays failed for a person: no loop.
+    """
+    current = now or datetime.now(UTC)
+    runs = (
+        await session.scalars(
+            select(WorkflowRun)
+            .join(WorkflowVersion, WorkflowVersion.id == WorkflowRun.workflow_version_id)
+            .join(WorkflowDefinition, WorkflowDefinition.id == WorkflowVersion.definition_id)
+            .where(
+                WorkflowDefinition.key == "content.publish",
+                WorkflowRun.status == "failed",
+                WorkflowRun.failure_code == "CONTENT_DEPLOYMENT_RATE_LIMITED",
+            )
+            .order_by(WorkflowRun.updated_at)
+            .with_for_update(skip_locked=True, of=WorkflowRun)
+            .limit(limit)
+        )
+    ).all()
+    resumed = 0
+    for run in runs:
+        publication = await session.scalar(
+            select(ContentPublication).where(
+                ContentPublication.organization_id == run.organization_id,
+                ContentPublication.workflow_run_id == run.id,
+                ContentPublication.status == "deployment_pending",
+                ContentPublication.safe_error_code == "CONTENT_DEPLOYMENT_RATE_LIMITED",
+            )
+        )
+        if publication is None:
+            continue
+        limited_at = run.completed_at or run.updated_at
+        if current - limited_at < CONTENT_DEPLOY_RATE_LIMIT_WINDOW:
+            continue
+        job = await ExecutionService().enqueue_automatic_resume(
+            session,
+            run,
+            resume_key=CONTENT_DEPLOY_RESUME_KEY,
+            reason_code="CONTENT_DEPLOYMENT_RATE_LIMITED",
+            max_attempts=CONTENT_DEPLOY_RESUME_MAX_ATTEMPTS,
+        )
+        if job is not None:
+            resumed += 1
+    return resumed
+
+
+async def reconcile_ambiguous_gbp_posts(
+    sessions: async_sessionmaker[AsyncSession],
+    settings: Settings,
+    *,
+    limit: int = 50,
+) -> int:
+    """Re-read Google for posts whose publish result was ambiguous, one transaction each."""
+    service = GBPOperationsService()
+    async with sessions() as session:
+        candidates = await service.ambiguous_post_publication_ids(session, limit=limit)
+    settled = 0
+    for organization_id, publication_id in candidates:
+        try:
+            async with sessions() as session, session.begin():
+                outcome = await service.auto_reconcile_ambiguous_post(
+                    session, settings, organization_id, publication_id
+                )
+        except Exception:
+            logger.exception(
+                "GBP ambiguous post reconciliation failed",
+                extra={
+                    "event_name": "gbp.post.auto_reconcile_failed",
+                    "publication_id": str(publication_id),
+                },
+            )
+            continue
+        if outcome in {"published", "not_published"}:
+            settled += 1
     return settled
 
 
@@ -658,6 +776,7 @@ async def reconcile_worker_state(
     async with sessions() as session, session.begin():
         workflows = await reconcile_exhausted_workflows(session)
         workflows += await settle_confirmed_review_replies(session)
+        workflows += await ReviewService().supersede_mismatched_responses(session)
         crawl_runs = await reconcile_orphaned_crawl_runs(session)
 
     agents = await reconcile_orphaned_agent_runs(sessions, settings)
@@ -668,10 +787,14 @@ async def reconcile_worker_state(
         workflows += await reconcile_exhausted_workflows(session)
         workflows += await settle_confirmed_review_replies(session)
         requeued = await requeue_recoverable_failures(session)
+        requeued += await resume_rate_limited_content_deploys(session)
+
+    gbp_posts = await reconcile_ambiguous_gbp_posts(sessions, settings)
 
     return {
         "workflows": workflows,
         "agents": agents,
         "requeued": requeued,
         "crawl_runs": crawl_runs,
+        "gbp_posts": gbp_posts,
     }
