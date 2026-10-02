@@ -3,6 +3,12 @@
 from pathlib import PurePosixPath
 from typing import Protocol
 
+# `deployment()` reports this state when the host refused to build the merged commit because
+# of its own build quota. The change itself is fine, so it is not a deployment failure.
+DEPLOYMENT_RATE_LIMITED = "rate_limited"
+# The host marks that refusal in the commit status link; the prose description is not read.
+VERCEL_BUILD_RATE_LIMIT_MARKER = "build-rate-limit"
+
 
 class RepositoryPublisher(Protocol):
     async def get_base_commit(self, repository_id: str, base_branch: str) -> str: ...

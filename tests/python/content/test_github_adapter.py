@@ -122,7 +122,7 @@ async def test_preview_only_deployment_does_not_satisfy_production_publish() -> 
 
 
 @pytest.mark.anyio
-async def test_failed_vercel_status_without_production_deployment_is_terminal() -> None:
+async def test_rate_limited_vercel_status_without_production_deployment_is_not_a_failure() -> None:
     target_url = "https://vercel.com/team?upgradeToPro=build-rate-limit"
     publisher = StubGitHubPublisher(
         check_pages=[],
@@ -133,7 +133,7 @@ async def test_failed_vercel_status_without_production_deployment_is_terminal() 
     )
 
     assert await publisher.deployment("owner/repo", "revision") == {
-        "state": "failure",
+        "state": "rate_limited",
         "url": target_url,
     }
 
@@ -273,3 +273,38 @@ async def test_get_file_decodes_content_and_reports_missing_file() -> None:
     assert await FilePublisher(None).get_file("owner/repo", "abc123", "missing.json") is None
     with pytest.raises(RuntimeError):
         await FilePublisher({"type": "dir"}).get_file("owner/repo", "abc123", "src")
+
+
+@pytest.mark.anyio
+async def test_vercel_build_rate_limit_is_reported_apart_from_a_failed_deployment() -> None:
+    limited = StubGitHubPublisher(
+        check_pages=[],
+        deployment_pages=[[]],
+        commit_status={
+            "statuses": [
+                {
+                    "context": "Vercel",
+                    "state": "failure",
+                    "description": "Deployment rate limited — retry in 24 hours.",
+                    "target_url": "https://vercel.com/team?upgradeToPro=build-rate-limit",
+                }
+            ]
+        },
+    )
+    failed = StubGitHubPublisher(
+        check_pages=[],
+        deployment_pages=[[]],
+        commit_status={
+            "statuses": [
+                {
+                    "context": "Vercel",
+                    "state": "failure",
+                    "description": "Deployment has failed",
+                    "target_url": "https://vercel.com/team/site/dpl_123",
+                }
+            ]
+        },
+    )
+
+    assert (await limited.deployment("owner/repo", "revision"))["state"] == "rate_limited"
+    assert (await failed.deployment("owner/repo", "revision"))["state"] == "failure"

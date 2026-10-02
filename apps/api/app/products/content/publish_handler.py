@@ -27,7 +27,7 @@ from apps.api.app.execution.handlers import (
     _provider_writes_enabled,
 )
 from apps.api.app.integrations.models import IntegrationConnection
-from apps.api.app.products.content.adapter import RepositoryPublisher
+from apps.api.app.products.content.adapter import DEPLOYMENT_RATE_LIMITED, RepositoryPublisher
 from apps.api.app.products.content.file_format import ContentFileFormatError, build_content_file
 from apps.api.app.products.content.frontmatter_contract import (
     FrontmatterContract,
@@ -682,24 +682,6 @@ async def _verify_merged_deployment(
         return JobOutcome(result="retryable_failure", safe_error="MERGE_REVISION_MISSING")
     try:
         deployment = await publisher.deployment(repository_id, revision_id)
-        state = deployment.get("state", "none").lower()
-        publication.deployment_status = state
-        if state in {"success", "active"}:
-            return await subject.finish(deployment.get("url"))
-        if state in {"error", "failure", "inactive"}:
-            publication.status = "failed"
-            publication.safe_error_code = "CONTENT_DEPLOYMENT_FAILED"
-            subject.set_state("failed")
-            await session.commit()
-            return JobOutcome(result="permanent_failure", safe_error="CONTENT_DEPLOYMENT_FAILED")
-
-        # A successful CI check can include a preview build or unrelated tests.
-        # Only a production deployment bound to this merged commit proves delivery.
-        publication.status = "deployment_pending"
-        publication.safe_error_code = None
-        subject.set_state("publishing")
-        await session.commit()
-        return JobOutcome(result="retryable_failure", safe_error="CONTENT_DEPLOYMENT_PENDING")
     except Exception as exc:
         logger.warning("Content deployment verification failed", exc_info=exc)
         publication.status = "reconciliation_required"
@@ -707,6 +689,37 @@ async def _verify_merged_deployment(
         subject.set_state("reconciliation_required")
         await session.commit()
         return JobOutcome(result="retryable_failure", safe_error="DEPLOYMENT_REREAD_FAILED")
+
+    # Only the provider read is guarded above. Persisting the outcome below is not a "reread"
+    # failure: a database error there must surface as itself, not as a second failing commit
+    # inside an except block that the worker reports as HANDLER_EXCEPTION.
+    state = deployment.get("state", "none").lower()
+    publication.deployment_status = state
+    if state in {"success", "active"}:
+        return await subject.finish(deployment.get("url"))
+    if state in {"error", "failure", "inactive"}:
+        publication.status = "failed"
+        publication.safe_error_code = "CONTENT_DEPLOYMENT_FAILED"
+        subject.set_state("failed")
+        await session.commit()
+        return JobOutcome(result="permanent_failure", safe_error="CONTENT_DEPLOYMENT_FAILED")
+    if state == DEPLOYMENT_RATE_LIMITED:
+        # The merge is on the base branch but the host refused to build it for 24 hours, so
+        # retrying within this run is pointless. Nothing is wrong with the change: the run
+        # ends with its own code and the publication stays resumable, not failed.
+        publication.status = "deployment_pending"
+        publication.safe_error_code = "CONTENT_DEPLOYMENT_RATE_LIMITED"
+        subject.set_state("publishing")
+        await session.commit()
+        return JobOutcome(result="permanent_failure", safe_error="CONTENT_DEPLOYMENT_RATE_LIMITED")
+
+    # A successful CI check can include a preview build or unrelated tests.
+    # Only a production deployment bound to this merged commit proves delivery.
+    publication.status = "deployment_pending"
+    publication.safe_error_code = None
+    subject.set_state("publishing")
+    await session.commit()
+    return JobOutcome(result="retryable_failure", safe_error="CONTENT_DEPLOYMENT_PENDING")
 
 
 async def _mark_published(
@@ -722,7 +735,8 @@ async def _mark_published(
     publication.safe_error_code = None
     if deployment_url:
         publication.published_url = deployment_url
-    revision.status = "published"
+    # An approved revision is immutable (database trigger content_revisions_approved_immutable
+    # allows only approved -> superseded). Which revision is live is recorded on the item.
     item.status = "published"
     item.approved_revision_id = revision.id
     item.publishing_target_id = publication.publishing_target_id

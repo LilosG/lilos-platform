@@ -12,6 +12,11 @@ from typing import Any
 
 import httpx
 
+from apps.api.app.products.content.adapter import (
+    DEPLOYMENT_RATE_LIMITED,
+    VERCEL_BUILD_RATE_LIMIT_MARKER,
+)
+
 GITHUB_API = "https://api.github.com"
 GITHUB_PAGE_SIZE = 100
 MAX_GITHUB_PAGES = 1_000
@@ -397,6 +402,8 @@ class GitHubRepositoryPublisher:
             ]
             if vercel_failures:
                 target_url = str(vercel_failures[0].get("target_url") or "")
+                if VERCEL_BUILD_RATE_LIMIT_MARKER in target_url:
+                    return {"state": DEPLOYMENT_RATE_LIMITED, "url": target_url}
                 return {"state": "failure", "url": target_url}
             return {"state": "none", "url": ""}
         deployment_id = production[0].get("id")

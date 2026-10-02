@@ -170,7 +170,7 @@ async def test_repository_without_checks_does_not_auto_merge() -> None:
 
 
 @pytest.mark.anyio
-async def test_matching_production_deployment_marks_approved_revision_published() -> None:
+async def test_matching_production_deployment_publishes_the_item_not_the_revision() -> None:
     session = SessionStub()
     revision: Any = SimpleNamespace(id=uuid4(), status="approved")
     item: Any = SimpleNamespace(status="publishing", approved_revision_id=None)
@@ -199,7 +199,8 @@ async def test_matching_production_deployment_marks_approved_revision_published(
     assert outcome.result == "succeeded"
     assert publication.status == "verified"
     assert publication.published_url == "https://production.example.com"
-    assert revision.status == "published"
+    # The approved revision is immutable in the database; the item records what is live.
+    assert revision.status == "approved"
     assert item.status == "published"
     assert item.approved_revision_id == revision.id
 
