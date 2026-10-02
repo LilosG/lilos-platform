@@ -19,7 +19,7 @@ LILOs is Lilos Growth's operating platform: one multi-tenant product for running
 8. Tenant isolation, idempotency and audit logging on every write.
 
 ## Commands
-- Locally, before every push: `npm run format:check && npm run lint && npm run typecheck`, plus only the tests that cover the code you changed (a single test file or `-k` selection; for the console `npm run test --workspace @lilos/console`).
+- Locally, before every push: `npm run format:check && npm run lint && npm run typecheck`, plus `npm run contracts:check` whenever API routes or response models change (regenerate with `npm run contracts:generate`; never hand-merge `packages/contracts`), plus only the tests that cover the code you changed (a single test file or `-k` selection; for the console `npm run test --workspace @lilos/console`).
 - The full 4-shard Python suite runs in CI only: `uv run python scripts/python_test_shards.py --shard-count 4 --verify`. CI runs each shard against its own disposable PostgreSQL 17 database whose name contains `test`. Locally you may run a shard with `LILOS_TEST_DATABASE_URL=... uv run python scripts/python_test_shards.py --shard-count 4 --shard-index N`.
 - `npm run test:web && npm run build` when web or console code changes.
 - `uv run alembic upgrade head && uv run alembic check` on a disposable DB when models/migrations change.
