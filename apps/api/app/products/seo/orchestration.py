@@ -87,17 +87,33 @@ class SEOOrchestrationService:
         *,
         location_id: UUID | None,
         correlation_id: str,
+        website_id: UUID | None = None,
     ) -> dict[str, object]:
-        website = await session.scalar(
-            select(SEOWebsite)
-            .where(
+        if website_id is not None:
+            # Analysis that follows a crawl must analyze exactly the crawled website, even
+            # when the run itself carries no location. The website is still tenant-checked,
+            # must be active, and must not belong to a different location than a scoped run.
+            conditions = [
                 SEOWebsite.organization_id == organization_id,
+                SEOWebsite.id == website_id,
                 SEOWebsite.status == "active",
-                or_(SEOWebsite.location_id == location_id, SEOWebsite.location_id.is_(None)),
+            ]
+            if location_id is not None:
+                conditions.append(
+                    or_(SEOWebsite.location_id == location_id, SEOWebsite.location_id.is_(None))
+                )
+            website = await session.scalar(select(SEOWebsite).where(*conditions))
+        else:
+            website = await session.scalar(
+                select(SEOWebsite)
+                .where(
+                    SEOWebsite.organization_id == organization_id,
+                    SEOWebsite.status == "active",
+                    or_(SEOWebsite.location_id == location_id, SEOWebsite.location_id.is_(None)),
+                )
+                .order_by(SEOWebsite.location_id.desc(), SEOWebsite.created_at.desc())
+                .limit(1)
             )
-            .order_by(SEOWebsite.location_id.desc(), SEOWebsite.created_at.desc())
-            .limit(1)
-        )
         if website is None:
             return {
                 "status": "no_active_website",

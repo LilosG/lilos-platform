@@ -665,6 +665,46 @@ class SEOService:
         )
         return crawl_run
 
+    async def ensure_scheduled_crawl_run(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        website_id: UUID,
+        workflow_run_id: UUID,
+    ) -> SEOCrawlRun:
+        """Scheduled path: create (or reuse) the crawl run for one website of a running workflow.
+
+        A schedule carries no crawl run, so the scheduled workflow creates it itself. Unlike
+        `enqueue_crawl` no job is queued: the workflow run that owns this crawl is already
+        being executed. The key is derived from the workflow run and website, so a retried
+        run reuses the same crawl run instead of starting a second crawl.
+        """
+        await self.get_website(session, organization_id, website_id)
+        key = f"scheduled-crawl:{workflow_run_id}:{website_id}"
+        existing = await session.scalar(
+            select(SEOCrawlRun).where(
+                SEOCrawlRun.organization_id == organization_id,
+                SEOCrawlRun.idempotency_key == key,
+            )
+        )
+        if existing is not None:
+            return existing
+        defaults = CrawlRequest(workflow_run_id=workflow_run_id, idempotency_key=key)
+        crawl_run = SEOCrawlRun(
+            organization_id=organization_id,
+            website_id=website_id,
+            workflow_run_id=workflow_run_id,
+            idempotency_key=key,
+            status="queued",
+            max_pages=defaults.max_pages,
+            max_depth=defaults.max_depth,
+            crawl_delay_seconds=defaults.crawl_delay_seconds,
+            safe_result={"page_evidence_version": "crawl_page.v1"},
+        )
+        session.add(crawl_run)
+        await session.flush()
+        return crawl_run
+
     async def execute_crawl(
         self,
         session: AsyncSession,
