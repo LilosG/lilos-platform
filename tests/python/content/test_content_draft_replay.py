@@ -1,7 +1,10 @@
 """Replay of the production `content.draft_revision` shape that failed 2026-09-29 to 2026-10-01.
 
-Coco Maya's ready `existing_page` brief for an attributed /brunch page failed eight times
-with CONTENT_GENERATION_EXCEPTION. Replayed here through the real handler and schema.
+Coco Maya's ready `existing_page` brief for /brunch failed eight times with
+CONTENT_GENERATION_EXCEPTION: its SEO opportunity was `query_only` (no attributed page) and the
+brief named a crawled page, which `ContentSEOTargetUnresolvedError` rejected (worker log,
+2026-10-01 17:00). Replayed here through the real handler and schema, for that shape and for
+an opportunity with an attributed page.
 """
 
 from __future__ import annotations
@@ -34,7 +37,9 @@ from apps.api.app.products.seo.models import SEOOpportunity, SEOPage, SEOWebsite
 ORIGIN = "https://inlovewiththecoco.com"
 
 
-async def _seed(session: AsyncSession, *, target_reference: str) -> tuple[UUID, UUID, UUID, UUID]:
+async def _seed(
+    session: AsyncSession, *, target_reference: str, attributed: bool = True
+) -> tuple[UUID, UUID, UUID, UUID]:
     org = Organization(
         name="Draft replay",
         slug=f"draft-replay-{uuid4().hex[:8]}",
@@ -120,12 +125,33 @@ async def _seed(session: AsyncSession, *, target_reference: str) -> tuple[UUID, 
         quality_status="valid",
     )
     session.add(page)
+    if not attributed:
+        # The production site has the page twice, with and without a trailing slash.
+        session.add(
+            SEOPage(
+                organization_id=org.id,
+                website_id=website.id,
+                normalized_url=f"{ORIGIN}/brunch/",
+                observed_url=f"{ORIGIN}/brunch/",
+                normalization_reasons=[],
+                http_status=200,
+                title="Brunch | Coco Maya",
+                meta_description="Brunch at Coco Maya.",
+                robots_directives=[],
+                internal_links=[],
+                external_links=[],
+                word_count=300,
+                indexability="indexable",
+                technical_issues=[],
+                quality_status="valid",
+            )
+        )
     await session.flush()
     opportunity = SEOOpportunity(
         organization_id=org.id,
         location_id=location.id,
         website_id=website.id,
-        page_id=page.id,
+        page_id=page.id if attributed else None,
         opportunity_type="gsc_low_ctr",
         deduplication_key=hashlib.sha256(uuid4().bytes).hexdigest(),
         active_marker="active",
@@ -135,7 +161,7 @@ async def _seed(session: AsyncSession, *, target_reference: str) -> tuple[UUID, 
         priority_score=70,
         score_explanation={"score_policy_version": "opportunity_score.v2"},
         status="accepted",
-        attribution_state="attributed",
+        attribution_state="attributed" if attributed else "query_only",
         version=1,
     )
     session.add(opportunity)
@@ -200,12 +226,22 @@ async def _seed(session: AsyncSession, *, target_reference: str) -> tuple[UUID, 
 
 @pytest.mark.integration
 @pytest.mark.anyio
-@pytest.mark.parametrize("target", [f"{ORIGIN}/brunch", "/brunch"])
-async def test_ready_existing_page_brief_with_an_attributed_page_drafts_a_revision(
-    content_session_factory: async_sessionmaker[AsyncSession], target: str
+@pytest.mark.parametrize(
+    ("target", "attributed"),
+    [
+        (f"{ORIGIN}/brunch", True),
+        ("/brunch", True),
+        # The production shape: a query-only opportunity whose brief names a crawled page.
+        (f"{ORIGIN}/brunch", False),
+    ],
+)
+async def test_ready_existing_page_brief_drafts_a_revision(
+    content_session_factory: async_sessionmaker[AsyncSession], target: str, attributed: bool
 ) -> None:
     async with content_session_factory.begin() as session:
-        org_id, item_id, brief_id, run_id = await _seed(session, target_reference=target)
+        org_id, item_id, brief_id, run_id = await _seed(
+            session, target_reference=target, attributed=attributed
+        )
 
     async with content_session_factory() as session:
         outcome = await _handle_content_draft_revision(
