@@ -72,13 +72,13 @@ def test_complete_product_skill_and_sanctioned_tool_plane() -> None:
     expected_versions = {
         # Prompt versions are immutable execution provenance: a changed prompt
         # must receive a new version rather than rewriting what a prior run means.
-        "gbp.operator": 5,
+        "gbp.operator": 6,
         "seo.operator": 7,
-        "content.operator": 6,
+        "content.operator": 7,
         "leads.operator": 1,
         "reviews.operator": 3,
         "insights.cross_product": 3,
-        "growth.planner": 6,
+        "growth.planner": 7,
     }
     for skill in SKILLS.values():
         assert skill.version == expected_versions[skill.key]

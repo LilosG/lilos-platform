@@ -13,7 +13,7 @@ from typing import Any, cast
 from uuid import UUID
 
 from pydantic import ValidationError
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.app.administration.knowledge_service import BusinessKnowledgeService
@@ -71,7 +71,8 @@ from apps.api.app.products.seo.site_change_service import SiteChangeService
 logger = logging.getLogger("lilos.agents.tools")
 
 # Same tool failing with the same typed code this many times ends the run.
-TOOL_FAILURE_LIMIT = 2
+TOOL_FAILURE_LIMIT = 3
+TOOL_ARGUMENT_INVALID = "TOOL_ARGUMENT_INVALID"
 RECENT_STOP_WINDOW = timedelta(minutes=10)
 ACTIVE_RUN_STATUSES = frozenset({"queued", "running", "waiting_approval"})
 
@@ -85,6 +86,12 @@ class AgentToolDeniedError(ValueError):
         super().__init__(message)
         if code is not None:
             self.code = code
+
+
+class ToolArgumentError(AgentToolDeniedError):
+    """A tool argument was missing or malformed; Hermes can correct that field and retry."""
+
+    code = TOOL_ARGUMENT_INVALID
 
 
 class SiteChangeInvalidError(AgentToolDeniedError):
@@ -215,11 +222,19 @@ TOOL_SPECS: dict[str, ToolSpec] = {
 }
 
 
-def _uuid(value: object, name: str) -> UUID:
+def message_fingerprint(message: str) -> str:
+    """Stable short hash of an error message; digits and ids are kept, case and spacing are not."""
+    return sha256(" ".join(message.lower().split()).encode()).hexdigest()[:16]
+
+
+def _uuid(value: object, name: str, *, prefix: str | None = None) -> UUID:
     try:
         return UUID(str(value))
     except (TypeError, ValueError) as exc:
-        raise AgentToolDeniedError(f"{name} must be a UUID") from exc
+        expected = f"a bare UUID or a {prefix}<uuid> reference" if prefix else "a UUID"
+        if value is None or str(value).strip() == "":
+            raise ToolArgumentError(f"{name} is required: provide {expected}") from exc
+        raise ToolArgumentError(f"{name} must be {expected}; received {str(value)[:60]!r}") from exc
 
 
 def _uuid_reference(
@@ -234,7 +249,7 @@ def _uuid_reference(
         if candidate.startswith(prefix):
             candidate = candidate[len(prefix) :]
             break
-    return _uuid(candidate, name)
+    return _uuid(candidate, name, prefix=accepted_prefixes[0] if accepted_prefixes else None)
 
 
 # Per-item text budgets. A full page of results must fit MAX_TOOL_RESULT_BYTES
@@ -395,7 +410,7 @@ class AgentToolService:
             raise AgentToolDeniedError("tool is not sanctioned")
         extras = set(arguments) - spec.allowed_arguments
         if extras:
-            raise AgentToolDeniedError(
+            raise ToolArgumentError(
                 "unsupported tool arguments: " + ", ".join(sorted(str(item) for item in extras))
             )
         safe_argument_metadata(arguments)
@@ -440,6 +455,7 @@ class AgentToolService:
         started = monotonic()
         outcome = "succeeded"
         error_code: str | None = None
+        error_message = ""
         result: dict[str, object] = {}
         result_hash: str | None = None
         result_bytes: int | None = None
@@ -512,18 +528,22 @@ class AgentToolService:
         except AgentToolDeniedError as exc:
             outcome = "denied"
             error_code = exc.code
+            error_message = str(exc)
             raise
         except ApiError as exc:
             outcome = "failed"
             error_code = exc.code
+            error_message = exc.public_message
             raise
-        except ValidationError:
+        except ValidationError as exc:
             outcome = "failed"
-            error_code = "HERMES_TOOL_ARGUMENT_INVALID"
+            error_code = TOOL_ARGUMENT_INVALID
+            error_message = str(exc)
             raise
         except Exception as exc:
             outcome = "failed"
             error_code = "HERMES_TOOL_FAILED"
+            error_message = f"{type(exc).__name__}: {exc}"
             logger.error(
                 "Sanctioned tool raised an unexpected exception",
                 extra={
@@ -561,6 +581,9 @@ class AgentToolService:
                     "latency_ms": latency_ms,
                     "outcome": outcome,
                     "error_code": error_code,
+                    "message_fingerprint": message_fingerprint(error_message)
+                    if error_code
+                    else None,
                     "result_hash": result_hash,
                     "result_bytes": result_bytes,
                     "source_references": [str(item)[:200] for item in source_references[:50]]
@@ -597,12 +620,21 @@ class AgentToolService:
                 ),
             )
             if error_code is not None:
-                await self._trip_circuit_breaker(session, run, tool_name, error_code)
+                await self._trip_circuit_breaker(
+                    session, run, tool_name, error_code, message_fingerprint(error_message)
+                )
 
     async def _trip_circuit_breaker(
-        self, session: AsyncSession, run: AgentRun, tool_name: str, error_code: str
+        self,
+        session: AsyncSession,
+        run: AgentRun,
+        tool_name: str,
+        error_code: str,
+        fingerprint: str,
     ) -> None:
-        """End the run once one tool has failed twice with the same typed code.
+        """End the run once one tool has failed three times with the same code and message.
+
+        A different message is progress: Hermes is correcting one argument at a time.
 
         Counting the audit trail keeps one source of truth: every call, including the
         one just recorded, is already there. Further calls are refused because the run
@@ -618,6 +650,7 @@ class AgentToolService:
                 AuditEvent.event_type == "agent.tool.invoked",
                 AuditEvent.event_metadata["tool_name"].as_string() == tool_name,
                 AuditEvent.event_metadata["error_code"].as_string() == error_code,
+                AuditEvent.event_metadata["message_fingerprint"].as_string() == fingerprint,
             )
         )
         if (failures or 0) < TOOL_FAILURE_LIMIT or run.status not in ACTIVE_RUN_STATUSES:
@@ -643,10 +676,15 @@ class AgentToolService:
                 correlation_id=run.correlation_id,
                 workflow_execution_id=run.workflow_run_id,
                 summary=f"Hermes run stopped: {tool_name} failed {TOOL_FAILURE_LIMIT} times "
-                f"with {error_code}.",
+                f"with {error_code} and the same message.",
                 metadata=cast(
                     dict[str, JsonValue],
-                    {"tool_name": tool_name, "error_code": error_code, "failures": failures},
+                    {
+                        "tool_name": tool_name,
+                        "error_code": error_code,
+                        "message_fingerprint": fingerprint,
+                        "failures": failures,
+                    },
                 ),
             ),
         )
@@ -713,7 +751,7 @@ class AgentToolService:
     @classmethod
     def _observed_source_references(cls, run: AgentRun, values: object, *, label: str) -> list[str]:
         if not isinstance(values, list):
-            raise AgentToolDeniedError(f"{label} must be a list")
+            raise ToolArgumentError(f"{label} must be a list of observed reference strings")
         requested = list(dict.fromkeys(str(value)[:500] for value in values))[:100]
         observed = [str(value) for value in run.source_references]
         if not requested:
@@ -1308,14 +1346,19 @@ class AgentToolService:
         elif "site_changes" in arguments:
             raise AgentToolDeniedError("site_changes is only accepted for a bound opportunity")
         else:
-            opportunity_id = _uuid(arguments.get("opportunity_id"), "opportunity_id")
+            opportunity_id = _uuid_reference(
+                arguments.get("opportunity_id"),
+                "opportunity_id",
+                accepted_prefixes=("seo-opportunity:",),
+            )
         opportunity = await self.seo.get_opportunity(session, run.organization_id, opportunity_id)
         if opportunity.location_id != run.location_id:
             raise AgentToolDeniedError("SEO opportunity is outside the bound location")
         source_ref = f"seo-opportunity:{opportunity.id}"
+        evidence = arguments.get("evidence_references")
         requested_refs = self._observed_source_references(
             run,
-            [source_ref] if bound_id is not None else arguments.get("evidence_references"),
+            [source_ref] if bound_id is not None or evidence is None else evidence,
             label="SEO evidence",
         )
         if source_ref not in requested_refs:
@@ -1392,18 +1435,54 @@ class AgentToolService:
     async def _tool_create_content_proposal(
         self, session: AsyncSession, run: AgentRun, arguments: dict[str, Any]
     ) -> dict[str, object]:
-        opportunity_id = _uuid(arguments.get("content_opportunity_id"), "content_opportunity_id")
+        opportunity_id = _uuid_reference(
+            arguments.get("content_opportunity_id"),
+            "content_opportunity_id",
+            accepted_prefixes=("content-opportunity:",),
+        )
         opportunity = await session.scalar(
             select(ContentOpportunity).where(
                 ContentOpportunity.organization_id == run.organization_id,
                 ContentOpportunity.id == opportunity_id,
-                ContentOpportunity.status == "accepted",
             )
         )
-        if opportunity is None or (
-            opportunity.location_id is not None and opportunity.location_id != run.location_id
-        ):
-            raise AgentToolDeniedError("accepted Content opportunity is outside the bound location")
+        in_location = opportunity is not None and (
+            opportunity.location_id is None or opportunity.location_id == run.location_id
+        )
+        if opportunity is None or not in_location or opportunity.status != "accepted":
+            accepted = (
+                await session.scalars(
+                    select(ContentOpportunity.id)
+                    .where(
+                        ContentOpportunity.organization_id == run.organization_id,
+                        ContentOpportunity.status == "accepted",
+                        or_(
+                            ContentOpportunity.location_id.is_(None),
+                            ContentOpportunity.location_id == run.location_id,
+                        ),
+                    )
+                    .limit(20)
+                )
+            ).all()
+            if opportunity is None:
+                reason = "was not found"
+            elif not in_location:
+                reason = "belongs to another location"
+            else:
+                reason = (
+                    f"has status {opportunity.status!r}; an operator must accept it in Content "
+                    "before it can become an item"
+                )
+            available = (
+                "accepted content opportunities for this location: "
+                + ", ".join(f"content-opportunity:{value}" for value in accepted)
+                if accepted
+                else "this location has no accepted content opportunities"
+            )
+            raise AgentToolDeniedError(
+                f"Content opportunity content-opportunity:{opportunity_id} {reason}; {available}",
+                code="CONTENT_OPPORTUNITY_NOT_ACCEPTED",
+            )
         source_ref = f"content-opportunity:{opportunity_id}"
         if source_ref not in {str(value) for value in run.source_references}:
             # The server builds this reference from a validated id, so it cannot be
@@ -1445,7 +1524,11 @@ class AgentToolService:
                 "(a proposed site path)",
                 code="CONTENT_TARGET_KIND_REQUIRED",
             ) from exc
-        item_id = _uuid(arguments.get("content_item_id"), "content_item_id")
+        item_id = _uuid_reference(
+            arguments.get("content_item_id"),
+            "content_item_id",
+            accepted_prefixes=("content-item:",),
+        )
         item = await self.content.get_item(session, run.organization_id, item_id)
         if item.location_id is not None and item.location_id != run.location_id:
             raise AgentToolDeniedError("Content item is outside the bound location")
@@ -1509,8 +1592,16 @@ class AgentToolService:
         source grounding, token budget, deterministic quality gate, metadata
         contract, and editorial-review lifecycle as direct Content generation.
         """
-        item_id = _uuid(arguments.get("content_item_id"), "content_item_id")
-        brief_id = _uuid(arguments.get("content_brief_id"), "content_brief_id")
+        item_id = _uuid_reference(
+            arguments.get("content_item_id"),
+            "content_item_id",
+            accepted_prefixes=("content-item:",),
+        )
+        brief_id = _uuid_reference(
+            arguments.get("content_brief_id"),
+            "content_brief_id",
+            accepted_prefixes=("content-brief:",),
+        )
         brief = await session.scalar(
             select(ContentBrief).where(
                 ContentBrief.organization_id == run.organization_id,
@@ -1526,7 +1617,11 @@ class AgentToolService:
             raise AgentToolDeniedError("Content item is outside the bound location")
 
         requested_facts = [
-            _uuid(value, "approved_fact_revision_ids")
+            _uuid_reference(
+                value,
+                "approved_fact_revision_ids",
+                accepted_prefixes=("business-fact:",),
+            )
             for value in arguments.get("approved_fact_revision_ids", [])
         ]
         brief_facts = {_uuid(value, "brief fact") for value in brief.approved_fact_revision_ids}
@@ -1610,7 +1705,11 @@ class AgentToolService:
             run, arguments.get("source_evidence_references"), label="GBP post evidence"
         )
         review_id = arguments.get("review_id")
-        source_review_id = _uuid(review_id, "review_id") if review_id is not None else None
+        source_review_id = (
+            _uuid_reference(review_id, "review_id", accepted_prefixes=("review:",))
+            if review_id is not None
+            else None
+        )
 
         # Translate the generator's failure modes into safe codes the agent can
         # report. The workflow handler already does this; the tool did not, so any
@@ -1805,7 +1904,7 @@ class AgentToolService:
     async def _tool_create_lead_followup_task(
         self, session: AsyncSession, run: AgentRun, arguments: dict[str, Any]
     ) -> dict[str, object]:
-        lead_id = _uuid(arguments.get("lead_id"), "lead_id")
+        lead_id = _uuid_reference(arguments.get("lead_id"), "lead_id", accepted_prefixes=("lead:",))
         lead_reference = f"lead:{lead_id}"
         if lead_reference not in {str(value) for value in run.source_references}:
             raise AgentToolDeniedError(

@@ -21,6 +21,15 @@ def _object(properties: dict, required: list[str] | None = None) -> dict:
 
 
 STRING = {"type": "string"}
+
+
+def _reference(prefix: str, source: str) -> dict:
+    return {
+        "type": "string",
+        "description": f"Bare UUID or {prefix}:<uuid> reference, as returned by {source}.",
+    }
+
+
 STRINGS = {"type": "array", "items": STRING, "maxItems": 100}
 OBJECT = {"type": "object"}
 OBJECTS = {"type": "array", "items": OBJECT, "maxItems": 100}
@@ -42,7 +51,7 @@ SCHEMAS = {
     ),
     "create_seo_recommendation_proposal": _object(
         {
-            "opportunity_id": STRING,
+            "opportunity_id": _reference("seo-opportunity", "analyze_seo_opportunities"),
             "proposed_action": STRING,
             "evidence_references": STRINGS,
             "expected_result_hypothesis": STRING,
@@ -80,17 +89,26 @@ SCHEMAS = {
         ],
     ),
     "create_content_proposal": _object(
-        {"content_opportunity_id": STRING, "content_type": STRING, "title": STRING, "slug": STRING},
+        {
+            "content_opportunity_id": _reference("content-opportunity", "read_content_inventory"),
+            "content_type": STRING,
+            "title": STRING,
+            "slug": STRING,
+        },
         ["content_opportunity_id", "content_type", "title", "slug"],
     ),
     "create_content_brief": _object(
         {
-            "content_item_id": STRING,
+            "content_item_id": _reference("content-item", "read_content_inventory"),
             "audience": STRING,
             "intent": STRING,
             "target_kind": {"type": "string", "enum": ["existing_page", "new_page"]},
             "target_reference": STRING,
-            "approved_fact_revision_ids": STRINGS,
+            "approved_fact_revision_ids": {
+                "type": "array",
+                "items": _reference("business-fact", "read_client_business_facts"),
+                "maxItems": 100,
+            },
             "required_claims": STRINGS,
             "prohibited_claims": STRINGS,
             "required_local_references": STRINGS,
@@ -110,9 +128,13 @@ SCHEMAS = {
     # quality validation. Raw page copy is intentionally not an argument.
     "generate_content_draft_proposal": _object(
         {
-            "content_item_id": STRING,
-            "content_brief_id": STRING,
-            "approved_fact_revision_ids": STRINGS,
+            "content_item_id": _reference("content-item", "read_content_inventory"),
+            "content_brief_id": _reference("content-brief", "create_content_brief"),
+            "approved_fact_revision_ids": {
+                "type": "array",
+                "items": _reference("business-fact", "read_client_business_facts"),
+                "maxItems": 100,
+            },
             "source_evidence_references": STRINGS,
         },
         [
@@ -162,7 +184,7 @@ SCHEMAS = {
     ),
     "create_lead_followup_task": _object(
         {
-            "lead_id": STRING,
+            "lead_id": _reference("lead", "read_leads_state"),
             "title": {"type": "string", "minLength": 1, "maxLength": 200},
             "description": {"type": ["string", "null"], "maxLength": 5000},
             "due_at": {"type": ["string", "null"]},
@@ -273,7 +295,8 @@ DESCRIPTIONS = {
         "exact replacements (field, proposed_value, rationale) for the fields it lists. LILOs "
         "supplies each current value from the client repo and rejects a title over 60 characters, "
         "a meta description over 160, an empty value, or one equal to the current value. "
-        "General SEO runs must also provide an observed opportunity_id and evidence_references."
+        "opportunity_id is required when the run is not bound to one opportunity; "
+        "evidence_references then defaults to that opportunity's seo-opportunity reference."
     ),
     "create_content_proposal": "Convert an accepted opportunity into a governed Content item.",
     "create_content_brief": "Create a grounded Content brief from approved facts and evidence.",

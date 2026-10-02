@@ -1,4 +1,4 @@
-"""One tool failing twice with the same typed code ends the run as failed."""
+"""One tool failing three times with the same code and message ends the run as failed."""
 
 from datetime import UTC, datetime
 from types import SimpleNamespace
@@ -52,6 +52,7 @@ class _Session:
             for e in tool_events
             if e.metadata["tool_name"] == last["tool_name"]
             and e.metadata["error_code"] == last["error_code"]
+            and e.metadata["message_fingerprint"] == last["message_fingerprint"]
         )
 
 
@@ -92,7 +93,7 @@ async def _loop(service: AgentToolService, run: Any, session: Any, calls: int) -
 
 
 @pytest.mark.anyio
-async def test_nine_call_loop_stops_at_two_and_the_run_is_failed_with_the_code() -> None:
+async def test_nine_call_loop_stops_at_three_identical_errors_and_fails_with_the_code() -> None:
     audit = _Audit()
 
     async def unresolved(*_args: object) -> dict[str, object]:
@@ -101,7 +102,7 @@ async def test_nine_call_loop_stops_at_two_and_the_run_is_failed_with_the_code()
     run = _run()
     made = await _loop(_service(unresolved, audit), run, _Session(audit), calls=9)
 
-    assert made == TOOL_FAILURE_LIMIT == 2
+    assert made == TOOL_FAILURE_LIMIT == 3
     assert run.status == "failed"
     assert run.safe_error_code == "CONTENT_SEO_TARGET_UNRESOLVED"
     assert run.completed_at is not None
@@ -112,17 +113,32 @@ async def test_nine_call_loop_stops_at_two_and_the_run_is_failed_with_the_code()
 @pytest.mark.anyio
 async def test_different_error_codes_do_not_trip_the_breaker() -> None:
     audit = _Audit()
-    codes = iter(["CODE_A", "CODE_B", "CODE_A"])
+    codes = iter(["CODE_A", "CODE_B", "CODE_A", "CODE_B"])
 
     async def varied(*_args: object) -> dict[str, object]:
         raise AgentToolDeniedError("nope", code=next(codes))
 
     run = _run()
-    made = await _loop(_service(varied, audit), run, _Session(audit), calls=3)
+    made = await _loop(_service(varied, audit), run, _Session(audit), calls=4)
 
-    assert made == 3
-    assert run.status == "failed"  # CODE_A failed twice, on the third call
-    assert run.safe_error_code == "CODE_A"
+    assert made == 4
+    assert run.status == "running"
+
+
+@pytest.mark.anyio
+async def test_two_different_argument_errors_do_not_stop_the_run_but_three_identical_do() -> None:
+    audit = _Audit()
+    messages = iter(["a is required", "b is required", "b is required", "b is required"])
+
+    async def corrected(*_args: object) -> dict[str, object]:
+        raise AgentToolDeniedError(next(messages), code="TOOL_ARGUMENT_INVALID")
+
+    run = _run()
+    made = await _loop(_service(corrected, audit), run, _Session(audit), calls=6)
+
+    assert made == 4  # a, b, b, b: only the third identical message trips it
+    assert run.status == "failed"
+    assert run.safe_error_code == "TOOL_ARGUMENT_INVALID"
 
 
 @pytest.mark.anyio

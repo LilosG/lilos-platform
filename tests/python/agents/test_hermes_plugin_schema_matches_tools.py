@@ -28,7 +28,7 @@ PLUGIN_PATH = (
 )
 
 _DECLARATIONS = frozenset(
-    {"_object", "STRING", "STRINGS", "OBJECT", "OBJECTS", "SCHEMAS", "DESCRIPTIONS"}
+    {"_object", "_reference", "STRING", "STRINGS", "OBJECT", "OBJECTS", "SCHEMAS", "DESCRIPTIONS"}
 )
 
 

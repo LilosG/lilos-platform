@@ -590,7 +590,7 @@ def test_an_unobserved_citation_still_fails_and_stops_the_run_on_repeat(
             "approved_fact_revision_ids": [str(world.fact)],
             "source_evidence_references": [f"seo-search-observation:{uuid4()}"],  # never observed
         }
-        for _ in range(2):
+        for _ in range(3):  # the same error three times ends the run
             with pytest.raises(AgentToolDeniedError) as denied:
                 await _call(factory, tools, run_id, "create_content_brief", arguments)
             assert denied.value.code == "EVIDENCE_NOT_OBSERVED"
