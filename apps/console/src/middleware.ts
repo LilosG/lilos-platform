@@ -27,6 +27,7 @@ export const onRequest = defineMiddleware(async (context, next) => {
       request.headers.get("cookie") ?? "",
     );
     locals.userId = null;
+    locals.userEmail = null;
     locals.token = null;
     if (locals.auth.valid) {
       const { data, error } = await locals.auth.client.auth.getUser();
@@ -35,6 +36,7 @@ export const onRequest = defineMiddleware(async (context, next) => {
         if (session.session?.user.id !== data.user.id)
           throw new Error("SESSION_IDENTITY_INVALID");
         locals.userId = data.user.id;
+        locals.userEmail = data.user.email ?? null;
         locals.token = session.session?.access_token ?? null;
         locals.auth.flush(true);
       } else locals.auth.flush(false);

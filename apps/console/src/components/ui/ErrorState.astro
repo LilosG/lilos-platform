@@ -1,0 +1,18 @@
+---
+interface Props {
+  title: string;
+  heading?: "h2" | "h3";
+}
+const { title, heading: Heading = "h2" } = Astro.props;
+---
+
+<div class="banner" role="alert">
+  <span class="severity" aria-hidden="true"> ! </span>
+  <div>
+    <Heading class="body-title">{title}</Heading>
+    <p>
+      <slot />
+    </p>
+  </div>
+  <slot name="action" />
+</div>

@@ -1,0 +1,179 @@
+---
+import type { ClientOverview } from "../../server/command-center";
+import {
+  attentionRows,
+  clientHealthRows,
+  clientInsight,
+  feedRows,
+  opportunityRows,
+  snapshotMetrics,
+  upcomingRows,
+} from "../../lib/portfolio-view";
+import { clientRoute } from "../../config/routes";
+import PageHeader from "../ui/PageHeader.astro";
+import SectionHeading from "../ui/SectionHeading.astro";
+import InsightPanel from "../ui/InsightPanel.astro";
+import StatusBadge from "../ui/StatusBadge.astro";
+import EmptyState from "../ui/EmptyState.astro";
+import AttentionList from "../app/AttentionList.astro";
+import AttentionItem from "../app/AttentionItem.astro";
+import AttentionDialog from "../app/AttentionDialog.astro";
+import UpcomingWork from "../app/UpcomingWork.astro";
+import ActivityItem from "../app/ActivityItem.astro";
+import OpportunityList from "../opportunities/OpportunityList.astro";
+import PerformanceSnapshot from "./PerformanceSnapshot.astro";
+interface Props {
+  overview: ClientOverview;
+}
+const { overview } = Astro.props;
+const c = overview.client;
+const now = new Date(overview.generated_at);
+const attention = attentionRows(overview.attention, now);
+const opportunities = opportunityRows(overview.opportunities);
+const insight = clientInsight(overview);
+const activity = feedRows(overview.activity, now);
+const next =
+  attention[0]?.next ??
+  (opportunities[0] ? `Review “${opportunities[0].title}”.` : null) ??
+  "Maintain review velocity and monitor priority search queries.";
+const subtitle = [
+  c.category,
+  c.location,
+  `${c.location_count} ${c.location_count === 1 ? "location" : "locations"}`,
+]
+  .filter(Boolean)
+  .join(" · ");
+---
+
+<PageHeader title={c.name} subtitle={subtitle} client days={overview.days} />
+
+<div class="grid commandgrid">
+  <section class="panel">
+    <SectionHeading>
+      <Fragment slot="title">
+        Requires attention <span class="count">{attention.length}</span>
+      </Fragment>
+      <Fragment slot="actions">
+        <button class="link" data-dialog="client-attention"> View all </button>
+      </Fragment>
+    </SectionHeading>
+    <AttentionList items={attention} limit={2} emptyMode="client" />
+  </section>
+  <section class="panel">
+    <SectionHeading>
+      <Fragment slot="title">
+        Opportunities
+        {
+          c.open_opportunities !== null && (
+            <span class="count">{c.open_opportunities}</span>
+          )
+        }
+      </Fragment>
+      <Fragment slot="actions">
+        <a class="link" href={clientRoute(c.slug, "Opportunities")}>
+          View all
+        </a>
+      </Fragment>
+    </SectionHeading>
+    <OpportunityList rows={opportunities} limit={2} showClient={false} />
+  </section>
+</div>
+
+<section class="panel snapshot">
+  <SectionHeading>
+    <Fragment slot="title">Core performance</Fragment>
+    <Fragment slot="actions">
+      <span class="muted">vs previous period</span>
+    </Fragment>
+  </SectionHeading>
+  <PerformanceSnapshot metrics={snapshotMetrics(overview)} />
+</section>
+
+<section class="panel contextual">
+  <SectionHeading>
+    <Fragment slot="title">What the numbers mean</Fragment>
+    <Fragment slot="actions"></Fragment>
+  </SectionHeading>
+  <div class="listrow">
+    <div>
+      <h3>{insight.title}</h3>
+      <p>{insight.description}</p>
+    </div>
+    <a class="link" href={insight.href}>
+      {insight.linkLabel}
+    </a>
+  </div>
+  <InsightPanel class="insight">
+    <b>Next best action:</b>{" "}
+    {next}
+  </InsightPanel>
+</section>
+
+<div class="bottomgrid">
+  <section class="panel">
+    <SectionHeading>
+      <Fragment slot="title">Recent activity</Fragment>
+      <Fragment slot="actions"></Fragment>
+    </SectionHeading>
+    {activity.slice(0, 3).map((item) => <ActivityItem {...item} />)}
+    {
+      activity.length === 0 && (
+        <EmptyState>No meaningful work completed in this period.</EmptyState>
+      )
+    }
+  </section>
+  <section class="panel">
+    <SectionHeading>
+      <Fragment slot="title">Coming next</Fragment>
+      <Fragment slot="actions"></Fragment>
+    </SectionHeading>
+    <UpcomingWork rows={upcomingRows(overview.upcoming, now)} />
+  </section>
+  <section class="panel">
+    <SectionHeading>
+      <Fragment slot="title">Operational health</Fragment>
+      <Fragment slot="actions"></Fragment>
+    </SectionHeading>
+    {
+      clientHealthRows(overview).map((row) => (
+        <div class="listrow">
+          <div>
+            {row.label}
+            {row.note && <small>{row.note}</small>}
+          </div>
+          <a class="link" href={row.href}>
+            <StatusBadge text={row.status} />
+          </a>
+        </div>
+      ))
+    }
+  </section>
+</div>
+
+<dialog
+  id="client-attention"
+  aria-labelledby="client-attention-title"
+  data-shell-dialog
+>
+  <div class="panelhead">
+    <span class="muted">LILOs Growth</span>
+    <button class="close" aria-label="Close details" data-close autofocus>
+      ×
+    </button>
+  </div>
+  <div class="body">
+    <div class="eyebrow">{c.name}</div>
+    <h2 id="client-attention-title">Requires attention</h2>
+    {
+      attention.length === 0 ? (
+        <p>No open attention items for this client.</p>
+      ) : (
+        attention.map((a) => <AttentionItem a={a} showClient={false} />)
+      )
+    }
+  </div>
+  <div class="dialogfoot">
+    <button class="control" data-close>Close</button>
+  </div>
+</dialog>
+{attention.map((a) => <AttentionDialog a={a} />)}

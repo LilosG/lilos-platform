@@ -1,0 +1,149 @@
+---
+import type { PortfolioOverview } from "../../server/command-center";
+import {
+  attentionRows,
+  clientRowView,
+  feedRows,
+  opportunityRows,
+  portfolioHealthRows,
+  portfolioMetrics,
+  upcomingRows,
+} from "../../lib/portfolio-view";
+import { longDate } from "../../lib/present";
+import PageHeader from "../ui/PageHeader.astro";
+import SectionHeading from "../ui/SectionHeading.astro";
+import InsightPanel from "../ui/InsightPanel.astro";
+import MetricStrip from "../ui/MetricStrip.astro";
+import StatusBadge from "../ui/StatusBadge.astro";
+import AttentionList from "../app/AttentionList.astro";
+import AttentionDialog from "../app/AttentionDialog.astro";
+import UpcomingWork from "../app/UpcomingWork.astro";
+import ActivityItem from "../app/ActivityItem.astro";
+import OpportunityList from "../opportunities/OpportunityList.astro";
+import ClientTable from "./ClientTable.astro";
+import EmptyState from "../ui/EmptyState.astro";
+interface Props {
+  overview: PortfolioOverview;
+}
+const { overview } = Astro.props;
+const now = new Date(overview.generated_at);
+const attention = attentionRows(overview.attention, now);
+const opportunities = opportunityRows(overview.opportunities);
+const clients = overview.clients.map((row) => clientRowView(row, now));
+const priority = attention.filter(
+  (a) => a.severity === "critical" || a.severity === "high",
+).length;
+const needing = overview.clients.filter((c) => c.health !== "healthy");
+const health = portfolioHealthRows(overview);
+const activity = feedRows(overview.activity, now);
+---
+
+<PageHeader
+  title="Portfolio overview"
+  subtitle={`${longDate(now)} · ${overview.client_count} active ${overview.client_count === 1 ? "client" : "clients"} across ${overview.location_count} ${overview.location_count === 1 ? "location" : "locations"}`}
+  days={overview.days}
+/>
+
+<div class="grid commandgrid">
+  <section class="panel">
+    <SectionHeading>
+      <Fragment slot="title">
+        Needs your attention <span class="count">{attention.length}</span>
+      </Fragment>
+      <Fragment slot="actions">
+        <a class="link" href="/attention/"> View all </a>
+      </Fragment>
+    </SectionHeading>
+    <AttentionList items={attention} limit={3} emptyMode="portfolio" />
+    <InsightPanel class="insight">
+      {priority} priority items · Fix data and tracking gaps before evaluating declines.
+    </InsightPanel>
+  </section>
+  <section class="panel">
+    <SectionHeading>
+      <Fragment slot="title">Opportunities</Fragment>
+      <Fragment slot="actions">
+        <a class="link" href="/opportunities/"> View all </a>
+      </Fragment>
+    </SectionHeading>
+    <OpportunityList rows={opportunities} limit={3} />
+  </section>
+</div>
+
+<MetricStrip items={portfolioMetrics(overview)} />
+
+{
+  needing.length > 0 && (
+    <InsightPanel class="insight contextinsight">
+      <details>
+        <summary>
+          ✧ {needing.length}{" "}
+          {needing.length === 1 ? "client needs" : "clients need"} a closer look
+          before performance is judged.
+        </summary>
+        <p>
+          {needing.map((c) => c.name).join(", ")}
+          {needing.length === 1 ? " has" : " have"} missing connections or
+          failing work. Fix data and tracking gaps first so declines are not
+          confused with gaps.
+        </p>
+        <button class="link" data-filter="filter" data-value="Needs attention">
+          Show clients needing attention
+        </button>
+      </details>
+    </InsightPanel>
+  )
+}
+
+<ClientTable rows={clients} locationCount={overview.location_count} />
+
+<div class="bottomgrid">
+  <section class="panel">
+    <SectionHeading>
+      <Fragment slot="title">Coming next</Fragment>
+      <Fragment slot="actions">
+        <a class="link" href="/reports/"> Reports </a>
+      </Fragment>
+    </SectionHeading>
+    <UpcomingWork rows={upcomingRows(overview.upcoming, now).slice(0, 4)} />
+  </section>
+  <section class="panel">
+    <SectionHeading>
+      <Fragment slot="title">Meaningful activity</Fragment>
+      <Fragment slot="actions">
+        <a class="link" href="/activity/"> View all </a>
+      </Fragment>
+    </SectionHeading>
+    {activity.slice(0, 3).map((item) => <ActivityItem {...item} />)}
+    {
+      activity.length === 0 && (
+        <EmptyState>No meaningful work completed in this period.</EmptyState>
+      )
+    }
+  </section>
+  <section class="panel">
+    <SectionHeading>
+      <Fragment slot="title">Operational health</Fragment>
+      <Fragment slot="actions">
+        <a class="link" href="/automations/"> Open console </a>
+      </Fragment>
+    </SectionHeading>
+    {
+      health.map((s) => (
+        <div class="listrow">
+          <div>
+            {s.label}
+            <small>{s.note}</small>
+          </div>
+          <a class="link" href={s.href}>
+            <StatusBadge text={s.status} />
+          </a>
+        </div>
+      ))
+    }
+  </section>
+</div>
+
+<Fragment>
+  {attention.slice(0, 3).map((a) => <AttentionDialog a={a} />)}
+</Fragment>

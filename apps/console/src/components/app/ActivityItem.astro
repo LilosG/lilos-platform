@@ -1,0 +1,28 @@
+---
+interface Props {
+  text: string;
+  clientName: string;
+  clientHref: string;
+  time: string;
+  /** Hide the client link inside that client's own workspace. */
+  showClient?: boolean;
+}
+const { text, clientName, clientHref, time, showClient = true } = Astro.props;
+---
+
+<div class="listrow feed">
+  <span class="activitydot">✓</span>
+  <div>
+    {text}
+    {
+      showClient && (
+        <small>
+          <a class="link compact-link" href={clientHref}>
+            {clientName}
+          </a>
+        </small>
+      )
+    }
+  </div>
+  <time>{time}</time>
+</div>

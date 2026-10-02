@@ -1,0 +1,114 @@
+---
+import type { ClientRowView } from "../../lib/portfolio-view";
+import ClientRows from "./ClientRows.astro";
+import DataTable from "../ui/DataTable.astro";
+interface Props {
+  rows: ClientRowView[];
+  locationCount: number;
+  query?: string;
+}
+const { rows, locationCount, query = "" } = Astro.props;
+// Filters whose evidence does not exist yet stay in the design but cannot be chosen.
+const filters: [string, string | null][] = [
+  ["All clients", null],
+  ["Needs attention", null],
+  ["Improving", "Needs local rank tracking"],
+  ["Declining", "Needs local rank tracking"],
+  ["New clients", "Onboarding start dates are not tracked"],
+  ["Multi-location", null],
+  ["Website issues", null],
+  ["GBP issues", null],
+  ["Review issues", "Review issues are not tracked yet"],
+  ["Integration issues", null],
+];
+const sorts: [string, string, boolean][] = [
+  ["priority", "Sort: Attention first", false],
+  ["name", "Sort: Client name", false],
+  ["visibility", "Sort: Visibility (not tracked)", true],
+  ["leads", "Sort: Leads", false],
+  ["change", "Sort: Biggest gains", false],
+];
+---
+
+<section class="panel">
+  <div class="panelhead">
+    <h2>
+      Client portfolio <span class="count">{rows.length}</span>
+    </h2>
+    <span class="muted text-small">Compared with previous period</span>
+  </div>
+  <div class="toolbar">
+    <input
+      class="search"
+      id="search"
+      placeholder="Search clients, locations or categories…"
+      aria-label="Search clients"
+      value={query}
+      data-client-search
+    />
+    <select aria-label="Sort clients" data-filter="sort">
+      {
+        sorts.map(([value, text, disabled]) => (
+          <option
+            value={value}
+            disabled={disabled}
+            selected={value === "priority"}
+          >
+            {text}
+          </option>
+        ))
+      }
+    </select>
+  </div>
+  <div class="chips">
+    {
+      filters.map(([name, unavailable]) => (
+        <button
+          class:list={["chip", { active: name === "All clients" }]}
+          data-filter="filter"
+          data-value={name}
+          disabled={unavailable !== null}
+          title={unavailable ?? undefined}
+        >
+          {name}
+        </button>
+      ))
+    }
+  </div>
+  <div class="tablewrap">
+    <DataTable>
+      <thead>
+        <tr>
+          <th>Client / location</th>
+          <th>Visibility</th>
+          <th>Avg. rank</th>
+          <th>Organic traffic</th>
+          <th>Leads</th>
+          <th>Reviews</th>
+          <th>Health</th>
+          <th>Last activity / next work</th>
+        </tr>
+      </thead>
+      <tbody id="clientrows">
+        <tr data-client-empty hidden={rows.length > 0}>
+          <td colspan="8" class="empty">
+            {
+              rows.length === 0
+                ? "No clients are available to your account."
+                : "No clients match. Try another search or filter."
+            }
+          </td>
+        </tr>
+        <ClientRows rows={rows} />
+      </tbody>
+    </DataTable>
+  </div>
+  <div class="tablefoot">
+    <span id="rowcount">{rows.length} of {rows.length} clients</span>
+    <span
+      >{
+        `${locationCount} ${locationCount === 1 ? "location" : "locations"} managed`
+      }</span
+    >
+  </div>
+</section>

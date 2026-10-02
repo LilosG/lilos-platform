@@ -1,0 +1,29 @@
+---
+import EmptyState from "../ui/EmptyState.astro";
+interface Row {
+  title: string;
+  clientName: string;
+  clientHref: string;
+  when: string;
+}
+interface Props {
+  rows: Row[];
+  showClient?: boolean;
+}
+const { rows, showClient = true } = Astro.props;
+---
+
+{
+  rows.map((row) => (
+    <div class="listrow">
+      <div>
+        <a class="link" href={row.clientHref}>
+          {row.title}
+        </a>
+        {showClient && <small>{row.clientName}</small>}
+      </div>
+      <span>{row.when}</span>
+    </div>
+  ))
+}
+{rows.length === 0 && <EmptyState>No work is scheduled.</EmptyState>}

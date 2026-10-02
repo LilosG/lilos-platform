@@ -1,0 +1,34 @@
+---
+import type { AttentionRow } from "../../lib/portfolio-view";
+interface Props {
+  a: AttentionRow;
+  /** Show the client name; omitted inside a client workspace. */
+  showClient?: boolean;
+}
+const { a, showClient = true } = Astro.props;
+---
+
+<div class="actionrow" data-attention-id={a.id}>
+  <span class={`severity ${a.severity === "medium" ? "medium" : ""}`}>
+    {a.severity === "critical" ? "!" : "⚑"}
+  </span>
+  <div>
+    <button class="link actiontitle" data-dialog={a.id}>
+      <strong>{a.title}</strong>
+    </button>
+    <p>
+      {
+        showClient && (
+          <Fragment>
+            <a class="clientcontextentry" href={a.clientHref}>
+              {a.clientName}
+            </a>{" "}
+            ·{" "}
+          </Fragment>
+        )
+      }
+      {a.severityLabel}
+    </p>
+  </div>
+  <span class="time">{a.time}</span>
+</div>

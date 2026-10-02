@@ -1,0 +1,35 @@
+---
+import type { AttentionRow } from "../../lib/portfolio-view";
+import AttentionItem from "./AttentionItem.astro";
+import EmptyState from "../ui/EmptyState.astro";
+interface Props {
+  items: AttentionRow[];
+  limit: number;
+  emptyMode: "portfolio" | "client";
+  showClient?: boolean;
+}
+const { items, limit, emptyMode, showClient = true } = Astro.props;
+---
+
+{
+  items
+    .slice(0, limit)
+    .map((a) => <AttentionItem a={a} showClient={showClient} />)
+}
+{
+  items.length === 0 &&
+    (emptyMode === "portfolio" ? (
+      <EmptyState>No open attention items.</EmptyState>
+    ) : (
+      <div class="clearstate">
+        <span class="severity low">✓</span>
+        <div>
+          <h3>No urgent issues</h3>
+          <p>
+            Priority sources are connected. Check again after the next scheduled
+            run.
+          </p>
+        </div>
+      </div>
+    ))
+}

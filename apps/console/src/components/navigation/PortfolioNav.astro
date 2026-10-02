@@ -1,0 +1,43 @@
+---
+import { portfolioNavigation, portfolioRoute } from "../../config/routes";
+interface Props {
+  page: string;
+  /** Open opportunities across the portfolio, when the source is loaded. */
+  opportunities?: number | null;
+}
+const { page, opportunities = null } = Astro.props;
+---
+
+<div class="navlabel">ENTIRE PORTFOLIO</div>
+<nav aria-label="Portfolio">
+  {
+    portfolioNavigation.map(([p, icon, label]) => (
+      <a
+        href={portfolioRoute(p)}
+        class:list={{ active: page === p }}
+        aria-current={page === p ? "page" : undefined}
+      >
+        <span class="navicon" aria-hidden="true">
+          {icon}
+        </span>
+        {label}
+        {p === "opportunities" && opportunities !== null && (
+          <span class="navcount">{opportunities}</span>
+        )}
+      </a>
+    ))
+  }
+</nav>
+<div data-owner-navigation>
+  <div class="navlabel">MANAGE</div>
+  <nav aria-label="Portfolio management">
+    <a
+      href={portfolioRoute("administration")}
+      class:list={{ active: page === "administration" }}
+      aria-current={page === "administration" ? "page" : undefined}
+    >
+      <span class="navicon" aria-hidden="true"> ⚙ </span>
+      Administration
+    </a>
+  </nav>
+</div>

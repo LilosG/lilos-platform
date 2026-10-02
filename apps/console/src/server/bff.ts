@@ -37,6 +37,18 @@ export const routes = [
   ...reviewRoutes,
   { pattern: /^me\/$/, method: "GET", upstream: "/api/v1/me", query: [] },
   {
+    pattern: /^command-center\/(portfolio|clients)\/$/,
+    method: "GET",
+    upstream: "",
+    query: ["days"],
+  },
+  {
+    pattern: new RegExp(`^command-center/clients/${uuid}/overview/$`),
+    method: "GET",
+    upstream: "",
+    query: ["days"],
+  },
+  {
     pattern: /^me\/organizations\/$/,
     method: "GET",
     upstream: "/api/v1/me/organizations",

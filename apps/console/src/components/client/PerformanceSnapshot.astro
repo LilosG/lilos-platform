@@ -1,0 +1,19 @@
+---
+import type { MetricCellView } from "../../lib/portfolio-view";
+interface Props {
+  metrics: (MetricCellView & { href: string })[];
+}
+const { metrics } = Astro.props;
+---
+
+<div class="snapshotgrid">
+  {
+    metrics.map((metric) => (
+      <a class="snapshotmetric" href={metric.href}>
+        <span>{metric.label}</span>
+        <strong class:list={{ muted: metric.missing }}>{metric.value}</strong>
+        <small>{metric.description}</small>
+      </a>
+    ))
+  }
+</div>

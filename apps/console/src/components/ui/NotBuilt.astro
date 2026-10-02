@@ -1,0 +1,29 @@
+---
+import PageHeader from "./PageHeader.astro";
+import type { NotBuilt } from "../../config/routes";
+import { notBuiltTitle } from "../../config/routes";
+interface Props {
+  target: NotBuilt;
+  subtitle?: string;
+}
+const { target, subtitle } = Astro.props;
+const title = notBuiltTitle(target);
+---
+
+<PageHeader
+  title={title}
+  subtitle={subtitle ?? "This screen is not part of the Command Center yet."}
+  client={target.scope === "client"}
+/>
+<section class="panel" data-not-built={`${target.scope}:${target.area}`}>
+  <div class="clearstate">
+    <span class="severity low">…</span>
+    <div>
+      <h2>{title} is not built yet</h2>
+      <p>
+        No placeholder or sample content is shown here. This area opens when its
+        integration phase ships.
+      </p>
+    </div>
+  </div>
+</section>

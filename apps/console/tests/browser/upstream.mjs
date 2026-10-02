@@ -17,9 +17,11 @@ let leadScenario = "inventory";
 const contentStates = new Map();
 const reviewStates = new Map();
 import { createServer } from "node:http";
+import { commandCenter } from "./command-center-sim.mjs";
 const ids = {
   a: "11111111-1111-4111-8111-111111111111",
   b: "22222222-2222-4222-8222-222222222222",
+  admin: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
   opp: "33333333-3333-4333-8333-333333333333",
   page: "44444444-4444-4444-8444-444444444444",
   rev: "55555555-5555-4555-8555-555555555555",
@@ -37,7 +39,12 @@ const user = (id) => ({
   id,
   aud: "authenticated",
   role: "authenticated",
-  email: id === ids.a ? "a@example.test" : "b@example.test",
+  email:
+    id === ids.a
+      ? "a@example.test"
+      : id === ids.admin
+        ? "admin@example.test"
+        : "b@example.test",
   app_metadata: {},
   user_metadata: {},
   factors,
@@ -114,7 +121,13 @@ createServer(async (req, res) => {
 
     if (url.searchParams.get("grant_type") === "refresh_token")
       return reply(
-        session(parsed.refresh_token?.includes(ids.b) ? ids.b : ids.a),
+        session(
+          parsed.refresh_token?.includes(ids.admin)
+            ? ids.admin
+            : parsed.refresh_token?.includes(ids.b)
+              ? ids.b
+              : ids.a,
+        ),
       );
     reviewStates.delete(ids.run);
     contentStates.delete(ids.run);
@@ -126,7 +139,15 @@ createServer(async (req, res) => {
     revision = ids.rev;
     approved = false;
     factors = [];
-    return reply(session(parsed.email === "a@example.test" ? ids.a : ids.b));
+    return reply(
+      session(
+        parsed.email === "a@example.test"
+          ? ids.a
+          : parsed.email === "admin@example.test"
+            ? ids.admin
+            : ids.b,
+      ),
+    );
   }
   if (url.pathname === "/auth/v1/user")
     return claims.sub
@@ -175,6 +196,8 @@ createServer(async (req, res) => {
     factors = [];
     return reply({ id: ids.factor });
   }
+  const feed = commandCenter(url, claims, ids);
+  if (feed) return reply(feed.body, feed.status ?? 200);
   if (url.pathname === "/api/v1/me/organizations")
     return reply({
       data: [

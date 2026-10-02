@@ -1,0 +1,82 @@
+---
+import type { Organization } from "../../server/context";
+import { clientAreaPath } from "../../lib/shell-paths";
+interface Props {
+  client?: Organization;
+  clients: Organization[];
+  /** The area path under the client, so switching clients keeps the screen. */
+  areaPath: string;
+  attentionCount: number | null;
+  attentionDialog: boolean;
+}
+const { client, clients, areaPath, attentionCount, attentionDialog } =
+  Astro.props;
+const flag = attentionCount === null ? "⚑" : `⚑ ${attentionCount}`;
+---
+
+<header id="topbar">
+  <div class="crumb">
+    <button
+      class="menu"
+      data-menu
+      aria-label="Toggle navigation"
+      aria-controls="sidebar"
+      aria-expanded="false"
+    >
+      ☰
+    </button>
+    <a href="/">LILOs Growth</a>
+    <span>/</span>
+    {
+      client ? (
+        <select
+          class="clientselector"
+          aria-label="Switch client"
+          data-client-selector
+        >
+          <option value="/">Entire portfolio</option>
+          {clients.map((x) => (
+            <option
+              value={clientAreaPath(x.organization_slug, areaPath)}
+              selected={x.organization_id === client.organization_id}
+            >
+              {x.organization_name}
+            </option>
+          ))}
+        </select>
+      ) : (
+        <strong>Entire portfolio</strong>
+      )
+    }
+  </div>
+  <div class="headerRight">
+    {
+      client ? (
+        attentionDialog ? (
+          <button
+            aria-label="Client attention items"
+            data-dialog="client-attention"
+          >
+            {flag}
+          </button>
+        ) : (
+          <a
+            class="control"
+            href={`/clients/${client.organization_slug}/attention/`}
+            aria-label="Client attention items"
+          >
+            {flag}
+          </a>
+        )
+      ) : (
+        <a
+          class="control"
+          href="/attention/"
+          aria-label="Portfolio attention items"
+        >
+          {flag}
+        </a>
+      )
+    }
+  </div>
+</header>

@@ -1,0 +1,111 @@
+---
+import type { ClientRowView } from "../../lib/portfolio-view";
+import StatusBadge from "../ui/StatusBadge.astro";
+interface Props {
+  rows: ClientRowView[];
+}
+const { rows } = Astro.props;
+const trend = (delta: string | null) =>
+  delta === null ? null : delta.startsWith("−") ? "negative" : "positive";
+---
+
+{
+  rows.map((c) => (
+    <tr
+      data-client-row={c.id}
+      data-row-href={c.href}
+      class="clientrow"
+      aria-label={`Open ${c.name} workspace`}
+      data-name={c.name}
+      data-search={c.search}
+      data-locations={c.filters.multiLocation ? 2 : 1}
+      data-needs-attention={String(c.filters.needsAttention)}
+      data-website-issue={String(c.filters.websiteIssue)}
+      data-gbp-issue={String(c.filters.gbpIssue)}
+      data-integration-issue={String(c.filters.integrationIssue)}
+      data-priority={c.priority}
+      data-leads={
+        c.leads.state === "available" ? c.leads.text.replaceAll(",", "") : -1
+      }
+      data-change={c.organic.delta ?? -1000}
+    >
+      <td>
+        <div class="clientcell">
+          <span class="clientmark">{c.mark}</span>
+          <div>
+            <a class="clientname" href={c.href}>
+              <span>{c.name}</span>
+            </a>
+            <span class="sub">{c.sub}</span>
+          </div>
+        </div>
+      </td>
+      <td>
+        <b class:list={{ muted: c.visibility.state !== "available" }}>
+          {c.visibility.text}
+        </b>
+        <span class="sub">
+          {c.visibility.state === "available" ? "" : c.visibility.note}
+        </span>
+      </td>
+      <td>
+        <span class:list={{ muted: c.rank.state !== "available" }}>
+          {c.rank.text}
+        </span>
+      </td>
+      <td>
+        <span class:list={{ muted: c.organic.state !== "available" }}>
+          {c.organic.text}
+        </span>
+        <span class="sub">
+          {c.organicDelta !== null ? (
+            <span class={trend(c.organicDelta)}>
+              {c.organicDelta.startsWith("−") ? "↘" : "↗"}{" "}
+              {c.organicDelta.replace(/^[+−]/, "")}
+            </span>
+          ) : c.organic.state !== "available" ? (
+            c.organic.note
+          ) : (
+            ""
+          )}
+        </span>
+      </td>
+      <td>
+        <b class:list={{ muted: c.leads.state !== "available" }}>
+          {c.leads.text}
+        </b>
+        <span class="sub">
+          {c.leadsDelta !== null ? (
+            <span class={trend(c.leadsDelta)}>
+              {c.leadsDelta.startsWith("−") ? "↘" : "↗"}{" "}
+              {c.leadsDelta.replace(/^[+−]/, "")}
+            </span>
+          ) : c.leads.state !== "available" ? (
+            c.leads.note
+          ) : (
+            ""
+          )}
+        </span>
+      </td>
+      <td>
+        {c.reviews.state === "available" ? (
+          <Fragment>
+            {c.reviews.rating} <span class="reviewstar-tone">★</span>
+            <span class="sub">{c.reviews.note}</span>
+          </Fragment>
+        ) : (
+          <span class="muted">{c.reviews.note}</span>
+        )}
+      </td>
+      <td>
+        <StatusBadge text={c.health} />
+        <span class="sub">{c.healthSub}</span>
+      </td>
+      <td>
+        <span class="sub lastactivity">{c.lastActivity}</span>
+        <b class="weight-medium">{c.nextTitle}</b>
+        <span class="sub">{c.nextWhen}</span>
+      </td>
+    </tr>
+  ))
+}

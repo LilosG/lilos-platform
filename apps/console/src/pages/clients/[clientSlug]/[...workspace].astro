@@ -40,6 +40,14 @@ import DialogFrame from "../../../components/ui/DialogFrame.astro";
 import AppLayout from "../../../layouts/AppLayout.astro";
 import OpportunityRow from "../../../components/opportunities/OpportunityRow.astro";
 import OpportunityDetail from "../../../components/opportunities/OpportunityDetail.astro";
+import Overview from "../../../components/client/Overview.astro";
+import NotBuilt from "../../../components/ui/NotBuilt.astro";
+import { clientAreaSlugs } from "../../../config/routes";
+import {
+  loadOverview,
+  reportingDays,
+  type ClientOverview,
+} from "../../../server/command-center";
 import { organizations, resolveSlug } from "../../../server/context";
 import { read, APIError } from "../../../server/bff";
 import {
@@ -76,8 +84,26 @@ let profileView: ProfileView | undefined;
 const segments = path.split("/");
 const tab = segments[1] ?? "";
 const days = Number(Astro.url.searchParams.get("days") ?? 28);
-if (section === "local-search" && ![7, 28, 90].includes(days))
+if (
+  (section === "local-search" || section === "") &&
+  ![7, 28, 90].includes(days)
+)
   return new Response("Invalid period", { status: 400 });
+const builtSections = [
+  "leads",
+  "website-content",
+  "reviews",
+  "integrations",
+  "local-search",
+  "opportunities",
+  "attention",
+];
+const notBuilt = section in clientAreaSlugs;
+if (section !== "" && !notBuilt && !builtSections.includes(section))
+  return new Response("Page not found", { status: 404 });
+if (notBuilt && segments.length > 1)
+  return new Response("Page not found", { status: 404 });
+let overview: ClientOverview | undefined;
 const websiteId = Astro.url.searchParams.get("website_id") ?? undefined;
 if (
   section === "local-search" &&
@@ -102,7 +128,15 @@ if (!Number.isInteger(offset) || offset < 0 || offset > 100000)
   return new Response("Invalid page", { status: 400 });
 const scope = `organizations/${client.organization_id}/command-center/`;
 try {
-  if (section === "leads") {
+  if (section === "") {
+    if (segments.length > 1 || path !== "")
+      return new Response("Page not found", { status: 404 });
+    overview = await loadOverview(
+      Astro.locals,
+      client.organization_id,
+      reportingDays(String(days)) ?? 28,
+    );
+  } else if (section === "leads") {
     const location = Astro.url.searchParams.get("location_id") || undefined;
     const params = new URLSearchParams(
       location ? { location_id: location } : {},
@@ -278,9 +312,13 @@ const title =
 ---
 
 <AppLayout
+  reference={overview !== undefined || notBuilt}
   title={title}
   organizations={rows}
   client={client}
+  attentionCount={overview ? overview.attention.length : null}
+  attentionDialog={overview !== undefined}
+  updatedAt={overview?.generated_at}
   surface={section === "local-search" ||
   section === "integrations" ||
   section === "reviews" ||
@@ -290,7 +328,17 @@ const title =
     : undefined}
 >
   {
-    leadDetail ? (
+    overview ? (
+      <Overview overview={overview} />
+    ) : notBuilt ? (
+      <NotBuilt
+        target={{
+          scope: "client",
+          area: section as keyof typeof clientAreaSlugs,
+        }}
+        subtitle={`${client.organization_name} · This screen is not part of the Command Center yet.`}
+      />
+    ) : leadDetail ? (
       <DialogFrame
         id="lead-detail"
         returnLabel="All leads"
@@ -476,15 +524,7 @@ const title =
               <p>No attention items in this page of canonical SEO work.</p>
             )}
           </div>
-        ) : (
-          <div class="panel">
-            <h2>Source unavailable</h2>
-            <p>This product area is awaiting its integration phase.</p>
-            <a href={`/clients/${client.organization_slug}/opportunities/`}>
-              View opportunities
-            </a>
-          </div>
-        )}
+        ) : null}
         {next !== null && <a href={`?offset=${next}`}>Next page</a>}
       </Fragment>
     )

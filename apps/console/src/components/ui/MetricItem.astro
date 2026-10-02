@@ -1,0 +1,19 @@
+---
+interface Props {
+  label: string;
+  value: string;
+  description: string;
+  /** Not a number: rendered muted so a missing value is never read as a result. */
+  missing?: boolean;
+}
+const { label, value, description, missing = false } = Astro.props;
+---
+
+<div class="metric">
+  <div class="metricLabel">{label}</div>
+  <strong
+    class:list={{ muted: missing }}
+    data-availability={missing ? "missing" : undefined}>{value}</strong
+  >
+  <small>{description}</small>
+</div>

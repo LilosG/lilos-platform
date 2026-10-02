@@ -7,6 +7,7 @@ declare global {
       settings: ConsoleConfig;
       auth: ReturnType<typeof requestSession>;
       userId: string | null;
+      userEmail?: string | null;
       token: string | null;
       csrf: string;
       binding: string;

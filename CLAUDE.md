@@ -6,7 +6,7 @@ LILOs is Lilos Growth's operating platform: one multi-tenant product for running
 - API: FastAPI (`apps/api/app`), worker (`apps/worker`), scheduler (`apps/scheduler`) — Render services `lilos-api`, `lilos-worker`, `lilos-scheduler`.
 - AI runtime: Hermes (`lilos-hermes` private service on Render), invoked through `apps/api/app/agents/`.
 - Database: Supabase Postgres (`lilos-production`), migrations in `migrations/` (Alembic).
-- Web: Astro + Tailwind v4 (`apps/web`), deployed on Vercel.
+- Web: Astro + Tailwind v4. apps/console is the new Command Center front end (Mike's design); apps/web is the current app until switchover. Both deploy on Vercel.
 
 ## Architecture principles (these replace the older packet-era rules)
 1. Deterministic work is code. Crawls, syncs, attribution, scoring, verification, measurement and provider writes run as normal workflows — never routed through an LLM.
@@ -18,12 +18,10 @@ LILOs is Lilos Growth's operating platform: one multi-tenant product for running
 7. No duplicate systems. Extend the canonical model instead of adding a parallel one. Remove what you replace in the same change.
 8. Tenant isolation, idempotency and audit logging on every write.
 
-## Commands (run before every push — CI must confirm, not discover)
-- `npm run format:check && npm run lint && npm run typecheck`
-- `npm run test:web && npm run build`
-- `uv run python scripts/python_test_shards.py --shard-count 4 --verify`
-- Python tests: 4 shards in parallel, each against its own disposable local PostgreSQL 17 database whose name contains `test`:
-  `LILOS_TEST_DATABASE_URL=... uv run python scripts/python_test_shards.py --shard-count 4 --shard-index N`
+## Commands
+- Locally, before every push: `npm run format:check && npm run lint && npm run typecheck`, plus `npm run contracts:check` whenever API routes or response models change (regenerate with `npm run contracts:generate`; never hand-merge `packages/contracts`), plus only the tests that cover the code you changed (a single test file or `-k` selection; for the console `npm run test --workspace @lilos/console`).
+- The full 4-shard Python suite runs in CI only: `uv run python scripts/python_test_shards.py --shard-count 4 --verify`. CI runs each shard against its own disposable PostgreSQL 17 database whose name contains `test`. Locally you may run a shard with `LILOS_TEST_DATABASE_URL=... uv run python scripts/python_test_shards.py --shard-count 4 --shard-index N`.
+- `npm run test:web && npm run build` when web or console code changes.
 - `uv run alembic upgrade head && uv run alembic check` on a disposable DB when models/migrations change.
 - `npm run check:browser` when UI changes.
 Never point tests at Supabase production.

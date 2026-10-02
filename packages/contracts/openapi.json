@@ -61,6 +61,42 @@
         "title": "AccessPagination",
         "type": "object"
       },
+      "ActivityItem": {
+        "additionalProperties": false,
+        "properties": {
+          "completed_at": {
+            "format": "date-time",
+            "title": "Completed At",
+            "type": "string"
+          },
+          "organization_id": {
+            "format": "uuid",
+            "title": "Organization Id",
+            "type": "string"
+          },
+          "organization_name": {
+            "title": "Organization Name",
+            "type": "string"
+          },
+          "organization_slug": {
+            "title": "Organization Slug",
+            "type": "string"
+          },
+          "workflow_key": {
+            "title": "Workflow Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "organization_id",
+          "organization_name",
+          "organization_slug",
+          "workflow_key",
+          "completed_at"
+        ],
+        "title": "ActivityItem",
+        "type": "object"
+      },
       "AgentRunStart": {
         "additionalProperties": false,
         "properties": {
@@ -349,6 +385,71 @@
         ],
         "title": "AssuranceLevel",
         "type": "string"
+      },
+      "AttentionItem": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "occurred_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Occurred At"
+          },
+          "organization_id": {
+            "format": "uuid",
+            "title": "Organization Id",
+            "type": "string"
+          },
+          "organization_name": {
+            "title": "Organization Name",
+            "type": "string"
+          },
+          "organization_slug": {
+            "title": "Organization Slug",
+            "type": "string"
+          },
+          "reference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference"
+          },
+          "severity": {
+            "enum": [
+              "critical",
+              "high",
+              "medium"
+            ],
+            "title": "Severity",
+            "type": "string"
+          }
+        },
+        "required": [
+          "organization_id",
+          "organization_name",
+          "organization_slug",
+          "code",
+          "severity",
+          "occurred_at",
+          "reference"
+        ],
+        "title": "AttentionItem",
+        "type": "object"
       },
       "AttentionList": {
         "additionalProperties": false,
@@ -980,6 +1081,262 @@
         ],
         "title": "ChecklistSeverity",
         "type": "string"
+      },
+      "ClientOverview": {
+        "additionalProperties": false,
+        "properties": {
+          "access": {
+            "enum": [
+              "member",
+              "platform_administrator"
+            ],
+            "title": "Access",
+            "type": "string"
+          },
+          "activity": {
+            "items": {
+              "$ref": "#/components/schemas/ActivityItem"
+            },
+            "title": "Activity",
+            "type": "array"
+          },
+          "attention": {
+            "items": {
+              "$ref": "#/components/schemas/AttentionItem"
+            },
+            "title": "Attention",
+            "type": "array"
+          },
+          "client": {
+            "$ref": "#/components/schemas/ClientRow"
+          },
+          "days": {
+            "title": "Days",
+            "type": "integer"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "insights": {
+            "$ref": "#/components/schemas/InsightsSummary"
+          },
+          "opportunities": {
+            "items": {
+              "$ref": "#/components/schemas/OpportunityItem"
+            },
+            "title": "Opportunities",
+            "type": "array"
+          },
+          "period_end": {
+            "format": "date-time",
+            "title": "Period End",
+            "type": "string"
+          },
+          "period_start": {
+            "format": "date-time",
+            "title": "Period Start",
+            "type": "string"
+          },
+          "systems": {
+            "items": {
+              "$ref": "#/components/schemas/ClientSystem"
+            },
+            "title": "Systems",
+            "type": "array"
+          },
+          "upcoming": {
+            "items": {
+              "$ref": "#/components/schemas/UpcomingItem"
+            },
+            "title": "Upcoming",
+            "type": "array"
+          }
+        },
+        "required": [
+          "generated_at",
+          "days",
+          "period_start",
+          "period_end",
+          "access",
+          "client",
+          "attention",
+          "opportunities",
+          "activity",
+          "upcoming",
+          "systems",
+          "insights"
+        ],
+        "title": "ClientOverview",
+        "type": "object"
+      },
+      "ClientRow": {
+        "additionalProperties": false,
+        "properties": {
+          "average_local_rank": {
+            "$ref": "#/components/schemas/MetricValue"
+          },
+          "average_position": {
+            "$ref": "#/components/schemas/MetricValue"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "health": {
+            "enum": [
+              "healthy",
+              "needs_attention",
+              "not_configured"
+            ],
+            "title": "Health",
+            "type": "string"
+          },
+          "health_reasons": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Health Reasons",
+            "type": "array"
+          },
+          "last_activity": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkItem"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "leads": {
+            "$ref": "#/components/schemas/MetricValue"
+          },
+          "local_visibility": {
+            "$ref": "#/components/schemas/MetricValue"
+          },
+          "location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location"
+          },
+          "location_count": {
+            "title": "Location Count",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "next_work": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkItem"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "open_opportunities": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Open Opportunities"
+          },
+          "organic_sessions": {
+            "$ref": "#/components/schemas/MetricValue"
+          },
+          "organization_id": {
+            "format": "uuid",
+            "title": "Organization Id",
+            "type": "string"
+          },
+          "reviews": {
+            "$ref": "#/components/schemas/ReviewSummary"
+          },
+          "search_clicks": {
+            "$ref": "#/components/schemas/MetricValue"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          }
+        },
+        "required": [
+          "organization_id",
+          "slug",
+          "name",
+          "location",
+          "category",
+          "location_count",
+          "organic_sessions",
+          "search_clicks",
+          "average_position",
+          "average_local_rank",
+          "leads",
+          "local_visibility",
+          "reviews",
+          "open_opportunities",
+          "health",
+          "health_reasons",
+          "last_activity",
+          "next_work"
+        ],
+        "title": "ClientRow",
+        "type": "object"
+      },
+      "ClientSystem": {
+        "additionalProperties": false,
+        "description": "One integration or workflow family for a single client.",
+        "properties": {
+          "key": {
+            "enum": [
+              "google",
+              "analytics",
+              "search_console",
+              "automations"
+            ],
+            "title": "Key",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "healthy",
+              "needs_attention",
+              "error",
+              "not_connected",
+              "not_permitted"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "status"
+        ],
+        "title": "ClientSystem",
+        "type": "object"
       },
       "CommunicationCreate": {
         "additionalProperties": false,
@@ -3058,6 +3415,80 @@
         ],
         "title": "IndustryStatus",
         "type": "string"
+      },
+      "InsightsSummary": {
+        "additionalProperties": false,
+        "description": "The former Insights summary, folded into the client overview.",
+        "properties": {
+          "availability": {
+            "enum": [
+              "available",
+              "no_data",
+              "not_connected",
+              "not_tracked",
+              "not_permitted"
+            ],
+            "title": "Availability",
+            "type": "string"
+          },
+          "content_publications": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Content Publications",
+            "type": "object"
+          },
+          "growth_outcomes": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Growth Outcomes",
+            "type": "object"
+          },
+          "reviews": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Reviews",
+            "type": "object"
+          },
+          "seo_opportunities": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Seo Opportunities",
+            "type": "object"
+          },
+          "seo_opportunities_blocked": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seo Opportunities Blocked"
+          },
+          "workflow_runs": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Workflow Runs",
+            "type": "object"
+          }
+        },
+        "required": [
+          "availability",
+          "workflow_runs",
+          "growth_outcomes",
+          "seo_opportunities",
+          "seo_opportunities_blocked",
+          "content_publications",
+          "reviews"
+        ],
+        "title": "InsightsSummary",
+        "type": "object"
       },
       "IntegrationView": {
         "properties": {
@@ -7567,6 +7998,87 @@
         "title": "MetricComparison",
         "type": "object"
       },
+      "MetricValue": {
+        "additionalProperties": false,
+        "properties": {
+          "availability": {
+            "enum": [
+              "available",
+              "no_data",
+              "not_connected",
+              "not_tracked",
+              "not_permitted"
+            ],
+            "title": "Availability",
+            "type": "string"
+          },
+          "current": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current"
+          },
+          "freshness_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Freshness At"
+          },
+          "percent_delta": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Percent Delta"
+          },
+          "previous": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous"
+          },
+          "source": {
+            "enum": [
+              "ga4",
+              "search_console",
+              "leads",
+              "reviews",
+              "rank_scan"
+            ],
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "current",
+          "previous",
+          "percent_delta",
+          "source",
+          "availability"
+        ],
+        "title": "MetricValue",
+        "type": "object"
+      },
       "MyOrganizationData": {
         "additionalProperties": false,
         "description": "Self-scoped organization-membership summary for the authenticated caller.",
@@ -8167,6 +8679,104 @@
           "correlation_id"
         ],
         "title": "OpportunityDetail",
+        "type": "object"
+      },
+      "OpportunityItem": {
+        "additionalProperties": false,
+        "properties": {
+          "classification": {
+            "enum": [
+              "Issue",
+              "Growth Opportunity"
+            ],
+            "title": "Classification",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "impressions": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Impressions"
+          },
+          "opportunity_type": {
+            "title": "Opportunity Type",
+            "type": "string"
+          },
+          "organization_id": {
+            "format": "uuid",
+            "title": "Organization Id",
+            "type": "string"
+          },
+          "organization_name": {
+            "title": "Organization Name",
+            "type": "string"
+          },
+          "organization_slug": {
+            "title": "Organization Slug",
+            "type": "string"
+          },
+          "page": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page"
+          },
+          "priority": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority"
+          },
+          "query": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Query"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "organization_id",
+          "organization_name",
+          "organization_slug",
+          "opportunity_type",
+          "classification",
+          "status",
+          "priority",
+          "query",
+          "page",
+          "impressions"
+        ],
+        "title": "OpportunityItem",
         "type": "object"
       },
       "OpportunityList": {
@@ -10335,6 +10945,150 @@
         "title": "PolicyCreate",
         "type": "object"
       },
+      "PortfolioOverview": {
+        "additionalProperties": false,
+        "properties": {
+          "activity": {
+            "items": {
+              "$ref": "#/components/schemas/ActivityItem"
+            },
+            "title": "Activity",
+            "type": "array"
+          },
+          "attention": {
+            "items": {
+              "$ref": "#/components/schemas/AttentionItem"
+            },
+            "title": "Attention",
+            "type": "array"
+          },
+          "client_count": {
+            "title": "Client Count",
+            "type": "integer"
+          },
+          "clients": {
+            "items": {
+              "$ref": "#/components/schemas/ClientRow"
+            },
+            "title": "Clients",
+            "type": "array"
+          },
+          "days": {
+            "title": "Days",
+            "type": "integer"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "location_count": {
+            "title": "Location Count",
+            "type": "integer"
+          },
+          "opportunities": {
+            "items": {
+              "$ref": "#/components/schemas/OpportunityItem"
+            },
+            "title": "Opportunities",
+            "type": "array"
+          },
+          "period_end": {
+            "format": "date-time",
+            "title": "Period End",
+            "type": "string"
+          },
+          "period_start": {
+            "format": "date-time",
+            "title": "Period Start",
+            "type": "string"
+          },
+          "systems": {
+            "items": {
+              "$ref": "#/components/schemas/SystemHealth"
+            },
+            "title": "Systems",
+            "type": "array"
+          },
+          "totals": {
+            "$ref": "#/components/schemas/PortfolioTotals"
+          },
+          "upcoming": {
+            "items": {
+              "$ref": "#/components/schemas/UpcomingItem"
+            },
+            "title": "Upcoming",
+            "type": "array"
+          }
+        },
+        "required": [
+          "generated_at",
+          "days",
+          "period_start",
+          "period_end",
+          "client_count",
+          "location_count",
+          "totals",
+          "clients",
+          "attention",
+          "opportunities",
+          "activity",
+          "upcoming",
+          "systems"
+        ],
+        "title": "PortfolioOverview",
+        "type": "object"
+      },
+      "PortfolioTotals": {
+        "additionalProperties": false,
+        "properties": {
+          "average_rating": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Average Rating"
+          },
+          "local_visibility": {
+            "$ref": "#/components/schemas/MetricValue"
+          },
+          "new_reviews": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "New Reviews"
+          },
+          "organic_sessions": {
+            "$ref": "#/components/schemas/MetricValue"
+          },
+          "reporting_attention": {
+            "title": "Reporting Attention",
+            "type": "integer"
+          },
+          "website_leads": {
+            "$ref": "#/components/schemas/MetricValue"
+          }
+        },
+        "required": [
+          "website_leads",
+          "organic_sessions",
+          "new_reviews",
+          "average_rating",
+          "reporting_attention",
+          "local_visibility"
+        ],
+        "title": "PortfolioTotals",
+        "type": "object"
+      },
       "PostDecision": {
         "additionalProperties": false,
         "properties": {
@@ -11946,6 +12700,63 @@
         "title": "ReviewSource",
         "type": "object"
       },
+      "ReviewSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "availability": {
+            "enum": [
+              "available",
+              "no_data",
+              "not_connected",
+              "not_tracked",
+              "not_permitted"
+            ],
+            "title": "Availability",
+            "type": "string"
+          },
+          "average_rating": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Average Rating"
+          },
+          "new_in_period": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "New In Period"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total"
+          }
+        },
+        "required": [
+          "availability",
+          "total",
+          "new_in_period",
+          "average_rating"
+        ],
+        "title": "ReviewSummary",
+        "type": "object"
+      },
       "ReviewsWorkspace": {
         "properties": {
           "average_rating": {
@@ -13390,6 +14201,41 @@
         "title": "SyncState",
         "type": "object"
       },
+      "SystemHealth": {
+        "additionalProperties": false,
+        "properties": {
+          "affected_clients": {
+            "title": "Affected Clients",
+            "type": "integer"
+          },
+          "key": {
+            "enum": [
+              "google",
+              "analytics",
+              "automations"
+            ],
+            "title": "Key",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "healthy",
+              "needs_attention",
+              "error",
+              "not_connected"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "status",
+          "affected_clients"
+        ],
+        "title": "SystemHealth",
+        "type": "object"
+      },
       "TargetCreate": {
         "additionalProperties": false,
         "description": "Configure a repository publishing target that references a GitHub connection.",
@@ -13488,6 +14334,42 @@
         "title": "UnmappedProfile",
         "type": "object"
       },
+      "UpcomingItem": {
+        "additionalProperties": false,
+        "properties": {
+          "next_run_at": {
+            "format": "date-time",
+            "title": "Next Run At",
+            "type": "string"
+          },
+          "organization_id": {
+            "format": "uuid",
+            "title": "Organization Id",
+            "type": "string"
+          },
+          "organization_name": {
+            "title": "Organization Name",
+            "type": "string"
+          },
+          "organization_slug": {
+            "title": "Organization Slug",
+            "type": "string"
+          },
+          "workflow_key": {
+            "title": "Workflow Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "organization_id",
+          "organization_name",
+          "organization_slug",
+          "workflow_key",
+          "next_run_at"
+        ],
+        "title": "UpcomingItem",
+        "type": "object"
+      },
       "UserProfileCreate": {
         "additionalProperties": false,
         "properties": {
@@ -13575,6 +14457,67 @@
           "type"
         ],
         "title": "ValidationError",
+        "type": "object"
+      },
+      "VisibleClient": {
+        "additionalProperties": false,
+        "properties": {
+          "access": {
+            "enum": [
+              "member",
+              "platform_administrator"
+            ],
+            "title": "Access",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "organization_id": {
+            "format": "uuid",
+            "title": "Organization Id",
+            "type": "string"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "organization_id",
+          "slug",
+          "name",
+          "status",
+          "access"
+        ],
+        "title": "VisibleClient",
+        "type": "object"
+      },
+      "VisibleClients": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/VisibleClient"
+            },
+            "title": "Data",
+            "type": "array"
+          },
+          "platform_administrator": {
+            "title": "Platform Administrator",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "platform_administrator",
+          "data"
+        ],
+        "title": "VisibleClients",
         "type": "object"
       },
       "WebsiteCheckRequest": {
@@ -14156,6 +15099,49 @@
         "title": "WebsiteWorkspace",
         "type": "object"
       },
+      "WorkItem": {
+        "additionalProperties": false,
+        "properties": {
+          "at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "At"
+          },
+          "failure_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Code"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "workflow_key": {
+            "title": "Workflow Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "workflow_key",
+          "status",
+          "at"
+        ],
+        "title": "WorkItem",
+        "type": "object"
+      },
       "WorkflowRunStart": {
         "additionalProperties": false,
         "properties": {
@@ -14499,6 +15485,124 @@
         "summary": "Get client-visible onboarding state",
         "tags": [
           "client-onboarding"
+        ]
+      }
+    },
+    "/api/v1/command-center/clients": {
+      "get": {
+        "description": "The clients the caller may open, with how they may open them.",
+        "operationId": "visible_clients_api_v1_command_center_clients_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VisibleClients"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Visible Clients",
+        "tags": [
+          "command-center"
+        ]
+      }
+    },
+    "/api/v1/command-center/clients/{organization_id}/overview": {
+      "get": {
+        "operationId": "client_overview_api_v1_command_center_clients__organization_id__overview_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "default": 28,
+              "title": "Days",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientOverview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Client Overview",
+        "tags": [
+          "command-center"
+        ]
+      }
+    },
+    "/api/v1/command-center/portfolio": {
+      "get": {
+        "operationId": "portfolio_overview_api_v1_command_center_portfolio_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "default": 28,
+              "title": "Days",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortfolioOverview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Portfolio Overview",
+        "tags": [
+          "command-center"
         ]
       }
     },
