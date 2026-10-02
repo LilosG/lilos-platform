@@ -76,6 +76,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/command-center/portfolio": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Portfolio Overview */
+        get: operations["portfolio_overview_api_v1_command_center_portfolio_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/integrations/github/callback": {
         parameters: {
             query?: never;
@@ -5135,6 +5152,25 @@ export interface components {
             /** Offset */
             offset: number;
         };
+        /** ActivityItem */
+        ActivityItem: {
+            /**
+             * Completed At
+             * Format: date-time
+             */
+            completed_at: string;
+            /**
+             * Organization Id
+             * Format: uuid
+             */
+            organization_id: string;
+            /** Organization Name */
+            organization_name: string;
+            /** Organization Slug */
+            organization_slug: string;
+            /** Workflow Key */
+            workflow_key: string;
+        };
         /** AgentRunStart */
         AgentRunStart: {
             /** Context Reference */
@@ -5267,6 +5303,29 @@ export interface components {
          * @enum {string}
          */
         AssuranceLevel: "aal1" | "aal2";
+        /** AttentionItem */
+        AttentionItem: {
+            /** Code */
+            code: string;
+            /** Occurred At */
+            occurred_at: string | null;
+            /**
+             * Organization Id
+             * Format: uuid
+             */
+            organization_id: string;
+            /** Organization Name */
+            organization_name: string;
+            /** Organization Slug */
+            organization_slug: string;
+            /** Reference */
+            reference: string | null;
+            /**
+             * Severity
+             * @enum {string}
+             */
+            severity: "critical" | "high" | "medium";
+        };
         /** AttentionList */
         AttentionList: {
             /** Data */
@@ -5485,6 +5544,41 @@ export interface components {
          * @enum {string}
          */
         ChecklistSeverity: "blocker" | "warning";
+        /** ClientRow */
+        ClientRow: {
+            average_position: components["schemas"]["MetricValue"];
+            /** Category */
+            category: string | null;
+            /**
+             * Health
+             * @enum {string}
+             */
+            health: "healthy" | "needs_attention" | "not_configured";
+            /** Health Reasons */
+            health_reasons: string[];
+            last_activity: components["schemas"]["WorkItem"] | null;
+            leads: components["schemas"]["MetricValue"];
+            local_visibility: components["schemas"]["MetricValue"];
+            /** Location */
+            location: string | null;
+            /** Location Count */
+            location_count: number;
+            /** Name */
+            name: string;
+            next_work: components["schemas"]["WorkItem"] | null;
+            /** Open Opportunities */
+            open_opportunities: number | null;
+            organic_sessions: components["schemas"]["MetricValue"];
+            /**
+             * Organization Id
+             * Format: uuid
+             */
+            organization_id: string;
+            reviews: components["schemas"]["ReviewSummary"];
+            search_clicks: components["schemas"]["MetricValue"];
+            /** Slug */
+            slug: string;
+        };
         /** CommunicationCreate */
         CommunicationCreate: {
             /**
@@ -7616,6 +7710,27 @@ export interface components {
             /** Quality */
             quality: string;
         };
+        /** MetricValue */
+        MetricValue: {
+            /**
+             * Availability
+             * @enum {string}
+             */
+            availability: "available" | "no_data" | "not_connected" | "not_tracked" | "not_permitted";
+            /** Current */
+            current: number | null;
+            /** Freshness At */
+            freshness_at?: string | null;
+            /** Percent Delta */
+            percent_delta: number | null;
+            /** Previous */
+            previous: number | null;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "ga4" | "search_console" | "leads" | "reviews" | "rank_scan";
+        };
         /**
          * MyOrganizationData
          * @description Self-scoped organization-membership summary for the authenticated caller.
@@ -7833,6 +7948,40 @@ export interface components {
             recommendations: components["schemas"]["RecommendationView"][];
             /** Runs */
             runs: components["schemas"]["RunView"][];
+        };
+        /** OpportunityItem */
+        OpportunityItem: {
+            /**
+             * Classification
+             * @enum {string}
+             */
+            classification: "Issue" | "Growth Opportunity";
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Impressions */
+            impressions: number | null;
+            /** Opportunity Type */
+            opportunity_type: string;
+            /**
+             * Organization Id
+             * Format: uuid
+             */
+            organization_id: string;
+            /** Organization Name */
+            organization_name: string;
+            /** Organization Slug */
+            organization_slug: string;
+            /** Page */
+            page: string | null;
+            /** Priority */
+            priority: number | null;
+            /** Query */
+            query: string | null;
+            /** Status */
+            status: string;
         };
         /** OpportunityList */
         OpportunityList: {
@@ -8511,6 +8660,55 @@ export interface components {
             schema_version: number;
             scope_type: components["schemas"]["ConfigurationScope"];
         };
+        /** PortfolioOverview */
+        PortfolioOverview: {
+            /** Activity */
+            activity: components["schemas"]["ActivityItem"][];
+            /** Attention */
+            attention: components["schemas"]["AttentionItem"][];
+            /** Client Count */
+            client_count: number;
+            /** Clients */
+            clients: components["schemas"]["ClientRow"][];
+            /** Days */
+            days: number;
+            /**
+             * Generated At
+             * Format: date-time
+             */
+            generated_at: string;
+            /** Location Count */
+            location_count: number;
+            /** Opportunities */
+            opportunities: components["schemas"]["OpportunityItem"][];
+            /**
+             * Period End
+             * Format: date-time
+             */
+            period_end: string;
+            /**
+             * Period Start
+             * Format: date-time
+             */
+            period_start: string;
+            /** Systems */
+            systems: components["schemas"]["SystemHealth"][];
+            totals: components["schemas"]["PortfolioTotals"];
+            /** Upcoming */
+            upcoming: components["schemas"]["UpcomingItem"][];
+        };
+        /** PortfolioTotals */
+        PortfolioTotals: {
+            /** Average Rating */
+            average_rating: number | null;
+            local_visibility: components["schemas"]["MetricValue"];
+            /** New Reviews */
+            new_reviews: number | null;
+            organic_sessions: components["schemas"]["MetricValue"];
+            /** Reporting Attention */
+            reporting_attention: number;
+            website_leads: components["schemas"]["MetricValue"];
+        };
         /** PostDecision */
         PostDecision: {
             /** Approve */
@@ -9079,6 +9277,20 @@ export interface components {
              */
             quality: "partial" | "unavailable";
         };
+        /** ReviewSummary */
+        ReviewSummary: {
+            /**
+             * Availability
+             * @enum {string}
+             */
+            availability: "available" | "no_data" | "not_connected" | "not_tracked" | "not_permitted";
+            /** Average Rating */
+            average_rating: number | null;
+            /** New In Period */
+            new_in_period: number | null;
+            /** Total */
+            total: number | null;
+        };
         /** ReviewsWorkspace */
         ReviewsWorkspace: {
             /** Average Rating */
@@ -9561,6 +9773,21 @@ export interface components {
             /** Status */
             status: string;
         };
+        /** SystemHealth */
+        SystemHealth: {
+            /** Affected Clients */
+            affected_clients: number;
+            /**
+             * Key
+             * @enum {string}
+             */
+            key: "google" | "analytics" | "automations";
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "healthy" | "needs_attention" | "error" | "not_connected";
+        };
         /**
          * TargetCreate
          * @description Configure a repository publishing target that references a GitHub connection.
@@ -9606,6 +9833,25 @@ export interface components {
              * Format: uuid
              */
             id: string;
+        };
+        /** UpcomingItem */
+        UpcomingItem: {
+            /**
+             * Next Run At
+             * Format: date-time
+             */
+            next_run_at: string;
+            /**
+             * Organization Id
+             * Format: uuid
+             */
+            organization_id: string;
+            /** Organization Name */
+            organization_name: string;
+            /** Organization Slug */
+            organization_slug: string;
+            /** Workflow Key */
+            workflow_key: string;
         };
         /** UserProfileCreate */
         UserProfileCreate: {
@@ -9832,6 +10078,17 @@ export interface components {
             website_id: string | null;
             /** Websites */
             websites: components["schemas"]["WebsiteOption"][];
+        };
+        /** WorkItem */
+        WorkItem: {
+            /** At */
+            at: string | null;
+            /** Failure Code */
+            failure_code?: string | null;
+            /** Status */
+            status: string;
+            /** Workflow Key */
+            workflow_key: string;
         };
         /** WorkflowRunStart */
         WorkflowRunStart: {
@@ -10072,6 +10329,37 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    portfolio_overview_api_v1_command_center_portfolio_get: {
+        parameters: {
+            query?: {
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PortfolioOverview"];
+                };
             };
             /** @description Validation Error */
             422: {
