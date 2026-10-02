@@ -89,6 +89,17 @@ def build_hermes_runs_client(settings: Settings) -> HermesRunsClient:
     )
 
 
+# Skills that report rather than propose; finishing without a proposal is their normal result.
+REPORT_ONLY_SKILLS = frozenset({"insights.cross_product"})
+
+
+def agent_run_outcome(run: AgentRun) -> str | None:
+    """Typed result of a finished run: "completed" alone hides that nothing was proposed."""
+    if run.status != "completed" or run.skill_key in REPORT_ONLY_SKILLS:
+        return None
+    return "proposal_created" if run.output_references else "no_proposal"
+
+
 class AgentRuntimeService:
     def __init__(
         self,
@@ -1001,6 +1012,7 @@ class AgentRuntimeService:
             "status": run.status,
             "model": run.model_key,
             "safe_error_code": run.safe_error_code,
+            "outcome": agent_run_outcome(run),
             "started_at": run.started_at.isoformat() if run.started_at else None,
             "completed_at": run.completed_at.isoformat() if run.completed_at else None,
             "created_at": run.created_at.isoformat() if run.created_at else None,

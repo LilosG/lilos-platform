@@ -91,7 +91,7 @@ async def invoke_tool(
         # stable safe code if a domain contract rejects them.
         return _tool_error(
             422,
-            "HERMES_TOOL_ARGUMENT_INVALID",
+            "TOOL_ARGUMENT_INVALID",
             "The sanctioned tool arguments did not pass the LILOs domain contract.",
         )
     except Exception as exc:

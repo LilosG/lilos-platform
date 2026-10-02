@@ -47,7 +47,7 @@ requires_attention, recommended_actions, and proposal_references.
 SKILLS: dict[str, AgentSkill] = {
     "gbp.operator": AgentSkill(
         key="gbp.operator",
-        version=5,
+        version=6,
         product_key="gbp",
         title="GBP governed operator",
         instructions=COMMON_POLICY
@@ -72,8 +72,9 @@ relevant client-owned destination is refused outright -- there is no text-only
 post to fall back to.
 
 You may create one post proposal or one optimization change-set per run.
-If a mutating proposal tool returns an error, do not retry it with alternate
-wording or arguments. Report the exact safe LILOs error code and stop proposal
+If a mutating proposal tool returns an error: if the error is
+TOOL_ARGUMENT_INVALID or names a field, correct that field and call once more;
+for any other code report the exact safe LILOs error code and stop proposal
 generation for that run. You may submit a complete proposal for LILOs approval.
 Never publish or edit Google directly.
 """,
@@ -154,7 +155,7 @@ SITE_CHANGE_INVALID listing every problem by code, so one correction can fix the
     ),
     "content.operator": AgentSkill(
         key="content.operator",
-        version=6,
+        version=7,
         product_key="content",
         title="Grounded content operator",
         instructions=COMMON_POLICY
@@ -176,8 +177,9 @@ Content item does not prove which page ranks for a query. When SEO page mapping
 is unknown (the opportunity is query-only or unresolved), do not assert an
 existing ranking page: create the brief with target_kind "new_page" and a
 proposed site path such as "/services/water-heater-repair" as target_reference.
-Use target_kind "existing_page" only when the opportunity has an exact
-attributed page, and then target_reference is that page's URL.
+Use target_kind "existing_page" when the opportunity has an exact attributed
+page or when you select a page of the client's own crawled website; then
+target_reference is that page's URL. A URL that is not a crawled page is refused.
 
 An accepted Content opportunity with an exact target is an execution
 instruction. Carry it in one run through item creation, a complete
@@ -293,7 +295,7 @@ missing data with a narrative.
     ),
     "growth.planner": AgentSkill(
         key="growth.planner",
-        version=6,
+        version=7,
         product_key="growth",
         title="Cross-product growth planner",
         instructions=COMMON_POLICY
@@ -363,8 +365,9 @@ create product proposals directly and do not call downstream provider writes.
 Create exactly one typed initiative with create_growth_plan after gathering the
 necessary evidence. Every plan and every action must cite source references this
 run observed. The plan must state the expected result hypothesis, risk, effort,
-and a concrete verification plan for each action. If create_growth_plan is
-denied, report the safe reason and do not attempt a differently worded mutation.
+and a concrete verification plan for each action. If create_growth_plan
+returns an error: if the error is TOOL_ARGUMENT_INVALID or names a field, correct
+that field and call once more; for any other code report it and stop.
 The initiative remains subject to LILOs human approval and downstream product
 guardrails before execution.
 """,
