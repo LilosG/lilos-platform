@@ -44,6 +44,7 @@ function publication(
     provider_post_id:
       status === "reconciliation_required" ? "localPosts/provider-1" : null,
     verified_at: status === "verified" ? "2026-08-24T12:01:00Z" : null,
+    safe_error_code: null,
     recovery_allowed: recoveryAllowed,
   };
 }
@@ -85,10 +86,8 @@ describe("GBP post publication truth", () => {
     const cases = [
       ["reserved", "Reserved / queued"],
       ["dispatched", "Dispatched / publishing"],
-      [
-        "reconciliation_required",
-        "Provider processing / reconciliation required",
-      ],
+      ["not_published", "Not published — Google does not show this post"],
+      ["discarded", "Discarded"],
       ["verified", "Published / verified"],
       ["failed", "Failed / rejected"],
       ["cancelled", "Cancelled"],
@@ -99,6 +98,58 @@ describe("GBP post publication truth", () => {
         postPresentation(revision("approved", publication(status))),
       ).toMatchObject({ label, canPublish: false });
     }
+  });
+
+  it("says in plain words what is happening to a post whose Google result was unknown", () => {
+    const label = (provider_post_id: string | null, code: string | null) =>
+      postPresentation(
+        revision("approved", {
+          ...publication("reconciliation_required"),
+          provider_post_id,
+          safe_error_code: code,
+        }),
+      ).label;
+
+    expect(label(null, "PROVIDER_WRITE_AMBIGUOUS")).toBe(
+      "Checking Google — LILOs will re-read it automatically",
+    );
+    expect(
+      label("accounts/1/localPosts/2", "POST_RECOVERY_PROVIDER_MATCHED"),
+    ).toBe("Google is processing this post — verification pending");
+    expect(label(null, "GOOGLE_READ_FAILED")).toBe(
+      "Needs a person — LILOs could not read Google to confirm this post",
+    );
+    expect(label(null, "GOOGLE_RECONNECT_REQUIRED")).toBe(
+      "Needs a person — reconnect Google, then check this post",
+    );
+    expect(label(null, "AMBIGUOUS_PROVIDER_MATCH")).toBe(
+      "Needs a person — more than one matching post is on Google",
+    );
+    expect(label(null, "SOMETHING_NEW")).toBe(
+      "Needs a person — Google’s result could not be confirmed",
+    );
+    expect(label(null, "PROVIDER_WRITE_AMBIGUOUS")).not.toMatch(
+      /Provider result uncertain|operator attention/,
+    );
+  });
+
+  it("offers Repost and Discard only on a post Google does not show", () => {
+    expect(
+      postPresentation(revision("approved", publication("not_published"))),
+    ).toMatchObject({ canRepostOrDiscard: true, canPublish: false });
+    for (const status of ["reconciliation_required", "failed", "discarded"]) {
+      expect(
+        postPresentation(revision("approved", publication(status))),
+      ).toMatchObject({ canRepostOrDiscard: false });
+    }
+    expect(
+      postPresentation(
+        revision("approved", {
+          ...publication("discarded"),
+          safe_error_code: "REPOSTED_AS_NEW_REVISION",
+        }),
+      ).label,
+    ).toBe("Reposted as a new draft");
   });
 
   it("exposes recovery only when the backend read model permits it", () => {

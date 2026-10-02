@@ -67,6 +67,24 @@ describe("operating dashboard", () => {
     ]);
   });
 
+  it("puts a Google connection that needs reconnecting in Attention", () => {
+    const items = requiresAttention({
+      ...summary,
+      google_connection: { status: "reconnect_required" },
+    });
+    expect(items[0]).toMatchObject({
+      key: "google-connection",
+      href: "/integrations",
+    });
+    expect(items[0].detail).toContain("Reconnect required");
+    expect(
+      requiresAttention({
+        ...summary,
+        google_connection: { status: "connected" },
+      }).map((item) => item.key),
+    ).not.toContain("google-connection");
+  });
+
   it("sums only the supplied provider-observed statuses", () => {
     expect(totalStatuses({ new: 2, responded: 7 })).toBe(9);
   });

@@ -181,7 +181,7 @@ class GBPPostPublication(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "organization_id", "idempotency_key", name="uq_gbp_post_publication_idempotency"
         ),
         CheckConstraint(
-            "status IN ('reserved','scheduled','dispatched','verified','failed','reconciliation_required','cancelled','expired')",
+            "status IN ('reserved','scheduled','dispatched','verified','failed','reconciliation_required','cancelled','expired','not_published','discarded')",
             name="status",
         ),
     )

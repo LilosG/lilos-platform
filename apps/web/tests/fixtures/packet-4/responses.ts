@@ -759,6 +759,7 @@ export const gbpPosts = [
       dispatched_at: observedAt,
       provider_post_id: "locations/1001/localPosts/2001",
       verified_at: observedAt,
+      safe_error_code: null,
       recovery_allowed: false,
     },
   },

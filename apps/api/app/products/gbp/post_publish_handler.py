@@ -35,6 +35,7 @@ from apps.api.app.products.gbp.post_publication_contract import (
 )
 from apps.api.app.products.gbp.provider_write_outcome import (
     classify_provider_write_failure,
+    provider_error_log_fields,
 )
 from apps.api.app.products.gbp.resource_names import v4_localposts_parent
 
@@ -394,7 +395,7 @@ async def handle_gbp_publish_post(
                 "publication_id": str(publication_id),
                 "provider_write_applied": outcome.applied,
                 "safe_error_code": outcome.safe_error_code,
-                "error": str(exc)[:200],
+                **provider_error_log_fields(exc),
             },
         )
         return JobOutcome(result=outcome.job_result, safe_error=outcome.safe_error_code)

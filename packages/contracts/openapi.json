@@ -25323,6 +25323,71 @@
         ]
       }
     },
+    "/api/v1/organizations/{organization_id}/locations/{location_id}/gbp/operations/posts/publications/{publication_id}/discard": {
+      "post": {
+        "operationId": "discard_post_publication_api_v1_organizations__organization_id__locations__location_id__gbp_operations_posts_publications__publication_id__discard_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "location_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Location Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "publication_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Publication Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Discard Post Publication Api V1 Organizations  Organization Id  Locations  Location Id  Gbp Operations Posts Publications  Publication Id  Discard Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Discard Post Publication",
+        "tags": [
+          "gbp"
+        ]
+      }
+    },
     "/api/v1/organizations/{organization_id}/locations/{location_id}/gbp/operations/posts/publications/{publication_id}/recover": {
       "post": {
         "operationId": "recover_post_publication_api_v1_organizations__organization_id__locations__location_id__gbp_operations_posts_publications__publication_id__recover_post",
@@ -25381,6 +25446,72 @@
           }
         },
         "summary": "Recover Post Publication",
+        "tags": [
+          "gbp"
+        ]
+      }
+    },
+    "/api/v1/organizations/{organization_id}/locations/{location_id}/gbp/operations/posts/publications/{publication_id}/repost": {
+      "post": {
+        "description": "Create a new revision awaiting approval; nothing is sent to Google here.",
+        "operationId": "repost_post_publication_api_v1_organizations__organization_id__locations__location_id__gbp_operations_posts_publications__publication_id__repost_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "location_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Location Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "publication_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Publication Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Repost Post Publication Api V1 Organizations  Organization Id  Locations  Location Id  Gbp Operations Posts Publications  Publication Id  Repost Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Repost Post Publication",
         "tags": [
           "gbp"
         ]

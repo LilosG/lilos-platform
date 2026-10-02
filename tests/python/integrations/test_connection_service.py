@@ -8,8 +8,10 @@ from uuid import uuid4
 import httpx
 import pytest
 from cryptography.fernet import Fernet
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from apps.api.app.audit.models import AuditEvent
 from apps.api.app.config import EnvironmentName, Settings
 from apps.api.app.integrations.connection_service import (
     ANALYTICS_SCOPE,
@@ -629,8 +631,10 @@ async def test_ensure_fresh_token_refreshes_when_near_expiry(
 
 @pytest.mark.integration
 @pytest.mark.anyio
-async def test_ensure_fresh_token_marks_reconnect_required_on_refresh_failure(
+@pytest.mark.parametrize("status", [400, 401])
+async def test_ensure_fresh_token_marks_reconnect_required_on_invalid_grant(
     integrations_session_factory: async_sessionmaker[AsyncSession],
+    status: int,
 ) -> None:
     async with integrations_session_factory.begin() as session:
         await ProviderCatalogSeeder().run(session)
@@ -656,15 +660,129 @@ async def test_ensure_fresh_token_marks_reconnect_required_on_refresh_failure(
             session, settings, organization.id, state=state, code="code", correlation_id="c2"
         )
         connection.token_expires_at = datetime.now(UTC) + timedelta(minutes=1)
-        await session.flush()
+        organization_id = organization.id
+        connection_id = connection.id
 
-        def failing_refresh_handler(request: httpx.Request) -> httpx.Response:
-            return httpx.Response(400, json={"error": "invalid_grant"})
+    def failing_refresh_handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(status, json={"error": "invalid_grant"})
 
-        service.http_client_factory = mock_client_factory(failing_refresh_handler)
-        with pytest.raises(IntegrationReconnectRequiredError):
-            await service.ensure_fresh_token(session, settings, connection)
-        assert connection.status == "reconnect_required"
+    service.http_client_factory = mock_client_factory(failing_refresh_handler)
+    # Every caller unwinds its transaction on this error. The status must survive that.
+    with pytest.raises(IntegrationReconnectRequiredError):
+        async with integrations_session_factory.begin() as session:
+            stale = await service.get_connection(session, organization_id)
+            await service.ensure_fresh_token(session, settings, stale)
+
+    async with integrations_session_factory() as session:
+        persisted = await service.get_connection(session, organization_id)
+        assert persisted.id == connection_id
+        assert persisted.status == "reconnect_required"
+        events = list(
+            await session.scalars(
+                select(AuditEvent).where(
+                    AuditEvent.organization_id == organization_id,
+                    AuditEvent.event_type == "gbp.connection.reconnect_required",
+                )
+            )
+        )
+        assert len(events) == 1
+
+    # A second rejected refresh is idempotent: no duplicate audit row.
+    with pytest.raises(IntegrationReconnectRequiredError):
+        async with integrations_session_factory.begin() as session:
+            again = await service.get_connection(session, organization_id)
+            await service.ensure_fresh_token(session, settings, again)
+    async with integrations_session_factory() as session:
+        count = await session.scalar(
+            select(func.count())
+            .select_from(AuditEvent)
+            .where(
+                AuditEvent.organization_id == organization_id,
+                AuditEvent.event_type == "gbp.connection.reconnect_required",
+            )
+        )
+        assert count == 1
+
+
+@pytest.mark.integration
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "failure",
+    [
+        "invalid_client_401",
+        "invalid_request_400",
+        "no_body_403",
+        "http_500",
+        "http_503",
+        "timeout",
+        "network",
+    ],
+)
+async def test_a_transient_refresh_failure_leaves_the_connection_status_unchanged(
+    integrations_session_factory: async_sessionmaker[AsyncSession],
+    failure: str,
+) -> None:
+    async with integrations_session_factory.begin() as session:
+        await ProviderCatalogSeeder().run(session)
+        organization = await make_organization(session)
+        settings = make_settings()
+
+        def connect_handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                200,
+                json={
+                    "access_token": "old-token",
+                    "refresh_token": "old-refresh",
+                    "expires_in": 3600,
+                },
+            )
+
+        service = GBPConnectionService(http_client_factory=mock_client_factory(connect_handler))
+        url = await service.begin_connection(
+            session, settings, organization.id, actor_id=None, correlation_id="c1"
+        )
+        state = state_from_authorization_url(url)
+        connection = await service.complete_connection(
+            session, settings, organization.id, state=state, code="code", correlation_id="c2"
+        )
+        connection.token_expires_at = datetime.now(UTC) + timedelta(minutes=1)
+        organization_id = organization.id
+        connection_id = connection.id
+
+    def failing_refresh_handler(request: httpx.Request) -> httpx.Response:
+        if failure == "timeout":
+            raise httpx.ReadTimeout("timed out", request=request)
+        if failure == "network":
+            raise httpx.ConnectError("no route", request=request)
+        if failure.startswith("invalid_"):
+            name, _, status = failure.rpartition("_")
+            return httpx.Response(int(status), json={"error": name})
+        if failure == "no_body_403":
+            return httpx.Response(403, content=b"Forbidden")
+        return httpx.Response(int(failure.removeprefix("http_")), json={"error": "backend_error"})
+
+    service.http_client_factory = mock_client_factory(failing_refresh_handler)
+    # Retryable, and not the reconnect-required error: the credential may be fine.
+    with pytest.raises(IntegrationTokenExchangeFailedError) as raised:
+        async with integrations_session_factory.begin() as session:
+            stale = await service.get_connection(session, organization_id)
+            await service.ensure_fresh_token(session, settings, stale)
+    assert not isinstance(raised.value, IntegrationReconnectRequiredError)
+    assert raised.value.retryable is True
+
+    async with integrations_session_factory() as session:
+        persisted = await service.get_connection(session, organization_id)
+        assert persisted.id == connection_id
+        assert persisted.status == "connected"
+        count = await session.scalar(
+            select(func.count())
+            .select_from(AuditEvent)
+            .where(
+                AuditEvent.organization_id == organization_id,
+                AuditEvent.event_type == "gbp.connection.reconnect_required",
+            )
+        )
+        assert count == 0
 
 
 @pytest.mark.integration

@@ -6,7 +6,7 @@ from decimal import Decimal
 import pytest
 
 from apps.api.app.config import EnvironmentName, Settings
-from apps.api.app.logging_config import JsonFormatter
+from apps.api.app.logging_config import JsonFormatter, configure_logging
 from apps.api.app.observability.operations import AlertRule, Incident, IncidentStatus, SLODefinition
 from apps.api.app.observability.telemetry import MetricPoint, TraceContext, redact
 
@@ -101,3 +101,22 @@ def test_slo_missing_and_error_budget_are_explicit() -> None:
 def test_production_configuration_fails_closed_without_telemetry() -> None:
     with pytest.raises(ValueError, match="telemetry"):
         Settings(environment=EnvironmentName.PRODUCTION, release="release-1")
+
+
+def test_module_loggers_emit_structured_fields(capsys: pytest.CaptureFixture[str]) -> None:
+    # Modules log as `apps.api...`. They once had no handler, so production printed the bare
+    # message and dropped event_name, status and error code.
+    configure_logging(Settings())
+    try:
+        logging.getLogger("apps.api.app.products.gbp.post_publish_handler").warning(
+            "GBP post creation failed",
+            extra={"event_name": "gbp.publish_post.failed", "http_status": 403},
+        )
+    finally:
+        for name in ("lilos", "apps", "scripts"):
+            logging.getLogger(name).handlers.clear()
+
+    line = capsys.readouterr().err.strip().splitlines()[-1]
+    payload = json.loads(line)
+    assert payload["event_name"] == "gbp.publish_post.failed"
+    assert payload["http_status"] == 403

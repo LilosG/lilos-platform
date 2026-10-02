@@ -60,6 +60,7 @@ export type GBPPostPublicationItem = {
   dispatched_at: string | null;
   provider_post_id: string | null;
   verified_at: string | null;
+  safe_error_code: string | null;
   recovery_allowed: boolean;
 };
 
@@ -101,6 +102,8 @@ export type GBPPostPresentation = {
   tone: string;
   canPublish: boolean;
   canRecover: boolean;
+  /** A post Google does not show: a person can repost it (new approval) or discard it. */
+  canRepostOrDiscard: boolean;
 };
 
 export function providerPostCounts(
@@ -129,6 +132,7 @@ export function postPresentation(
         tone: "setup",
         canPublish: false,
         canRecover: false,
+        canRepostOrDiscard: false,
       };
     }
     if (post.status === "approved") {
@@ -137,6 +141,7 @@ export function postPresentation(
         tone: "ready",
         canPublish: true,
         canRecover: false,
+        canRepostOrDiscard: false,
       };
     }
     return {
@@ -144,6 +149,7 @@ export function postPresentation(
       tone: "neutral",
       canPublish: false,
       canRecover: false,
+      canRepostOrDiscard: false,
     };
   }
 
@@ -151,14 +157,20 @@ export function postPresentation(
     reserved: { label: "Reserved / queued", tone: "setup" },
     scheduled: { label: "Reserved / queued", tone: "setup" },
     dispatched: { label: "Dispatched / publishing", tone: "setup" },
-    reconciliation_required: {
-      label: publication.provider_post_id
-        ? "Provider processing / reconciliation required"
-        : "Provider result uncertain / operator attention",
-      tone: "blocked",
-    },
+    reconciliation_required: reconciliationPresentation(publication),
     verified: { label: "Published / verified", tone: "ready" },
     failed: { label: "Failed / rejected", tone: "blocked" },
+    not_published: {
+      label: "Not published — Google does not show this post",
+      tone: "blocked",
+    },
+    discarded: {
+      label:
+        publication.safe_error_code === "REPOSTED_AS_NEW_REVISION"
+          ? "Reposted as a new draft"
+          : "Discarded",
+      tone: "neutral",
+    },
     cancelled: { label: "Cancelled", tone: "neutral" },
     expired: { label: "Expired", tone: "neutral" },
   };
@@ -170,6 +182,49 @@ export function postPresentation(
     ...presentation,
     canPublish: false,
     canRecover: publication.recovery_allowed,
+    canRepostOrDiscard: publication.status === "not_published",
+  };
+}
+
+/**
+ * A post whose Google result was unknown. Google is re-read automatically, so the plain
+ * state is "checking"; a person is only asked once that read could not settle it. The
+ * reason comes from the typed code, never from matching error text.
+ */
+function reconciliationPresentation(publication: GBPPostPublicationItem): {
+  label: string;
+  tone: string;
+} {
+  if (publication.provider_post_id) {
+    return {
+      label: "Google is processing this post — verification pending",
+      tone: "setup",
+    };
+  }
+  const reasons: Record<string, string> = {
+    GOOGLE_READ_FAILED:
+      "Needs a person — LILOs could not read Google to confirm this post",
+    GOOGLE_RECONNECT_REQUIRED:
+      "Needs a person — reconnect Google, then check this post",
+    AMBIGUOUS_PROVIDER_MATCH:
+      "Needs a person — more than one matching post is on Google",
+  };
+  const code = publication.safe_error_code ?? "";
+  if (reasons[code]) {
+    return { label: reasons[code], tone: "blocked" };
+  }
+  if (
+    ["PROVIDER_WRITE_AMBIGUOUS", "AMBIGUOUS_PROVIDER_RESULT"].includes(code) ||
+    code === "PROVIDER_RETURNED_NO_RESOURCE_NAME"
+  ) {
+    return {
+      label: "Checking Google — LILOs will re-read it automatically",
+      tone: "setup",
+    };
+  }
+  return {
+    label: "Needs a person — Google’s result could not be confirmed",
+    tone: "blocked",
   };
 }
 
@@ -443,6 +498,28 @@ export function recoverPostPublication(
 ): Promise<ApiOutcome<GBPPostPublicationItem>> {
   return apiRequest(
     `${base(organizationId, locationId)}/posts/publications/${publicationId}/recover`,
+    { method: "POST" },
+  );
+}
+
+export function repostPostPublication(
+  organizationId: string,
+  locationId: string,
+  publicationId: string,
+): Promise<ApiOutcome<GBPPostRevisionItem>> {
+  return apiRequest(
+    `${base(organizationId, locationId)}/posts/publications/${publicationId}/repost`,
+    { method: "POST" },
+  );
+}
+
+export function discardPostPublication(
+  organizationId: string,
+  locationId: string,
+  publicationId: string,
+): Promise<ApiOutcome<GBPPostPublicationItem>> {
+  return apiRequest(
+    `${base(organizationId, locationId)}/posts/publications/${publicationId}/discard`,
     { method: "POST" },
   );
 }

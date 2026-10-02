@@ -46,7 +46,7 @@ from apps.api.app.integrations.connection_service import (
 from apps.api.app.integrations.errors import (
     IntegrationNotFoundError,
     IntegrationReconnectRequiredError,
-    IntegrationTokenExchangeFailedError,
+    IntegrationTokenRejectedError,
 )
 from apps.api.app.integrations.models import IntegrationConnection
 from apps.api.app.products.seo.errors import (
@@ -426,7 +426,7 @@ class SearchConsoleService:
             assert plan.refresh_token is not None
             try:
                 payload = await self.connection.refresh_token_pair(settings, plan.refresh_token)
-            except IntegrationTokenExchangeFailedError:
+            except IntegrationTokenRejectedError:
                 # Committed on its own so the status survives the error unwinding us.
                 async with scope.begin() as session:
                     stale = await session.get(IntegrationConnection, connection_id)

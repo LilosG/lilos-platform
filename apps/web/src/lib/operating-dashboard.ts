@@ -144,9 +144,25 @@ export function dashboardMetrics(
   return metrics;
 }
 
+export function googleReconnectRequired(
+  summary: InsightsSummary | null,
+): boolean {
+  return summary?.google_connection?.status === "reconnect_required";
+}
+
 export function requiresAttention(summary: InsightsSummary | null): WorkItem[] {
   if (!summary) return [];
   const items: WorkItem[] = [];
+  if (googleReconnectRequired(summary))
+    items.push({
+      key: "google-connection",
+      label: "Google connection",
+      detail:
+        "Reconnect required. Google rejected LILOs' access, so syncs and publishing are paused until it is reconnected.",
+      count: 1,
+      severity: "urgent",
+      href: "/integrations",
+    });
   const workflowFailures = count(summary.workflow_runs ?? {}, [
     "failed",
     "escalated",

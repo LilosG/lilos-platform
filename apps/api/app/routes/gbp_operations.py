@@ -186,6 +186,7 @@ def post_publication_row(
         "dispatched_at": item.dispatched_at,
         "provider_post_id": item.provider_post_id,
         "verified_at": item.verified_at,
+        "safe_error_code": item.safe_error_code,
         "recovery_allowed": recovery_allowed,
     }
 
@@ -704,6 +705,56 @@ async def recover_post_publication(
         "data": post_publication_row(result.publication),
         "meta": {**meta(request), "recovery_mode": result.recovery_mode},
     }
+
+
+@router.post(
+    "/posts/publications/{publication_id}/repost",
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(no_store)],
+)
+async def repost_post_publication(
+    request: Request,
+    organization_id: UUID,
+    location_id: UUID,
+    publication_id: UUID,
+    session: Session,
+    principal: Authenticated,
+    _: Annotated[AuthorizationDecision, policy("gbp.publish", True)],
+) -> dict[str, object]:
+    """Create a new revision awaiting approval; nothing is sent to Google here."""
+    item = await service.repost_publication(
+        session,
+        organization_id,
+        location_id,
+        publication_id,
+        actor_id=principal.platform_user_id,
+        correlation_id=request_correlation_id(request),
+    )
+    return {"data": post_revision_row(item), "meta": meta(request)}
+
+
+@router.post(
+    "/posts/publications/{publication_id}/discard",
+    dependencies=[Depends(no_store)],
+)
+async def discard_post_publication(
+    request: Request,
+    organization_id: UUID,
+    location_id: UUID,
+    publication_id: UUID,
+    session: Session,
+    principal: Authenticated,
+    _: Annotated[AuthorizationDecision, policy("gbp.publish", True)],
+) -> dict[str, object]:
+    item = await service.discard_publication(
+        session,
+        organization_id,
+        location_id,
+        publication_id,
+        actor_id=principal.platform_user_id,
+        correlation_id=request_correlation_id(request),
+    )
+    return {"data": post_publication_row(item), "meta": meta(request)}
 
 
 @router.get(

@@ -51,7 +51,7 @@ from apps.api.app.integrations.connection_service import (
 )
 from apps.api.app.integrations.errors import (
     IntegrationReconnectRequiredError,
-    IntegrationTokenExchangeFailedError,
+    IntegrationTokenRejectedError,
 )
 from apps.api.app.integrations.models import IntegrationConnection
 from apps.api.app.products.analytics.adapter import (
@@ -585,7 +585,7 @@ class AnalyticsService:
             assert plan.refresh_token is not None
             try:
                 payload = await self.connection.refresh_token_pair(settings, plan.refresh_token)
-            except IntegrationTokenExchangeFailedError:
+            except IntegrationTokenRejectedError:
                 async with scope.begin() as session:
                     stale = await session.get(IntegrationConnection, connection_id)
                     if stale is not None:

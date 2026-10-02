@@ -42,6 +42,16 @@ class IntegrationTokenExchangeFailedError(ApiError):
     public_message = "The provider rejected the token exchange."
 
 
+class IntegrationTokenRejectedError(IntegrationTokenExchangeFailedError):
+    """Google definitively rejected the credential (HTTP 400 or 401, e.g. invalid_grant).
+
+    Unlike a 5xx, timeout or network error, retrying cannot help: the user must reconnect.
+    """
+
+    code = "INTEGRATION_TOKEN_REJECTED"
+    retryable = False
+
+
 class IntegrationReconnectRequiredError(ConflictError):
     """The stored refresh token is no longer valid; the user must reconnect."""
 

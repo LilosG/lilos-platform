@@ -2869,6 +2869,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/organizations/{organization_id}/locations/{location_id}/gbp/operations/posts/publications/{publication_id}/discard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Discard Post Publication */
+        post: operations["discard_post_publication_api_v1_organizations__organization_id__locations__location_id__gbp_operations_posts_publications__publication_id__discard_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/organizations/{organization_id}/locations/{location_id}/gbp/operations/posts/publications/{publication_id}/recover": {
         parameters: {
             query?: never;
@@ -2880,6 +2897,26 @@ export interface paths {
         put?: never;
         /** Recover Post Publication */
         post: operations["recover_post_publication_api_v1_organizations__organization_id__locations__location_id__gbp_operations_posts_publications__publication_id__recover_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/organizations/{organization_id}/locations/{location_id}/gbp/operations/posts/publications/{publication_id}/repost": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Repost Post Publication
+         * @description Create a new revision awaiting approval; nothing is sent to Google here.
+         */
+        post: operations["repost_post_publication_api_v1_organizations__organization_id__locations__location_id__gbp_operations_posts_publications__publication_id__repost_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -16330,6 +16367,41 @@ export interface operations {
             };
         };
     };
+    discard_post_publication_api_v1_organizations__organization_id__locations__location_id__gbp_operations_posts_publications__publication_id__discard_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organization_id: string;
+                location_id: string;
+                publication_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     recover_post_publication_api_v1_organizations__organization_id__locations__location_id__gbp_operations_posts_publications__publication_id__recover_post: {
         parameters: {
             query?: never;
@@ -16350,6 +16422,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    repost_post_publication_api_v1_organizations__organization_id__locations__location_id__gbp_operations_posts_publications__publication_id__repost_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organization_id: string;
+                location_id: string;
+                publication_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */

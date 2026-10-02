@@ -11,6 +11,7 @@ Google connection records are created.
 """
 
 import json
+import logging
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -21,7 +22,7 @@ from uuid import UUID
 import httpx
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from apps.api.app.audit.contracts import AuditEventCreate
 from apps.api.app.audit.enums import AuditActorType, AuditResult
@@ -35,6 +36,7 @@ from apps.api.app.integrations.errors import (
     IntegrationReconnectRequiredError,
     IntegrationStateInvalidError,
     IntegrationTokenExchangeFailedError,
+    IntegrationTokenRejectedError,
 )
 from apps.api.app.integrations.models import (
     IntegrationConnection,
@@ -47,6 +49,8 @@ from apps.api.app.integrations.service import OAuthIntentService
 GOOGLE_AUTHORIZATION_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token"
 GOOGLE_REVOKE_ENDPOINT = "https://oauth2.googleapis.com/revoke"
+logger = logging.getLogger(__name__)
+
 GBP_PROVIDER_KEY = "google_business_profile"
 BUSINESS_MANAGE_SCOPE = "https://www.googleapis.com/auth/business.manage"
 SEARCH_CONSOLE_SCOPE = "https://www.googleapis.com/auth/webmasters.readonly"
@@ -124,6 +128,16 @@ def missing_scopes_for(
         wanted.update(scopes_for_product(product))
     granted = granted_scopes(connection)
     return tuple(sorted(wanted - granted))
+
+
+def _google_error_code(response: httpx.Response) -> str | None:
+    """Google's OAuth `error` code from a token-endpoint failure body, if it has one."""
+    try:
+        body = response.json()
+    except ValueError:
+        return None
+    code = body.get("error") if isinstance(body, dict) else None
+    return code[:64] if isinstance(code, str) else None
 
 
 @dataclass(slots=True)
@@ -301,6 +315,20 @@ class GBPConnectionService:
         except httpx.HTTPError as exc:
             raise IntegrationTokenExchangeFailedError from exc
         if response.status_code >= 400:
+            google_error = _google_error_code(response)
+            if google_error == "invalid_grant":
+                # The only definitive "this credential is dead": the user must reconnect.
+                raise IntegrationTokenRejectedError
+            # Anything else (invalid_client, invalid_request, 5xx, ...) is a platform or
+            # provider fault, not proof the user's grant is gone. Status stays unchanged.
+            logger.error(
+                "Google token endpoint refused the request",
+                extra={
+                    "event_name": "integrations.token_endpoint.platform_error",
+                    "http_status": response.status_code,
+                    "google_error": google_error,
+                },
+            )
             raise IntegrationTokenExchangeFailedError
         payload = response.json()
         if not isinstance(payload, dict) or "access_token" not in payload:
@@ -617,8 +645,8 @@ class GBPConnectionService:
         assert plan.refresh_token is not None
         try:
             payload = await self.refresh_token_pair(settings, plan.refresh_token)
-        except IntegrationTokenExchangeFailedError:
-            await self.fail_token_refresh(session, connection)
+        except IntegrationTokenRejectedError:
+            await self.fail_token_refresh_durably(session, connection)
             raise IntegrationReconnectRequiredError from None
         return await self.complete_token_refresh(session, settings, connection, plan, payload)
 
@@ -671,6 +699,8 @@ class GBPConnectionService:
         Persisting this in its own short transaction keeps the `reconnect_required`
         status and its audit row from being lost when the error unwinds the caller.
         """
+        if connection.status == "reconnect_required":
+            return
         connection.status = "reconnect_required"
         await session.flush()
         await self._audit(
@@ -685,6 +715,26 @@ class GBPConnectionService:
             metadata={"status": connection.status},
             result=AuditResult.FAILED,
         )
+
+    async def fail_token_refresh_durably(
+        self, session: AsyncSession, connection: IntegrationConnection
+    ) -> None:
+        """Persist `reconnect_required` in its own transaction, then return.
+
+        `ensure_fresh_token` raises straight after a rejected refresh, and every caller
+        unwinds its session on that error, so a status written only into the caller's
+        transaction was rolled back and the dead connection kept showing "connected".
+        This commits the status and its audit row independently of the caller.
+        """
+        bind = session.bind
+        if bind is None:
+            raise RuntimeError("the session is not bound to an engine")
+        connection_id = connection.id
+        async with async_sessionmaker(bind=bind, expire_on_commit=False).begin() as own:
+            stale = await own.get(IntegrationConnection, connection_id)
+            if stale is not None:
+                await self.fail_token_refresh(own, stale)
+        connection.status = "reconnect_required"
 
     async def complete_token_refresh(
         self,

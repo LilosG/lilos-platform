@@ -465,7 +465,7 @@ class ExecutionService:
         workflow_run_id: UUID,
         *,
         recovery_reference: str,
-        actor_id: UUID,
+        actor_id: UUID | None,
         correlation_id: str,
     ) -> Job:
         """Resume a terminal run through the canonical durable job queue.
@@ -532,6 +532,68 @@ class ExecutionService:
             correlation_id=correlation_id,
             summary="Workflow run recovery enqueued.",
             metadata={"recovery_reference": recovery_reference, "job_id": str(job.id)},
+        )
+        return job
+
+    async def enqueue_automatic_resume(
+        self,
+        session: AsyncSession,
+        run: WorkflowRun,
+        *,
+        resume_key: str,
+        reason_code: str,
+        max_attempts: int | None = None,
+    ) -> Job | None:
+        """Resume a failed run once, on the system's own initiative.
+
+        The job's idempotency key is derived from `resume_key`, so a given reason resumes a
+        run at most once: a second call returns `None` and changes nothing. If the resumed
+        run fails the same way, it stays failed for a person; it is never resumed again.
+        """
+        idempotency_key = f"run:{run.id}:auto-resume:{resume_key}"
+        existing = await session.scalar(
+            select(Job.id).where(
+                Job.organization_id == run.organization_id,
+                Job.idempotency_key == idempotency_key,
+            )
+        )
+        if existing is not None:
+            return None
+        active = await session.scalar(
+            select(Job.id).where(
+                Job.organization_id == run.organization_id,
+                Job.workflow_run_id == run.id,
+                Job.status.in_(("queued", "claimed", "running", "retry_scheduled")),
+            )
+        )
+        if active is not None:
+            return None
+        job = Job(
+            organization_id=run.organization_id,
+            workflow_run_id=run.id,
+            job_type="workflow.execute",
+            status="queued",
+            idempotency_key=idempotency_key,
+            payload={"run_id": str(run.id), "automatic_resume": resume_key},
+        )
+        if max_attempts is not None:
+            job.max_attempts = max_attempts
+        session.add(job)
+        run.status = "queued"
+        run.failure_code = None
+        run.completed_at = None
+        await session.flush()
+        await self._audit(
+            session,
+            event="workflow.run.automatic_resume_enqueued",
+            organization_id=run.organization_id,
+            location_id=run.location_id,
+            actor_id=None,
+            resource_type="workflow_run",
+            resource_id=run.id,
+            correlation_id=f"auto-resume:{run.id}",
+            summary="Workflow run resumed automatically after its wait.",
+            metadata={"resume_key": resume_key, "reason_code": reason_code, "job_id": str(job.id)},
         )
         return job
 

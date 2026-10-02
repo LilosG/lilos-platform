@@ -120,6 +120,7 @@ export type InsightsSummary = {
     opportunities_blocked: number;
   };
   leads: Record<string, number>;
+  google_connection?: { status: string | null };
   ga4?: {
     connected: boolean;
     properties: {
