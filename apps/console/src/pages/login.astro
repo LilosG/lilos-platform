@@ -4,7 +4,7 @@ import { safeReturn } from "../server/security";
 const target = safeReturn(Astro.url.searchParams.get("return"));
 ---
 
-<AppLayout title="Sign in"
+<AppLayout title="Sign in" bare
   ><div class="pagehead">
     <div><h1>Sign in</h1><p>Access your LILOs workspace.</p></div>
   </div>

@@ -1,0 +1,25 @@
+---
+import DateControl from "./DateControl.astro";
+interface Props {
+  title: string;
+  subtitle: string;
+  client?: boolean;
+  /** Reporting period shown in the date control; omitted where the screen has none. */
+  days?: number;
+}
+const { title, subtitle, client = false, days } = Astro.props;
+---
+
+<div class="pagehead">
+  <div>
+    <div class="eyebrow">
+      {client ? "Client workspace" : "Portfolio intelligence"}
+    </div>
+    <h1>{title}</h1>
+    <p>{subtitle}</p>
+  </div>
+  <div class="controls">
+    <slot name="actions" />
+    {days !== undefined && <DateControl days={days} />}
+  </div>
+</div>

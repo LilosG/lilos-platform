@@ -14507,9 +14507,14 @@
             },
             "title": "Data",
             "type": "array"
+          },
+          "platform_administrator": {
+            "title": "Platform Administrator",
+            "type": "boolean"
           }
         },
         "required": [
+          "platform_administrator",
           "data"
         ],
         "title": "VisibleClients",

@@ -144,6 +144,7 @@ class VisibleClient(DTO):
 
 
 class VisibleClients(DTO):
+    platform_administrator: bool
     data: list[VisibleClient]
 
 
@@ -683,6 +684,7 @@ async def visible_clients(session: Session, principal: Authenticated) -> Visible
     """The clients the caller may open, with how they may open them."""
     scope = await visible_scope(session, principal)
     return VisibleClients(
+        platform_administrator=scope.platform_administrator,
         data=[
             VisibleClient(
                 organization_id=org.id,
@@ -692,7 +694,7 @@ async def visible_clients(session: Session, principal: Authenticated) -> Visible
                 access=scope.access(org.id),
             )
             for org in scope.organizations
-        ]
+        ],
     )
 
 

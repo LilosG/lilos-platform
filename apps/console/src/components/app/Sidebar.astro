@@ -1,0 +1,43 @@
+---
+import type { Organization } from "../../server/context";
+import PortfolioNav from "../navigation/PortfolioNav.astro";
+import ClientNav from "../navigation/ClientNav.astro";
+interface Props {
+  client?: Organization;
+  page: string;
+  area: string;
+  email: string;
+  role: string;
+  opportunities?: number | null;
+}
+const { client, page, area, email, role, opportunities } = Astro.props;
+---
+
+<aside id="sidebar" aria-label="Application navigation">
+  <a class="brand" href="/">
+    <span class="logo">L</span>
+    <span>
+      LILOs<small>GROWTH</small>
+    </span>
+  </a>
+  {
+    client ? (
+      <ClientNav client={client} area={area} />
+    ) : (
+      <PortfolioNav page={page} opportunities={opportunities} />
+    )
+  }
+  <div class="sidebarbottom">
+    <div class="person">
+      <span class="avatar">{email.slice(0, 2).toUpperCase()}</span>
+      <div>
+        <span class="personname">{email}</span><small>{role}</small>
+      </div>
+    </div>
+    <a class="rolepreview" href="/mfa/">Account security</a>
+    <form method="post" action="/auth/sign-out/">
+      <input type="hidden" name="csrf" value={Astro.locals.csrf} />
+      <button class="rolepreview" type="submit">Sign out</button>
+    </form>
+  </div>
+</aside>

@@ -1681,19 +1681,19 @@ pre {
   overflow-wrap: anywhere;
   font-size: 13px;
 }
-.panel form,
-.panel > div,
-.panel > p,
-.panel > h2,
-.panel > h3 {
+body:not([data-ref]) .panel form,
+body:not([data-ref]) .panel > div,
+body:not([data-ref]) .panel > p,
+body:not([data-ref]) .panel > h2,
+body:not([data-ref]) .panel > h3 {
   margin: 16px 20px;
 }
-.panel label {
+body:not([data-ref]) .panel label {
   display: block;
   margin: 16px 0;
 }
-.panel input,
-.panel textarea {
+body:not([data-ref]) .panel input,
+body:not([data-ref]) .panel textarea {
   display: block;
   width: 100%;
   max-width: 640px;
@@ -1703,7 +1703,7 @@ pre {
 .panel textarea {
   min-height: 100px;
 }
-.panel pre {
+body:not([data-ref]) .panel pre {
   margin: 16px 20px;
 }
 .beforeafter {
@@ -1736,4 +1736,74 @@ pre {
 /* Leads evidence panels retain AA contrast on the approved tinted canvas. */
 .leads-banner p {
   color: #526460;
+}
+
+/* Console additions: states the reference does not draw because it has no live data. */
+.authmain {
+  max-width: 440px;
+  padding-top: 12vh;
+}
+.authbrand {
+  position: static;
+  margin-bottom: 28px;
+}
+.authmain form.panel,
+.authmain section.panel {
+  padding: 24px;
+}
+.authmain .panel label {
+  margin: 0 0 16px;
+}
+.authmain .panel input {
+  max-width: none;
+  width: 100%;
+}
+.authmain .panel > * {
+  margin-left: 0;
+  margin-right: 0;
+}
+.authmain button[type="submit"] {
+  background: var(--green);
+  color: white;
+  border: 1px solid var(--green);
+  border-radius: var(--radius-control);
+  padding: 10px 16px;
+}
+.authmain [role="alert"] {
+  margin-bottom: 16px;
+  color: var(--red);
+}
+a.rolepreview,
+form .rolepreview {
+  display: block;
+  cursor: pointer;
+}
+.personname {
+  display: block;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.chip:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.metric strong.muted,
+.snapshotmetric strong.muted {
+  font-size: 22px;
+  color: var(--muted);
+}
+/* Accessibility: the reference nav group label (#89918f) is 3.2:1 on white; AA needs 4.5:1. */
+.navlabel {
+  color: #66716e;
+}
+/* Accessibility: the reference muted text (#697775) is 4.3:1 on its tinted surfaces; AA needs 4.5:1. */
+:root {
+  --muted: #62706e;
+}
+footer {
+  color: var(--muted);
+}
+.badge.neutral {
+  color: #55625c;
 }

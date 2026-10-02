@@ -1,0 +1,41 @@
+---
+import type { OpportunityRowView } from "../../lib/portfolio-view";
+import StatusBadge from "../ui/StatusBadge.astro";
+import EmptyState from "../ui/EmptyState.astro";
+interface Props {
+  rows: OpportunityRowView[];
+  limit: number;
+  showClient?: boolean;
+}
+const { rows, limit, showClient = true } = Astro.props;
+---
+
+{
+  rows.slice(0, limit).map((o) => (
+    <div class="listrow opportunitycard" data-opportunity-id={o.id}>
+      <div>
+        <a class="link opportunity-activation" href={o.href}>
+          {o.title}
+        </a>
+        <small>
+          {showClient ? (
+            <a class="contextname" href={o.clientHref}>
+              {o.clientName}
+            </a>
+          ) : (
+            o.classification
+          )}
+          {showClient && ` · ${o.classification}`}
+        </small>
+      </div>
+      <StatusBadge text={o.priority} />
+    </div>
+  ))
+}
+{
+  rows.length === 0 && (
+    <EmptyState>
+      No new opportunities. Work in progress is available in Opportunities.
+    </EmptyState>
+  )
+}

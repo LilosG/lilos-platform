@@ -1,0 +1,17 @@
+---
+import { REPORTING_DAYS } from "../../server/command-center";
+interface Props {
+  days: number;
+}
+const { days } = Astro.props;
+---
+
+<select aria-label="Reporting date range" data-period>
+  {
+    REPORTING_DAYS.map((value) => (
+      <option value={value} selected={days === value}>
+        Last {value} days
+      </option>
+    ))
+  }
+</select>

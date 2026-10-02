@@ -1,0 +1,17 @@
+---
+import MetricItem from "./MetricItem.astro";
+export interface MetricCell {
+  label: string;
+  value: string;
+  description: string;
+  missing?: boolean;
+}
+interface Props {
+  items: readonly MetricCell[];
+}
+const { items } = Astro.props;
+---
+
+<div class="metrics">
+  {items.map((item) => <MetricItem {...item} />)}
+</div>

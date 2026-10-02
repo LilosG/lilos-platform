@@ -1,124 +1,125 @@
 ---
 import "../styles/theme.css";
 import "../styles/app.css";
-import type { Organization } from "../server/context";
+import Sidebar from "../components/app/Sidebar.astro";
+import TopBar from "../components/app/TopBar.astro";
+import { workspace, type Organization } from "../server/context";
+import { areaFamily, areaOfPath } from "../lib/shell-paths";
 interface Props {
   title: string;
+  /** Kept for existing screens; the shell resolves the same list itself. */
   organizations?: Organization[];
   client?: Organization;
   surface?:
     "local-search" | "integrations" | "reviews" | "website-content" | "leads";
+  /** Pre-sign-in screens render without navigation. */
+  bare?: boolean;
+  /** Screens drawn by the approved design render with its exact panel spacing. */
+  reference?: boolean;
+  /** Open attention items, when the screen has loaded them. Unknown is not zero. */
+  attentionCount?: number | null;
+  /** Client attention list is rendered on this screen as a dialog. */
+  attentionDialog?: boolean;
+  /** Open opportunities across the portfolio, when loaded. */
+  opportunities?: number | null;
+  /** When the data on this screen was generated. */
+  updatedAt?: string;
 }
-const { title, organizations = [], client, surface } = Astro.props;
-const base = client ? `/clients/${client.organization_slug}/` : "/";
-const portfolio = [
-  ["Dashboard", "/"],
-  ["Clients", "/clients/"],
-  ["Opportunities", "/opportunities/"],
-  ["Reports", "/reports/"],
-  ["Automations", "/automations/"],
-  ["Integrations", "/integrations/"],
-];
-const workspace = [
-  ["Overview", base],
-  ["Local Search", base + "local-search/"],
-  ["Reviews", base + "reviews/"],
-  ["Website & Content", base + "website-content/"],
-  ["Leads", base + "leads/"],
-  ["Opportunities", base + "opportunities/"],
-  ["Automations", base + "automations/"],
-  ["Reports", base + "reports/"],
-  ["Integrations", base + "integrations/"],
-  ["Settings", base + "settings/"],
-];
+const {
+  title,
+  client,
+  surface,
+  bare = false,
+  reference = false,
+  attentionCount = null,
+  attentionDialog = false,
+  opportunities = null,
+  updatedAt,
+} = Astro.props;
+const path = Astro.url.pathname;
+const segments = path.split("/").filter(Boolean);
+const page = client ? "client" : (segments[0] ?? "") || "dashboard";
+const workspacePath = client ? segments.slice(2).join("/") : "";
+const area = client ? (areaOfPath[workspacePath.split("/", 1)[0]] ?? "") : "";
+const shell = bare ? null : await workspace(Astro.locals);
+const email = Astro.locals.userEmail ?? "";
+const role = shell?.platformAdministrator
+  ? "Platform administrator"
+  : "Client user";
+const updated = updatedAt
+  ? new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/Los_Angeles",
+      month: "long",
+      day: "numeric",
+      year: "numeric",
+    }).format(new Date(updatedAt))
+  : null;
 ---
 
 <!doctype html>
 <html lang="en">
-  <head
-    ><meta charset="utf-8" /><meta
-      name="viewport"
-      content="width=device-width,initial-scale=1"
-    /><title>{title} | LILOs Growth</title><meta
-      name="csrf-token"
-      content={Astro.locals.csrf}
-    /></head
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>{title} | LILOs Growth</title>
+    <meta name="description" content="LILOs Growth agency command center" />
+    <meta name="csrf-token" content={Astro.locals.csrf} />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231e443c'/%3E%3Cpath d='M9 7v18h15v-5H14V7' fill='%23d6f26b'/%3E%3C/svg%3E"
+    />
+  </head>
+  <body
+    class={surface ? "phase2-surface" : undefined}
+    data-client-id={client?.organization_id}
+    data-page={page}
+    data-ref={reference ? "true" : undefined}
+    data-area={area}
   >
-  <body class={surface ? "phase2-surface" : undefined}
-    ><a class="skiplink" href="#main">Skip to content</a>
-    <aside id="sidebar" aria-label="Application navigation">
-      <a class="brand" href="/"
-        ><span class="logo">L</span><span>LILOs<small>GROWTH</small></span></a
-      >
-      <nav aria-label={client ? "Client workspace" : "Portfolio"}>
-        {
-          (client ? workspace : portfolio).map(([label, href]) => (
-            <a
-              class:list={["navitem", { active: Astro.url.pathname === href }]}
-              href={href}
-            >
-              {label}
-            </a>
-          ))
-        }
-        <a class="navitem" href={client ? base + "attention/" : "/attention/"}
-          >Requires attention</a
-        >
-      </nav>
-      <div class="sidebarbottom">
-        <form method="post" action="/auth/sign-out/">
-          <input type="hidden" name="csrf" value={Astro.locals.csrf} /><button
-            type="submit">Sign out</button
-          >
-        </form>
-      </div>
-    </aside>
-    <div class="shell">
-      <header id="topbar">
-        <div class="crumb">
-          <button
-            class="menu"
-            id="menu"
-            aria-label="Toggle navigation"
-            aria-controls="sidebar"
-            aria-expanded="false">☰</button
-          ><a href="/">LILOs Growth</a><span>/</span><select
-            aria-label="Switch client"
-            data-client-selector
-            ><option value="/" selected={!client}>Entire portfolio</option>{
-              organizations.map((org) => (
-                <option
-                  value={`/clients/${org.organization_slug}/opportunities/`}
-                  selected={client?.organization_id === org.organization_id}
-                >
-                  {org.organization_name}
-                </option>
-              ))
-            }</select
-          >
-        </div><div class="headerRight">
-          <a href={base + "attention/"}>Requires attention</a><a
-            href={`/mfa/?return=${encodeURIComponent(Astro.url.pathname)}`}
-            >Account security</a
-          >
-        </div>
-      </header>
-      <main id="main" tabindex="-1"><slot /></main><footer>
-        Source freshness and unavailable data are shown with each record.
-      </footer>
-    </div>
+    <a class="skiplink" href="#main">Skip to content</a>
+    {
+      bare ? (
+        <main id="main" tabindex="-1" class="authmain">
+          <a class="brand authbrand" href="/">
+            <span class="logo">L</span>
+            <span>
+              LILOs<small>GROWTH</small>
+            </span>
+          </a>
+          <slot />
+        </main>
+      ) : (
+        <Fragment>
+          <Sidebar
+            client={client}
+            page={page}
+            area={area}
+            email={email}
+            role={role}
+            opportunities={opportunities}
+          />
+          <div class="shell">
+            <TopBar
+              client={client}
+              clients={shell?.clients ?? []}
+              areaPath={areaFamily(workspacePath)}
+              attentionCount={attentionCount}
+              attentionDialog={attentionDialog}
+            />
+            <main id="main" tabindex="-1">
+              <slot />
+            </main>
+            <footer>
+              Source freshness and unavailable data are shown with each record.
+              {updated && ` · Updated ${updated}`}
+            </footer>
+          </div>
+          <div id="toast" role="status" aria-live="polite" />
+        </Fragment>
+      )
+    }
     <script>
-      document
-        .querySelector<HTMLSelectElement>("[data-client-selector]")
-        ?.addEventListener("change", (event) => {
-          window.location.assign((event.target as HTMLSelectElement).value);
-        });
-      const menu = document.getElementById("menu");
-      menu?.addEventListener("click", () => {
-        const expanded = menu.getAttribute("aria-expanded") !== "true";
-        menu.setAttribute("aria-expanded", String(expanded));
-        document.body.classList.toggle("navopen", expanded);
-      });
-    </script></body
-  >
+      import "../lib/shell";
+    </script>
+  </body>
 </html>

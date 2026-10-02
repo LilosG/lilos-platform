@@ -1,0 +1,37 @@
+---
+import type { AttentionRow } from "../../lib/portfolio-view";
+import StatusBadge from "../ui/StatusBadge.astro";
+interface Props {
+  a: AttentionRow;
+}
+const { a } = Astro.props;
+const label = a.severityLabel;
+---
+
+<dialog id={a.id} aria-labelledby={`${a.id}-title`} data-shell-dialog>
+  <div class="panelhead">
+    <span class="muted">LILOs Growth</span>
+    <button class="close" aria-label="Close details" data-close autofocus>
+      ×
+    </button>
+  </div>
+  <div class="body">
+    <div class="eyebrow">{a.clientName}</div>
+    <h2 id={`${a.id}-title`}>{a.title}</h2>
+    <p>
+      <StatusBadge text={label} />{" "}
+      <span class="muted"
+        >{
+          a.time === "Open" ? "Open now" : `Detected ${a.time.toLowerCase()}`
+        }</span
+      >
+    </p>
+    <p>{a.impact}</p>
+    <h3>Recommended next action</h3>
+    <p>{a.next}</p>
+  </div>
+  <div class="dialogfoot">
+    <a href={a.clientHref} class="control"> Client workspace </a>
+    <a href={a.actionHref} class="control primary"> Open source </a>
+  </div>
+</dialog>

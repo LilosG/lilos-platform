@@ -1,66 +1,95 @@
 ---
 import AppLayout from "../layouts/AppLayout.astro";
+import Dashboard from "../components/portfolio/Dashboard.astro";
+import ClientTable from "../components/portfolio/ClientTable.astro";
+import PageHeader from "../components/ui/PageHeader.astro";
+import ErrorState from "../components/ui/ErrorState.astro";
+import NotBuilt from "../components/ui/NotBuilt.astro";
+import { AREAS, type PortfolioArea } from "../lib/present";
+import { clientRowView } from "../lib/portfolio-view";
+import {
+  loadPortfolio,
+  reportingDays,
+  type PortfolioOverview,
+} from "../server/command-center";
 import { organizations } from "../server/context";
-const page = Astro.params.page ?? "";
-const rows = await organizations(Astro.locals);
-const labels: Record<string, string> = {
-  "": "Dashboard",
-  clients: "Client portfolio",
-  opportunities: "Opportunities",
-  attention: "Requires attention",
-  reports: "Reports",
-  automations: "Automations",
-  integrations: "Integrations",
-  activity: "Activity",
-  administration: "Administration",
-};
-if (!(page in labels)) return new Response("Page not found", { status: 404 });
+import { APIError } from "../server/bff";
+const page = (Astro.params.page ?? "").replace(/\/$/, "");
+const [area, sub] = page.split("/");
+const administration =
+  area === "administration" &&
+  (sub === undefined || ["onboarding", "users", "platform"].includes(sub));
+const builtArea =
+  Object.hasOwn(AREAS, area) && (area !== "administration" || administration);
+if (page.split("/").length > (area === "administration" ? 2 : 1))
+  return new Response("Page not found", { status: 404 });
+if (page !== "" && page !== "clients" && !builtArea)
+  return new Response("Page not found", { status: 404 });
 if (page === "integrations" && Astro.url.searchParams.has("org")) {
+  const rows = await organizations(Astro.locals);
   const org = rows.find(
     (row) => row.organization_id === Astro.url.searchParams.get("org"),
   );
   if (!org) return new Response("Client not found", { status: 404 });
   return Astro.redirect(`/clients/${org.organization_slug}/integrations/`);
 }
-const title = labels[page];
+const days = reportingDays(Astro.url.searchParams.get("days"));
+if (days === null) return new Response("Invalid period", { status: 400 });
+const loadsData = page === "" || page === "clients";
+let overview: PortfolioOverview | undefined;
+let failed = false;
+if (loadsData) {
+  try {
+    overview = await loadPortfolio(Astro.locals, days);
+  } catch (e) {
+    if (e instanceof APIError && e.status === 401)
+      return Astro.redirect("/login/", 303);
+    failed = true;
+  }
+}
+const title =
+  page === ""
+    ? "Dashboard"
+    : page === "clients"
+      ? "Client portfolio"
+      : AREAS[area as PortfolioArea];
 ---
 
-<AppLayout title={title} organizations={rows}
-  ><div class="pagehead">
-    <div><h1>{title}</h1><p>Select an authorized client workspace.</p></div>
-  </div>
-  <div class="panel">
-    <h2>Client workspaces</h2>{
-      rows.length ? (
-        rows.map((client) => (
-          <div class="listrow">
-            <div>
-              <>
-                <a
-                  href={`/clients/${client.organization_slug}/${page === "opportunities" || page === "attention" || page === "integrations" ? page + "/" : ""}`}
-                >
-                  {client.organization_name}
-                </a>
-                <small>{client.organization_status}</small>
-              </>
-            </div>
-          </div>
-        ))
-      ) : (
-        <p>No active client workspaces are available to your account.</p>
-      )
-    }
-  </div>
+<AppLayout
+  reference
+  title={title}
+  attentionCount={overview ? overview.attention.length : null}
+  updatedAt={overview?.generated_at}
+>
   {
-    !["", "clients", "opportunities", "attention", "integrations"].includes(
-      page,
-    ) && (
-      <div class="panel">
-        <>
-          <h2>Source unavailable</h2>
-          <p>This product area is awaiting its integration phase.</p>
-        </>
-      </div>
+    failed ? (
+      <Fragment>
+        <PageHeader
+          title={page === "" ? "Portfolio overview" : "Client portfolio"}
+          subtitle="Every client, one operational view."
+        />
+        <ErrorState title="Portfolio data is temporarily unavailable">
+          No sample data is substituted. Reload to try again.
+        </ErrorState>
+      </Fragment>
+    ) : overview && page === "" ? (
+      <Dashboard overview={overview} />
+    ) : overview ? (
+      <Fragment>
+        <PageHeader
+          title="Client portfolio"
+          subtitle="Every client, one operational view."
+          days={overview.days}
+        />
+        <ClientTable
+          rows={overview.clients.map((row) =>
+            clientRowView(row, new Date(overview!.generated_at)),
+          )}
+          locationCount={overview.location_count}
+        />
+      </Fragment>
+    ) : (
+      <NotBuilt target={{ scope: "portfolio", area: area as PortfolioArea }} />
     )
   }
 </AppLayout>

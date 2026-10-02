@@ -10030,6 +10030,8 @@ export interface components {
         VisibleClients: {
             /** Data */
             data: components["schemas"]["VisibleClient"][];
+            /** Platform Administrator */
+            platform_administrator: boolean;
         };
         /**
          * WebsiteCheckRequest

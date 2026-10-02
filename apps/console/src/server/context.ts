@@ -1,31 +1,43 @@
-import { z } from "zod";
-import type { components } from "@lilos/contracts/api";
-import { read, APIError } from "./bff";
-export type Organization = components["schemas"]["MyOrganizationData"];
-const organization = z
-  .object({
-    organization_id: z.uuid(),
-    organization_slug: z.string().regex(/^[a-z][a-z0-9-]{2,62}$/),
-    organization_name: z.string(),
-    organization_status: z.string(),
-    membership_status: z.string(),
-  })
-  .loose();
+import { loadClients } from "./command-center";
+import { APIError } from "./bff";
+export interface Organization {
+  organization_id: string;
+  organization_slug: string;
+  organization_name: string;
+  organization_status: string;
+  access: "member" | "platform_administrator";
+}
+export interface Workspace {
+  clients: Organization[];
+  platformAdministrator: boolean;
+}
+/** The clients this caller may open. Scope is decided by the API from the session alone. */
+const loaded = new WeakMap<App.Locals, Promise<Workspace>>();
+export function workspace(locals: App.Locals): Promise<Workspace> {
+  let pending = loaded.get(locals);
+  if (!pending) {
+    pending = loadWorkspace(locals);
+    loaded.set(locals, pending);
+  }
+  return pending;
+}
+async function loadWorkspace(locals: App.Locals): Promise<Workspace> {
+  const result = await loadClients(locals);
+  return {
+    clients: result.data.map((row) => ({
+      organization_id: row.organization_id,
+      organization_slug: row.slug,
+      organization_name: row.name,
+      organization_status: row.status,
+      access: row.access,
+    })),
+    platformAdministrator: result.platform_administrator,
+  };
+}
 export async function organizations(
   locals: App.Locals,
 ): Promise<Organization[]> {
-  const payload = await read<{ data: Organization[] }>(
-    locals,
-    "me/organizations/",
-  );
-  return z
-    .array(organization)
-    .parse(payload.data)
-    .filter(
-      (row) =>
-        row.organization_status === "active" &&
-        row.membership_status === "active",
-    ) as Organization[];
+  return (await workspace(locals)).clients;
 }
 export function resolveSlug(rows: Organization[], slug: string): Organization {
   const organization = rows.find((row) => row.organization_slug === slug);

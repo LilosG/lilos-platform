@@ -121,6 +121,7 @@ def test_client_overview_is_tenant_scoped_and_labels_missing_data(
     assert [(row["organization_id"], row["access"]) for row in listed.json()["data"]] == [
         (org, "member")
     ]
+    assert listed.json()["platform_administrator"] is False
     assert other not in listed.text
 
     own = client.get(f"{CLIENTS}/{org}/overview?days=28", headers=HEADERS)
@@ -164,8 +165,9 @@ def test_platform_administrator_sees_every_active_client(
 
     run_db(postgresql_test_url, grant)
 
-    listed = client.get(CLIENTS, headers=HEADERS).json()["data"]
-    access = {row["organization_id"]: row["access"] for row in listed}
+    elevated = client.get(CLIENTS, headers=HEADERS).json()
+    assert elevated["platform_administrator"] is True
+    access = {row["organization_id"]: row["access"] for row in elevated["data"]}
     assert access == {org: "member", other: "platform_administrator"}
     portfolio = client.get(PORTFOLIO, headers=HEADERS).json()
     assert {row["organization_id"] for row in portfolio["clients"]} == {org, other}
