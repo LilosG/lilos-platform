@@ -45,7 +45,10 @@ export type ContentBrief = {
   revision_number: number;
   audience: string;
   intent: string;
+  target_kind: "existing_page" | "new_page";
   target_reference: string;
+  /** Whether an existing page was attributed by SEO or selected from the crawled site. */
+  target_resolution: "attributed" | "selected" | null;
   approved_fact_revision_ids: string[];
   status: string;
 };

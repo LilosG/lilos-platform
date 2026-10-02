@@ -95,7 +95,9 @@ def brief_row(item: ContentBrief) -> dict[str, object]:
         "revision_number": item.revision_number,
         "audience": item.audience,
         "intent": item.intent,
+        "target_kind": item.target_kind,
         "target_reference": item.target_reference,
+        "target_resolution": item.validation_requirements.get("target_resolution"),
         "approved_fact_revision_ids": item.approved_fact_revision_ids,
         "status": item.status,
     }

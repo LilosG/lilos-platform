@@ -1001,6 +1001,16 @@ import "../styles/global.css";
           facts.append(
             fact("Audience", brief.audience),
             fact("Goal", brief.intent),
+            fact(
+              "Target page",
+              brief.target_kind === "new_page"
+                ? `New page: ${brief.target_reference}`
+                : `${brief.target_reference} (${
+                    brief.target_resolution === "selected"
+                      ? "selected from the crawled site"
+                      : "attributed by SEO"
+                  })`,
+            ),
           );
           context.append(facts);
           region.append(context);

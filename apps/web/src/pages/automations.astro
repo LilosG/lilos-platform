@@ -157,6 +157,7 @@ import "../styles/automations.css";
         canControlAgent,
         decideAgentApproval,
         getAgentRun,
+        agentRunDisplayStatus,
         listAgentRuns,
         resetAgentSession,
         startAgentRun,
@@ -502,7 +503,10 @@ import "../styles/automations.css";
         heading.textContent = agentLabelForSkill(detail.skill_key);
         headingRow.append(
           heading,
-          statusBadge(statusTone(detail.status), statusLabel(detail.status)),
+          statusBadge(
+            statusTone(agentRunDisplayStatus(detail)),
+            statusLabel(agentRunDisplayStatus(detail)),
+          ),
         );
         card.append(headingRow);
 
@@ -746,7 +750,10 @@ import "../styles/automations.css";
                 key: "status",
                 header: "Status",
                 render: (run: AgentRunSummary) =>
-                  statusBadge(statusTone(run.status), statusLabel(run.status)),
+                  statusBadge(
+                    statusTone(agentRunDisplayStatus(run)),
+                    statusLabel(agentRunDisplayStatus(run)),
+                  ),
               },
               {
                 key: "started",

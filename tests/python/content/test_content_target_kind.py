@@ -20,11 +20,15 @@ PAGE_URL = "https://example.invalid/real-page"
 def _service(page_url: str | None) -> ContentService:
     service = ContentService()
 
-    async def seo_target(*_args: object) -> tuple[str, Any] | None:
+    async def seo_target(*_args: object) -> tuple[str, Any, Any] | None:
         page = SimpleNamespace(normalized_url=page_url) if page_url else None
-        return f"seo-opportunity:{uuid4()}", page
+        return f"seo-opportunity:{uuid4()}", page, uuid4()
+
+    async def crawled(*_args: object) -> None:
+        return None
 
     setattr(service, "_seo_target_for_item", seo_target)  # noqa: B010
+    setattr(service, "_crawled_page_for_target", crawled)  # noqa: B010
     return service
 
 

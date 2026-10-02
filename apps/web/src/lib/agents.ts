@@ -19,6 +19,8 @@ export type AgentEligibility = {
   location_id: string;
 };
 
+export type AgentRunOutcome = "proposal_created" | "no_proposal";
+
 export type AgentRunSummary = {
   id: string;
   location_id: string | null;
@@ -26,6 +28,7 @@ export type AgentRunSummary = {
   status: string;
   model: string | null;
   safe_error_code: string | null;
+  outcome: AgentRunOutcome | null;
   started_at: string | null;
   completed_at: string | null;
   created_at: string | null;
@@ -212,4 +215,13 @@ export function resetAgentSession(
       body: { skill_key: skillKey, location_id: locationId },
     },
   );
+}
+
+/** The status to show for a run: a completed run that proposed nothing is not "completed". */
+export function agentRunDisplayStatus(
+  run: Pick<AgentRunSummary, "status" | "outcome">,
+): string {
+  return run.status === "completed" && run.outcome === "no_proposal"
+    ? "no_proposal"
+    : run.status;
 }

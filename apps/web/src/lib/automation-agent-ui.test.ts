@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { agentRunDisplayStatus } from "./agents";
 import type { AgentRunEvent, AgentRunSummary } from "./agents";
 import {
   actionableWorkflowFailureCount,
@@ -18,6 +19,7 @@ function agentRun(overrides: Partial<AgentRunSummary> = {}): AgentRunSummary {
     status: "running",
     model: "hermes-agent",
     safe_error_code: null,
+    outcome: null,
     started_at: "2026-08-25T17:20:00.000Z",
     completed_at: null,
     created_at: "2026-08-25T17:20:00.000Z",
@@ -156,5 +158,23 @@ describe("agentRunErrorLabel", () => {
 
   it("renders a dash when there is no error", () => {
     expect(agentRunErrorLabel(null)).toBe("—");
+  });
+});
+
+describe("agentRunDisplayStatus", () => {
+  it("does not call a run that proposed nothing completed", () => {
+    expect(
+      agentRunDisplayStatus(
+        agentRun({ status: "completed", outcome: "no_proposal" }),
+      ),
+    ).toBe("no_proposal");
+    expect(
+      agentRunDisplayStatus(
+        agentRun({ status: "completed", outcome: "proposal_created" }),
+      ),
+    ).toBe("completed");
+    expect(agentRunDisplayStatus(agentRun({ status: "failed" }))).toBe(
+      "failed",
+    );
   });
 });

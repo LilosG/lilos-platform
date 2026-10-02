@@ -569,6 +569,7 @@ async def _handle_content_draft_revision(
         return JobOutcome(result="permanent_failure", safe_error="INVALID_UUID")
 
     from apps.api.app.ai.errors import AIProviderConfigurationError, AIProviderError
+    from apps.api.app.errors import ApiError
 
     content_service = ContentService()
     try:
@@ -618,6 +619,20 @@ async def _handle_content_draft_revision(
                 "AI_PROVIDER_TEMPORARY_FAILURE" if retryable else "CONTENT_GENERATION_REJECTED"
             ),
         )
+    except ApiError as exc:
+        # A domain refusal carries its own typed code; recording it as a generic
+        # exception hid why the draft was refused.
+        logger.warning(
+            "Content AI draft generation refused",
+            extra={
+                "event_name": "content.draft_revision.refused",
+                "organization_id": str(organization_id),
+                "item_id": str(item_id),
+                "brief_id": str(brief_id),
+                "safe_error": exc.code,
+            },
+        )
+        return JobOutcome(result="permanent_failure", safe_error=exc.code)
     except Exception as exc:
         logger.exception(
             "Content AI draft generation raised an unexpected exception",

@@ -69,6 +69,7 @@ from apps.api.app.products.content.models import (
     PublishingTarget,
 )
 from apps.api.app.products.seo.models import SEOOpportunity, SEOPage
+from apps.api.app.products.seo.site_map_resolver import normalize_url_path
 
 SECRET_PATTERN = re.compile(r"(?i)(?:api[_-]?key|secret|token|password)\s*[:=]")
 
@@ -81,6 +82,8 @@ def _cast_str_list(value: object) -> list[str]:
 
 
 AI_TASK_KEY = "content.draft_revision"
+TARGET_ATTRIBUTED = "attributed"
+TARGET_SELECTED = "selected"
 NOTIFICATION_TEMPLATES = {
     "content.revision.awaiting_editorial": ("in_app", "A content revision needs editorial review."),
     "content.revision.awaiting_client": ("in_app", "A content revision needs client approval."),
@@ -323,7 +326,7 @@ class ContentService:
 
     async def _seo_target_for_item(
         self, session: AsyncSession, organization_id: UUID, item: ContentItem
-    ) -> tuple[str, SEOPage | None] | None:
+    ) -> tuple[str, SEOPage | None, UUID] | None:
         """Resolve the SEO-owned page rather than treating a Content URL as attribution."""
         if item.opportunity_id is None:
             return None
@@ -354,7 +357,7 @@ class ContentService:
         if opportunity is None:
             raise ContentSEOTargetMismatchError
         if opportunity.page_id is None:
-            return source.source_reference, None
+            return source.source_reference, None, opportunity.website_id
         page = await session.scalar(
             select(SEOPage).where(
                 SEOPage.organization_id == organization_id,
@@ -364,7 +367,26 @@ class ContentService:
         )
         if page is None:
             raise ContentSEOTargetMismatchError
-        return source.source_reference, page
+        return source.source_reference, page, opportunity.website_id
+
+    async def _crawled_page_for_target(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        website_id: UUID,
+        target_reference: str,
+    ) -> SEOPage | None:
+        """The crawled page of this website a URL or site path refers to, if any."""
+        wanted = normalize_url_path(target_reference)
+        pages = await session.scalars(
+            select(SEOPage).where(
+                SEOPage.organization_id == organization_id, SEOPage.website_id == website_id
+            )
+        )
+        for page in pages:
+            if normalize_url_path(page.normalized_url) == wanted:
+                return page
+        return None
 
     async def _validate_seo_target_reference(
         self,
@@ -374,26 +396,48 @@ class ContentService:
         target_reference: str | None,
         *,
         target_kind: ContentTargetKind = ContentTargetKind.EXISTING_PAGE,
-    ) -> None:
+    ) -> str | None:
         """Validate a brief's target against the SEO opportunity that produced the item.
 
-        ``existing_page`` needs an attributed page and is the only case that can
-        return CONTENT_SEO_TARGET_UNRESOLVED. ``new_page`` proposes a new URL, so it
-        never needs an attributed page; it only needs a well-formed site path.
+        ``existing_page`` must be a page LILOs knows: the opportunity's attributed page
+        (returns ``attributed``) or any other crawled page of the bound website
+        (returns ``selected``). A URL that is not a crawled page is still rejected.
+        ``new_page`` proposes a new URL, so it only needs a well-formed site path.
         """
         if target_kind is ContentTargetKind.NEW_PAGE:
             path = (target_reference or "").strip()
             if not path.startswith("/") or path.startswith("//") or len(path) < 2:
                 raise ContentNewPageTargetInvalidError
-            return
+            return None
         seo_target = await self._seo_target_for_item(session, organization_id, item)
         if seo_target is None:
-            return
-        _source_reference, page = seo_target
+            return None
+        _source_reference, page, website_id = seo_target
+        if target_reference is None:
+            if page is not None:
+                return TARGET_ATTRIBUTED
+            # Publication re-validates without a target; use the one the brief chose.
+            target_reference = await session.scalar(
+                select(ContentBrief.target_reference)
+                .where(
+                    ContentBrief.organization_id == organization_id,
+                    ContentBrief.content_item_id == item.id,
+                )
+                .order_by(ContentBrief.revision_number.desc())
+                .limit(1)
+            )
+        if page is not None and (
+            target_reference is None
+            or normalize_url_path(target_reference) == normalize_url_path(page.normalized_url)
+        ):
+            return TARGET_ATTRIBUTED
+        if target_reference and await self._crawled_page_for_target(
+            session, organization_id, website_id, target_reference
+        ):
+            return TARGET_SELECTED
         if page is None:
             raise ContentSEOTargetUnresolvedError
-        if target_reference is not None and target_reference != page.normalized_url:
-            raise ContentSEOTargetMismatchError
+        raise ContentSEOTargetMismatchError
 
     async def _latest_target_kind(
         self, session: AsyncSession, organization_id: UUID, item_id: UUID
@@ -781,7 +825,7 @@ class ContentService:
         )
         if not item:
             raise ContentItemNotFoundError
-        await self._validate_seo_target_reference(
+        target_resolution = await self._validate_seo_target_reference(
             session,
             organization_id,
             item,
@@ -818,7 +862,10 @@ class ContentService:
             prohibited_claims=command.prohibited_claims,
             required_local_references=command.required_local_references,
             source_evidence_references=sources,
-            validation_requirements=command.validation_requirements,
+            validation_requirements={
+                **command.validation_requirements,
+                **({"target_resolution": target_resolution} if target_resolution else {}),
+            },
             status="ready" if ready else "blocked",
             blocked_reason_code=None if ready else "CONTENT_BRIEF_SOURCES_MISSING",
         )
@@ -1116,6 +1163,16 @@ class ContentService:
         digest = hashlib.sha256(
             (command.body + repr(sorted(command.frontmatter.items()))).encode()
         ).hexdigest()
+        duplicate = await session.scalar(
+            select(ContentRevision).where(
+                ContentRevision.content_item_id == item_id,
+                ContentRevision.content_hash == digest,
+            )
+        )
+        if duplicate is not None:
+            # The same body and frontmatter is already this item's revision; a second row
+            # would violate uq_content_revision_hash and surface as an untyped failure.
+            return duplicate
         revision = ContentRevision(
             organization_id=organization_id,
             content_item_id=item_id,
