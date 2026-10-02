@@ -1,12 +1,13 @@
 """Portfolio overview: real persisted evidence, explicit availability, tenant scope."""
 
 from datetime import UTC, datetime, timedelta
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.testclient import TestClient
 
 from apps.api.app.execution.models import WorkflowRun
+from apps.api.app.platform_admin.models import PlatformAdministrator
 from leads import test_leads_api as canonical
 
 HEADERS = canonical.HEADERS
@@ -104,3 +105,70 @@ def test_portfolio_rejects_invalid_period_and_requires_authentication(
     client, _ = canonical_leads_client
     assert client.get(PORTFOLIO + "?days=30", headers=HEADERS).status_code == 422
     assert client.get(PORTFOLIO).status_code == 401
+
+
+CLIENTS = "/api/v1/command-center/clients"
+
+
+def test_client_overview_is_tenant_scoped_and_labels_missing_data(
+    canonical_leads_client: tuple[TestClient, dict[str, UUID]],
+) -> None:
+    client, ids = canonical_leads_client
+    org, other = str(ids["organization"]), str(ids["other_organization"])
+
+    listed = client.get(CLIENTS, headers=HEADERS)
+    assert listed.status_code == 200, listed.text
+    assert [(row["organization_id"], row["access"]) for row in listed.json()["data"]] == [
+        (org, "member")
+    ]
+    assert other not in listed.text
+
+    own = client.get(f"{CLIENTS}/{org}/overview?days=28", headers=HEADERS)
+    assert own.status_code == 200, own.text
+    assert "no-store" in own.headers["cache-control"]
+    body = own.json()
+    row = body["client"]
+    assert body["access"] == "member"
+    assert row["organization_id"] == org
+    assert row["local_visibility"]["availability"] == "not_tracked"
+    assert row["average_local_rank"]["availability"] == "not_tracked"
+    assert row["average_local_rank"]["current"] is None
+    assert {system["key"] for system in body["systems"]} == {
+        "google",
+        "analytics",
+        "search_console",
+        "automations",
+    }
+    # The fixture organization has no Insights entitlement: labeled, not zeroed.
+    assert body["insights"]["availability"] == "not_permitted"
+    assert body["insights"]["workflow_runs"] == {}
+    assert body["insights"]["seo_opportunities_blocked"] is None
+
+    # Another tenant and an unknown id are indistinguishable: no disclosure.
+    assert client.get(f"{CLIENTS}/{other}/overview", headers=HEADERS).status_code == 404
+    assert client.get(f"{CLIENTS}/{uuid4()}/overview", headers=HEADERS).status_code == 404
+    assert client.get(f"{CLIENTS}/{org}/overview?days=30", headers=HEADERS).status_code == 422
+    assert client.get(f"{CLIENTS}/{org}/overview").status_code == 401
+
+
+def test_platform_administrator_sees_every_active_client(
+    canonical_leads_client: tuple[TestClient, dict[str, UUID]],
+    postgresql_test_url: str,
+) -> None:
+    client, ids = canonical_leads_client
+    org, other = str(ids["organization"]), str(ids["other_organization"])
+
+    async def grant(session: AsyncSession) -> None:
+        session.add(PlatformAdministrator(user_profile_id=ids["profile"]))
+        await session.commit()
+
+    run_db(postgresql_test_url, grant)
+
+    listed = client.get(CLIENTS, headers=HEADERS).json()["data"]
+    access = {row["organization_id"]: row["access"] for row in listed}
+    assert access == {org: "member", other: "platform_administrator"}
+    portfolio = client.get(PORTFOLIO, headers=HEADERS).json()
+    assert {row["organization_id"] for row in portfolio["clients"]} == {org, other}
+    overview = client.get(f"{CLIENTS}/{other}/overview", headers=HEADERS)
+    assert overview.status_code == 200, overview.text
+    assert overview.json()["access"] == "platform_administrator"

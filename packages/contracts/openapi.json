@@ -1082,9 +1082,101 @@
         "title": "ChecklistSeverity",
         "type": "string"
       },
+      "ClientOverview": {
+        "additionalProperties": false,
+        "properties": {
+          "access": {
+            "enum": [
+              "member",
+              "platform_administrator"
+            ],
+            "title": "Access",
+            "type": "string"
+          },
+          "activity": {
+            "items": {
+              "$ref": "#/components/schemas/ActivityItem"
+            },
+            "title": "Activity",
+            "type": "array"
+          },
+          "attention": {
+            "items": {
+              "$ref": "#/components/schemas/AttentionItem"
+            },
+            "title": "Attention",
+            "type": "array"
+          },
+          "client": {
+            "$ref": "#/components/schemas/ClientRow"
+          },
+          "days": {
+            "title": "Days",
+            "type": "integer"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "insights": {
+            "$ref": "#/components/schemas/InsightsSummary"
+          },
+          "opportunities": {
+            "items": {
+              "$ref": "#/components/schemas/OpportunityItem"
+            },
+            "title": "Opportunities",
+            "type": "array"
+          },
+          "period_end": {
+            "format": "date-time",
+            "title": "Period End",
+            "type": "string"
+          },
+          "period_start": {
+            "format": "date-time",
+            "title": "Period Start",
+            "type": "string"
+          },
+          "systems": {
+            "items": {
+              "$ref": "#/components/schemas/ClientSystem"
+            },
+            "title": "Systems",
+            "type": "array"
+          },
+          "upcoming": {
+            "items": {
+              "$ref": "#/components/schemas/UpcomingItem"
+            },
+            "title": "Upcoming",
+            "type": "array"
+          }
+        },
+        "required": [
+          "generated_at",
+          "days",
+          "period_start",
+          "period_end",
+          "access",
+          "client",
+          "attention",
+          "opportunities",
+          "activity",
+          "upcoming",
+          "systems",
+          "insights"
+        ],
+        "title": "ClientOverview",
+        "type": "object"
+      },
       "ClientRow": {
         "additionalProperties": false,
         "properties": {
+          "average_local_rank": {
+            "$ref": "#/components/schemas/MetricValue"
+          },
           "average_position": {
             "$ref": "#/components/schemas/MetricValue"
           },
@@ -1200,6 +1292,7 @@
           "organic_sessions",
           "search_clicks",
           "average_position",
+          "average_local_rank",
           "leads",
           "local_visibility",
           "reviews",
@@ -1210,6 +1303,39 @@
           "next_work"
         ],
         "title": "ClientRow",
+        "type": "object"
+      },
+      "ClientSystem": {
+        "additionalProperties": false,
+        "description": "One integration or workflow family for a single client.",
+        "properties": {
+          "key": {
+            "enum": [
+              "google",
+              "analytics",
+              "search_console",
+              "automations"
+            ],
+            "title": "Key",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "healthy",
+              "needs_attention",
+              "error",
+              "not_connected",
+              "not_permitted"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "status"
+        ],
+        "title": "ClientSystem",
         "type": "object"
       },
       "CommunicationCreate": {
@@ -3289,6 +3415,80 @@
         ],
         "title": "IndustryStatus",
         "type": "string"
+      },
+      "InsightsSummary": {
+        "additionalProperties": false,
+        "description": "The former Insights summary, folded into the client overview.",
+        "properties": {
+          "availability": {
+            "enum": [
+              "available",
+              "no_data",
+              "not_connected",
+              "not_tracked",
+              "not_permitted"
+            ],
+            "title": "Availability",
+            "type": "string"
+          },
+          "content_publications": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Content Publications",
+            "type": "object"
+          },
+          "growth_outcomes": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Growth Outcomes",
+            "type": "object"
+          },
+          "reviews": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Reviews",
+            "type": "object"
+          },
+          "seo_opportunities": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Seo Opportunities",
+            "type": "object"
+          },
+          "seo_opportunities_blocked": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seo Opportunities Blocked"
+          },
+          "workflow_runs": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Workflow Runs",
+            "type": "object"
+          }
+        },
+        "required": [
+          "availability",
+          "workflow_runs",
+          "growth_outcomes",
+          "seo_opportunities",
+          "seo_opportunities_blocked",
+          "content_publications",
+          "reviews"
+        ],
+        "title": "InsightsSummary",
+        "type": "object"
       },
       "IntegrationView": {
         "properties": {
@@ -14259,6 +14459,62 @@
         "title": "ValidationError",
         "type": "object"
       },
+      "VisibleClient": {
+        "additionalProperties": false,
+        "properties": {
+          "access": {
+            "enum": [
+              "member",
+              "platform_administrator"
+            ],
+            "title": "Access",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "organization_id": {
+            "format": "uuid",
+            "title": "Organization Id",
+            "type": "string"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "organization_id",
+          "slug",
+          "name",
+          "status",
+          "access"
+        ],
+        "title": "VisibleClient",
+        "type": "object"
+      },
+      "VisibleClients": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/VisibleClient"
+            },
+            "title": "Data",
+            "type": "array"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "VisibleClients",
+        "type": "object"
+      },
       "WebsiteCheckRequest": {
         "additionalProperties": false,
         "description": "Reserve and queue the canonical crawl in one transaction.",
@@ -15224,6 +15480,81 @@
         "summary": "Get client-visible onboarding state",
         "tags": [
           "client-onboarding"
+        ]
+      }
+    },
+    "/api/v1/command-center/clients": {
+      "get": {
+        "description": "The clients the caller may open, with how they may open them.",
+        "operationId": "visible_clients_api_v1_command_center_clients_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VisibleClients"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Visible Clients",
+        "tags": [
+          "command-center"
+        ]
+      }
+    },
+    "/api/v1/command-center/clients/{organization_id}/overview": {
+      "get": {
+        "operationId": "client_overview_api_v1_command_center_clients__organization_id__overview_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "default": 28,
+              "title": "Days",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientOverview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Client Overview",
+        "tags": [
+          "command-center"
         ]
       }
     },

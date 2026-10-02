@@ -76,6 +76,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/command-center/clients": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Visible Clients
+         * @description The clients the caller may open, with how they may open them.
+         */
+        get: operations["visible_clients_api_v1_command_center_clients_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/command-center/clients/{organization_id}/overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Client Overview */
+        get: operations["client_overview_api_v1_command_center_clients__organization_id__overview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/command-center/portfolio": {
         parameters: {
             query?: never;
@@ -5544,8 +5581,46 @@ export interface components {
          * @enum {string}
          */
         ChecklistSeverity: "blocker" | "warning";
+        /** ClientOverview */
+        ClientOverview: {
+            /**
+             * Access
+             * @enum {string}
+             */
+            access: "member" | "platform_administrator";
+            /** Activity */
+            activity: components["schemas"]["ActivityItem"][];
+            /** Attention */
+            attention: components["schemas"]["AttentionItem"][];
+            client: components["schemas"]["ClientRow"];
+            /** Days */
+            days: number;
+            /**
+             * Generated At
+             * Format: date-time
+             */
+            generated_at: string;
+            insights: components["schemas"]["InsightsSummary"];
+            /** Opportunities */
+            opportunities: components["schemas"]["OpportunityItem"][];
+            /**
+             * Period End
+             * Format: date-time
+             */
+            period_end: string;
+            /**
+             * Period Start
+             * Format: date-time
+             */
+            period_start: string;
+            /** Systems */
+            systems: components["schemas"]["ClientSystem"][];
+            /** Upcoming */
+            upcoming: components["schemas"]["UpcomingItem"][];
+        };
         /** ClientRow */
         ClientRow: {
+            average_local_rank: components["schemas"]["MetricValue"];
             average_position: components["schemas"]["MetricValue"];
             /** Category */
             category: string | null;
@@ -5578,6 +5653,22 @@ export interface components {
             search_clicks: components["schemas"]["MetricValue"];
             /** Slug */
             slug: string;
+        };
+        /**
+         * ClientSystem
+         * @description One integration or workflow family for a single client.
+         */
+        ClientSystem: {
+            /**
+             * Key
+             * @enum {string}
+             */
+            key: "google" | "analytics" | "search_console" | "automations";
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "healthy" | "needs_attention" | "error" | "not_connected" | "not_permitted";
         };
         /** CommunicationCreate */
         CommunicationCreate: {
@@ -6324,6 +6415,39 @@ export interface components {
          * @enum {string}
          */
         IndustryStatus: "active" | "deprecated" | "archived";
+        /**
+         * InsightsSummary
+         * @description The former Insights summary, folded into the client overview.
+         */
+        InsightsSummary: {
+            /**
+             * Availability
+             * @enum {string}
+             */
+            availability: "available" | "no_data" | "not_connected" | "not_tracked" | "not_permitted";
+            /** Content Publications */
+            content_publications: {
+                [key: string]: number;
+            };
+            /** Growth Outcomes */
+            growth_outcomes: {
+                [key: string]: number;
+            };
+            /** Reviews */
+            reviews: {
+                [key: string]: number;
+            };
+            /** Seo Opportunities */
+            seo_opportunities: {
+                [key: string]: number;
+            };
+            /** Seo Opportunities Blocked */
+            seo_opportunities_blocked: number | null;
+            /** Workflow Runs */
+            workflow_runs: {
+                [key: string]: number;
+            };
+        };
         /** IntegrationView */
         IntegrationView: {
             /** Analytics Properties */
@@ -9883,6 +10007,30 @@ export interface components {
             /** Error Type */
             type: string;
         };
+        /** VisibleClient */
+        VisibleClient: {
+            /**
+             * Access
+             * @enum {string}
+             */
+            access: "member" | "platform_administrator";
+            /** Name */
+            name: string;
+            /**
+             * Organization Id
+             * Format: uuid
+             */
+            organization_id: string;
+            /** Slug */
+            slug: string;
+            /** Status */
+            status: string;
+        };
+        /** VisibleClients */
+        VisibleClients: {
+            /** Data */
+            data: components["schemas"]["VisibleClient"][];
+        };
         /**
          * WebsiteCheckRequest
          * @description Reserve and queue the canonical crawl in one transaction.
@@ -10329,6 +10477,59 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    visible_clients_api_v1_command_center_clients_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VisibleClients"];
+                };
+            };
+        };
+    };
+    client_overview_api_v1_command_center_clients__organization_id__overview_get: {
+        parameters: {
+            query?: {
+                days?: number;
+            };
+            header?: never;
+            path: {
+                organization_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClientOverview"];
+                };
             };
             /** @description Validation Error */
             422: {
