@@ -9,6 +9,7 @@ from uuid import UUID
 
 from sqlalchemy import Select, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from apps.api.app.ai.factory import build_ai_gateway
 from apps.api.app.ai.gateway import AIGatewayRequest
@@ -272,6 +273,77 @@ class ReviewService:
             and response.external_response_id is not None
             and response.published_at is not None
         )
+
+    async def supersede_mismatched_responses(
+        self, session: AsyncSession, *, limit: int = 200
+    ) -> int:
+        """Retire mismatch-parked replies whose review already has a published revision.
+
+        VERIFICATION_CONTENT_MISMATCH means Google shows different text than this
+        revision approved. When another revision of the same review is published, the
+        review is answered and the mismatched revision is history, so no person needs to
+        look at it. A mismatch with no published revision is left for a person.
+        Re-running is a no-op: only `reconciliation_required` rows are selected.
+        """
+        other = aliased(ReviewResponseRevision)
+        mismatched = list(
+            await session.scalars(
+                select(ReviewResponseRevision)
+                .where(
+                    ReviewResponseRevision.status == "reconciliation_required",
+                    ReviewResponseRevision.safe_error_code == "VERIFICATION_CONTENT_MISMATCH",
+                    select(other.id)
+                    .where(
+                        other.organization_id == ReviewResponseRevision.organization_id,
+                        other.review_id == ReviewResponseRevision.review_id,
+                        other.id != ReviewResponseRevision.id,
+                        other.status == "published",
+                    )
+                    .exists(),
+                )
+                .order_by(ReviewResponseRevision.updated_at)
+                .with_for_update(skip_locked=True)
+                .limit(limit)
+            )
+        )
+        for response in mismatched:
+            published_revision = await session.scalar(
+                select(ReviewResponseRevision)
+                .where(
+                    ReviewResponseRevision.organization_id == response.organization_id,
+                    ReviewResponseRevision.review_id == response.review_id,
+                    ReviewResponseRevision.id != response.id,
+                    ReviewResponseRevision.status == "published",
+                )
+                .order_by(ReviewResponseRevision.revision_number.desc())
+                .limit(1)
+            )
+            if published_revision is None:
+                continue
+            response.status = "superseded"
+            response.safe_error_code = None
+            review = await session.get(Review, response.review_id)
+            if review is not None and review.status == "publication_failed":
+                review.status = "responded"
+            await self._audit(
+                session,
+                event="reviews.response.superseded_by_published_revision",
+                organization_id=response.organization_id,
+                location_id=response.location_id,
+                actor_id=None,
+                resource_type="review_response_revision",
+                resource_id=response.id,
+                correlation_id=f"reviews.supersede:{response.id}",
+                summary="A different revision of this review is already published; "
+                "the mismatched reply was superseded.",
+                metadata={
+                    "published_response_revision_id": str(published_revision.id),
+                    "reason": "VERIFICATION_CONTENT_MISMATCH_WITH_PUBLISHED_REVISION",
+                    "revision": response.revision_number,
+                },
+            )
+        await session.flush()
+        return len(mismatched)
 
     async def _audit_provider_confirmation_once(
         self,
