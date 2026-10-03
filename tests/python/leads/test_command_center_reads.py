@@ -9,15 +9,6 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.testclient import TestClient
 
-from apps.api.app.access_control.enums import ScopeType
-from apps.api.app.access_control.models import MembershipPermissionDeny, Permission
-from apps.api.app.access_control.service import AccessControlService
-from apps.api.app.authentication.contracts import AuthenticatedPrincipal
-from apps.api.app.authentication.enums import AssuranceLevel, UserStatus
-from apps.api.app.authentication.models import UserProfile
-from apps.api.app.authorization.batch import resolve_organization_permissions
-from apps.api.app.authorization.contracts import AuthorizationRequest
-from apps.api.app.authorization.service import AuthorizationService
 from apps.api.app.execution.models import WorkflowDefinition, WorkflowRun, WorkflowVersion
 from apps.api.app.insights.models import InsightSource, MetricObservation
 from apps.api.app.integrations.models import IntegrationConnection, Provider
@@ -334,74 +325,3 @@ def test_only_unresolved_failures_count_as_attention(
     row = next(c for c in body["clients"] if c["organization_id"] == str(org))
     assert "WORKFLOW_ATTENTION" not in row["health_reasons"]
     assert body["totals"]["reporting_attention"] == 1  # Google is still not connected
-
-
-def test_batch_permissions_match_the_canonical_authorization_decision(
-    canonical_leads_client: tuple[TestClient, dict[str, UUID]],
-    postgresql_test_url: str,
-) -> None:
-    _, ids = canonical_leads_client
-    org = ids["organization"]
-
-    async def compare(session: AsyncSession) -> None:
-        profile = await session.get(UserProfile, ids["profile"])
-        assert profile is not None
-        principal = AuthenticatedPrincipal(
-            platform_user_id=profile.id,
-            auth_user_id=profile.auth_user_id,
-            user_status=UserStatus.ACTIVE,
-            session_id=uuid4(),
-            assurance_level=AssuranceLevel.AAL2,
-            token_issued_at=None,
-            token_expires_at=datetime.now(UTC) + timedelta(hours=1),
-        )
-        pairs = await AccessControlService().list_my_organizations(session, profile.id)
-        authorization = AuthorizationService()
-
-        async def single(key: str) -> bool:
-            decision = await authorization.evaluate(
-                session,
-                principal,
-                AuthorizationRequest(
-                    platform_user_id=profile.id,
-                    organization_id=org,
-                    permission_key=key,
-                    resource_scope=ScopeType.ORGANIZATION,
-                    location_id=None,
-                    minimum_assurance_level=AssuranceLevel.AAL1,
-                ),
-                correlation_id="batch-equivalence",
-            )
-            return decision.allowed
-
-        keys = (*KEYS, "leads.respond", "gbp.read", "content.read")
-        batch = await resolve_organization_permissions(session, principal, pairs, keys)
-        before = {key: await single(key) for key in keys}
-        assert before["leads.read"] is True and before["seo.read"] is False
-        assert {key: batch.allows(org, key) for key in keys} == before
-        # An explicit deny removes the permission in both.
-        membership = pairs[0][0]
-        leads_read = await session.scalar(
-            select(Permission.id).where(Permission.key == "leads.read")
-        )
-        assert leads_read is not None
-        session.add(
-            MembershipPermissionDeny(
-                organization_id=org,
-                membership_id=membership.id,
-                permission_id=leads_read,
-                scope_type=ScopeType.ORGANIZATION,
-            )
-        )
-        await session.flush()
-        denied = await resolve_organization_permissions(session, principal, pairs, keys)
-        assert await single("leads.read") is False
-        assert denied.allows(org, "leads.read") is False
-        assert denied.allows(org, "leads.respond") == await single("leads.respond")
-        # A non-active principal holds nothing.
-        inactive = principal.model_copy(update={"user_status": UserStatus.DEACTIVATED})
-        nothing = await resolve_organization_permissions(session, inactive, pairs, keys)
-        assert not nothing.allows(org, "leads.read")
-        await session.rollback()
-
-    run_db(postgresql_test_url, compare)

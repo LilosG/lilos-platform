@@ -15,12 +15,10 @@ from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import func, select
 
-from apps.api.app.access_control.models import OrganizationMembership
 from apps.api.app.access_control.service import AccessControlService
 from apps.api.app.authentication.contracts import AuthenticatedPrincipal
 from apps.api.app.authentication.dependencies import Authenticated, get_authenticated_principal
 from apps.api.app.authentication.enums import AssuranceLevel, UserStatus
-from apps.api.app.authorization.batch import resolve_organization_permissions
 from apps.api.app.authorization.service import assurance_satisfies
 from apps.api.app.errors import request_correlation_id
 from apps.api.app.insights.aggregation_service import InsightsService
@@ -28,6 +26,7 @@ from apps.api.app.organizations.enums import OrganizationStatus
 from apps.api.app.organizations.models import Organization
 from apps.api.app.platform_admin.repository import PlatformAdministratorRepository
 from apps.api.app.products.seo.decision import GROWTH_TYPES
+from apps.api.app.routes.command_center import authorization
 from apps.api.app.routes.command_center_reads import (
     PERMISSIONS,
     Facts,
@@ -281,7 +280,6 @@ class Scope:
     organizations: list[Organization]
     members: frozenset[UUID]
     platform_administrator: bool
-    pairs: list[tuple[OrganizationMembership, Organization]] = field(default_factory=list)
 
     def access(self, organization_id: UUID) -> Literal["member", "platform_administrator"]:
         return "member" if organization_id in self.members else "platform_administrator"
@@ -312,7 +310,7 @@ async def visible_scope(session: Session, principal: AuthenticatedPrincipal) -> 
     )
     if not administrator:
         ordered = sorted(owned, key=lambda pair: pair[1].name.lower())
-        return Scope([organization for _, organization in ordered], members, False, ordered)
+        return Scope([organization for _, organization in ordered], members, False)
     everyone = list(
         await session.scalars(
             select(Organization)
@@ -320,7 +318,7 @@ async def visible_scope(session: Session, principal: AuthenticatedPrincipal) -> 
             .order_by(func.lower(Organization.name))
         )
     )
-    return Scope(everyone, members, True, owned)
+    return Scope(everyone, members, True)
 
 
 async def permitted_organizations(
@@ -328,6 +326,7 @@ async def permitted_organizations(
     principal: AuthenticatedPrincipal,
     scope: Scope,
     organizations: list[Organization],
+    correlation_id: str,
 ) -> dict[str, set[UUID]]:
     """Which of ``organizations`` the caller may read, per permission, in constant queries."""
     ids = {organization.id for organization in organizations}
@@ -335,10 +334,16 @@ async def permitted_organizations(
         # An administrator reads every client's evidence; writes stay behind the
         # per-organization gate and are not reachable from these read projections.
         return {permission: set(ids) for permission in PERMISSIONS}
-    pairs = [pair for pair in scope.pairs if pair[1].id in ids]
-    resolved = await resolve_organization_permissions(session, principal, pairs, PERMISSIONS)
+    decisions = await authorization.evaluate_many(
+        session,
+        principal,
+        list(ids),
+        PERMISSIONS,
+        correlation_id=correlation_id,
+    )
     return {
-        permission: {i for i in ids if resolved.allows(i, permission)} for permission in PERMISSIONS
+        permission: {i for i in ids if decisions[(i, permission)].allowed}
+        for permission in PERMISSIONS
     }
 
 
@@ -548,7 +553,9 @@ async def portfolio_overview(
     start = now - timedelta(days=days)
     async with timer.section("scope"):
         scope = await visible_scope(session, principal)
-        allowed = await permitted_organizations(session, principal, scope, scope.organizations)
+        allowed = await permitted_organizations(
+            session, principal, scope, scope.organizations, str(request_correlation_id(request))
+        )
     facts = await load_facts(session, scope.organizations, allowed, days=days, now=now, timer=timer)
     async with timer.section("assemble"):
         bundles = [assemble(org, facts, allowed) for org in scope.organizations]
@@ -654,7 +661,9 @@ async def client_overview(
         if org is None:
             # Same answer for "does not exist" and "not yours": no tenant disclosure.
             raise HTTPException(status_code=404, detail="Not found")
-        allowed = await permitted_organizations(session, principal, scope, [org])
+        allowed = await permitted_organizations(
+            session, principal, scope, [org], str(request_correlation_id(request))
+        )
     now = datetime.now(UTC)
     facts = await load_facts(session, [org], allowed, days=days, now=now, timer=timer)
     bundle = assemble(org, facts, allowed)
