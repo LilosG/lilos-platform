@@ -5344,6 +5344,8 @@ export interface components {
         AttentionItem: {
             /** Code */
             code: string;
+            /** Failure Code */
+            failure_code?: string | null;
             /** Occurred At */
             occurred_at: string | null;
             /**
@@ -5362,6 +5364,8 @@ export interface components {
              * @enum {string}
              */
             severity: "critical" | "high" | "medium";
+            /** Workflow Key */
+            workflow_key?: string | null;
         };
         /** AttentionList */
         AttentionList: {

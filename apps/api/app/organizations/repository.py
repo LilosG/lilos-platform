@@ -1,5 +1,6 @@
 """Controlled PostgreSQL access for organizations."""
 
+from collections.abc import Sequence
 from datetime import datetime
 from typing import cast
 from uuid import UUID
@@ -31,6 +32,17 @@ class OrganizationRepository:
     ) -> Organization | None:
         """Return exactly one organization by its stable internal identifier."""
         return await session.get(Organization, organization_id)
+
+    async def get_many(
+        self, session: AsyncSession, organization_ids: Sequence[UUID]
+    ) -> dict[UUID, Organization]:
+        """Return the organizations that exist among the given identifiers, in one query."""
+        if not organization_ids:
+            return {}
+        rows = await session.scalars(
+            select(Organization).where(Organization.id.in_(organization_ids))
+        )
+        return {row.id: row for row in rows}
 
     async def get_by_slug(self, session: AsyncSession, slug: str) -> Organization | None:
         """Return exactly one organization by its immutable slug."""

@@ -7,35 +7,34 @@ frontend never shows missing data as zero.
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
-from typing import Literal
+from typing import Literal, TypedDict
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import Select, func, select
+from sqlalchemy import func, select
 
 from apps.api.app.access_control.service import AccessControlService
 from apps.api.app.authentication.contracts import AuthenticatedPrincipal
 from apps.api.app.authentication.dependencies import Authenticated, get_authenticated_principal
 from apps.api.app.authentication.enums import AssuranceLevel, UserStatus
 from apps.api.app.authorization.service import assurance_satisfies
-from apps.api.app.execution.models import Schedule, WorkflowDefinition, WorkflowRun, WorkflowVersion
-from apps.api.app.industries.models import Industry
+from apps.api.app.errors import request_correlation_id
 from apps.api.app.insights.aggregation_service import InsightsService
-from apps.api.app.integrations.models import IntegrationConnection, Provider
-from apps.api.app.locations.models import Location
 from apps.api.app.organizations.enums import OrganizationStatus
 from apps.api.app.organizations.models import Organization
 from apps.api.app.platform_admin.repository import PlatformAdministratorRepository
-from apps.api.app.products.analytics.service import AnalyticsService
-from apps.api.app.products.leads.models import Lead
-from apps.api.app.products.reviews.models import Review
 from apps.api.app.products.seo.decision import GROWTH_TYPES
-from apps.api.app.products.seo.models import SEOOpportunity
-from apps.api.app.products.seo.search_console_service import SearchConsoleService
-from apps.api.app.routes.command_center_search import allowed
-from apps.api.app.routes.seo import Session, no_store, service
+from apps.api.app.routes.command_center import authorization
+from apps.api.app.routes.command_center_reads import (
+    PERMISSIONS,
+    Facts,
+    MetricRead,
+    SectionTimer,
+    load_facts,
+)
+from apps.api.app.routes.seo import Session, no_store
 
 router = APIRouter(
     prefix="/api/v1/command-center",
@@ -106,6 +105,9 @@ class AttentionItem(DTO):
     severity: Literal["critical", "high", "medium"]
     occurred_at: datetime | None
     reference: str | None
+    # Typed cause for workflow attention, so the UI shows what failed without parsing text.
+    workflow_key: str | None = None
+    failure_code: str | None = None
 
 
 class OpportunityItem(DTO):
@@ -219,14 +221,6 @@ class UpcomingItem(DTO):
 PortfolioOverview.model_rebuild()
 ClientOverview.model_rebuild()
 
-MEANINGFUL_ACTIVITY = (
-    "gbp.publish_post",
-    "reviews.publish_response",
-    "content.publish",
-    "seo.apply_site_change",
-    "seo.crawl_or_analysis",
-)
-
 
 def percent(current: float | None, previous: float | None) -> float | None:
     if current is None or previous is None or previous == 0:
@@ -253,33 +247,17 @@ def metric(
     )
 
 
-def report_metric(report: dict[str, object], key: str, source: str) -> MetricValue:
-    """Read one comparison from a canonical performance report without inventing zeros."""
-    if not report.get("connected"):
-        return metric(source, "not_connected")
-    freshness = report.get("freshness") or {}
-    synced = freshness.get("last_synced_at") if isinstance(freshness, dict) else None
-    synced_at = datetime.fromisoformat(synced) if isinstance(synced, str) else None
-    metrics = report.get("metrics") or {}
-    value = metrics.get(key) if isinstance(metrics, dict) else None
-    if not isinstance(value, dict) or value.get("current") is None:
-        return metric(source, "no_data", freshness_at=synced_at)
-    return metric(
-        source,
-        "available",
-        float(value["current"]),
-        float(value["previous"]) if value.get("previous") is not None else None,
-        synced_at,
-    )
+def shaped(source: str, read: MetricRead | None) -> MetricValue:
+    """An absent read means the caller may not read that source; it is never zero."""
+    if read is None:
+        return metric(source, "not_permitted")
+    return metric(source, read.availability, read.current, read.previous, read.freshness_at)
 
 
-def workflow_keyed(organization_id: UUID) -> Select[tuple[WorkflowRun, str]]:
-    return (
-        select(WorkflowRun, WorkflowDefinition.key)
-        .join(WorkflowVersion, WorkflowVersion.id == WorkflowRun.workflow_version_id)
-        .join(WorkflowDefinition, WorkflowDefinition.id == WorkflowVersion.definition_id)
-        .where(WorkflowRun.organization_id == organization_id)
-    )
+class Owner(TypedDict):
+    organization_id: UUID
+    organization_name: str
+    organization_slug: str
 
 
 @dataclass
@@ -317,11 +295,11 @@ async def visible_scope(session: Session, principal: AuthenticatedPrincipal) -> 
     """
     pairs = await access_service.list_my_organizations(session, principal.platform_user_id)
     owned = [
-        organization
+        (membership, organization)
         for membership, organization in pairs
         if membership.status == "active" and organization.status.value == "active"
     ]
-    members = frozenset(organization.id for organization in owned)
+    members = frozenset(organization.id for _, organization in owned)
     administrator = (
         principal.user_status is UserStatus.ACTIVE
         and assurance_satisfies(principal.assurance_level, AssuranceLevel.AAL2)
@@ -331,7 +309,8 @@ async def visible_scope(session: Session, principal: AuthenticatedPrincipal) -> 
         is not None
     )
     if not administrator:
-        return Scope(sorted(owned, key=lambda o: o.name.lower()), members, False)
+        ordered = sorted(owned, key=lambda pair: pair[1].name.lower())
+        return Scope([organization for _, organization in ordered], members, False)
     everyone = list(
         await session.scalars(
             select(Organization)
@@ -342,173 +321,79 @@ async def visible_scope(session: Session, principal: AuthenticatedPrincipal) -> 
     return Scope(everyone, members, True)
 
 
-async def build_client(
+async def permitted_organizations(
     session: Session,
-    request: Request,
-    principal: Authenticated,
-    org: Organization,
-    *,
-    administrator: bool,
-    days: int,
-    now: datetime,
-) -> ClientBundle:
-    start = now - timedelta(days=days)
-    previous_start = start - timedelta(days=days)
-    oid = org.id
-    bundle_attention: list[AttentionItem] = []
-    bundle_opportunities: list[OpportunityItem] = []
-    bundle_activity: list[ActivityItem] = []
-    bundle_upcoming: list[UpcomingItem] = []
-
-    async def can(permission: str) -> bool:
-        # A platform administrator reads every client's evidence; writes stay behind
-        # the per-organization gate and are not reachable from these read projections.
-        return administrator or await allowed(session, principal, oid, request, permission)
-
-    locations = list(
-        await session.scalars(
-            select(Location)
-            .where(Location.organization_id == oid, Location.status == "active")
-            .order_by(Location.is_primary.desc(), Location.created_at)
-        )
+    principal: AuthenticatedPrincipal,
+    scope: Scope,
+    organizations: list[Organization],
+    correlation_id: str,
+) -> dict[str, set[UUID]]:
+    """Which of ``organizations`` the caller may read, per permission, in constant queries."""
+    ids = {organization.id for organization in organizations}
+    if scope.platform_administrator:
+        # An administrator reads every client's evidence; writes stay behind the
+        # per-organization gate and are not reachable from these read projections.
+        return {permission: set(ids) for permission in PERMISSIONS}
+    decisions = await authorization.evaluate_many(
+        session,
+        principal,
+        list(ids),
+        PERMISSIONS,
+        correlation_id=correlation_id,
     )
+    return {
+        permission: {i for i in ids if decisions[(i, permission)].allowed}
+        for permission in PERMISSIONS
+    }
+
+
+def impressions_of(evidence: dict[str, object]) -> float | None:
+    value = evidence.get("impressions")
+    return float(value) if isinstance(value, (int, float)) else None
+
+
+def assemble(org: Organization, facts: Facts, allowed: dict[str, set[UUID]]) -> ClientBundle:
+    """Shape one client from already-loaded facts. No I/O."""
+    oid = org.id
+    locations = facts.locations.get(oid, [])
     primary = locations[0] if locations else None
     place = ", ".join(part for part in (primary.city, primary.region) if part) if primary else ""
-    industry = (
-        await session.scalar(select(Industry.name).where(Industry.id == org.industry_id))
-        if org.industry_id
-        else None
+
+    def read(table: dict[UUID, MetricRead], permission: str) -> MetricRead | None:
+        return table.get(oid) if oid in allowed[permission] else None
+
+    search_clicks = shaped("search_console", read(facts.clicks, "seo.read"))
+    position = shaped("search_console", read(facts.position, "seo.read"))
+    sessions = shaped("ga4", read(facts.sessions, "insights.read"))
+    leads = shaped("leads", read(facts.leads, "leads.read"))
+    reviews = facts.reviews.get(oid)
+    review_summary = (
+        ReviewSummary(
+            availability=reviews.availability,  # type: ignore[arg-type]
+            total=reviews.total,
+            new_in_period=reviews.new_in_period,
+            average_rating=reviews.average_rating,
+        )
+        if reviews is not None
+        else ReviewSummary(
+            availability="not_permitted", total=None, new_in_period=None, average_rating=None
+        )
     )
-
-    # Search Console and GA4 come from their canonical reporting services.
-    search_clicks = metric("search_console", "not_permitted")
-    position = metric("search_console", "not_permitted")
-    open_count: int | None = None
-    if await can("seo.read"):
-        websites = [w for w in await service.list_websites(session, oid) if w.status == "active"]
-        if websites:
-            report = await SearchConsoleService().performance_report(
-                session, oid, websites[0].id, days=days
-            )
-            search_clicks = report_metric(report, "clicks", "search_console")
-            position = report_metric(report, "position", "search_console")
-        else:
-            search_clicks = metric("search_console", "not_connected")
-            position = metric("search_console", "not_connected")
-        open_count = int(
-            await session.scalar(
-                select(func.count())
-                .select_from(SEOOpportunity)
-                .where(
-                    SEOOpportunity.organization_id == oid,
-                    SEOOpportunity.status.in_(OPEN_OPPORTUNITY_STATUSES),
-                )
-            )
-            or 0
-        )
-        for item in await session.scalars(
-            select(SEOOpportunity)
-            .where(
-                SEOOpportunity.organization_id == oid,
-                SEOOpportunity.status.in_(OPEN_OPPORTUNITY_STATUSES),
-            )
-            .order_by(SEOOpportunity.priority_score.desc().nulls_last())
-            .limit(5)
-        ):
-            evidence = item.evidence or {}
-            impressions = evidence.get("impressions")
-            bundle_opportunities.append(
-                OpportunityItem(
-                    id=item.id,
-                    organization_id=oid,
-                    organization_name=org.name,
-                    organization_slug=org.slug,
-                    opportunity_type=item.opportunity_type,
-                    classification="Growth Opportunity"
-                    if item.opportunity_type in GROWTH_TYPES
-                    else "Issue",
-                    status=item.status,
-                    priority=item.priority_score,
-                    query=str(evidence["query"]) if evidence.get("query") else None,
-                    page=str(evidence["page"]) if evidence.get("page") else None,
-                    impressions=float(impressions)
-                    if isinstance(impressions, (int, float))
-                    else None,
-                )
-            )
-
-    sessions = metric("ga4", "not_permitted")
-    if await can("insights.read"):
-        ga4 = await AnalyticsService().performance_report(session, oid, days=days)
-        sessions = report_metric(ga4, "ga4.sessions", "ga4")
-
-    leads = metric("leads", "not_permitted")
-    if await can("leads.read"):
-
-        async def lead_count(lower: datetime, upper: datetime) -> int:
-            return int(
-                await session.scalar(
-                    select(func.count())
-                    .select_from(Lead)
-                    .where(
-                        Lead.organization_id == oid,
-                        Lead.duplicate_of_lead_id.is_(None),
-                        Lead.received_at >= lower,
-                        Lead.received_at < upper,
-                    )
-                )
-                or 0
-            )
-
-        leads = metric(
-            "leads",
-            "available",
-            await lead_count(start, now),
-            await lead_count(previous_start, start),
-        )
-
-    reviews = ReviewSummary(
-        availability="not_permitted", total=None, new_in_period=None, average_rating=None
-    )
-    if await can("reviews.read"):
-        total, average, recent = (
-            await session.execute(
-                select(
-                    func.count(Review.id),
-                    func.avg(Review.rating),
-                    func.count(Review.id).filter(Review.review_created_at >= start),
-                ).where(Review.organization_id == oid)
-            )
-        ).one()
-        reviews = ReviewSummary(
-            availability="available" if total else "no_data",
-            total=int(total) if total else None,
-            new_in_period=int(recent) if total else None,
-            average_rating=round(float(average), 1) if average is not None else None,
-        )
-
-    # Integration health: the best connection per provider is what counts, so an
-    # old disconnected record next to a working reconnection is not an alert.
+    owner: Owner = {
+        "organization_id": oid,
+        "organization_name": org.name,
+        "organization_slug": org.slug,
+    }
     reasons: list[str] = []
-    best: dict[str, str] = {}
-    rank = {"connected": 4, "degraded": 3, "pending": 2, "reconnect_required": 1}
-    for key, status in await session.execute(
-        select(Provider.key, IntegrationConnection.status)
-        .join(Provider, Provider.id == IntegrationConnection.provider_id)
-        .where(IntegrationConnection.organization_id == oid)
-    ):
-        if rank.get(status, 0) >= rank.get(best.get(key, ""), -1):
-            best[key] = status
-    google = best.get("google_business_profile")
+    attention: list[AttentionItem] = []
+    google = facts.google.get(oid)
     if google is None:
         reasons.append("GOOGLE_NOT_CONNECTED")
     elif google != "connected":
         reasons.append("GOOGLE_RECONNECT_REQUIRED")
-        bundle_attention.append(
+        attention.append(
             AttentionItem(
-                organization_id=oid,
-                organization_name=org.name,
-                organization_slug=org.slug,
+                **owner,
                 code="GOOGLE_RECONNECT_REQUIRED",
                 severity="critical",
                 occurred_at=None,
@@ -519,84 +404,22 @@ async def build_client(
         reasons.append("SEARCH_CONSOLE_NOT_CONNECTED")
     if sessions.availability == "not_connected":
         reasons.append("GA4_NOT_CONNECTED")
-
-    last_activity: WorkItem | None = None
-    next_work: WorkItem | None = None
-    automations_failing = False
-    if await can("workflows.read"):
-        base = workflow_keyed(oid)
-        latest = (
-            await session.execute(
-                base.where(WorkflowRun.status == "completed")
-                .order_by(WorkflowRun.completed_at.desc().nulls_last())
-                .limit(1)
+    failures = facts.unresolved.get(oid, [])
+    for run in failures:
+        reasons.append("WORKFLOW_ATTENTION")
+        attention.append(
+            AttentionItem(
+                **owner,
+                code=f"WORKFLOW_{run.status.upper()}",
+                severity="high" if run.status != "retry_scheduled" else "medium",
+                occurred_at=run.at,
+                reference=f"{run.workflow_key}:{run.failure_code or ''}".rstrip(":"),
+                workflow_key=run.workflow_key,
+                failure_code=run.failure_code,
             )
-        ).first()
-        if latest:
-            run, key = latest
-            last_activity = WorkItem(workflow_key=key, status=run.status, at=run.completed_at)
-        for run, key in await session.execute(
-            base.where(
-                WorkflowRun.status.in_(ATTENTION_RUN_STATUSES),
-                WorkflowRun.updated_at >= start,
-            ).order_by(WorkflowRun.updated_at.desc())
-        ):
-            reasons.append("WORKFLOW_ATTENTION")
-            automations_failing = True
-            bundle_attention.append(
-                AttentionItem(
-                    organization_id=oid,
-                    organization_name=org.name,
-                    organization_slug=org.slug,
-                    code=f"WORKFLOW_{run.status.upper()}",
-                    severity="high" if run.status != "retry_scheduled" else "medium",
-                    occurred_at=run.updated_at,
-                    reference=f"{key}:{run.failure_code or ''}".rstrip(":"),
-                )
-            )
-        for run, key in await session.execute(
-            base.where(
-                WorkflowRun.status == "completed",
-                WorkflowRun.completed_at >= start,
-                WorkflowDefinition.key.in_(MEANINGFUL_ACTIVITY),
-            )
-            .order_by(WorkflowRun.completed_at.desc())
-            .limit(5)
-        ):
-            bundle_activity.append(
-                ActivityItem(
-                    organization_id=oid,
-                    organization_name=org.name,
-                    organization_slug=org.slug,
-                    workflow_key=key,
-                    completed_at=run.completed_at or run.updated_at,
-                )
-            )
-        scheduled = (
-            await session.execute(
-                select(Schedule, WorkflowDefinition.key)
-                .join(WorkflowVersion, WorkflowVersion.id == Schedule.workflow_version_id)
-                .join(WorkflowDefinition, WorkflowDefinition.id == WorkflowVersion.definition_id)
-                .where(Schedule.organization_id == oid, Schedule.status == "active")
-                .order_by(Schedule.next_run_at)
-                .limit(1)
-            )
-        ).first()
-        if scheduled:
-            schedule, scheduled_key = scheduled
-            next_work = WorkItem(
-                workflow_key=scheduled_key, status="scheduled", at=schedule.next_run_at
-            )
-            bundle_upcoming.append(
-                UpcomingItem(
-                    organization_id=oid,
-                    organization_name=org.name,
-                    organization_slug=org.slug,
-                    workflow_key=scheduled_key,
-                    next_run_at=schedule.next_run_at,
-                )
-            )
-
+        )
+    last = facts.last_completed.get(oid)
+    scheduled = facts.next_work.get(oid)
     health: Literal["healthy", "needs_attention", "not_configured"] = (
         "not_configured"
         if "GOOGLE_NOT_CONNECTED" in reasons
@@ -604,6 +427,14 @@ async def build_client(
         if reasons
         else "healthy"
     )
+
+    def status_of(read_metric: MetricValue) -> Literal["healthy", "not_connected", "not_permitted"]:
+        if read_metric.availability == "not_permitted":
+            return "not_permitted"
+        if read_metric.availability == "not_connected":
+            return "not_connected"
+        return "healthy"
+
     systems = [
         ClientSystem(
             key="google",
@@ -613,33 +444,16 @@ async def build_client(
             if google == "connected"
             else "needs_attention",
         ),
-        ClientSystem(
-            key="analytics",
-            status="not_permitted"
-            if sessions.availability == "not_permitted"
-            else "not_connected"
-            if sessions.availability == "not_connected"
-            else "healthy",
-        ),
-        ClientSystem(
-            key="search_console",
-            status="not_permitted"
-            if search_clicks.availability == "not_permitted"
-            else "not_connected"
-            if search_clicks.availability == "not_connected"
-            else "healthy",
-        ),
-        ClientSystem(
-            key="automations",
-            status="error" if automations_failing else "healthy",
-        ),
+        ClientSystem(key="analytics", status=status_of(sessions)),
+        ClientSystem(key="search_console", status=status_of(search_clicks)),
+        ClientSystem(key="automations", status="error" if failures else "healthy"),
     ]
     row = ClientRow(
         organization_id=oid,
         slug=org.slug,
         name=org.name,
         location=place or None,
-        category=industry,
+        category=facts.industries.get(oid),
         location_count=len(locations),
         organic_sessions=sessions,
         search_clicks=search_clicks,
@@ -647,20 +461,45 @@ async def build_client(
         average_local_rank=metric("rank_scan", "not_tracked"),
         leads=leads,
         local_visibility=metric("rank_scan", "not_tracked"),
-        reviews=reviews,
-        open_opportunities=open_count,
+        reviews=review_summary,
+        open_opportunities=facts.open_counts.get(oid),
         health=health,
         health_reasons=sorted(set(reasons)),
-        last_activity=last_activity,
-        next_work=next_work,
+        last_activity=WorkItem(workflow_key=last.workflow_key, status="completed", at=last.at)
+        if last
+        else None,
+        next_work=WorkItem(workflow_key=scheduled[0], status="scheduled", at=scheduled[1])
+        if scheduled
+        else None,
     )
     return ClientBundle(
         row=row,
         locations=len(locations),
-        attention=bundle_attention,
-        opportunities=bundle_opportunities,
-        activity=bundle_activity,
-        upcoming=bundle_upcoming,
+        attention=attention,
+        opportunities=[
+            OpportunityItem(
+                id=item.id,
+                **owner,
+                opportunity_type=item.opportunity_type,
+                classification="Growth Opportunity"
+                if item.opportunity_type in GROWTH_TYPES
+                else "Issue",
+                status=item.status,
+                priority=item.priority,
+                query=str(item.evidence["query"]) if item.evidence.get("query") else None,
+                page=str(item.evidence["page"]) if item.evidence.get("page") else None,
+                impressions=impressions_of(item.evidence),
+            )
+            for item in facts.opportunities.get(oid, [])
+        ],
+        activity=[
+            ActivityItem(**owner, workflow_key=run.workflow_key, completed_at=run.at)
+            for run in facts.activity.get(oid, [])
+            if run.at is not None
+        ],
+        upcoming=[UpcomingItem(**owner, workflow_key=scheduled[0], next_run_at=scheduled[1])]
+        if scheduled
+        else [],
         systems=systems,
     )
 
@@ -698,6 +537,9 @@ async def visible_clients(session: Session, principal: Authenticated) -> Visible
     )
 
 
+SEVERITY_ORDER = {"critical": 0, "high": 1, "medium": 2}
+
+
 @router.get("/portfolio", response_model=PortfolioOverview)
 async def portfolio_overview(
     request: Request,
@@ -706,21 +548,18 @@ async def portfolio_overview(
     days: int = Query(28),
 ) -> PortfolioOverview:
     validate_days(days)
+    timer = SectionTimer()
     now = datetime.now(UTC)
     start = now - timedelta(days=days)
-    scope = await visible_scope(session, principal)
-    bundles = [
-        await build_client(
-            session,
-            request,
-            principal,
-            org,
-            administrator=scope.platform_administrator,
-            days=days,
-            now=now,
+    async with timer.section("scope"):
+        scope = await visible_scope(session, principal)
+        allowed = await permitted_organizations(
+            session, principal, scope, scope.organizations, str(request_correlation_id(request))
         )
-        for org in scope.organizations
-    ]
+    facts = await load_facts(session, scope.organizations, allowed, days=days, now=now, timer=timer)
+    async with timer.section("assemble"):
+        bundles = [assemble(org, facts, allowed) for org in scope.organizations]
+    timer.log("portfolio", len(bundles), str(request_correlation_id(request)))
     clients = [bundle.row for bundle in bundles]
     attention = [item for bundle in bundles for item in bundle.attention]
     opportunities = [item for bundle in bundles for item in bundle.opportunities[:3]]
@@ -735,6 +574,9 @@ async def portfolio_overview(
             if getattr(c, field_name).availability == "available"
         ]
         if not rows:
+            states = {getattr(c, field_name).availability for c in clients}
+            if len(states) == 1 and states <= {"not_connected", "not_permitted"}:
+                return metric(source, states.pop())
             return metric(source, "no_data" if clients else "not_connected")
         current = sum(r.current or 0 for r in rows)
         previous_rows = [r.previous for r in rows if r.previous is not None]
@@ -743,10 +585,9 @@ async def portfolio_overview(
 
     rated = [c.reviews for c in clients if c.reviews.average_rating is not None]
     new_reviews = [c.reviews.new_in_period for c in clients if c.reviews.new_in_period is not None]
-    severity_order = {"critical": 0, "high": 1, "medium": 2}
     attention.sort(
         key=lambda a: (
-            severity_order[a.severity],
+            SEVERITY_ORDER[a.severity],
             -(a.occurred_at.timestamp() if a.occurred_at else now.timestamp()),
         )
     )
@@ -813,21 +654,19 @@ async def client_overview(
     days: int = Query(28),
 ) -> ClientOverview:
     validate_days(days)
-    scope = await visible_scope(session, principal)
-    org = next((o for o in scope.organizations if o.id == organization_id), None)
-    if org is None:
-        # Same answer for "does not exist" and "not yours": no tenant disclosure.
-        raise HTTPException(status_code=404, detail="Not found")
+    timer = SectionTimer()
+    async with timer.section("scope"):
+        scope = await visible_scope(session, principal)
+        org = next((o for o in scope.organizations if o.id == organization_id), None)
+        if org is None:
+            # Same answer for "does not exist" and "not yours": no tenant disclosure.
+            raise HTTPException(status_code=404, detail="Not found")
+        allowed = await permitted_organizations(
+            session, principal, scope, [org], str(request_correlation_id(request))
+        )
     now = datetime.now(UTC)
-    bundle = await build_client(
-        session,
-        request,
-        principal,
-        org,
-        administrator=scope.platform_administrator,
-        days=days,
-        now=now,
-    )
+    facts = await load_facts(session, [org], allowed, days=days, now=now, timer=timer)
+    bundle = assemble(org, facts, allowed)
     insights = InsightsSummary(
         availability="not_permitted",
         workflow_runs={},
@@ -837,10 +676,9 @@ async def client_overview(
         content_publications={},
         reviews={},
     )
-    if scope.platform_administrator or await allowed(
-        session, principal, organization_id, request, "insights.read"
-    ):
-        summary = await InsightsService().summary(session, organization_id)
+    if organization_id in allowed["insights.read"]:
+        async with timer.section("insights"):
+            summary = await InsightsService().summary(session, organization_id)
         seo = summary.get("seo")
         growth = summary.get("growth")
         blocked = seo.get("opportunities_blocked") if isinstance(seo, dict) else None
@@ -857,9 +695,10 @@ async def client_overview(
             content_publications=count_map(summary.get("content_publications")),
             reviews=count_map(summary.get("reviews")),
         )
+    timer.log("overview", 1, str(request_correlation_id(request)))
     bundle.attention.sort(
         key=lambda a: (
-            {"critical": 0, "high": 1, "medium": 2}[a.severity],
+            SEVERITY_ORDER[a.severity],
             -(a.occurred_at.timestamp() if a.occurred_at else now.timestamp()),
         )
     )

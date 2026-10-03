@@ -75,6 +75,8 @@ const attention = z.object({
   severity: z.enum(["critical", "high", "medium"]),
   occurred_at: z.string().nullable(),
   reference: z.string().nullable(),
+  workflow_key: z.string().nullable().optional(),
+  failure_code: z.string().nullable().optional(),
 });
 const opportunity = z.object({
   id: uuid,

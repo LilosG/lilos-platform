@@ -121,13 +121,9 @@ createServer(async (req, res) => {
 
     if (url.searchParams.get("grant_type") === "refresh_token")
       return reply(
-        session(
-          parsed.refresh_token?.includes(ids.admin)
-            ? ids.admin
-            : parsed.refresh_token?.includes(ids.b)
-              ? ids.b
-              : ids.a,
-        ),
+        parsed.refresh_token?.includes(ids.admin)
+          ? session(ids.admin, "aal2")
+          : session(parsed.refresh_token?.includes(ids.b) ? ids.b : ids.a),
       );
     reviewStates.delete(ids.run);
     contentStates.delete(ids.run);
@@ -139,15 +135,20 @@ createServer(async (req, res) => {
     revision = ids.rev;
     approved = false;
     factors = [];
-    return reply(
-      session(
-        parsed.email === "a@example.test"
-          ? ids.a
-          : parsed.email === "admin@example.test"
-            ? ids.admin
-            : ids.b,
-      ),
-    );
+    if (parsed.email === "stepup@example.test") {
+      factors = [
+        {
+          id: ids.factor,
+          factor_type: "totp",
+          status: "verified",
+          friendly_name: "Synthetic authenticator",
+        },
+      ];
+      return reply(session(ids.admin, "aal1"));
+    }
+    if (parsed.email === "admin@example.test")
+      return reply(session(ids.admin, "aal2"));
+    return reply(session(parsed.email === "a@example.test" ? ids.a : ids.b));
   }
   if (url.pathname === "/auth/v1/user")
     return claims.sub

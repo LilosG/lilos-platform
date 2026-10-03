@@ -36,7 +36,8 @@ from apps.api.app.execution.models import (
 )
 from apps.api.app.execution.service import ExecutionService
 from apps.api.app.products.content.models import ContentPublication
-from apps.api.app.products.gbp.operations_service import GBPOperationsService
+from apps.api.app.products.gbp.operations_models import GBPPostPublication
+from apps.api.app.products.gbp.operations_service import GBPOperationsService, settlement_code
 from apps.api.app.products.reviews.models import ReviewResponseRevision
 from apps.api.app.products.reviews.publish_handler import VERIFY_ONLY_SAFE_ERRORS
 from apps.api.app.products.reviews.service import ReviewService
@@ -251,6 +252,49 @@ async def settle_confirmed_review_replies(
             session, run, "reviews.publish_response", outcome
         )
         settled += 1
+    await session.flush()
+    return settled
+
+
+async def settle_unpublished_gbp_post_runs(
+    session: AsyncSession,
+    *,
+    limit: int = 200,
+) -> int:
+    """Settle failed or escalated publish runs whose post was retired.
+
+    A post Google does not show (`not_published`) or that an operator discarded or reposted is
+    finished: it will never be published by that run. The run is settled through the canonical
+    outcome path with a typed code, so it stops counting as a failure and is not mistaken for a
+    publication. Runs whose publication is still live are left alone.
+    """
+    rows = (
+        await session.execute(
+            select(WorkflowRun, GBPPostPublication)
+            .join(
+                GBPPostPublication,
+                (GBPPostPublication.organization_id == WorkflowRun.organization_id)
+                & (GBPPostPublication.workflow_run_id == WorkflowRun.id),
+            )
+            .join(WorkflowVersion, WorkflowVersion.id == WorkflowRun.workflow_version_id)
+            .join(WorkflowDefinition, WorkflowDefinition.id == WorkflowVersion.definition_id)
+            .where(
+                WorkflowDefinition.key == "gbp.publish_post",
+                WorkflowRun.status.in_(("failed", "escalated")),
+                GBPPostPublication.status.in_(("not_published", "discarded")),
+            )
+            .order_by(WorkflowRun.updated_at)
+            .with_for_update(skip_locked=True, of=WorkflowRun)
+            .limit(limit)
+        )
+    ).all()
+    settled = 0
+    for run, publication in rows:
+        code = settlement_code(publication.status, publication.safe_error_code)
+        if code is None:
+            continue
+        if await ExecutionService().settle_cancelled(session, run, "gbp.publish_post", code):
+            settled += 1
     await session.flush()
     return settled
 
@@ -776,6 +820,7 @@ async def reconcile_worker_state(
     async with sessions() as session, session.begin():
         workflows = await reconcile_exhausted_workflows(session)
         workflows += await settle_confirmed_review_replies(session)
+        workflows += await settle_unpublished_gbp_post_runs(session)
         workflows += await ReviewService().supersede_mismatched_responses(session)
         crawl_runs = await reconcile_orphaned_crawl_runs(session)
 

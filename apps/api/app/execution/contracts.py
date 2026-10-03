@@ -23,7 +23,7 @@ class JobClaim(BaseModel):
 
 class JobOutcome(BaseModel):
     model_config = ConfigDict(frozen=True)
-    result: Literal["succeeded", "retryable_failure", "permanent_failure", "ambiguous"]
+    result: Literal["succeeded", "retryable_failure", "permanent_failure", "ambiguous", "cancelled"]
     result_reference: str | None = Field(default=None, max_length=500)
     safe_error: str | None = Field(default=None, max_length=500)
 

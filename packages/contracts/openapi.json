@@ -393,6 +393,17 @@
             "title": "Code",
             "type": "string"
           },
+          "failure_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Code"
+          },
           "occurred_at": {
             "anyOf": [
               {
@@ -437,6 +448,17 @@
             ],
             "title": "Severity",
             "type": "string"
+          },
+          "workflow_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Key"
           }
         },
         "required": [

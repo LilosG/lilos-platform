@@ -16,7 +16,7 @@ from apps.api.app.audit.metadata import JsonValue
 from apps.api.app.audit.repository import AuditEventRepository
 from apps.api.app.audit.service import AuditEventService
 from apps.api.app.config import Settings
-from apps.api.app.execution.models import Job, JobAttempt
+from apps.api.app.execution.models import Job, JobAttempt, WorkflowRun
 from apps.api.app.execution.service import ExecutionService
 from apps.api.app.integrations.errors import IntegrationReconnectRequiredError
 from apps.api.app.notifications.models import NotificationTemplate
@@ -93,6 +93,19 @@ AMBIGUOUS_POST_CODES = frozenset(
 POST_NOT_ON_GOOGLE = "POST_NOT_ON_GOOGLE"
 POST_REPOSTED = "REPOSTED_AS_NEW_REVISION"
 POST_DISCARDED = "DISCARDED_BY_OPERATOR"
+# Typed codes a publish run is settled with once its post is retired (see settle_publication_run).
+GBP_POST_NOT_PUBLISHED = "GBP_POST_NOT_PUBLISHED"
+GBP_POST_DISCARDED = "GBP_POST_DISCARDED"
+GBP_POST_REPOSTED = "GBP_POST_REPOSTED"
+
+
+def settlement_code(status: str, safe_error_code: str | None) -> str | None:
+    """The run-settlement code for a retired publication, or None when it is still live."""
+    if status == "not_published":
+        return GBP_POST_NOT_PUBLISHED
+    if status == "discarded":
+        return GBP_POST_REPOSTED if safe_error_code == POST_REPOSTED else GBP_POST_DISCARDED
+    return None
 
 
 @dataclass(frozen=True, slots=True)
@@ -1211,6 +1224,7 @@ class GBPOperationsService:
             return "published"
         publication.status = "not_published"
         publication.safe_error_code = POST_NOT_ON_GOOGLE
+        await self._settle_publication_run(session, publication)
         await self._audit(
             session,
             event="gbp.post.auto_reconciled_not_published",
@@ -1224,6 +1238,17 @@ class GBPOperationsService:
             metadata={"previous_code": "PROVIDER_WRITE_AMBIGUOUS"},
         )
         return "not_published"
+
+    async def _settle_publication_run(
+        self, session: AsyncSession, publication: GBPPostPublication
+    ) -> None:
+        """Settle the escalated publish run of a retired post through the canonical outcome path."""
+        code = settlement_code(publication.status, publication.safe_error_code)
+        if code is None:
+            return
+        run = await session.get(WorkflowRun, publication.workflow_run_id)
+        if run is not None and run.organization_id == publication.organization_id:
+            await self.execution.settle_cancelled(session, run, "gbp.publish_post", code)
 
     async def _park_ambiguous_post(
         self,
@@ -1327,6 +1352,7 @@ class GBPOperationsService:
             )
         publication.status = "discarded"
         publication.safe_error_code = POST_REPOSTED
+        await self._settle_publication_run(session, publication)
         await session.flush()
         await self._audit(
             session,
@@ -1368,6 +1394,7 @@ class GBPOperationsService:
             raise GBPPostPublicationNotActionableError
         publication.status = "discarded"
         publication.safe_error_code = POST_DISCARDED
+        await self._settle_publication_run(session, publication)
         await session.flush()
         await self._audit(
             session,
