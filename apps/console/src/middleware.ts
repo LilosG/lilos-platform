@@ -58,6 +58,31 @@ export const onRequest = defineMiddleware(async (context, next) => {
     );
     const publicRoute =
       url.pathname === "/login/" || url.pathname.startsWith("/auth/");
+    // A password-only session for a user with a verified authenticator must step up
+    // before any page, shell or BFF call. Checked on every request, never cached.
+    if (
+      locals.token &&
+      !publicRoute &&
+      url.pathname !== "/mfa/" &&
+      url.pathname !== "/mfa"
+    ) {
+      const { data: assurance, error: assuranceError } =
+        await locals.auth.client.auth.mfa.getAuthenticatorAssuranceLevel();
+      if (assuranceError) throw new Error("MFA_STATE_UNAVAILABLE");
+      if (assurance.currentLevel === "aal1" && assurance.nextLevel === "aal2") {
+        return finish(
+          url.pathname.startsWith("/api/")
+            ? new Response(JSON.stringify({ code: "MFA_REQUIRED" }), {
+                status: 403,
+                headers: { "Content-Type": "application/json" },
+              })
+            : context.redirect(
+                `/mfa/?return=${encodeURIComponent(url.pathname + url.search)}`,
+                303,
+              ),
+        );
+      }
+    }
     if (!publicRoute && !locals.token) {
       return finish(
         url.pathname.startsWith("/api/")
