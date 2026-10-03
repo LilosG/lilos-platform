@@ -1,0 +1,16 @@
+{
+  "exceptions": [
+    {
+      "ghsa": "GHSA-ch52-4w7c-c8xp",
+      "package": "http-cache-semantics",
+      "reason": "Astro uses http-cache-semantics only for build-time remote image caching; no shared cache of authenticated responses.",
+      "expires": "2026-11-02"
+    },
+    {
+      "ghsa": "GHSA-vfj7-8cjw-p6xm",
+      "package": "braces",
+      "reason": "Reached only through stylelint, a dev-only linter that globs repository files; never processes untrusted input.",
+      "expires": "2026-11-02"
+    }
+  ]
+}
