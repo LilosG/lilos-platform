@@ -312,6 +312,17 @@ class SEOSearchObservation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "dimension_hash",
             name="uq_seo_search_observation",
         ),
+        # Reporting reads the site summary of a property by window; without this the portfolio
+        # read scans every observation (daily, top-query and top-page rows included).
+        Index(
+            "ix_seo_search_observations_site_summary_window",
+            "search_property_id",
+            text("date_end DESC"),
+            postgresql_where=text(
+                "(dimensions ->> 'observation_type') = 'site_summary' "
+                "AND quality_status IN ('valid', 'zero')"
+            ),
+        ),
         Index(
             "ix_seo_search_observations_org_website_page_date_end",
             "organization_id",
