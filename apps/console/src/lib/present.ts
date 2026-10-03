@@ -146,11 +146,15 @@ export interface AttentionLike {
   severity: "critical" | "high" | "medium";
   reference: string | null;
   occurred_at: string | null;
+  workflow_key?: string | null;
+  failure_code?: string | null;
 }
 export function attentionView(item: AttentionLike) {
   const copy = attentionCopy[item.code] ?? fallbackAttention;
-  const workflow = item.reference?.split(":", 1)[0] ?? "";
+  const workflow = item.workflow_key ?? "";
   return {
+    workflow: workflow ? workflowNoun(workflow) : null,
+    failureCode: item.failure_code ?? null,
     title: copy.title(workflow ? workflowNoun(workflow) : "Workflow"),
     impact: copy.impact,
     next: copy.next,

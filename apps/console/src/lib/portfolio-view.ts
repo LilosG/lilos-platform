@@ -34,6 +34,9 @@ export interface AttentionRow {
   clientHref: string;
   actionHref: string;
   time: string;
+  /** What failed, from the typed workflow key and failure code. */
+  workflow: string | null;
+  failureCode: string | null;
 }
 export function attentionRows(items: Attention[], now: Date): AttentionRow[] {
   return items.map((item, index) => {
@@ -49,6 +52,8 @@ export function attentionRows(items: Attention[], now: Date): AttentionRow[] {
       clientHref: clientRoute(item.organization_slug),
       actionHref: `/clients/${item.organization_slug}/${view.area}/`,
       time: item.occurred_at ? when(item.occurred_at, now) : "Open",
+      workflow: view.workflow,
+      failureCode: view.failureCode,
     };
   });
 }

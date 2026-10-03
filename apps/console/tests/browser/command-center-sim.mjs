@@ -88,7 +88,7 @@ function rows(ids) {
       category: null,
       location_count: 0,
       organic_sessions: missing("ga4", "not_permitted"),
-      leads: missing("leads", "not_permitted"),
+      leads: missing("leads", "not_connected"),
       reviews: {
         availability: "no_data",
         total: null,
@@ -125,6 +125,8 @@ const attention = (row) =>
           severity: "high",
           occurred_at: now(),
           reference: "gbp.publish_post:PROVIDER_REJECTED",
+          workflow_key: "gbp.publish_post",
+          failure_code: "PROVIDER_REJECTED",
         },
       ];
 const opportunities = (row) =>
@@ -183,9 +185,13 @@ const window = (days) => ({
 export function commandCenter(url, claims, ids) {
   const match = url.pathname.match(/^\/api\/v1\/command-center\/(.*)$/);
   if (!match) return null;
-  const admin = claims.sub === ids.admin;
+  const admin = claims.sub === ids.admin && claims.aal === "aal2";
   const all = rows(ids);
-  const visibleIds = admin ? [ids.a, ids.b, gamma] : [claims.sub];
+  const visibleIds = admin
+    ? [ids.a, ids.b, gamma]
+    : claims.sub === ids.admin
+      ? []
+      : [claims.sub];
   if (!admin && !all[claims.sub])
     return { status: 404, body: { code: "NOT_FOUND" } };
   const access = (id) =>

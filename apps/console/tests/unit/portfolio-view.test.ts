@@ -113,6 +113,27 @@ describe("missing data is never shown as a number", () => {
     const shown = show({ ...missing("available"), availability: "available" });
     expect(shown.text).toBe("No data");
   });
+  it("leads without an active source read Not connected, never 0", () => {
+    const view = clientRowView(
+      row({ leads: missing("not_connected", "leads") }),
+      now,
+    );
+    expect(view.leads.text).toBe("Not connected");
+    expect(view.leads.state).toBe("not_connected");
+    expect(view.leadsDelta).toBeNull();
+    const totals = portfolioMetrics({
+      totals: {
+        website_leads: missing("not_connected", "leads"),
+        organic_sessions: missing("not_connected"),
+        new_reviews: null,
+        average_rating: null,
+        reporting_attention: 0,
+        local_visibility: missing("not_tracked", "rank_scan"),
+      },
+    } as never);
+    expect(totals[1].value).toBe("Not connected");
+    expect(totals[1].missing).toBe(true);
+  });
   it("local visibility and rank are not tracked on every client row", () => {
     const view = clientRowView(row(), now);
     expect(view.visibility.text).toBe("Not tracked");
@@ -159,6 +180,8 @@ describe("typed codes, not sentences", () => {
           severity: "high",
           occurred_at: now.toISOString(),
           reference: "gbp.publish_post:PROVIDER_REJECTED",
+          workflow_key: "gbp.publish_post",
+          failure_code: "PROVIDER_REJECTED",
         },
         {
           organization_id: org,
@@ -173,6 +196,8 @@ describe("typed codes, not sentences", () => {
       now,
     );
     expect(rows[0].title).toBe("Google post publishing failed");
+    expect(rows[0].workflow).toBe("Google post publishing");
+    expect(rows[0].failureCode).toBe("PROVIDER_REJECTED");
     expect(rows[0].actionHref).toBe("/clients/park101-carlsbad/automations/");
     expect(rows[1].title).toBe("Attention needed");
     expect(rows[1].time).toBe("Open");

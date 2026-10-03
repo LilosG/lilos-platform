@@ -27,6 +27,19 @@ const label = a.severityLabel;
       >
     </p>
     <p>{a.impact}</p>
+    {
+      a.workflow && (
+        <p>
+          <b>What failed:</b> {a.workflow}
+          {a.failureCode && (
+            <Fragment>
+              {" "}
+              · <code>{a.failureCode}</code>
+            </Fragment>
+          )}
+        </p>
+      )
+    }
     <h3>Recommended next action</h3>
     <p>{a.next}</p>
   </div>
