@@ -1,0 +1,128 @@
+---
+import type { HoursRow } from "../../lib/gbp-view";
+import SectionHeading from "../ui/SectionHeading.astro";
+import StatusBadge from "../ui/StatusBadge.astro";
+import EmptyState from "../ui/EmptyState.astro";
+interface Props {
+  rows: HoursRow[];
+  canPropose: boolean;
+  canApprove: boolean;
+  verifyHref: string;
+}
+const { rows, canPropose, canApprove, verifyHref } = Astro.props;
+---
+
+<section class="panel">
+  <SectionHeading>
+    <Fragment slot="title">
+      Special hours <span class="count">{rows.length}</span>
+    </Fragment>
+    <Fragment slot="actions">
+      {
+        canPropose && (
+          <button
+            type="button"
+            class="control primary"
+            data-dialog="hours-dialog"
+          >
+            Add special hours
+          </button>
+        )
+      }
+    </Fragment>
+  </SectionHeading>
+  {
+    !canApprove &&
+      rows.some((row) => row.chip.label === "Awaiting approval") && (
+        <div class="insight">
+          Approving needs a verified authenticator.{" "}
+          <a class="link" href={verifyHref}>
+            Verify to approve
+          </a>
+        </div>
+      )
+  }
+  {
+    rows.length ? (
+      rows.map((row) => (
+        <div class="listrow" data-hours={row.id}>
+          <div>
+            <b>{row.date}</b>
+            <small>{row.times}</small>
+          </div>
+          <div class="rowactions">
+            <StatusBadge text={row.chip.label} tone={row.chip.tone} />
+            {row.actions.map((action) => (
+              <button
+                type="button"
+                class:list={["control", { primary: action === "approve" }]}
+                data-gbp-action={`hours-${action}`}
+                data-id={row.id}
+              >
+                {action === "approve" ? "Approve" : "Reject"}
+              </button>
+            ))}
+          </div>
+        </div>
+      ))
+    ) : (
+      <EmptyState title="No special hours yet">
+        Holidays and events change opening times. Add them so Google shows the
+        right hours.
+        {canPropose && (
+          <button
+            slot="action"
+            type="button"
+            class="control primary"
+            data-dialog="hours-dialog"
+          >
+            Add special hours
+          </button>
+        )}
+      </EmptyState>
+    )
+  }
+</section>
+<dialog
+  id="hours-dialog"
+  aria-labelledby="hours-dialog-title"
+  data-shell-dialog
+  data-gbp-dialog="hours"
+>
+  <form data-gbp-form="hours" class="formgrid">
+    <div class="panelhead">
+      <span class="muted">Google Business Profile</span>
+      <button type="button" class="close" aria-label="Close" data-close
+        >×</button
+      >
+    </div>
+    <div class="body formgrid">
+      <div>
+        <div class="eyebrow">Special hours</div>
+        <h2 id="hours-dialog-title">Add special hours</h2>
+      </div>
+      <div class="field">
+        <label for="hours-date">Date</label>
+        <input id="hours-date" name="service_date" type="date" required />
+      </div>
+      <div class="formgrid">
+        <div class="field">
+          <label for="hours-opens">Opens</label>
+          <input id="hours-opens" name="opens" type="time" value="09:00" />
+        </div>
+        <div class="field">
+          <label for="hours-closes">Closes</label>
+          <input id="hours-closes" name="closes" type="time" value="17:00" />
+        </div>
+      </div>
+      <p class="hint">
+        The hours are sent for approval before anything reaches Google.
+      </p>
+      <p class="formstatus" role="alert" data-form-status></p>
+    </div>
+    <div class="dialogfoot">
+      <button type="button" class="control" data-close>Cancel</button>
+      <button type="submit" class="control primary">Save for approval</button>
+    </div>
+  </form>
+</dialog>

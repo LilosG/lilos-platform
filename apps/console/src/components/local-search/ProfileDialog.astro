@@ -1,0 +1,78 @@
+---
+interface Props {
+  /** Today's value for each editable field, so the person sees what will change. */
+  current: Record<"description" | "phone" | "website", string>;
+}
+const { current } = Astro.props;
+const fields = [
+  ["description", "Business description", "textarea"],
+  ["phone", "Phone number", "tel"],
+  ["website", "Website address", "url"],
+] as const;
+---
+
+<dialog
+  id="profile-dialog"
+  aria-labelledby="profile-dialog-title"
+  data-shell-dialog
+  data-gbp-dialog="profile"
+>
+  <form data-gbp-form="profile" class="formgrid">
+    <div class="panelhead">
+      <span class="muted">Google Business Profile</span>
+      <button type="button" class="close" aria-label="Close" data-close
+        >×</button
+      >
+    </div>
+    <div class="body formgrid">
+      <div>
+        <div class="eyebrow">Profile change</div>
+        <h2 id="profile-dialog-title">Edit a profile detail</h2>
+      </div>
+      <div class="field">
+        <label for="profile-field">What to change</label>
+        <select id="profile-field" name="field" data-profile-field>
+          {fields.map(([key, label]) => <option value={key}>{label}</option>)}
+        </select>
+      </div>
+      {
+        fields.map(([key, , kind]) => (
+          <div hidden={key !== "description"} data-profile-pane={key}>
+            <div class="field">
+              <label for={`profile-${key}`}>New value</label>
+              {kind === "textarea" ? (
+                <textarea
+                  id={`profile-${key}`}
+                  name={key}
+                  rows="5"
+                  maxlength="750"
+                  aria-describedby={`profile-${key}-today`}
+                />
+              ) : (
+                <input
+                  id={`profile-${key}`}
+                  name={key}
+                  type={kind}
+                  maxlength="750"
+                  aria-describedby={`profile-${key}-today`}
+                />
+              )}
+              <span class="hint" id={`profile-${key}-today`}>
+                Today: {current[key] || "Not set"}
+              </span>
+            </div>
+          </div>
+        ))
+      }
+      <p class="hint">
+        The change is sent for approval first. Google is updated only after it
+        is approved.
+      </p>
+      <p class="formstatus" role="alert" data-form-status></p>
+    </div>
+    <div class="dialogfoot">
+      <button type="button" class="control" data-close>Cancel</button>
+      <button type="submit" class="control primary">Send for approval</button>
+    </div>
+  </form>
+</dialog>

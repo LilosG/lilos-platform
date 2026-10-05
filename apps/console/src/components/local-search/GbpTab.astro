@@ -1,0 +1,162 @@
+---
+import type { GbpTabData, GbpViewKey } from "../../lib/gbp-view";
+import { GBP_VIEWS, photoRows, hoursRows, postRows } from "../../lib/gbp-view";
+import EmptyState from "../ui/EmptyState.astro";
+import ErrorState from "../ui/ErrorState.astro";
+import GbpPerformance from "./GbpPerformance.astro";
+import GbpPosts from "./GbpPosts.astro";
+import GbpPhotos from "./GbpPhotos.astro";
+import GbpSpecialHours from "./GbpSpecialHours.astro";
+import GbpProfile from "./GbpProfile.astro";
+import PostDialog from "./PostDialog.astro";
+interface Props {
+  data: GbpTabData;
+  days: number;
+  /** Links that keep the period, website and location while the view changes. */
+  href: (view: GbpViewKey, location?: string) => string;
+  integrationsHref: string;
+}
+const { data, days, href, integrationsHref } = Astro.props;
+const selected = data.selected;
+const detail = data.detail;
+const can = {
+  canApprove: detail?.can_approve ?? false,
+  canPublish: detail?.can_publish ?? false,
+  canPropose: detail?.can_propose ?? false,
+  canWrite: selected?.writeEnabled ?? false,
+};
+---
+
+{
+  !selected ? (
+    <section class="panel">
+      <EmptyState title="No Business Profile is connected">
+        Confirm a Google Business Profile in Integrations to manage posts,
+        photos and hours here, and to see how people find the business on
+        Google.
+        <a slot="action" class="control primary" href={integrationsHref}>
+          Open Integrations
+        </a>
+      </EmptyState>
+    </section>
+  ) : (
+    <div
+      data-gbp
+      data-org={data.organizationId}
+      data-location={selected.locationId}
+      data-profile={selected.gbpId}
+    >
+      <div class="toolbar nopad">
+        <nav class="subtabs" aria-label="Business Profile sections">
+          {GBP_VIEWS.map(([label, key]) => (
+            <a
+              href={href(key)}
+              class:list={{ active: data.view === key }}
+              aria-current={data.view === key ? "page" : undefined}
+            >
+              {label}
+            </a>
+          ))}
+        </nav>
+        {data.locations.length > 1 && (
+          <select
+            aria-label="Business Profile location"
+            data-query-select="location"
+          >
+            {data.locations.map((place) => (
+              <option
+                value={place.locationId}
+                selected={place.locationId === selected.locationId}
+              >
+                {place.name}
+              </option>
+            ))}
+          </select>
+        )}
+      </div>
+      <p class="formstatus" role="status" aria-live="polite" data-gbp-status />
+      {data.view === "performance" ? (
+        data.performance ? (
+          <GbpPerformance
+            perf={data.performance}
+            days={days}
+            integrationsHref={integrationsHref}
+          />
+        ) : (
+          <ErrorState title="Performance could not be loaded">
+            Refresh to try again. Nothing is estimated in its place.
+            <a slot="action" class="control" href={href("performance")}>
+              Try again
+            </a>
+          </ErrorState>
+        )
+      ) : data.view === "posts" ? (
+        detail ? (
+          <Fragment>
+            <GbpPosts
+              rows={postRows(detail, can)}
+              canPropose={can.canPropose}
+              canApprove={can.canApprove}
+              verifyHref={data.verifyHref}
+              writeEnabled={can.canWrite}
+            />
+            {can.canPropose && <PostDialog />}
+          </Fragment>
+        ) : (
+          <ErrorState title="Posts could not be loaded">
+            Refresh to try again.
+            <a slot="action" class="control" href={href("posts")}>
+              Try again
+            </a>
+          </ErrorState>
+        )
+      ) : data.view === "photos" ? (
+        data.media ? (
+          <GbpPhotos
+            rows={photoRows(data.media, can)}
+            canPropose={can.canPropose}
+            canApprove={can.canApprove}
+            verifyHref={data.verifyHref}
+          />
+        ) : (
+          <ErrorState title="Photos could not be loaded">
+            Refresh to try again.
+            <a slot="action" class="control" href={href("photos")}>
+              Try again
+            </a>
+          </ErrorState>
+        )
+      ) : data.view === "special-hours" ? (
+        data.hours ? (
+          <GbpSpecialHours
+            rows={hoursRows(data.hours, can.canApprove)}
+            canPropose={can.canPropose}
+            canApprove={can.canApprove}
+            verifyHref={data.verifyHref}
+          />
+        ) : (
+          <ErrorState title="Special hours could not be loaded">
+            Refresh to try again.
+            <a slot="action" class="control" href={href("special-hours")}>
+              Try again
+            </a>
+          </ErrorState>
+        )
+      ) : detail ? (
+        <GbpProfile
+          data={data}
+          canPropose={can.canPropose}
+          canApprove={can.canApprove}
+        />
+      ) : (
+        <ErrorState title="The profile could not be loaded">
+          Refresh to try again.
+          <a slot="action" class="control" href={href("profile")}>
+            Try again
+          </a>
+        </ErrorState>
+      )}
+      <script>import "../../lib/gbp-actions";</script>
+    </div>
+  )
+}

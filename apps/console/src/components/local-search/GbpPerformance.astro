@@ -1,0 +1,220 @@
+---
+import type { GbpPerformanceView } from "../../adapters/gbp";
+import {
+  dailyCharts,
+  impressionSplits,
+  keywordMonth,
+  keywordRows,
+  performancePeriod,
+  performanceSource,
+  performanceTiles,
+} from "../../lib/gbp-view";
+import MetricStrip from "../ui/MetricStrip.astro";
+import SectionHeading from "../ui/SectionHeading.astro";
+import StatusBadge from "../ui/StatusBadge.astro";
+import EmptyState from "../ui/EmptyState.astro";
+import DataTable from "../ui/DataTable.astro";
+import VisibilityChart from "./VisibilityChart.astro";
+interface Props {
+  perf: GbpPerformanceView;
+  days: number;
+  integrationsHref: string;
+}
+const { perf, days, integrationsHref } = Astro.props;
+const source = performanceSource(perf);
+const waiting =
+  perf.availability === "not_connected" ||
+  perf.availability === "not_synced" ||
+  perf.availability === "no_data";
+const tiles = waiting ? null : performanceTiles(perf, days);
+const charts = waiting ? null : dailyCharts(perf);
+const splits = waiting ? [] : impressionSplits(perf);
+const keywords = keywordRows(perf);
+const month = keywordMonth(perf);
+---
+
+<div class="pagehead compact" data-gbp-performance>
+  <div class="chipwrap">
+    <span class="muted">{performancePeriod(perf)}</span>
+    <button
+      type="button"
+      class="statuschip"
+      data-dialog="gbp-source"
+      aria-label={`Data status: ${source.chip.label}. Open details`}
+    >
+      <StatusBadge text={source.chip.label} tone={source.chip.tone} />
+    </button>
+  </div>
+</div>
+{
+  perf.availability === "not_connected" ? (
+    <section class="panel">
+      <EmptyState title="Business Profile is not connected">
+        Connect and confirm this profile to see how people find and contact the
+        business on Google.
+        <a slot="action" class="control primary" href={integrationsHref}>
+          Open Integrations
+        </a>
+      </EmptyState>
+    </section>
+  ) : perf.availability === "not_synced" ? (
+    <section class="panel">
+      <EmptyState title="First sync scheduled">
+        Google Business Profile performance appears here after the first sync
+        completes. Nothing is estimated in the meantime.
+      </EmptyState>
+    </section>
+  ) : perf.availability === "no_data" ? (
+    <section class="panel">
+      <EmptyState title="No activity reported for this period">
+        Google reported no profile activity for these dates. Try a longer
+        period.
+      </EmptyState>
+    </section>
+  ) : (
+    <Fragment>
+      <MetricStrip items={[tiles!.views, ...tiles!.actions]} />
+      {tiles!.optional.length > 0 && (
+        <MetricStrip
+          items={tiles!.optional}
+          columns={tiles!.optional.length >= 4 ? 4 : 3}
+        />
+      )}
+      <div class="splitgrid">
+        <section class="panel">
+          <SectionHeading>
+            <Fragment slot="title">Profile views per day</Fragment>
+          </SectionHeading>
+          {charts!.impressions ? (
+            <div class="chartbody">
+              <VisibilityChart
+                chart={charts!.impressions}
+                label="Daily profile views across the selected period"
+              />
+            </div>
+          ) : (
+            <EmptyState title="Not enough days to chart">
+              A trend appears once at least two days have synced.
+            </EmptyState>
+          )}
+        </section>
+        <section class="panel">
+          <SectionHeading>
+            <Fragment slot="title">Actions per day</Fragment>
+          </SectionHeading>
+          {charts!.actions ? (
+            <div class="chartbody">
+              <VisibilityChart
+                chart={charts!.actions}
+                label="Daily calls, website clicks and direction requests"
+              />
+              <div class="legend">
+                <span>
+                  <i />
+                  Calls, website clicks and directions
+                </span>
+              </div>
+            </div>
+          ) : (
+            <EmptyState title="Not enough days to chart">
+              A trend appears once at least two days have synced.
+            </EmptyState>
+          )}
+        </section>
+      </div>
+      {splits.length > 0 && (
+        <div class="splitgrid">
+          {splits.map((split) => (
+            <section class="panel">
+              <SectionHeading>
+                <Fragment slot="title">{split.title}</Fragment>
+              </SectionHeading>
+              <div class="chartbody">
+                {split.rows.map((row) => (
+                  <div class="splitrow">
+                    <div>
+                      <span>{row.label}</span>
+                      <b>
+                        {row.value} · {row.share}%
+                      </b>
+                    </div>
+                    <div class="splitbar">
+                      <i style={`width:${row.share}%`} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+      )}
+    </Fragment>
+  )
+}
+{
+  perf.availability !== "not_connected" && (
+    <section class="panel tablewrap">
+      <SectionHeading>
+        <Fragment slot="title">How people searched for the business</Fragment>
+        <Fragment slot="actions">
+          <span class="muted">{month || "Monthly"}</span>
+        </Fragment>
+      </SectionHeading>
+      {keywords.length ? (
+        <DataTable>
+          <thead>
+            <tr>
+              <th scope="col">Search term</th>
+              <th class="num" scope="col">
+                Times shown
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {keywords.map((row) => (
+              <tr>
+                <td>{row.keyword}</td>
+                <td class="num">{row.value}</td>
+              </tr>
+            ))}
+          </tbody>
+        </DataTable>
+      ) : (
+        <EmptyState title="No search terms yet">
+          Google reports search terms once a month, after the first sync.
+        </EmptyState>
+      )}
+      <div class="insight">
+        For rare searches Google reports a limit such as “&lt; 15” instead of a
+        count. That is shown as the limit, never as zero.
+      </div>
+    </section>
+  )
+}
+<dialog id="gbp-source" aria-labelledby="gbp-source-title" data-shell-dialog>
+  <div class="panelhead">
+    <span class="muted">Google Business Profile</span>
+    <button type="button" class="close" aria-label="Close details" data-close>
+      ×
+    </button>
+  </div>
+  <div class="body">
+    <h2 id="gbp-source-title">Data status</h2>
+    <div class="listrow">
+      <div>
+        Performance data
+        <small>{source.detail}</small>
+      </div>
+      <StatusBadge text={source.chip.label} tone={source.chip.tone} />
+    </div>
+    <div class="listrow">
+      <div>
+        Period
+        <small>{performancePeriod(perf)}</small>
+      </div>
+    </div>
+  </div>
+  <div class="dialogfoot">
+    <button type="button" class="control" data-close>Close</button>
+  </div>
+</dialog>

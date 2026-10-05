@@ -1,0 +1,52 @@
+---
+interface Props {
+  /** Characters Google accepts in one post. */
+  limit?: number;
+}
+const { limit = 1500 } = Astro.props;
+---
+
+<dialog
+  id="post-dialog"
+  aria-labelledby="post-dialog-title"
+  data-shell-dialog
+  data-gbp-dialog="post"
+>
+  <form data-gbp-form="post" class="formgrid">
+    <div class="panelhead">
+      <span class="muted">Google Business Profile</span>
+      <button type="button" class="close" aria-label="Close" data-close
+        >×</button
+      >
+    </div>
+    <div class="body formgrid">
+      <div>
+        <div class="eyebrow" data-post-eyebrow>New post</div>
+        <h2 id="post-dialog-title" data-post-title>Write a Google post</h2>
+      </div>
+      <div class="field">
+        <label for="post-content">Post copy</label>
+        <textarea
+          id="post-content"
+          name="content"
+          rows="6"
+          maxlength={limit}
+          required
+          aria-describedby="post-count"
+          data-post-content></textarea>
+        <span class="hint" id="post-count">
+          <span data-post-count>0</span> of {limit} characters
+        </span>
+      </div>
+      <p class="hint">
+        Saving sends the post for approval. Nothing is published to Google until
+        it is approved and published.
+      </p>
+      <p class="formstatus" role="alert" data-form-status></p>
+    </div>
+    <div class="dialogfoot">
+      <button type="button" class="control" data-close>Cancel</button>
+      <button type="submit" class="control primary">Save for approval</button>
+    </div>
+  </form>
+</dialog>
