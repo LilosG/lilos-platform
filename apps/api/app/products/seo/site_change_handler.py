@@ -31,6 +31,7 @@ from apps.api.app.products.seo.change_set import SiteChangeSet
 from apps.api.app.products.seo.errors import SEOSiteMappingRequiredError
 from apps.api.app.products.seo.models import SEOPage, SEORecommendationRevision
 from apps.api.app.products.seo.site_change_codes import SiteChangeCode
+from apps.api.app.products.seo.site_change_service import live_change_superseding
 from apps.api.app.products.seo.site_map_resolver import (
     SiteMapLocator,
     apply_change,
@@ -90,6 +91,17 @@ async def handle_seo_apply_site_change(
             publication,
             SiteChangeCode.SITE_CHANGE_FINGERPRINT_MISMATCH,
             "change set differs from the approved fingerprint",
+        )
+
+    # A publication reserved before a newer change went live must not roll the page back.
+    if publication.status == "reserved" and await live_change_superseding(
+        session, organization_id, revision, change_set
+    ):
+        return await _permanent(
+            session,
+            publication,
+            SiteChangeCode.SUPERSEDED_BY_LIVE_CHANGE,
+            "a newer change to the same page field is already live",
         )
 
     context = await load_publishing_context(session, organization_id, publication)

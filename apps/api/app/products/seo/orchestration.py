@@ -14,8 +14,9 @@ from datetime import UTC, datetime
 from typing import Literal
 from uuid import UUID
 
-from sqlalchemy import or_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from apps.api.app.config import Settings
 from apps.api.app.products.content.contracts import OpportunityCreate
@@ -901,13 +902,101 @@ class SEOOrchestrationService:
             archived += 1
         return archived
 
+    async def supersede_by_live_change(
+        self, session: AsyncSession, *, correlation_id: str, limit: int = 100
+    ) -> int:
+        """Close open opportunities whose newer duplicate already has its change live.
+
+        A duplicate shares organization, type and query, and either the target page or the
+        older one has no page yet (a query-only row its attributed successor replaces).
+        Closing goes through `archive_opportunity`, so every unpublished revision is
+        withdrawn and audited. Work whose publication is underway is left alone.
+        """
+        sibling = aliased(SEOOpportunity)
+        verified_sibling = (
+            select(ContentPublication.id)
+            .join(
+                SEORecommendationRevision,
+                SEORecommendationRevision.id == ContentPublication.seo_recommendation_revision_id,
+            )
+            .where(
+                SEORecommendationRevision.opportunity_id == sibling.id,
+                ContentPublication.organization_id == sibling.organization_id,
+                ContentPublication.publication_kind == "site_change",
+                ContentPublication.status == "verified",
+            )
+            .exists()
+        )
+        pairs = (
+            await session.execute(
+                select(SEOOpportunity, sibling.id)
+                .join(
+                    sibling,
+                    and_(
+                        sibling.organization_id == SEOOpportunity.organization_id,
+                        sibling.opportunity_type == SEOOpportunity.opportunity_type,
+                        sibling.id != SEOOpportunity.id,
+                        sibling.created_at > SEOOpportunity.created_at,
+                        sibling.evidence["query"].as_string()
+                        == SEOOpportunity.evidence["query"].as_string(),
+                        or_(
+                            SEOOpportunity.page_id.is_(None),
+                            sibling.page_id == SEOOpportunity.page_id,
+                        ),
+                    ),
+                )
+                .where(
+                    SEOOpportunity.active_marker == "active",
+                    SEOOpportunity.status.in_(("identified", "recommended", "approved")),
+                    SEOOpportunity.evidence["query"].as_string().is_not(None),
+                    verified_sibling,
+                )
+                .order_by(SEOOpportunity.created_at, sibling.created_at.desc())
+                .limit(limit)
+            )
+        ).all()
+        closed: set[UUID] = set()
+        for opportunity, live_id in pairs:
+            if opportunity.id in closed:
+                continue
+            # An implementation task that never produced a publication is unpublished work;
+            # only a publication that is underway or live is left alone.
+            started = await session.scalar(
+                select(ContentPublication.id)
+                .join(
+                    SEORecommendationRevision,
+                    SEORecommendationRevision.id
+                    == ContentPublication.seo_recommendation_revision_id,
+                )
+                .where(
+                    SEORecommendationRevision.opportunity_id == opportunity.id,
+                    ContentPublication.organization_id == opportunity.organization_id,
+                    ContentPublication.status.not_in(("failed", "checks_failed", "rolled_back")),
+                )
+                .limit(1)
+            )
+            if started is not None:
+                continue
+            await self.archive_opportunity(
+                session,
+                opportunity.organization_id,
+                opportunity,
+                reason="SUPERSEDED_BY_LIVE_CHANGE",
+                superseded_by=live_id,
+                correlation_id=correlation_id,
+            )
+            closed.add(opportunity.id)
+        return len(closed)
+
     async def archive_opportunity(
         self,
         session: AsyncSession,
         organization_id: UUID,
         opportunity: SEOOpportunity,
         *,
-        reason: Literal["stale", "superseded", "legacy_approval_superseded"],
+        reason: Literal[
+            "stale", "superseded", "legacy_approval_superseded", "SUPERSEDED_BY_LIVE_CHANGE"
+        ],
         superseded_by: UUID | None,
         correlation_id: str,
     ) -> None:
