@@ -113,6 +113,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/command-center/opportunities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Portfolio Opportunities
+         * @description Every opportunity kind across the clients the caller may open, one set-based read.
+         */
+        get: operations["portfolio_opportunities_api_v1_command_center_opportunities_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/command-center/portfolio": {
         parameters: {
             query?: never;
@@ -5783,6 +5803,29 @@ export interface components {
             /** Status */
             status: string;
         };
+        /** ContentItemView */
+        ContentItemView: {
+            /** Content Type */
+            content_type: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Status */
+            status: string;
+            /** Title */
+            title: string;
+        };
+        /** ContentOpportunityView */
+        ContentOpportunityView: {
+            /** Items */
+            items: components["schemas"]["ContentItemView"][];
+            /** Opportunity Type */
+            opportunity_type: string;
+            /** Target Reference */
+            target_reference: string;
+        };
         /** ContentPublicationView */
         ContentPublicationView: {
             /** Approved Head Sha */
@@ -6157,6 +6200,27 @@ export interface components {
             /** Source */
             source: string | null;
         };
+        /** EvidenceMetric */
+        EvidenceMetric: {
+            /** Key */
+            key: string;
+            /** Value */
+            value: number;
+        };
+        /**
+         * EvidenceSummary
+         * @description What the evidence says, as codes and numbers. Labels are the frontend's job.
+         */
+        EvidenceSummary: {
+            /** Metrics */
+            metrics: components["schemas"]["EvidenceMetric"][];
+            /** Signal */
+            signal: string;
+            /** Source */
+            source: string | null;
+            /** Source Count */
+            source_count?: number | null;
+        };
         /** ExpectedVersion */
         ExpectedVersion: {
             /** Expected Version */
@@ -6364,10 +6428,47 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** GrowthActionView */
+        GrowthActionView: {
+            /** Action Key */
+            action_key: string;
+            /** Action Type */
+            action_type: string;
+            /** Effort */
+            effort: string;
+            /** Execution Mode */
+            execution_mode: string;
+            /** Expected Result Hypothesis */
+            expected_result_hypothesis: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Product Key */
+            product_key: string;
+            /** Risk */
+            risk: string;
+            /** Safe Error Code */
+            safe_error_code: string | null;
+            /** Status */
+            status: string;
+        };
         /** GrowthInitiativeDecision */
         GrowthInitiativeDecision: {
             /** Approve */
             approve: boolean;
+        };
+        /** GrowthPlanView */
+        GrowthPlanView: {
+            /** Actions */
+            actions: components["schemas"]["GrowthActionView"][];
+            /** Confidence */
+            confidence: number;
+            /** Objective */
+            objective: string;
+            /** Rationale */
+            rationale: string;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -7182,6 +7283,18 @@ export interface components {
             observed?: unknown;
             /** State */
             state: string | null;
+        };
+        /**
+         * LiveCheckResult
+         * @description The verification of the live site against the approved change, as persisted.
+         */
+        LiveCheckResult: {
+            /** Checks */
+            checks: components["schemas"]["LiveCheck"][];
+            /** State */
+            state: string | null;
+            /** Verified At */
+            verified_at: string | null;
         };
         /**
          * LivenessData
@@ -8035,6 +8148,18 @@ export interface components {
          * @enum {string}
          */
         OnboardingStepState: "complete" | "incomplete" | "optional_incomplete";
+        /** OpportunityClient */
+        OpportunityClient: {
+            /** Name */
+            name: string;
+            /**
+             * Organization Id
+             * Format: uuid
+             */
+            organization_id: string;
+            /** Slug */
+            slug: string;
+        };
         /** OpportunityCreate */
         OpportunityCreate: {
             /** Evidence Document */
@@ -8067,9 +8192,20 @@ export interface components {
             can_approve: boolean;
             /** Can Recommend */
             can_recommend: boolean;
+            content?: components["schemas"]["ContentOpportunityView"] | null;
             /** Correlation Id */
             correlation_id: string;
             data: components["schemas"]["OpportunityView"];
+            growth?: components["schemas"]["GrowthPlanView"] | null;
+            /** History */
+            history?: components["schemas"]["StatusEvent"][] | null;
+            /**
+             * Kind
+             * @default seo
+             * @enum {string}
+             */
+            kind: "seo" | "content" | "growth";
+            live_check?: components["schemas"]["LiveCheckResult"] | null;
             /** Page Url */
             page_url: string | null;
             /** Recommendations */
@@ -8115,6 +8251,11 @@ export interface components {
         OpportunityList: {
             /** Data */
             data: components["schemas"]["OpportunityView"][];
+            /**
+             * Kinds Unavailable
+             * @default []
+             */
+            kinds_unavailable: ("seo" | "content" | "growth")[];
             /** Next Offset */
             next_offset: number | null;
         };
@@ -8125,15 +8266,35 @@ export interface components {
              * @enum {string}
              */
             classification: "Issue" | "Growth Opportunity" | "Optimization" | "Data & Tracking";
+            client?: components["schemas"]["OpportunityClient"] | null;
+            /** Confidence */
+            confidence?: number | null;
             /** Evidence */
             evidence: {
                 [key: string]: unknown;
             };
             evidence_context: components["schemas"]["EvidenceContext"];
+            evidence_summary?: components["schemas"]["EvidenceSummary"] | null;
+            /** Headline */
+            headline?: string | null;
             /** Id */
             id: string;
+            /**
+             * Kind
+             * @default seo
+             * @enum {string}
+             */
+            kind: "seo" | "content" | "growth";
+            /** Latest Revision Status */
+            latest_revision_status?: string | null;
             /** Location Id */
             location_id: string | null;
+            /**
+             * Next Action
+             * @default none
+             * @enum {string}
+             */
+            next_action: "request_recommendation" | "review_recommendation" | "monitor_publication" | "review_opportunity" | "review_growth_plan" | "monitor_execution" | "none";
             /**
              * Observed At
              * Format: date-time
@@ -8148,10 +8309,20 @@ export interface components {
             page_id: string | null;
             /** Priority */
             priority: number | null;
+            /** Priority Band */
+            priority_band?: ("high" | "medium" | "low") | null;
             /** Score Explanation */
             score_explanation: {
                 [key: string]: unknown;
             };
+            /**
+             * Site Change
+             * @default not_applicable
+             * @enum {string}
+             */
+            site_change: "configured" | "not_configured" | "not_applicable";
+            /** Site Change Reason */
+            site_change_reason?: "SITE_CHANGES_NOT_CONFIGURED" | null;
             /**
              * Source Id
              * Format: uuid
@@ -8160,18 +8331,15 @@ export interface components {
             /**
              * Source Kind
              * @default seo_opportunity
-             * @constant
+             * @enum {string}
              */
-            source_kind: "seo_opportunity";
+            source_kind: "seo_opportunity" | "content_opportunity" | "growth_initiative";
             /** Source Type */
             source_type: string;
             /** Status */
             status: string;
-            /**
-             * Website Id
-             * Format: uuid
-             */
-            website_id: string;
+            /** Website Id */
+            website_id: string | null;
         };
         /** OrganizationBusinessIdentity */
         OrganizationBusinessIdentity: {
@@ -9856,6 +10024,22 @@ export interface components {
             /** Source */
             source: string;
         };
+        /** StatusEvent */
+        StatusEvent: {
+            /** Action */
+            action: string;
+            /** Actor Type */
+            actor_type: string;
+            /** Event Type */
+            event_type: string;
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+            /** Result */
+            result: string;
+        };
         /** SteerCommand */
         SteerCommand: {
             /** Text */
@@ -10535,6 +10719,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ClientOverview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    portfolio_opportunities_api_v1_command_center_opportunities_get: {
+        parameters: {
+            query?: {
+                offset?: number;
+                limit?: number;
+                organization_id?: string | null;
+                kind?: ("seo" | "content" | "growth") | null;
+                priority?: ("high" | "medium" | "low") | null;
+                include_closed?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpportunityList"];
                 };
             };
             /** @description Validation Error */
@@ -11693,6 +11913,9 @@ export interface operations {
             query?: {
                 offset?: number;
                 limit?: number;
+                kind?: ("seo" | "content" | "growth") | null;
+                priority?: ("high" | "medium" | "low") | null;
+                include_closed?: boolean;
             };
             header?: never;
             path: {

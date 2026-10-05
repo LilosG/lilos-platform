@@ -1695,6 +1695,63 @@
         "title": "ContentDraftRun",
         "type": "object"
       },
+      "ContentItemView": {
+        "additionalProperties": false,
+        "properties": {
+          "content_type": {
+            "title": "Content Type",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "content_type",
+          "title",
+          "status"
+        ],
+        "title": "ContentItemView",
+        "type": "object"
+      },
+      "ContentOpportunityView": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ContentItemView"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "opportunity_type": {
+            "title": "Opportunity Type",
+            "type": "string"
+          },
+          "target_reference": {
+            "title": "Target Reference",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target_reference",
+          "opportunity_type",
+          "items"
+        ],
+        "title": "ContentOpportunityView",
+        "type": "object"
+      },
       "ContentPublicationView": {
         "properties": {
           "approved_head_sha": {
@@ -2714,6 +2771,71 @@
         "title": "EvidenceContext",
         "type": "object"
       },
+      "EvidenceMetric": {
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "number"
+          }
+        },
+        "required": [
+          "key",
+          "value"
+        ],
+        "title": "EvidenceMetric",
+        "type": "object"
+      },
+      "EvidenceSummary": {
+        "additionalProperties": false,
+        "description": "What the evidence says, as codes and numbers. Labels are the frontend's job.",
+        "properties": {
+          "metrics": {
+            "items": {
+              "$ref": "#/components/schemas/EvidenceMetric"
+            },
+            "title": "Metrics",
+            "type": "array"
+          },
+          "signal": {
+            "title": "Signal",
+            "type": "string"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "source_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Count"
+          }
+        },
+        "required": [
+          "source",
+          "signal",
+          "metrics"
+        ],
+        "title": "EvidenceSummary",
+        "type": "object"
+      },
       "ExpectedVersion": {
         "additionalProperties": false,
         "properties": {
@@ -3317,6 +3439,73 @@
         "title": "GrowthActionOutcomeRecord",
         "type": "object"
       },
+      "GrowthActionView": {
+        "additionalProperties": false,
+        "properties": {
+          "action_key": {
+            "title": "Action Key",
+            "type": "string"
+          },
+          "action_type": {
+            "title": "Action Type",
+            "type": "string"
+          },
+          "effort": {
+            "title": "Effort",
+            "type": "string"
+          },
+          "execution_mode": {
+            "title": "Execution Mode",
+            "type": "string"
+          },
+          "expected_result_hypothesis": {
+            "title": "Expected Result Hypothesis",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "product_key": {
+            "title": "Product Key",
+            "type": "string"
+          },
+          "risk": {
+            "title": "Risk",
+            "type": "string"
+          },
+          "safe_error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Safe Error Code"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "action_key",
+          "product_key",
+          "action_type",
+          "execution_mode",
+          "status",
+          "risk",
+          "effort",
+          "expected_result_hypothesis",
+          "safe_error_code"
+        ],
+        "title": "GrowthActionView",
+        "type": "object"
+      },
       "GrowthInitiativeDecision": {
         "additionalProperties": false,
         "properties": {
@@ -3329,6 +3518,38 @@
           "approve"
         ],
         "title": "GrowthInitiativeDecision",
+        "type": "object"
+      },
+      "GrowthPlanView": {
+        "additionalProperties": false,
+        "properties": {
+          "actions": {
+            "items": {
+              "$ref": "#/components/schemas/GrowthActionView"
+            },
+            "title": "Actions",
+            "type": "array"
+          },
+          "confidence": {
+            "title": "Confidence",
+            "type": "number"
+          },
+          "objective": {
+            "title": "Objective",
+            "type": "string"
+          },
+          "rationale": {
+            "title": "Rationale",
+            "type": "string"
+          }
+        },
+        "required": [
+          "objective",
+          "rationale",
+          "confidence",
+          "actions"
+        ],
+        "title": "GrowthPlanView",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -5715,6 +5936,49 @@
           "state"
         ],
         "title": "LiveCheck",
+        "type": "object"
+      },
+      "LiveCheckResult": {
+        "additionalProperties": false,
+        "description": "The verification of the live site against the approved change, as persisted.",
+        "properties": {
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/LiveCheck"
+            },
+            "title": "Checks",
+            "type": "array"
+          },
+          "state": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "State"
+          },
+          "verified_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verified At"
+          }
+        },
+        "required": [
+          "state",
+          "verified_at",
+          "checks"
+        ],
+        "title": "LiveCheckResult",
         "type": "object"
       },
       "LivenessData": {
@@ -8564,6 +8828,31 @@
         "title": "OnboardingStepState",
         "type": "string"
       },
+      "OpportunityClient": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "organization_id": {
+            "format": "uuid",
+            "title": "Organization Id",
+            "type": "string"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          }
+        },
+        "required": [
+          "organization_id",
+          "name",
+          "slug"
+        ],
+        "title": "OpportunityClient",
+        "type": "object"
+      },
       "OpportunityCreate": {
         "additionalProperties": false,
         "properties": {
@@ -8658,12 +8947,66 @@
             "title": "Can Recommend",
             "type": "boolean"
           },
+          "content": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ContentOpportunityView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "correlation_id": {
             "title": "Correlation Id",
             "type": "string"
           },
           "data": {
             "$ref": "#/components/schemas/OpportunityView"
+          },
+          "growth": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GrowthPlanView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "history": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/StatusEvent"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "History"
+          },
+          "kind": {
+            "default": "seo",
+            "enum": [
+              "seo",
+              "content",
+              "growth"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "live_check": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LiveCheckResult"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "page_url": {
             "anyOf": [
@@ -8811,6 +9154,19 @@
             "title": "Data",
             "type": "array"
           },
+          "kinds_unavailable": {
+            "default": [],
+            "items": {
+              "enum": [
+                "seo",
+                "content",
+                "growth"
+              ],
+              "type": "string"
+            },
+            "title": "Kinds Unavailable",
+            "type": "array"
+          },
           "next_offset": {
             "anyOf": [
               {
@@ -8843,6 +9199,27 @@
             "title": "Classification",
             "type": "string"
           },
+          "client": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OpportunityClient"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence"
+          },
           "evidence": {
             "additionalProperties": true,
             "title": "Evidence",
@@ -8851,9 +9228,51 @@
           "evidence_context": {
             "$ref": "#/components/schemas/EvidenceContext"
           },
+          "evidence_summary": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EvidenceSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "headline": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Headline"
+          },
           "id": {
             "title": "Id",
             "type": "string"
+          },
+          "kind": {
+            "default": "seo",
+            "enum": [
+              "seo",
+              "content",
+              "growth"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "latest_revision_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Revision Status"
           },
           "location_id": {
             "anyOf": [
@@ -8866,6 +9285,20 @@
               }
             ],
             "title": "Location Id"
+          },
+          "next_action": {
+            "default": "none",
+            "enum": [
+              "request_recommendation",
+              "review_recommendation",
+              "monitor_publication",
+              "review_opportunity",
+              "review_growth_plan",
+              "monitor_execution",
+              "none"
+            ],
+            "title": "Next Action",
+            "type": "string"
           },
           "observed_at": {
             "format": "date-time",
@@ -8900,10 +9333,48 @@
             ],
             "title": "Priority"
           },
+          "priority_band": {
+            "anyOf": [
+              {
+                "enum": [
+                  "high",
+                  "medium",
+                  "low"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority Band"
+          },
           "score_explanation": {
             "additionalProperties": true,
             "title": "Score Explanation",
             "type": "object"
+          },
+          "site_change": {
+            "default": "not_applicable",
+            "enum": [
+              "configured",
+              "not_configured",
+              "not_applicable"
+            ],
+            "title": "Site Change",
+            "type": "string"
+          },
+          "site_change_reason": {
+            "anyOf": [
+              {
+                "const": "SITE_CHANGES_NOT_CONFIGURED",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Site Change Reason"
           },
           "source_id": {
             "format": "uuid",
@@ -8911,8 +9382,12 @@
             "type": "string"
           },
           "source_kind": {
-            "const": "seo_opportunity",
             "default": "seo_opportunity",
+            "enum": [
+              "seo_opportunity",
+              "content_opportunity",
+              "growth_initiative"
+            ],
             "title": "Source Kind",
             "type": "string"
           },
@@ -8925,9 +9400,16 @@
             "type": "string"
           },
           "website_id": {
-            "format": "uuid",
-            "title": "Website Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Website Id"
           }
         },
         "required": [
@@ -14085,6 +14567,41 @@
         "title": "SpecialHoursPropose",
         "type": "object"
       },
+      "StatusEvent": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "actor_type": {
+            "title": "Actor Type",
+            "type": "string"
+          },
+          "event_type": {
+            "title": "Event Type",
+            "type": "string"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "event_type",
+          "action",
+          "result",
+          "occurred_at",
+          "actor_type"
+        ],
+        "title": "StatusEvent",
+        "type": "object"
+      },
       "SteerCommand": {
         "additionalProperties": false,
         "properties": {
@@ -15580,6 +16097,132 @@
           }
         },
         "summary": "Client Overview",
+        "tags": [
+          "command-center"
+        ]
+      }
+    },
+    "/api/v1/command-center/opportunities": {
+      "get": {
+        "description": "Every opportunity kind across the clients the caller may open, one set-based read.",
+        "operationId": "portfolio_opportunities_api_v1_command_center_opportunities_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "organization_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Organization Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "seo",
+                    "content",
+                    "growth"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kind"
+            }
+          },
+          {
+            "in": "query",
+            "name": "priority",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "high",
+                    "medium",
+                    "low"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Priority"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_closed",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Closed",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpportunityList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Portfolio Opportunities",
         "tags": [
           "command-center"
         ]
@@ -17534,6 +18177,58 @@
               "minimum": 1,
               "title": "Limit",
               "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "seo",
+                    "content",
+                    "growth"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kind"
+            }
+          },
+          {
+            "in": "query",
+            "name": "priority",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "high",
+                    "medium",
+                    "low"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Priority"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_closed",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Closed",
+              "type": "boolean"
             }
           }
         ],
