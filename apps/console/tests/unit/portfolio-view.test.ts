@@ -4,6 +4,7 @@ import {
   clientHealthRows,
   clientInsight,
   clientRowView,
+  opportunityRows,
   portfolioMetrics,
   snapshotMetrics,
 } from "../../src/lib/portfolio-view";
@@ -51,6 +52,7 @@ function row(overrides: Partial<ClientRow> = {}): ClientRow {
     search_clicks: missing("not_connected", "search_console"),
     average_position: missing("not_connected", "search_console"),
     average_local_rank: missing("not_tracked", "rank_scan"),
+    gbp_actions: missing("not_connected", "gbp"),
     leads: have(0, 0),
     local_visibility: missing("not_tracked", "rank_scan"),
     reviews: {
@@ -160,12 +162,60 @@ describe("missing data is never shown as a number", () => {
     ]);
     expect(totals.slice(0, 3).every((t) => t.missing)).toBe(true);
   });
-  it("snapshot never invents GBP actions or local rank", () => {
+  it("snapshot never invents local rank and shows GBP actions only from the sync", () => {
     const metrics = snapshotMetrics(overview(row()));
     const byLabel = Object.fromEntries(metrics.map((m) => [m.label, m]));
-    expect(byLabel["GBP actions"].value).toBe("Not tracked");
+    expect(byLabel["GBP actions"].value).toBe("Not connected");
+    expect(byLabel["GBP actions"].missing).toBe(true);
     expect(byLabel["Average local rank"].value).toBe("Not tracked");
     expect(byLabel["Google rating"].value).toBe("4.6 ★");
+    const synced = (gbp: MetricValue) =>
+      Object.fromEntries(
+        snapshotMetrics(overview(row({ gbp_actions: gbp }))).map((m) => [
+          m.label,
+          m,
+        ]),
+      )["GBP actions"];
+    expect(synced(missing("no_data", "gbp")).value).toBe("No data");
+    const available = synced({ ...have(140, 100), source: "gbp" });
+    expect(available.value).toBe("140");
+    expect(available.description).toContain("+40% vs previous period");
+    // A zero from a real sync is a result; it is not the same as no data.
+    expect(synced({ ...have(0, 12), source: "gbp" }).value).toBe("0");
+  });
+  it("lists a finding once, with the title the Opportunities screen uses", () => {
+    const item = (id: string, over: Record<string, unknown> = {}) => ({
+      id,
+      organization_id: org,
+      organization_name: "Park 101",
+      organization_slug: "park101-carlsbad",
+      opportunity_type: "gsc_low_ctr",
+      classification: "Issue" as const,
+      status: "approved",
+      priority: 90,
+      query: "brunch spots san diego",
+      page: null,
+      impressions: 100,
+      ...over,
+    });
+    const rows = opportunityRows([
+      item("a"),
+      item("b"),
+      item("c", { query: null, page: "https://park101.example/menu/" }),
+      item("d", { query: null, page: "https://park101.example/menu/" }),
+      item("e", {
+        opportunity_type: "missing_meta_description",
+        query: null,
+        page: "/",
+      }),
+    ]);
+    expect(rows.map((r) => r.id)).toEqual(["a", "c", "e"]);
+    expect(rows.map((r) => r.title)).toEqual([
+      "Low click-through: \u201cbrunch spots san diego\u201d",
+      "Low click-through \u00b7 /menu/",
+      "Missing meta description \u00b7 Homepage",
+    ]);
+    for (const r of rows) expect(r.title).not.toMatch(/gsc_|_|https?:/);
   });
 });
 describe("typed codes, not sentences", () => {

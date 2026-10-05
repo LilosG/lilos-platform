@@ -260,15 +260,6 @@ export const initials = (name: string) =>
     .slice(0, 2)
     .join("")
     .toUpperCase();
-export function opportunityTitle(item: {
-  opportunity_type: string;
-  query: string | null;
-  page: string | null;
-}): string {
-  const type = humanize(item.opportunity_type);
-  const target = item.query ?? item.page;
-  return target ? `${type}: ${target}` : type;
-}
 export const priorityText = (score: number | null) =>
   score === null ? "Priority unavailable" : `Priority ${Math.round(score)}`;
 export const AREAS = {

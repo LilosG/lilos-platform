@@ -27,7 +27,14 @@ const metric = z.object({
   current: z.number().nullable(),
   previous: z.number().nullable(),
   percent_delta: z.number().nullable(),
-  source: z.enum(["ga4", "search_console", "leads", "reviews", "rank_scan"]),
+  source: z.enum([
+    "ga4",
+    "search_console",
+    "leads",
+    "reviews",
+    "rank_scan",
+    "gbp",
+  ]),
   availability,
   freshness_at: z.string().nullable().optional(),
 });
@@ -50,6 +57,7 @@ const row = z.object({
   search_clicks: metric,
   average_position: metric,
   average_local_rank: metric,
+  gbp_actions: metric,
   leads: metric,
   local_visibility: metric,
   reviews: z.object({
