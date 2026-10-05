@@ -93,7 +93,7 @@ const workflowText: Record<string, { noun: string; done: string }> = {
     done: "Sent a lead communication",
   },
 };
-function humanize(key: string): string {
+export function humanize(key: string): string {
   const text = key.replaceAll(/[._]+/g, " ").trim();
   return text.charAt(0).toUpperCase() + text.slice(1);
 }

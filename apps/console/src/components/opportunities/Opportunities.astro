@@ -1,0 +1,155 @@
+---
+import type { OpportunityListView } from "../../adapters/opportunities";
+import type { Organization } from "../../server/context";
+import { filterOptions, rowView } from "../../lib/opportunity-view";
+import { kindLabel } from "../../lib/opportunity-view";
+import DataTable from "../ui/DataTable.astro";
+import FilterBar from "../ui/FilterBar.astro";
+import PageHeader from "../ui/PageHeader.astro";
+import OpportunityRow from "./OpportunityRow.astro";
+interface Props {
+  view: OpportunityListView;
+  /** Present on a client's own screen; absent for the portfolio. */
+  client?: Organization;
+  /** The portfolio's clients, for its client filter. */
+  clients?: Organization[];
+  filters: { organization_id: string; kind: string; priority: string };
+  now: Date;
+}
+const { view, client, clients = [], filters, now } = Astro.props;
+const from = client ? "client" : "portfolio";
+const rows = view.items.map((item) => rowView(item, now, from));
+const more = view.next !== null;
+const nextQuery = new URLSearchParams(
+  Object.entries(filters).filter(([, value]) => value),
+);
+if (view.next !== null) nextQuery.set("offset", String(view.next));
+---
+
+<PageHeader
+  title="Opportunities"
+  subtitle="Evidence-backed issues and growth opportunities, ready for action."
+  client={client !== undefined}
+/>
+<form method="get" data-opportunity-filters>
+  <FilterBar class="toolbar oppfilters">
+    {
+      !client && (
+        <select
+          aria-label="Filter opportunities by client"
+          name="organization_id"
+        >
+          <option value="">All clients</option>
+          {clients.map((c) => (
+            <option
+              value={c.organization_id}
+              selected={filters.organization_id === c.organization_id}
+            >
+              {c.organization_name}
+            </option>
+          ))}
+        </select>
+      )
+    }
+    <select aria-label="Filter opportunity type" name="kind">
+      {
+        filterOptions.type.map(([value, label]) => (
+          <option value={value} selected={filters.kind === value}>
+            {label}
+          </option>
+        ))
+      }
+    </select>
+    <select aria-label="Filter priority" name="priority">
+      {
+        filterOptions.priority.map(([value, label]) => (
+          <option value={value} selected={filters.priority === value}>
+            {label}
+          </option>
+        ))
+      }
+    </select>
+    <noscript><button type="submit">Apply filters</button></noscript>
+    <span class="muted" data-opportunity-count>
+      {rows.length}
+      {more ? "+" : ""} opportunities
+    </span>
+  </FilterBar>
+</form>
+{
+  view.kindsUnavailable.length > 0 && (
+    <p class="muted" role="status" data-kinds-unavailable>
+      Not shown, no access:{" "}
+      {view.kindsUnavailable.map((k) => kindLabel[k]).join(", ")}.
+    </p>
+  )
+}
+<section class="panel opportunitytable">
+  <div class="tablewrap">
+    <DataTable>
+      <thead>
+        <tr>
+          <th>Opportunity / client</th>
+          <th>Evidence</th>
+          <th>Priority</th>
+          <th>Recommended next action</th>
+          <th><span class="visually-hidden">Actions</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        {
+          rows.length > 0 ? (
+            rows.map((row) => <OpportunityRow row={row} showClient={!client} />)
+          ) : (
+            <tr>
+              <td colspan="5" class="empty">
+                No opportunities match these filters.
+              </td>
+            </tr>
+          )
+        }
+      </tbody>
+    </DataTable>
+  </div>
+</section>
+{
+  more && (
+    <p>
+      <a class="control" href={`?${nextQuery}`}>
+        Next page
+      </a>
+    </p>
+  )
+}
+<style is:global>
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+</style>
+<script>
+  document
+    .querySelectorAll<HTMLFormElement>("[data-opportunity-filters]")
+    .forEach((form) => {
+      form
+        .querySelectorAll("select")
+        .forEach((select) =>
+          select.addEventListener("change", () => form.requestSubmit()),
+        );
+    });
+  document
+    .querySelectorAll<HTMLElement>("tr[data-opportunity-row]")
+    .forEach((row) => {
+      const open = () => window.location.assign(row.dataset.href!);
+      row.addEventListener("click", (event) => {
+        if (!(event.target as HTMLElement).closest("a, button")) open();
+      });
+      row.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" && event.target === row) open();
+      });
+    });
+</script>

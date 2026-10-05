@@ -5,6 +5,11 @@ import ClientTable from "../components/portfolio/ClientTable.astro";
 import PageHeader from "../components/ui/PageHeader.astro";
 import ErrorState from "../components/ui/ErrorState.astro";
 import NotBuilt from "../components/ui/NotBuilt.astro";
+import Opportunities from "../components/opportunities/Opportunities.astro";
+import {
+  adaptOpportunityList,
+  type OpportunityListView,
+} from "../adapters/opportunities";
 import { AREAS, type PortfolioArea } from "../lib/present";
 import { clientRowView } from "../lib/portfolio-view";
 import {
@@ -13,7 +18,7 @@ import {
   type PortfolioOverview,
 } from "../server/command-center";
 import { organizations } from "../server/context";
-import { APIError } from "../server/bff";
+import { APIError, read } from "../server/bff";
 const page = (Astro.params.page ?? "").replace(/\/$/, "");
 const [area, sub] = page.split("/");
 const administration =
@@ -37,7 +42,43 @@ const days = reportingDays(Astro.url.searchParams.get("days"));
 if (days === null) return new Response("Invalid period", { status: 400 });
 const loadsData = page === "" || page === "clients";
 let overview: PortfolioOverview | undefined;
+let opportunities: OpportunityListView | undefined;
 let failed = false;
+const filters = {
+  organization_id: Astro.url.searchParams.get("organization_id") ?? "",
+  kind: Astro.url.searchParams.get("kind") ?? "",
+  priority: Astro.url.searchParams.get("priority") ?? "",
+};
+const offset = Number(Astro.url.searchParams.get("offset") ?? 0);
+const clientRows =
+  page === "opportunities" ? await organizations(Astro.locals) : [];
+if (page === "opportunities") {
+  if (
+    (filters.kind && !["seo", "content", "growth"].includes(filters.kind)) ||
+    (filters.priority &&
+      !["high", "medium", "low"].includes(filters.priority)) ||
+    (filters.organization_id &&
+      !clientRows.some((c) => c.organization_id === filters.organization_id)) ||
+    !Number.isInteger(offset) ||
+    offset < 0 ||
+    offset > 100000
+  )
+    return new Response("Invalid filter", { status: 400 });
+  try {
+    const params = new URLSearchParams({ offset: String(offset) });
+    for (const [key, value] of Object.entries(filters))
+      if (value) params.set(key, value);
+    opportunities = adaptOpportunityList(
+      await read(Astro.locals, `command-center/opportunities/?${params}`),
+      null,
+      clientRows.map((c) => c.organization_id),
+    );
+  } catch (e) {
+    if (e instanceof APIError && e.status === 401)
+      return Astro.redirect("/login/", 303);
+    failed = true;
+  }
+}
 if (loadsData) {
   try {
     overview = await loadPortfolio(Astro.locals, days);
@@ -65,13 +106,36 @@ const title =
     failed ? (
       <Fragment>
         <PageHeader
-          title={page === "" ? "Portfolio overview" : "Client portfolio"}
-          subtitle="Every client, one operational view."
+          title={
+            page === "opportunities"
+              ? "Opportunities"
+              : page === ""
+                ? "Portfolio overview"
+                : "Client portfolio"
+          }
+          subtitle={
+            page === "opportunities"
+              ? "Evidence-backed issues and growth opportunities, ready for action."
+              : "Every client, one operational view."
+          }
         />
-        <ErrorState title="Portfolio data is temporarily unavailable">
+        <ErrorState
+          title={
+            page === "opportunities"
+              ? "Opportunities are temporarily unavailable"
+              : "Portfolio data is temporarily unavailable"
+          }
+        >
           No sample data is substituted. Reload to try again.
         </ErrorState>
       </Fragment>
+    ) : opportunities ? (
+      <Opportunities
+        view={opportunities}
+        clients={clientRows}
+        filters={filters}
+        now={new Date()}
+      />
     ) : overview && page === "" ? (
       <Dashboard overview={overview} />
     ) : overview ? (
