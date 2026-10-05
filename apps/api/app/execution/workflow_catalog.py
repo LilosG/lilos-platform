@@ -21,6 +21,7 @@ WORKFLOW_TYPES: dict[str, tuple[str, str]] = {
     "reviews.publish_response": ("Publish an approved review response to the provider", "reviews"),
     "leads.send_communication": ("Send a planned lead communication", "leads"),
     "gbp.sync": ("Scheduled GBP profile discovery and sync", "gbp"),
+    "gbp.sync_performance": ("Scheduled GBP performance metrics sync", "gbp"),
     "reviews.ingest": ("Scheduled reviews ingestion", "reviews"),
     "agent.gbp": ("Hermes GBP governed agent", "gbp"),
     "agent.seo": ("Hermes SEO evidence agent", "seo"),

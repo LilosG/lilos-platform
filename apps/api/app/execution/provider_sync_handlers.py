@@ -25,6 +25,15 @@ from apps.api.app.products.analytics.errors import (
     AnalyticsScopeRequiredError,
 )
 from apps.api.app.products.analytics.service import AnalyticsService
+from apps.api.app.products.gbp.performance_enums import (
+    GBPPerformanceFailureCode,
+    GBPPerformanceSyncStatus,
+)
+from apps.api.app.products.gbp.performance_service import (
+    GBPPerformanceService,
+    GBPPerformanceSyncError,
+    resolve_gbp_location,
+)
 from apps.api.app.products.seo.errors import (
     SEOSearchConsoleScopeRequiredError,
     SEOSearchPropertyNotConfiguredError,
@@ -294,3 +303,67 @@ async def _sync_analytics_property(
     if not result.get("periods_synced"):
         return JobOutcome(result="retryable_failure", safe_error="ANALYTICS_SYNC_INCOMPLETE")
     return JobOutcome(result="succeeded", result_reference=f"analytics-property:{property_id}")
+
+
+async def handle_gbp_performance_sync(
+    session: AsyncSession,
+    *,
+    organization_id: UUID,
+    location_id: UUID | None,
+    input_document: dict[str, Any],
+    correlation_id: str,
+    workflow_run_id: UUID,
+) -> JobOutcome:
+    """`gbp.sync_performance`: Google's daily metrics and search keywords for one GBP location.
+
+    Deterministic: no model. The location is the schedule's platform location, or
+    ``gbp_location_id`` on a manual run.
+    """
+    raw_gbp_location_id = input_document.get("gbp_location_id")
+    gbp_location_id = _uuid(raw_gbp_location_id)
+    if raw_gbp_location_id and gbp_location_id is None:
+        return _performance_failure(GBPPerformanceFailureCode.LOCATION_ID_INVALID)
+    try:
+        gbp_location = await resolve_gbp_location(
+            session,
+            organization_id,
+            gbp_location_id=gbp_location_id,
+            platform_location_id=location_id,
+        )
+    except GBPPerformanceSyncError as exc:
+        return _performance_failure(exc.code)
+    pk = gbp_location.id
+    # Release anything this session auto-began: nothing may be open during Google calls.
+    await session.rollback()
+    try:
+        service = GBPPerformanceService()
+        if live_smoke_authorized(Settings(), organization_id):
+            from apps.api.app.products.gbp.adapter import GoogleBusinessProfileAdapter
+
+            service.adapter = GoogleBusinessProfileAdapter()
+        result = await service.sync_location(
+            transaction_scope(session),
+            Settings(),
+            organization_id,
+            pk,
+            correlation_id=correlation_id,
+            workflow_run_id=workflow_run_id,
+        )
+    except GBPPerformanceSyncError as exc:
+        return _performance_failure(exc.code)
+    except Exception:
+        logger.exception("GBP performance sync failed", extra={"gbp_location_id": str(pk)})
+        return _performance_failure(GBPPerformanceFailureCode.SYNC_FAILED)
+    if result.status is not GBPPerformanceSyncStatus.SUCCEEDED:
+        # Daily metrics are stored; the search keywords were not all readable. Surface it.
+        return _performance_failure(
+            result.failure_code or GBPPerformanceFailureCode.KEYWORDS_UNAVAILABLE
+        )
+    return JobOutcome(result="succeeded", result_reference=f"gbp-performance:{pk}")
+
+
+def _performance_failure(code: GBPPerformanceFailureCode) -> JobOutcome:
+    return JobOutcome(
+        result="retryable_failure" if code.retryable else "permanent_failure",
+        safe_error=code.value,
+    )

@@ -194,22 +194,25 @@ async def test_dry_run_changes_nothing_and_apply_creates_each_schedule_once(
         workflows_session_factory, apply=False, organization_id=client_id, now=NOW
     )
     assert not dry.applied
-    assert [c.action for c in dry.changes] == [Action.CREATE] * 6
+    assert [c.action for c in dry.changes] == [Action.CREATE] * 8
     assert await _schedules(workflows_session_factory, client_id) == []
 
     applied = await ensure_client_schedules(
         workflows_session_factory, apply=True, organization_id=client_id, now=NOW
     )
-    assert [c.action for c in applied.changes] == [Action.CREATE] * 6
+    assert [c.action for c in applied.changes] == [Action.CREATE] * 8
     schedules = await _schedules(workflows_session_factory, client_id)
     by_key = {schedule.key: schedule for schedule in schedules}
-    assert len(by_key) == 6
+    assert len(by_key) == 8
     assert {schedule.timezone for schedule in schedules} == {"America/Los_Angeles"}
     assert {schedule.status for schedule in schedules} == {"active"}
     assert all(schedule.next_run_at > NOW for schedule in schedules)
     for location_id in locations:
         review = by_key[f"ensure:reviews.ingest:{location_id}"]
         assert (review.cron_expression, review.location_id) == ("0 */6 * * *", location_id)
+        performance = by_key[f"ensure:gbp.sync_performance:{location_id}"]
+        # Daily, after the 05:00 gbp.sync, one schedule per mapped GBP location.
+        assert (performance.cron_expression, performance.location_id) == ("15 5 * * *", location_id)
     assert by_key["ensure:gbp.sync"].cron_expression == "0 5 * * *"
     assert by_key["ensure:gbp.sync"].location_id == locations[0]
     assert by_key["ensure:seo.sync_search_console"].cron_expression == "30 5 * * *"
@@ -227,7 +230,7 @@ async def test_dry_run_changes_nothing_and_apply_creates_each_schedule_once(
                 AuditEvent.event_type == "workflow.schedule.created",
             )
         )
-    assert audited == 6
+    assert audited == 8
 
 
 @pytest.mark.integration
@@ -290,6 +293,7 @@ async def test_missing_mappings_are_skipped_and_reported_not_scheduled(
     assert {(s.workflow_key, s.reason) for s in report.skipped} == {
         ("reviews.ingest", SkipReason.NO_MAPPED_GBP_LOCATION),
         ("gbp.sync", SkipReason.NO_MAPPED_GBP_LOCATION),
+        ("gbp.sync_performance", SkipReason.NO_MAPPED_GBP_LOCATION),
         ("seo.sync_search_console", SkipReason.NO_MAPPED_SEARCH_PROPERTY),
         ("insights.sync_analytics", SkipReason.NO_MAPPED_ANALYTICS_PROPERTY),
         ("seo.crawl_or_analysis", SkipReason.NO_ACTIVE_WEBSITE),
@@ -333,7 +337,7 @@ async def test_archived_organizations_wheyland_and_foreign_schedules_are_never_t
     assert await _schedules(workflows_session_factory, archived_id) == []
     assert await _schedules(workflows_session_factory, wheyland_id) == []
     keys = [s.key for s in await _schedules(workflows_session_factory, client_id)]
-    assert "weekly-gbp-post" in keys and len(keys) == 6  # five ensure:* plus the foreign one
+    assert "weekly-gbp-post" in keys and len(keys) == 7  # six ensure:* plus the foreign one
     async with workflows_session_factory() as session:
         untouched = await session.get(Schedule, foreign_id)
         assert untouched is not None

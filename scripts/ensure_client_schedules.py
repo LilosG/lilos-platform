@@ -11,6 +11,7 @@ and reported, never given a schedule that can only fail):
 
 * `reviews.ingest`            every 6 hours, one schedule per mapped GBP location
 * `gbp.sync`                  daily, one schedule, bound to the first mapped GBP location
+* `gbp.sync_performance`      daily after `gbp.sync`, one schedule per mapped GBP location
 * `seo.sync_search_console`   daily, one schedule, needs a mapped Search Console property
 * `insights.sync_analytics`   daily, one schedule, needs a mapped GA4 property
 * `seo.crawl_or_analysis`     weekly on Mondays, one schedule, needs an active SEO website
@@ -50,11 +51,10 @@ from apps.api.app.database.runtime import create_database_runtime
 from apps.api.app.execution.contracts import ScheduleCreate, ScheduleUpdate
 from apps.api.app.execution.models import Schedule, WorkflowDefinition, WorkflowVersion
 from apps.api.app.execution.service import ExecutionService
-from apps.api.app.integrations.models import ProviderResourceMapping
 from apps.api.app.organizations.enums import OrganizationStatus
 from apps.api.app.organizations.models import Organization
 from apps.api.app.products.analytics.models import AnalyticsProperty
-from apps.api.app.products.gbp.models import GBPLocation
+from apps.api.app.products.gbp.performance_service import mapped_gbp_locations
 from apps.api.app.products.seo.models import SEOSearchProperty, SEOWebsite
 from scripts._cli import run_script
 
@@ -66,6 +66,7 @@ KEY_PREFIX = "ensure:"
 class Cadence(StrEnum):
     REVIEWS = "0 */6 * * *"
     GBP_SYNC = "0 5 * * *"
+    GBP_PERFORMANCE = "15 5 * * *"
     SEARCH_CONSOLE = "30 5 * * *"
     ANALYTICS = "0 6 * * *"
     CRAWL = "0 7 * * 1"
@@ -144,26 +145,10 @@ async def _mapped_gbp_locations(session: AsyncSession, organization_id: UUID) ->
 
     That is exactly what `ReviewIngestionService.ingest_for_location` needs to resolve.
     """
-    rows = await session.execute(
-        select(GBPLocation.location_id)
-        .join(
-            ProviderResourceMapping,
-            ProviderResourceMapping.id == GBPLocation.integration_resource_id,
-        )
-        .where(
-            GBPLocation.organization_id == organization_id,
-            GBPLocation.mapping_status == "confirmed",
-            GBPLocation.location_id.is_not(None),
-            ProviderResourceMapping.status == "active",
-            ProviderResourceMapping.resource_type == "location",
-            ProviderResourceMapping.platform_resource_id == GBPLocation.location_id,
-        )
-        .order_by(GBPLocation.created_at, GBPLocation.id)
-    )
     seen: list[UUID] = []
-    for (location_id,) in rows:
-        if location_id is not None and location_id not in seen:
-            seen.append(location_id)
+    for row in await mapped_gbp_locations(session, organization_id):
+        if row.location_id is not None and row.location_id not in seen:
+            seen.append(row.location_id)
     return seen
 
 
@@ -195,6 +180,15 @@ async def wanted_schedules(
                     location_id,
                 )
             )
+        for location_id in locations:
+            wanted.append(
+                Wanted(
+                    "gbp.sync_performance",
+                    f"{KEY_PREFIX}gbp.sync_performance:{location_id}",
+                    Cadence.GBP_PERFORMANCE,
+                    location_id,
+                )
+            )
         # The sync covers the whole organization, so any mapped location will do.
         wanted.append(
             Wanted(
@@ -208,6 +202,7 @@ async def wanted_schedules(
     else:
         skip("reviews.ingest", SkipReason.NO_MAPPED_GBP_LOCATION)
         skip("gbp.sync", SkipReason.NO_MAPPED_GBP_LOCATION)
+        skip("gbp.sync_performance", SkipReason.NO_MAPPED_GBP_LOCATION)
 
     if await _has(
         session,
