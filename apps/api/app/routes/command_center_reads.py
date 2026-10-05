@@ -16,16 +16,18 @@ import time
 from collections import defaultdict
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from decimal import Decimal
+from typing import Literal
 from uuid import UUID
 
-from sqlalchemy import and_, exists, func, or_, select, tuple_
+from sqlalchemy import ColumnElement, and_, exists, func, or_, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import aliased
+from sqlalchemy.orm import InstrumentedAttribute, aliased
 
 from apps.api.app.execution.models import Schedule, WorkflowDefinition, WorkflowRun, WorkflowVersion
+from apps.api.app.growth.models import GrowthInitiative
 from apps.api.app.industries.models import Industry
 from apps.api.app.insights.models import InsightSource, MetricDefinition, MetricObservation
 from apps.api.app.integrations.models import IntegrationConnection, Provider
@@ -36,14 +38,18 @@ from apps.api.app.products.analytics.service import (
     ANALYTICS_PROVIDER_KEY,
     METRIC_DEFINITION_VERSION,
 )
+from apps.api.app.products.content.models import ContentOpportunity, PublishingTarget
 from apps.api.app.products.leads.models import Lead, LeadSource
 from apps.api.app.products.reviews.models import Review
 from apps.api.app.products.seo.models import (
     SEOOpportunity,
+    SEOPage,
+    SEORecommendationRevision,
     SEOSearchObservation,
     SEOSearchProperty,
     SEOWebsite,
 )
+from apps.api.app.products.seo.site_change_service import page_mapping_limitation
 from apps.api.app.reporting_periods import comparison_window
 
 logger = logging.getLogger("lilos.api.command_center")
@@ -59,7 +65,14 @@ MEANINGFUL_ACTIVITY = (
 )
 OPPORTUNITIES_PER_ORGANIZATION = 5
 ACTIVITY_PER_ORGANIZATION = 5
-PERMISSIONS = ("seo.read", "insights.read", "leads.read", "reviews.read", "workflows.read")
+PERMISSIONS = (
+    "seo.read",
+    "content.read",
+    "insights.read",
+    "leads.read",
+    "reviews.read",
+    "workflows.read",
+)
 RANK = {"connected": 4, "degraded": 3, "pending": 2, "reconnect_required": 1}
 
 
@@ -725,3 +738,263 @@ __all__ = [
     "SectionTimer",
     "load_facts",
 ]
+
+
+# ---------------------------------------------------------------------------------------------
+# Opportunities: one list across every kind. Deterministic, set-based, no per-item queries.
+# ---------------------------------------------------------------------------------------------
+
+OpportunityKind = Literal["seo", "content", "growth"]
+OPPORTUNITY_KINDS: tuple[OpportunityKind, ...] = ("seo", "content", "growth")
+KIND_PERMISSION: dict[OpportunityKind, str] = {
+    "seo": "seo.read",
+    "content": "content.read",
+    "growth": "workflows.read",
+}
+OPEN_STATUSES: dict[OpportunityKind, tuple[str, ...]] = {
+    "seo": OPEN_OPPORTUNITY_STATUSES,
+    "content": ("identified", "validated", "accepted"),
+    "growth": ("proposed", "approved", "executing"),
+}
+PriorityBand = Literal["high", "medium", "low"]
+BAND_FLOOR: dict[PriorityBand, float] = {"high": 70, "medium": 40, "low": 0}
+SiteChangeAvailability = Literal["configured", "not_configured", "not_applicable"]
+
+
+def priority_band(priority: float | None) -> PriorityBand | None:
+    if priority is None:
+        return None
+    return "high" if priority >= 70 else "medium" if priority >= 40 else "low"
+
+
+@dataclass(frozen=True)
+class OpportunityListRow:
+    kind: OpportunityKind
+    id: UUID
+    organization_id: UUID
+    location_id: UUID | None
+    website_id: UUID | None
+    page_id: UUID | None
+    source_type: str
+    status: str
+    priority: float | None
+    evidence: dict[str, object]
+    score_explanation: dict[str, object]
+    observed_at: datetime
+    headline: str | None
+    confidence: float | None
+    source_count: int | None
+    latest_revision_status: str | None
+    site_change: SiteChangeAvailability
+
+
+def seo_row(row: SEOOpportunity) -> OpportunityListRow:
+    return OpportunityListRow(
+        kind="seo",
+        id=row.id,
+        organization_id=row.organization_id,
+        location_id=row.location_id,
+        website_id=row.website_id,
+        page_id=row.page_id,
+        source_type=row.opportunity_type,
+        status=row.status,
+        priority=float(row.priority_score),
+        evidence=row.evidence or {},
+        score_explanation=row.score_explanation or {},
+        observed_at=row.updated_at,
+        headline=None,
+        confidence=None,
+        source_count=None,
+        latest_revision_status=None,
+        site_change="not_configured",
+    )
+
+
+def content_row(row: ContentOpportunity) -> OpportunityListRow:
+    return OpportunityListRow(
+        kind="content",
+        id=row.id,
+        organization_id=row.organization_id,
+        location_id=row.location_id,
+        website_id=None,
+        page_id=None,
+        source_type=row.opportunity_type,
+        status=row.status,
+        priority=float(row.priority_score),
+        evidence=row.evidence_document or {},
+        score_explanation={},
+        observed_at=row.updated_at,
+        headline=row.target_reference,
+        confidence=None,
+        source_count=None,
+        latest_revision_status=None,
+        site_change="not_applicable",
+    )
+
+
+def growth_row(row: GrowthInitiative) -> OpportunityListRow:
+    return OpportunityListRow(
+        kind="growth",
+        id=row.id,
+        organization_id=row.organization_id,
+        location_id=row.location_id,
+        website_id=None,
+        page_id=None,
+        source_type="growth_plan",
+        status=row.status,
+        priority=float(row.priority_score),
+        evidence={},
+        score_explanation={},
+        observed_at=row.updated_at,
+        headline=row.objective,
+        confidence=float(row.confidence),
+        source_count=len(row.source_references or []),
+        latest_revision_status=None,
+        site_change="not_applicable",
+    )
+
+
+def band_clause(
+    column: ColumnElement[float] | InstrumentedAttribute[int], band: PriorityBand | None
+) -> list[ColumnElement[bool]]:
+    if band is None:
+        return []
+    clauses: list[ColumnElement[bool]] = [column >= BAND_FLOOR[band]]
+    if band == "medium":
+        clauses.append(column < BAND_FLOOR["high"])
+    if band == "low":
+        clauses.append(column < BAND_FLOOR["medium"])
+    return clauses
+
+
+async def opportunity_rows(
+    session: AsyncSession,
+    permitted: dict[OpportunityKind, set[UUID]],
+    *,
+    organization_id: UUID | None = None,
+    kind: OpportunityKind | None = None,
+    band: PriorityBand | None = None,
+    include_closed: bool = False,
+    limit: int,
+    offset: int,
+) -> tuple[list[OpportunityListRow], bool]:
+    """The page of opportunities across every permitted kind, ranked by priority.
+
+    Each kind is one query bounded by ``offset + limit + 1``; the latest SEO revision, the
+    page rows and the publishing targets are three more. The count of queries never depends
+    on the number of opportunities or clients.
+    """
+    window = offset + limit + 1
+
+    def scope(current: OpportunityKind) -> set[UUID]:
+        orgs = permitted.get(current, set())
+        if organization_id is not None:
+            orgs = orgs & {organization_id}
+        return set() if kind is not None and kind != current else orgs
+
+    gathered: list[OpportunityListRow] = []
+    if orgs := scope("seo"):
+        seo = (
+            select(SEOOpportunity)
+            .where(
+                SEOOpportunity.organization_id.in_(orgs),
+                *band_clause(SEOOpportunity.priority_score, band),
+                *([SEOOpportunity.status.in_(OPEN_STATUSES["seo"])] if not include_closed else []),
+            )
+            .order_by(SEOOpportunity.priority_score.desc(), SEOOpportunity.id.asc())
+            .limit(window)
+        )
+        gathered += [seo_row(row) for row in await session.scalars(seo)]
+    if orgs := scope("content"):
+        content = (
+            select(ContentOpportunity)
+            .where(
+                ContentOpportunity.organization_id.in_(orgs),
+                *band_clause(ContentOpportunity.priority_score, band),
+                *(
+                    [ContentOpportunity.status.in_(OPEN_STATUSES["content"])]
+                    if not include_closed
+                    else []
+                ),
+            )
+            .order_by(ContentOpportunity.priority_score.desc(), ContentOpportunity.id.asc())
+            .limit(window)
+        )
+        gathered += [content_row(row) for row in await session.scalars(content)]
+    if orgs := scope("growth"):
+        growth = (
+            select(GrowthInitiative)
+            .where(
+                GrowthInitiative.organization_id.in_(orgs),
+                *band_clause(GrowthInitiative.priority_score, band),
+                *(
+                    [GrowthInitiative.status.in_(OPEN_STATUSES["growth"])]
+                    if not include_closed
+                    else []
+                ),
+            )
+            .order_by(GrowthInitiative.priority_score.desc(), GrowthInitiative.id.asc())
+            .limit(window)
+        )
+        gathered += [growth_row(row) for row in await session.scalars(growth)]
+    gathered.sort(key=lambda r: (-(r.priority or 0), r.kind, str(r.id)))
+    page = gathered[offset : offset + limit]
+    more = len(gathered) > offset + limit
+    return await with_seo_state(session, page), more
+
+
+async def with_seo_state(
+    session: AsyncSession, rows: list[OpportunityListRow]
+) -> list[OpportunityListRow]:
+    """Latest recommendation status and site-change availability for the SEO rows."""
+    seo = [r for r in rows if r.kind == "seo"]
+    if not seo:
+        return rows
+    latest: dict[UUID, str] = {}
+    for opportunity_id, status in await session.execute(
+        select(SEORecommendationRevision.opportunity_id, SEORecommendationRevision.status)
+        .where(SEORecommendationRevision.opportunity_id.in_([r.id for r in seo]))
+        .distinct(SEORecommendationRevision.opportunity_id)
+        .order_by(
+            SEORecommendationRevision.opportunity_id,
+            SEORecommendationRevision.revision_number.desc(),
+        )
+    ):
+        latest[opportunity_id] = status
+    org_ids = {r.organization_id for r in seo}
+    page_ids = {r.page_id for r in seo if r.page_id}
+    urls = (
+        {
+            page_id: url
+            for page_id, url in await session.execute(
+                select(SEOPage.id, SEOPage.normalized_url).where(
+                    SEOPage.organization_id.in_(org_ids), SEOPage.id.in_(page_ids)
+                )
+            )
+        }
+        if page_ids
+        else {}
+    )
+    by_org: dict[UUID, list[PublishingTarget]] = defaultdict(list)
+    for active in await session.scalars(
+        select(PublishingTarget).where(
+            PublishingTarget.organization_id.in_(org_ids), PublishingTarget.status == "active"
+        )
+    ):
+        by_org[active.organization_id].append(active)
+    result: list[OpportunityListRow] = []
+    for row in rows:
+        if row.kind != "seo":
+            result.append(row)
+            continue
+        targets = by_org.get(row.organization_id, [])
+        target: PublishingTarget | None = targets[0] if len(targets) == 1 else None
+        limitation = page_mapping_limitation(target, urls.get(row.page_id) if row.page_id else None)
+        result.append(
+            replace(
+                row,
+                latest_revision_status=latest.get(row.id),
+                site_change="not_configured" if limitation else "configured",
+            )
+        )
+    return result

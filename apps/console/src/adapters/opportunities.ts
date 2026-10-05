@@ -1,16 +1,35 @@
 import { z } from "zod";
 import type { components } from "@lilos/contracts/api";
-export type OpportunityView = components["schemas"]["OpportunityView"];
 export type AttentionView = components["schemas"]["AttentionView"];
-export type OpportunityDetail = components["schemas"]["OpportunityDetail"];
 const uuid = z.uuid();
+const kind = z.enum(["seo", "content", "growth"]);
+const sourceKind = z.enum([
+  "seo_opportunity",
+  "content_opportunity",
+  "growth_initiative",
+]);
+const prefix = {
+  seo: "seo_opportunity",
+  content: "content_opportunity",
+  growth: "growth_initiative",
+} as const;
+const evidenceSummary = z.object({
+  source: z.string().nullable(),
+  signal: z.string(),
+  metrics: z.array(z.object({ key: z.string(), value: z.number() })),
+  source_count: z.number().int().nullable().optional(),
+});
 const opportunity = z.object({
   id: z.string(),
-  source_kind: z.literal("seo_opportunity"),
+  source_kind: sourceKind,
+  kind,
   source_id: uuid,
   organization_id: uuid,
+  client: z
+    .object({ organization_id: uuid, name: z.string(), slug: z.string() })
+    .nullable(),
   location_id: uuid.nullable(),
-  website_id: uuid,
+  website_id: uuid.nullable(),
   page_id: uuid.nullable(),
   classification: z.enum([
     "Issue",
@@ -32,7 +51,38 @@ const opportunity = z.object({
     period_end: z.string().nullable(),
     limitation_code: z.string().nullable(),
   }),
+  priority_band: z.enum(["high", "medium", "low"]).nullable(),
+  headline: z.string().nullable(),
+  confidence: z.number().nullable(),
+  evidence_summary: evidenceSummary.nullable(),
+  next_action: z.enum([
+    "request_recommendation",
+    "review_recommendation",
+    "monitor_publication",
+    "review_opportunity",
+    "review_growth_plan",
+    "monitor_execution",
+    "none",
+  ]),
+  latest_revision_status: z.string().nullable(),
+  site_change: z.enum(["configured", "not_configured", "not_applicable"]),
+  site_change_reason: z.literal("SITE_CHANGES_NOT_CONFIGURED").nullable(),
 });
+export type OpportunityKind = z.infer<typeof kind>;
+export type OpportunityView = z.infer<typeof opportunity>;
+function assertScope(
+  rows: z.infer<typeof opportunity>[],
+  organizationId: string | null,
+) {
+  for (const row of rows)
+    if (
+      (organizationId !== null && row.organization_id !== organizationId) ||
+      row.id !== `${prefix[row.kind]}:${row.source_id}` ||
+      row.source_kind !== prefix[row.kind] ||
+      (row.client && row.client.organization_id !== row.organization_id)
+    )
+      throw new Error("SOURCE_SCOPE_INVALID");
+}
 export function adaptOpportunities(
   payload: unknown,
   organizationId: string,
@@ -40,13 +90,39 @@ export function adaptOpportunities(
   const parsed = z
     .object({ data: z.array(opportunity), next_offset: z.number().nullable() })
     .parse(payload);
-  for (const row of parsed.data)
-    if (
-      row.organization_id !== organizationId ||
-      row.id !== `seo_opportunity:${row.source_id}`
+  assertScope(parsed.data, organizationId);
+  return parsed.data;
+}
+const list = z.object({
+  data: z.array(opportunity),
+  next_offset: z.number().int().nullable(),
+  kinds_unavailable: z.array(kind),
+});
+export interface OpportunityListView {
+  items: OpportunityView[];
+  next: number | null;
+  kindsUnavailable: OpportunityKind[];
+}
+/** The unified list. A portfolio read has no single organization; each row carries its client. */
+export function adaptOpportunityList(
+  payload: unknown,
+  organizationId: string | null,
+  allowed: readonly string[] | null,
+): OpportunityListView {
+  const parsed = list.parse(payload);
+  assertScope(parsed.data, organizationId);
+  if (
+    allowed !== null &&
+    parsed.data.some(
+      (row) => !row.client || !allowed.includes(row.client.organization_id),
     )
-      throw new Error("SOURCE_SCOPE_INVALID");
-  return parsed.data as OpportunityView[];
+  )
+    throw new Error("SOURCE_SCOPE_INVALID");
+  return {
+    items: parsed.data,
+    next: parsed.next_offset,
+    kindsUnavailable: parsed.kinds_unavailable,
+  };
 }
 const attention = z.object({
   id: z.string(),
@@ -143,43 +219,93 @@ const revision = z.object({
   approved_fingerprint: z.string().nullable(),
   quality,
 });
+const growthPlan = z.object({
+  objective: z.string(),
+  rationale: z.string(),
+  confidence: z.number(),
+  actions: z.array(
+    z.object({
+      id: uuid,
+      action_key: z.string(),
+      product_key: z.string(),
+      action_type: z.string(),
+      execution_mode: z.string(),
+      status: z.string(),
+      risk: z.string(),
+      effort: z.string(),
+      expected_result_hypothesis: z.string(),
+      safe_error_code: z.string().nullable(),
+    }),
+  ),
+});
+const contentView = z.object({
+  target_reference: z.string(),
+  opportunity_type: z.string(),
+  items: z.array(
+    z.object({
+      id: uuid,
+      content_type: z.string(),
+      title: z.string(),
+      status: z.string(),
+    }),
+  ),
+});
+const history = z.array(
+  z.object({
+    event_type: z.string(),
+    action: z.string(),
+    result: z.string(),
+    occurred_at: z.string(),
+    actor_type: z.string(),
+  }),
+);
+const liveCheck = z.object({
+  state: z.string().nullable(),
+  verified_at: z.string().nullable(),
+  checks: publication.shape.live_checks,
+});
+const detailSchema = z.object({
+  kind,
+  data: opportunity,
+  page_url: z.string().nullable(),
+  recommendations: z.array(revision),
+  runs: z.array(
+    z.object({
+      id: uuid,
+      task_id: uuid,
+      task_status: z.string(),
+      status: z.string(),
+      correlation_id: z.string(),
+      output_reference: z.string().nullable(),
+    }),
+  ),
+  growth: growthPlan.nullable(),
+  content: contentView.nullable(),
+  history: history.nullable(),
+  live_check: liveCheck.nullable(),
+  can_recommend: z.boolean(),
+  can_approve: z.boolean(),
+  correlation_id: z.string(),
+});
+export type OpportunityDetail = z.infer<typeof detailSchema>;
 export function adaptDetail(
   payload: unknown,
   organizationId: string,
   sourceId: string,
 ): OpportunityDetail {
-  const parsed = z
-    .object({
-      data: opportunity,
-      page_url: z.string().nullable(),
-      recommendations: z.array(revision),
-      runs: z.array(
-        z.object({
-          id: uuid,
-          task_id: uuid,
-          task_status: z.string(),
-          status: z.string(),
-          correlation_id: z.string(),
-          output_reference: z.string().nullable(),
-        }),
-      ),
-      can_recommend: z.boolean(),
-      can_approve: z.boolean(),
-      correlation_id: z.string(),
-    })
-    .parse(payload);
-  adaptOpportunities(
-    { data: [parsed.data], next_offset: null },
-    organizationId,
-  );
+  const parsed = detailSchema.parse(payload);
+  assertScope([parsed.data], organizationId);
   if (
     parsed.data.source_id !== sourceId ||
+    parsed.data.kind !== parsed.kind ||
+    (parsed.kind === "growth") !== (parsed.growth !== null) ||
+    (parsed.kind === "content") !== (parsed.content !== null) ||
     parsed.recommendations.some((rev) =>
       rev.change_set.some((edit) => edit.page_id !== parsed.data.page_id),
     )
   )
     throw new Error("SOURCE_SCOPE_INVALID");
-  return parsed as OpportunityDetail;
+  return parsed;
 }
 export const displayEvidence = (value: unknown): string =>
   value == null

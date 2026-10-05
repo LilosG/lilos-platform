@@ -38,7 +38,7 @@ import type {
 } from "../../../adapters/local-search";
 import DialogFrame from "../../../components/ui/DialogFrame.astro";
 import AppLayout from "../../../layouts/AppLayout.astro";
-import OpportunityRow from "../../../components/opportunities/OpportunityRow.astro";
+import Opportunities from "../../../components/opportunities/Opportunities.astro";
 import OpportunityDetail from "../../../components/opportunities/OpportunityDetail.astro";
 import Overview from "../../../components/client/Overview.astro";
 import NotBuilt from "../../../components/ui/NotBuilt.astro";
@@ -51,12 +51,12 @@ import {
 import { organizations, resolveSlug } from "../../../server/context";
 import { read, APIError } from "../../../server/bff";
 import {
-  adaptOpportunities,
+  adaptOpportunityList,
   adaptAttention,
   adaptDetail,
 } from "../../../adapters/opportunities";
 import type {
-  OpportunityView,
+  OpportunityListView,
   AttentionView,
   OpportunityDetail as Detail,
 } from "../../../adapters/opportunities";
@@ -118,7 +118,7 @@ if (
   ].includes(tab)
 )
   return new Response("Page not found", { status: 404 });
-let opportunities: OpportunityView[] = [];
+let opportunities: OpportunityListView | undefined;
 let attention: AttentionView[] = [];
 let detail: Detail | undefined;
 let error: string | undefined;
@@ -126,6 +126,19 @@ let next: number | null = null;
 const offset = Number(Astro.url.searchParams.get("offset") ?? 0);
 if (!Number.isInteger(offset) || offset < 0 || offset > 100000)
   return new Response("Invalid page", { status: 400 });
+const oppFilters = {
+  organization_id: "",
+  kind: Astro.url.searchParams.get("kind") ?? "",
+  priority: Astro.url.searchParams.get("priority") ?? "",
+};
+if (
+  (oppFilters.kind &&
+    !["seo", "content", "growth"].includes(oppFilters.kind)) ||
+  (oppFilters.priority &&
+    !["high", "medium", "low"].includes(oppFilters.priority))
+)
+  return new Response("Invalid filter", { status: 400 });
+const fromPortfolio = Astro.url.searchParams.get("from") === "portfolio";
 const scope = `organizations/${client.organization_id}/command-center/`;
 try {
   if (section === "") {
@@ -270,12 +283,15 @@ try {
         sourceId,
       );
     else {
-      const payload = await read<{
-        data: unknown[];
-        next_offset: number | null;
-      }>(Astro.locals, scope + `opportunities/?offset=${offset}`);
-      opportunities = adaptOpportunities(payload, client.organization_id);
-      next = payload.next_offset;
+      const params = new URLSearchParams({ offset: String(offset) });
+      for (const key of ["kind", "priority"])
+        if (oppFilters[key as "kind" | "priority"])
+          params.set(key, oppFilters[key as "kind" | "priority"]);
+      opportunities = adaptOpportunityList(
+        await read(Astro.locals, scope + `opportunities/?${params}`),
+        client.organization_id,
+        null,
+      );
     }
   } else if (section === "attention") {
     const payload = await read<{ data: unknown[]; next_offset: number | null }>(
@@ -312,7 +328,9 @@ const title =
 ---
 
 <AppLayout
-  reference={overview !== undefined || notBuilt}
+  reference={overview !== undefined ||
+    notBuilt ||
+    (section === "opportunities" && error === undefined)}
   title={title}
   organizations={rows}
   client={client}
@@ -413,24 +431,39 @@ const title =
     ) : detail ? (
       <DialogFrame
         id="opportunity-detail"
-        returnTo={`/clients/${client.organization_slug}/opportunities/`}
+        returnTo={
+          fromPortfolio
+            ? "/opportunities/"
+            : `/clients/${client.organization_slug}/opportunities/`
+        }
       >
-        <OpportunityDetail
-          slot="body"
-          detail={detail}
-          slug={client.organization_slug}
-        />
+        <OpportunityDetail slot="body" detail={detail} />
+        <a
+          slot="footer"
+          class="control"
+          href={
+            detail.kind === "content"
+              ? `/clients/${client.organization_slug}/website-content/content/`
+              : detail.kind === "seo"
+                ? `/clients/${client.organization_slug}/local-search/pages/`
+                : `/clients/${client.organization_slug}/`
+          }
+        >
+          Open source area
+        </a>
       </DialogFrame>
     ) : (
       <Fragment>
-        <div class="pagehead">
-          <div>
-            <>
-              <h1>{title}</h1>
-              <p>{client.organization_name}</p>
-            </>
+        {!opportunities && (
+          <div class="pagehead">
+            <div>
+              <>
+                <h1>{title}</h1>
+                <p>{client.organization_name}</p>
+              </>
+            </div>
           </div>
-        </div>
+        )}
         {error ? (
           <p role="alert">{error}</p>
         ) : leads ? (
@@ -472,35 +505,13 @@ const title =
             days={days}
             offset={offset}
           />
-        ) : section === "opportunities" ? (
-          opportunities.length ? (
-            <div class="panel">
-              <table>
-                <caption>Canonical SEO opportunities</caption>
-                <thead>
-                  <tr>
-                    <th scope="col">Opportunity</th>
-                    <th scope="col">Priority</th>
-                    <th scope="col">Observed</th>
-                    <th scope="col">Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {opportunities.map((o) => (
-                    <OpportunityRow
-                      opportunity={o}
-                      slug={client.organization_slug}
-                    />
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <div class="panel">
-              <h2>No opportunities</h2>
-              <p>No canonical opportunities are available in this scope.</p>
-            </div>
-          )
+        ) : opportunities ? (
+          <Opportunities
+            view={opportunities}
+            client={client}
+            filters={oppFilters}
+            now={new Date()}
+          />
         ) : section === "attention" ? (
           <div class="panel">
             <h2>Operational attention</h2>

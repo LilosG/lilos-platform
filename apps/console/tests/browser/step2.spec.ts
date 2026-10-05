@@ -94,7 +94,6 @@ test("Unbuilt screens share one typed state and show no content", async ({
 }) => {
   await login(page);
   for (const path of [
-    "/opportunities/",
     "/reports/",
     "/automations/",
     "/integrations/",
@@ -111,6 +110,17 @@ test("Unbuilt screens share one typed state and show no content", async ({
     await expect(page.locator("[data-not-built]")).toContainText(
       "is not built yet",
     );
+  }
+  // Opportunities is built, in both scopes.
+  for (const path of [
+    "/opportunities/",
+    "/clients/synthetic-alpha/opportunities/",
+  ]) {
+    await page.goto(path);
+    await expect(page.locator("[data-not-built]")).toHaveCount(0);
+    await expect(
+      page.getByRole("heading", { name: "Opportunities", exact: true }),
+    ).toBeVisible();
   }
   await clean(page);
   expect((await page.goto("/nope/"))?.status()).toBe(404);
@@ -215,6 +225,7 @@ test("A verified factor forces MFA before any page or BFF call, then elevates", 
 });
 
 const BUILT = [
+  "/opportunities/",
   "/clients/synthetic-alpha/local-search/",
   "/clients/synthetic-alpha/reviews/",
   "/clients/synthetic-alpha/website-content/",

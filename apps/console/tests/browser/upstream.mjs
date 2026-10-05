@@ -16,8 +16,10 @@ const leadStates = new Map();
 let leadScenario = "inventory";
 const contentStates = new Map();
 const reviewStates = new Map();
+const growthStates = new Map();
+const contentOpportunityStates = new Map();
 import { createServer } from "node:http";
-import { commandCenter } from "./command-center-sim.mjs";
+import { commandCenter, unified } from "./command-center-sim.mjs";
 const ids = {
   a: "11111111-1111-4111-8111-111111111111",
   b: "22222222-2222-4222-8222-222222222222",
@@ -127,6 +129,8 @@ createServer(async (req, res) => {
           : session(parsed.refresh_token?.includes(ids.b) ? ids.b : ids.a),
       );
     reviewStates.delete(ids.run);
+    growthStates.clear();
+    contentOpportunityStates.clear();
     contentStates.delete(ids.run);
     if (parsed.password !== "synthetic-password")
       return reply(
@@ -376,6 +380,27 @@ createServer(async (req, res) => {
     }
     return reply(data);
   }
+  const growthDecision = path.match(/^growth\/([^/]+)\/decision$/);
+  if (growthDecision && req.method === "POST") {
+    if (claims.aal !== "aal2") return reply({ code: "AAL2_REQUIRED" }, 403);
+    growthStates.set(
+      claims.session_id,
+      parsed.approve ? "approved" : "rejected",
+    );
+    return reply({ data: { status: growthStates.get(claims.session_id) } });
+  }
+  if (
+    /^content\/opportunities\/[^/]+\/decision$/.test(path) &&
+    req.method === "POST"
+  ) {
+    contentOpportunityStates.set(
+      claims.session_id,
+      parsed.accept ? "accepted" : "rejected",
+    );
+    return reply({
+      data: { status: contentOpportunityStates.get(claims.session_id) },
+    });
+  }
   if (path === "content" && req.method === "POST")
     return reply({ data: { id: phase4.detail.id } }, 201);
   if (path.includes("content-operations/") && req.method === "POST") {
@@ -496,18 +521,7 @@ createServer(async (req, res) => {
     });
   if (path.endsWith("gbp/operations/locations/" + ids.factor + "/posts"))
     return reply({ data: { id: ids.rev, status: "awaiting_approval" } }, 201);
-  const opportunity = {
-    id: `seo_opportunity:${ids.opp}`,
-    source_kind: "seo_opportunity",
-    source_id: ids.opp,
-    organization_id: claims.sub,
-    location_id: null,
-    website_id: claims.sub,
-    page_id: ids.page,
-    classification: "Issue",
-    source_type: "missing_meta_description",
-    status: "identified",
-    priority: 70,
+  const opportunity = unified("seo", claims.sub, ids, {
     evidence: {
       issue: "missing_meta_description",
       quality: "valid",
@@ -515,8 +529,6 @@ createServer(async (req, res) => {
       source: "crawl",
       observed_at: "2026-09-30T00:00:00Z",
     },
-    score_explanation: { reason: "Persisted synthetic crawl finding" },
-    observed_at: "2026-09-30T00:00:00Z",
     evidence_context: {
       source: "crawl",
       quality: "issues_detected",
@@ -525,7 +537,9 @@ createServer(async (req, res) => {
       period_end: null,
       limitation_code: null,
     },
-  };
+    latest_revision_status: approved ? "approved" : "awaiting_approval",
+    next_action: approved ? "monitor_publication" : "review_recommendation",
+  });
   const recommendation = {
     id: revision,
     revision_number: revision === ids.rev ? 1 : 2,
@@ -583,8 +597,86 @@ createServer(async (req, res) => {
         : [],
     },
   };
-  if (path === "command-center/opportunities")
-    return reply({ data: [opportunity], next_offset: null });
+  if (path === "command-center/opportunities") {
+    const wanted = url.searchParams.get("kind");
+    const band = url.searchParams.get("priority");
+    return reply({
+      data: [
+        opportunity,
+        unified("growth", claims.sub, ids),
+        unified("content", claims.sub, ids),
+      ]
+        .filter((row) => !wanted || row.kind === wanted)
+        .filter((row) => !band || row.priority_band === band),
+      next_offset: null,
+      kinds_unavailable: [],
+    });
+  }
+  if (
+    path ===
+    `command-center/opportunities/${unified("growth", claims.sub, ids).source_id}`
+  )
+    return reply({
+      kind: "growth",
+      data: unified("growth", claims.sub, ids, {
+        status: growthStates.get(claims.session_id) ?? "proposed",
+        next_action: growthStates.has(claims.session_id)
+          ? "monitor_execution"
+          : "review_growth_plan",
+      }),
+      page_url: null,
+      recommendations: [],
+      runs: [],
+      growth: {
+        objective: "Win brunch searches",
+        rationale: "Demand exists for brunch queries",
+        confidence: 0.8,
+        actions: [
+          {
+            id: ids.run,
+            action_key: "a1",
+            product_key: "seo",
+            action_type: "site_implementation",
+            execution_mode: "manual",
+            status: "proposed",
+            risk: "low",
+            effort: "low",
+            expected_result_hypothesis: "More clicks on brunch queries",
+            safe_error_code: null,
+          },
+        ],
+      },
+      content: null,
+      history: [],
+      live_check: null,
+      can_recommend: false,
+      can_approve: claims.aal === "aal2",
+      correlation_id: req.headers["x-correlation-id"],
+    });
+  if (
+    path ===
+    `command-center/opportunities/${unified("content", claims.sub, ids).source_id}`
+  )
+    return reply({
+      kind: "content",
+      data: unified("content", claims.sub, ids, {
+        status: contentOpportunityStates.get(claims.session_id) ?? "identified",
+      }),
+      page_url: null,
+      recommendations: [],
+      runs: [],
+      growth: null,
+      content: {
+        target_reference: "/blog/brunch",
+        opportunity_type: "seo",
+        items: [],
+      },
+      history: null,
+      live_check: null,
+      can_recommend: false,
+      can_approve: true,
+      correlation_id: req.headers["x-correlation-id"],
+    });
   if (path === "command-center/attention")
     return reply({
       data: approved
@@ -603,6 +695,17 @@ createServer(async (req, res) => {
     });
   if (path === `command-center/opportunities/${ids.opp}`)
     return reply({
+      kind: "seo",
+      growth: null,
+      content: null,
+      history: [],
+      live_check: approved
+        ? {
+            state: "verified",
+            verified_at: "2026-09-30T00:00:00Z",
+            checks: recommendation.site_change.live_checks,
+          }
+        : null,
       data: opportunity,
       page_url: "https://synthetic.invalid/page",
       recommendations: [recommendation],

@@ -18,6 +18,7 @@ const { id, returnTo, returnLabel = "All opportunities" } = Astro.props;
   </div>
   <div class="body"><slot name="body" /></div><div class="dialogfoot">
     <a class="control" href={returnTo}>{returnLabel}</a>
+    <slot name="footer" />
   </div>
 </dialog>
 <script>

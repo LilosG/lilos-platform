@@ -33,6 +33,7 @@ from apps.api.app.access_control.enums import MembershipType, ScopeType
 from apps.api.app.access_control.service import AccessControlService
 from apps.api.app.administration.catalog import AdministrationCatalogSeeder
 from apps.api.app.administration.models import Product, ProductEntitlement
+from apps.api.app.agents.models import AgentRun, AgentSession
 from apps.api.app.authentication.contracts import VerifiedProviderClaims
 from apps.api.app.authentication.enums import AssuranceLevel, UserStatus
 from apps.api.app.authentication.models import UserProfile
@@ -43,6 +44,7 @@ from apps.api.app.execution.models import (
     WorkflowRun,
     WorkflowVersion,
 )
+from apps.api.app.growth.models import GrowthInitiative
 from apps.api.app.insights.models import InsightSource, MetricObservation
 from apps.api.app.integrations.models import (
     IntegrationConnection,
@@ -58,6 +60,7 @@ from apps.api.app.organizations.models import Organization
 from apps.api.app.platform_admin.models import PlatformAdministrator
 from apps.api.app.products.analytics.models import AnalyticsProperty
 from apps.api.app.products.analytics.service import AnalyticsService
+from apps.api.app.products.content.models import ContentOpportunity
 from apps.api.app.products.leads.models import Lead, LeadSource
 from apps.api.app.products.seo.models import (
     SEOOpportunity,
@@ -77,6 +80,8 @@ VOLUMES = {
     "workflow_runs": 120,
     "leads": 60,
     "opportunities": 40,
+    "content_opportunities": 25,
+    "growth_initiatives": 12,
 }
 NAMES = [
     "Coco Maya",
@@ -89,7 +94,7 @@ NAMES = [
     "Extra Client",
     "Another Client",
 ]
-PRODUCTS = ("seo", "insights", "leads", "reviews")
+PRODUCTS = ("seo", "insights", "leads", "reviews", "content")
 
 
 class FakeVerifier:
@@ -449,6 +454,83 @@ async def seed(url: str, organizations: int, scale: float) -> tuple[UUID, list[U
                 )
             if runs:
                 await session.execute(insert(WorkflowRun), runs)
+            await session.execute(
+                insert(ContentOpportunity),
+                [
+                    {
+                        "organization_id": org.id,
+                        "location_id": first_location.id,
+                        "product_key": "seo",
+                        "target_reference": f"/blog/post-{n}",
+                        "opportunity_type": "seo",
+                        "source_type": "seo_analysis",
+                        "source_reference": f"bench-{n}",
+                        "evidence_document": {"impressions": n, "clicks": n // 10},
+                        "evidence_hash": uuid4().hex + uuid4().hex,
+                        "priority_score": n % 100,
+                        "status": "identified" if n % 5 else "archived",
+                    }
+                    for n in range(int(VOLUMES["content_opportunities"] * scale))
+                ],
+            )
+            planner_workflow = WorkflowRun(
+                organization_id=org.id,
+                location_id=first_location.id,
+                workflow_version_id=versions[0].id,
+                product_key="benchmark",
+                trigger_type="manual",
+                idempotency_key=f"bench-planner-{index}-{uuid4().hex[:6]}",
+                request_hash="h",
+                input_document={},
+                correlation_id="bench",
+            )
+            planner_session = AgentSession(
+                organization_id=org.id,
+                location_id=first_location.id,
+                skill_key="growth.planner",
+                namespace_hash=uuid4().hex + uuid4().hex,
+                hermes_session_key=uuid4().hex,
+                status="active",
+                expires_at=now + timedelta(days=365),
+                version=1,
+            )
+            session.add_all([planner_workflow, planner_session])
+            await session.flush()
+            planner_run = AgentRun(
+                organization_id=org.id,
+                location_id=first_location.id,
+                workflow_run_id=planner_workflow.id,
+                agent_session_id=planner_session.id,
+                skill_key="growth.planner",
+                skill_version=6,
+                hermes_session_id=planner_session.hermes_session_key,
+                correlation_id="bench",
+                status="completed",
+                capability_snapshot={},
+                output_references=[],
+                source_references=[],
+                event_count=0,
+            )
+            session.add(planner_run)
+            await session.flush()
+            await session.execute(
+                insert(GrowthInitiative),
+                [
+                    {
+                        "organization_id": org.id,
+                        "location_id": first_location.id,
+                        "planner_agent_run_id": planner_run.id,
+                        "idempotency_key": f"bench-growth-{n}-{uuid4().hex[:6]}",
+                        "objective": f"Objective {n}",
+                        "rationale": "Benchmark rationale",
+                        "source_references": [{"n": n}],
+                        "priority_score": (n * 7) % 100,
+                        "confidence": 0.7,
+                        "status": "proposed" if n % 4 else "completed",
+                    }
+                    for n in range(int(VOLUMES["growth_initiatives"] * scale))
+                ],
+            )
             session.add(
                 Schedule(
                     organization_id=org.id,
@@ -506,12 +588,17 @@ def main() -> None:
         targets = {
             "/api/v1/command-center/clients": "clients",
             "/api/v1/command-center/portfolio?days=28": "portfolio",
+            "/api/v1/command-center/opportunities?limit=100": "opportunities_portfolio",
         }
         first = client.get("/api/v1/command-center/clients", headers=headers).json()["data"]
         if first:
             targets[f"/api/v1/command-center/clients/{first[0]['organization_id']}/overview"] = (
                 "overview"
             )
+            targets[
+                f"/api/v1/organizations/{first[0]['organization_id']}"
+                "/command-center/opportunities?limit=100"
+            ] = "opportunities_client"
         for path, label in targets.items():
             client.get(path, headers=headers)  # warm the pool and caches
             timings: list[float] = []

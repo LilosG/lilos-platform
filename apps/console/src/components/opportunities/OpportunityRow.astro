@@ -1,19 +1,74 @@
 ---
-import type { OpportunityView } from "../../adapters/opportunities";
+import type { OpportunityRowView } from "../../lib/opportunity-view";
+import StatusBadge from "../ui/StatusBadge.astro";
 interface Props {
-  opportunity: OpportunityView;
-  slug: string;
+  row: OpportunityRowView;
+  /** Portfolio rows name their client; a client's own rows do not. */
+  showClient: boolean;
 }
-const { opportunity: o, slug } = Astro.props;
-const href = `/clients/${slug}/opportunities/${o.source_id}/`;
+const { row: o, showClient } = Astro.props;
 ---
 
-<tr class="opportunity-row"
-  ><td
-    ><a href={href}><b>{o.source_type.replaceAll("_", " ")}</b></a><span
-      class="sub">{o.classification} · {o.status}</span
-    ></td
-  ><td>{o.priority === null ? "Priority unavailable" : o.priority}</td><td
-    >{o.observed_at}</td
-  ><td><a class="control" href={href}>Details</a></td></tr
+<tr
+  class="opportunity-row"
+  tabindex="0"
+  data-opportunity-row="true"
+  data-href={o.href}
+  data-opportunity-id={o.id}
+  data-opportunity-mode="table"
+  data-type={o.type}
+  data-priority={o.band}
+  data-kind={o.kind}
+  aria-label={`Open opportunity: ${o.title}`}
 >
+  <td>
+    <b>{o.title}</b>
+    <span class="sub">
+      {
+        showClient ? (
+          <Fragment>
+            <a class="contextname" href={o.clientHref}>
+              {o.clientName}
+            </a>{" "}
+            · {o.type} · {o.classification}
+          </Fragment>
+        ) : (
+          `${o.classification} · ${o.type}`
+        )
+      }
+    </span>
+    {o.why && <p class="opwhy">{o.why}</p>}
+  </td>
+  <td>
+    {o.evidence}
+    <span class="sub">{o.evidenceSub}</span>
+  </td>
+  <td>
+    <StatusBadge text={o.band} />
+    <span class="sub" data-opportunity-effort={o.id}>{o.sub}</span>
+  </td>
+  <td class="nextaction">
+    {o.next}
+    {
+      o.siteChangeNote && (
+        <span class="sub" data-site-change-reason="SITE_CHANGES_NOT_CONFIGURED">
+          {o.siteChangeNote}
+        </span>
+      )
+    }
+  </td>
+  <td>
+    <a class="control" href={o.href}>Details</a>
+  </td>
+</tr>
+
+<style>
+  .opportunity-row {
+    cursor: pointer;
+  }
+
+  .opportunity-row:focus-visible {
+    outline: 3px solid #81a78d;
+    outline-offset: -3px;
+  }
+</style>

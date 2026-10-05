@@ -28,6 +28,7 @@ const revise = z
   })
   .strict();
 const decision = z.object({ approve: z.boolean() }).strict();
+const contentDecision = z.object({ accept: z.boolean() }).strict();
 type DecisionBody =
   paths["/api/v1/organizations/{organization_id}/seo/recommendations/{revision_id}/decision"]["post"]["requestBody"]["content"]["application/json"];
 export const routes = [
@@ -55,9 +56,28 @@ export const routes = [
     query: [],
   },
   {
+    pattern: /^command-center\/opportunities\/$/,
+    method: "GET",
+    upstream: "",
+    query: [
+      "limit",
+      "offset",
+      "organization_id",
+      "kind",
+      "priority",
+      "include_closed",
+    ],
+  },
+  {
     pattern: new RegExp(
-      `^organizations/${uuid}/command-center/(opportunities|attention)/$`,
+      `^organizations/${uuid}/command-center/opportunities/$`,
     ),
+    method: "GET",
+    upstream: "",
+    query: ["limit", "offset", "kind", "priority", "include_closed"],
+  },
+  {
+    pattern: new RegExp(`^organizations/${uuid}/command-center/attention/$`),
     method: "GET",
     upstream: "",
     query: ["limit", "offset"],
@@ -105,7 +125,44 @@ export const routes = [
     query: [],
     body: decision,
   },
+  {
+    // Hermes growth plans are approved or rejected through the existing growth endpoint.
+    pattern: new RegExp(`^organizations/${uuid}/growth/${uuid}/decision/$`),
+    method: "POST",
+    upstream: "",
+    query: [],
+    body: decision,
+  },
+  {
+    pattern: new RegExp(
+      `^organizations/${uuid}/content/opportunities/${uuid}/decision/$`,
+    ),
+    method: "POST",
+    upstream: "",
+    query: [],
+    body: contentDecision,
+  },
 ] as const;
+const uuidKeys = new Set([
+  "website_id",
+  "location_id",
+  "target_id",
+  "organization_id",
+]);
+const enumQuery: Record<string, readonly string[]> = {
+  kind: ["seo", "content", "growth"],
+  priority: ["high", "medium", "low"],
+  include_closed: ["true", "false"],
+};
+/** One typed rule per query key; anything unlisted fails closed. */
+function queryValid(key: string, value: string): boolean {
+  if (uuidKeys.has(key)) return z.uuid().safeParse(value).success;
+  if (key in enumQuery) return enumQuery[key].includes(value);
+  if (!/^\d+$/.test(value)) return false;
+  if (key === "days") return [7, 28, 90].includes(Number(value));
+  if (key === "limit") return Number(value) >= 1 && Number(value) <= 100;
+  return Number(value) <= 100000;
+}
 export class APIError extends Error {
   constructor(
     public status: number,
@@ -141,16 +198,8 @@ export async function forward(
   for (const [key, value] of query) {
     if (
       !(route.query as readonly string[]).includes(key) ||
-      (key === "website_id" || key === "location_id" || key === "target_id"
-        ? !z.uuid().safeParse(value).success
-        : !/^\d+$/.test(value)) ||
       query.getAll(key).length !== 1 ||
-      (key !== "website_id" &&
-        key !== "location_id" &&
-        key !== "target_id" &&
-        Number(value) > (key === "limit" ? 100 : 100000)) ||
-      (key === "days" && ![7, 28, 90].includes(Number(value))) ||
-      (key === "limit" && Number(value) < 1)
+      !queryValid(key, value)
     )
       return response("QUERY_INVALID", 400);
   }

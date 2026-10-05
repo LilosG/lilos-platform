@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Annotated, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 
@@ -14,6 +14,10 @@ from apps.api.app.authentication.enums import AssuranceLevel
 from apps.api.app.authorization.contracts import AuthorizationRequest
 from apps.api.app.authorization.service import AuthorizationService
 from apps.api.app.execution.models import WorkflowRun
+from apps.api.app.growth.models import GrowthInitiative
+from apps.api.app.growth.service import GrowthService
+from apps.api.app.organizations.models import Organization
+from apps.api.app.products.content.models import ContentItem, ContentOpportunity
 from apps.api.app.products.seo.change_quality import QualityCode, quality_problems
 from apps.api.app.products.seo.change_set import SiteChangeItem, SiteChangeSet
 from apps.api.app.products.seo.decision import (
@@ -22,6 +26,19 @@ from apps.api.app.products.seo.decision import (
     resolve_decision,
 )
 from apps.api.app.products.seo.models import SEOImplementationTask, SEOOpportunity, SEOPage
+from apps.api.app.routes.command_center_reads import (
+    KIND_PERMISSION,
+    OpportunityKind,
+    OpportunityListRow,
+    PriorityBand,
+    SiteChangeAvailability,
+    content_row,
+    growth_row,
+    opportunity_rows,
+    priority_band,
+    seo_row,
+    with_seo_state,
+)
 from apps.api.app.routes.seo import Session, meta, no_store, policy, recommendation_row, service
 
 router = APIRouter(
@@ -45,13 +62,48 @@ class EvidenceContext(DTO):
     limitation_code: str | None = None
 
 
+class OpportunityClient(DTO):
+    organization_id: UUID
+    name: str
+    slug: str
+
+
+class EvidenceMetric(DTO):
+    key: str
+    value: float
+
+
+class EvidenceSummary(DTO):
+    """What the evidence says, as codes and numbers. Labels are the frontend's job."""
+
+    source: str | None
+    signal: str
+    metrics: list[EvidenceMetric]
+    source_count: int | None = None
+
+
+NextAction = Literal[
+    "request_recommendation",
+    "review_recommendation",
+    "monitor_publication",
+    "review_opportunity",
+    "review_growth_plan",
+    "monitor_execution",
+    "none",
+]
+
+
 class OpportunityView(DTO):
     id: str
-    source_kind: Literal["seo_opportunity"] = "seo_opportunity"
+    source_kind: Literal["seo_opportunity", "content_opportunity", "growth_initiative"] = (
+        "seo_opportunity"
+    )
+    kind: OpportunityKind = "seo"
     source_id: UUID
     organization_id: UUID
+    client: OpportunityClient | None = None
     location_id: UUID | None
-    website_id: UUID
+    website_id: UUID | None
     page_id: UUID | None
     classification: Literal["Issue", "Growth Opportunity", "Optimization", "Data & Tracking"]
     source_type: str
@@ -61,11 +113,22 @@ class OpportunityView(DTO):
     score_explanation: dict[str, object]
     observed_at: datetime
     evidence_context: EvidenceContext
+    priority_band: PriorityBand | None = None
+    headline: str | None = None
+    confidence: float | None = None
+    evidence_summary: EvidenceSummary | None = None
+    next_action: NextAction = "none"
+    latest_revision_status: str | None = None
+    site_change: SiteChangeAvailability = "not_applicable"
+    # Typed reason the site-change action is disabled; the frontend owns the sentence.
+    site_change_reason: Literal["SITE_CHANGES_NOT_CONFIGURED"] | None = None
 
 
 class OpportunityList(DTO):
     data: list[OpportunityView]
     next_offset: int | None
+    # Kinds the caller may not read: labeled, never shown as an empty list of zero.
+    kinds_unavailable: list[OpportunityKind] = []
 
 
 class QualityResult(DTO):
@@ -135,11 +198,66 @@ class RunView(DTO):
     output_reference: str | None
 
 
+class StatusEvent(DTO):
+    event_type: str
+    action: str
+    result: str
+    occurred_at: datetime
+    actor_type: str
+
+
+class GrowthActionView(DTO):
+    id: UUID
+    action_key: str
+    product_key: str
+    action_type: str
+    execution_mode: str
+    status: str
+    risk: str
+    effort: str
+    expected_result_hypothesis: str
+    safe_error_code: str | None
+
+
+class GrowthPlanView(DTO):
+    objective: str
+    rationale: str
+    confidence: float
+    actions: list[GrowthActionView]
+
+
+class ContentItemView(DTO):
+    id: UUID
+    content_type: str
+    title: str
+    status: str
+
+
+class ContentOpportunityView(DTO):
+    target_reference: str
+    opportunity_type: str
+    items: list[ContentItemView]
+
+
+class LiveCheckResult(DTO):
+    """The verification of the live site against the approved change, as persisted."""
+
+    state: str | None
+    verified_at: datetime | None
+    checks: list[LiveCheck]
+
+
 class OpportunityDetail(DTO):
+    kind: OpportunityKind = "seo"
     data: OpportunityView
     page_url: str | None
     recommendations: list[RecommendationView]
     runs: list[RunView]
+    growth: GrowthPlanView | None = None
+    content: ContentOpportunityView | None = None
+    # None: the caller may not read audit history. An empty list is a real "no events".
+    history: list[StatusEvent] | None = None
+    live_check: LiveCheckResult | None = None
     can_recommend: bool
     can_approve: bool
     correlation_id: str
@@ -198,6 +316,89 @@ def project(item: SEOOpportunity) -> OpportunityView:
     )
 
 
+def next_action_for(kind: OpportunityKind, status: str, revision_status: str | None) -> NextAction:
+    """One typed next step per state; the frontend maps it to wording."""
+    if kind == "seo":
+        if revision_status is None or revision_status in {"rejected", "superseded", "withdrawn"}:
+            return "request_recommendation" if status not in {"archived", "implemented"} else "none"
+        if revision_status == "awaiting_approval":
+            return "review_recommendation"
+        return "monitor_publication" if revision_status == "approved" else "none"
+    if kind == "content":
+        return "review_opportunity" if status in {"identified", "validated"} else "none"
+    if status == "proposed":
+        return "review_growth_plan"
+    return "monitor_execution" if status in {"approved", "executing"} else "none"
+
+
+EVIDENCE_NUMBERS = ("clicks", "impressions", "ctr", "position", "http_status")
+
+
+def evidence_summary(row: OpportunityListRow) -> EvidenceSummary:
+    metrics = [
+        EvidenceMetric(key=key, value=float(value))
+        for key in EVIDENCE_NUMBERS
+        if isinstance((value := row.evidence.get(key)), (int, float))
+        and not isinstance(value, bool)
+    ]
+    issue = row.evidence.get("issue")
+    source = row.evidence.get("source")
+    return EvidenceSummary(
+        source=str(source) if source else ("crawl" if row.kind == "seo" else None),
+        signal=str(issue) if isinstance(issue, str) else row.source_type,
+        metrics=metrics,
+        source_count=row.source_count,
+    )
+
+
+def project_row(row: OpportunityListRow, organization: Organization) -> OpportunityView:
+    classification: Literal["Issue", "Growth Opportunity", "Optimization", "Data & Tracking"] = (
+        "Growth Opportunity" if row.kind == "growth" or row.source_type in GROWTH_TYPES else "Issue"
+    )
+    return OpportunityView(
+        id=f"{SOURCE_KINDS[row.kind]}:{row.id}",
+        source_kind=SOURCE_KINDS[row.kind],
+        kind=row.kind,
+        source_id=row.id,
+        organization_id=row.organization_id,
+        client=OpportunityClient(
+            organization_id=organization.id, name=organization.name, slug=organization.slug
+        ),
+        location_id=row.location_id,
+        website_id=row.website_id,
+        page_id=row.page_id,
+        classification=classification,
+        source_type=row.source_type,
+        status=row.status,
+        priority=row.priority,
+        evidence=row.evidence,
+        score_explanation=row.score_explanation,
+        observed_at=row.observed_at,
+        evidence_context=EvidenceContext(
+            source=None, quality=None, freshness_at=None, period_start=None, period_end=None
+        ),
+        priority_band=priority_band(row.priority),
+        headline=row.headline,
+        confidence=row.confidence,
+        evidence_summary=evidence_summary(row),
+        next_action=next_action_for(row.kind, row.status, row.latest_revision_status),
+        latest_revision_status=row.latest_revision_status,
+        site_change=row.site_change,
+        site_change_reason="SITE_CHANGES_NOT_CONFIGURED"
+        if row.site_change == "not_configured"
+        else None,
+    )
+
+
+SOURCE_KINDS: dict[
+    OpportunityKind, Literal["seo_opportunity", "content_opportunity", "growth_initiative"]
+] = {
+    "seo": "seo_opportunity",
+    "content": "content_opportunity",
+    "growth": "growth_initiative",
+}
+
+
 async def capability(
     session: Session,
     principal: Authenticated,
@@ -221,20 +422,96 @@ async def capability(
     return result.allowed
 
 
+async def readable_kinds(
+    session: Session,
+    principal: Authenticated,
+    organization_id: UUID,
+    request: Request,
+) -> dict[OpportunityKind, set[UUID]]:
+    """Which opportunity kinds the caller may read for one client, in one set-based decision."""
+    decisions = await authorization.evaluate_many(
+        session,
+        principal,
+        [organization_id],
+        list(KIND_PERMISSION.values()),
+        correlation_id=str(meta(request)["correlation_id"]),
+    )
+    return {
+        kind: {organization_id} if decisions[(organization_id, permission)].allowed else set()
+        for kind, permission in KIND_PERMISSION.items()
+    }
+
+
 @router.get("/opportunities", response_model=OpportunityList)
 async def opportunities(
+    request: Request,
     organization_id: UUID,
     session: Session,
-    _: Annotated[object, policy("seo.read")],
+    principal: Authenticated,
     offset: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
+    kind: OpportunityKind | None = None,
+    priority: PriorityBand | None = None,
+    include_closed: bool = False,
 ) -> OpportunityList:
-    rows, more = await service.list_opportunities(
-        session, organization_id, limit=limit, offset=offset
+    permitted = await readable_kinds(session, principal, organization_id, request)
+    if not any(permitted.values()):
+        # Same answer for "does not exist" and "not yours": no tenant disclosure.
+        raise HTTPException(status_code=404, detail="Not found")
+    organization = await session.get(Organization, organization_id)
+    if organization is None:
+        raise HTTPException(status_code=404, detail="Not found")
+    rows, more = await opportunity_rows(
+        session,
+        permitted,
+        kind=kind,
+        band=priority,
+        include_closed=include_closed,
+        limit=limit,
+        offset=offset,
     )
     return OpportunityList(
-        data=[project(row) for row in rows], next_offset=offset + limit if more else None
+        data=[project_row(row, organization) for row in rows],
+        next_offset=offset + limit if more else None,
+        kinds_unavailable=[k for k, orgs in permitted.items() if not orgs],
     )
+
+
+async def resolve_kind(
+    session: Session, organization_id: UUID, opportunity_id: UUID
+) -> tuple[OpportunityKind, SEOOpportunity | ContentOpportunity | GrowthInitiative] | None:
+    """Which kind a tenant-scoped id belongs to. At most three primary-key lookups."""
+    seo = await session.scalar(
+        select(SEOOpportunity).where(
+            SEOOpportunity.organization_id == organization_id,
+            SEOOpportunity.id == opportunity_id,
+        )
+    )
+    if seo is not None:
+        return "seo", seo
+    content = await session.scalar(
+        select(ContentOpportunity).where(
+            ContentOpportunity.organization_id == organization_id,
+            ContentOpportunity.id == opportunity_id,
+        )
+    )
+    if content is not None:
+        return "content", content
+    growth = await session.scalar(
+        select(GrowthInitiative).where(
+            GrowthInitiative.organization_id == organization_id,
+            GrowthInitiative.id == opportunity_id,
+        )
+    )
+    return ("growth", growth) if growth is not None else None
+
+
+HISTORY_RESOURCE: dict[OpportunityKind, str] = {
+    "seo": "seo_opportunity",
+    "content": "content_opportunity",
+    "growth": "growth_initiative",
+}
+growth_service = GrowthService()
 
 
 @router.get("/opportunities/{opportunity_id}", response_model=OpportunityDetail)
@@ -244,10 +521,115 @@ async def detail(
     opportunity_id: UUID,
     session: Session,
     principal: Authenticated,
-    _: Annotated[object, policy("seo.read")],
 ) -> OpportunityDetail:
-    item = await service.get_opportunity(session, organization_id, opportunity_id)
-    projected = project(item)
+    found = await resolve_kind(session, organization_id, opportunity_id)
+    if found is None:
+        raise HTTPException(status_code=404, detail="Not found")
+    kind, entity = found
+    if not await capability(
+        session, principal, organization_id, KIND_PERMISSION[kind], AssuranceLevel.AAL1, request
+    ):
+        # Same answer for "does not exist" and "not yours": no tenant disclosure.
+        raise HTTPException(status_code=404, detail="Not found")
+    organization = await session.get(Organization, organization_id)
+    if organization is None:
+        raise HTTPException(status_code=404, detail="Not found")
+    history: list[StatusEvent] | None = None
+    if await capability(
+        session, principal, organization_id, "audit.read", AssuranceLevel.AAL1, request
+    ):
+        history = [
+            StatusEvent(
+                event_type=event.event_type,
+                action=event.action,
+                result=event.result,
+                occurred_at=event.occurred_at,
+                actor_type=event.actor_type,
+            )
+            for event in await service.audit_repository.list_for_resource(
+                session,
+                organization_id=organization_id,
+                resource_type=HISTORY_RESOURCE[kind],
+                resource_id=opportunity_id,
+                limit=50,
+            )
+        ]
+    correlation = str(meta(request)["correlation_id"])
+    if kind == "growth":
+        assert isinstance(entity, GrowthInitiative)
+        plan = await growth_service.detail(session, organization_id, opportunity_id)
+        actions = plan["actions"] if plan else []
+        listed = growth_row(entity)
+        return OpportunityDetail(
+            kind="growth",
+            data=project_row(listed, organization),
+            page_url=None,
+            recommendations=[],
+            runs=[],
+            growth=GrowthPlanView(
+                objective=entity.objective,
+                rationale=entity.rationale,
+                confidence=float(entity.confidence),
+                actions=[
+                    GrowthActionView.model_validate(
+                        {key: action[key] for key in GrowthActionView.model_fields if key in action}
+                    )
+                    for action in actions  # type: ignore[attr-defined]
+                ],
+            ),
+            history=history,
+            can_recommend=False,
+            can_approve=await capability(
+                session,
+                principal,
+                organization_id,
+                "workflows.execute",
+                AssuranceLevel.AAL2,
+                request,
+            ),
+            correlation_id=correlation,
+        )
+    if kind == "content":
+        assert isinstance(entity, ContentOpportunity)
+        items = await session.scalars(
+            select(ContentItem)
+            .where(
+                ContentItem.organization_id == organization_id,
+                ContentItem.opportunity_id == opportunity_id,
+            )
+            .order_by(ContentItem.created_at)
+        )
+        return OpportunityDetail(
+            kind="content",
+            data=project_row(content_row(entity), organization),
+            page_url=None,
+            recommendations=[],
+            runs=[],
+            content=ContentOpportunityView(
+                target_reference=entity.target_reference,
+                opportunity_type=entity.opportunity_type,
+                items=[
+                    ContentItemView(
+                        id=item.id,
+                        content_type=item.content_type,
+                        title=item.title,
+                        status=item.status,
+                    )
+                    for item in items
+                ],
+            ),
+            history=history,
+            can_recommend=False,
+            can_approve=await capability(
+                session, principal, organization_id, "content.create", AssuranceLevel.AAL1, request
+            ),
+            correlation_id=correlation,
+        )
+    assert isinstance(entity, SEOOpportunity)
+    item = entity
+    (seo_state,) = await with_seo_state(session, [seo_row(item)])
+    projected = project_row(seo_state, organization)
+    projected.evidence_context = project(item).evidence_context
     try:
         evidence = await resolve_decision(
             session, organization_id, item, [f"seo-opportunity:{item.id}"]
@@ -341,8 +723,19 @@ async def detail(
         if item.page_id
         else None
     )
+    # The newest revision's persisted publication is the live check; nothing is re-derived here.
+    latest_site_change = recommendations[0].site_change if recommendations else None
     return OpportunityDetail(
+        kind="seo",
         data=projected,
+        history=history,
+        live_check=LiveCheckResult(
+            state=latest_site_change.verification_state,
+            verified_at=latest_site_change.verified_at,
+            checks=latest_site_change.live_checks,
+        )
+        if latest_site_change
+        else None,
         page_url=page.normalized_url if page else None,
         recommendations=recommendations,
         runs=[
@@ -362,7 +755,7 @@ async def detail(
         can_approve=await capability(
             session, principal, organization_id, "seo.approve", AssuranceLevel.AAL2, request
         ),
-        correlation_id=str(meta(request)["correlation_id"]),
+        correlation_id=correlation,
     )
 
 

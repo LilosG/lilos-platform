@@ -65,6 +65,25 @@ SITE_CHANGE_JOB_ATTEMPTS = 30
 AuditFn = Callable[..., Awaitable[None]]
 
 
+def page_mapping_limitation(target: PublishingTarget | None, page_url: str | None) -> str | None:
+    """`SITE_MAPPING_REQUIRED` when a page cannot be edited through the target's page map.
+
+    Pure: callers load the page and the active target (one set-based read for many
+    pages, or one pair for a single page). None means a site change is possible.
+    """
+    if page_url is None or target is None or not target.allowed_site_change_prefixes:
+        return SiteChangeCode.SITE_MAPPING_REQUIRED.value
+    try:
+        resolve_entry(
+            page_map_from_contract(target.frontmatter_contract),
+            page_url,
+            target.allowed_site_change_prefixes,
+        )
+    except SEOSiteMappingRequiredError:
+        return SiteChangeCode.SITE_MAPPING_REQUIRED.value
+    return None
+
+
 @dataclass(frozen=True, slots=True)
 class PageFields:
     """A page's current, repo-read values for every field its page map declares."""
@@ -268,17 +287,7 @@ class SiteChangeService:
             select(SEOPage).where(SEOPage.organization_id == organization_id, SEOPage.id == page_id)
         )
         target = await self.active_target(session, organization_id)
-        if page is None or target is None or not target.allowed_site_change_prefixes:
-            return SiteChangeCode.SITE_MAPPING_REQUIRED.value
-        try:
-            resolve_entry(
-                page_map_from_contract(target.frontmatter_contract),
-                page.normalized_url,
-                target.allowed_site_change_prefixes,
-            )
-        except SEOSiteMappingRequiredError:
-            return SiteChangeCode.SITE_MAPPING_REQUIRED.value
-        return None
+        return page_mapping_limitation(target, page.normalized_url if page else None)
 
     async def site_change_context(
         self, session: AsyncSession, organization_id: UUID, opportunity: SEOOpportunity

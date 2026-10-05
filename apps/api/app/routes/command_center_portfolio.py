@@ -26,13 +26,22 @@ from apps.api.app.organizations.enums import OrganizationStatus
 from apps.api.app.organizations.models import Organization
 from apps.api.app.platform_admin.repository import PlatformAdministratorRepository
 from apps.api.app.products.seo.decision import GROWTH_TYPES
-from apps.api.app.routes.command_center import authorization
+from apps.api.app.routes.command_center import (
+    OpportunityList,
+    OpportunityView,
+    authorization,
+    project_row,
+)
 from apps.api.app.routes.command_center_reads import (
+    KIND_PERMISSION,
     PERMISSIONS,
     Facts,
     MetricRead,
+    OpportunityKind,
+    PriorityBand,
     SectionTimer,
     load_facts,
+    opportunity_rows,
 )
 from apps.api.app.routes.seo import Session, no_store
 
@@ -538,6 +547,51 @@ async def visible_clients(session: Session, principal: Authenticated) -> Visible
 
 
 SEVERITY_ORDER = {"critical": 0, "high": 1, "medium": 2}
+
+
+@router.get("/opportunities", response_model=OpportunityList)
+async def portfolio_opportunities(
+    request: Request,
+    session: Session,
+    principal: Authenticated,
+    offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=100),
+    organization_id: UUID | None = None,
+    kind: OpportunityKind | None = None,
+    priority: PriorityBand | None = None,
+    include_closed: bool = False,
+) -> OpportunityList:
+    """Every opportunity kind across the clients the caller may open, one set-based read."""
+    timer = SectionTimer()
+    async with timer.section("scope"):
+        scope = await visible_scope(session, principal)
+        allowed = await permitted_organizations(
+            session, principal, scope, scope.organizations, str(request_correlation_id(request))
+        )
+    permitted: dict[OpportunityKind, set[UUID]] = {
+        k: allowed[permission] for k, permission in KIND_PERMISSION.items()
+    }
+    if organization_id is not None and all(o.id != organization_id for o in scope.organizations):
+        raise HTTPException(status_code=404, detail="Not found")
+    async with timer.section("opportunities"):
+        rows, more = await opportunity_rows(
+            session,
+            permitted,
+            organization_id=organization_id,
+            kind=kind,
+            band=priority,
+            include_closed=include_closed,
+            limit=limit,
+            offset=offset,
+        )
+    owners = {o.id: o for o in scope.organizations}
+    timer.log("opportunities", len(scope.organizations), str(request_correlation_id(request)))
+    data: list[OpportunityView] = [project_row(row, owners[row.organization_id]) for row in rows]
+    return OpportunityList(
+        data=data,
+        next_offset=offset + limit if more else None,
+        kinds_unavailable=[k for k in KIND_PERMISSION if not permitted[k]],
+    )
 
 
 @router.get("/portfolio", response_model=PortfolioOverview)

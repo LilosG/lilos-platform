@@ -19,9 +19,12 @@ test("SSR login -> canonical detail -> MFA -> revise -> exact approve -> publica
   await expect(
     page.getByRole("heading", { name: "Opportunities", exact: true }),
   ).toBeVisible();
-  await page.getByRole("link", { name: "Details", exact: true }).click();
+  await page
+    .getByRole("link", { name: "Details", exact: true })
+    .first()
+    .click();
   await expect(
-    page.getByRole("heading", { name: "Evidence", exact: true }),
+    page.getByRole("heading", { name: "Supporting evidence", exact: true }),
   ).toBeVisible();
   await expect(
     page.getByText("Deterministic quality: passed", { exact: true }),
@@ -135,7 +138,7 @@ test("tenant SSR/BFF/cache isolation and direct unauthorized source requests", a
   await login(pa);
   await pa.goto(detail);
   await expect(
-    pa.getByRole("heading", { name: "Evidence", exact: true }),
+    pa.getByRole("heading", { name: "Supporting evidence", exact: true }),
   ).toBeVisible();
   await login(pb, "b@example.test");
   const result = await pb.goto(detail);
