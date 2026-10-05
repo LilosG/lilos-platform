@@ -101,18 +101,59 @@ const queryTitles: Record<string, string> = {
   gsc_unmapped_demand: "No page for",
   seo: "Content for",
 };
-export function title(o: OpportunityView): string {
+export interface FindingSubject {
+  /** The detector or source type, such as "gsc_low_ctr". */
+  source_type: string;
+  kind: OpportunityKind;
+  query: string | null;
+  /** A path or a full address; an address is shown as its path. */
+  path: string | null;
+  headline?: string | null;
+}
+/** A landing page by its path; the site's own address adds nothing to a client's list. */
+export function pagePath(address: string): string {
+  try {
+    const url = new URL(address);
+    return pageLabel(url.pathname + url.search);
+  } catch {
+    return pageLabel(address);
+  }
+}
+/** One title for a finding wherever it is listed: the Opportunities screen and a client's Overview. */
+export function findingTitle(o: FindingSubject): string {
   if (o.headline && !unsafe.test(o.headline)) return o.headline;
-  const query = clean(o.subject.query);
-  const path = clean(o.subject.path);
+  const query = clean(o.query);
+  const path = o.path ? clean(pagePath(o.path)) : null;
   const lead = queryTitles[o.source_type];
   if (lead && query) return `${lead}: ${quoted(query)}`;
   const base =
     o.kind === "content"
       ? "Content opportunity"
       : sourceTypeLabel(o.source_type);
-  if (path) return `${base} \u00b7 ${pageLabel(path)}`;
+  if (path) return `${base} \u00b7 ${path}`;
   return query ? `${base}: ${quoted(query)}` : base;
+}
+export const title = (o: OpportunityView): string =>
+  findingTitle({
+    source_type: o.source_type,
+    kind: o.kind,
+    query: o.subject.query,
+    path: o.subject.path,
+    headline: o.headline,
+  });
+/** One finding is (organization, type, query or page); the first listed, the best ranked, stands for it. */
+export function dedupeFindings<T>(
+  items: T[],
+  key: (item: T) => [string, string, string | null],
+): T[] {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    const [organization, type, target] = key(item);
+    const id = `${organization}\u0000${type}\u0000${target ?? ""}`;
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
 }
 export function metricText(key: string, value: number): [string, string] {
   const label = metricLabel[key] ?? humanize(key);

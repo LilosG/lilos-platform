@@ -1,37 +1,10 @@
 import { z } from "zod";
+import { action } from "./api-client";
 const status = () =>
   document.querySelector<HTMLElement>("[data-search-status]");
 function message(text: string) {
   const node = status();
   if (node) node.textContent = text;
-}
-async function action(url: string, body: unknown, method = "POST") {
-  const response = await fetch(url, {
-    method,
-    headers: {
-      "Content-Type": "application/json",
-      "X-CSRF-Token":
-        document.querySelector<HTMLMetaElement>('meta[name="csrf-token"]')
-          ?.content ?? "",
-    },
-    ...(method === "GET" || method === "DELETE"
-      ? {}
-      : { body: JSON.stringify(body) }),
-  });
-  const data: unknown = await response.json();
-  const envelope = z
-    .object({
-      data: z.unknown().optional(),
-      error: z.object({ code: z.string() }).loose().optional(),
-      code: z.string().optional(),
-    })
-    .loose()
-    .parse(data);
-  if (!response.ok || envelope.error || envelope.code)
-    throw new Error(
-      envelope.code ?? envelope.error?.code ?? `HTTP_${response.status}`,
-    );
-  return envelope.data;
 }
 function failure(error: unknown) {
   message(
@@ -68,26 +41,6 @@ function initialize() {
               throw new Error("OAUTH_TARGET_INVALID");
             window.location.assign(url.href);
           } else window.location.reload();
-        } catch (error) {
-          failure(error);
-        }
-      }),
-    );
-  document
-    .querySelectorAll<HTMLFormElement>("[data-post-form]")
-    .forEach((form) =>
-      form.addEventListener("submit", async (event) => {
-        event.preventDefault();
-        const button = form.querySelector<HTMLButtonElement>(
-          'button[type="submit"]',
-        )!;
-        button.disabled = true;
-        try {
-          await action(form.dataset.action!, {
-            post_type: "standard",
-            content: new FormData(form).get("content"),
-          });
-          window.location.reload();
         } catch (error) {
           failure(error);
         }

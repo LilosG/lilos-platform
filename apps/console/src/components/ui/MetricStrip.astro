@@ -5,13 +5,16 @@ export interface MetricCell {
   value: string;
   description: string;
   missing?: boolean;
+  trend?: number | null;
 }
 interface Props {
   items: readonly MetricCell[];
+  /** Tiles per row on a wide screen; the design's strip holds four. */
+  columns?: 3 | 4 | 5;
 }
-const { items } = Astro.props;
+const { items, columns = 4 } = Astro.props;
 ---
 
-<div class="metrics">
+<div class:list={["metrics", `cols${columns}`]}>
   {items.map((item) => <MetricItem {...item} />)}
 </div>

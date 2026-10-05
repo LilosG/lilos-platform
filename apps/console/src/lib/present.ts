@@ -233,6 +233,8 @@ const yearOf = (value: string) =>
       year: "numeric",
     }).format(new Date(dateOnly.test(value) ? `${value}T00:00:00Z` : value)),
   );
+/** "Oct 4": a day within a chart or table whose heading carries the year. */
+export const shortDate = (value: string): string => formatDay(value, false);
 /** "Oct 4, 2026". An ISO string is never shown as is. */
 export const dateText = (value: string | null): string =>
   value ? formatDay(value, true) : "";
@@ -280,3 +282,21 @@ export const AREAS = {
   settings: "Settings",
 } as const;
 export type PortfolioArea = keyof typeof AREAS;
+/** A count, or a dash when the source gave none. A missing count is never 0. */
+export const countText = (value: number | null | undefined): string =>
+  value === null || value === undefined ? "\u2013" : fmt(value);
+/** Click-through rate from a ratio (0.042) or a percentage (4.2), as "4.2%". */
+export const ctrText = (value: number | null | undefined): string =>
+  value === null || value === undefined
+    ? "\u2013"
+    : `${(value <= 1 ? value * 100 : value).toFixed(1)}%`;
+export const positionText = (value: number | null | undefined): string =>
+  value === null || value === undefined ? "\u2013" : value.toFixed(1);
+/** "9:00 AM" from "09:00" or "09:00:00". */
+export function clockText(value: string): string {
+  const [hours, minutes] = value.split(":").map(Number);
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return "";
+  return `${hours % 12 || 12}:${String(minutes).padStart(2, "0")} ${hours < 12 ? "AM" : "PM"}`;
+}
+/** "Last 28 days" for the reporting period that a tile or table covers. */
+export const periodText = (days: number): string => `Last ${days} days`;
