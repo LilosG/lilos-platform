@@ -84,7 +84,7 @@ test("Integrations canonical states -> discover -> explicit mapping -> sync", as
   });
   expect(errors).toEqual([]);
 });
-test("Local Search all tabs -> page intelligence and scoped GBP posts", async ({
+test("Local Search tabs, source details, page intelligence and scoped GBP posts", async ({
   page,
 }) => {
   await login(page);
@@ -94,20 +94,29 @@ test("Local Search all tabs -> page intelligence and scoped GBP posts", async ({
   await expect(
     page.getByRole("heading", { name: "Local Search", exact: true }),
   ).toBeVisible();
-  await expect(
-    page.getByText(/Google authorization: reconnect_required/),
-  ).toBeVisible();
+  // Connection and sync detail sits behind one status chip, never on the page itself.
+  await expect(page.locator("body")).not.toContainText("Recent source syncs");
+  await expect(page.locator("main")).not.toContainText(/authorization:/i);
+  await page
+    .getByRole("button", { name: /Data status: Reconnect Google/ })
+    .click();
+  const details = page.getByRole("dialog");
+  await expect(details).toContainText("Reconnect Google");
+  await expect(details).toContainText("Out of date");
+  await expect(details).toContainText(
+    "Google limited the request; it will be retried.",
+  );
+  await expect(details).not.toContainText("reconnect_required");
+  await expect(details).not.toContainText("PROVIDER_RATE_LIMITED");
+  await expect(details).not.toContainText(/[0-9a-f]{8}-[0-9a-f]{4}-/);
+  await page.keyboard.press("Escape");
   await page.getByRole("link", { name: "Rankings", exact: true }).click();
   await expect(
-    page.getByRole("button", { name: "Run rank scan unavailable" }),
-  ).toBeDisabled();
+    page.getByRole("heading", { name: "Local Visibility Grid is coming" }),
+  ).toBeVisible();
   await page.getByRole("link", { name: "Search Console", exact: true }).click();
   await expect(
-    page.getByText("synthetic brunch", { exact: true }),
-  ).toBeVisible();
-  await expect(page.getByText(/Quality: partial/)).toBeVisible();
-  await expect(
-    page.getByText(/Comparison: 2026-08-07 – 2026-09-04 \(28 days\)/),
+    page.getByRole("cell", { name: "synthetic brunch", exact: true }),
   ).toBeVisible();
   await page.getByRole("link", { name: "Pages", exact: true }).click();
   await page
@@ -141,41 +150,37 @@ test("Local Search all tabs -> page intelligence and scoped GBP posts", async ({
     .getByRole("link", { name: "Google Business Profile", exact: true })
     .click();
   await expect(
-    page.getByRole("heading", {
-      name: "GBP performance unavailable",
-      exact: true,
-    }),
+    page.getByRole("heading", { name: "Business Profile is not connected" }),
   ).toBeVisible();
-  await page
-    .getByRole("link", { name: "View profile and posts", exact: true })
-    .click();
+  await page.getByRole("link", { name: "Posts", exact: true }).click();
+  await expect(page.getByText("Synthetic exact post")).toBeVisible();
+  await expect(page.locator("[data-post-row]")).toContainText(
+    "Awaiting approval",
+  );
+  // Approval needs a verified authenticator: no approve control, a way to verify instead.
   await expect(
-    page.getByRole("heading", { name: "Business Profile", exact: true }),
+    page.getByRole("button", { name: "Approve", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("link", { name: "Verify to approve" }),
   ).toBeVisible();
-  await expect(
-    page.getByRole("button", {
-      name: "Approve exact post revision 1",
-      exact: true,
-    }),
-  ).toBeDisabled();
+  await page.getByRole("button", { name: "New post", exact: true }).click();
   await page
-    .getByLabel("Post content", { exact: true })
+    .getByLabel("Post copy", { exact: true })
     .fill("Exact synthetic draft");
   const draftReload = page.waitForNavigation({ waitUntil: "domcontentloaded" });
   const draft = page.waitForRequest((r) =>
     r.url().endsWith(`/locations/${profileId}/posts/`),
   );
   await page
-    .getByRole("button", { name: "Save post draft", exact: true })
+    .getByRole("button", { name: "Save for approval", exact: true })
     .click();
   await draftReload;
   expect((await draft).postDataJSON()).toEqual({
     post_type: "standard",
     content: "Exact synthetic draft",
   });
-  await expect(
-    page.getByRole("heading", { name: "Business Profile", exact: true }),
-  ).toBeVisible();
+  await expect(page.getByText("Synthetic exact post")).toBeVisible();
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
 });
 test("Phase 2 tenant and cache isolation plus fixed OAuth return resolution", async ({

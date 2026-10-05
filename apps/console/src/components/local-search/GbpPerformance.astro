@@ -153,7 +153,12 @@ const month = keywordMonth(perf);
 }
 {
   perf.availability !== "not_connected" && (
-    <section class="panel tablewrap">
+    <section
+      class="panel tablewrap"
+      role="region"
+      aria-label="Search terms"
+      tabindex="0"
+    >
       <SectionHeading>
         <Fragment slot="title">How people searched for the business</Fragment>
         <Fragment slot="actions">

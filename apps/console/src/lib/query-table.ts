@@ -47,11 +47,11 @@ function setup(root: HTMLElement) {
     root.querySelector<HTMLElement>("[data-query-none]")!.hidden =
       matching.length > 0;
     root
-      .querySelectorAll<HTMLElement>("[data-sort]")
-      .forEach((button) =>
-        button.setAttribute(
+      .querySelectorAll<HTMLElement>("[data-sort-header]")
+      .forEach((header) =>
+        header.setAttribute(
           "aria-sort",
-          button.dataset.sort === key ? direction : "none",
+          header.dataset.sortHeader === key ? direction : "none",
         ),
       );
   };

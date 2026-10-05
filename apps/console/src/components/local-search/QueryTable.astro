@@ -36,6 +36,9 @@ const columns = [
 
 <section
   class="panel tablewrap"
+  role="region"
+  aria-label={title}
+  tabindex="0"
   data-query-table={interactive ? "interactive" : undefined}
 >
   <SectionHeading>
@@ -70,14 +73,16 @@ const columns = [
         <thead>
           <tr>
             {columns.map(([key, label, numeric]) => (
-              <th class:list={{ num: numeric }} scope="col">
+              <th
+                class:list={{ num: numeric }}
+                scope="col"
+                aria-sort={
+                  interactive && key === "clicks" ? "descending" : undefined
+                }
+                data-sort-header={key}
+              >
                 {interactive ? (
-                  <button
-                    class="sortable"
-                    type="button"
-                    data-sort={key}
-                    aria-sort={key === "clicks" ? "descending" : "none"}
-                  >
+                  <button class="sortable" type="button" data-sort={key}>
                     {label}
                   </button>
                 ) : (

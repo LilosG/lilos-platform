@@ -20,6 +20,11 @@ const growthStates = new Map();
 const contentOpportunityStates = new Map();
 import { createServer } from "node:http";
 import { commandCenter, liveChange, unified } from "./command-center-sim.mjs";
+import {
+  handle as beta,
+  notConnected,
+  reset as resetBeta,
+} from "./local-search-sim.mjs";
 const ids = {
   a: "11111111-1111-4111-8111-111111111111",
   b: "22222222-2222-4222-8222-222222222222",
@@ -102,6 +107,10 @@ createServer(async (req, res) => {
   if (url.pathname === "/test/leads-scenario") {
     leadScenario = parsed.mode;
     leadStates.clear();
+    return reply({ ok: true });
+  }
+  if (url.pathname === "/test/gbp-reset") {
+    resetBeta();
     return reply({ ok: true });
   }
   if (url.pathname === "/health") return reply({ ok: true });
@@ -238,6 +247,11 @@ createServer(async (req, res) => {
   if (!scoped || scoped[1] !== claims.sub)
     return reply({ code: "NOT_FOUND" }, 404);
   const path = scoped[2];
+  // Synthetic Beta has the rich Local Search and Business Profile feeds.
+  if (claims.sub === ids.b) {
+    const result = beta(path, req.method, parsed, url, claims.sub);
+    if (result) return reply(result.body, result.status);
+  }
   if (
     path === "command-center/leads" ||
     path === `command-center/leads/${phase5.detail.lead.id}`
@@ -484,6 +498,8 @@ createServer(async (req, res) => {
     if (key === "profile") data.can_approve = claims.aal === "aal2";
     return data;
   };
+  if (path === "command-center/gbp/performance")
+    return reply(notConnected(claims.sub, url.searchParams));
   if (path === "command-center/integrations")
     return reply(phase2Payload("integration"));
   if (path === "command-center/local-search")

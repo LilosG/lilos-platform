@@ -201,3 +201,4 @@ form("hours", (data) => {
     source: "console",
   });
 });
+root?.setAttribute("data-ready", "true");

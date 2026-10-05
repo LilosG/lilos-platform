@@ -225,12 +225,10 @@ export interface MomentumView {
   chart: ChartModel | null;
   period: string;
 }
+// Lower is better: a falling average position is an improvement, so its trend is inverted.
 const positionTrend = (report: Report): number | null => {
-  const metric = report.metrics.position;
-  // Lower is better: a falling average position is an improvement.
-  return metric?.delta === null || metric?.delta === undefined
-    ? null
-    : -Math.round(metric.delta * 10) / 10;
+  const change = report.metrics.position?.percent_delta;
+  return change === null || change === undefined ? null : -Math.round(change);
 };
 /** Search momentum: clicks against the previous period, with the average position beside it. */
 export function momentum(search: LocalSearchView): MomentumView | null {

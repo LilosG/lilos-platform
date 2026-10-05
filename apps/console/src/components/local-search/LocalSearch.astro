@@ -191,7 +191,12 @@ const gbpActions = gbp ? dailyCharts(gbp).actions : null;
     <Fragment>
       <MetricStrip items={rankingTiles()} columns={3} />
       <RankingDistribution bands={null} />
-      <section class="panel tablewrap spaced-section">
+      <section
+        class="panel tablewrap spaced-section"
+        role="region"
+        aria-label="Priority keywords"
+        tabindex="0"
+      >
         <SectionHeading>
           <Fragment slot="title">Priority keywords</Fragment>
         </SectionHeading>
