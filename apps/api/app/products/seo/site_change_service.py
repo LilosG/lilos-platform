@@ -100,6 +100,44 @@ def organization_mapping_limitation(target: PublishingTarget | None) -> str | No
     return None
 
 
+async def live_change_superseding(
+    session: AsyncSession,
+    organization_id: UUID,
+    revision: SEORecommendationRevision,
+    change_set: SiteChangeSet,
+) -> UUID | None:
+    """The newer revision whose verified live change covers a page field this one edits.
+
+    An approved change must never publish over a newer one that is already live and
+    verified for the same (page, field): it would silently roll the page back.
+    """
+    targets = {(item.page_id, item.field) for item in change_set.items}
+    newer = await session.execute(
+        select(SEORecommendationRevision.id, SEORecommendationRevision.change_set)
+        .join(
+            ContentPublication,
+            ContentPublication.seo_recommendation_revision_id == SEORecommendationRevision.id,
+        )
+        .where(
+            SEORecommendationRevision.organization_id == organization_id,
+            SEORecommendationRevision.id != revision.id,
+            SEORecommendationRevision.created_at > revision.created_at,
+            SEORecommendationRevision.change_set.is_not(None),
+            ContentPublication.organization_id == organization_id,
+            ContentPublication.publication_kind == "site_change",
+            ContentPublication.status == "verified",
+        )
+    )
+    for newer_id, raw in newer:
+        try:
+            live = SiteChangeSet.model_validate(raw)
+        except ValueError:
+            continue
+        if targets & {(item.page_id, item.field) for item in live.items}:
+            return UUID(str(newer_id))
+    return None
+
+
 @dataclass(frozen=True, slots=True)
 class PageFields:
     """A page's current, repo-read values for every field its page map declares."""
@@ -159,6 +197,8 @@ class SiteChangeService:
         )
         if existing is not None:
             return existing
+        if await live_change_superseding(session, organization_id, revision, change_set):
+            raise SEOEvidenceInvalidError(SEOLimitationCode.SUPERSEDED_BY_LIVE_CHANGE)
 
         target = await self.active_target(session, organization_id)
         if target is None or not target.allowed_site_change_prefixes:

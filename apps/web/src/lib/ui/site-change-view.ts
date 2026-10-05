@@ -54,6 +54,8 @@ const BLOCKED_COPY: Record<string, string> = {
     "This page has no confirmed file and field mapping, so LILOs cannot edit it safely. Add a page map for this site in Integrations.",
   SITE_CHANGE_FINGERPRINT_MISMATCH:
     "The change no longer matches what was approved. Nothing was written; create a new recommendation.",
+  SUPERSEDED_BY_LIVE_CHANGE:
+    "A newer change to this page field is already live, so this one was not published.",
   CHANGE_SET_INVALID:
     "The approved change could not be read. Nothing was written; create a new recommendation.",
   CHECKS_UNAVAILABLE:

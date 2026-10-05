@@ -91,6 +91,8 @@ const unsafe =
   /[0-9a-f]{8}-[0-9a-f]{4}-|seo-opportunity:|content-brief:|https?:/i;
 const clean = (value: string | null) =>
   value && !unsafe.test(value) ? value : null;
+/** The site root reads as "Homepage"; every other path stays as it is. */
+export const pageLabel = (path: string) => (path === "/" ? "Homepage" : path);
 const quoted = (query: string) => `\u201c${query}\u201d`;
 const queryTitles: Record<string, string> = {
   gsc_low_ctr: "Low click-through",
@@ -109,7 +111,7 @@ export function title(o: OpportunityView): string {
     o.kind === "content"
       ? "Content opportunity"
       : sourceTypeLabel(o.source_type);
-  if (path) return `${base} \u00b7 ${path}`;
+  if (path) return `${base} \u00b7 ${pageLabel(path)}`;
   return query ? `${base}: ${quoted(query)}` : base;
 }
 export function metricText(key: string, value: number): [string, string] {
@@ -152,7 +154,6 @@ export interface OpportunityRowView {
   sub: string;
   evidence: string;
   evidenceSub: string;
-  why: string | null;
   next: string;
   siteChangeNote: string | null;
 }
@@ -176,7 +177,6 @@ export function rowView(
     sub: lifecycleLabel(o),
     evidence: evidenceHeadline(o),
     evidenceSub: evidenceSub(o, now),
-    why: whyItMatters(o),
     next: nextAction(o),
     siteChangeNote:
       o.site_change_reason === "SITE_CHANGES_NOT_CONFIGURED"

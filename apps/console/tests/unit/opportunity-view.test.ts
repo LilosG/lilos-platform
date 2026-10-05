@@ -171,7 +171,7 @@ it("titles each type from its typed subject", () => {
     t("pagespeed_performance_mobile", { query: null, path: "/menu" }),
   ).toBe("Mobile page speed \u00b7 /menu");
   expect(t("pagespeed_seo_desktop", { query: null, path: "/" })).toBe(
-    "Desktop page speed \u00b7 /",
+    "Desktop page speed \u00b7 Homepage",
   );
   expect(
     title({
@@ -195,6 +195,14 @@ it("formats every date as a readable range or day, never ISO", () => {
   expect(dateText("2026-10-04T18:00:00Z")).toBe("Oct 4, 2026");
   expect(dateText("2026-09-30T00:00:00Z")).toBe("Sep 29, 2026");
   expect(dateText(null)).toBe("");
+});
+it("keeps Why it matters out of list rows", () => {
+  const row = rowView(
+    { ...base, importance_reason: "KEY_EVENTS_INFERRED" },
+    new Date("2026-10-05T00:00:00Z"),
+    "client",
+  );
+  expect(row).not.toHaveProperty("why");
 });
 it("labels fields, reasons, live state and revisions from typed values", () => {
   expect(labelField("seo_title")).toBe("SEO title");

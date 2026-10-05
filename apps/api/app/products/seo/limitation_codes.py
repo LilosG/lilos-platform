@@ -54,6 +54,7 @@ class SEOLimitationCode(StrEnum):
     SITE_MAPPING_REQUIRED = "SITE_MAPPING_REQUIRED"
     SITE_CHANGE_FINGERPRINT_MISMATCH = "SITE_CHANGE_FINGERPRINT_MISMATCH"
     SITE_CHANGE_TARGET_UNAVAILABLE = "SITE_CHANGE_TARGET_UNAVAILABLE"
+    SUPERSEDED_BY_LIVE_CHANGE = "SUPERSEDED_BY_LIVE_CHANGE"
 
 
 # Exhaustive over SEOLimitationCode -- tests assert this registry covers
@@ -135,5 +136,8 @@ LIMITATION_COPY: dict[SEOLimitationCode, str] = {
     ),
     SEOLimitationCode.SITE_CHANGE_TARGET_UNAVAILABLE: (
         "No active GitHub publishing target is connected for this website."
+    ),
+    SEOLimitationCode.SUPERSEDED_BY_LIVE_CHANGE: (
+        "A newer change to the same page field is already live and verified."
     ),
 }

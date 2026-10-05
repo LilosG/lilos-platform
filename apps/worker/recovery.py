@@ -42,6 +42,7 @@ from apps.api.app.products.reviews.models import ReviewResponseRevision
 from apps.api.app.products.reviews.publish_handler import VERIFY_ONLY_SAFE_ERRORS
 from apps.api.app.products.reviews.service import ReviewService
 from apps.api.app.products.seo.models import SEOCrawlRun, SEOWebsite
+from apps.api.app.products.seo.orchestration import SEOOrchestrationService
 
 logger = logging.getLogger(__name__)
 
@@ -823,6 +824,9 @@ async def reconcile_worker_state(
         workflows += await settle_unpublished_gbp_post_runs(session)
         workflows += await ReviewService().supersede_mismatched_responses(session)
         crawl_runs = await reconcile_orphaned_crawl_runs(session)
+        workflows += await SEOOrchestrationService().supersede_by_live_change(
+            session, correlation_id="worker-recovery"
+        )
 
     agents = await reconcile_orphaned_agent_runs(sessions, settings)
 
