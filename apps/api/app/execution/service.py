@@ -105,6 +105,10 @@ class ExecutionService:
             event = "workflow.run.reconciliation_required"
             result = AuditResult.PARTIALLY_SUCCEEDED
             summary = f"Workflow run requires reconciliation: {workflow_key}."
+        elif outcome.result == "cancelled":
+            event = "workflow.run.settled_cancelled"
+            result = AuditResult.CANCELLED
+            summary = f"Workflow run settled without its effect: {workflow_key}."
         else:
             event = "workflow.run.failed"
             result = AuditResult.FAILED
@@ -132,6 +136,29 @@ class ExecutionService:
                 },
             ),
         )
+
+    async def settle_cancelled(
+        self,
+        session: AsyncSession,
+        run: WorkflowRun,
+        workflow_key: str,
+        code: str,
+    ) -> bool:
+        """Settle a failed or escalated run whose intended effect was deliberately retired.
+
+        The run ends ``cancelled`` with a typed code, so it stops counting as a failure and is
+        never mistaken for a completed publication. Returns False when the run is not in a
+        state this may settle, so it is safe to call repeatedly.
+        """
+        if run.status not in ("failed", "escalated"):
+            return False
+        run.status = "cancelled"
+        run.cancelled_at = run.cancelled_at or datetime.now(UTC)
+        run.failure_code = code
+        await self.record_run_outcome(
+            session, run, workflow_key, JobOutcome(result="cancelled", safe_error=code)
+        )
+        return True
 
     @staticmethod
     def request_hash(command: WorkflowSubmit) -> str:

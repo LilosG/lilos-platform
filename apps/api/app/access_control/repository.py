@@ -1,5 +1,6 @@
 """Narrow organization-scoped persistence for the access domain."""
 
+from collections.abc import Sequence
 from datetime import datetime
 from typing import cast
 from uuid import UUID
@@ -58,6 +59,20 @@ class MembershipRepository:
                 )
             ),
         )
+
+    async def get_by_user_in(
+        self, session: AsyncSession, organization_ids: Sequence[UUID], user_profile_id: UUID
+    ) -> dict[UUID, OrganizationMembership]:
+        """The caller's membership in each of the given organizations, in one query."""
+        if not organization_ids:
+            return {}
+        rows = await session.scalars(
+            select(OrganizationMembership).where(
+                OrganizationMembership.organization_id.in_(organization_ids),
+                OrganizationMembership.user_profile_id == user_profile_id,
+            )
+        )
+        return {row.organization_id: row for row in rows}
 
     async def list_by_user(
         self, session: AsyncSession, user_profile_id: UUID
@@ -269,6 +284,30 @@ class CatalogRepository:
         rows = await session.execute(select(RolePermission.role_id, RolePermission.permission_id))
         return set(rows.tuples())
 
+    async def list_permissions_by_keys(
+        self, session: AsyncSession, keys: Sequence[str]
+    ) -> dict[str, Permission]:
+        if not keys:
+            return {}
+        rows = await session.scalars(select(Permission).where(Permission.key.in_(keys)))
+        return {row.key: row for row in rows}
+
+    async def role_ids_by_permission(
+        self, session: AsyncSession, permission_ids: set[UUID], role_ids: set[UUID]
+    ) -> dict[UUID, set[UUID]]:
+        """Fixed-catalog allows for many permissions over a bounded role set, in one query."""
+        grants: dict[UUID, set[UUID]] = {}
+        if not permission_ids or not role_ids:
+            return grants
+        for role_id, permission_id in await session.execute(
+            select(RolePermission.role_id, RolePermission.permission_id).where(
+                RolePermission.permission_id.in_(permission_ids),
+                RolePermission.role_id.in_(role_ids),
+            )
+        ):
+            grants.setdefault(permission_id, set()).add(role_id)
+        return grants
+
     async def get_roles_by_ids(self, session: AsyncSession, role_ids: set[UUID]) -> list[Role]:
         """Resolve only roles referenced by one membership's applicable assignments."""
         if not role_ids:
@@ -295,6 +334,24 @@ class CatalogRepository:
 
 
 class AssignmentRepository:
+    async def list_for_memberships(
+        self,
+        session: AsyncSession,
+        organization_ids: Sequence[UUID],
+        membership_ids: Sequence[UUID],
+    ) -> dict[UUID, list[MembershipRoleAssignment]]:
+        grouped: dict[UUID, list[MembershipRoleAssignment]] = {}
+        if not membership_ids:
+            return grouped
+        for row in await session.scalars(
+            select(MembershipRoleAssignment).where(
+                MembershipRoleAssignment.organization_id.in_(organization_ids),
+                MembershipRoleAssignment.membership_id.in_(membership_ids),
+            )
+        ):
+            grouped.setdefault(row.membership_id, []).append(row)
+        return grouped
+
     async def add(
         self, session: AsyncSession, item: MembershipRoleAssignment
     ) -> MembershipRoleAssignment:
@@ -334,6 +391,26 @@ class AssignmentRepository:
 
 
 class DenyRepository:
+    async def list_for_memberships(
+        self,
+        session: AsyncSession,
+        organization_ids: Sequence[UUID],
+        membership_ids: Sequence[UUID],
+    ) -> dict[UUID, list[MembershipPermissionDeny]]:
+        grouped: dict[UUID, list[MembershipPermissionDeny]] = {}
+        if not membership_ids:
+            return grouped
+        for row in await session.scalars(
+            select(MembershipPermissionDeny)
+            .where(
+                MembershipPermissionDeny.organization_id.in_(organization_ids),
+                MembershipPermissionDeny.membership_id.in_(membership_ids),
+            )
+            .order_by(MembershipPermissionDeny.created_at, MembershipPermissionDeny.id)
+        ):
+            grouped.setdefault(row.membership_id, []).append(row)
+        return grouped
+
     async def add(
         self, session: AsyncSession, item: MembershipPermissionDeny
     ) -> MembershipPermissionDeny:

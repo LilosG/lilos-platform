@@ -32,7 +32,8 @@ const ids = {
 const raceCounts = new Map();
 let revision = ids.rev;
 let approved = false;
-let factors = [];
+const factorsByUser = new Map();
+const factorsFor = (id) => factorsByUser.get(id) ?? [];
 let proposal =
   "A protected synthetic description proposed for this exact page.";
 const user = (id) => ({
@@ -47,7 +48,7 @@ const user = (id) => ({
         : "b@example.test",
   app_metadata: {},
   user_metadata: {},
-  factors,
+  factors: factorsFor(id),
   created_at: "2026-09-30T00:00:00Z",
 });
 const token = (id, aal = "aal1", expired = false) =>
@@ -121,13 +122,9 @@ createServer(async (req, res) => {
 
     if (url.searchParams.get("grant_type") === "refresh_token")
       return reply(
-        session(
-          parsed.refresh_token?.includes(ids.admin)
-            ? ids.admin
-            : parsed.refresh_token?.includes(ids.b)
-              ? ids.b
-              : ids.a,
-        ),
+        parsed.refresh_token?.includes(ids.admin)
+          ? session(ids.admin, "aal2")
+          : session(parsed.refresh_token?.includes(ids.b) ? ids.b : ids.a),
       );
     reviewStates.delete(ids.run);
     contentStates.delete(ids.run);
@@ -138,16 +135,28 @@ createServer(async (req, res) => {
       );
     revision = ids.rev;
     approved = false;
-    factors = [];
-    return reply(
-      session(
-        parsed.email === "a@example.test"
+    const loginId =
+      parsed.email === "stepup@example.test" ||
+      parsed.email === "admin@example.test"
+        ? ids.admin
+        : parsed.email === "a@example.test"
           ? ids.a
-          : parsed.email === "admin@example.test"
-            ? ids.admin
-            : ids.b,
-      ),
-    );
+          : ids.b;
+    factorsByUser.delete(loginId);
+    if (parsed.email === "stepup@example.test") {
+      factorsByUser.set(loginId, [
+        {
+          id: ids.factor,
+          factor_type: "totp",
+          status: "verified",
+          friendly_name: "Synthetic authenticator",
+        },
+      ]);
+      return reply(session(ids.admin, "aal1"));
+    }
+    if (parsed.email === "admin@example.test")
+      return reply(session(ids.admin, "aal2"));
+    return reply(session(parsed.email === "a@example.test" ? ids.a : ids.b));
   }
   if (url.pathname === "/auth/v1/user")
     return claims.sub
@@ -156,8 +165,8 @@ createServer(async (req, res) => {
   if (url.pathname === "/auth/v1/logout") return reply({});
   if (url.pathname === "/auth/v1/factors" && req.method === "GET")
     return reply({
-      all: factors,
-      totp: factors.filter((f) => f.status === "verified"),
+      all: factorsFor(claims.sub),
+      totp: factorsFor(claims.sub).filter((f) => f.status === "verified"),
       phone: [],
     });
   if (url.pathname === "/auth/v1/factors" && req.method === "POST") {
@@ -167,7 +176,7 @@ createServer(async (req, res) => {
       status: "unverified",
       friendly_name: "Synthetic authenticator",
     };
-    factors = [factor];
+    factorsByUser.set(claims.sub, [factor]);
     return reply({
       ...factor,
       totp: {
@@ -189,11 +198,14 @@ createServer(async (req, res) => {
         { msg: "Invalid TOTP", code: "mfa_verification_failed" },
         422,
       );
-    factors = factors.map((f) => ({ ...f, status: "verified" }));
+    factorsByUser.set(
+      claims.sub,
+      factorsFor(claims.sub).map((f) => ({ ...f, status: "verified" })),
+    );
     return reply(session(claims.sub, "aal2"));
   }
   if (req.method === "DELETE" && url.pathname.startsWith("/auth/v1/factors/")) {
-    factors = [];
+    factorsByUser.delete(claims.sub);
     return reply({ id: ids.factor });
   }
   const feed = commandCenter(url, claims, ids);

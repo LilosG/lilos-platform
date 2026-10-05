@@ -43,6 +43,15 @@ test("Attention dialog, period control and filters", async ({ page }) => {
   const dialog = page.getByRole("dialog");
   await expect(dialog).toContainText("Recommended next action");
   await dialog.getByRole("button", { name: "Close details" }).click();
+  await page
+    .getByRole("button", { name: "Google post publishing failed" })
+    .click();
+  await expect(page.getByRole("dialog")).toContainText("What failed");
+  await expect(page.getByRole("dialog")).toContainText("PROVIDER_REJECTED");
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Close details" })
+    .click();
   await page.getByLabel("Reporting date range").selectOption("90");
   await expect(page).toHaveURL(/days=90/);
   await page.getByRole("button", { name: "Improving" }).isDisabled();
@@ -137,7 +146,7 @@ test("A client user sees only their organization; an administrator sees every cl
   const gamma = page.locator("[data-client-row]", {
     hasText: "Synthetic Gamma",
   });
-  await expect(gamma.locator("td").nth(4)).toContainText("No access");
+  await expect(gamma.locator("td").nth(4)).toContainText("Not connected");
   await expect(gamma.locator("td").nth(5)).toContainText("No data");
   await expect(gamma).toContainText("Google not connected");
   // Beta's true zero stays a zero, distinct from unavailable.
@@ -179,4 +188,73 @@ test("Mobile navigation opens and the table scrolls inside its panel", async ({
     () => document.documentElement.scrollWidth > window.innerWidth,
   );
   expect(overflow).toBe(false);
+});
+test("A verified factor forces MFA before any page or BFF call, then elevates", async ({
+  page,
+}) => {
+  await login(page, "stepup@example.test", "/clients/");
+  // Password only: no shell, no data, straight to the existing /mfa page with the return path.
+  await expect(page).toHaveURL(/\/mfa\/\?return=%2Fclients%2F/);
+  await expect(page.locator("#sidebar")).toHaveCount(0);
+  await expect(page.locator(".person")).toHaveCount(0);
+  for (const path of ["/", "/clients/", "/clients/synthetic-alpha/"]) {
+    await page.goto(path);
+    await expect(page).toHaveURL(/\/mfa\//);
+  }
+  const bff = await page.request.get("/api/command-center/portfolio/", {
+    maxRedirects: 0,
+  });
+  expect(bff.status()).toBe(403);
+  expect(await bff.json()).toMatchObject({ code: "MFA_REQUIRED" });
+  await page.goto(`/mfa/?return=${encodeURIComponent("/clients/")}`);
+  await page.getByLabel("Authenticator code").fill("123456");
+  await page.getByRole("button", { name: "Verify", exact: true }).click();
+  await expect(page).toHaveURL(/\/clients\/$/);
+  await expect(page.locator(".person")).toContainText("Platform administrator");
+  await expect(page.locator("[data-client-row]")).toHaveCount(3);
+});
+
+const BUILT = [
+  "/clients/synthetic-alpha/local-search/",
+  "/clients/synthetic-alpha/reviews/",
+  "/clients/synthetic-alpha/website-content/",
+  "/clients/synthetic-alpha/leads/",
+  "/clients/synthetic-alpha/opportunities/",
+  "/clients/synthetic-alpha/integrations/",
+];
+test("Every sidebar link routes to a built screen or the typed not-built state", async ({
+  page,
+}) => {
+  await login(page);
+  const visited: string[] = [];
+  async function walk(start: string) {
+    await page.goto(start);
+    if (page.viewportSize()!.width <= 760)
+      await page.getByRole("button", { name: "Toggle navigation" }).click();
+    const hrefs = await page
+      .locator("#sidebar nav a")
+      .evaluateAll((links) =>
+        links.map((link) => (link as HTMLAnchorElement).getAttribute("href")!),
+      );
+    for (const href of hrefs) {
+      const response = await page.goto(href);
+      expect(response?.status(), href).toBe(200);
+      const notBuilt = await page.locator("[data-not-built]").count();
+      const heading = await page.locator("main h1").count();
+      expect(notBuilt === 1 || heading >= 1, href).toBe(true);
+      if (BUILT.includes(href)) expect(notBuilt, href).toBe(0);
+      else if (
+        href !== "/" &&
+        href !== "/clients/" &&
+        href !== "/clients/synthetic-alpha/"
+      )
+        expect(notBuilt, href).toBe(1);
+      visited.push(href);
+    }
+  }
+  await walk("/");
+  await walk("/clients/synthetic-alpha/");
+  expect(visited).toContain("/clients/synthetic-alpha/settings/");
+  expect(visited).toContain("/administration/");
+  expect(visited.length).toBeGreaterThanOrEqual(17);
 });

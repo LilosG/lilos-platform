@@ -1,9 +1,10 @@
 """Deterministic product-permission mapping and entitlement evaluation."""
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from types import MappingProxyType
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import and_, select
@@ -118,6 +119,40 @@ class ProductEntitlementAuthorizationContext:
         )
 
 
+def entitlement_context(
+    rows: Sequence[tuple[Any, ...]],
+) -> ProductEntitlementAuthorizationContext | None:
+    """Interpret one product's rows for one organization.
+
+    Each row is ``(product status, entitlement id, entitlement status, effective from,
+    effective until, location id, location status)``. This is the single interpretation used
+    by both the single and the many-organization loaders, so they cannot disagree.
+    """
+    if not rows:
+        return None
+    signatures = {(row[1], row[2], row[3], row[4]) for row in rows}
+    if rows[0][0] != "registered" or len(signatures) != 1:
+        return ProductEntitlementAuthorizationContext(catalog_consistent=False)
+
+    entitlement_id, status, effective_from, effective_until = next(iter(signatures))
+    location_rows = [(row[5], row[6]) for row in rows if row[5] is not None]
+    if entitlement_id is None and location_rows:
+        return ProductEntitlementAuthorizationContext(catalog_consistent=False)
+    return ProductEntitlementAuthorizationContext(
+        catalog_consistent=True,
+        entitlement_id=entitlement_id,
+        status=status,
+        effective_from=effective_from,
+        effective_until=effective_until,
+        has_location_scope=bool(location_rows),
+        active_location_ids=frozenset(
+            location_id
+            for location_id, location_status in location_rows
+            if location_status == "active"
+        ),
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class ProductEntitlementAuthorizationRepository:
     """Load one product entitlement and its complete location scope in one query."""
@@ -161,27 +196,65 @@ class ProductEntitlementAuthorizationRepository:
             .tuples()
             .all()
         )
-        if not rows:
-            return None
+        return entitlement_context([tuple(row) for row in rows])
 
-        signatures = {(row[1], row[2], row[3], row[4]) for row in rows}
-        if rows[0][0] != "registered" or len(signatures) != 1:
-            return ProductEntitlementAuthorizationContext(catalog_consistent=False)
+    async def resolve_many(
+        self,
+        session: AsyncSession,
+        organization_ids: Sequence[UUID],
+        product_keys: Sequence[str],
+    ) -> dict[tuple[UUID, str], ProductEntitlementAuthorizationContext | None]:
+        """Resolve every (organization, product) pair in two queries.
 
-        entitlement_id, status, effective_from, effective_until = next(iter(signatures))
-        location_rows = [(row[5], row[6]) for row in rows if row[5] is not None]
-        if entitlement_id is None and location_rows:
-            return ProductEntitlementAuthorizationContext(catalog_consistent=False)
-        return ProductEntitlementAuthorizationContext(
-            catalog_consistent=True,
-            entitlement_id=entitlement_id,
-            status=status,
-            effective_from=effective_from,
-            effective_until=effective_until,
-            has_location_scope=bool(location_rows),
-            active_location_ids=frozenset(
-                location_id
-                for location_id, location_status in location_rows
-                if location_status == "active"
-            ),
-        )
+        An unknown product resolves to ``None`` for every organization; a registered product an
+        organization holds no entitlement for resolves to a context without an entitlement id,
+        exactly as ``resolve`` does.
+        """
+        result: dict[tuple[UUID, str], ProductEntitlementAuthorizationContext | None] = {}
+        if not organization_ids or not product_keys:
+            return result
+        product_status = {
+            key: status
+            for key, status in await session.execute(
+                select(Product.key, Product.status).where(Product.key.in_(product_keys))
+            )
+        }
+        grouped: dict[tuple[UUID, str], list[tuple[Any, ...]]] = {}
+        for row in await session.execute(
+            select(
+                ProductEntitlement.organization_id,
+                Product.key,
+                Product.status,
+                ProductEntitlement.id,
+                ProductEntitlement.status,
+                ProductEntitlement.effective_from,
+                ProductEntitlement.effective_until,
+                ProductEntitlementLocation.location_id,
+                ProductEntitlementLocation.status,
+            )
+            .join(Product, Product.id == ProductEntitlement.product_id)
+            .outerjoin(
+                ProductEntitlementLocation,
+                and_(
+                    ProductEntitlementLocation.organization_id
+                    == ProductEntitlement.organization_id,
+                    ProductEntitlementLocation.entitlement_id == ProductEntitlement.id,
+                ),
+            )
+            .where(
+                ProductEntitlement.organization_id.in_(organization_ids),
+                Product.key.in_(product_keys),
+            )
+            .order_by(ProductEntitlementLocation.location_id)
+        ):
+            grouped.setdefault((row[0], row[1]), []).append(tuple(row[2:]))
+        for organization_id in organization_ids:
+            for key in product_keys:
+                if key not in product_status:
+                    result[(organization_id, key)] = None
+                    continue
+                rows = grouped.get((organization_id, key)) or [
+                    (product_status[key], None, None, None, None, None, None)
+                ]
+                result[(organization_id, key)] = entitlement_context(rows)
+        return result
