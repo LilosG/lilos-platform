@@ -1,5 +1,6 @@
 """Additive SEO reference projections. All writes remain in canonical SEO routes."""
 
+from dataclasses import replace
 from datetime import datetime
 from typing import Annotated, Literal
 from uuid import UUID
@@ -28,14 +29,21 @@ from apps.api.app.products.seo.decision import (
 from apps.api.app.products.seo.models import SEOImplementationTask, SEOOpportunity, SEOPage
 from apps.api.app.routes.command_center_reads import (
     KIND_PERMISSION,
+    ImportanceReason,
+    Lifecycle,
     OpportunityKind,
     OpportunityListRow,
+    OpportunityState,
     PriorityBand,
     SiteChangeAvailability,
     content_row,
+    earlier_observations,
+    enrich,
     growth_row,
     opportunity_rows,
     priority_band,
+    seo_dedupe_columns,
+    seo_dedupe_key,
     seo_row,
     with_seo_state,
 )
@@ -86,11 +94,28 @@ NextAction = Literal[
     "request_recommendation",
     "review_recommendation",
     "monitor_publication",
+    "measure_impact",
     "review_opportunity",
     "review_growth_plan",
     "monitor_execution",
     "none",
 ]
+
+
+class EarlierObservation(DTO):
+    """An older sighting of the same finding. Rolled up in the read; never deleted."""
+
+    id: UUID
+    observed_at: datetime
+    status: str
+    priority: float | None
+
+
+class OpportunitySubject(DTO):
+    """What the opportunity is about: the titles are built from these, never from keys."""
+
+    query: str | None = None
+    path: str | None = None
 
 
 class OpportunityView(DTO):
@@ -122,6 +147,15 @@ class OpportunityView(DTO):
     site_change: SiteChangeAvailability = "not_applicable"
     # Typed reason the site-change action is disabled; the frontend owns the sentence.
     site_change_reason: Literal["SITE_CHANGES_NOT_CONFIGURED"] | None = None
+    subject: OpportunitySubject = OpportunitySubject()
+    # The full text of a growth plan; `headline` is its short title.
+    summary: str | None = None
+    lifecycle: Lifecycle = "open"
+    # When the approved change was verified on the live site.
+    verified_at: datetime | None = None
+    # Typed reason the opportunity matters; None means there is nothing to say.
+    importance_reason: ImportanceReason | None = None
+    earlier_observations: list[EarlierObservation] = []
 
 
 class OpportunityList(DTO):
@@ -175,6 +209,7 @@ class PublicationView(DTO):
 
 class RecommendationView(DTO):
     id: UUID
+    created_at: datetime
     revision_number: int
     proposed_action: str
     expected_result_hypothesis: str
@@ -316,9 +351,13 @@ def project(item: SEOOpportunity) -> OpportunityView:
     )
 
 
-def next_action_for(kind: OpportunityKind, status: str, revision_status: str | None) -> NextAction:
+def next_action_for(
+    kind: OpportunityKind, status: str, revision_status: str | None, live: bool = False
+) -> NextAction:
     """One typed next step per state; the frontend maps it to wording."""
     if kind == "seo":
+        if live:
+            return "measure_impact"
         if revision_status is None or revision_status in {"rejected", "superseded", "withdrawn"}:
             return "request_recommendation" if status not in {"archived", "implemented"} else "none"
         if revision_status == "awaiting_approval":
@@ -381,12 +420,25 @@ def project_row(row: OpportunityListRow, organization: Organization) -> Opportun
         headline=row.headline,
         confidence=row.confidence,
         evidence_summary=evidence_summary(row),
-        next_action=next_action_for(row.kind, row.status, row.latest_revision_status),
+        next_action=next_action_for(
+            row.kind, row.status, row.latest_revision_status, row.lifecycle == "live"
+        ),
         latest_revision_status=row.latest_revision_status,
         site_change=row.site_change,
         site_change_reason="SITE_CHANGES_NOT_CONFIGURED"
         if row.site_change == "not_configured"
         else None,
+        subject=OpportunitySubject(query=row.subject_query, path=row.subject_path),
+        summary=row.summary,
+        lifecycle=row.lifecycle,
+        verified_at=row.verified_at,
+        importance_reason=row.importance_reason,
+        earlier_observations=[
+            EarlierObservation(
+                id=o.id, observed_at=o.observed_at, status=o.status, priority=o.priority
+            )
+            for o in row.earlier
+        ],
     )
 
 
@@ -452,7 +504,7 @@ async def opportunities(
     limit: int = Query(50, ge=1, le=100),
     kind: OpportunityKind | None = None,
     priority: PriorityBand | None = None,
-    include_closed: bool = False,
+    state: OpportunityState = "open",
 ) -> OpportunityList:
     permitted = await readable_kinds(session, principal, organization_id, request)
     if not any(permitted.values()):
@@ -466,7 +518,7 @@ async def opportunities(
         permitted,
         kind=kind,
         band=priority,
-        include_closed=include_closed,
+        state=state,
         limit=limit,
         offset=offset,
     )
@@ -601,7 +653,7 @@ async def detail(
         )
         return OpportunityDetail(
             kind="content",
-            data=project_row(content_row(entity), organization),
+            data=project_row((await enrich(session, [content_row(entity)]))[0], organization),
             page_url=None,
             recommendations=[],
             runs=[],
@@ -628,6 +680,14 @@ async def detail(
     assert isinstance(entity, SEOOpportunity)
     item = entity
     (seo_state,) = await with_seo_state(session, [seo_row(item)])
+    seo_state = replace(
+        seo_state,
+        earlier=(
+            await earlier_observations(
+                session, SEOOpportunity, seo_dedupe_columns(), seo_dedupe_key, [item]
+            )
+        ).get(seo_dedupe_key(item), ()),
+    )
     projected = project_row(seo_state, organization)
     projected.evidence_context = project(item).evidence_context
     try:
@@ -667,6 +727,7 @@ async def detail(
         recommendations.append(
             RecommendationView.model_validate(
                 {
+                    "created_at": revision.created_at,
                     **{
                         key: row[key]
                         for key in (

@@ -190,6 +190,7 @@ def test_one_list_carries_every_kind_with_typed_fields_and_never_hides_unconfigu
     content = by_kind["content"]
     assert content["source_id"] == str(seeded["content"])
     assert content["site_change"] == "not_applicable"
+    assert content["subject"] == {"query": None, "path": "/blog/brunch"}
     assert content["next_action"] == "review_opportunity"
     assert {m["key"]: m["value"] for m in content["evidence_summary"]["metrics"]} == {
         "clicks": 12.0,
@@ -264,7 +265,7 @@ def test_statement_count_does_not_grow_with_opportunities(
                         opportunity_type="missing_title",
                         deduplication_key=f"opps-{number}",
                         active_marker=f"opps-{number}",
-                        evidence={"issue": "missing_title"},
+                        evidence={"issue": "missing_title", "query": f"q{number}"},
                         source_versions=["crawl.v1"],
                         score_version=1,
                         priority_score=30 + number,

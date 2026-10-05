@@ -38,6 +38,7 @@ from apps.api.app.routes.command_center_reads import (
     Facts,
     MetricRead,
     OpportunityKind,
+    OpportunityState,
     PriorityBand,
     SectionTimer,
     load_facts,
@@ -559,7 +560,7 @@ async def portfolio_opportunities(
     organization_id: UUID | None = None,
     kind: OpportunityKind | None = None,
     priority: PriorityBand | None = None,
-    include_closed: bool = False,
+    state: OpportunityState = "open",
 ) -> OpportunityList:
     """Every opportunity kind across the clients the caller may open, one set-based read."""
     timer = SectionTimer()
@@ -580,7 +581,7 @@ async def portfolio_opportunities(
             organization_id=organization_id,
             kind=kind,
             band=priority,
-            include_closed=include_closed,
+            state=state,
             limit=limit,
             offset=offset,
         )
