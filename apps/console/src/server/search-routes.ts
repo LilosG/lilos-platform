@@ -16,10 +16,70 @@ const route = (
   ...(body ? { body } : {}),
 });
 const empty = z.object({}).strict();
+const decide = z.object({ approve: z.boolean() }).strict();
+const ops = `${location}/gbp/operations`;
+const media = z
+  .object({
+    media_type: z.enum(["photo", "video", "logo", "cover"]),
+    source_reference: z.url({ protocol: /^https$/ }).max(1000),
+    rights_authority: z.string().min(1).max(500),
+    idempotency_key: z.string().min(8).max(128),
+  })
+  .strict();
+const hours = z
+  .object({
+    service_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    periods: z
+      .array(
+        z
+          .object({
+            opens: z.string().regex(/^\d{2}:\d{2}$/),
+            closes: z.string().regex(/^\d{2}:\d{2}$/),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(10),
+    source: z.literal("console"),
+  })
+  .strict();
+// What a profile edit may change today, each as one exact field and value to approve.
+const profileEdit = z
+  .object({
+    capability_key: z.enum(["profile", "phoneNumbers", "websiteUri"]),
+    field_changes: z
+      .array(
+        z
+          .object({
+            field: z.enum(["description", "phoneNumbers", "websiteUri"]),
+            value: z.string().min(1).max(750),
+          })
+          .strict(),
+      )
+      .length(1),
+    evidence: empty,
+    risk: z.literal("low"),
+    idempotency_key: z.string().min(8).max(128),
+  })
+  .strict();
+// A media publish needs a reserved workflow run; the console reserves one for this workflow only.
+const reserveMediaRun = z
+  .object({
+    location_id: z.uuid(),
+    idempotency_key: z.string().min(8).max(128),
+    input_document: empty,
+    execute: z.literal(false),
+  })
+  .strict();
 const sync = z.object({ days: z.number().int().min(7).max(365) }).strict();
 const key = z.object({ idempotency_key: z.string().min(8).max(128) }).strict();
 export const searchRoutes = [
   route(`${org}/command-center/integrations`, "GET"),
+  route(`${org}/command-center/gbp/performance`, "GET", undefined, [
+    "period",
+    "month",
+    "location_id",
+  ]),
   route(`${org}/command-center/local-search`, "GET", undefined, [
     "website_id",
     "days",
@@ -114,4 +174,27 @@ export const searchRoutes = [
     "POST",
     empty,
   ),
+  route(`${ops}/posts/publications/${uuid}/(repost|discard)`, "POST", empty),
+  route(`${ops}/locations/${uuid}/posts/reconcile`, "POST", empty),
+  route(`${ops}/locations/${uuid}/media`, "GET"),
+  route(`${ops}/locations/${uuid}/media`, "POST", media),
+  route(`${ops}/media/${uuid}/decide`, "POST", decide),
+  route(
+    `${ops}/media/${uuid}/publish`,
+    "POST",
+    z
+      .object({
+        workflow_run_id: z.uuid(),
+        idempotency_key: key.shape.idempotency_key,
+      })
+      .strict(),
+  ),
+  route(`${ops}/locations/${uuid}/special-hours`, "GET"),
+  route(`${ops}/locations/${uuid}/special-hours`, "POST", hours),
+  route(`${ops}/special-hours/${uuid}/decision`, "POST", decide),
+  route(`${ops}/locations/${uuid}/completeness`, "GET"),
+  route(`${ops}/locations/${uuid}/change-sets`, "GET"),
+  route(`${ops}/locations/${uuid}/change-sets`, "POST", profileEdit),
+  route(`${ops}/change-sets/${uuid}/decision`, "POST", decide),
+  route(`${org}/workflows/gbp.upload_media/runs`, "POST", reserveMediaRun),
 ];

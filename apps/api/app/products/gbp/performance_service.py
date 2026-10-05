@@ -15,7 +15,7 @@ from datetime import UTC, date, datetime, timedelta
 from typing import cast
 from uuid import UUID, uuid4
 
-from sqlalchemy import func, select
+from sqlalchemy import ColumnElement, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -147,6 +147,17 @@ def day_chunks(start: date, end: date, span_days: int = 186) -> list[tuple[date,
     return chunks
 
 
+def _mapped_location_conditions() -> tuple[ColumnElement[bool], ...]:
+    """What makes a GBP location "mapped"; shared by the per-client and the set-based reads."""
+    return (
+        GBPLocation.mapping_status == "confirmed",
+        GBPLocation.location_id.is_not(None),
+        ProviderResourceMapping.status == "active",
+        ProviderResourceMapping.resource_type == "location",
+        ProviderResourceMapping.platform_resource_id == GBPLocation.location_id,
+    )
+
+
 async def mapped_gbp_locations(session: AsyncSession, organization_id: UUID) -> list[GBPLocation]:
     """GBP locations that are confirmed and have an active resource mapping to a platform location.
 
@@ -158,17 +169,26 @@ async def mapped_gbp_locations(session: AsyncSession, organization_id: UUID) -> 
             ProviderResourceMapping,
             ProviderResourceMapping.id == GBPLocation.integration_resource_id,
         )
-        .where(
-            GBPLocation.organization_id == organization_id,
-            GBPLocation.mapping_status == "confirmed",
-            GBPLocation.location_id.is_not(None),
-            ProviderResourceMapping.status == "active",
-            ProviderResourceMapping.resource_type == "location",
-            ProviderResourceMapping.platform_resource_id == GBPLocation.location_id,
-        )
+        .where(GBPLocation.organization_id == organization_id, *_mapped_location_conditions())
         .order_by(GBPLocation.created_at, GBPLocation.id)
     )
     return list(rows)
+
+
+async def mapped_gbp_location_counts(
+    session: AsyncSession, organization_ids: Sequence[UUID]
+) -> dict[UUID, int]:
+    """How many mapped GBP locations each organization has, in one query for all of them."""
+    rows = await session.execute(
+        select(GBPLocation.organization_id, func.count(GBPLocation.id))
+        .join(
+            ProviderResourceMapping,
+            ProviderResourceMapping.id == GBPLocation.integration_resource_id,
+        )
+        .where(GBPLocation.organization_id.in_(organization_ids), *_mapped_location_conditions())
+        .group_by(GBPLocation.organization_id)
+    )
+    return {organization_id: int(count) for organization_id, count in rows}
 
 
 async def resolve_gbp_location(

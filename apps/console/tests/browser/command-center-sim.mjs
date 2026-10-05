@@ -29,6 +29,7 @@ function rows(ids) {
     slug: dir[id].slug,
     name: dir[id].name,
     average_local_rank: missing("rank_scan", "not_tracked"),
+    gbp_actions: missing("gbp", "not_connected"),
     local_visibility: missing("rank_scan", "not_tracked"),
     average_position: missing("search_console", "not_connected"),
     search_clicks: missing("search_console", "not_connected"),
@@ -36,6 +37,7 @@ function rows(ids) {
   return {
     [ids.a]: {
       ...base(ids.a),
+      gbp_actions: metric("gbp", "available", 698, 610),
       location: "Carlsbad, CA",
       category: "Restaurant",
       location_count: 1,
@@ -65,6 +67,7 @@ function rows(ids) {
     },
     [ids.b]: {
       ...base(ids.b),
+      gbp_actions: metric("gbp", "available", 698, 610),
       location: "San Diego, CA",
       category: "Bar",
       location_count: 2,
@@ -142,6 +145,17 @@ const opportunities = (row) =>
           query: null,
           page: "/menu",
           impressions: 900,
+        },
+        {
+          id: "33333333-3333-4333-8333-333333333335",
+          ...owner(row),
+          opportunity_type: "missing_meta_description",
+          classification: "Issue",
+          status: "identified",
+          priority: 80,
+          query: null,
+          page: "/menu",
+          impressions: 880,
         },
         {
           id: "33333333-3333-4333-8333-333333333334",

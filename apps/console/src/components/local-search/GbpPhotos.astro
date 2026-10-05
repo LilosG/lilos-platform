@@ -1,0 +1,165 @@
+---
+import type { PhotoRow } from "../../lib/gbp-view";
+import SectionHeading from "../ui/SectionHeading.astro";
+import StatusBadge from "../ui/StatusBadge.astro";
+import EmptyState from "../ui/EmptyState.astro";
+interface Props {
+  rows: PhotoRow[];
+  canPropose: boolean;
+  canApprove: boolean;
+  verifyHref: string;
+}
+const { rows, canPropose, canApprove, verifyHref } = Astro.props;
+const rights = [
+  "Owned by the business",
+  "Supplied by the client with permission",
+  "Licensed for business use",
+];
+---
+
+<section class="panel">
+  <SectionHeading>
+    <Fragment slot="title">
+      Photos <span class="count">{rows.length}</span>
+    </Fragment>
+    <Fragment slot="actions">
+      {
+        canPropose && (
+          <button
+            type="button"
+            class="control primary"
+            data-dialog="photo-dialog"
+          >
+            Add photo
+          </button>
+        )
+      }
+    </Fragment>
+  </SectionHeading>
+  {
+    !canApprove &&
+      rows.some((row) => row.chip.label === "Awaiting approval") && (
+        <div class="insight">
+          Approving needs a verified authenticator.{" "}
+          <a class="link" href={verifyHref}>
+            Verify to approve
+          </a>
+        </div>
+      )
+  }
+  {
+    rows.length ? (
+      <div class="photogrid">
+        {rows.map((row) => (
+          <figure class="photo" data-photo={row.id}>
+            <div class="frame">
+              {row.url ? (
+                <img src={row.url} alt={row.kind} loading="lazy" />
+              ) : (
+                <span>Preview unavailable</span>
+              )}
+            </div>
+            <figcaption class="caption">
+              <div class="postmeta">
+                <StatusBadge text={row.chip.label} tone={row.chip.tone} />
+                <span>{row.kind}</span>
+              </div>
+              <div class="sub">{row.rights}</div>
+              {row.verified && <div class="sub">{row.verified}</div>}
+              <div class="rowactions">
+                {row.actions.map((action) => (
+                  <button
+                    type="button"
+                    class:list={["control", { primary: action !== "reject" }]}
+                    data-gbp-action={`photo-${action}`}
+                    data-id={row.id}
+                  >
+                    {action === "approve"
+                      ? "Approve"
+                      : action === "reject"
+                        ? "Reject"
+                        : "Publish"}
+                  </button>
+                ))}
+              </div>
+            </figcaption>
+          </figure>
+        ))}
+      </div>
+    ) : (
+      <EmptyState title="No photos yet">
+        Fresh photos help people choose the business. Add one by its web address
+        and confirm the rights to use it.
+        {canPropose && (
+          <button
+            slot="action"
+            type="button"
+            class="control primary"
+            data-dialog="photo-dialog"
+          >
+            Add the first photo
+          </button>
+        )}
+      </EmptyState>
+    )
+  }
+</section>
+<dialog
+  id="photo-dialog"
+  aria-labelledby="photo-dialog-title"
+  data-shell-dialog
+  data-gbp-dialog="photo"
+>
+  <form data-gbp-form="photo" class="formgrid">
+    <div class="panelhead">
+      <span class="muted">Google Business Profile</span>
+      <button type="button" class="close" aria-label="Close" data-close
+        >×</button
+      >
+    </div>
+    <div class="body formgrid">
+      <div>
+        <div class="eyebrow">New photo</div>
+        <h2 id="photo-dialog-title">Add a photo</h2>
+      </div>
+      <div class="field">
+        <label for="photo-address">Photo address</label>
+        <input
+          id="photo-address"
+          name="source_reference"
+          type="url"
+          inputmode="url"
+          placeholder="https://"
+          required
+          maxlength="1000"
+          aria-describedby="photo-address-hint"
+        />
+        <span class="hint" id="photo-address-hint">
+          A secure (https) link to the image file.
+        </span>
+      </div>
+      <div class="field">
+        <label for="photo-type">Type</label>
+        <select id="photo-type" name="media_type">
+          <option value="photo">Photo</option>
+          <option value="cover">Cover photo</option>
+          <option value="logo">Logo</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="photo-rights">Who may use it</label>
+        <select id="photo-rights" name="rights_authority">
+          {rights.map((text) => <option value={text}>{text}</option>)}
+        </select>
+      </div>
+      <p class="hint">
+        The photo is sent for approval before anything reaches Google.
+      </p>
+      <p class="formstatus" role="alert" data-form-status></p>
+    </div>
+    <div class="dialogfoot">
+      <button type="button" class="control" data-close>Cancel</button>
+      <button type="submit" class="control primary">Save for approval</button>
+    </div>
+  </form>
+</dialog>

@@ -1,3 +1,13 @@
+---
+interface Props {
+  /** What is missing, in a few words. */
+  title?: string;
+}
+const { title } = Astro.props;
+---
+
 <div class="empty">
-  <slot />
+  {title && <h3 class="emptytitle">{title}</h3>}
+  <p class="emptytext"><slot /></p>
+  <div class="emptyaction"><slot name="action" /></div>
 </div>

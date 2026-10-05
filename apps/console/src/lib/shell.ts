@@ -102,6 +102,13 @@ root.addEventListener("change", (event) => {
     location.href = event.target.value;
     return;
   }
+  if (event.target.dataset.querySelect) {
+    const url = new URL(location.href);
+    url.searchParams.set(event.target.dataset.querySelect, event.target.value);
+    url.searchParams.delete("offset");
+    location.href = url.toString();
+    return;
+  }
   if ("period" in event.target.dataset) {
     const url = new URL(location.href);
     url.searchParams.set("days", event.target.value);

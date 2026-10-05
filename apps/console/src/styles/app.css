@@ -1807,3 +1807,292 @@ footer {
 .badge.neutral {
   color: #55625c;
 }
+
+/* Step 4b: five-tile strips, empty states with an action, chart and Business Profile screens. */
+.metrics.cols5 {
+  grid-template-columns: repeat(5, 1fr);
+}
+.metrics.cols3 {
+  grid-template-columns: repeat(3, 1fr);
+}
+.metric small {
+  display: block;
+}
+.emptytitle {
+  font-size: 16px;
+  color: var(--ink, #1c2b27);
+  margin: 0 0 6px;
+}
+.emptytext {
+  margin: 0 auto;
+  max-width: 460px;
+}
+.emptyaction {
+  margin-top: 14px;
+}
+.emptyaction:empty {
+  display: none;
+}
+.empty a.control,
+.empty button.control {
+  display: inline-block;
+}
+button.statuschip {
+  cursor: pointer;
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: 12px;
+}
+button.statuschip .badge {
+  padding: 7px 11px;
+  font-size: 13px;
+}
+.chipwrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.subtabs {
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+  margin: 0 0 20px;
+}
+.subtabs a {
+  font-size: 13px;
+  padding: 7px 12px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: white;
+  color: inherit;
+  text-decoration: none;
+}
+.subtabs a.active {
+  background: var(--green);
+  border-color: var(--green);
+  color: white;
+}
+.splitgrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 22px;
+  margin-bottom: 24px;
+}
+.splitrow {
+  padding: 0 22px 14px;
+}
+.splitrow > div {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  margin-bottom: 5px;
+}
+.splitbar {
+  height: 8px;
+  border-radius: 4px;
+  background: #edf0ef;
+  overflow: hidden;
+}
+.splitbar i {
+  display: block;
+  height: 100%;
+  background: var(--green);
+}
+.chart .gridline {
+  stroke: #e7ece8;
+  stroke-dasharray: 3 5;
+}
+.chart .area {
+  fill: #edf4ec;
+}
+.chart .line {
+  fill: none;
+  stroke: #35684e;
+  stroke-width: 3;
+}
+.chart .dot {
+  fill: #fff;
+  stroke: #35684e;
+  stroke-width: 2;
+}
+.quote {
+  margin: 0;
+  padding: 2px 0 2px 14px;
+  border-left: 3px solid #cfe0d3;
+  color: #2b3a35;
+  line-height: 1.5;
+}
+.postrow {
+  padding: 18px 22px;
+  border-bottom: 1px solid var(--line);
+}
+.postrow:last-child {
+  border-bottom: 0;
+}
+.postmeta {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.rowactions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+.photogrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 18px;
+  padding: 22px;
+}
+.photo {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  background: white;
+}
+.photo .frame {
+  aspect-ratio: 4 / 3;
+  background: #edf2ed;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  font-size: 13px;
+}
+.photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.photo .caption {
+  padding: 12px 14px 14px;
+  font-size: 13px;
+}
+.completeness {
+  height: 10px;
+  border-radius: 5px;
+  background: #edf0ef;
+  overflow: hidden;
+  margin: 10px 0 14px;
+}
+.completeness i {
+  display: block;
+  height: 100%;
+  background: var(--green);
+}
+.tagrow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+.beforeafter .was {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+.formgrid {
+  display: grid;
+  gap: 14px;
+}
+.field {
+  display: grid;
+  gap: 6px;
+}
+.field label {
+  font-size: 13px;
+  font-weight: 600;
+}
+.formgrid input,
+.formgrid select,
+.formgrid textarea {
+  width: 100%;
+  font-weight: 400;
+}
+.formgrid .hint,
+.field .hint {
+  font-weight: 400;
+  color: var(--muted);
+  font-size: 12px;
+  margin: 0;
+}
+.formstatus {
+  color: var(--red);
+  font-size: 13px;
+  min-height: 1.2em;
+}
+.sortable {
+  cursor: pointer;
+  user-select: none;
+  background: none;
+  border: 0;
+  font: inherit;
+  font-weight: 600;
+  padding: 0;
+  color: inherit;
+}
+.sortable[aria-sort="ascending"]::after {
+  content: " \2191";
+}
+.sortable[aria-sort="descending"]::after {
+  content: " \2193";
+}
+.pager {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 13px 22px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.pager .pagerbtns {
+  display: flex;
+  gap: 8px;
+}
+.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+@media (max-width: 1100px) {
+  .metrics.cols5 {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+@media (max-width: 700px) {
+  .metrics.cols5,
+  .metrics.cols3 {
+    grid-template-columns: 1fr 1fr;
+  }
+  .splitgrid {
+    grid-template-columns: 1fr;
+  }
+  .photogrid {
+    padding: 16px;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  }
+}
+.pagehead.compact {
+  margin-bottom: 14px;
+}
+.toolbar.nopad {
+  padding: 0;
+  margin-bottom: 12px;
+  justify-content: space-between;
+}
+.toolbar.nopad .subtabs {
+  margin: 0;
+}
+.subhead {
+  font-size: 14px;
+  margin: 22px 0 4px;
+}
+/* Error states sit on the tinted banner surface; the muted text colour is 4.46:1 there. */
+.banner p {
+  color: #526460;
+}

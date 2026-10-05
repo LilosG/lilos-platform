@@ -143,12 +143,14 @@ const uuidKeys = new Set([
   "organization_id",
 ]);
 const enumQuery: Record<string, readonly string[]> = {
+  period: ["7d", "28d", "90d", "month"],
   kind: ["seo", "content", "growth"],
   priority: ["high", "medium", "low"],
   state: ["open", "done"],
 };
 /** One typed rule per query key; anything unlisted fails closed. */
 function queryValid(key: string, value: string): boolean {
+  if (key === "month") return /^\d{4}-(0[1-9]|1[0-2])$/.test(value);
   if (uuidKeys.has(key)) return z.uuid().safeParse(value).success;
   if (key in enumQuery) return enumQuery[key].includes(value);
   if (!/^\d+$/.test(value)) return false;

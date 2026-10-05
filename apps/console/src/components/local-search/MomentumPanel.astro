@@ -1,0 +1,69 @@
+---
+import type { MomentumView } from "../../lib/local-search-view";
+import SectionHeading from "../ui/SectionHeading.astro";
+import StatusBadge from "../ui/StatusBadge.astro";
+import EmptyState from "../ui/EmptyState.astro";
+import Trend from "../ui/Trend.astro";
+import VisibilityChart from "./VisibilityChart.astro";
+interface Props {
+  /** Null when Search Console is not connected. */
+  momentum: MomentumView | null;
+  integrationsHref: string;
+}
+const { momentum, integrationsHref } = Astro.props;
+---
+
+<section class="panel" data-momentum>
+  <SectionHeading>
+    <Fragment slot="title">Search momentum</Fragment>
+    <Fragment slot="actions">
+      {
+        momentum && (
+          <StatusBadge text={momentum.chip.label} tone={momentum.chip.tone} />
+        )
+      }
+    </Fragment>
+  </SectionHeading>
+  {
+    momentum ? (
+      <div class="chartbody">
+        <div class="chartstats">
+          {momentum.stats.map((stat) => (
+            <div>
+              <small>{stat.label}</small>
+              <strong>{stat.value}</strong>
+              {stat.trend !== null && (
+                <span class="trend">
+                  <Trend value={stat.trend} />
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
+        {momentum.chart ? (
+          <VisibilityChart
+            chart={momentum.chart}
+            label="Daily search clicks across the selected period"
+          />
+        ) : (
+          <EmptyState title="Not enough days to chart">
+            A trend appears once Search Console has reported at least two days.
+          </EmptyState>
+        )}
+        <div class="legend">
+          <span>
+            <i />
+            Daily search clicks · {momentum.period}
+          </span>
+        </div>
+      </div>
+    ) : (
+      <EmptyState title="Search Console is not connected">
+        Connect it to see search clicks, impressions and position over time.
+        <a slot="action" class="control primary" href={integrationsHref}>
+          Open Integrations
+        </a>
+      </EmptyState>
+    )
+  }
+</section>

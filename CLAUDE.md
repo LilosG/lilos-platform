@@ -18,6 +18,14 @@ LILOs is Lilos Growth's operating platform: one multi-tenant product for running
 7. No duplicate systems. Extend the canonical model instead of adding a parallel one. Remove what you replace in the same change.
 8. Tenant isolation, idempotency and audit logging on every write.
 
+## UI quality standard (console)
+1. Screens are built only from the reference components in `apps/console/reference/src/components` (ported into `apps/console/src/components`). Old carried-over screens are replaced, not restyled.
+2. No raw system text in the UI: no ISO timestamps, field names, enum values, IDs, UUIDs, provider keys or API error strings. Everything goes through formatters/presenters in `apps/console/src/lib` (`present.ts`, `status.ts`).
+3. Technical, provenance and connection detail (sync runs, source health, authorization state, run IDs) sits behind a status chip or a "Details" dialog, never as a banner or paragraph on the main screen.
+4. Use visual components for data: star ratings, status chips, avatars, quoted responses, metric tiles with trend, charts.
+5. Every UI PR includes desktop (1440px) and mobile (390px) screenshots of each changed screen next to the matching reference screen, committed under `apps/console/visual/<step>/` and embedded in the PR description.
+6. Every empty, not-connected, not-tracked and error state is a designed state (`EmptyState`/`ErrorState` components with a clear next action), never bare text. Missing data is never shown as 0.
+
 ## Commands
 - Locally, before every push: `npm run format:check && npm run lint && npm run typecheck`, plus `npm run contracts:check` whenever API routes or response models change (regenerate with `npm run contracts:generate`; never hand-merge `packages/contracts`), plus only the tests that cover the code you changed (a single test file or `-k` selection; for the console `npm run test --workspace @lilos/console`).
 - The full 4-shard Python suite runs in CI only: `uv run python scripts/python_test_shards.py --shard-count 4 --verify`. CI runs each shard against its own disposable PostgreSQL 17 database whose name contains `test`. Locally you may run a shard with `LILOS_TEST_DATABASE_URL=... uv run python scripts/python_test_shards.py --shard-count 4 --shard-index N`.

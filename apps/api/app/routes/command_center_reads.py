@@ -43,6 +43,10 @@ from apps.api.app.products.content.models import (
     ContentPublication,
     PublishingTarget,
 )
+from apps.api.app.products.gbp.performance_read import (
+    PerformancePeriod,
+    read_actions_by_organization,
+)
 from apps.api.app.products.leads.models import Lead, LeadSource
 from apps.api.app.products.reviews.models import Review
 from apps.api.app.products.seo.models import (
@@ -85,6 +89,7 @@ PERMISSIONS = (
     "leads.read",
     "reviews.read",
     "workflows.read",
+    "gbp.read",
 )
 RANK = {"connected": 4, "degraded": 3, "pending": 2, "reconnect_required": 1}
 
@@ -178,6 +183,7 @@ class Facts:
     open_counts: dict[UUID, int] = field(default_factory=dict)
     opportunities: dict[UUID, list[OpportunityRead]] = field(default_factory=dict)
     google: dict[UUID, str] = field(default_factory=dict)
+    gbp_actions: dict[UUID, MetricRead] = field(default_factory=dict)
     last_completed: dict[UUID, RunRead] = field(default_factory=dict)
     unresolved: dict[UUID, list[RunRead]] = field(default_factory=dict)
     activity: dict[UUID, list[RunRead]] = field(default_factory=dict)
@@ -216,6 +222,8 @@ async def load_facts(
         )
     async with timer.section("integrations"):
         facts.google = await google_connections(session, ids)
+    async with timer.section("gbp_performance"):
+        facts.gbp_actions = await gbp_actions(session, ids, allowed["gbp.read"], days)
     async with timer.section("workflows"):
         (
             facts.last_completed,
@@ -586,19 +594,14 @@ async def opportunities(
     top: dict[UUID, list[OpportunityRead]] = defaultdict(list)
     if not readable:
         return counts, top
+    # The Opportunities screen's rule: one finding is (organization, type, query or page), the
+    # newest observation stands for it, and a change that is live and verified is not open work.
     open_filter = and_(
         SEOOpportunity.organization_id.in_(readable),
         SEOOpportunity.status.in_(OPEN_OPPORTUNITY_STATUSES),
+        ~seo_is_live(),
     )
-    for organization_id, total in await session.execute(
-        select(SEOOpportunity.organization_id, func.count())
-        .where(open_filter)
-        .group_by(SEOOpportunity.organization_id)
-    ):
-        counts[organization_id] = int(total)
-    for organization_id in readable:
-        counts.setdefault(organization_id, 0)
-    ranked = (
+    newest = (
         select(
             SEOOpportunity.id.label("id"),
             SEOOpportunity.organization_id.label("organization_id"),
@@ -608,12 +611,38 @@ async def opportunities(
             SEOOpportunity.evidence.label("evidence"),
             func.row_number()
             .over(
-                partition_by=SEOOpportunity.organization_id,
-                order_by=SEOOpportunity.priority_score.desc().nulls_last(),
+                partition_by=seo_dedupe_columns(),
+                order_by=(SEOOpportunity.updated_at.desc(), SEOOpportunity.id.desc()),
+            )
+            .label("recency"),
+        )
+        .where(open_filter)
+        .subquery()
+    )
+    for organization_id, total in await session.execute(
+        select(newest.c.organization_id, func.count())
+        .where(newest.c.recency == 1)
+        .group_by(newest.c.organization_id)
+    ):
+        counts[organization_id] = int(total)
+    for organization_id in readable:
+        counts.setdefault(organization_id, 0)
+    ranked = (
+        select(
+            newest.c.id,
+            newest.c.organization_id,
+            newest.c.opportunity_type,
+            newest.c.status,
+            newest.c.priority,
+            newest.c.evidence,
+            func.row_number()
+            .over(
+                partition_by=newest.c.organization_id,
+                order_by=newest.c.priority.desc().nulls_last(),
             )
             .label("rank"),
         )
-        .where(open_filter)
+        .where(newest.c.recency == 1)
         .subquery()
     )
     for row in await session.execute(
@@ -632,6 +661,24 @@ async def opportunities(
             )
         )
     return counts, top
+
+
+async def gbp_actions(
+    session: AsyncSession, ids: list[UUID], permitted: set[UUID], days: int
+) -> dict[UUID, MetricRead]:
+    """Calls, website clicks and direction requests for every readable client, in one pass."""
+    readable = [i for i in ids if i in permitted]
+    rows = await read_actions_by_organization(session, readable, PerformancePeriod(f"{days}d"))
+    state = {"partial": "available", "not_synced": "no_data"}
+    return {
+        organization_id: MetricRead(
+            state.get(read.availability.value, read.availability.value),
+            float(read.current) if read.current is not None else None,
+            float(read.previous) if read.previous is not None else None,
+            read.freshness_at,
+        )
+        for organization_id, read in rows.items()
+    }
 
 
 async def google_connections(session: AsyncSession, ids: list[UUID]) -> dict[UUID, str]:

@@ -1213,6 +1213,9 @@
             ],
             "title": "Category"
           },
+          "gbp_actions": {
+            "$ref": "#/components/schemas/MetricValue"
+          },
           "health": {
             "enum": [
               "healthy",
@@ -1315,6 +1318,7 @@
           "search_clicks",
           "average_position",
           "average_local_rank",
+          "gbp_actions",
           "leads",
           "local_visibility",
           "reviews",
@@ -3275,6 +3279,13 @@
           "search_terms": {
             "$ref": "#/components/schemas/PerformanceSearchTerms"
           },
+          "series": {
+            "items": {
+              "$ref": "#/components/schemas/PerformanceDay"
+            },
+            "title": "Series",
+            "type": "array"
+          },
           "source": {
             "$ref": "#/components/schemas/PerformanceSource"
           }
@@ -3291,6 +3302,7 @@
           "profile_views",
           "metrics",
           "search_terms",
+          "series",
           "source"
         ],
         "title": "GBPPerformanceView",
@@ -8512,7 +8524,8 @@
               "search_console",
               "leads",
               "reviews",
-              "rank_scan"
+              "rank_scan",
+              "gbp"
             ],
             "title": "Source",
             "type": "string"
@@ -11467,6 +11480,45 @@
           "change_percent"
         ],
         "title": "PerformanceComparison",
+        "type": "object"
+      },
+      "PerformanceDay": {
+        "description": "One synced day across the selected locations; a day that was not synced has no entry.",
+        "properties": {
+          "actions": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actions"
+          },
+          "day": {
+            "format": "date",
+            "title": "Day",
+            "type": "string"
+          },
+          "impressions": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Impressions"
+          }
+        },
+        "required": [
+          "day",
+          "impressions",
+          "actions"
+        ],
+        "title": "PerformanceDay",
         "type": "object"
       },
       "PerformanceLocation": {

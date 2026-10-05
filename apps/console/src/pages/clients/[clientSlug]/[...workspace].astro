@@ -23,19 +23,20 @@ import type { ReviewsView, ReviewDetailView } from "../../../adapters/reviews";
 import Integrations from "../../../components/integrations/Integrations.astro";
 import LocalSearch from "../../../components/local-search/LocalSearch.astro";
 import PageIntelligence from "../../../components/local-search/PageIntelligence.astro";
-import Profile from "../../../components/local-search/Profile.astro";
 import {
   adaptIntegrations,
   adaptLocalSearch,
   adaptPage,
-  adaptProfile,
 } from "../../../adapters/local-search";
 import type {
   IntegrationsView,
   LocalSearchView,
   PageIntelligence as PageView,
-  ProfileView,
 } from "../../../adapters/local-search";
+import type { GbpPerformanceView } from "../../../adapters/gbp";
+import type { GbpTabData } from "../../../lib/gbp-view";
+import { loadGbpOverview, loadGbpTab } from "../../../server/gbp-loader";
+import ErrorState from "../../../components/ui/ErrorState.astro";
 import DialogFrame from "../../../components/ui/DialogFrame.astro";
 import AppLayout from "../../../layouts/AppLayout.astro";
 import Opportunities from "../../../components/opportunities/Opportunities.astro";
@@ -80,7 +81,8 @@ let reviewDetail: ReviewDetailView | undefined;
 let integrations: IntegrationsView | undefined;
 let localSearch: LocalSearchView | undefined;
 let pageView: PageView | undefined;
-let profileView: ProfileView | undefined;
+let gbpOverview: GbpPerformanceView | null = null;
+let gbpTab: GbpTabData | null = null;
 const segments = path.split("/");
 const tab = segments[1] ?? "";
 const days = Number(Astro.url.searchParams.get("days") ?? 28);
@@ -114,7 +116,6 @@ if (
     "search-console",
     "pages",
     "technical",
-    "profiles",
   ].includes(tab)
 )
   return new Response("Page not found", { status: 404 });
@@ -252,19 +253,8 @@ try {
         segments[2],
         segments[3],
       );
-    else if (segments.length === 4 && tab === "profiles")
-      profileView = adaptProfile(
-        await read(
-          Astro.locals,
-          scope +
-            `local-search/locations/${segments[2]}/profiles/${segments[3]}/`,
-        ),
-        client.organization_id,
-        segments[2],
-        segments[3],
-      );
     else {
-      if (segments.length > 2 || tab === "profiles")
+      if (segments.length > 2)
         return new Response("Page not found", { status: 404 });
       const params = new URLSearchParams({
         days: String(days),
@@ -276,6 +266,20 @@ try {
         client.organization_id,
         websiteId,
       );
+      if (tab === "")
+        gbpOverview = await loadGbpOverview(
+          Astro.locals,
+          client.organization_id,
+          days,
+        );
+      else if (tab === "google-business-profile")
+        gbpTab = await loadGbpTab(
+          Astro.locals,
+          localSearch,
+          Astro.url.searchParams,
+          days,
+          Astro.url.pathname,
+        );
     }
   } else if (section === "opportunities") {
     if (sourceId)
@@ -331,7 +335,8 @@ const title =
 <AppLayout
   reference={overview !== undefined ||
     notBuilt ||
-    (section === "opportunities" && error === undefined)}
+    (section === "opportunities" && error === undefined) ||
+    (localSearch !== undefined && error === undefined)}
   title={title}
   organizations={rows}
   client={client}
@@ -417,18 +422,6 @@ const title =
           slug={client.organization_slug}
         />
       </DialogFrame>
-    ) : profileView ? (
-      <DialogFrame
-        id="profile-detail"
-        returnLabel="All profiles"
-        returnTo={`/clients/${client.organization_slug}/local-search/google-business-profile/`}
-      >
-        <Profile
-          slot="body"
-          view={profileView}
-          slug={client.organization_slug}
-        />
-      </DialogFrame>
     ) : detail ? (
       <DialogFrame
         id="opportunity-detail"
@@ -455,7 +448,7 @@ const title =
       </DialogFrame>
     ) : (
       <Fragment>
-        {!opportunities && (
+        {!opportunities && !localSearch && (
           <div class="pagehead">
             <div>
               <>
@@ -466,7 +459,7 @@ const title =
           </div>
         )}
         {error ? (
-          <p role="alert">{error}</p>
+          <ErrorState title="This page could not be loaded">{error}</ErrorState>
         ) : leads ? (
           <Leads view={leads} slug={client.organization_slug} tab={tab} />
         ) : website ? (
@@ -502,9 +495,12 @@ const title =
           <LocalSearch
             view={localSearch}
             slug={client.organization_slug}
+            clientName={client.organization_name}
             tab={tab}
             days={days}
             offset={offset}
+            gbp={gbpOverview}
+            gbpTab={gbpTab}
           />
         ) : opportunities ? (
           <Opportunities

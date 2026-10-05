@@ -9,7 +9,6 @@ import {
   healthLabel,
   healthSub,
   initials,
-  opportunityTitle,
   priorityText,
   show,
   signed,
@@ -21,6 +20,7 @@ import {
   type Shown,
 } from "./present";
 import { clientRoute } from "../config/routes";
+import { dedupeFindings, findingTitle } from "./opportunity-view";
 type Attention = PortfolioOverview["attention"][number];
 type Opportunity = PortfolioOverview["opportunities"][number];
 export interface AttentionRow {
@@ -67,9 +67,19 @@ export interface OpportunityRowView {
   priority: string;
 }
 export function opportunityRows(items: Opportunity[]): OpportunityRowView[] {
-  return items.map((item) => ({
+  const findings = dedupeFindings(items, (item) => [
+    item.organization_id,
+    item.opportunity_type,
+    item.query ?? item.page,
+  ]);
+  return findings.map((item) => ({
     id: item.id,
-    title: opportunityTitle(item),
+    title: findingTitle({
+      source_type: item.opportunity_type,
+      kind: "seo",
+      query: item.query,
+      path: item.page,
+    }),
     clientName: item.organization_name,
     clientHref: clientRoute(item.organization_slug),
     href: `/clients/${item.organization_slug}/opportunities/${item.id}/`,
@@ -228,13 +238,6 @@ export function snapshotMetrics(overview: ClientOverview): (MetricCellView & {
   const reviews = row.reviews;
   const reviewShown =
     reviews.availability === "available" && reviews.average_rating !== null;
-  const unavailable = (label: string, note: string, href: string) => ({
-    label,
-    value: "Not tracked",
-    description: note,
-    missing: true,
-    href,
-  });
   return [
     {
       ...cell("Local visibility", show(row.local_visibility), () => ""),
@@ -244,11 +247,14 @@ export function snapshotMetrics(overview: ClientOverview): (MetricCellView & {
       ...cell("Average local rank", show(row.average_local_rank), () => ""),
       href: `${clientRoute(slug, "Local Search")}rankings/`,
     },
-    unavailable(
-      "GBP actions",
-      "Google profile performance is not collected yet",
-      `${clientRoute(slug, "Local Search")}google-business-profile/`,
-    ),
+    {
+      ...cell("GBP actions", show(row.gbp_actions), (shown) =>
+        signed(shown.delta)
+          ? `${signed(shown.delta)} vs previous period \u00b7 calls, website clicks, directions`
+          : "Calls, website clicks and directions",
+      ),
+      href: `${clientRoute(slug, "Local Search")}google-business-profile/`,
+    },
     {
       label: "Google rating",
       value: reviewShown

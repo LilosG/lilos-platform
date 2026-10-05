@@ -1,0 +1,32 @@
+---
+import type { ChartModel } from "../../lib/local-search-view";
+interface Props {
+  chart: ChartModel;
+  /** What the line shows, read aloud by assistive technology. */
+  label: string;
+}
+const { chart, label } = Astro.props;
+---
+
+<svg class="chart" viewBox="0 0 580 170" role="img" aria-label={label}>
+  {
+    chart.grid.map((line) => (
+      <Fragment>
+        <line class="gridline" x1="38" y1={line.y} x2="560" y2={line.y} />
+        <text x="0" y={line.y + 4}>
+          {line.label}
+        </text>
+      </Fragment>
+    ))
+  }
+  <path class="area" d={chart.area}></path>
+  <path class="line" d={chart.line}></path>
+  {chart.dots.map((dot) => <circle class="dot" cx={dot.x} cy={dot.y} r="4" />)}
+  {
+    chart.labels.map((tick) => (
+      <text x={tick.x} y="163" text-anchor={tick.anchor}>
+        {tick.text}
+      </text>
+    ))
+  }
+</svg>

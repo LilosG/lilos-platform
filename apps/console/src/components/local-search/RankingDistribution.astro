@@ -1,0 +1,71 @@
+---
+import SectionHeading from "../ui/SectionHeading.astro";
+export interface Band {
+  label: string;
+  value: number;
+  tone: "top-three" | "top-ten" | "below-ten" | "not-found";
+}
+interface Props {
+  /** Null until grid scans are tracked; an empty bar stands in, never sample numbers. */
+  bands: Band[] | null;
+}
+const { bands } = Astro.props;
+---
+
+<section class="panel">
+  <SectionHeading>
+    <Fragment slot="title">Ranking distribution</Fragment>
+    <span slot="actions" class="muted">
+      {bands ? "Local scan grid" : "Not tracked yet"}
+    </span>
+  </SectionHeading>
+  <div class="distributionbody">
+    {
+      bands ? (
+        <Fragment>
+          <div
+            class="distribution"
+            role="img"
+            aria-label="Ranking distribution"
+          >
+            {bands.map((band) => (
+              <i class={band.tone} style={`width:${band.value}%`}>
+                {band.value}%
+              </i>
+            ))}
+          </div>
+          <div class="distributionlegend">
+            {bands.map((band) => (
+              <span>
+                {band.label} <b>{band.value}%</b>
+              </span>
+            ))}
+          </div>
+        </Fragment>
+      ) : (
+        <Fragment>
+          <div class="distribution ghost" aria-hidden="true">
+            <i style="width:100%" />
+          </div>
+          <div class="distributionlegend">
+            <span>Top 3</span>
+            <span>Ranks 4–10</span>
+            <span>Below the top 10</span>
+            <span>Not found</span>
+          </div>
+          <p>
+            Local rank grids are not collected yet, so there is no share to show
+            for any of these bands.
+          </p>
+        </Fragment>
+      )
+    }
+  </div>
+</section>
+
+<style>
+  .ghost i {
+    background: #edf0ef;
+    color: transparent;
+  }
+</style>

@@ -24,7 +24,9 @@ test("Dashboard shows real states, never fixtures or invented zeros", async ({
   await expect(
     page.getByRole("button", { name: "Google post publishing failed" }),
   ).toBeVisible();
-  await expect(page.getByText("Missing meta description: /menu")).toBeVisible();
+  await expect(
+    page.getByText("Missing meta description \u00b7 /menu"),
+  ).toHaveCount(1);
   const row = page.locator("[data-client-row]").first();
   await expect(row).toContainText("Synthetic Alpha");
   await expect(row.locator("td").nth(1)).toContainText("Not tracked");

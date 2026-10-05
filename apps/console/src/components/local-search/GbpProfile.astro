@@ -1,0 +1,214 @@
+---
+import type { GbpTabData } from "../../lib/gbp-view";
+import {
+  changeRows,
+  completenessView,
+  healthView,
+  profileSummary,
+} from "../../lib/gbp-view";
+import { dateText } from "../../lib/present";
+import SectionHeading from "../ui/SectionHeading.astro";
+import StatusBadge from "../ui/StatusBadge.astro";
+import EmptyState from "../ui/EmptyState.astro";
+import ProfileDialog from "./ProfileDialog.astro";
+interface Props {
+  data: GbpTabData;
+  canPropose: boolean;
+  canApprove: boolean;
+}
+const { data, canPropose, canApprove } = Astro.props;
+const detail = data.detail;
+const summary = profileSummary(detail?.profile ?? null);
+const health = healthView(detail?.health ?? null);
+const complete = data.completeness ? completenessView(data.completeness) : null;
+const pending = changeRows(
+  data.changes ?? [],
+  detail?.profile ?? null,
+  canApprove,
+);
+const profile = (detail?.profile ?? {}) as Record<string, unknown>;
+const text = (value: unknown) => (typeof value === "string" ? value : "");
+const current = {
+  description: summary.description ?? "",
+  phone: summary.rows.find((row) => row.label === "Phone")?.value ?? "",
+  website: text(profile.websiteUri),
+};
+---
+
+<div class="grid">
+  <section class="panel">
+    <SectionHeading>
+      <Fragment slot="title">Profile</Fragment>
+      <Fragment slot="actions">
+        {
+          health && (
+            <StatusBadge text={health.chip.label} tone={health.chip.tone} />
+          )
+        }
+        {
+          canPropose && (
+            <button type="button" class="control primary" data-profile-open>
+              Edit details
+            </button>
+          )
+        }
+      </Fragment>
+    </SectionHeading>
+    {
+      summary.rows.length ? (
+        <Fragment>
+          {summary.rows.map((row) => (
+            <div class="listrow">
+              <div>
+                <small>{row.label}</small>
+                {row.value}
+              </div>
+            </div>
+          ))}
+          {summary.description && (
+            <div class="listrow">
+              <div>
+                <small>Description</small>
+                <blockquote class="quote">{summary.description}</blockquote>
+              </div>
+            </div>
+          )}
+          {health && health.issues.length > 0 && (
+            <div class="insight">{health.issues.join(" · ")}</div>
+          )}
+          <div class="insight">
+            {detail?.observed_at
+              ? `Profile as Google shows it · refreshed ${dateText(detail.observed_at)}`
+              : ""}
+          </div>
+        </Fragment>
+      ) : (
+        <EmptyState title="Google has not shared this profile yet">
+          Details appear after the profile's first sync.
+        </EmptyState>
+      )
+    }
+  </section>
+  <section class="panel">
+    <SectionHeading>
+      <Fragment slot="title">Opening hours</Fragment>
+    </SectionHeading>
+    {
+      summary.hours.some((row) => row.text !== "Closed") ? (
+        summary.hours.map((row) => (
+          <div class="listrow">
+            <div>{row.day}</div>
+            <b>{row.text}</b>
+          </div>
+        ))
+      ) : (
+        <EmptyState title="No opening hours on file">
+          Add regular hours in the Google profile so visitors know when to come.
+        </EmptyState>
+      )
+    }
+  </section>
+</div>
+<section class="panel">
+  <SectionHeading>
+    <Fragment slot="title">Completeness</Fragment>
+    <Fragment slot="actions">
+      {complete && <span class="muted">{complete.percent}% complete</span>}
+    </Fragment>
+  </SectionHeading>
+  {
+    complete ? (
+      <div class="chartbody">
+        <div
+          class="completeness"
+          role="img"
+          aria-label={`Profile ${complete.percent}% complete`}
+        >
+          <i style={`width:${complete.percent}%`} />
+        </div>
+        {complete.missing.length > 0 ? (
+          <Fragment>
+            <p>Still to add:</p>
+            <div class="tagrow">
+              {complete.missing.map((label) => (
+                <StatusBadge text={label} tone="warn" />
+              ))}
+            </div>
+          </Fragment>
+        ) : (
+          <p>Every field Google supports for this profile is filled in.</p>
+        )}
+        {complete.known.length > 0 && (
+          <Fragment>
+            <p>Complete:</p>
+            <div class="tagrow">
+              {complete.known.map((label) => (
+                <StatusBadge text={label} />
+              ))}
+            </div>
+          </Fragment>
+        )}
+      </div>
+    ) : (
+      <EmptyState title="Completeness unavailable">
+        It is measured from the profile's first sync.
+      </EmptyState>
+    )
+  }
+</section>
+{
+  pending.length > 0 && (
+    <section class="panel spaced-section">
+      <SectionHeading>
+        <Fragment slot="title">
+          Changes awaiting approval <span class="count">{pending.length}</span>
+        </Fragment>
+      </SectionHeading>
+      {pending.map((row) => (
+        <div class="listrow" data-change={row.id}>
+          <div>
+            <b>{row.label}</b>
+            <div class="beforeafter">
+              <div>
+                <small>Today</small>
+                <span class="was">{row.before}</span>
+              </div>
+              <div>
+                <small>After approval</small>
+                {row.after}
+              </div>
+            </div>
+          </div>
+          <div class="rowactions">
+            <StatusBadge text={row.chip.label} tone={row.chip.tone} />
+            {row.canDecide ? (
+              <Fragment>
+                <button
+                  type="button"
+                  class="control primary"
+                  data-gbp-action="change-approve"
+                  data-id={row.id}
+                >
+                  Approve
+                </button>
+                <button
+                  type="button"
+                  class="control"
+                  data-gbp-action="change-reject"
+                  data-id={row.id}
+                >
+                  Reject
+                </button>
+              </Fragment>
+            ) : (
+              <a class="link" href={data.verifyHref}>
+                Verify to approve
+              </a>
+            )}
+          </div>
+        </div>
+      ))}
+    </section>
+  )
+}
+{canPropose && <ProfileDialog current={current} />}

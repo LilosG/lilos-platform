@@ -67,7 +67,7 @@ class MetricValue(DTO):
     current: float | None
     previous: float | None
     percent_delta: float | None
-    source: Literal["ga4", "search_console", "leads", "reviews", "rank_scan"]
+    source: Literal["ga4", "search_console", "leads", "reviews", "rank_scan", "gbp"]
     availability: Availability
     freshness_at: datetime | None = None
 
@@ -97,6 +97,8 @@ class ClientRow(DTO):
     search_clicks: MetricValue
     average_position: MetricValue
     average_local_rank: MetricValue
+    # Calls, website clicks and direction requests from the Business Profile performance sync.
+    gbp_actions: MetricValue
     leads: MetricValue
     local_visibility: MetricValue
     reviews: ReviewSummary
@@ -376,6 +378,7 @@ def assemble(org: Organization, facts: Facts, allowed: dict[str, set[UUID]]) -> 
     position = shaped("search_console", read(facts.position, "seo.read"))
     sessions = shaped("ga4", read(facts.sessions, "insights.read"))
     leads = shaped("leads", read(facts.leads, "leads.read"))
+    gbp_actions = shaped("gbp", read(facts.gbp_actions, "gbp.read"))
     reviews = facts.reviews.get(oid)
     review_summary = (
         ReviewSummary(
@@ -469,6 +472,7 @@ def assemble(org: Organization, facts: Facts, allowed: dict[str, set[UUID]]) -> 
         search_clicks=search_clicks,
         average_position=position,
         average_local_rank=metric("rank_scan", "not_tracked"),
+        gbp_actions=gbp_actions,
         leads=leads,
         local_visibility=metric("rank_scan", "not_tracked"),
         reviews=review_summary,

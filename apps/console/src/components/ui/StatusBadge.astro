@@ -1,10 +1,12 @@
 ---
 interface Props {
   text: string;
+  /** A typed chip passes its own tone; a bare label falls back to the label's wording. */
+  tone?: "error" | "warn" | "neutral" | "";
 }
-const { text } = Astro.props;
+const { text, tone: given } = Astro.props;
 import { statusTone } from "../../lib/status";
-const tone = statusTone(text);
+const tone = given ?? statusTone(text);
 ---
 
 <span class:list={["badge", tone]}>{text}</span>

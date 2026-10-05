@@ -84,6 +84,14 @@ class PerformanceSearchTerms(BaseModel):
     terms: list[PerformanceSearchTerm]
 
 
+class PerformanceDay(BaseModel):
+    """One synced day across the selected locations; a day that was not synced has no entry."""
+
+    day: date
+    impressions: int | None
+    actions: int | None
+
+
 class PerformanceSource(BaseModel):
     last_synced_at: datetime | None
     last_status: GBPPerformanceSyncStatus | None
@@ -102,6 +110,7 @@ class GBPPerformanceView(BaseModel):
     profile_views: PerformanceComparison
     metrics: list[PerformanceMetricView]
     search_terms: PerformanceSearchTerms
+    series: list[PerformanceDay]
     source: PerformanceSource
 
 
@@ -162,6 +171,10 @@ def _view(
                 for term in read.search_terms.terms
             ],
         ),
+        series=[
+            PerformanceDay(day=point.day, impressions=point.impressions, actions=point.actions)
+            for point in read.series
+        ],
         source=PerformanceSource(
             last_synced_at=read.source.last_synced_at,
             last_status=read.source.last_status,

@@ -1,0 +1,116 @@
+---
+import type { PostRow } from "../../lib/gbp-view";
+import { postActionLabel } from "../../lib/gbp-view";
+import SectionHeading from "../ui/SectionHeading.astro";
+import StatusBadge from "../ui/StatusBadge.astro";
+import EmptyState from "../ui/EmptyState.astro";
+interface Props {
+  rows: PostRow[];
+  canPropose: boolean;
+  canApprove: boolean;
+  verifyHref: string;
+  /** Only the owner of a write-enabled profile can publish. */
+  writeEnabled: boolean;
+}
+const { rows, canPropose, canApprove, verifyHref, writeEnabled } = Astro.props;
+const waiting = rows.some((row) => row.state === "awaiting_approval");
+---
+
+<section class="panel">
+  <SectionHeading>
+    <Fragment slot="title">
+      Google posts <span class="count">{rows.length}</span>
+    </Fragment>
+    <Fragment slot="actions">
+      <button
+        type="button"
+        class="control"
+        data-gbp-action="reconcile"
+        title="Compare with what Google currently shows"
+      >
+        Check Google
+      </button>
+      {
+        canPropose && (
+          <button type="button" class="control primary" data-post-open="new">
+            New post
+          </button>
+        )
+      }
+    </Fragment>
+  </SectionHeading>
+  {
+    waiting && !canApprove && (
+      <div class="insight">
+        Approving needs a verified authenticator.{" "}
+        <a class="link" href={verifyHref}>
+          Verify to approve
+        </a>
+      </div>
+    )
+  }
+  {
+    !writeEnabled && rows.some((r) => r.state === "approved") && (
+      <div class="insight">
+        Publishing is turned off for this profile. Turn it on in Integrations to
+        publish approved posts.
+      </div>
+    )
+  }
+  {
+    rows.length ? (
+      rows.map((row) => (
+        <article class="postrow" data-post-row={row.id}>
+          <div class="postmeta">
+            <StatusBadge text={row.chip.label} tone={row.chip.tone} />
+            <span>{row.kind}</span>
+            <span>{row.detail}</span>
+            {row.cta && <span>Button: {row.cta}</span>}
+          </div>
+          <blockquote class="quote">{row.content}</blockquote>
+          <div class="rowactions">
+            {row.editable && canPropose && (
+              <button
+                type="button"
+                class="control"
+                data-post-open="edit"
+                data-post-key={row.postKey}
+                data-post-content={row.content}
+              >
+                Edit
+              </button>
+            )}
+            {row.actions.map((action) => (
+              <button
+                type="button"
+                class:list={[
+                  "control",
+                  { primary: action === "approve" || action === "publish" },
+                ]}
+                data-gbp-action={`post-${action}`}
+                data-id={row.id}
+                data-publication={row.publicationId ?? undefined}
+              >
+                {postActionLabel[action]}
+              </button>
+            ))}
+          </div>
+        </article>
+      ))
+    ) : (
+      <EmptyState title="No posts yet">
+        Google posts keep the profile fresh. Draft one and send it for approval.
+        {canPropose && (
+          <button
+            slot="action"
+            type="button"
+            class="control primary"
+            data-post-open="new"
+          >
+            Write the first post
+          </button>
+        )}
+      </EmptyState>
+    )
+  }
+</section>

@@ -1,12 +1,21 @@
 ---
+import Trend from "./Trend.astro";
 interface Props {
   label: string;
   value: string;
   description: string;
   /** Not a number: rendered muted so a missing value is never read as a result. */
   missing?: boolean;
+  /** Whole-percent change against the previous period, when there is one. */
+  trend?: number | null;
 }
-const { label, value, description, missing = false } = Astro.props;
+const {
+  label,
+  value,
+  description,
+  missing = false,
+  trend = null,
+} = Astro.props;
 ---
 
 <div class="metric">
@@ -15,5 +24,7 @@ const { label, value, description, missing = false } = Astro.props;
     class:list={{ muted: missing }}
     data-availability={missing ? "missing" : undefined}>{value}</strong
   >
-  <small>{description}</small>
+  <small>
+    {trend !== null && <Trend value={trend} />}{" "}{description}
+  </small>
 </div>
