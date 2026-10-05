@@ -1,0 +1,152 @@
+---
+import type { QueryRow } from "../../lib/local-search-view";
+import SectionHeading from "../ui/SectionHeading.astro";
+import DataTable from "../ui/DataTable.astro";
+import EmptyState from "../ui/EmptyState.astro";
+interface Props {
+  rows: QueryRow[];
+  title: string;
+  /** Period the numbers cover, such as "Last 28 days". */
+  period: string;
+  /** The full table sorts, searches and pages; the Overview's top-10 does not. */
+  interactive?: boolean;
+  /** Where "View all" leads from the Overview. */
+  moreHref?: string;
+  integrationsHref: string;
+  /** Why there are no rows: the source is not connected, or it has reported nothing. */
+  connected: boolean;
+}
+const {
+  rows,
+  title,
+  period,
+  interactive = false,
+  moreHref,
+  integrationsHref,
+  connected,
+} = Astro.props;
+const columns = [
+  ["query", "Query", false],
+  ["clicks", "Clicks", true],
+  ["impressions", "Impressions", true],
+  ["ctr", "CTR", true],
+  ["position", "Position", true],
+] as const;
+---
+
+<section
+  class="panel tablewrap"
+  data-query-table={interactive ? "interactive" : undefined}
+>
+  <SectionHeading>
+    <Fragment slot="title">{title}</Fragment>
+    <Fragment slot="actions">
+      <span class="muted">Search Console · {period}</span>
+      {
+        moreHref && (
+          <a class="link" href={moreHref}>
+            View all
+          </a>
+        )
+      }
+    </Fragment>
+  </SectionHeading>
+  {
+    interactive && rows.length > 0 && (
+      <div class="toolbar">
+        <input
+          class="search"
+          type="search"
+          placeholder="Search queries…"
+          aria-label="Search queries"
+          data-query-search
+        />
+      </div>
+    )
+  }
+  {
+    rows.length ? (
+      <DataTable>
+        <thead>
+          <tr>
+            {columns.map(([key, label, numeric]) => (
+              <th class:list={{ num: numeric }} scope="col">
+                {interactive ? (
+                  <button
+                    class="sortable"
+                    type="button"
+                    data-sort={key}
+                    aria-sort={key === "clicks" ? "descending" : "none"}
+                  >
+                    {label}
+                  </button>
+                ) : (
+                  label
+                )}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody data-query-rows>
+          {rows.map((row) => (
+            <tr
+              data-query={row.query.toLowerCase()}
+              data-clicks={row.clicks ?? -1}
+              data-impressions={row.impressions ?? -1}
+              data-ctr={row.ctrText}
+              data-position={row.position ?? 100000}
+            >
+              <td>{row.query}</td>
+              <td class="num">{row.clicksText}</td>
+              <td class="num">{row.impressionsText}</td>
+              <td class="num">{row.ctrText}</td>
+              <td class="num">{row.positionText}</td>
+            </tr>
+          ))}
+        </tbody>
+      </DataTable>
+    ) : (
+      <EmptyState
+        title={
+          connected
+            ? "No search queries yet"
+            : "Search Console is not connected"
+        }
+      >
+        {connected
+          ? "Queries appear once Search Console reports clicks for this period."
+          : "Connect Search Console to see which searches bring people to the site."}
+        {!connected && (
+          <a slot="action" class="control primary" href={integrationsHref}>
+            Open Integrations
+          </a>
+        )}
+      </EmptyState>
+    )
+  }
+  {
+    interactive && rows.length > 0 && (
+      <div class="pager" data-query-pager>
+        <span data-query-count />
+        <div class="pagerbtns">
+          <button class="control" type="button" data-query-prev>
+            Previous
+          </button>
+          <button class="control" type="button" data-query-next>
+            Next
+          </button>
+        </div>
+      </div>
+    )
+  }
+  {
+    interactive && rows.length > 0 && (
+      <p class="emptytext" data-query-none hidden>
+        No queries match that search.
+      </p>
+    )
+  }
+</section>
+<script>
+  import "../../lib/query-table";
+</script>

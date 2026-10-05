@@ -1,0 +1,143 @@
+---
+import type { LocalSearchView } from "../../adapters/local-search";
+import { value } from "../../adapters/local-search";
+// Pages and Technical keep their carried-over layout; step 5 rebuilds them.
+interface Props {
+  view: LocalSearchView;
+  slug: string;
+  tab: string;
+  offset: number;
+}
+const { view: v, slug, tab, offset } = Astro.props;
+const base = `/clients/${slug}/local-search/`;
+const api = `/api/organizations/${v.organization_id}/`;
+const query = new URLSearchParams({
+  days: String(Astro.url.searchParams.get("days") ?? 28),
+  ...(v.website_id ? { website_id: v.website_id } : {}),
+}).toString();
+---
+
+<>
+  <section class="panel">
+    <Fragment>
+      <h2>
+        {tab === "technical" ? "Technical findings" : "Observed pages"}
+      </h2>
+      <p>
+        Crawl indexability does not establish Google indexation. Health scores
+        and Google indexing coverage are unavailable.
+      </p>
+    </Fragment>
+    <div class="tablewrap">
+      <table>
+        <>
+          <caption>Persisted crawl evidence</caption>
+          <thead>
+            <tr>
+              <>
+                <th scope="col">Page</th>
+                <th scope="col">HTTP / indexability</th>
+                <th scope="col">Quality / observed</th>
+                <th scope="col">
+                  {tab === "technical" ? "Findings" : "Action"}
+                </th>
+              </>
+            </tr>
+          </thead>
+          <tbody>
+            {
+              v.pages.map((p) => (
+                <tr>
+                  <td>
+                    {p.title ?? "Untitled"}
+                    <span class="sub">{p.normalized_url}</span>
+                  </td>
+                  <td>
+                    {value(p.http_status)} · {value(p.indexability)}
+                  </td>
+                  <td>
+                    {p.quality_status}
+                    <span class="sub">{p.observed_at ?? "Unavailable"}</span>
+                  </td>
+                  <td>
+                    {tab === "technical" ? (
+                      <p>
+                        {p.technical_issues.length
+                          ? p.technical_issues.map(value).join(", ")
+                          : "No findings recorded for this page"}
+                      </p>
+                    ) : null}
+                    <a href={`${base}pages/${p.website_id}/${p.id}/?${query}`}>
+                      Inspect page intelligence
+                    </a>
+                  </td>
+                </tr>
+              ))
+            }
+          </tbody>
+        </>
+      </table>
+    </div>
+    {!v.pages.length && <p>No persisted page observations in this scope.</p>}
+    {
+      offset > 0 && (
+        <a href={`?${query}&offset=${Math.max(0, offset - 50)}`}>
+          Previous page
+        </a>
+      )
+    }
+    {
+      v.next_offset !== null && (
+        <a href={`?${query}&offset=${v.next_offset}`}>Next page</a>
+      )
+    }
+  </section>
+  <section class="panel">
+    <Fragment>
+      <h2>Website checks</h2>
+      <button
+        inert
+        disabled={!v.can_crawl}
+        data-action={v.website_id
+          ? api + `seo/websites/${v.website_id}/check/`
+          : undefined}
+        data-key
+      >
+        Run website check
+      </button>
+    </Fragment>
+    <p>
+      Checks are queued in the canonical workflow. Refresh to inspect persisted
+      progress.
+    </p>
+    {
+      v.crawls.length ? (
+        v.crawls.map((c) => (
+          <div class="listrow">
+            <div>
+              <h3>{c.status}</h3>
+              <p>
+                Completed: {c.completed_at ?? "Unavailable"} · Stop reason:{" "}
+                {c.stop_reason ?? "Unavailable"}
+              </p>
+              <details>
+                <summary>Crawl evidence</summary>
+                <p>{value(c.safe_result)}</p>
+              </details>
+            </div>
+          </div>
+        ))
+      ) : (
+        <p>No crawl runs.</p>
+      )
+    }
+    <a href={`/clients/${slug}/opportunities/`}>
+      Inspect governed opportunities
+    </a>
+  </section>
+</>
+
+<p role="status" aria-live="polite" data-search-status></p>
+<script>
+  import "../../lib/search-actions";
+</script>

@@ -1,0 +1,35 @@
+---
+import EmptyState from "../ui/EmptyState.astro";
+export interface RankingRow {
+  query: string;
+  rank: string;
+  top3: string;
+  top10: string;
+}
+interface Props {
+  rows: RankingRow[];
+}
+const { rows } = Astro.props;
+---
+
+{
+  rows.length ? (
+    rows.map((row) => (
+      <tr>
+        <td>{row.query}</td>
+        <td>{row.rank}</td>
+        <td>{row.top3}</td>
+        <td>{row.top10}</td>
+      </tr>
+    ))
+  ) : (
+    <tr>
+      <td colspan="4">
+        <EmptyState title="Local Visibility Grid is coming">
+          Priority keywords and their local rank will be listed here once grid
+          scans are tracked. Nothing is estimated in the meantime.
+        </EmptyState>
+      </td>
+    </tr>
+  )
+}

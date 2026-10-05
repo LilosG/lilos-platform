@@ -1,0 +1,130 @@
+---
+import type { LocalSearchView } from "../../adapters/local-search";
+import {
+  clickSeries,
+  chartModel,
+  pageRows,
+  queryRows,
+  type Tile,
+} from "../../lib/local-search-view";
+import { periodText, rangeText } from "../../lib/present";
+import MetricStrip from "../ui/MetricStrip.astro";
+import SectionHeading from "../ui/SectionHeading.astro";
+import DataTable from "../ui/DataTable.astro";
+import EmptyState from "../ui/EmptyState.astro";
+import VisibilityChart from "./VisibilityChart.astro";
+import QueryTable from "./QueryTable.astro";
+interface Props {
+  view: LocalSearchView;
+  tiles: Tile[];
+  days: number;
+  integrationsHref: string;
+}
+const { view, tiles, days, integrationsHref } = Astro.props;
+const report = view.search_console;
+const connected = Boolean(report?.connected);
+const chart = chartModel(clickSeries(report));
+const pages = pageRows(view);
+const period = periodText(days);
+---
+
+<MetricStrip items={tiles} />
+<section class="panel">
+  <SectionHeading>
+    <Fragment slot="title">Search clicks over time</Fragment>
+    <Fragment slot="actions">
+      <span class="muted">
+        {
+          report?.range
+            ? rangeText(report.range.start, report.range.end)
+            : period
+        }
+      </span>
+    </Fragment>
+  </SectionHeading>
+  {
+    chart ? (
+      <div class="chartbody">
+        <VisibilityChart
+          chart={chart}
+          label="Daily search clicks across the selected period"
+        />
+        <div class="legend">
+          <span>
+            <i />
+            Daily search clicks
+          </span>
+        </div>
+      </div>
+    ) : (
+      <EmptyState
+        title={
+          connected
+            ? "Not enough days to chart"
+            : "Search Console is not connected"
+        }
+      >
+        {connected
+          ? "A trend appears once Search Console has reported at least two days."
+          : "Connect Search Console to chart search clicks."}
+        {!connected && (
+          <a slot="action" class="control primary" href={integrationsHref}>
+            Open Integrations
+          </a>
+        )}
+      </EmptyState>
+    )
+  }
+</section>
+<div class="spaced-section">
+  <QueryTable
+    rows={queryRows(view)}
+    title="Organic search queries"
+    period={period}
+    interactive
+    connected={connected}
+    integrationsHref={integrationsHref}
+  />
+</div>
+<section class="panel tablewrap spaced-section">
+  <SectionHeading>
+    <Fragment slot="title">Search landing pages</Fragment>
+    <Fragment slot="actions">
+      <span class="muted">Search Console · {period}</span>
+    </Fragment>
+  </SectionHeading>
+  {
+    pages.length ? (
+      <DataTable>
+        <thead>
+          <tr>
+            <th scope="col">Page</th>
+            <th class="num" scope="col">
+              Clicks
+            </th>
+            <th class="num" scope="col">
+              Impressions
+            </th>
+            <th class="num" scope="col">
+              Position
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {pages.map((page) => (
+            <tr>
+              <td>{page.label}</td>
+              <td class="num">{page.clicksText}</td>
+              <td class="num">{page.impressionsText}</td>
+              <td class="num">{page.positionText}</td>
+            </tr>
+          ))}
+        </tbody>
+      </DataTable>
+    ) : (
+      <EmptyState title="No landing pages yet">
+        Pages appear here once Search Console attributes clicks to them.
+      </EmptyState>
+    )
+  }
+</section>
