@@ -23,7 +23,15 @@ from apps.api.app.authentication.models import UserProfile
 from apps.api.app.config import EnvironmentName, Settings
 from apps.api.app.main import create_app
 from apps.api.app.products.gbp.adapter import KeywordImpressionPoint
-from apps.api.app.products.gbp.performance_enums import GBPPerformanceMetric
+from apps.api.app.products.gbp.performance_enums import (
+    GBPPerformanceAvailability,
+    GBPPerformanceMetric,
+)
+from apps.api.app.products.gbp.performance_read import (
+    ActionsRead,
+    PerformancePeriod,
+    read_actions_by_organization,
+)
 from gbp.test_performance_sync import FakeGoogle, run_sync, seed_client, service
 
 HEADERS = {"Authorization": "Bearer fabricated.token"}
@@ -149,6 +157,13 @@ def test_performance_totals_comparison_availability_and_terms(
     # Profile views sums the four impression metrics; only one exists here, so it is partial.
     assert body["profile_views"]["current"]["availability"] == "partial"
     assert body["source"]["last_status"] == "succeeded"
+    # One point per synced day, oldest first; a day that was not synced is absent, never 0.
+    days = [point["day"] for point in body["series"]]
+    assert len(days) == 28 and days == sorted(days)
+    assert days[0] == body["current_range"]["start"] and days[-1] == body["current_range"]["end"]
+    assert all(
+        point == {"day": point["day"], "impressions": 3, "actions": 3} for point in body["series"]
+    )
     terms = body["search_terms"]
     assert terms["availability"] == "available"
     assert [
@@ -198,3 +213,61 @@ def test_another_tenants_locations_and_organizations_are_not_readable(
     assert foreign_org.status_code in (403, 404)
     assert foreign_location.status_code == 404
     assert foreign_location.json()["error"]["code"] == "GBP_LOCATION_NOT_FOUND"
+
+
+@pytest.mark.integration
+def test_the_portfolio_and_client_overview_carry_gbp_actions_from_the_performance_sync(
+    performance_client: tuple[TestClient, dict[str, UUID]],
+) -> None:
+    client, ids = performance_client
+
+    portfolio = client.get("/api/v1/command-center/portfolio", headers=HEADERS)
+    overview = client.get(
+        f"/api/v1/command-center/clients/{ids['organization']}/overview", headers=HEADERS
+    )
+
+    assert portfolio.status_code == 200, portfolio.text
+    assert overview.status_code == 200, overview.text
+    row = next(
+        r for r in portfolio.json()["clients"] if r["organization_id"] == str(ids["organization"])
+    )
+    # The fake syncs calls only (28 days of 3); the other two action metrics are missing, so the
+    # sum is the calls we have and no change against the previous period is claimed.
+    assert row["gbp_actions"]["source"] == "gbp"
+    assert row["gbp_actions"]["availability"] == "available"
+    assert row["gbp_actions"]["current"] == 28 * 3
+    assert row["gbp_actions"]["previous"] is None and row["gbp_actions"]["percent_delta"] is None
+    assert overview.json()["client"]["gbp_actions"] == row["gbp_actions"]
+
+
+@pytest.mark.integration
+def test_actions_are_read_for_every_organization_at_once_and_never_as_zero(
+    postgresql_test_url: str, gbp_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    async def scenario() -> None:
+        synced, synced_gbp, _ = await seed_client(gbp_session_factory, "Synced")
+        unsynced, _, _ = await seed_client(gbp_session_factory, "Unsynced")
+        unmapped = uuid4()
+        google = FakeGoogle()
+        google.value_for = lambda metric, day: 2
+        await run_sync(
+            gbp_session_factory, service(google), synced, synced_gbp, now=datetime.now(UTC)
+        )
+
+        async with gbp_session_factory() as session:
+            reads = await read_actions_by_organization(
+                session, [synced, unsynced, unmapped], PerformancePeriod.LAST_7_DAYS
+            )
+
+        assert reads[synced].availability is GBPPerformanceAvailability.PARTIAL
+        assert reads[synced].current == 7 * 2  # calls only; website and directions are missing
+        assert reads[synced].freshness_at is not None
+        assert reads[unsynced] == ActionsRead(
+            GBPPerformanceAvailability.NOT_SYNCED, None, None, None
+        )
+        assert reads[unmapped] == ActionsRead(
+            GBPPerformanceAvailability.NOT_CONNECTED, None, None, None
+        )
+        assert await read_actions_by_organization(session, [], PerformancePeriod.LAST_7_DAYS) == {}
+
+    asyncio.run(scenario())

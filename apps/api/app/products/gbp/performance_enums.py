@@ -28,6 +28,14 @@ IMPRESSION_METRICS: tuple[GBPPerformanceMetric, ...] = (
 )
 
 
+# The actions every profile reports: a person called, visited the website or asked for directions.
+ACTION_METRICS: tuple[GBPPerformanceMetric, ...] = (
+    GBPPerformanceMetric.CALL_CLICKS,
+    GBPPerformanceMetric.WEBSITE_CLICKS,
+    GBPPerformanceMetric.BUSINESS_DIRECTION_REQUESTS,
+)
+
+
 class GBPPerformanceSyncStatus(StrEnum):
     RUNNING = "running"
     SUCCEEDED = "succeeded"

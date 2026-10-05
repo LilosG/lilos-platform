@@ -43,6 +43,10 @@ from apps.api.app.products.content.models import (
     ContentPublication,
     PublishingTarget,
 )
+from apps.api.app.products.gbp.performance_read import (
+    PerformancePeriod,
+    read_actions_by_organization,
+)
 from apps.api.app.products.leads.models import Lead, LeadSource
 from apps.api.app.products.reviews.models import Review
 from apps.api.app.products.seo.models import (
@@ -85,6 +89,7 @@ PERMISSIONS = (
     "leads.read",
     "reviews.read",
     "workflows.read",
+    "gbp.read",
 )
 RANK = {"connected": 4, "degraded": 3, "pending": 2, "reconnect_required": 1}
 
@@ -178,6 +183,7 @@ class Facts:
     open_counts: dict[UUID, int] = field(default_factory=dict)
     opportunities: dict[UUID, list[OpportunityRead]] = field(default_factory=dict)
     google: dict[UUID, str] = field(default_factory=dict)
+    gbp_actions: dict[UUID, MetricRead] = field(default_factory=dict)
     last_completed: dict[UUID, RunRead] = field(default_factory=dict)
     unresolved: dict[UUID, list[RunRead]] = field(default_factory=dict)
     activity: dict[UUID, list[RunRead]] = field(default_factory=dict)
@@ -216,6 +222,8 @@ async def load_facts(
         )
     async with timer.section("integrations"):
         facts.google = await google_connections(session, ids)
+    async with timer.section("gbp_performance"):
+        facts.gbp_actions = await gbp_actions(session, ids, allowed["gbp.read"], days)
     async with timer.section("workflows"):
         (
             facts.last_completed,
@@ -632,6 +640,24 @@ async def opportunities(
             )
         )
     return counts, top
+
+
+async def gbp_actions(
+    session: AsyncSession, ids: list[UUID], permitted: set[UUID], days: int
+) -> dict[UUID, MetricRead]:
+    """Calls, website clicks and direction requests for every readable client, in one pass."""
+    readable = [i for i in ids if i in permitted]
+    rows = await read_actions_by_organization(session, readable, PerformancePeriod(f"{days}d"))
+    state = {"partial": "available", "not_synced": "no_data"}
+    return {
+        organization_id: MetricRead(
+            state.get(read.availability.value, read.availability.value),
+            float(read.current) if read.current is not None else None,
+            float(read.previous) if read.previous is not None else None,
+            read.freshness_at,
+        )
+        for organization_id, read in rows.items()
+    }
 
 
 async def google_connections(session: AsyncSession, ids: list[UUID]) -> dict[UUID, str]:

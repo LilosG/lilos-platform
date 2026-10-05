@@ -12,10 +12,11 @@ from datetime import UTC, date, datetime, timedelta
 from enum import StrEnum
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.app.products.gbp.performance_enums import (
+    ACTION_METRICS,
     IMPRESSION_METRICS,
     GBPPerformanceAvailability,
     GBPPerformanceMetric,
@@ -26,7 +27,11 @@ from apps.api.app.products.gbp.performance_models import (
     GBPPerformanceKeywordImpression,
     GBPPerformanceSyncRun,
 )
-from apps.api.app.products.gbp.performance_service import first_of_month, months_before
+from apps.api.app.products.gbp.performance_service import (
+    first_of_month,
+    mapped_gbp_location_counts,
+    months_before,
+)
 
 TOP_SEARCH_TERMS = 25
 # The newest complete day: today's and yesterday's values are not final when Google serves them.
@@ -133,6 +138,15 @@ class SourceState:
 
 
 @dataclass(frozen=True, slots=True)
+class DailyPoint:
+    """One synced day. A day nothing was synced for has no point: it is never reported as 0."""
+
+    day: date
+    impressions: int | None  # the four impression metrics; None when none was stored that day
+    actions: int | None  # calls, website clicks and direction requests; None when none was stored
+
+
+@dataclass(frozen=True, slots=True)
 class PerformanceRead:
     windows: PeriodWindows
     availability: GBPPerformanceAvailability
@@ -140,6 +154,7 @@ class PerformanceRead:
     metrics: dict[GBPPerformanceMetric, MetricComparison]
     search_terms: SearchTerms
     source: SourceState
+    series: list[DailyPoint]
 
 
 def total_of(*, rows: int, expected: int, value: int, ever_synced: bool) -> Total:
@@ -232,6 +247,41 @@ def _totals(
             expected,
         )
     return views, per_metric
+
+
+async def _series(
+    session: AsyncSession,
+    organization_id: UUID,
+    gbp_location_ids: Sequence[UUID],
+    window: DateRange,
+) -> list[DailyPoint]:
+    """Per-day totals across the locations, oldest first, for the days that have rows."""
+    rows = await session.execute(
+        select(
+            GBPPerformanceDailyMetric.metric_date,
+            GBPPerformanceDailyMetric.metric,
+            func.sum(GBPPerformanceDailyMetric.value),
+        )
+        .where(
+            GBPPerformanceDailyMetric.organization_id == organization_id,
+            GBPPerformanceDailyMetric.gbp_location_id.in_(gbp_location_ids),
+            GBPPerformanceDailyMetric.metric_date >= window.start,
+            GBPPerformanceDailyMetric.metric_date <= window.end,
+        )
+        .group_by(GBPPerformanceDailyMetric.metric_date, GBPPerformanceDailyMetric.metric)
+    )
+    impressions: dict[date, int] = {}
+    actions: dict[date, int] = {}
+    for metric_date, metric, total in rows:
+        key = GBPPerformanceMetric(metric)
+        if key in IMPRESSION_METRICS:
+            impressions[metric_date] = impressions.get(metric_date, 0) + int(total or 0)
+        elif key in ACTION_METRICS:
+            actions[metric_date] = actions.get(metric_date, 0) + int(total or 0)
+    return [
+        DailyPoint(day, impressions.get(day), actions.get(day))
+        for day in sorted(impressions.keys() | actions.keys())
+    ]
 
 
 async def _search_terms(
@@ -332,6 +382,7 @@ def not_connected(windows: PeriodWindows) -> PerformanceRead:
         metrics=dict.fromkeys(GBPPerformanceMetric, unavailable),
         search_terms=SearchTerms(GBPPerformanceAvailability.NOT_CONNECTED, None, []),
         source=SourceState(None, None, None),
+        series=[],
     )
 
 
@@ -372,4 +423,110 @@ async def read_performance(
         metrics={metric: compare(current[metric], previous[metric]) for metric in current},
         search_terms=terms,
         source=source,
+        series=await _series(session, organization_id, gbp_location_ids, windows.current),
     )
+
+
+@dataclass(frozen=True, slots=True)
+class ActionsRead:
+    """Calls, website clicks and direction requests for one organization over one period."""
+
+    availability: GBPPerformanceAvailability
+    current: int | None
+    previous: int | None
+    freshness_at: datetime | None
+
+
+async def read_actions_by_organization(
+    session: AsyncSession,
+    organization_ids: Sequence[UUID],
+    period: PerformancePeriod,
+    *,
+    now: datetime | None = None,
+) -> dict[UUID, ActionsRead]:
+    """Actions for every organization at once: three queries however many organizations.
+
+    An organization with no mapped location is ``NOT_CONNECTED``; one whose window holds nothing
+    is ``NOT_SYNCED``. The previous period is returned only when both windows are complete, so
+    a half-synced side never produces a change.
+    """
+    if not organization_ids:
+        return {}
+    today = (now or datetime.now(UTC)).astimezone(UTC).date()
+    windows = period_windows(period, today=today)
+    locations = await mapped_gbp_location_counts(session, organization_ids)
+    connected = list(locations)
+    result: dict[UUID, ActionsRead] = {
+        organization_id: ActionsRead(GBPPerformanceAvailability.NOT_CONNECTED, None, None, None)
+        for organization_id in organization_ids
+    }
+    if not connected:
+        return result
+    in_current = GBPPerformanceDailyMetric.metric_date.between(
+        windows.current.start, windows.current.end
+    )
+    in_previous = GBPPerformanceDailyMetric.metric_date.between(
+        windows.previous.start, windows.previous.end
+    )
+    sums = await session.execute(
+        select(
+            GBPPerformanceDailyMetric.organization_id,
+            func.coalesce(func.sum(case((in_current, GBPPerformanceDailyMetric.value))), 0),
+            func.count(case((in_current, 1))),
+            func.coalesce(func.sum(case((in_previous, GBPPerformanceDailyMetric.value))), 0),
+            func.count(case((in_previous, 1))),
+        )
+        .where(
+            GBPPerformanceDailyMetric.organization_id.in_(connected),
+            GBPPerformanceDailyMetric.metric.in_([metric.value for metric in ACTION_METRICS]),
+            GBPPerformanceDailyMetric.metric_date >= windows.previous.start,
+            GBPPerformanceDailyMetric.metric_date <= windows.current.end,
+        )
+        .group_by(GBPPerformanceDailyMetric.organization_id)
+    )
+    totals = {row[0]: row[1:] for row in sums}
+    last_synced = await session.execute(
+        select(
+            GBPPerformanceSyncRun.organization_id,
+            func.max(GBPPerformanceSyncRun.completed_at),
+        )
+        .where(
+            GBPPerformanceSyncRun.organization_id.in_(connected),
+            GBPPerformanceSyncRun.status.in_(
+                (
+                    GBPPerformanceSyncStatus.SUCCEEDED.value,
+                    GBPPerformanceSyncStatus.PARTIAL.value,
+                )
+            ),
+        )
+        .group_by(GBPPerformanceSyncRun.organization_id)
+    )
+    synced: dict[UUID, datetime | None] = {row[0]: row[1] for row in last_synced}
+    for organization_id in connected:
+        per_day = locations[organization_id] * len(ACTION_METRICS)
+        current_sum, current_rows, previous_sum, previous_rows = totals.get(
+            organization_id, (0, 0, 0, 0)
+        )
+        if not current_rows:
+            result[organization_id] = ActionsRead(
+                GBPPerformanceAvailability.NOT_SYNCED
+                if organization_id not in synced
+                else GBPPerformanceAvailability.NO_DATA,
+                None,
+                None,
+                synced.get(organization_id),
+            )
+            continue
+        complete = (
+            current_rows >= windows.current.days * per_day
+            and previous_rows >= windows.previous.days * per_day
+        )
+        result[organization_id] = ActionsRead(
+            GBPPerformanceAvailability.AVAILABLE
+            if current_rows >= windows.current.days * per_day
+            else GBPPerformanceAvailability.PARTIAL,
+            int(current_sum),
+            int(previous_sum) if complete else None,
+            synced.get(organization_id),
+        )
+    return result

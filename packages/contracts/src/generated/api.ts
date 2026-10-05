@@ -5672,6 +5672,7 @@ export interface components {
             average_position: components["schemas"]["MetricValue"];
             /** Category */
             category: string | null;
+            gbp_actions: components["schemas"]["MetricValue"];
             /**
              * Health
              * @enum {string}
@@ -6398,6 +6399,8 @@ export interface components {
             previous_range: components["schemas"]["PerformanceRange"];
             profile_views: components["schemas"]["PerformanceComparison"];
             search_terms: components["schemas"]["PerformanceSearchTerms"];
+            /** Series */
+            series: components["schemas"]["PerformanceDay"][];
             source: components["schemas"]["PerformanceSource"];
         };
         /**
@@ -8054,7 +8057,7 @@ export interface components {
              * Source
              * @enum {string}
              */
-            source: "ga4" | "search_console" | "leads" | "reviews" | "rank_scan";
+            source: "ga4" | "search_console" | "leads" | "reviews" | "rank_scan" | "gbp";
         };
         /**
          * MyOrganizationData
@@ -8975,6 +8978,21 @@ export interface components {
             change_percent: number | null;
             current: components["schemas"]["PerformanceTotal"];
             previous: components["schemas"]["PerformanceTotal"];
+        };
+        /**
+         * PerformanceDay
+         * @description One synced day across the selected locations; a day that was not synced has no entry.
+         */
+        PerformanceDay: {
+            /** Actions */
+            actions: number | null;
+            /**
+             * Day
+             * Format: date
+             */
+            day: string;
+            /** Impressions */
+            impressions: number | null;
         };
         /** PerformanceLocation */
         PerformanceLocation: {
