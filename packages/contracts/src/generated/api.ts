@@ -668,6 +668,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/organizations/{organization_id}/command-center/gbp/performance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Performance
+         * @description A client's Business Profile performance for 7, 28 or 90 days or a calendar month.
+         *
+         *     Totals are per metric, with the previous period of equal length for comparison.
+         *     ``profile_views`` is the sum of the four impression metrics. ``location_id`` narrows to one
+         *     platform location; without it every location the caller may read is summed.
+         */
+        get: operations["performance_api_v1_organizations__organization_id__command_center_gbp_performance_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/organizations/{organization_id}/command-center/integrations": {
         parameters: {
             query?: never;
@@ -6337,6 +6361,46 @@ export interface components {
             snapshot_id: string | null;
         };
         /**
+         * GBPPerformanceAvailability
+         * @description What a performance number can be trusted to mean. Never rendered as 0 when not synced.
+         * @enum {string}
+         */
+        GBPPerformanceAvailability: "available" | "partial" | "no_data" | "not_synced" | "not_connected";
+        /**
+         * GBPPerformanceMetric
+         * @description Every daily metric the Business Profile Performance API provides (names are Google's).
+         * @enum {string}
+         */
+        GBPPerformanceMetric: "BUSINESS_IMPRESSIONS_DESKTOP_MAPS" | "BUSINESS_IMPRESSIONS_DESKTOP_SEARCH" | "BUSINESS_IMPRESSIONS_MOBILE_MAPS" | "BUSINESS_IMPRESSIONS_MOBILE_SEARCH" | "CALL_CLICKS" | "WEBSITE_CLICKS" | "BUSINESS_DIRECTION_REQUESTS" | "BUSINESS_CONVERSATIONS" | "BUSINESS_BOOKINGS" | "BUSINESS_FOOD_ORDERS" | "BUSINESS_FOOD_MENU_CLICKS";
+        /**
+         * GBPPerformanceSyncStatus
+         * @enum {string}
+         */
+        GBPPerformanceSyncStatus: "running" | "succeeded" | "partial" | "failed";
+        /** GBPPerformanceView */
+        GBPPerformanceView: {
+            availability: components["schemas"]["GBPPerformanceAvailability"];
+            current_range: components["schemas"]["PerformanceRange"];
+            /** Location Id */
+            location_id: string | null;
+            /** Locations */
+            locations: components["schemas"]["PerformanceLocation"][];
+            /** Metrics */
+            metrics: components["schemas"]["PerformanceMetricView"][];
+            /** Month */
+            month: string | null;
+            /**
+             * Organization Id
+             * Format: uuid
+             */
+            organization_id: string;
+            period: components["schemas"]["PerformancePeriod"];
+            previous_range: components["schemas"]["PerformanceRange"];
+            profile_views: components["schemas"]["PerformanceComparison"];
+            search_terms: components["schemas"]["PerformanceSearchTerms"];
+            source: components["schemas"]["PerformanceSource"];
+        };
+        /**
          * GitHubConnectionCreate
          * @description Register an application-side GitHub connection (PAT fallback).
          *
@@ -8903,6 +8967,42 @@ export interface components {
              */
             website_id: string;
         };
+        /** PerformanceComparison */
+        PerformanceComparison: {
+            /** Change */
+            change: number | null;
+            /** Change Percent */
+            change_percent: number | null;
+            current: components["schemas"]["PerformanceTotal"];
+            previous: components["schemas"]["PerformanceTotal"];
+        };
+        /** PerformanceLocation */
+        PerformanceLocation: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Mapped */
+            mapped: boolean;
+            /** Name */
+            name: string;
+        };
+        /** PerformanceMetricView */
+        PerformanceMetricView: {
+            /** Change */
+            change: number | null;
+            /** Change Percent */
+            change_percent: number | null;
+            current: components["schemas"]["PerformanceTotal"];
+            metric: components["schemas"]["GBPPerformanceMetric"];
+            previous: components["schemas"]["PerformanceTotal"];
+        };
+        /**
+         * PerformancePeriod
+         * @enum {string}
+         */
+        PerformancePeriod: "7d" | "28d" | "90d" | "month";
         /** PerformanceProperty */
         PerformanceProperty: {
             /** External Property Id */
@@ -8916,6 +9016,61 @@ export interface components {
             id: string;
             /** Last Synced At */
             last_synced_at: string | null;
+        };
+        /** PerformanceRange */
+        PerformanceRange: {
+            /** Days */
+            days: number;
+            /**
+             * End
+             * Format: date
+             */
+            end: string;
+            /**
+             * Start
+             * Format: date
+             */
+            start: string;
+        };
+        /** PerformanceSearchTerm */
+        PerformanceSearchTerm: {
+            /** Below Threshold */
+            below_threshold: number | null;
+            /** Is Exact */
+            is_exact: boolean;
+            /** Keyword */
+            keyword: string;
+            /** Value */
+            value: number | null;
+        };
+        /** PerformanceSearchTerms */
+        PerformanceSearchTerms: {
+            availability: components["schemas"]["GBPPerformanceAvailability"];
+            /** Month */
+            month: string | null;
+            /** Terms */
+            terms: components["schemas"]["PerformanceSearchTerm"][];
+        };
+        /** PerformanceSource */
+        PerformanceSource: {
+            /** Last Failure Code */
+            last_failure_code: string | null;
+            last_status: components["schemas"]["GBPPerformanceSyncStatus"] | null;
+            /** Last Synced At */
+            last_synced_at: string | null;
+        };
+        /**
+         * PerformanceTotal
+         * @description A sum over a window. ``value`` is null unless something was synced for it; never 0.
+         */
+        PerformanceTotal: {
+            availability: components["schemas"]["GBPPerformanceAvailability"];
+            /** Days Covered */
+            days_covered: number;
+            /** Days Expected */
+            days_expected: number;
+            /** Value */
+            value: number | null;
         };
         /** PermissionData */
         PermissionData: {
@@ -11749,6 +11904,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AttentionList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    performance_api_v1_organizations__organization_id__command_center_gbp_performance_get: {
+        parameters: {
+            query?: {
+                period?: components["schemas"]["PerformancePeriod"];
+                month?: string | null;
+                location_id?: string | null;
+            };
+            header?: never;
+            path: {
+                organization_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GBPPerformanceView"];
                 };
             };
             /** @description Validation Error */

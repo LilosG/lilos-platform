@@ -110,6 +110,11 @@ from apps.api.app.products.gbp.operations_models import (
     GBPSpecialHours,
     GBPSuspensionCase,
 )
+from apps.api.app.products.gbp.performance_models import (
+    GBPPerformanceDailyMetric,
+    GBPPerformanceKeywordImpression,
+    GBPPerformanceSyncRun,
+)
 from apps.api.app.products.gbp.post_generation_models import GBPPostAsset
 from apps.api.app.products.leads.models import (
     CRMLeadMapping,
@@ -264,6 +269,9 @@ for gbp_operation_model in (
     GBPPostAsset,
     GBPProviderPost,
     GBPSuspensionCase,
+    GBPPerformanceSyncRun,
+    GBPPerformanceDailyMetric,
+    GBPPerformanceKeywordImpression,
 ):
     assert gbp_operation_model.metadata is target_metadata
 for insight_model in (

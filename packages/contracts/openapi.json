@@ -3172,6 +3172,130 @@
         "title": "GBPDetailView",
         "type": "object"
       },
+      "GBPPerformanceAvailability": {
+        "description": "What a performance number can be trusted to mean. Never rendered as 0 when not synced.",
+        "enum": [
+          "available",
+          "partial",
+          "no_data",
+          "not_synced",
+          "not_connected"
+        ],
+        "title": "GBPPerformanceAvailability",
+        "type": "string"
+      },
+      "GBPPerformanceMetric": {
+        "description": "Every daily metric the Business Profile Performance API provides (names are Google's).",
+        "enum": [
+          "BUSINESS_IMPRESSIONS_DESKTOP_MAPS",
+          "BUSINESS_IMPRESSIONS_DESKTOP_SEARCH",
+          "BUSINESS_IMPRESSIONS_MOBILE_MAPS",
+          "BUSINESS_IMPRESSIONS_MOBILE_SEARCH",
+          "CALL_CLICKS",
+          "WEBSITE_CLICKS",
+          "BUSINESS_DIRECTION_REQUESTS",
+          "BUSINESS_CONVERSATIONS",
+          "BUSINESS_BOOKINGS",
+          "BUSINESS_FOOD_ORDERS",
+          "BUSINESS_FOOD_MENU_CLICKS"
+        ],
+        "title": "GBPPerformanceMetric",
+        "type": "string"
+      },
+      "GBPPerformanceSyncStatus": {
+        "enum": [
+          "running",
+          "succeeded",
+          "partial",
+          "failed"
+        ],
+        "title": "GBPPerformanceSyncStatus",
+        "type": "string"
+      },
+      "GBPPerformanceView": {
+        "properties": {
+          "availability": {
+            "$ref": "#/components/schemas/GBPPerformanceAvailability"
+          },
+          "current_range": {
+            "$ref": "#/components/schemas/PerformanceRange"
+          },
+          "location_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location Id"
+          },
+          "locations": {
+            "items": {
+              "$ref": "#/components/schemas/PerformanceLocation"
+            },
+            "title": "Locations",
+            "type": "array"
+          },
+          "metrics": {
+            "items": {
+              "$ref": "#/components/schemas/PerformanceMetricView"
+            },
+            "title": "Metrics",
+            "type": "array"
+          },
+          "month": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Month"
+          },
+          "organization_id": {
+            "format": "uuid",
+            "title": "Organization Id",
+            "type": "string"
+          },
+          "period": {
+            "$ref": "#/components/schemas/PerformancePeriod"
+          },
+          "previous_range": {
+            "$ref": "#/components/schemas/PerformanceRange"
+          },
+          "profile_views": {
+            "$ref": "#/components/schemas/PerformanceComparison"
+          },
+          "search_terms": {
+            "$ref": "#/components/schemas/PerformanceSearchTerms"
+          },
+          "source": {
+            "$ref": "#/components/schemas/PerformanceSource"
+          }
+        },
+        "required": [
+          "organization_id",
+          "period",
+          "month",
+          "location_id",
+          "locations",
+          "availability",
+          "current_range",
+          "previous_range",
+          "profile_views",
+          "metrics",
+          "search_terms",
+          "source"
+        ],
+        "title": "GBPPerformanceView",
+        "type": "object"
+      },
       "GitHubConnectionCreate": {
         "additionalProperties": false,
         "description": "Register an application-side GitHub connection (PAT fallback).\n\nThis is the **advanced/developer fallback** path. Normal production\npublishing uses the GitHub App installation flow\n(``POST .../integrations/github/install``), which mints short-lived\ninstallation tokens and never persists a long-lived credential. This PAT\npath remains for local development or app-less environments.",
@@ -11305,6 +11429,124 @@
         "title": "PageSummary",
         "type": "object"
       },
+      "PerformanceComparison": {
+        "properties": {
+          "change": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change"
+          },
+          "change_percent": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change Percent"
+          },
+          "current": {
+            "$ref": "#/components/schemas/PerformanceTotal"
+          },
+          "previous": {
+            "$ref": "#/components/schemas/PerformanceTotal"
+          }
+        },
+        "required": [
+          "current",
+          "previous",
+          "change",
+          "change_percent"
+        ],
+        "title": "PerformanceComparison",
+        "type": "object"
+      },
+      "PerformanceLocation": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "mapped": {
+            "title": "Mapped",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "mapped"
+        ],
+        "title": "PerformanceLocation",
+        "type": "object"
+      },
+      "PerformanceMetricView": {
+        "properties": {
+          "change": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change"
+          },
+          "change_percent": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change Percent"
+          },
+          "current": {
+            "$ref": "#/components/schemas/PerformanceTotal"
+          },
+          "metric": {
+            "$ref": "#/components/schemas/GBPPerformanceMetric"
+          },
+          "previous": {
+            "$ref": "#/components/schemas/PerformanceTotal"
+          }
+        },
+        "required": [
+          "current",
+          "previous",
+          "change",
+          "change_percent",
+          "metric"
+        ],
+        "title": "PerformanceMetricView",
+        "type": "object"
+      },
+      "PerformancePeriod": {
+        "enum": [
+          "7d",
+          "28d",
+          "90d",
+          "month"
+        ],
+        "title": "PerformancePeriod",
+        "type": "string"
+      },
       "PerformanceProperty": {
         "properties": {
           "external_property_id": {
@@ -11340,6 +11582,185 @@
           "last_synced_at"
         ],
         "title": "PerformanceProperty",
+        "type": "object"
+      },
+      "PerformanceRange": {
+        "properties": {
+          "days": {
+            "title": "Days",
+            "type": "integer"
+          },
+          "end": {
+            "format": "date",
+            "title": "End",
+            "type": "string"
+          },
+          "start": {
+            "format": "date",
+            "title": "Start",
+            "type": "string"
+          }
+        },
+        "required": [
+          "start",
+          "end",
+          "days"
+        ],
+        "title": "PerformanceRange",
+        "type": "object"
+      },
+      "PerformanceSearchTerm": {
+        "properties": {
+          "below_threshold": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Below Threshold"
+          },
+          "is_exact": {
+            "title": "Is Exact",
+            "type": "boolean"
+          },
+          "keyword": {
+            "title": "Keyword",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "keyword",
+          "value",
+          "below_threshold",
+          "is_exact"
+        ],
+        "title": "PerformanceSearchTerm",
+        "type": "object"
+      },
+      "PerformanceSearchTerms": {
+        "properties": {
+          "availability": {
+            "$ref": "#/components/schemas/GBPPerformanceAvailability"
+          },
+          "month": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Month"
+          },
+          "terms": {
+            "items": {
+              "$ref": "#/components/schemas/PerformanceSearchTerm"
+            },
+            "title": "Terms",
+            "type": "array"
+          }
+        },
+        "required": [
+          "availability",
+          "month",
+          "terms"
+        ],
+        "title": "PerformanceSearchTerms",
+        "type": "object"
+      },
+      "PerformanceSource": {
+        "properties": {
+          "last_failure_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Failure Code"
+          },
+          "last_status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GBPPerformanceSyncStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "last_synced_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Synced At"
+          }
+        },
+        "required": [
+          "last_synced_at",
+          "last_status",
+          "last_failure_code"
+        ],
+        "title": "PerformanceSource",
+        "type": "object"
+      },
+      "PerformanceTotal": {
+        "description": "A sum over a window. ``value`` is null unless something was synced for it; never 0.",
+        "properties": {
+          "availability": {
+            "$ref": "#/components/schemas/GBPPerformanceAvailability"
+          },
+          "days_covered": {
+            "title": "Days Covered",
+            "type": "integer"
+          },
+          "days_expected": {
+            "title": "Days Expected",
+            "type": "integer"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "availability",
+          "value",
+          "days_covered",
+          "days_expected"
+        ],
+        "title": "PerformanceTotal",
         "type": "object"
       },
       "PermissionData": {
@@ -17876,6 +18297,93 @@
           }
         },
         "summary": "Attention",
+        "tags": [
+          "command-center"
+        ]
+      }
+    },
+    "/api/v1/organizations/{organization_id}/command-center/gbp/performance": {
+      "get": {
+        "description": "A client's Business Profile performance for 7, 28 or 90 days or a calendar month.\n\nTotals are per metric, with the previous period of equal length for comparison.\n``profile_views`` is the sum of the four impression metrics. ``location_id`` narrows to one\nplatform location; without it every location the caller may read is summed.",
+        "operationId": "performance_api_v1_organizations__organization_id__command_center_gbp_performance_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "period",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/PerformancePeriod",
+              "default": "28d"
+            }
+          },
+          {
+            "in": "query",
+            "name": "month",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Month"
+            }
+          },
+          {
+            "in": "query",
+            "name": "location_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Location Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GBPPerformanceView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Performance",
         "tags": [
           "command-center"
         ]

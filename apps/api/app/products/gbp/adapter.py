@@ -2,14 +2,22 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import date
 from typing import Any, Protocol, cast
 
 import httpx
+
+from apps.api.app.products.gbp.performance_enums import (
+    GBPPerformanceFailureCode,
+    GBPPerformanceMetric,
+)
+from apps.api.app.products.gbp.resource_names import v1_location_name
 
 BUSINESS_MANAGE_SCOPE = "https://www.googleapis.com/auth/business.manage"
 ACCOUNT_BASE = "https://mybusinessaccountmanagement.googleapis.com/v1"
 INFO_BASE = "https://mybusinessbusinessinformation.googleapis.com/v1"
 MYBUSINESS_BASE = "https://mybusiness.googleapis.com/v4"
+PERFORMANCE_BASE = "https://businessprofileperformance.googleapis.com/v1"
 SUPPORTED_READ_MASK = ",".join(
     [
         "name",
@@ -34,6 +42,7 @@ ACCOUNT_PAGE_SIZE = 20
 LOCATION_PAGE_SIZE = 100
 REVIEW_PAGE_SIZE = 50
 LOCAL_POST_PAGE_SIZE = 100
+KEYWORD_PAGE_SIZE = 100
 MAX_PROVIDER_PAGES = 1_000
 
 SUPPORTED_POST_TYPES = frozenset({"STANDARD", "OFFER", "EVENT"})
@@ -43,6 +52,32 @@ SUPPORTED_MEDIA_FORMATS = frozenset({"PHOTO", "VIDEO"})
 
 class ProviderRequestInvalidError(ValueError):
     """The request body failed local validation, so nothing was sent to Google."""
+
+
+class GBPPerformanceProviderError(Exception):
+    """A Performance API request failed; ``code`` says why, with no provider text attached."""
+
+    def __init__(self, code: GBPPerformanceFailureCode) -> None:
+        super().__init__(code.value)
+        self.code = code
+
+
+@dataclass(frozen=True, slots=True)
+class DailyMetricPoint:
+    """One day of one metric. Google omits a zero from its JSON, so a day it lists is a value."""
+
+    metric: GBPPerformanceMetric
+    day: date
+    value: int
+
+
+@dataclass(frozen=True, slots=True)
+class KeywordImpressionPoint:
+    """One search term for one month: an exact ``value``, or the ``threshold`` it was below."""
+
+    keyword: str
+    value: int | None
+    threshold: int | None
 
 
 class GBPAdapter(Protocol):
@@ -76,6 +111,17 @@ class GBPAdapter(Protocol):
     ) -> dict[str, Any]: ...
     async def get_media(self, access_token: str, media_name: str) -> dict[str, Any]: ...
     async def delete_media(self, access_token: str, media_name: str) -> None: ...
+
+
+class GBPPerformanceAdapter(Protocol):
+    """Read-only Business Profile Performance API operations."""
+
+    async def fetch_daily_metrics(
+        self, access_token: str, location_name: str, start: date, end: date
+    ) -> list[DailyMetricPoint]: ...
+    async def list_search_keyword_impressions(
+        self, access_token: str, location_name: str, month: date
+    ) -> list[KeywordImpressionPoint]: ...
 
 
 @dataclass(slots=True)
@@ -368,3 +414,144 @@ class GoogleBusinessProfileAdapter:
                 },
             )
         response.raise_for_status()
+
+    # -- Business Profile Performance API v1 (read-only) -----------------------
+
+    async def _performance_get(
+        self, access_token: str, url: str, params: list[tuple[str, str]]
+    ) -> dict[str, Any]:
+        try:
+            return await self._request("GET", url, access_token, params=params)
+        except httpx.HTTPStatusError as exc:
+            status = exc.response.status_code
+            if status in (401, 403):
+                code = GBPPerformanceFailureCode.PROVIDER_ACCESS_DENIED
+            elif status == 429:
+                code = GBPPerformanceFailureCode.PROVIDER_RATE_LIMITED
+            elif status >= 500:
+                code = GBPPerformanceFailureCode.PROVIDER_UNAVAILABLE
+            else:
+                code = GBPPerformanceFailureCode.PROVIDER_REJECTED_REQUEST
+            raise GBPPerformanceProviderError(code) from None
+        except httpx.TransportError:
+            raise GBPPerformanceProviderError(
+                GBPPerformanceFailureCode.PROVIDER_UNAVAILABLE
+            ) from None
+        except ValueError:
+            raise GBPPerformanceProviderError(
+                GBPPerformanceFailureCode.PROVIDER_RESPONSE_INVALID
+            ) from None
+
+    async def fetch_daily_metrics(
+        self, access_token: str, location_name: str, start: date, end: date
+    ) -> list[DailyMetricPoint]:
+        """``locations/{id}:fetchMultiDailyMetricsTimeSeries`` for every daily metric.
+
+        ``start`` and ``end`` are inclusive. A metric Google does not return for a location
+        (for example food orders on a salon) simply yields no points.
+        """
+        params: list[tuple[str, str]] = [
+            ("dailyMetrics", metric.value) for metric in GBPPerformanceMetric
+        ]
+        for prefix, day in (("dailyRange.startDate", start), ("dailyRange.endDate", end)):
+            params += [
+                (f"{prefix}.year", str(day.year)),
+                (f"{prefix}.month", str(day.month)),
+                (f"{prefix}.day", str(day.day)),
+            ]
+        payload = await self._performance_get(
+            access_token,
+            f"{PERFORMANCE_BASE}/{v1_location_name(location_name)}:fetchMultiDailyMetricsTimeSeries",
+            params,
+        )
+        try:
+            return _parse_daily_metrics(payload)
+        except (TypeError, ValueError, KeyError):
+            raise GBPPerformanceProviderError(
+                GBPPerformanceFailureCode.PROVIDER_RESPONSE_INVALID
+            ) from None
+
+    async def list_search_keyword_impressions(
+        self, access_token: str, location_name: str, month: date
+    ) -> list[KeywordImpressionPoint]:
+        """``locations/{id}/searchkeywords/impressions/monthly`` for exactly one month."""
+        url = (
+            f"{PERFORMANCE_BASE}/{v1_location_name(location_name)}"
+            "/searchkeywords/impressions/monthly"
+        )
+        base_params = [
+            ("monthlyRange.startMonth.year", str(month.year)),
+            ("monthlyRange.startMonth.month", str(month.month)),
+            ("monthlyRange.endMonth.year", str(month.year)),
+            ("monthlyRange.endMonth.month", str(month.month)),
+            ("pageSize", str(KEYWORD_PAGE_SIZE)),
+        ]
+        params = list(base_params)
+        points: dict[str, KeywordImpressionPoint] = {}
+        seen_tokens: set[str] = set()
+        for _page_number in range(MAX_PROVIDER_PAGES):
+            payload = await self._performance_get(access_token, url, params)
+            try:
+                for point in _parse_keyword_impressions(payload):
+                    points[point.keyword] = point
+                token = self._next_page_token(payload)
+            except (TypeError, ValueError, KeyError):
+                raise GBPPerformanceProviderError(
+                    GBPPerformanceFailureCode.PROVIDER_RESPONSE_INVALID
+                ) from None
+            if token is None:
+                return list(points.values())
+            if token in seen_tokens:
+                raise GBPPerformanceProviderError(
+                    GBPPerformanceFailureCode.PROVIDER_RESPONSE_INVALID
+                )
+            seen_tokens.add(token)
+            params = [*base_params, ("pageToken", token)]
+        raise GBPPerformanceProviderError(GBPPerformanceFailureCode.PROVIDER_RESPONSE_INVALID)
+
+
+def _int64(raw: object) -> int:
+    """Google sends int64 as a decimal string; an omitted value is proto-JSON for zero."""
+    if raw is None:
+        return 0
+    if isinstance(raw, bool) or not isinstance(raw, (str, int)):
+        raise ValueError("invalid int64")
+    value = int(raw)
+    if value < 0:
+        raise ValueError("negative count")
+    return value
+
+
+def _parse_daily_metrics(payload: dict[str, Any]) -> list[DailyMetricPoint]:
+    known = {metric.value: metric for metric in GBPPerformanceMetric}
+    points: dict[tuple[GBPPerformanceMetric, date], DailyMetricPoint] = {}
+    for multi in payload.get("multiDailyMetricTimeSeries", []) or []:
+        for series in multi.get("dailyMetricTimeSeries", []) or []:
+            metric = known.get(str(series.get("dailyMetric")))
+            if metric is None:
+                continue  # a metric Google added after this was written: not modelled yet
+            for dated in (series.get("timeSeries") or {}).get("datedValues", []) or []:
+                raw_date = dated["date"]
+                day = date(int(raw_date["year"]), int(raw_date["month"]), int(raw_date["day"]))
+                points[(metric, day)] = DailyMetricPoint(metric, day, _int64(dated.get("value")))
+    return list(points.values())
+
+
+def _parse_keyword_impressions(payload: dict[str, Any]) -> list[KeywordImpressionPoint]:
+    points: list[KeywordImpressionPoint] = []
+    for item in payload.get("searchKeywordsCounts", []) or []:
+        keyword = item["searchKeyword"]
+        if not isinstance(keyword, str) or not keyword.strip():
+            raise ValueError("invalid search keyword")
+        insights = item.get("insightsValue")
+        if not isinstance(insights, dict):
+            raise ValueError("invalid insights value")
+        if insights.get("value") is not None:
+            points.append(KeywordImpressionPoint(keyword[:500], _int64(insights["value"]), None))
+        elif insights.get("threshold") is not None:
+            threshold = _int64(insights["threshold"])
+            if threshold <= 0:
+                raise ValueError("invalid threshold")
+            points.append(KeywordImpressionPoint(keyword[:500], None, threshold))
+        # Neither set is unknown, not zero: store nothing.
+    return points
