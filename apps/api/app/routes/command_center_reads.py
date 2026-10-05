@@ -594,19 +594,14 @@ async def opportunities(
     top: dict[UUID, list[OpportunityRead]] = defaultdict(list)
     if not readable:
         return counts, top
+    # The Opportunities screen's rule: one finding is (organization, type, query or page), the
+    # newest observation stands for it, and a change that is live and verified is not open work.
     open_filter = and_(
         SEOOpportunity.organization_id.in_(readable),
         SEOOpportunity.status.in_(OPEN_OPPORTUNITY_STATUSES),
+        ~seo_is_live(),
     )
-    for organization_id, total in await session.execute(
-        select(SEOOpportunity.organization_id, func.count())
-        .where(open_filter)
-        .group_by(SEOOpportunity.organization_id)
-    ):
-        counts[organization_id] = int(total)
-    for organization_id in readable:
-        counts.setdefault(organization_id, 0)
-    ranked = (
+    newest = (
         select(
             SEOOpportunity.id.label("id"),
             SEOOpportunity.organization_id.label("organization_id"),
@@ -616,12 +611,38 @@ async def opportunities(
             SEOOpportunity.evidence.label("evidence"),
             func.row_number()
             .over(
-                partition_by=SEOOpportunity.organization_id,
-                order_by=SEOOpportunity.priority_score.desc().nulls_last(),
+                partition_by=seo_dedupe_columns(),
+                order_by=(SEOOpportunity.updated_at.desc(), SEOOpportunity.id.desc()),
+            )
+            .label("recency"),
+        )
+        .where(open_filter)
+        .subquery()
+    )
+    for organization_id, total in await session.execute(
+        select(newest.c.organization_id, func.count())
+        .where(newest.c.recency == 1)
+        .group_by(newest.c.organization_id)
+    ):
+        counts[organization_id] = int(total)
+    for organization_id in readable:
+        counts.setdefault(organization_id, 0)
+    ranked = (
+        select(
+            newest.c.id,
+            newest.c.organization_id,
+            newest.c.opportunity_type,
+            newest.c.status,
+            newest.c.priority,
+            newest.c.evidence,
+            func.row_number()
+            .over(
+                partition_by=newest.c.organization_id,
+                order_by=newest.c.priority.desc().nulls_last(),
             )
             .label("rank"),
         )
-        .where(open_filter)
+        .where(newest.c.recency == 1)
         .subquery()
     )
     for row in await session.execute(

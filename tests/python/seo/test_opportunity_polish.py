@@ -209,6 +209,71 @@ def test_one_item_per_finding_newest_wins_and_older_sightings_become_history(
     assert [r["source_id"] for r in done] == [str(seeded["gone"])]
 
 
+def test_client_overview_counts_and_lists_one_opportunity_per_finding(
+    seo_client: tuple[TestClient, dict[str, UUID]],
+    seo_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    client, ids = seo_client
+    website, page = asyncio.run(seed_website(seo_session_factory, ids))
+    target = asyncio.run(add_target(seo_session_factory, ids))
+
+    async def rows() -> UUID:
+        async with seo_session_factory.begin() as session:
+            older = opportunity(ids, website, None, status="approved", priority_score=90)
+            older.updated_at = NOW - timedelta(days=5)
+            newer = opportunity(ids, website, page, status="approved", priority_score=92)
+            newer.updated_at = NOW
+            other = opportunity(
+                ids, website, None, evidence={"query": "date night"}, status="recommended"
+            )
+            live = opportunity(ids, website, page, evidence={"query": "already live"})
+            session.add_all([older, newer, other, live])
+            await session.flush()
+            revision = SEORecommendationRevision(
+                organization_id=ids["organization"],
+                opportunity_id=live.id,
+                revision_number=1,
+                proposed_action="Rewrite the title",
+                evidence_references=[],
+                expected_result_hypothesis="More clicks",
+                risk="low",
+                effort="low",
+                status="approved",
+                created_at=NOW,
+            )
+            session.add(revision)
+            await session.flush()
+            session.add(
+                ContentPublication(
+                    organization_id=ids["organization"],
+                    publication_kind="site_change",
+                    seo_recommendation_revision_id=revision.id,
+                    publishing_target_id=target,
+                    workflow_run_id=ids["workflow_run"],
+                    idempotency_key=f"overview-{revision.id}",
+                    status="verified",
+                    target_path="src/content/menu.json",
+                    verification_status="verified",
+                    verified_at=NOW,
+                )
+            )
+            return newer.id
+
+    newer_id = asyncio.run(rows())
+    overview = client.get(
+        f"/api/v1/command-center/clients/{ids['organization']}/overview", headers=HEADERS
+    )
+
+    assert overview.status_code == 200, overview.text
+    body = overview.json()
+    # Two findings are open: the brunch query (newest sighting stands for it) and date night.
+    # The verified live change is done work, the same as on the Opportunities screen.
+    assert body["client"]["open_opportunities"] == 2
+    listed = {item["id"]: item for item in body["opportunities"]}
+    assert len(listed) == 2 and str(newer_id) in listed
+    assert {item["query"] for item in listed.values()} == {"brunch spots san diego", "date night"}
+
+
 def test_live_verified_change_is_done_work_with_measure_impact_next(
     seo_client: tuple[TestClient, dict[str, UUID]],
     seo_session_factory: async_sessionmaker[AsyncSession],
