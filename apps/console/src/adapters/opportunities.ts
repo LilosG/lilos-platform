@@ -19,6 +19,16 @@ const evidenceSummary = z.object({
   metrics: z.array(z.object({ key: z.string(), value: z.number() })),
   source_count: z.number().int().nullable().optional(),
 });
+const subject = z.object({
+  query: z.string().nullable(),
+  path: z.string().nullable(),
+});
+const earlierObservation = z.object({
+  id: uuid,
+  observed_at: z.string(),
+  status: z.string(),
+  priority: z.number().nullable(),
+});
 const opportunity = z.object({
   id: z.string(),
   source_kind: sourceKind,
@@ -59,6 +69,7 @@ const opportunity = z.object({
     "request_recommendation",
     "review_recommendation",
     "monitor_publication",
+    "measure_impact",
     "review_opportunity",
     "review_growth_plan",
     "monitor_execution",
@@ -67,6 +78,12 @@ const opportunity = z.object({
   latest_revision_status: z.string().nullable(),
   site_change: z.enum(["configured", "not_configured", "not_applicable"]),
   site_change_reason: z.literal("SITE_CHANGES_NOT_CONFIGURED").nullable(),
+  subject,
+  summary: z.string().nullable(),
+  lifecycle: z.enum(["open", "live", "done"]),
+  verified_at: z.string().nullable(),
+  importance_reason: z.literal("KEY_EVENTS_INFERRED").nullable(),
+  earlier_observations: z.array(earlierObservation),
 });
 export type OpportunityKind = z.infer<typeof kind>;
 export type OpportunityView = z.infer<typeof opportunity>;
@@ -199,6 +216,7 @@ const publication = z.object({
 });
 const revision = z.object({
   id: uuid,
+  created_at: z.string(),
   revision_number: z.number().int(),
   proposed_action: z.string(),
   expected_result_hypothesis: z.string(),

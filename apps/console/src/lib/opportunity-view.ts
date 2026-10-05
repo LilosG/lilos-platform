@@ -3,7 +3,7 @@ import type {
   OpportunityKind,
   OpportunityView,
 } from "../adapters/opportunities";
-import { fmt, humanize, when } from "./present";
+import { dateText, fmt, humanize, when } from "./present";
 /** Every label for an opportunity comes from a typed code here, never from API prose. */
 export const kindLabel: Record<OpportunityKind, string> = {
   seo: "Website & search",
@@ -21,6 +21,7 @@ const nextActionText: Record<OpportunityView["next_action"], string> = {
   request_recommendation: "Ask Hermes for a recommendation",
   review_recommendation: "Review and approve the proposed change",
   monitor_publication: "Follow the approved change to the live site",
+  measure_impact: "Measure impact",
   review_opportunity: "Decide whether to act on this opportunity",
   review_growth_plan: "Review and approve the growth plan",
   monitor_execution: "Follow the plan's actions to completion",
@@ -39,12 +40,77 @@ const sourceLabel: Record<string, string> = {
   search_console: "Search Console",
 };
 export const nextAction = (o: OpportunityView) => nextActionText[o.next_action];
+export const fieldLabel: Record<string, string> = {
+  seo_title: "SEO title",
+  meta_description: "Meta description",
+  h1: "H1 heading",
+  body_section: "Body section",
+  schema: "Structured data",
+  internal_link: "Internal link",
+};
+export const labelField = (field: string) =>
+  fieldLabel[field] ?? humanize(field);
+/** Why an opportunity matters, by typed code. No code, no sentence. */
+const importanceText: Record<
+  NonNullable<OpportunityView["importance_reason"]>,
+  string
+> = {
+  KEY_EVENTS_INFERRED:
+    "Visitors from organic search complete key actions on this page, so it likely matters to the business. This is inferred from key events, not attributed revenue.",
+};
+export const whyItMatters = (o: OpportunityView): string | null =>
+  o.importance_reason ? importanceText[o.importance_reason] : null;
 export const statusLabel = (status: string) => humanize(status);
+/** The opportunity's status for a badge: a verified change reads "Live · verified <date>". */
+export const lifecycleLabel = (o: OpportunityView) =>
+  o.lifecycle === "live" && o.verified_at
+    ? `Live \u00b7 verified ${dateText(o.verified_at)}`
+    : statusLabel(o.status);
+/** What each detector or source type is called, once, for titles and the evidence line. */
+const typeLabel: Record<string, string> = {
+  gsc_low_ctr: "Low click-through",
+  gsc_striking_distance: "Close to page one",
+  gsc_query_demand: "Search demand",
+  gsc_unmapped_demand: "Search demand without a page",
+  missing_meta_description: "Missing meta description",
+  missing_title: "Missing page title",
+  missing_h1: "Missing H1 heading",
+  non_200_status: "Page returns an error",
+  seo: "Content opportunity",
+  growth_plan: "Growth plan",
+};
+const pageSpeed =
+  /^pagespeed_(?:performance|seo|accessibility|best_practices)_(mobile|desktop)$/;
+export function sourceTypeLabel(type: string): string {
+  const speed = pageSpeed.exec(type);
+  if (speed) return `${humanize(speed[1])} page speed`;
+  return typeLabel[type] ?? humanize(type);
+}
+// Titles are built from typed fields. A key, id or address never reaches a title.
+const unsafe =
+  /[0-9a-f]{8}-[0-9a-f]{4}-|seo-opportunity:|content-brief:|https?:/i;
+const clean = (value: string | null) =>
+  value && !unsafe.test(value) ? value : null;
+const quoted = (query: string) => `\u201c${query}\u201d`;
+const queryTitles: Record<string, string> = {
+  gsc_low_ctr: "Low click-through",
+  gsc_striking_distance: "Close to page one",
+  gsc_query_demand: "Search demand",
+  gsc_unmapped_demand: "No page for",
+  seo: "Content for",
+};
 export function title(o: OpportunityView): string {
-  if (o.headline) return o.headline;
-  const query = o.evidence.query;
-  const type = humanize(o.source_type);
-  return typeof query === "string" ? `${type}: ${query}` : type;
+  if (o.headline && !unsafe.test(o.headline)) return o.headline;
+  const query = clean(o.subject.query);
+  const path = clean(o.subject.path);
+  const lead = queryTitles[o.source_type];
+  if (lead && query) return `${lead}: ${quoted(query)}`;
+  const base =
+    o.kind === "content"
+      ? "Content opportunity"
+      : sourceTypeLabel(o.source_type);
+  if (path) return `${base} \u00b7 ${path}`;
+  return query ? `${base}: ${quoted(query)}` : base;
 }
 export function metricText(key: string, value: number): [string, string] {
   const label = metricLabel[key] ?? humanize(key);
@@ -63,7 +129,7 @@ export function evidenceHeadline(o: OpportunityView): string {
   const found =
     o.kind === "growth"
       ? `${summary.source_count ?? 0} supporting sources`
-      : humanize(summary.signal);
+      : sourceTypeLabel(summary.signal);
   if (!lead || o.kind === "growth") return found;
   const [value, label] = metricText(lead.key, lead.value);
   return `${found} · ${value} ${label.toLowerCase()}`;
@@ -96,7 +162,6 @@ export function rowView(
   from: "portfolio" | "client",
 ): OpportunityRowView {
   const slug = o.client?.slug ?? "";
-  const reason = o.score_explanation.reason;
   return {
     id: o.source_id,
     title: title(o),
@@ -108,10 +173,10 @@ export function rowView(
     classification: o.classification,
     band: o.priority_band ? bandLabel[o.priority_band] : "Priority unavailable",
     bandKey: o.priority_band ?? "unavailable",
-    sub: statusLabel(o.status),
+    sub: lifecycleLabel(o),
     evidence: evidenceHeadline(o),
     evidenceSub: evidenceSub(o, now),
-    why: typeof reason === "string" ? reason : null,
+    why: whyItMatters(o),
     next: nextAction(o),
     siteChangeNote:
       o.site_change_reason === "SITE_CHANGES_NOT_CONFIGURED"
@@ -126,6 +191,10 @@ export const filterOptions = {
     ["content", kindLabel.content],
     ["growth", kindLabel.growth],
   ],
+  state: [
+    ["", "Open"],
+    ["done", "Done"],
+  ],
   priority: [
     ["", "All priorities"],
     ["high", "High"],
@@ -137,23 +206,27 @@ export const filterOptions = {
 export function discovered(d: OpportunityDetail): string {
   const o = d.data;
   if (d.growth) return d.growth.rationale;
-  if (typeof o.evidence.issue === "string") return humanize(o.evidence.issue);
+  if (typeof o.evidence.issue === "string")
+    return sourceTypeLabel(o.evidence.issue);
   if (typeof o.evidence.query === "string")
     return `Search query: ${o.evidence.query}`;
   return o.evidence_summary
-    ? humanize(o.evidence_summary.signal)
+    ? sourceTypeLabel(o.evidence_summary.signal)
     : "Discovery explanation unavailable.";
-}
-export function whyItMatters(o: OpportunityView): string {
-  const s = o.score_explanation;
-  return typeof s.reason === "string"
-    ? s.reason
-    : typeof s.business_evidence_limitation === "string"
-      ? s.business_evidence_limitation
-      : "Business importance evidence is unavailable.";
 }
 export const historyLabel = (event: {
   event_type: string;
   action: string;
   result: string;
 }) => `${humanize(event.action)} · ${humanize(event.result)}`;
+export const revisionLine = (r: {
+  revision_number: number;
+  status: string;
+  created_at: string;
+}) =>
+  `Revision ${r.revision_number} \u00b7 ${statusLabel(r.status)} \u00b7 ${dateText(r.created_at)}`;
+/** The implementation state, read from the publication's verified state, not the task row. */
+export const implementationLabel = (
+  taskStatus: string,
+  liveState: string | null,
+) => (liveState === "verified" ? "Verified live" : humanize(taskStatus));

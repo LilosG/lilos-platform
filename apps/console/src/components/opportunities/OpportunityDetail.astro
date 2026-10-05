@@ -6,23 +6,27 @@ import {
   bandLabel,
   discovered,
   historyLabel,
+  implementationLabel,
   kindLabel,
+  labelField,
+  lifecycleLabel,
   metricText,
+  revisionLine,
   nextAction,
   sourceText,
   statusLabel,
   title,
   whyItMatters,
 } from "../../lib/opportunity-view";
-import { when } from "../../lib/present";
+import { dateText, rangeText } from "../../lib/present";
 import StatusBadge from "../ui/StatusBadge.astro";
 interface Props {
   detail: OpportunityDetail;
 }
 const { detail: d } = Astro.props;
 const o = d.data;
-const now = new Date();
-const current = d.recommendations[0];
+const [current, ...older] = d.recommendations;
+const why = whyItMatters(o);
 const scope = `/api/organizations/${o.organization_id}/`;
 const metrics = (o.evidence_summary?.metrics ?? []).map((m) =>
   metricText(m.key, m.value),
@@ -49,12 +53,19 @@ const post = (url: string, body: unknown) => ({
       ? `${bandLabel[o.priority_band]} priority`
       : "Priority unavailable"}
   />
-  <StatusBadge text={statusLabel(o.status)} />
+  <StatusBadge text={lifecycleLabel(o)} />
 </p>
+{o.summary && <p data-opportunity-summary>{o.summary}</p>}
 <h3>Why it was discovered</h3>
 <p>{discovered(d)}</p>
-<h3>Why it matters</h3>
-<p>{whyItMatters(o)}</p>
+{
+  why && (
+    <Fragment>
+      <h3>Why it matters</h3>
+      <p>{why}</p>
+    </Fragment>
+  )
+}
 <div class="reportpreview">
   <h3>Supporting evidence</h3>
   <p>
@@ -78,12 +89,28 @@ const post = (url: string, body: unknown) => ({
   }
   {o.kind === "seo" && <p>Target page: {d.page_url ?? "No attributed page"}</p>}
   <small class="sub">
-    Observed {when(o.observed_at, now)}
+    Observed {dateText(o.observed_at)}
     {
       o.evidence_context.period_start &&
-        ` · Period ${o.evidence_context.period_start} – ${o.evidence_context.period_end ?? "Unavailable"}`
+        ` · Period ${rangeText(o.evidence_context.period_start, o.evidence_context.period_end)}`
     }
   </small>
+  {
+    o.earlier_observations.length > 0 && (
+      <details data-earlier-observations>
+        <summary>Earlier sightings ({o.earlier_observations.length})</summary>
+        <ol>
+          {o.earlier_observations.map((seen) => (
+            <li>
+              {dateText(seen.observed_at)} · {statusLabel(seen.status)}
+              {seen.priority !== null &&
+                ` · Priority ${Math.round(seen.priority)}`}
+            </li>
+          ))}
+        </ol>
+      </details>
+    )
+  }
   {
     o.evidence_context.limitation_code && (
       <p role="status">
@@ -110,25 +137,23 @@ const post = (url: string, body: unknown) => ({
   )
 }
 {
-  d.recommendations.map((r, index) => (
+  [current].filter(Boolean).map((r) => (
     <section class="panel" data-revision-id={r.id}>
       <h2>Recommendation revision {r.revision_number}</h2>
-      <p>Status: {r.status}</p>
+      <p>Status: {statusLabel(r.status)}</p>
       <p>{r.proposed_action}</p>
       <p>Expected result: {r.expected_result_hypothesis}</p>
       <p>
         Risk: {r.risk} · Effort: {r.effort}
       </p>
-      <p>Deterministic quality: {r.quality.state}</p>
+      <p>Deterministic quality: {statusLabel(r.quality.state)}</p>
       <p>
         Protected query: {r.quality.target_query ?? "Unavailable"} · Top
         queries: {r.quality.top_queries.join(", ") || "Unavailable"} ·
         Locations: {r.quality.location_terms.join(", ") || "Unavailable"}
       </p>
       {r.quality.problems.map((p) => (
-        <p>
-          {p.code}: {p.reason}
-        </p>
+        <p>{p.reason}</p>
       ))}
       <p>
         Current repository values and the approved fingerprint are rechecked by
@@ -137,7 +162,7 @@ const post = (url: string, body: unknown) => ({
       </p>
       {r.change_set.map((edit) => (
         <div>
-          <h3>{edit.field}</h3>
+          <h3>{labelField(edit.field)}</h3>
           <p>Target page: {d.page_url ?? "Unavailable"}</p>
           <div class="beforeafter">
             <div>
@@ -152,13 +177,13 @@ const post = (url: string, body: unknown) => ({
           <p>{edit.rationale}</p>
         </div>
       ))}
-      {index === 0 && r.status === "awaiting_approval" && (
+      {r.status === "awaiting_approval" && (
         <Fragment>
           {d.can_recommend && r.change_set.length > 0 && (
             <form data-revise={scope + `seo/recommendations/${r.id}/revise/`}>
               {r.change_set.map((edit) => (
                 <label>
-                  {edit.field}
+                  {labelField(edit.field)}
                   <textarea name={edit.field} required>
                     {edit.proposed_value}
                   </textarea>
@@ -211,7 +236,9 @@ const post = (url: string, body: unknown) => ({
           <p>Deployment: {r.site_change.deployment_status ?? "Unavailable"}</p>
           <p>
             Live verification observed:{" "}
-            {r.site_change.verified_at ?? "Unavailable"}
+            {r.site_change.verified_at
+              ? dateText(r.site_change.verified_at)
+              : "Unavailable"}
           </p>
           <p>
             Mapping: {r.site_change.mapping_state ?? "Unavailable"} · State:{" "}
@@ -236,10 +263,21 @@ const post = (url: string, body: unknown) => ({
   ))
 }
 {
+  older.length > 0 && (
+    <details class="panel" data-revision-history>
+      <summary>History</summary>
+      <ol>
+        {older.map((r) => (
+          <li data-revision-id={r.id}>{revisionLine(r)}</li>
+        ))}
+      </ol>
+    </details>
+  )
+}
+{
   d.growth && (
     <section class="panel" data-growth-plan>
       <h2>Growth plan</h2>
-      <p>{d.growth.objective}</p>
       <p>Confidence: {Math.round(d.growth.confidence * 100)}%</p>
       <ol>
         {d.growth.actions.map((a) => (
@@ -328,7 +366,8 @@ const post = (url: string, body: unknown) => ({
       <h2>Workflow and implementation</h2>
       {d.runs.map((run) => (
         <p>
-          Workflow: {run.status} · Implementation: {run.task_status}
+          Workflow: {statusLabel(run.status)} · Implementation:{" "}
+          {implementationLabel(run.task_status, d.live_check?.state ?? null)}
         </p>
       ))}
     </section>
@@ -340,13 +379,13 @@ const post = (url: string, body: unknown) => ({
     <Fragment>
       <p data-live-check={d.live_check.state ?? "unavailable"}>
         {statusLabel(d.live_check.state ?? "unavailable")}
-        {d.live_check.verified_at &&
-          ` · ${when(d.live_check.verified_at, now)}`}
+        {d.live_check.verified_at && ` · ${dateText(d.live_check.verified_at)}`}
       </p>
       {d.live_check.checks.length ? (
         d.live_check.checks.map((check) => (
           <p>
-            {check.field}: {check.state} · Expected{" "}
+            {labelField(check.field ?? "")}:{" "}
+            {statusLabel(check.state ?? "unavailable")} · Expected{" "}
             {displayEvidence(check.expected)} · Observed{" "}
             {displayEvidence(check.observed)}
           </p>
@@ -372,7 +411,7 @@ const post = (url: string, body: unknown) => ({
       {d.history.map((event) => (
         <li>
           {historyLabel(event)}
-          <span class="sub">{when(event.occurred_at, now)}</span>
+          <span class="sub">{dateText(event.occurred_at)}</span>
         </li>
       ))}
     </ol>

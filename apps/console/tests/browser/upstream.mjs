@@ -19,7 +19,7 @@ const reviewStates = new Map();
 const growthStates = new Map();
 const contentOpportunityStates = new Map();
 import { createServer } from "node:http";
-import { commandCenter, unified } from "./command-center-sim.mjs";
+import { commandCenter, liveChange, unified } from "./command-center-sim.mjs";
 const ids = {
   a: "11111111-1111-4111-8111-111111111111",
   b: "22222222-2222-4222-8222-222222222222",
@@ -28,6 +28,7 @@ const ids = {
   page: "44444444-4444-4444-8444-444444444444",
   rev: "55555555-5555-4555-8555-555555555555",
   next: "66666666-6666-4666-8666-666666666666",
+  older: "88888888-8888-4888-8888-888888888888",
   factor: "77777777-7777-4777-8777-777777777777",
   run: "88888888-8888-4888-8888-888888888888",
 };
@@ -538,10 +539,45 @@ createServer(async (req, res) => {
       limitation_code: null,
     },
     latest_revision_status: approved ? "approved" : "awaiting_approval",
-    next_action: approved ? "monitor_publication" : "review_recommendation",
+    // A verified change is live: the next step is to measure it, not to follow it.
+    lifecycle: approved ? "live" : "open",
+    verified_at: approved ? "2026-09-30T00:00:00Z" : null,
+    next_action: approved ? "measure_impact" : "review_recommendation",
+    evidence_context: {
+      source: "gsc",
+      quality: "issues_detected",
+      freshness_at: "2026-09-30T00:00:00Z",
+      period_start: "2026-09-27",
+      period_end: "2026-10-04",
+      limitation_code: null,
+    },
   });
+  const earlierRevision = {
+    id: ids.older,
+    created_at: "2026-09-27T12:00:00Z",
+    revision_number: 1,
+    proposed_action: "Superseded wording",
+    expected_result_hypothesis: "Earlier hypothesis",
+    risk: "low",
+    effort: "low",
+    status: "superseded",
+    change_set: [],
+    change_set_limitation_code: null,
+    decision_context: null,
+    approved_fingerprint: null,
+    quality: {
+      state: "unavailable",
+      problems: [],
+      target_query: null,
+      top_queries: [],
+      location_terms: [],
+      repository_verification: "executor_rechecks_before_write",
+    },
+    site_change: null,
+  };
   const recommendation = {
     id: revision,
+    created_at: "2026-09-28T12:00:00Z",
     revision_number: revision === ids.rev ? 1 : 2,
     proposed_action: "Repair the exact description",
     expected_result_hypothesis: "A clearer result snippet",
@@ -600,12 +636,16 @@ createServer(async (req, res) => {
   if (path === "command-center/opportunities") {
     const wanted = url.searchParams.get("kind");
     const band = url.searchParams.get("priority");
+    const done = url.searchParams.get("state") === "done";
     return reply({
-      data: [
-        opportunity,
-        unified("growth", claims.sub, ids),
-        unified("content", claims.sub, ids),
-      ]
+      data: (done
+        ? [approved ? opportunity : liveChange(claims.sub, ids)]
+        : [
+            ...(approved ? [] : [opportunity]),
+            unified("growth", claims.sub, ids),
+            unified("content", claims.sub, ids),
+          ]
+      )
         .filter((row) => !wanted || row.kind === wanted)
         .filter((row) => !band || row.priority_band === band),
       next_offset: null,
@@ -708,13 +748,16 @@ createServer(async (req, res) => {
         : null,
       data: opportunity,
       page_url: "https://synthetic.invalid/page",
-      recommendations: [recommendation],
+      recommendations:
+        revision === ids.rev
+          ? [recommendation]
+          : [recommendation, earlierRevision],
       runs: approved
         ? [
             {
               id: ids.run,
               task_id: ids.run,
-              task_status: "verified",
+              task_status: "pending",
               status: "completed",
               correlation_id: req.headers["x-correlation-id"],
               output_reference: "publication:synthetic",

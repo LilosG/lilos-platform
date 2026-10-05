@@ -217,6 +217,32 @@ export function when(iso: string | null, now: Date): string {
     day: "numeric",
   }).format(at);
 }
+const dateOnly = /^\d{4}-\d{2}-\d{2}$/;
+const formatDay = (value: string, year: boolean) =>
+  new Intl.DateTimeFormat("en-US", {
+    // A calendar date has no time of day; reading it in a zone could move it a day.
+    timeZone: dateOnly.test(value) ? "UTC" : DISPLAY_TIME_ZONE,
+    month: "short",
+    day: "numeric",
+    ...(year ? { year: "numeric" } : {}),
+  }).format(new Date(dateOnly.test(value) ? `${value}T00:00:00Z` : value));
+const yearOf = (value: string) =>
+  Number(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: dateOnly.test(value) ? "UTC" : DISPLAY_TIME_ZONE,
+      year: "numeric",
+    }).format(new Date(dateOnly.test(value) ? `${value}T00:00:00Z` : value)),
+  );
+/** "Oct 4, 2026". An ISO string is never shown as is. */
+export const dateText = (value: string | null): string =>
+  value ? formatDay(value, true) : "";
+/** "Sep 27 – Oct 4, 2026"; the year is shown once when both ends share it. */
+export function rangeText(start: string, end: string | null): string {
+  if (!end) return dateText(start);
+  return yearOf(start) === yearOf(end)
+    ? `${formatDay(start, false)} – ${formatDay(end, true)}`
+    : `${formatDay(start, true)} – ${formatDay(end, true)}`;
+}
 export const longDate = (now: Date) =>
   new Intl.DateTimeFormat("en-US", {
     timeZone: DISPLAY_TIME_ZONE,

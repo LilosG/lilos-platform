@@ -13,7 +13,12 @@ interface Props {
   client?: Organization;
   /** The portfolio's clients, for its client filter. */
   clients?: Organization[];
-  filters: { organization_id: string; kind: string; priority: string };
+  filters: {
+    organization_id: string;
+    kind: string;
+    priority: string;
+    state: string;
+  };
   now: Date;
 }
 const { view, client, clients = [], filters, now } = Astro.props;
@@ -69,6 +74,15 @@ if (view.next !== null) nextQuery.set("offset", String(view.next));
         ))
       }
     </select>
+    <select aria-label="Filter by state" name="state">
+      {
+        filterOptions.state.map(([value, label]) => (
+          <option value={value} selected={filters.state === value}>
+            {label}
+          </option>
+        ))
+      }
+    </select>
     <noscript><button type="submit">Apply filters</button></noscript>
     <span class="muted" data-opportunity-count>
       {rows.length}
@@ -103,7 +117,9 @@ if (view.next !== null) nextQuery.set("offset", String(view.next));
           ) : (
             <tr>
               <td colspan="5" class="empty">
-                No opportunities match these filters.
+                {filters.state === "done"
+                  ? "No finished opportunities match these filters."
+                  : "No open opportunities match these filters."}
               </td>
             </tr>
           )
