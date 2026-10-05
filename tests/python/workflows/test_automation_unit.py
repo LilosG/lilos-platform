@@ -99,6 +99,7 @@ def test_canonical_workflow_types_registered() -> None:
         "gbp.publish_change",
         "gbp.publish_post",
         "gbp.sync",
+        "gbp.sync_performance",
         "gbp.upload_media",
         "insights.sync_analytics",
         "leads.send_communication",
