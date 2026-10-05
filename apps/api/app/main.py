@@ -17,6 +17,9 @@ from apps.api.app.routes.agents import router as agents_router
 from apps.api.app.routes.api_v1 import router as api_v1_router
 from apps.api.app.routes.client_onboarding import router as client_onboarding_router
 from apps.api.app.routes.command_center import router as command_center_router
+from apps.api.app.routes.command_center_gbp_performance import (
+    router as command_center_gbp_performance_router,
+)
 from apps.api.app.routes.command_center_leads import router as command_center_leads_router
 from apps.api.app.routes.command_center_portfolio import router as command_center_portfolio_router
 from apps.api.app.routes.command_center_reviews import router as command_center_reviews_router
@@ -96,6 +99,7 @@ def create_app(
     application.include_router(command_center_search_router)
     application.include_router(command_center_reviews_router)
     application.include_router(command_center_leads_router)
+    application.include_router(command_center_gbp_performance_router)
     application.include_router(command_center_website_router)
     application.include_router(command_center_portfolio_router)
     application.include_router(health_router)

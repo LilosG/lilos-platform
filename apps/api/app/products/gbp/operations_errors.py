@@ -1,6 +1,9 @@
 """Safe GBP-operations errors exposed through the standard API envelope."""
 
-from apps.api.app.errors import ConflictError, NotFoundError
+from http import HTTPStatus
+
+from apps.api.app.errors import ApiError, ConflictError, NotFoundError
+from apps.api.app.schemas import ErrorCategory
 
 
 class GBPLocationNotFoundError(NotFoundError):
@@ -84,3 +87,10 @@ class GBPLocationNotWriteEnabledError(ConflictError):
 class GBPMediaNotPublishEligibleError(ConflictError):
     code = "GBP_MEDIA_NOT_PUBLISH_ELIGIBLE"
     public_message = "An approved media item on a write-enabled location is required."
+
+
+class GBPPerformanceMonthRequiredError(ApiError):
+    status_code = HTTPStatus.BAD_REQUEST
+    code = "GBP_PERFORMANCE_MONTH_REQUIRED"
+    category = ErrorCategory.VALIDATION
+    public_message = "A month (YYYY-MM) is required for the month period."
