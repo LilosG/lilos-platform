@@ -176,6 +176,112 @@ const upcoming = (row) =>
         },
       ]
     : [];
+const growthId = "77777777-7777-4777-8777-777777777778";
+const contentId = "77777777-7777-4777-8777-777777777779";
+const sourceKind = {
+  seo: "seo_opportunity",
+  content: "content_opportunity",
+  growth: "growth_initiative",
+};
+/** One unified opportunity as the API projects it. Beta has no site-change target. */
+export function unified(kind, orgId, ids, overrides = {}) {
+  const info = directory(ids)[orgId];
+  const sourceId = {
+    seo: ids.opp,
+    growth: growthId,
+    content: contentId,
+  }[kind];
+  const priority = { seo: 82, growth: 65, content: 55 }[kind];
+  return {
+    id: `${sourceKind[kind]}:${sourceId}`,
+    source_kind: sourceKind[kind],
+    kind,
+    source_id: sourceId,
+    organization_id: orgId,
+    client: { organization_id: orgId, name: info.name, slug: info.slug },
+    location_id: null,
+    website_id: kind === "seo" ? orgId : null,
+    page_id: kind === "seo" ? ids.page : null,
+    classification: kind === "growth" ? "Growth Opportunity" : "Issue",
+    source_type: {
+      seo: "missing_meta_description",
+      growth: "growth_plan",
+      content: "seo",
+    }[kind],
+    status: { seo: "identified", growth: "proposed", content: "identified" }[
+      kind
+    ],
+    priority,
+    evidence:
+      kind === "seo"
+        ? {
+            issue: "missing_meta_description",
+            quality: "valid",
+            source: "crawl",
+          }
+        : kind === "content"
+          ? { impressions: 1200, clicks: 12 }
+          : {},
+    score_explanation:
+      kind === "seo" ? { reason: "Persisted synthetic crawl finding" } : {},
+    observed_at: "2026-09-30T00:00:00Z",
+    evidence_context: {
+      source: kind === "seo" ? "crawl" : null,
+      quality: null,
+      freshness_at: null,
+      period_start: null,
+      period_end: null,
+      limitation_code: null,
+    },
+    priority_band: priority >= 70 ? "high" : "medium",
+    headline: {
+      seo: null,
+      growth: "Win brunch searches",
+      content: "/blog/brunch",
+    }[kind],
+    confidence: kind === "growth" ? 0.8 : null,
+    evidence_summary: {
+      source: kind === "seo" ? "crawl" : null,
+      signal: kind === "seo" ? "missing_meta_description" : sourceKind[kind],
+      metrics:
+        kind === "content"
+          ? [
+              { key: "clicks", value: 12 },
+              { key: "impressions", value: 1200 },
+            ]
+          : [],
+      source_count: kind === "growth" ? 2 : null,
+    },
+    next_action: {
+      seo: "review_recommendation",
+      growth: "review_growth_plan",
+      content: "review_opportunity",
+    }[kind],
+    latest_revision_status: kind === "seo" ? "awaiting_approval" : null,
+    site_change:
+      kind !== "seo"
+        ? "not_applicable"
+        : orgId === ids.b
+          ? "not_configured"
+          : "configured",
+    site_change_reason:
+      kind === "seo" && orgId === ids.b ? "SITE_CHANGES_NOT_CONFIGURED" : null,
+    ...overrides,
+  };
+}
+function opportunityFeed(url, visibleIds, ids) {
+  const kinds = ["seo", "growth", "content"];
+  const wanted = url.searchParams.get("kind");
+  const band = url.searchParams.get("priority");
+  const only = url.searchParams.get("organization_id");
+  const data = visibleIds
+    .filter((id) => !only || id === only)
+    .flatMap((id) => kinds.map((kind) => unified(kind, id, ids)))
+    .filter((row) => !wanted || row.kind === wanted)
+    .filter((row) => !band || row.priority_band === band)
+    .sort((a, b) => b.priority - a.priority);
+  return { data, next_offset: null, kinds_unavailable: [] };
+}
 const window = (days) => ({
   generated_at: now(),
   days,
@@ -240,6 +346,12 @@ export function commandCenter(url, claims, ids) {
         ],
       },
     };
+  }
+  if (path === "opportunities") {
+    const only = url.searchParams.get("organization_id");
+    if (only && !visibleIds.includes(only))
+      return { status: 404, body: { code: "NOT_FOUND" } };
+    return { body: opportunityFeed(url, visibleIds, ids) };
   }
   const overview = path.match(/^clients\/([^/]+)\/overview$/);
   if (overview) {
