@@ -32,12 +32,16 @@ test("Portfolio Opportunities lists every kind on real data and filters on the s
   await expect(page.locator("[data-not-built]")).toHaveCount(0);
   await expect(page.locator("body")).not.toContainText("not built yet");
   await expect(rows(page)).toHaveCount(3);
-  await expect(rows(page).nth(0)).toContainText("Missing meta description");
+  await expect(rows(page).nth(0)).toContainText(
+    "Low click-through: \u201cbrunch spots san diego\u201d",
+  );
   await expect(rows(page).nth(0)).toContainText("Synthetic Alpha");
   await expect(rows(page).nth(0)).toContainText("High");
   await expect(rows(page).nth(1)).toContainText("Win brunch searches");
   await expect(rows(page).nth(1)).toContainText("Growth plan");
-  await expect(rows(page).nth(2)).toContainText("/blog/brunch");
+  await expect(rows(page).nth(2)).toContainText(
+    "Content opportunity \u00b7 /blog/brunch",
+  );
   await expect(rows(page).nth(2)).toContainText("12 clicks");
   await expect(page.locator("[data-opportunity-count]")).toHaveText(
     "3 opportunities",
@@ -82,10 +86,21 @@ test("Client Opportunities tab replaces the not-built state and opens each kind'
     await expect(
       dialog.getByRole("heading", { name: heading, exact: true }),
     ).toBeVisible();
-  await expect(dialog).toContainText("Missing meta description");
-  await expect(dialog).toContainText("Persisted synthetic crawl finding");
-  await expect(dialog).toContainText("Deterministic quality: passed");
-  await expect(dialog.getByText("meta_description").first()).toBeVisible();
+  await expect(dialog).toContainText(
+    "Low click-through: \u201cbrunch spots san diego\u201d",
+  );
+  await expect(dialog).toContainText(
+    "Visitors from organic search complete key actions",
+  );
+  // Dates read "Sep 27 – Oct 4, 2026", never as an ISO string.
+  await expect(dialog).toContainText("Period Sep 27 \u2013 Oct 4, 2026");
+  await expect(dialog).not.toContainText(/\d{4}-\d{2}-\d{2}T/);
+  await expect(dialog.locator("[data-earlier-observations]")).toContainText(
+    "Earlier sightings (1)",
+  );
+  await expect(dialog).toContainText("Deterministic quality: Passed");
+  await expect(dialog.getByText("Meta description").first()).toBeVisible();
+  await expect(dialog).not.toContainText("meta_description");
   await expect(dialog.getByText("No change has been published")).toBeVisible();
   await expect(
     dialog.getByRole("link", { name: "Open source area" }),
@@ -95,6 +110,9 @@ test("Client Opportunities tab replaces the not-built state and opens each kind'
   await expect(
     page.getByRole("heading", { name: "Win brunch searches" }),
   ).toBeVisible();
+  await expect(page.locator("[data-opportunity-summary]")).toContainText(
+    "publishing the approved page",
+  );
   await expect(
     page.getByText("Demand exists for brunch queries"),
   ).toBeVisible();
@@ -115,7 +133,7 @@ test("A client without a site-change target keeps the opportunity, disabled with
   await login(page, "b@example.test", "/clients/synthetic-beta/opportunities/");
   await expect(rows(page)).toHaveCount(3);
   const seo = rows(page).nth(0);
-  await expect(seo).toContainText("Missing meta description");
+  await expect(seo).toContainText("Low click-through");
   await expect(
     seo.locator('[data-site-change-reason="SITE_CHANGES_NOT_CONFIGURED"]'),
   ).toHaveText("Site changes not configured for this client");
@@ -127,6 +145,28 @@ test("A client without a site-change target keeps the opportunity, disabled with
     page.getByRole("button", { name: "Approve exact revision 1" }),
   ).toBeDisabled();
   await clean(page);
+});
+test("The default list is open work; verified live changes are under Done", async ({
+  page,
+}) => {
+  await login(
+    page,
+    "a@example.test",
+    "/clients/synthetic-alpha/opportunities/",
+  );
+  await expect(page.getByLabel("Filter by state")).toHaveValue("");
+  await expect(rows(page)).toHaveCount(3);
+  await expect(page.locator("body")).not.toContainText("Live \u00b7 verified");
+  await page.getByLabel("Filter by state").selectOption("done");
+  await expect(page).toHaveURL(/state=done/);
+  await expect(rows(page)).toHaveCount(1);
+  await expect(rows(page).first()).toContainText(
+    "Live \u00b7 verified Oct 4, 2026",
+  );
+  await expect(rows(page).first()).toContainText("Measure impact");
+  await expect(rows(page).first()).not.toContainText("Follow the approved");
+  await page.goto("/opportunities/?state=nonsense");
+  await expect(page.locator("body")).toContainText("Invalid filter");
 });
 test("Approving a growth plan goes through the step-up gate and the existing decision endpoint", async ({
   page,

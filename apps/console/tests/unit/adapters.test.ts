@@ -45,6 +45,12 @@ const row = {
   latest_revision_status: null,
   site_change: "not_configured",
   site_change_reason: "SITE_CHANGES_NOT_CONFIGURED",
+  subject: { query: null, path: null },
+  summary: null,
+  lifecycle: "open",
+  verified_at: null,
+  importance_reason: null,
+  earlier_observations: [],
 };
 it("preserves canonical namespaced identity, null, and partial evidence", () => {
   const result = adaptOpportunities({ data: [row], next_offset: null }, org);

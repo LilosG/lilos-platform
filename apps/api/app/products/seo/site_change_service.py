@@ -84,6 +84,22 @@ def page_mapping_limitation(target: PublishingTarget | None, page_url: str | Non
     return None
 
 
+def organization_mapping_limitation(target: PublishingTarget | None) -> str | None:
+    """`SITE_MAPPING_REQUIRED` when the organization has no usable publishing target page map.
+
+    The answer for an opportunity that is not yet tied to one page: site changes are
+    available when the client's one active target maps at least one page inside its
+    allowed prefixes. Pure, like `page_mapping_limitation`.
+    """
+    if (
+        target is None
+        or not target.allowed_site_change_prefixes
+        or not page_map_from_contract(target.frontmatter_contract)
+    ):
+        return SiteChangeCode.SITE_MAPPING_REQUIRED.value
+    return None
+
+
 @dataclass(frozen=True, slots=True)
 class PageFields:
     """A page's current, repo-read values for every field its page map declares."""

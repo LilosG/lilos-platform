@@ -59,14 +59,7 @@ export const routes = [
     pattern: /^command-center\/opportunities\/$/,
     method: "GET",
     upstream: "",
-    query: [
-      "limit",
-      "offset",
-      "organization_id",
-      "kind",
-      "priority",
-      "include_closed",
-    ],
+    query: ["limit", "offset", "organization_id", "kind", "priority", "state"],
   },
   {
     pattern: new RegExp(
@@ -74,7 +67,7 @@ export const routes = [
     ),
     method: "GET",
     upstream: "",
-    query: ["limit", "offset", "kind", "priority", "include_closed"],
+    query: ["limit", "offset", "kind", "priority", "state"],
   },
   {
     pattern: new RegExp(`^organizations/${uuid}/command-center/attention/$`),
@@ -152,7 +145,7 @@ const uuidKeys = new Set([
 const enumQuery: Record<string, readonly string[]> = {
   kind: ["seo", "content", "growth"],
   priority: ["high", "medium", "low"],
-  include_closed: ["true", "false"],
+  state: ["open", "done"],
 };
 /** One typed rule per query key; anything unlisted fails closed. */
 function queryValid(key: string, value: string): boolean {

@@ -27,7 +27,7 @@ test("SSR login -> canonical detail -> MFA -> revise -> exact approve -> publica
     page.getByRole("heading", { name: "Supporting evidence", exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByText("Deterministic quality: passed", { exact: true }),
+    page.getByText("Deterministic quality: Passed", { exact: true }),
   ).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Approve exact revision 1" }),
@@ -92,7 +92,7 @@ test("SSR login -> canonical detail -> MFA -> revise -> exact approve -> publica
   await page.getByRole("button", { name: "Verify", exact: true }).click();
   await expect(page).toHaveURL(new RegExp(detail));
   await page
-    .getByRole("textbox", { name: "meta_description", exact: true })
+    .getByRole("textbox", { name: "Meta description", exact: true })
     .fill(
       "An edited synthetic description for this exact page and audited revision.",
     );
@@ -105,7 +105,7 @@ test("SSR login -> canonical detail -> MFA -> revise -> exact approve -> publica
   ).toBeVisible();
   await page.getByRole("button", { name: "Approve exact revision 2" }).click();
   await expect(
-    page.getByText("Live verification observed: 2026-09-30T00:00:00Z", {
+    page.getByText("Live verification observed: Sep 29, 2026", {
       exact: true,
     }),
   ).toBeVisible();
@@ -113,7 +113,7 @@ test("SSR login -> canonical detail -> MFA -> revise -> exact approve -> publica
     page.getByRole("link", { name: "Open pull request" }),
   ).toBeVisible();
   await expect(page.getByText(/Deployment: ready/)).toBeVisible();
-  await expect(page.getByText(/Implementation: verified/)).toBeVisible();
+  await expect(page.getByText(/Implementation: Verified live/)).toBeVisible();
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
   await page.screenshot({
     path: `test-results/reference-${test.info().project.name}.png`,

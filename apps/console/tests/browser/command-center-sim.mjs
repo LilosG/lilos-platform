@@ -204,7 +204,7 @@ export function unified(kind, orgId, ids, overrides = {}) {
     page_id: kind === "seo" ? ids.page : null,
     classification: kind === "growth" ? "Growth Opportunity" : "Issue",
     source_type: {
-      seo: "missing_meta_description",
+      seo: "gsc_low_ctr",
       growth: "growth_plan",
       content: "seo",
     }[kind],
@@ -215,18 +215,18 @@ export function unified(kind, orgId, ids, overrides = {}) {
     evidence:
       kind === "seo"
         ? {
-            issue: "missing_meta_description",
+            query: "brunch spots san diego",
             quality: "valid",
-            source: "crawl",
+            source: "gsc",
           }
         : kind === "content"
           ? { impressions: 1200, clicks: 12 }
           : {},
     score_explanation:
-      kind === "seo" ? { reason: "Persisted synthetic crawl finding" } : {},
+      kind === "seo" ? { business_importance_state: "inferred" } : {},
     observed_at: "2026-09-30T00:00:00Z",
     evidence_context: {
-      source: kind === "seo" ? "crawl" : null,
+      source: kind === "seo" ? "gsc" : null,
       quality: null,
       freshness_at: null,
       period_start: null,
@@ -234,15 +234,33 @@ export function unified(kind, orgId, ids, overrides = {}) {
       limitation_code: null,
     },
     priority_band: priority >= 70 ? "high" : "medium",
-    headline: {
-      seo: null,
-      growth: "Win brunch searches",
-      content: "/blog/brunch",
-    }[kind],
+    headline: { seo: null, growth: "Win brunch searches", content: null }[kind],
+    summary:
+      kind === "growth"
+        ? "Win brunch searches by publishing the approved page and improving click-through on the top-ranked brunch queries."
+        : null,
+    subject: {
+      query: kind === "seo" ? "brunch spots san diego" : null,
+      path: kind === "content" ? "/blog/brunch" : null,
+    },
+    lifecycle: "open",
+    verified_at: null,
+    importance_reason: kind === "seo" ? "KEY_EVENTS_INFERRED" : null,
+    earlier_observations:
+      kind === "seo"
+        ? [
+            {
+              id: "44444444-4444-4444-8444-444444444444",
+              observed_at: "2026-09-27T12:00:00Z",
+              status: "archived",
+              priority: 80,
+            },
+          ]
+        : [],
     confidence: kind === "growth" ? 0.8 : null,
     evidence_summary: {
-      source: kind === "seo" ? "crawl" : null,
-      signal: kind === "seo" ? "missing_meta_description" : sourceKind[kind],
+      source: kind === "seo" ? "gsc" : null,
+      signal: kind === "seo" ? "gsc_low_ctr" : sourceKind[kind],
       metrics:
         kind === "content"
           ? [
@@ -269,14 +287,30 @@ export function unified(kind, orgId, ids, overrides = {}) {
     ...overrides,
   };
 }
+/** An SEO change that was approved, published and verified on the live site. */
+export function liveChange(orgId, ids) {
+  return unified("seo", orgId, ids, {
+    status: "approved",
+    lifecycle: "live",
+    verified_at: "2026-10-04T18:00:00Z",
+    next_action: "measure_impact",
+    latest_revision_status: "approved",
+    earlier_observations: [],
+  });
+}
 function opportunityFeed(url, visibleIds, ids) {
   const kinds = ["seo", "growth", "content"];
   const wanted = url.searchParams.get("kind");
   const band = url.searchParams.get("priority");
   const only = url.searchParams.get("organization_id");
+  const done = url.searchParams.get("state") === "done";
   const data = visibleIds
     .filter((id) => !only || id === only)
-    .flatMap((id) => kinds.map((kind) => unified(kind, id, ids)))
+    .flatMap((id) =>
+      done
+        ? [liveChange(id, ids)]
+        : kinds.map((kind) => unified(kind, id, ids)),
+    )
     .filter((row) => !wanted || row.kind === wanted)
     .filter((row) => !band || row.priority_band === band)
     .sort((a, b) => b.priority - a.priority);

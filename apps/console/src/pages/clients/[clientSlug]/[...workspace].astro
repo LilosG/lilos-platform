@@ -130,8 +130,10 @@ const oppFilters = {
   organization_id: "",
   kind: Astro.url.searchParams.get("kind") ?? "",
   priority: Astro.url.searchParams.get("priority") ?? "",
+  state: Astro.url.searchParams.get("state") ?? "",
 };
 if (
+  (oppFilters.state && !["open", "done"].includes(oppFilters.state)) ||
   (oppFilters.kind &&
     !["seo", "content", "growth"].includes(oppFilters.kind)) ||
   (oppFilters.priority &&
@@ -284,9 +286,8 @@ try {
       );
     else {
       const params = new URLSearchParams({ offset: String(offset) });
-      for (const key of ["kind", "priority"])
-        if (oppFilters[key as "kind" | "priority"])
-          params.set(key, oppFilters[key as "kind" | "priority"]);
+      for (const key of ["kind", "priority", "state"] as const)
+        if (oppFilters[key]) params.set(key, oppFilters[key]);
       opportunities = adaptOpportunityList(
         await read(Astro.locals, scope + `opportunities/?${params}`),
         client.organization_id,

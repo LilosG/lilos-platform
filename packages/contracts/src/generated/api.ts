@@ -6154,6 +6154,26 @@ export interface components {
              */
             review_revision_id: string;
         };
+        /**
+         * EarlierObservation
+         * @description An older sighting of the same finding. Rolled up in the read; never deleted.
+         */
+        EarlierObservation: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Observed At
+             * Format: date-time
+             */
+            observed_at: string;
+            /** Priority */
+            priority: number | null;
+            /** Status */
+            status: string;
+        };
         /** EntitlementCreate */
         EntitlementCreate: {
             /** Effective From */
@@ -8259,6 +8279,16 @@ export interface components {
             /** Next Offset */
             next_offset: number | null;
         };
+        /**
+         * OpportunitySubject
+         * @description What the opportunity is about: the titles are built from these, never from keys.
+         */
+        OpportunitySubject: {
+            /** Path */
+            path?: string | null;
+            /** Query */
+            query?: string | null;
+        };
         /** OpportunityView */
         OpportunityView: {
             /**
@@ -8269,6 +8299,11 @@ export interface components {
             client?: components["schemas"]["OpportunityClient"] | null;
             /** Confidence */
             confidence?: number | null;
+            /**
+             * Earlier Observations
+             * @default []
+             */
+            earlier_observations: components["schemas"]["EarlierObservation"][];
             /** Evidence */
             evidence: {
                 [key: string]: unknown;
@@ -8279,6 +8314,8 @@ export interface components {
             headline?: string | null;
             /** Id */
             id: string;
+            /** Importance Reason */
+            importance_reason?: "KEY_EVENTS_INFERRED" | null;
             /**
              * Kind
              * @default seo
@@ -8287,6 +8324,12 @@ export interface components {
             kind: "seo" | "content" | "growth";
             /** Latest Revision Status */
             latest_revision_status?: string | null;
+            /**
+             * Lifecycle
+             * @default open
+             * @enum {string}
+             */
+            lifecycle: "open" | "live" | "done";
             /** Location Id */
             location_id: string | null;
             /**
@@ -8294,7 +8337,7 @@ export interface components {
              * @default none
              * @enum {string}
              */
-            next_action: "request_recommendation" | "review_recommendation" | "monitor_publication" | "review_opportunity" | "review_growth_plan" | "monitor_execution" | "none";
+            next_action: "request_recommendation" | "review_recommendation" | "monitor_publication" | "measure_impact" | "review_opportunity" | "review_growth_plan" | "monitor_execution" | "none";
             /**
              * Observed At
              * Format: date-time
@@ -8338,6 +8381,12 @@ export interface components {
             source_type: string;
             /** Status */
             status: string;
+            /** @default {} */
+            subject: components["schemas"]["OpportunitySubject"];
+            /** Summary */
+            summary?: string | null;
+            /** Verified At */
+            verified_at?: string | null;
             /** Website Id */
             website_id: string | null;
         };
@@ -9314,6 +9363,11 @@ export interface components {
             change_set: components["schemas"]["SiteChangeItem"][];
             /** Change Set Limitation Code */
             change_set_limitation_code: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
             /** Decision Context */
             decision_context: {
                 [key: string]: unknown;
@@ -10740,7 +10794,7 @@ export interface operations {
                 organization_id?: string | null;
                 kind?: ("seo" | "content" | "growth") | null;
                 priority?: ("high" | "medium" | "low") | null;
-                include_closed?: boolean;
+                state?: "open" | "done";
             };
             header?: never;
             path?: never;
@@ -11915,7 +11969,7 @@ export interface operations {
                 limit?: number;
                 kind?: ("seo" | "content" | "growth") | null;
                 priority?: ("high" | "medium" | "low") | null;
-                include_closed?: boolean;
+                state?: "open" | "done";
             };
             header?: never;
             path: {

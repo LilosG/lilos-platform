@@ -48,6 +48,7 @@ const filters = {
   organization_id: Astro.url.searchParams.get("organization_id") ?? "",
   kind: Astro.url.searchParams.get("kind") ?? "",
   priority: Astro.url.searchParams.get("priority") ?? "",
+  state: Astro.url.searchParams.get("state") ?? "",
 };
 const offset = Number(Astro.url.searchParams.get("offset") ?? 0);
 const clientRows =
@@ -57,6 +58,7 @@ if (page === "opportunities") {
     (filters.kind && !["seo", "content", "growth"].includes(filters.kind)) ||
     (filters.priority &&
       !["high", "medium", "low"].includes(filters.priority)) ||
+    (filters.state && !["open", "done"].includes(filters.state)) ||
     (filters.organization_id &&
       !clientRows.some((c) => c.organization_id === filters.organization_id)) ||
     !Number.isInteger(offset) ||

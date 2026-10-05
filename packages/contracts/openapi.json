@@ -2585,6 +2585,45 @@
         "title": "DraftCreate",
         "type": "object"
       },
+      "EarlierObservation": {
+        "additionalProperties": false,
+        "description": "An older sighting of the same finding. Rolled up in the read; never deleted.",
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "observed_at": {
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "priority": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "observed_at",
+          "status",
+          "priority"
+        ],
+        "title": "EarlierObservation",
+        "type": "object"
+      },
       "EntitlementCreate": {
         "additionalProperties": false,
         "properties": {
@@ -9186,6 +9225,36 @@
         "title": "OpportunityList",
         "type": "object"
       },
+      "OpportunitySubject": {
+        "additionalProperties": false,
+        "description": "What the opportunity is about: the titles are built from these, never from keys.",
+        "properties": {
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path"
+          },
+          "query": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Query"
+          }
+        },
+        "title": "OpportunitySubject",
+        "type": "object"
+      },
       "OpportunityView": {
         "additionalProperties": false,
         "properties": {
@@ -9220,6 +9289,14 @@
             ],
             "title": "Confidence"
           },
+          "earlier_observations": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/EarlierObservation"
+            },
+            "title": "Earlier Observations",
+            "type": "array"
+          },
           "evidence": {
             "additionalProperties": true,
             "title": "Evidence",
@@ -9253,6 +9330,18 @@
             "title": "Id",
             "type": "string"
           },
+          "importance_reason": {
+            "anyOf": [
+              {
+                "const": "KEY_EVENTS_INFERRED",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Importance Reason"
+          },
           "kind": {
             "default": "seo",
             "enum": [
@@ -9274,6 +9363,16 @@
             ],
             "title": "Latest Revision Status"
           },
+          "lifecycle": {
+            "default": "open",
+            "enum": [
+              "open",
+              "live",
+              "done"
+            ],
+            "title": "Lifecycle",
+            "type": "string"
+          },
           "location_id": {
             "anyOf": [
               {
@@ -9292,6 +9391,7 @@
               "request_recommendation",
               "review_recommendation",
               "monitor_publication",
+              "measure_impact",
               "review_opportunity",
               "review_growth_plan",
               "monitor_execution",
@@ -9398,6 +9498,33 @@
           "status": {
             "title": "Status",
             "type": "string"
+          },
+          "subject": {
+            "$ref": "#/components/schemas/OpportunitySubject",
+            "default": {}
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary"
+          },
+          "verified_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verified At"
           },
           "website_id": {
             "anyOf": [
@@ -12534,6 +12661,11 @@
             ],
             "title": "Change Set Limitation Code"
           },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
           "decision_context": {
             "anyOf": [
               {
@@ -12591,6 +12723,7 @@
         },
         "required": [
           "id",
+          "created_at",
           "revision_number",
           "proposed_action",
           "expected_result_hypothesis",
@@ -16191,12 +16324,16 @@
           },
           {
             "in": "query",
-            "name": "include_closed",
+            "name": "state",
             "required": false,
             "schema": {
-              "default": false,
-              "title": "Include Closed",
-              "type": "boolean"
+              "default": "open",
+              "enum": [
+                "open",
+                "done"
+              ],
+              "title": "State",
+              "type": "string"
             }
           }
         ],
@@ -18223,12 +18360,16 @@
           },
           {
             "in": "query",
-            "name": "include_closed",
+            "name": "state",
             "required": false,
             "schema": {
-              "default": false,
-              "title": "Include Closed",
-              "type": "boolean"
+              "default": "open",
+              "enum": [
+                "open",
+                "done"
+              ],
+              "title": "State",
+              "type": "string"
             }
           }
         ],
