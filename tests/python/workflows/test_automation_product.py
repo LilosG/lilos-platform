@@ -396,6 +396,35 @@ def test_list_schedules_empty(p5_client: P5Context) -> None:
 
 
 @pytest.mark.integration
+def test_a_platform_only_workflow_is_unknown_to_tenant_routes(p5_client: P5Context) -> None:
+    """organization.remove acts on the client itself, so tenant routes treat it as unknown."""
+    client, org = p5_client.client, p5_client.ids["organization"]
+    base = f"/api/v1/organizations/{org}/workflows"
+    listed = {item["key"] for item in client.get(base, headers=HEADERS).json()["data"]}
+    assert "organization.remove" not in listed
+    assert client.get(f"{base}/organization.remove", headers=HEADERS).status_code == 404
+    started = client.post(
+        f"{base}/organization.remove/runs",
+        headers=HEADERS,
+        json={"idempotency_key": "tenant-removal-attempt", "execute": True},
+    )
+    assert started.status_code == 404, started.text
+    assert started.json()["error"]["code"] == "WORKFLOW_KEY_UNKNOWN"
+    scheduled = client.post(
+        f"{base}/schedules",
+        headers=HEADERS,
+        json={
+            "workflow_key": "organization.remove",
+            "key": "tenant-removal-schedule",
+            "cron_expression": "0 8 * * *",
+            "timezone": "UTC",
+            "next_run_at": (datetime.now(UTC) + timedelta(hours=1)).isoformat(),
+        },
+    )
+    assert scheduled.status_code == 404, scheduled.text
+
+
+@pytest.mark.integration
 def test_create_schedule(p5_client: P5Context) -> None:
     client, org = p5_client.client, p5_client.ids["organization"]
     next_run = (datetime.now(UTC) + timedelta(hours=1)).isoformat()

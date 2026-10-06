@@ -34,5 +34,15 @@ WORKFLOW_TYPES: dict[str, tuple[str, str]] = {
 }
 
 
+# Workflows only the platform may start. A tenant-facing route must treat these as unknown:
+# they act on the organization itself, not on one of its products.
+PLATFORM_ONLY_WORKFLOWS = frozenset({"organization.remove"})
+
+
+def is_tenant_workflow_key(key: str) -> bool:
+    """A known workflow a client organization's own users may list, start or schedule."""
+    return key in WORKFLOW_TYPES and key not in PLATFORM_ONLY_WORKFLOWS
+
+
 def is_known_workflow_key(key: str) -> bool:
     return key in WORKFLOW_TYPES

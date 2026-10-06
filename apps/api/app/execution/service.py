@@ -38,7 +38,11 @@ from apps.api.app.execution.models import (
     WorkflowRun,
     WorkflowVersion,
 )
-from apps.api.app.execution.workflow_catalog import WORKFLOW_TYPES, is_known_workflow_key
+from apps.api.app.execution.workflow_catalog import (
+    WORKFLOW_TYPES,
+    is_known_workflow_key,
+    is_tenant_workflow_key,
+)
 from apps.api.app.locations.models import Location
 
 CONSUMABLE_WORKFLOW_RUN_STATUSES = {"created", "queued"}
@@ -890,6 +894,8 @@ class ExecutionService:
 
         result: list[dict[str, object]] = []
         for key, (display_name, product_key) in sorted(WORKFLOW_TYPES.items()):
+            if not is_tenant_workflow_key(key):
+                continue
             definition = def_by_key.get(key)
             version = ver_by_def.get(definition.id) if definition else None
             result.append(
