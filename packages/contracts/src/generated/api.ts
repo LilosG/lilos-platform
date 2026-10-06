@@ -5071,6 +5071,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/platform/organizations/{organization_id}/removal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get where an organization's removal stands
+         * @description Report the removal as requested, in progress, completed or failed (with its typed code).
+         */
+        get: operations["get_organization_removal_api_v1_platform_organizations__organization_id__removal_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/platform/organizations/{organization_id}/remove": {
         parameters: {
             query?: never;
@@ -22992,6 +23012,58 @@ export interface operations {
         };
     };
     reconcile_organization_defaults_api_v1_platform_organizations__organization_id__reconcile_defaults_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organization_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DataResponse"];
+                };
+            };
+            /** @description Caller is not an active platform administrator */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Organization or location not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Slug, lifecycle, primary, or version conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_organization_removal_api_v1_platform_organizations__organization_id__removal_get: {
         parameters: {
             query?: never;
             header?: never;

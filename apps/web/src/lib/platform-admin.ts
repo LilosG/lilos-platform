@@ -1,5 +1,8 @@
 import { apiGet, apiRequest, type ApiOutcome } from "./api-client";
-import type { OrganizationRemoval } from "./organization-removal";
+import type {
+  OrganizationRemoval,
+  OrganizationRemovalStatus,
+} from "./organization-removal";
 
 export type OrganizationType =
   "client" | "internal" | "partner" | "demo" | "test";
@@ -479,6 +482,15 @@ export function removeOrganization(
       method: "POST",
       body: { confirm_name: confirmName, ...(reason ? { reason } : {}) },
     },
+  );
+}
+
+/** Where an organization's removal stands: requested, in progress, completed or failed. */
+export function fetchOrganizationRemoval(
+  organizationId: string,
+): Promise<ApiOutcome<OrganizationRemovalStatus>> {
+  return apiGet<OrganizationRemovalStatus>(
+    `${base}/organizations/${organizationId}/removal`,
   );
 }
 

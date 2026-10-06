@@ -7,12 +7,19 @@ import type { AdminOrganization } from "./platform-admin";
  * never from text the API sent.
  */
 export type OrganizationRemovalState =
-  "requested" | "in_progress" | "completed";
+  "requested" | "in_progress" | "completed" | "failed";
 
 /** Body of a successful `POST /organizations/{id}/remove`. */
 export type OrganizationRemoval = {
   organization: AdminOrganization;
   state: OrganizationRemovalState;
+  workflow_run_id: string | null;
+};
+
+/** Body of `GET /organizations/{id}/removal`; `state` is null if none was requested. */
+export type OrganizationRemovalStatus = {
+  state: OrganizationRemovalState | null;
+  failure_code: string | null;
   workflow_run_id: string | null;
 };
 
@@ -95,4 +102,34 @@ export function isRemovalComplete(
   organization: Pick<AdminOrganization, "removed_at">,
 ): boolean {
   return Boolean(organization.removed_at);
+}
+
+/** A removal the worker is still carrying out (or about to). */
+export function isRemovalPending(
+  state: OrganizationRemovalState | null | undefined,
+): boolean {
+  return state === "requested" || state === "in_progress";
+}
+
+/**
+ * What to tell the operator when the worker could not finish a removal, chosen
+ * from the worker's typed failure code. API text is never shown.
+ */
+export function removalFailedMessage(
+  name: string,
+  code: string | null | undefined,
+): string {
+  const retry = "Nothing further is deleted until you try again.";
+  switch (code) {
+    case "ORGANIZATION_REMOVAL_STORAGE_UNAVAILABLE":
+      return `Removing ${name} stopped because file storage could not be reached. ${retry}`;
+    case "ORGANIZATION_REMOVAL_WAITING_FOR_ACTIVE_JOBS":
+      return `Removing ${name} stopped because work for this client was still running. ${retry}`;
+    case "ORGANIZATION_REMOVAL_BLOCKED_BY_PROTECTED_HISTORY":
+    case "ORGANIZATION_REMOVAL_BLOCKED":
+    case "ORGANIZATION_REMOVAL_STALLED":
+      return `Removing ${name} stopped because some of its records could not be deleted. ${retry} If it fails again, contact engineering.`;
+    default:
+      return `Removing ${name} did not finish. ${retry}`;
+  }
 }

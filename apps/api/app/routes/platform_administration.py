@@ -67,6 +67,7 @@ from apps.api.app.organizations.contracts import (
     OrganizationData,
     OrganizationIndustryAssignment,
     OrganizationRemovalData,
+    OrganizationRemovalStatusData,
     OrganizationRemove,
     OrganizationTransition,
 )
@@ -537,6 +538,26 @@ async def remove_organization(
             organization=OrganizationData.model_validate(organization),
             state=state,
             workflow_run_id=run_id,
+        ),
+    )
+
+
+@router.get(
+    "/organizations/{organization_id}/removal",
+    response_model=DataResponse,
+    summary="Get where an organization's removal stands",
+)
+async def get_organization_removal(
+    request: Request,
+    organization_id: UUID,
+    session: DatabaseSession,
+) -> DataResponse:
+    """Report the removal as requested, in progress, completed or failed (with its typed code)."""
+    state, failure_code, run_id = await organizations.removal_status(session, organization_id)
+    return response(
+        request,
+        OrganizationRemovalStatusData(
+            state=state, failure_code=failure_code, workflow_run_id=run_id
         ),
     )
 

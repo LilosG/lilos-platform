@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import cast
 from uuid import UUID
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.app.database.base import utc_now
@@ -122,6 +122,29 @@ class OrganizationRepository:
                 Organization.version == expected_version,
             )
             .values(**values)
+            .returning(Organization)
+        )
+        return cast(Organization | None, await session.scalar(statement))
+
+    async def mark_removal_requested(
+        self, session: AsyncSession, organization_id: UUID
+    ) -> Organization | None:
+        """Record that an administrator asked for removal; the first request time is kept.
+
+        This is the state the database's delete guard reads, so it is only called from the
+        authorized remove endpoint's service method, and only for an archived organization.
+        """
+        statement = (
+            update(Organization)
+            .where(
+                Organization.id == organization_id,
+                Organization.status == OrganizationStatus.ARCHIVED,
+                Organization.removed_at.is_(None),
+            )
+            .values(
+                removal_requested_at=func.coalesce(Organization.removal_requested_at, utc_now()),
+                updated_at=utc_now(),
+            )
             .returning(Organization)
         )
         return cast(Organization | None, await session.scalar(statement))

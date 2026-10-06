@@ -18,6 +18,13 @@ of that are handled explicitly:
   stays as a scrubbed tombstone (its slug is immutable by trigger and is kept);
 * the removal's own workflow run and job stay until the worker has finished them.
 
+Governed history (approved revisions, entitlements, recommendations) is protected by BEFORE
+DELETE triggers. They let a delete through only when the database itself finds the row's
+organization archived with a removal requested and not yet finished
+(``lilos_organization_removal_in_progress``, see the ``20261006_0001`` migration); nothing this
+module sets on a session can open them. If a trigger still refuses, the removal fails with
+``ORGANIZATION_REMOVAL_BLOCKED_BY_PROTECTED_HISTORY`` and the failure is shown to the operator.
+
 Nothing here calls Google, GitHub or Vercel. Provider accounts, the client's website and its
 repository are never touched.
 """
@@ -126,6 +133,7 @@ class RemovalCode:
     WAITING_FOR_ACTIVE_JOBS = "ORGANIZATION_REMOVAL_WAITING_FOR_ACTIVE_JOBS"
     STORAGE_UNAVAILABLE = "ORGANIZATION_REMOVAL_STORAGE_UNAVAILABLE"
     BLOCKED = "ORGANIZATION_REMOVAL_BLOCKED"
+    # A governed-history trigger still refused a delete the database guard should have allowed.
     PROTECTED_HISTORY = "ORGANIZATION_REMOVAL_BLOCKED_BY_PROTECTED_HISTORY"
     STALLED = "ORGANIZATION_REMOVAL_STALLED"
     SCHEMA_INCOMPLETE = "ORGANIZATION_REMOVAL_SCHEMA_INCOMPLETE"
@@ -282,7 +290,6 @@ class OrganizationRemovalService:
 
         progress = await self._load_progress(session, workflow_run_id)
         try:
-            await self._assert_nothing_protected(session, organization_id, workflow_run_id)
             if await self._stop_activity(session, organization_id, workflow_run_id, progress):
                 return JobOutcome(
                     result="retryable_failure", safe_error=RemovalCode.WAITING_FOR_ACTIVE_JOBS
@@ -332,35 +339,6 @@ class OrganizationRemovalService:
             )
         )
         return found is not None
-
-    async def _assert_nothing_protected(
-        self, session: AsyncSession, organization_id: UUID, workflow_run_id: UUID
-    ) -> None:
-        """Refuse to start when a table's delete-blocking trigger guards this client's rows.
-
-        Governed history (approved revisions, entitlements, recommendations) is protected by
-        BEFORE DELETE triggers that reject the delete. Finding that out in the middle of the
-        purge would leave a client half deleted, so it is checked first and nothing is touched.
-        """
-        guarded = {
-            str(name)
-            for (name,) in await session.execute(
-                text(
-                    "SELECT DISTINCT c.relname FROM pg_trigger t "
-                    "JOIN pg_class c ON c.oid = t.tgrelid "
-                    "WHERE NOT t.tgisinternal AND c.relnamespace = current_schema()::regnamespace "
-                    "AND (t.tgtype & 1) = 1 AND (t.tgtype & 2) = 2 AND (t.tgtype & 8) = 8"
-                )
-            )
-        }
-        tables = purge_plan()
-        plan = set(tables)
-        for table in tables:
-            if table.name not in guarded:
-                continue
-            scope = and_(_scope(table, organization_id, plan), *_kept(table, workflow_run_id))
-            if await session.scalar(select(literal(1)).select_from(table).where(scope).limit(1)):
-                raise RemovalBlockedError(RemovalCode.PROTECTED_HISTORY, table.name)
 
     async def _assert_schema_complete(self, session: AsyncSession) -> None:
         """Fail closed if the database holds an organization-scoped table the plan lacks.
@@ -610,7 +588,13 @@ class OrganizationRemovalService:
                 result = await session.execute(statement)
             except DBAPIError as error:
                 await session.rollback()
-                raise RemovalBlockedError(RemovalCode.BLOCKED, table.name) from error
+                # A trigger refusing the delete raises check_violation (23514); anything else is
+                # a constraint or connection problem.
+                refused = getattr(error.orig, "sqlstate", None) == "23514"
+                raise RemovalBlockedError(
+                    RemovalCode.PROTECTED_HISTORY if refused else RemovalCode.BLOCKED,
+                    table.name,
+                ) from error
             deleted = _rows(result)
             if deleted == 0:
                 break

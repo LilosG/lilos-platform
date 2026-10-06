@@ -933,6 +933,64 @@ def test_a_removed_client_leaves_the_administration_list_and_answers_with_its_st
     assert tombstone["legal_name"] is None and tombstone["billing_email"] is None
 
 
+@pytest.mark.integration
+def test_removal_status_reports_a_failure_and_a_retry_queues_a_fresh_run(
+    platform_administration_client: tuple[TestClient, FakeVerifier, dict[str, UUID]],
+    platform_administration_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    client, verifier, ids = platform_administration_client
+    verifier.result = claims(ids["admin_subject"])
+    factory = platform_administration_session_factory
+    organization = _archive(client, _create_organization(client, slug=f"flop-{uuid4().hex[:8]}"))
+    path = f"/api/v1/platform/organizations/{organization['id']}/removal"
+
+    never = client.get(path, headers=HEADERS).json()["data"]
+    assert never == {"state": None, "failure_code": None, "workflow_run_id": None}
+    # The database guard reads this timestamp, so it must not exist before a request.
+    assert _organization_row(factory, organization["id"])["removal_requested_at"] is None
+
+    queued = _remove(client, organization["id"], str(organization["name"])).json()["data"]
+    assert client.get(path, headers=HEADERS).json()["data"]["state"] == "requested"
+    assert _organization_row(factory, organization["id"])["removal_requested_at"] is not None
+
+    async def fail_the_run() -> None:
+        async with factory.begin() as session:
+            await session.execute(
+                text(
+                    "UPDATE workflow_runs SET status = 'failed', "
+                    "failure_code = 'ORGANIZATION_REMOVAL_BLOCKED' WHERE id = :id"
+                ),
+                {"id": UUID(queued["workflow_run_id"])},
+            )
+
+    asyncio.run(fail_the_run())
+    failed = client.get(path, headers=HEADERS).json()["data"]
+    assert failed["state"] == "failed"
+    assert failed["failure_code"] == "ORGANIZATION_REMOVAL_BLOCKED"
+
+    # Trying again after a failure queues a new run (and a wrong name is still refused).
+    wrong = _remove(client, organization["id"], "not the name")
+    assert wrong.json()["error"]["code"] == "ORGANIZATION_REMOVAL_CONFIRMATION_MISMATCH"
+    again = _remove(client, organization["id"], str(organization["name"])).json()["data"]
+    assert again["state"] == "requested"
+    assert again["workflow_run_id"] != queued["workflow_run_id"]
+    assert client.get(path, headers=HEADERS).json()["data"]["state"] == "requested"
+
+
+def _organization_row(
+    factory: async_sessionmaker[AsyncSession], organization_id: object
+) -> dict[str, object]:
+    async def read() -> dict[str, object]:
+        async with factory() as session:
+            result = await session.execute(
+                text("SELECT * FROM organizations WHERE id = :id"),
+                {"id": UUID(str(organization_id))},
+            )
+            return dict(result.mappings().one())
+
+    return asyncio.run(read())
+
+
 def _removal_runs(factory: async_sessionmaker[AsyncSession], organization_id: object) -> int:
     return len(_database_rows(factory, "workflow_runs", organization_id))
 

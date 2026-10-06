@@ -179,6 +179,16 @@ class OrganizationRemovalData(BaseModel):
     workflow_run_id: UUID | None
 
 
+class OrganizationRemovalStatusData(BaseModel):
+    """Where an organization's removal stands; ``state`` is null if none was ever requested."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    state: OrganizationRemovalState | None
+    failure_code: str | None
+    workflow_run_id: UUID | None
+
+
 class OrganizationResponse(BaseModel):
     """Single-organization success envelope."""
 

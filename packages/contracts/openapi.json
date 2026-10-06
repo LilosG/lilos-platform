@@ -36753,6 +36753,59 @@
         ]
       }
     },
+    "/api/v1/platform/organizations/{organization_id}/removal": {
+      "get": {
+        "description": "Report the removal as requested, in progress, completed or failed (with its typed code).",
+        "operationId": "get_organization_removal_api_v1_platform_organizations__organization_id__removal_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "Caller is not an active platform administrator"
+          },
+          "404": {
+            "description": "Organization or location not found"
+          },
+          "409": {
+            "description": "Slug, lifecycle, primary, or version conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get where an organization's removal stands",
+        "tags": [
+          "platform-administration"
+        ]
+      }
+    },
     "/api/v1/platform/organizations/{organization_id}/remove": {
       "post": {
         "description": "Step two of retiring a client: queue the permanent deletion of its data.\n\nArchiving stays step one and keeps every record. This only records the request, audits\nit and queues the ``organization.remove`` workflow; the worker stops the client's\nschedules and runs, deletes its data, and finally marks the organization removed. It is\nidempotent: asking again returns the state of the removal already queued or finished.\nAuthorization is the router's: an active platform administrator at AAL2.",

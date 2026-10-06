@@ -389,7 +389,7 @@ import "../styles/global.css";
         activateOrganization,
         startOffboardingOrganization,
         archiveOrganization,
-        fetchOrganization,
+        fetchOrganizationRemoval,
         removeOrganization,
         fetchOrganizationLocations,
         createLocation,
@@ -411,7 +411,8 @@ import "../styles/global.css";
         REMOVAL_DELETES,
         REMOVAL_UNTOUCHED,
         canRemoveOrganization,
-        isRemovalComplete,
+        isRemovalPending,
+        removalFailedMessage,
         removalConfirmationMatches,
         removalFailureMessage,
         removalProgressMessage,
@@ -836,13 +837,32 @@ import "../styles/global.css";
         if (canRemoveOrganization(organization)) {
           // Step two of retiring a client. Retiring keeps every record; this
           // permanently deletes them, so it is only offered once archived and
-          // always behind a typed confirmation.
+          // always behind a typed confirmation. The server holds the real
+          // state, so a reload shows a removal in progress or one that failed.
+          const removal = await fetchOrganizationRemoval(organization.id);
+          const removalStatus = removal.kind === "ok" ? removal.data : null;
+          if (isRemovalPending(removalStatus?.state)) {
+            removingClientIds.add(organization.id);
+            void watchRemoval(organization);
+          } else if (removalStatus?.state === "failed") {
+            removingClientIds.delete(organization.id);
+            const failure = document.createElement("p");
+            failure.className = "alert alert--error";
+            failure.setAttribute("role", "alert");
+            failure.textContent = removalFailedMessage(
+              organization.name,
+              removalStatus.failure_code,
+            );
+            body.append(failure);
+          }
           const removeButton = document.createElement("button");
           removeButton.type = "button";
           removeButton.className = "ui-button ui-button--danger ui-button--sm";
           removeButton.textContent = removingClientIds.has(organization.id)
             ? "Removing…"
-            : "Remove client";
+            : removalStatus?.state === "failed"
+              ? "Try removal again"
+              : "Remove client";
           removeButton.disabled = removingClientIds.has(organization.id);
           removeButton.title =
             "Permanently deletes this client's data. Provider accounts and websites are not touched.";
@@ -947,7 +967,7 @@ import "../styles/global.css";
       // The server holds the real state; this only drives the "Removing…" label.
       const removingClientIds = new Set<string>();
       const REMOVAL_POLL_MS = 3000;
-      const REMOVAL_POLL_LIMIT = 100;
+      const REMOVAL_POLL_LIMIT = 400;
 
       function fillList(id: string, items: readonly string[]): void {
         const list = document.getElementById(id)!;
@@ -960,32 +980,59 @@ import "../styles/global.css";
         );
       }
 
+      const watchingRemoval = new Set<string>();
+
       async function watchRemoval(
         organization: AdminOrganization,
       ): Promise<void> {
-        for (let attempt = 0; attempt < REMOVAL_POLL_LIMIT; attempt += 1) {
-          await new Promise((resolve) => setTimeout(resolve, REMOVAL_POLL_MS));
-          const current = await fetchOrganization(organization.id);
-          if (
-            current.kind === "not-found" ||
-            (current.kind === "ok" && isRemovalComplete(current.data))
-          ) {
-            removingClientIds.delete(organization.id);
-            platformAlert(
-              "success",
-              removalProgressMessage(organization.name, "completed"),
+        if (watchingRemoval.has(organization.id)) return;
+        watchingRemoval.add(organization.id);
+        try {
+          for (let attempt = 0; attempt < REMOVAL_POLL_LIMIT; attempt += 1) {
+            await new Promise((resolve) =>
+              setTimeout(resolve, REMOVAL_POLL_MS),
             );
-            await renderClientsList();
-            if (selectedClientOrganization?.id === organization.id) {
-              document.getElementById("client-detail")!.hidden = true;
+            const status = await fetchOrganizationRemoval(organization.id);
+            if (
+              status.kind === "not-found" ||
+              (status.kind === "ok" && status.data.state === "completed")
+            ) {
+              removingClientIds.delete(organization.id);
+              platformAlert(
+                "success",
+                removalProgressMessage(organization.name, "completed"),
+              );
+              await renderClientsList();
+              if (selectedClientOrganization?.id === organization.id) {
+                document.getElementById("client-detail")!.hidden = true;
+              }
+              return;
             }
-            return;
+            if (status.kind === "ok" && status.data.state === "failed") {
+              // The worker gave up: say so now, with the cause, and offer a retry.
+              removingClientIds.delete(organization.id);
+              platformAlert(
+                "error",
+                removalFailedMessage(
+                  organization.name,
+                  status.data.failure_code,
+                ),
+              );
+              await renderClientsList();
+              if (selectedClientOrganization?.id === organization.id) {
+                watchingRemoval.delete(organization.id);
+                await renderClientDetail(organization);
+              }
+              return;
+            }
           }
+          platformAlert(
+            "error",
+            `Removal of ${organization.name} is still running. It continues in the background; reload this page to check on it.`,
+          );
+        } finally {
+          watchingRemoval.delete(organization.id);
         }
-        platformAlert(
-          "error",
-          `Removal of ${organization.name} is taking longer than expected. It continues in the background; reload this page to check on it.`,
-        );
       }
 
       function openRemoveClientDialog(organization: AdminOrganization): void {

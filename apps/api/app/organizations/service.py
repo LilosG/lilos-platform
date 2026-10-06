@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -39,6 +40,7 @@ from apps.api.app.organizations.naming import normalize_organization_name
 from apps.api.app.organizations.repository import OrganizationRepository
 
 if TYPE_CHECKING:
+    from apps.api.app.execution.models import WorkflowRun
     from apps.api.app.execution.service import ExecutionService
 
 
@@ -317,8 +319,6 @@ class OrganizationService:
         workflow run is queued; the worker does the deleting. Asking again while a removal is
         queued, running or finished returns that state instead of queueing a second one.
         """
-        from apps.api.app.execution.models import WorkflowRun
-
         organization = await session.scalar(
             select(Organization)
             .where(Organization.id == organization_id)
@@ -330,31 +330,18 @@ class OrganizationService:
         if organization.removed_at is not None:
             return organization, OrganizationRemovalState.COMPLETED, None
 
-        runs = list(
-            await session.scalars(
-                select(WorkflowRun)
-                .where(
-                    WorkflowRun.organization_id == organization_id,
-                    WorkflowRun.idempotency_key.startswith(
-                        f"{REMOVAL_WORKFLOW_KEY}:{organization_id}:"
-                    ),
-                )
-                .order_by(WorkflowRun.created_at.desc(), WorkflowRun.id.desc())
-            )
-        )
+        runs = await self._removal_runs(session, organization_id)
         if runs and runs[0].status in _REMOVAL_PENDING | _REMOVAL_RUNNING:
-            state = (
-                OrganizationRemovalState.REQUESTED
-                if runs[0].status in _REMOVAL_PENDING
-                else OrganizationRemovalState.IN_PROGRESS
-            )
-            return organization, state, runs[0].id
+            return organization, _removal_state(runs[0]), runs[0].id
 
         if organization.status is not OrganizationStatus.ARCHIVED:
             raise OrganizationRemovalRequiresArchivedError
         if organization.name.strip().casefold() != command.confirm_name.strip().casefold():
             raise OrganizationRemovalConfirmationMismatchError
 
+        # From here the database's delete guard lets the worker delete governed history.
+        if await self.repository.mark_removal_requested(session, organization.id) is None:
+            raise OrganizationRemovalRequiresArchivedError
         event = await self.audit_service.record(
             session,
             AuditEventCreate(
@@ -375,7 +362,7 @@ class OrganizationService:
             session,
             organization.id,
             REMOVAL_WORKFLOW_KEY,
-            f"{REMOVAL_WORKFLOW_KEY}:{organization.id}:{len(runs) + 1}",
+            f"{REMOVAL_WORKFLOW_KEY}:{organization.id}:{uuid4().hex}",
             input_document={"request_audit_event_id": str(event.id)},
             correlation_id=correlation_id,
             actor_id=actor_id,
@@ -388,3 +375,54 @@ class OrganizationService:
             timeout_seconds=REMOVAL_TIMEOUT_SECONDS,
         )
         return organization, OrganizationRemovalState.REQUESTED, run.id
+
+    async def _removal_runs(
+        self, session: AsyncSession, organization_id: UUID
+    ) -> Sequence[WorkflowRun]:
+        """This organization's removal runs, newest first."""
+        from apps.api.app.execution.models import WorkflowRun
+
+        return tuple(
+            await session.scalars(
+                select(WorkflowRun)
+                .where(
+                    WorkflowRun.organization_id == organization_id,
+                    WorkflowRun.idempotency_key.startswith(
+                        f"{REMOVAL_WORKFLOW_KEY}:{organization_id}:"
+                    ),
+                )
+                .order_by(WorkflowRun.created_at.desc(), WorkflowRun.id.desc())
+            )
+        )
+
+    async def removal_status(
+        self, session: AsyncSession, organization_id: UUID
+    ) -> tuple[OrganizationRemovalState | None, str | None, UUID | None]:
+        """Where this organization's removal stands: (state, typed failure code, run id).
+
+        ``state`` is None when no removal was ever requested. A failed state carries the
+        worker's typed failure code so the UI can say what went wrong.
+        """
+        organization = await self.get(session, organization_id)
+        if organization.removed_at is not None:
+            return OrganizationRemovalState.COMPLETED, None, None
+        runs = await self._removal_runs(session, organization_id)
+        if not runs:
+            return None, None, None
+        return _removal_state(runs[0]), _removal_failure(runs[0]), runs[0].id
+
+
+def _removal_state(run: WorkflowRun) -> OrganizationRemovalState:
+    if run.status in _REMOVAL_PENDING:
+        return OrganizationRemovalState.REQUESTED
+    if run.status in _REMOVAL_RUNNING:
+        return OrganizationRemovalState.IN_PROGRESS
+    if run.status == "completed":
+        return OrganizationRemovalState.IN_PROGRESS  # finishing; removed_at lands with it
+    return OrganizationRemovalState.FAILED
+
+
+def _removal_failure(run: WorkflowRun) -> str | None:
+    if _removal_state(run) is not OrganizationRemovalState.FAILED:
+        return None
+    return run.failure_code or "ORGANIZATION_REMOVAL_FAILED"

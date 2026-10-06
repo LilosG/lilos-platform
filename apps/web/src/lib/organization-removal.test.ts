@@ -8,6 +8,8 @@ import {
   REMOVAL_UNTOUCHED,
   canRemoveOrganization,
   isRemovalComplete,
+  isRemovalPending,
+  removalFailedMessage,
   removalConfirmationMatches,
   removalFailureMessage,
   removalProgressMessage,
@@ -112,5 +114,34 @@ describe("removal wording", () => {
     );
     expect(isRemovalComplete({ removed_at: null })).toBe(false);
     expect(isRemovalComplete({})).toBe(false);
+  });
+});
+
+describe("failed removals", () => {
+  it("tells pending states from finished ones", () => {
+    expect(isRemovalPending("requested")).toBe(true);
+    expect(isRemovalPending("in_progress")).toBe(true);
+    expect(isRemovalPending("failed")).toBe(false);
+    expect(isRemovalPending("completed")).toBe(false);
+    expect(isRemovalPending(null)).toBe(false);
+  });
+
+  it("explains a failure from the typed code and invites a retry", () => {
+    const storage = removalFailedMessage(
+      "Acme",
+      "ORGANIZATION_REMOVAL_STORAGE_UNAVAILABLE",
+    );
+    const blocked = removalFailedMessage(
+      "Acme",
+      "ORGANIZATION_REMOVAL_BLOCKED",
+    );
+    const unknown = removalFailedMessage("Acme", "SOMETHING_NEW");
+    expect(storage).toMatch(/storage/i);
+    expect(blocked).toMatch(/could not be deleted/i);
+    for (const message of [storage, blocked, unknown]) {
+      expect(message).toMatch(/try again/i);
+      expect(message).not.toMatch(/ORGANIZATION_REMOVAL|SOMETHING_NEW/);
+    }
+    expect(removalFailedMessage("Acme", null)).toMatch(/did not finish/i);
   });
 });

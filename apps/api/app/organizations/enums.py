@@ -43,6 +43,7 @@ class OrganizationRemovalState(StrEnum):
     REQUESTED = "requested"
     IN_PROGRESS = "in_progress"
     COMPLETED = "completed"
+    FAILED = "failed"
 
 
 class OrganizationRemovalErrorCode(StrEnum):

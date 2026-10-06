@@ -11,6 +11,7 @@ from sqlalchemy import Column, ForeignKey, Integer, MetaData, Table, func, selec
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from apps.api.app.administration.models import Product, ProductEntitlement
 from apps.api.app.audit.models import AuditEvent
 from apps.api.app.execution.contracts import ScheduleCreate
 from apps.api.app.execution.models import Job, Schedule, WorkflowRun
@@ -215,6 +216,27 @@ async def populate(
         )
         location_ids.append(location.id)
     await session.flush()
+    # Governed history: product_entitlements refuses every DELETE except a removal's.
+    product = Product(
+        key=f"product_{uuid4().hex[:8]}",
+        name="Product",
+        description="A product",
+        owning_module="tests",
+        current_product_version="1.0.0",
+        runtime_control_namespace=f"tests_{uuid4().hex[:8]}",
+    )
+    session.add(product)
+    await session.flush()
+    session.add(
+        ProductEntitlement(
+            organization_id=organization.id,
+            product_id=product.id,
+            status="active",
+            source="test",
+            reason="test",
+        )
+    )
+    await session.flush()
     execution = ExecutionService()
     # Only location 0 is named by an audit event, so location 1 can be deleted outright.
     await execution.create_schedule(
@@ -384,6 +406,7 @@ async def test_removal_deletes_the_client_and_leaves_every_other_client_untouche
             for table, count in part.items()
         }
         assert reported["gbp_locations"] == 2
+        assert reported["product_entitlements"] == 1
         assert reported["integration_connections"] == 1
         assert reported["provider_resource_mappings"] == 2
         assert reported["workflow_schedules"] == 2
@@ -751,19 +774,18 @@ async def test_a_self_referencing_table_is_emptied_leaf_first_in_batches(
 
 @pytest.mark.integration
 @pytest.mark.anyio
-async def test_protected_history_stops_the_removal_before_anything_is_deleted(
+async def test_a_trigger_that_still_refuses_a_delete_fails_the_removal_with_a_typed_code(
     workflows_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    """Governed tables reject DELETE by trigger; discovering that mid-purge would half-delete."""
+    """The database guard allows governed deletes; anything else that refuses is reported."""
     factory = workflows_session_factory
     organization_id, _ = await archived_client(factory)
     run_id, document = await request_removal(factory, organization_id, "Remove Me")
-    before = await counts(factory, organization_id)
     async with factory.begin() as session:
         await session.execute(
             text(
                 "CREATE FUNCTION removal_test_refuse() RETURNS trigger LANGUAGE plpgsql AS "
-                "$$ BEGIN RAISE EXCEPTION 'governed'; END $$"
+                "$$ BEGIN RAISE EXCEPTION 'unexpected' USING ERRCODE = '23514'; END $$"
             )
         )
         await session.execute(
@@ -783,7 +805,6 @@ async def test_protected_history_stops_the_removal_before_anything_is_deleted(
 
     assert outcome.result == "permanent_failure"
     assert outcome.safe_error == RemovalCode.PROTECTED_HISTORY
-    assert await counts(factory, organization_id) == before, "nothing may be deleted or stopped"
     async with factory() as session:
         organization = await session.get(Organization, organization_id)
         assert organization is not None and organization.removed_at is None
