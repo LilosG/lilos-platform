@@ -43,6 +43,7 @@ from apps.api.app.routes.command_center_reads import (
     SectionTimer,
     load_facts,
     opportunity_rows,
+    priority_band,
 )
 from apps.api.app.routes.seo import Session, no_store
 
@@ -131,6 +132,8 @@ class OpportunityItem(DTO):
     classification: Literal["Issue", "Growth Opportunity"]
     status: str
     priority: float | None
+    # The same band the Opportunities screen shows, so a list never prints the raw score.
+    priority_band: PriorityBand | None = None
     query: str | None
     page: str | None
     impressions: float | None
@@ -500,6 +503,7 @@ def assemble(org: Organization, facts: Facts, allowed: dict[str, set[UUID]]) -> 
                 else "Issue",
                 status=item.status,
                 priority=item.priority,
+                priority_band=priority_band(item.priority),
                 query=str(item.evidence["query"]) if item.evidence.get("query") else None,
                 page=str(item.evidence["page"]) if item.evidence.get("page") else None,
                 impressions=impressions_of(item.evidence),

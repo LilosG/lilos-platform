@@ -2837,7 +2837,11 @@ export interface paths {
         /** List Media */
         get: operations["list_media_api_v1_organizations__organization_id__locations__location_id__gbp_operations_locations__gbp_location_id__media_get"];
         put?: never;
-        /** Propose Media */
+        /**
+         * Propose Media
+         * @description Upload a photo (multipart). It is checked against Google's limits, held in private
+         *     storage, and queued for approval; nothing reaches Google until it is approved and published.
+         */
         post: operations["propose_media_api_v1_organizations__organization_id__locations__location_id__gbp_operations_locations__gbp_location_id__media_post"];
         delete?: never;
         options?: never;
@@ -5495,6 +5499,20 @@ export interface components {
             /** Step Key */
             step_key: string | null;
         };
+        /** Body_propose_media_api_v1_organizations__organization_id__locations__location_id__gbp_operations_locations__gbp_location_id__media_post */
+        Body_propose_media_api_v1_organizations__organization_id__locations__location_id__gbp_operations_locations__gbp_location_id__media_post: {
+            /** File */
+            file: string;
+            /** Idempotency Key */
+            idempotency_key: string;
+            /**
+             * Media Type
+             * @enum {string}
+             */
+            media_type: "photo" | "logo" | "cover";
+            /** Rights Authority */
+            rights_authority: string;
+        };
         /** BriefCreate */
         BriefCreate: {
             /** Approved Fact Revision Ids */
@@ -6587,6 +6605,12 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /**
+         * IndexStatus
+         * @description What the latest site crawl says about a landing page. Not Google's index.
+         * @enum {string}
+         */
+        IndexStatus: "indexable" | "not_indexable" | "not_crawled";
         /** IndustryIdentity */
         IndustryIdentity: {
             /**
@@ -6607,6 +6631,35 @@ export interface components {
          * @enum {string}
          */
         IndustryStatus: "active" | "deprecated" | "archived";
+        /**
+         * InsightCode
+         * @enum {string}
+         */
+        InsightCode: "QUERY_GAINING_CLICKS" | "QUERY_LOSING_CLICKS" | "PAGE_GAINING_CLICKS" | "PAGE_LOSING_CLICKS" | "SEARCH_CLICKS_UP" | "SEARCH_CLICKS_DOWN" | "IMPRESSIONS_OUTRUNNING_CLICKS" | "PROFILE_ACTIONS_UP" | "PROFILE_ACTIONS_DOWN" | "QUERIES_NEAR_PAGE_ONE";
+        /**
+         * InsightLink
+         * @description The console screen that shows the evidence for an insight.
+         * @enum {string}
+         */
+        InsightLink: "search_console" | "pages" | "google_business_profile";
+        /**
+         * InsightView
+         * @description A deterministic finding as a code and numbers; the console words it.
+         */
+        InsightView: {
+            code: components["schemas"]["InsightCode"];
+            /** Count */
+            count: number | null;
+            /** Current */
+            current: number | null;
+            link: components["schemas"]["InsightLink"];
+            /** Percent Change */
+            percent_change: number | null;
+            /** Previous */
+            previous: number | null;
+            /** Subject */
+            subject: string | null;
+        };
         /**
          * InsightsSummary
          * @description The former Insights summary, folded into the client overview.
@@ -7921,20 +7974,6 @@ export interface components {
             /** Approve */
             approve: boolean;
         };
-        /** MediaPropose */
-        MediaPropose: {
-            /** Idempotency Key */
-            idempotency_key: string;
-            /**
-             * Media Type
-             * @enum {string}
-             */
-            media_type: "photo" | "video" | "logo" | "cover";
-            /** Rights Authority */
-            rights_authority: string;
-            /** Source Reference */
-            source_reference: string;
-        };
         /** MediaPublishRequest */
         MediaPublishRequest: {
             /** Idempotency Key */
@@ -8329,6 +8368,8 @@ export interface components {
             page: string | null;
             /** Priority */
             priority: number | null;
+            /** Priority Band */
+            priority_band?: ("high" | "medium" | "low") | null;
             /** Query */
             query: string | null;
             /** Status */
@@ -10002,8 +10043,12 @@ export interface components {
             ctr: number | null;
             /** Impressions */
             impressions: number | null;
+            /** @default not_crawled */
+            index_status: components["schemas"]["IndexStatus"];
             /** Page */
             page: string;
+            /** Page Id */
+            page_id?: string | null;
             /** Position */
             position: number | null;
         };
@@ -10125,6 +10170,11 @@ export interface components {
             crawls: components["schemas"]["CrawlView"][];
             /** Google Status */
             google_status: string | null;
+            /**
+             * Insights
+             * @default []
+             */
+            insights: components["schemas"]["InsightView"][];
             /** Next Offset */
             next_offset: number | null;
             /**
@@ -10139,6 +10189,7 @@ export interface components {
             search_console: components["schemas"]["SearchPerformance"] | null;
             /** Syncs */
             syncs: components["schemas"]["SyncState"][];
+            technical_health?: components["schemas"]["TechnicalHealth"] | null;
             /**
              * Unsupported
              * @default [
@@ -10241,8 +10292,13 @@ export interface components {
         };
         /** SpecialHoursPropose */
         SpecialHoursPropose: {
+            /**
+             * Closed
+             * @default false
+             */
+            closed: boolean;
             /** Periods */
-            periods: components["schemas"]["SpecialHoursPeriod"][];
+            periods?: components["schemas"]["SpecialHoursPeriod"][];
             /**
              * Service Date
              * Format: date
@@ -10354,12 +10410,42 @@ export interface components {
              */
             target_type: "github_astro";
         };
+        /**
+         * TechnicalHealth
+         * @description Indexing and technical health from the latest site crawl.
+         *
+         *     Google's own indexed-page count is not collected, so ``google_indexed_pages`` is always
+         *     not_tracked. The crawl's indexability is a different fact and is reported as such.
+         */
+        TechnicalHealth: {
+            excluded_pages: components["schemas"]["TrackedCount"];
+            google_indexed_pages: components["schemas"]["TrackedCount"];
+            indexable_pages: components["schemas"]["TrackedCount"];
+            /** Last Crawled At */
+            last_crawled_at: string | null;
+            pages_crawled: components["schemas"]["TrackedCount"];
+            pages_with_issues: components["schemas"]["TrackedCount"];
+            structured_data_pages: components["schemas"]["TrackedCount"];
+        };
         /** ToolInvocation */
         ToolInvocation: {
             /** Arguments */
             arguments?: {
                 [key: string]: unknown;
             };
+        };
+        /**
+         * TrackedCount
+         * @description A count the platform collects, or the typed fact that it does not. Never a zero stand-in.
+         */
+        TrackedCount: {
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "tracked" | "not_tracked";
+            /** Value */
+            value?: number | null;
         };
         /** UnmappedProfile */
         UnmappedProfile: {
@@ -16951,7 +17037,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["MediaPropose"];
+                "multipart/form-data": components["schemas"]["Body_propose_media_api_v1_organizations__organization_id__locations__location_id__gbp_operations_locations__gbp_location_id__media_post"];
             };
         };
         responses: {

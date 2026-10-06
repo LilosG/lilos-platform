@@ -677,6 +677,45 @@
         "title": "BlockerResolution",
         "type": "object"
       },
+      "Body_propose_media_api_v1_organizations__organization_id__locations__location_id__gbp_operations_locations__gbp_location_id__media_post": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          },
+          "idempotency_key": {
+            "maxLength": 128,
+            "minLength": 8,
+            "title": "Idempotency Key",
+            "type": "string"
+          },
+          "media_type": {
+            "enum": [
+              "photo",
+              "logo",
+              "cover"
+            ],
+            "title": "Media Type",
+            "type": "string"
+          },
+          "rights_authority": {
+            "maxLength": 500,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Rights Authority",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file",
+          "media_type",
+          "rights_authority",
+          "idempotency_key"
+        ],
+        "title": "Body_propose_media_api_v1_organizations__organization_id__locations__location_id__gbp_operations_locations__gbp_location_id__media_post",
+        "type": "object"
+      },
       "BriefCreate": {
         "additionalProperties": false,
         "properties": {
@@ -3791,6 +3830,16 @@
         "title": "ImplementationTaskVerify",
         "type": "object"
       },
+      "IndexStatus": {
+        "description": "What the latest site crawl says about a landing page. Not Google's index.",
+        "enum": [
+          "indexable",
+          "not_indexable",
+          "not_crawled"
+        ],
+        "title": "IndexStatus",
+        "type": "string"
+      },
       "IndustryIdentity": {
         "additionalProperties": false,
         "properties": {
@@ -3833,6 +3882,109 @@
         ],
         "title": "IndustryStatus",
         "type": "string"
+      },
+      "InsightCode": {
+        "enum": [
+          "QUERY_GAINING_CLICKS",
+          "QUERY_LOSING_CLICKS",
+          "PAGE_GAINING_CLICKS",
+          "PAGE_LOSING_CLICKS",
+          "SEARCH_CLICKS_UP",
+          "SEARCH_CLICKS_DOWN",
+          "IMPRESSIONS_OUTRUNNING_CLICKS",
+          "PROFILE_ACTIONS_UP",
+          "PROFILE_ACTIONS_DOWN",
+          "QUERIES_NEAR_PAGE_ONE"
+        ],
+        "title": "InsightCode",
+        "type": "string"
+      },
+      "InsightLink": {
+        "description": "The console screen that shows the evidence for an insight.",
+        "enum": [
+          "search_console",
+          "pages",
+          "google_business_profile"
+        ],
+        "title": "InsightLink",
+        "type": "string"
+      },
+      "InsightView": {
+        "description": "A deterministic finding as a code and numbers; the console words it.",
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/InsightCode"
+          },
+          "count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Count"
+          },
+          "current": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current"
+          },
+          "link": {
+            "$ref": "#/components/schemas/InsightLink"
+          },
+          "percent_change": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Percent Change"
+          },
+          "previous": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous"
+          },
+          "subject": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subject"
+          }
+        },
+        "required": [
+          "code",
+          "link",
+          "subject",
+          "current",
+          "previous",
+          "percent_change",
+          "count"
+        ],
+        "title": "InsightView",
+        "type": "object"
       },
       "InsightsSummary": {
         "additionalProperties": false,
@@ -8109,47 +8261,6 @@
         "title": "MediaDecision",
         "type": "object"
       },
-      "MediaPropose": {
-        "additionalProperties": false,
-        "properties": {
-          "idempotency_key": {
-            "maxLength": 128,
-            "minLength": 8,
-            "title": "Idempotency Key",
-            "type": "string"
-          },
-          "media_type": {
-            "enum": [
-              "photo",
-              "video",
-              "logo",
-              "cover"
-            ],
-            "title": "Media Type",
-            "type": "string"
-          },
-          "rights_authority": {
-            "maxLength": 500,
-            "minLength": 1,
-            "title": "Rights Authority",
-            "type": "string"
-          },
-          "source_reference": {
-            "maxLength": 1000,
-            "minLength": 1,
-            "title": "Source Reference",
-            "type": "string"
-          }
-        },
-        "required": [
-          "media_type",
-          "source_reference",
-          "rights_authority",
-          "idempotency_key"
-        ],
-        "title": "MediaPropose",
-        "type": "object"
-      },
       "MediaPublishRequest": {
         "additionalProperties": false,
         "properties": {
@@ -9287,6 +9398,22 @@
               }
             ],
             "title": "Priority"
+          },
+          "priority_band": {
+            "anyOf": [
+              {
+                "enum": [
+                  "high",
+                  "medium",
+                  "low"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority Band"
           },
           "query": {
             "anyOf": [
@@ -14460,9 +14587,25 @@
             ],
             "title": "Impressions"
           },
+          "index_status": {
+            "$ref": "#/components/schemas/IndexStatus",
+            "default": "not_crawled"
+          },
           "page": {
             "title": "Page",
             "type": "string"
+          },
+          "page_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page Id"
           },
           "position": {
             "anyOf": [
@@ -14821,6 +14964,14 @@
             ],
             "title": "Google Status"
           },
+          "insights": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/InsightView"
+            },
+            "title": "Insights",
+            "type": "array"
+          },
           "next_offset": {
             "anyOf": [
               {
@@ -14867,6 +15018,16 @@
             },
             "title": "Syncs",
             "type": "array"
+          },
+          "technical_health": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TechnicalHealth"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "unsupported": {
             "default": [
@@ -15144,12 +15305,16 @@
       "SpecialHoursPropose": {
         "additionalProperties": false,
         "properties": {
+          "closed": {
+            "default": false,
+            "title": "Closed",
+            "type": "boolean"
+          },
           "periods": {
             "items": {
               "$ref": "#/components/schemas/SpecialHoursPeriod"
             },
             "maxItems": 10,
-            "minItems": 1,
             "title": "Periods",
             "type": "array"
           },
@@ -15167,7 +15332,6 @@
         },
         "required": [
           "service_date",
-          "periods",
           "source"
         ],
         "title": "SpecialHoursPropose",
@@ -15443,6 +15607,52 @@
         "title": "TargetCreate",
         "type": "object"
       },
+      "TechnicalHealth": {
+        "description": "Indexing and technical health from the latest site crawl.\n\nGoogle's own indexed-page count is not collected, so ``google_indexed_pages`` is always\nnot_tracked. The crawl's indexability is a different fact and is reported as such.",
+        "properties": {
+          "excluded_pages": {
+            "$ref": "#/components/schemas/TrackedCount"
+          },
+          "google_indexed_pages": {
+            "$ref": "#/components/schemas/TrackedCount"
+          },
+          "indexable_pages": {
+            "$ref": "#/components/schemas/TrackedCount"
+          },
+          "last_crawled_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Crawled At"
+          },
+          "pages_crawled": {
+            "$ref": "#/components/schemas/TrackedCount"
+          },
+          "pages_with_issues": {
+            "$ref": "#/components/schemas/TrackedCount"
+          },
+          "structured_data_pages": {
+            "$ref": "#/components/schemas/TrackedCount"
+          }
+        },
+        "required": [
+          "pages_crawled",
+          "indexable_pages",
+          "excluded_pages",
+          "pages_with_issues",
+          "structured_data_pages",
+          "google_indexed_pages",
+          "last_crawled_at"
+        ],
+        "title": "TechnicalHealth",
+        "type": "object"
+      },
       "ToolInvocation": {
         "additionalProperties": false,
         "properties": {
@@ -15453,6 +15663,35 @@
           }
         },
         "title": "ToolInvocation",
+        "type": "object"
+      },
+      "TrackedCount": {
+        "description": "A count the platform collects, or the typed fact that it does not. Never a zero stand-in.",
+        "properties": {
+          "state": {
+            "enum": [
+              "tracked",
+              "not_tracked"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "state"
+        ],
+        "title": "TrackedCount",
         "type": "object"
       },
       "UnmappedProfile": {
@@ -27078,6 +27317,7 @@
         ]
       },
       "post": {
+        "description": "Upload a photo (multipart). It is checked against Google's limits, held in private\nstorage, and queued for approval; nothing reaches Google until it is approved and published.",
         "operationId": "propose_media_api_v1_organizations__organization_id__locations__location_id__gbp_operations_locations__gbp_location_id__media_post",
         "parameters": [
           {
@@ -27113,9 +27353,9 @@
         ],
         "requestBody": {
           "content": {
-            "application/json": {
+            "multipart/form-data": {
               "schema": {
-                "$ref": "#/components/schemas/MediaPropose"
+                "$ref": "#/components/schemas/Body_propose_media_api_v1_organizations__organization_id__locations__location_id__gbp_operations_locations__gbp_location_id__media_post"
               }
             }
           },
