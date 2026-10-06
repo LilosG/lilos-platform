@@ -733,3 +733,66 @@ def test_provider_observed_response_needs_no_local_approval(
     assert response["workflow_status"] is None
     assert response["can_approve"] is False
     assert response["can_publish"] is False
+
+
+def test_command_center_reviews_expose_reviewer_identity_and_status_filter(
+    postgresql_test_url: str,
+    reviews_client: tuple[TestClient, dict[str, UUID]],
+) -> None:
+    from apps.api.app.products.reviews.service import ReviewerObservation
+
+    client, ids = reviews_client
+    org, location = ids["organization"], ids["location"]
+
+    async def seed(session: AsyncSession) -> UUID:
+        async with session.begin():
+            first = None
+            for key, reviewer in (
+                (
+                    "rid-named",
+                    ReviewerObservation("named", "Jane Synthetic", "https://example.invalid/j.jpg"),
+                ),
+                ("rid-anon", ReviewerObservation("anonymous")),
+                ("rid-unknown", None),
+            ):
+                review, _, _ = await ReviewService().ingest(
+                    session,
+                    organization_id=org,
+                    location_id=location,
+                    integration_resource_id=ids["integration_resource"],
+                    external_review_id=key,
+                    provider="google_business_profile",
+                    rating=4,
+                    title=None,
+                    body="Synthetic visit",
+                    created_at=datetime.now(UTC),
+                    updated_at=None,
+                    correlation_id=key,
+                    reviewer=reviewer,
+                )
+                first = first or review.id
+            assert first is not None
+            return first
+
+    review_id = run_db(postgresql_test_url, seed)
+    path = f"/api/v1/organizations/{org}/command-center/reviews"
+    body = client.get(path, headers=HEADERS, params={"location_id": str(location)}).json()
+    by_id = {item["external_review_id"]: item for item in body["items"]}
+    assert by_id["rid-named"]["reviewer_identity"] == "named"
+    assert by_id["rid-named"]["reviewer_display_name"] == "Jane Synthetic"
+    assert by_id["rid-named"]["reviewer_photo_url"] == "https://example.invalid/j.jpg"
+    assert by_id["rid-anon"]["reviewer_identity"] == "anonymous"
+    assert by_id["rid-anon"]["reviewer_display_name"] is None
+    assert by_id["rid-unknown"]["reviewer_identity"] == "unknown"
+    assert body["awaiting_response_count"] == 3
+    published = client.get(
+        path, headers=HEADERS, params={"location_id": str(location), "status": "published"}
+    ).json()
+    assert published["items"] == []
+    needs = client.get(
+        path, headers=HEADERS, params={"location_id": str(location), "status": "needs_response"}
+    ).json()
+    assert len(needs["items"]) == 3
+    assert client.get(path, headers=HEADERS, params={"status": "bogus"}).status_code == 422
+    detail = client.get(f"{path}/locations/{location}/{review_id}", headers=HEADERS).json()
+    assert detail["review"]["reviewer_identity"] == "named"

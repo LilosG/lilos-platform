@@ -474,3 +474,29 @@ def test_20260812_0001_catalog_correction_survives_immutability_trigger(
     finally:
         # ---------- sync: always restore head ----------
         alembic_upgrade(config, "head")
+
+
+@pytest.mark.integration
+def test_review_reviewer_identity_migration_round_trips(
+    postgresql_test_url: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("LILOS_MIGRATION_DATABASE_URL", postgresql_test_url)
+    config = alembic_config()
+    columns = {"reviewer_display_name", "reviewer_photo_url", "reviewer_identity"}
+
+    async def review_columns() -> set[str]:
+        engine = create_async_engine(postgresql_test_url)
+        try:
+            async with engine.connect() as connection:
+                return await connection.run_sync(
+                    lambda c: {col["name"] for col in inspect(c).get_columns("reviews")}
+                )
+        finally:
+            await engine.dispose()
+
+    command.upgrade(config, "head")
+    assert columns <= asyncio.run(review_columns())
+    command.downgrade(config, "20261005_0002")
+    assert not columns & asyncio.run(review_columns())
+    command.upgrade(config, "head")
+    assert columns <= asyncio.run(review_columns())

@@ -31,6 +31,7 @@ from apps.api.app.products.reviews.service import (
     PROVIDER_OBSERVED_TYPE,
     PROVIDER_REPLY_STATE_UNSPECIFIED,
     ProviderReplyObservation,
+    ReviewerObservation,
     ReviewService,
     lilos_publication_confirmation_lifecycle,
     provider_reply_hash,
@@ -73,6 +74,27 @@ def _provider_enum(raw: Any, *, default: str | None) -> str | None:
     if not value or len(value) > 96 or not value.replace("_", "").isalnum():
         raise ValueError("invalid Google review reply enum")
     return value
+
+
+def _normalize_reviewer(raw_review: dict[str, Any]) -> ReviewerObservation:
+    """Map Google's ``reviewer`` object to a typed identity; a missing object is ``unknown``."""
+    raw = raw_review.get("reviewer")
+    if not isinstance(raw, dict):
+        return ReviewerObservation(identity="unknown")
+    if raw.get("isAnonymous") is True:
+        return ReviewerObservation(identity="anonymous")
+    name = raw.get("displayName")
+    name = name.strip()[:255] if isinstance(name, str) else ""
+    if not name:
+        return ReviewerObservation(identity="unknown")
+    photo = raw.get("profilePhotoUrl")
+    photo = photo.strip() if isinstance(photo, str) else ""
+    # Only an https photo that fits the column is kept; anything else is simply absent.
+    return ReviewerObservation(
+        identity="named",
+        display_name=name,
+        photo_url=photo if photo.startswith("https://") and len(photo) <= 1000 else None,
+    )
 
 
 def _normalize_provider_reply(
@@ -295,6 +317,7 @@ class ReviewIngestionService:
                 updated_at=updated_at,
                 correlation_id=correlation_id,
                 provider_reply=provider_reply,
+                reviewer=_normalize_reviewer(raw),
             )
             if created:
                 ingested += 1

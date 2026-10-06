@@ -41,6 +41,9 @@ class Review(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "status IN ('new','classified','triaged','drafting','awaiting_approval','approved','publishing','responded','publication_failed','escalated','disputed','closed','archived','removed')",
             name="status",
         ),
+        CheckConstraint(
+            "reviewer_identity IN ('named','anonymous','unknown')", name="reviewer_identity"
+        ),
     )
     organization_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
@@ -54,6 +57,11 @@ class Review(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     external_review_id: Mapped[str] = mapped_column(String(500), nullable=False)
     provider: Mapped[str] = mapped_column(String(64), nullable=False)
     reviewer_reference: Mapped[str | None] = mapped_column(String(255))
+    reviewer_display_name: Mapped[str | None] = mapped_column(String(255))
+    reviewer_photo_url: Mapped[str | None] = mapped_column(String(1000))
+    reviewer_identity: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default="unknown"
+    )
     rating: Mapped[float | None] = mapped_column(Numeric(4, 2))
     language: Mapped[str | None] = mapped_column(String(16))
     status: Mapped[str] = mapped_column(String(32), nullable=False, server_default="new")

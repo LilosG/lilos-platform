@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TypedDict, cast
@@ -170,6 +171,15 @@ def validate_draft(text: str) -> None:
     normalized = text.casefold()
     if not text.strip() or any(term in normalized for term in PROHIBITED_DRAFT_TERMS):
         raise UnsafeDraftError
+
+
+@dataclass(frozen=True, slots=True)
+class ReviewerObservation:
+    """Who Google says wrote a review; ``identity`` is the typed class, never free text."""
+
+    identity: str  # named | anonymous | unknown
+    display_name: str | None = None
+    photo_url: str | None = None
 
 
 class ReviewService:
@@ -635,6 +645,7 @@ class ReviewService:
         updated_at: datetime | None,
         correlation_id: str,
         provider_reply: ProviderReplyObservation | None = None,
+        reviewer: ReviewerObservation | None = None,
     ) -> tuple[Review, ReviewRevision, bool]:
         digest = review_hash(rating, title, body)
         observed_at = datetime.now(UTC)
@@ -650,6 +661,11 @@ class ReviewService:
         )
         if review:
             review.last_synced_at = observed_at
+            if reviewer is not None:
+                # Identity is not review content: updating it never starts a revision.
+                review.reviewer_identity = reviewer.identity
+                review.reviewer_display_name = reviewer.display_name
+                review.reviewer_photo_url = reviewer.photo_url
             current = await session.scalar(
                 select(ReviewRevision).where(
                     ReviewRevision.review_id == review.id, ReviewRevision.content_hash == digest
@@ -692,6 +708,9 @@ class ReviewService:
                 integration_resource_id=integration_resource_id,
                 external_review_id=external_review_id,
                 provider=provider,
+                reviewer_identity=reviewer.identity if reviewer else "unknown",
+                reviewer_display_name=reviewer.display_name if reviewer else None,
+                reviewer_photo_url=reviewer.photo_url if reviewer else None,
                 rating=rating,
                 status="new",
                 sentiment="unknown",
@@ -1166,6 +1185,7 @@ class ReviewService:
         location_id: UUID,
         *,
         status_filter: str | None = None,
+        status_in: Sequence[str] | None = None,
         rating_min: float | None = None,
         rating_max: float | None = None,
         search: str | None = None,
@@ -1182,6 +1202,8 @@ class ReviewService:
         )
         if status_filter is not None:
             statement = statement.where(Review.status == status_filter)
+        if status_in is not None:
+            statement = statement.where(Review.status.in_(status_in))
         if rating_min is not None:
             statement = statement.where(Review.rating >= rating_min)
         if rating_max is not None:
