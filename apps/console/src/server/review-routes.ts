@@ -21,6 +21,7 @@ export const reviewRoutes = [
   route(`${org}/command-center/reviews`, "GET", undefined, [
     "location_id",
     "offset",
+    "status",
   ]),
   route(`${org}/command-center/reviews/locations/${uuid}/${uuid}`, "GET"),
   route(`${reviews}/ingest`, "POST", z.object({}).strict()),

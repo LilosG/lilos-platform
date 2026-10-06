@@ -1,0 +1,74 @@
+---
+import type { ReviewsView } from "../../adapters/reviews";
+import { reviewDate, dateText } from "../../lib/present";
+import { reviewer } from "../../lib/review-view";
+import { reviewChip, reviewStateOf } from "../../lib/status";
+import StatusBadge from "../ui/StatusBadge.astro";
+import ReviewerAvatar from "./ReviewerAvatar.astro";
+import Stars from "./Stars.astro";
+interface Props {
+  item: ReviewsView["items"][number];
+  href: string;
+  now: Date;
+}
+const { item, href, now } = Astro.props;
+const who = reviewer(item);
+const chip = reviewChip(item.status, item.response_status);
+const state = reviewStateOf(item.status, item.response_status);
+const reply = new Set([
+  "draft",
+  "awaiting_approval",
+  "approved",
+  "publishing",
+  "published",
+]).has(state);
+const replyLabel = {
+  published: "Published response",
+  publishing: "Response being published",
+  approved: "Approved response",
+  awaiting_approval: "Response awaiting approval",
+  draft: "Response draft",
+}[state as "published"];
+const quote = reply && item.response_text ? item.response_text : null;
+---
+
+<article class="reviewcard" data-review-id={item.id} data-state={state}>
+  <div class="reviewhead">
+    <ReviewerAvatar who={who} />
+    <div class="reviewwho">
+      <b>{who.name}</b>
+      <small>
+        <Stars rating={item.rating} />
+        <time datetime={item.created_at} title={dateText(item.created_at)}>
+          {reviewDate(item.created_at, now)}
+        </time>
+        · Google
+      </small>
+    </div>
+    <StatusBadge text={chip.label} tone={chip.tone} />
+  </div>
+  {
+    item.body ? (
+      <p class="reviewtext">
+        {item.title && <b>{item.title} </b>}
+        {item.body}
+      </p>
+    ) : (
+      <p class="reviewtext muted">This review has a star rating and no text.</p>
+    )
+  }
+  {
+    quote && (
+      <div class="replyblock">
+        <span class="replylabel">{replyLabel}</span>
+        <blockquote class="quote">{quote}</blockquote>
+      </div>
+    )
+  }
+  <div class="rowactions">
+    <a class="control" href={href}>
+      {state === "published" ? "View response" : "Respond"}
+      <span class="sr-only"> to {who.name}</span>
+    </a>
+  </div>
+</article>

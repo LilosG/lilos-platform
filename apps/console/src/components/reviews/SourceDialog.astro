@@ -1,0 +1,40 @@
+---
+import type { SourceView } from "../../lib/review-view";
+import StatusBadge from "../ui/StatusBadge.astro";
+interface Props {
+  source: SourceView;
+  integrations: string;
+}
+const { source, integrations } = Astro.props;
+---
+
+<dialog
+  id="review-source"
+  aria-labelledby="review-source-title"
+  data-shell-dialog
+>
+  <div class="panelhead">
+    <span class="muted">Google reviews</span>
+    <button type="button" class="close" aria-label="Close details" data-close>
+      ×
+    </button>
+  </div>
+  <div class="body">
+    <h2 id="review-source-title">Review source details</h2>
+    {
+      source.rows.map((row) => (
+        <div class="listrow">
+          <div>
+            {row.name}
+            <small>{row.detail}</small>
+          </div>
+          <StatusBadge text={row.chip.label} tone={row.chip.tone} />
+        </div>
+      ))
+    }
+  </div>
+  <div class="dialogfoot">
+    <a class="control" href={integrations}>Manage in Integrations</a>
+    <button type="button" class="control" data-close>Close</button>
+  </div>
+</dialog>

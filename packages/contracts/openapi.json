@@ -13827,6 +13827,48 @@
             ],
             "title": "Response Status"
           },
+          "response_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Response Text"
+          },
+          "reviewer_display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewer Display Name"
+          },
+          "reviewer_identity": {
+            "enum": [
+              "named",
+              "anonymous",
+              "unknown"
+            ],
+            "title": "Reviewer Identity",
+            "type": "string"
+          },
+          "reviewer_photo_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewer Photo Url"
+          },
           "reviewer_reference": {
             "anyOf": [
               {
@@ -13886,6 +13928,9 @@
           "provider",
           "external_review_id",
           "reviewer_reference",
+          "reviewer_identity",
+          "reviewer_display_name",
+          "reviewer_photo_url",
           "rating",
           "body",
           "title",
@@ -13894,7 +13939,8 @@
           "risk_level",
           "created_at",
           "last_synced_at",
-          "response_status"
+          "response_status",
+          "response_text"
         ],
         "title": "ReviewInventoryItem",
         "type": "object"
@@ -14050,6 +14096,17 @@
             ],
             "title": "Average Rating"
           },
+          "awaiting_response_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Awaiting Response Count"
+          },
           "campaigns": {
             "const": "unavailable_no_canonical_source",
             "default": "unavailable_no_canonical_source",
@@ -14143,6 +14200,7 @@
           "inventory_count",
           "average_rating",
           "open_restricted_cases",
+          "awaiting_response_count",
           "items",
           "next_offset",
           "can_ingest"
@@ -19337,6 +19395,23 @@
               "minimum": 0,
               "title": "Offset",
               "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "default": "all",
+              "enum": [
+                "all",
+                "needs_response",
+                "draft",
+                "awaiting_approval",
+                "published"
+              ],
+              "title": "Status",
+              "type": "string"
             }
           }
         ],

@@ -97,3 +97,56 @@ export const syncChip = (status: string): Chip =>
     label: "Unknown",
     tone: "neutral",
   };
+
+/** A review's state for the person reading it: what happened to the reply wins over the review. */
+export type ReviewState =
+  | "needs_response"
+  | "draft"
+  | "awaiting_approval"
+  | "approved"
+  | "publishing"
+  | "published"
+  | "needs_attention"
+  | "escalated"
+  | "closed";
+export const reviewChips: Record<ReviewState, Chip> = {
+  needs_response: { label: "Needs response", tone: "warn" },
+  draft: { label: "Draft", tone: "neutral" },
+  awaiting_approval: { label: "Awaiting approval", tone: "warn" },
+  approved: { label: "Approved", tone: "" },
+  publishing: { label: "Publishing", tone: "neutral" },
+  published: { label: "Published", tone: "" },
+  needs_attention: { label: "Needs attention", tone: "error" },
+  escalated: { label: "Escalated", tone: "error" },
+  closed: { label: "Closed", tone: "neutral" },
+};
+const responseState: Record<string, ReviewState> = {
+  draft: "draft",
+  generated: "draft",
+  awaiting_approval: "awaiting_approval",
+  approved: "approved",
+  publishing: "publishing",
+  published: "published",
+  failed: "needs_attention",
+  reconciliation_required: "needs_attention",
+};
+const reviewState: Record<string, ReviewState> = {
+  escalated: "escalated",
+  publication_failed: "needs_attention",
+  responded: "published",
+  closed: "closed",
+  archived: "closed",
+  removed: "closed",
+  disputed: "closed",
+};
+export function reviewStateOf(
+  status: string,
+  response: string | null,
+): ReviewState {
+  const reply = response ? responseState[response] : undefined;
+  if (status === "escalated") return "escalated";
+  if (reply && reply !== "needs_attention") return reply;
+  return reviewState[status] ?? reply ?? "needs_response";
+}
+export const reviewChip = (status: string, response: string | null): Chip =>
+  reviewChips[reviewStateOf(status, response)];

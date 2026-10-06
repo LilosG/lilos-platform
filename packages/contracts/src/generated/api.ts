@@ -9843,6 +9843,17 @@ export interface components {
             rating: number | null;
             /** Response Status */
             response_status: string | null;
+            /** Response Text */
+            response_text: string | null;
+            /** Reviewer Display Name */
+            reviewer_display_name: string | null;
+            /**
+             * Reviewer Identity
+             * @enum {string}
+             */
+            reviewer_identity: "named" | "anonymous" | "unknown";
+            /** Reviewer Photo Url */
+            reviewer_photo_url: string | null;
             /** Reviewer Reference */
             reviewer_reference: string | null;
             /** Revision */
@@ -9917,6 +9928,8 @@ export interface components {
         ReviewsWorkspace: {
             /** Average Rating */
             average_rating: number | null;
+            /** Awaiting Response Count */
+            awaiting_response_count: number | null;
             /**
              * Campaigns
              * @default unavailable_no_canonical_source
@@ -12388,6 +12401,7 @@ export interface operations {
             query?: {
                 location_id?: string | null;
                 offset?: number;
+                status?: "all" | "needs_response" | "draft" | "awaiting_approval" | "published";
             };
             header?: never;
             path: {

@@ -1216,3 +1216,99 @@ def test_90_approved_provider_replies_keep_collection_complete_and_fully_respond
     assert second == {"total": 90, "ingested": 0, "updated": 90}
     assert response_count == 90
     assert summary["by_status"] == {"responded": 90}
+
+
+def _with_reviewer(raw: dict[str, Any], reviewer: dict[str, Any] | None) -> dict[str, Any]:
+    if reviewer is not None:
+        raw["reviewer"] = reviewer
+    return raw
+
+
+@pytest.mark.integration
+def test_ingestion_maps_named_anonymous_and_missing_reviewers(
+    ingestion_setup: tuple[async_sessionmaker[AsyncSession], UUID, UUID],
+    postgresql_test_url: str,
+) -> None:
+    factory, organization_id, location_id = ingestion_setup
+    raw_reviews = [
+        _with_reviewer(
+            _raw_review(review_id="named"),
+            {
+                "displayName": "  Jane Synthetic ",
+                "profilePhotoUrl": "https://example.invalid/a.jpg",
+            },
+        ),
+        _with_reviewer(
+            _raw_review(review_id="anon"),
+            {"displayName": "A Google User", "isAnonymous": True},
+        ),
+        _raw_review(review_id="missing"),
+        _with_reviewer(_raw_review(review_id="blank"), {"displayName": "  "}),
+        _with_reviewer(
+            _raw_review(review_id="unsafe-photo"),
+            {"displayName": "Sam", "profilePhotoUrl": "javascript:alert(1)"},
+        ),
+    ]
+
+    async def scenario() -> dict[str, tuple[str, str | None, str | None]]:
+        await _sync(
+            factory, _settings(postgresql_test_url), organization_id, location_id, raw_reviews, "r"
+        )
+        async with factory() as session:
+            rows = await session.scalars(
+                select(Review).where(Review.organization_id == organization_id)
+            )
+            return {
+                r.external_review_id: (
+                    r.reviewer_identity,
+                    r.reviewer_display_name,
+                    r.reviewer_photo_url,
+                )
+                for r in rows
+            }
+
+    assert asyncio.run(scenario()) == {
+        "named": ("named", "Jane Synthetic", "https://example.invalid/a.jpg"),
+        "anon": ("anonymous", None, None),
+        "missing": ("unknown", None, None),
+        "blank": ("unknown", None, None),
+        "unsafe-photo": ("named", "Sam", None),
+    }
+
+
+@pytest.mark.integration
+def test_reingest_backfills_reviewer_without_new_revision(
+    ingestion_setup: tuple[async_sessionmaker[AsyncSession], UUID, UUID],
+    postgresql_test_url: str,
+) -> None:
+    factory, organization_id, location_id = ingestion_setup
+    settings = _settings(postgresql_test_url)
+
+    async def scenario() -> tuple[int, str, str | None, int]:
+        # Imported before reviewer identity was captured: no reviewer object.
+        await _sync(factory, settings, organization_id, location_id, [_raw_review()], "first")
+        named = _with_reviewer(_raw_review(), {"displayName": "Jane Synthetic"})
+        summary = await _sync(factory, settings, organization_id, location_id, [named], "second")
+        async with factory() as session:
+            review = (
+                await session.scalars(
+                    select(Review).where(Review.organization_id == organization_id)
+                )
+            ).one()
+            revisions = int(
+                await session.scalar(
+                    select(func.count(ReviewRevision.id)).where(
+                        ReviewRevision.review_id == review.id
+                    )
+                )
+                or 0
+            )
+            return (
+                revisions,
+                review.reviewer_identity,
+                review.reviewer_display_name,
+                int(summary["updated"]),  # type: ignore[call-overload]
+            )
+
+    revisions, identity, name, updated = asyncio.run(scenario())
+    assert (revisions, identity, name, updated) == (1, "named", "Jane Synthetic", 1)

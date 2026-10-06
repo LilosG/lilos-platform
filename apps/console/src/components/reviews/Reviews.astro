@@ -1,126 +1,215 @@
 ---
-import type { ReviewsView } from "../../adapters/reviews";
-import { metric } from "../../adapters/reviews";
+import type { ReviewsView, ReviewFilter } from "../../adapters/reviews";
+import { REVIEW_FILTERS } from "../../adapters/reviews";
+import { reviewMetrics, sourceView } from "../../lib/review-view";
+import EmptyState from "../ui/EmptyState.astro";
+import MetricStrip from "../ui/MetricStrip.astro";
+import PageHeader from "../ui/PageHeader.astro";
+import SectionHeading from "../ui/SectionHeading.astro";
+import StatusBadge from "../ui/StatusBadge.astro";
+import ReviewCard from "./ReviewCard.astro";
+import SourceDialog from "./SourceDialog.astro";
 interface Props {
   view: ReviewsView;
   slug: string;
+  clientName: string;
+  filter: ReviewFilter;
+  /** The inbox, or one of the two tabs that have no source yet. */
+  tab: "" | "requests" | "opportunities";
   offset: number;
+  now: Date;
 }
-const { view: v, slug, offset } = Astro.props;
+const { view: v, slug, clientName, filter, tab, offset, now } = Astro.props;
 const base = `/clients/${slug}/reviews/`;
+const query = (extra: Record<string, string | null> = {}) => {
+  const params = new URLSearchParams();
+  const merged: Record<string, string | null> = {
+    location_id: v.location_id,
+    status: filter === "all" ? null : filter,
+    ...extra,
+  };
+  for (const [key, value] of Object.entries(merged))
+    if (value) params.set(key, value);
+  const text = params.toString();
+  return text ? `?${text}` : "";
+};
+const source = sourceView(v.source);
+const integrations = `/clients/${slug}/integrations/`;
+const detailHref = (id: string, location: string) =>
+  `${base}locations/${location}/${id}/${query({ status: null })}`;
+const tabs = [
+  ...REVIEW_FILTERS.map(([key, label]) => ({
+    label,
+    href: base + query({ status: key === "all" ? null : key }),
+    current: tab === "" && filter === key,
+  })),
+  {
+    label: "Review requests",
+    href: `${base}requests/${query({ status: null })}`,
+    current: tab === "requests",
+  },
+  {
+    label: "Opportunities",
+    href: `${base}opportunities/${query({ status: null })}`,
+    current: tab === "opportunities",
+  },
+];
+const filterLabel = REVIEW_FILTERS.find(([key]) => key === filter)![1];
 ---
 
-<div class="metrics">
-  <div class="metric">
-    <div class="metricLabel">Persisted reviews</div><strong
-      >{metric(v.inventory_count)}</strong
-    ><small>All stored reviews</small>
-  </div>
-  <div class="metric">
-    <div class="metricLabel">Average rating</div><strong
-      >{metric(v.average_rating)}</strong
-    ><small>All stored ratings</small>
-  </div>
-  <div class="metric">
-    <div class="metricLabel">Restricted cases</div><strong
-      >{metric(v.open_restricted_cases)}</strong
-    ><small>Open canonical cases</small>
-  </div>
-</div>
-<section class="panel">
-  <h2>Source health</h2>
-  <form method="get">
-    <label
-      >Location<select name="location_id"
-        >{
-          v.locations.map((l) => (
-            <option value={l.id} selected={l.id === v.location_id}>
-              {l.name}
+<PageHeader title="Reviews" subtitle={clientName} client>
+  <Fragment slot="actions">
+    {
+      v.locations.length > 1 && (
+        <select aria-label="Location" data-query-select="location_id">
+          {v.locations.map((place) => (
+            <option value={place.id} selected={place.id === v.location_id}>
+              {place.name}
             </option>
-          ))
-        }</select
-      ></label
-    ><button type="submit">View location</button>
-  </form>
-  <p>
-    Google authorization: {v.source?.connection_status ?? "Unavailable"} · Mapping:
-    {v.source?.mapping_status ?? "Unavailable"}
-  </p>
-  <p>
-    Last review import: {v.source?.last_ingested_at ?? "Unavailable"} · Freshness:
-    {v.source?.freshness ?? "unavailable"} · Quality: {
-      v.source?.quality ?? "unavailable"
+          ))}
+        </select>
+      )
     }
-  </p>
-  <p>
-    These metrics describe the persisted inventory. Provider-wide totals,
-    complete coverage, trend comparisons and response-rate metrics are
-    unavailable.
-  </p>
-  <a href={`/clients/${slug}/integrations/`}>Manage Integration</a>
-  <button
-    inert
-    data-review-action={`/api/organizations/${v.organization_id}/locations/${v.location_id}/reviews/ingest/`}
-    disabled={!v.can_ingest}
-    >Import reviews and read back provider replies</button
-  >
-</section>
-<div class="sectiontabs">
-  <a href={base} aria-current="page">All reviews</a><a href={base + "requests/"}
-    >Review requests</a
-  >
-</div>
-<section class="panel" data-review-inbox>
-  <h2>Review inbox</h2>
+    <button
+      type="button"
+      class="statuschip"
+      data-dialog="review-source"
+      aria-label={`Review source status: ${source.chip.label}. Open details`}
+    >
+      <StatusBadge text={source.chip.label} tone={source.chip.tone} />
+    </button>
+    {
+      v.can_ingest && (
+        <button
+          type="button"
+          class="control primary"
+          inert
+          data-review-action={`/api/organizations/${v.organization_id}/locations/${v.location_id}/reviews/ingest/`}
+        >
+          Import reviews
+        </button>
+      )
+    }
+  </Fragment>
+</PageHeader>
+<MetricStrip items={reviewMetrics(v)} columns={3} />
+<nav class="sectiontabs" aria-label="Review views">
   {
-    v.items.length ? (
-      v.items.map((r) => (
-        <article class="reviewrow">
-          <div class="reviewtop">
-            <>
-              <b>{r.reviewer_reference ?? "Reviewer identity unavailable"}</b>
-              <span>
-                {metric(r.rating)} stars · {r.provider}
-              </span>
-            </>
-          </div>
-          <small>
-            {r.created_at} · Last synced: {r.last_synced_at}
-          </small>
-          <p>
-            {r.title}
-            {r.body ?? "Review text unavailable"}
-          </p>
-          <p>
-            Review: {r.status} · Response:{" "}
-            {r.response_status ?? "No persisted response"} · Risk:{" "}
-            {r.risk_level} · Sentiment: {r.sentiment}
-          </p>
-          <a
-            class="control"
-            href={base + `locations/${r.location_id}/${r.id}/`}
-          >
-            View response and history
-          </a>
-        </article>
-      ))
-    ) : (
-      <p>
-        No persisted reviews in this view. Missing provider evidence is not a
-        zero review total.
-      </p>
-    )
-  }
-  {
-    v.next_offset !== null && (
-      <a href={`?location_id=${v.location_id}&offset=${v.next_offset}`}>
-        Next reviews
+    tabs.map((t) => (
+      <a
+        href={t.href}
+        class:list={{ active: t.current }}
+        aria-current={t.current ? "page" : undefined}
+      >
+        {t.label}
       </a>
-    )
+    ))
   }
-  {offset > 0 && <a href={`?location_id=${v.location_id}`}>First reviews</a>}
-</section>
-<p role="status" aria-live="polite" data-review-status></p>
+</nav>
+<p class="formstatus" role="status" aria-live="polite" data-review-status></p>
+{
+  tab === "requests" ? (
+    <section class="panel">
+      <SectionHeading>
+        <Fragment slot="title">Review requests</Fragment>
+      </SectionHeading>
+      <EmptyState title="Review requests are not tracked yet">
+        Asking customers for reviews after a visit or a job is not part of the
+        Command Center yet. Until it is, nothing here is estimated.
+        <a slot="action" class="control" href={base + query({ status: null })}>
+          Back to reviews
+        </a>
+      </EmptyState>
+    </section>
+  ) : tab === "opportunities" ? (
+    <section class="panel">
+      <SectionHeading>
+        <Fragment slot="title">Review opportunities</Fragment>
+      </SectionHeading>
+      <EmptyState title="Review opportunities are not tracked yet">
+        Spotting guests and customers worth asking for a review is not part of
+        the Command Center yet. Reviews that need a reply are in the inbox.
+        <a
+          slot="action"
+          class="control"
+          href={base + query({ status: "needs_response" })}
+        >
+          See reviews that need a reply
+        </a>
+      </EmptyState>
+    </section>
+  ) : (
+    <section class="panel" data-review-inbox>
+      <SectionHeading>
+        <Fragment slot="title">
+          Review inbox <span class="count">{filterLabel}</span>
+        </Fragment>
+      </SectionHeading>
+      {v.items.length ? (
+        v.items.map((item) => (
+          <ReviewCard
+            item={item}
+            href={detailHref(item.id, item.location_id)}
+            now={now}
+          />
+        ))
+      ) : filter !== "all" ? (
+        <EmptyState title="Nothing in this view">
+          No reviews match “{filterLabel}” right now.
+          <a
+            slot="action"
+            class="control"
+            href={base + query({ status: null })}
+          >
+            Show all reviews
+          </a>
+        </EmptyState>
+      ) : v.source?.connection_status !== "connected" ||
+        v.source.mapping_status !== "confirmed" ? (
+        <EmptyState title="Google reviews are not connected">
+          Connect Google and match this location to its Business Profile to
+          bring reviews in.
+          <a slot="action" class="control primary" href={integrations}>
+            Open Integrations
+          </a>
+        </EmptyState>
+      ) : (
+        <EmptyState title="No reviews yet">
+          Import reviews from Google to see them here and reply to them.
+          {v.can_ingest && (
+            <button
+              slot="action"
+              type="button"
+              class="control primary"
+              inert
+              data-review-action={`/api/organizations/${v.organization_id}/locations/${v.location_id}/reviews/ingest/`}
+            >
+              Import reviews
+            </button>
+          )}
+        </EmptyState>
+      )}
+      {(v.next_offset !== null || offset > 0) && (
+        <div class="rowactions pager">
+          {offset > 0 && (
+            <a class="control" href={base + query()}>
+              First reviews
+            </a>
+          )}
+          {v.next_offset !== null && (
+            <a
+              class="control"
+              href={base + query({ offset: String(v.next_offset) })}
+            >
+              Next reviews
+            </a>
+          )}
+        </div>
+      )}
+    </section>
+  )
+}
+<SourceDialog source={source} integrations={integrations} />
 <script>
   import "../../lib/review-actions";
 </script>

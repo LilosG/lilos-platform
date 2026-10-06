@@ -9,8 +9,8 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { chromium } from "@playwright/test";
 const reference = process.env.REFERENCE ?? "http://127.0.0.1:4401";
 const consoleUrl = process.env.CONSOLE ?? "http://127.0.0.1:4346";
-const step = process.argv[2] ?? "step-4c";
-const out = new URL(`../visual/${step}/`, import.meta.url);
+const stepName = process.argv[2] ?? "step-4c";
+const out = new URL(`../visual/${stepName}/`, import.meta.url);
 const sizes = { desktop: [1440, 1000], mobile: [390, 844] };
 const gbp = "/clients/synthetic-beta/local-search/google-business-profile/";
 const coco = "/clients/coco-maya/local-search/";
@@ -104,6 +104,44 @@ const screens = [
   ],
   ["client-overview", "a", "/clients/synthetic-alpha/", "/clients/coco-maya/"],
 ];
+// Step 6: the Reviews inbox, an empty source, source details, a filter and the response dialog.
+const reviewsAlpha = "/clients/synthetic-alpha/reviews/";
+const detailPath = `${reviewsAlpha}locations/77777777-7777-4777-8777-777777777777/33333333-3333-4333-8333-333333333333/`;
+const referenceReviews = "/clients/coco-maya/reviews/";
+const openSource = async (page) => {
+  await page.getByRole("button", { name: /Review source status/ }).click();
+  await page.locator("dialog[open]").waitFor();
+};
+const referenceRespond = async (page) => {
+  await page.getByRole("button", { name: "Respond" }).first().click();
+  await page.locator("dialog[open]").waitFor();
+};
+const referenceAwaiting = async (page) => {
+  await page.getByRole("button", { name: "Awaiting approval" }).first().click();
+};
+const reviewScreens = [
+  ["reviews-inbox", "a", reviewsAlpha, referenceReviews],
+  [
+    "reviews-awaiting-approval",
+    "a",
+    `${reviewsAlpha}?status=awaiting_approval`,
+    referenceReviews,
+    undefined,
+    undefined,
+    referenceAwaiting,
+  ],
+  ["reviews-empty", "b", "/clients/synthetic-beta/reviews/", referenceReviews],
+  ["reviews-source-details", "a", reviewsAlpha, referenceReviews, openSource],
+  [
+    "reviews-response",
+    "a",
+    detailPath,
+    referenceReviews,
+    undefined,
+    undefined,
+    referenceRespond,
+  ],
+];
 async function signIn(context, who) {
   const page = await context.newPage();
   await page.goto(`${consoleUrl}/login/`);
@@ -155,8 +193,13 @@ const side = async (browser, size, left, right) => {
   await page.close();
   return image;
 };
+const activeScreens = stepName === "step-6" ? reviewScreens : screens;
 await mkdir(out, { recursive: true });
-const browser = await chromium.launch();
+const browser = await chromium.launch(
+  process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE
+    ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE }
+    : {},
+);
 await fetch(`${consoleUrl.replace("4346", "4455")}/test/gbp-reset`, {
   method: "POST",
   body: "{}",
@@ -169,10 +212,18 @@ for (const [label, [width, height]] of Object.entries(sizes)) {
     await signIn(contexts[who], who);
   }
   const plain = await browser.newContext({ viewport });
-  for (const [name, who, path, refPath, step, prepare] of screens) {
+  for (const [
+    name,
+    who,
+    path,
+    refPath,
+    step,
+    prepare,
+    refStep,
+  ] of activeScreens) {
     await (prepare ?? reset)();
     const right = await shot(contexts[who], consoleUrl + path, step);
-    const left = await shot(plain, reference + refPath, undefined);
+    const left = await shot(plain, reference + refPath, refStep);
     const combined = await side(browser, [width, height], left, right);
     await writeFile(
       new URL(`${name}-${label}-reference-left-console-right.jpg`, out),

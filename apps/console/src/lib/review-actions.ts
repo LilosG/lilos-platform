@@ -12,10 +12,19 @@ export function reviewFailure(raw: unknown, status: number): string {
     ? (parsed.data.error?.code ?? parsed.data.code ?? `HTTP_${status}`)
     : `HTTP_${status}`;
 }
+const failureText: Record<string, string> = {
+  AAL2_REQUIRED: "Verify your authenticator, then try again.",
+  CSRF_INVALID: "Your session expired. Refresh the page and try again.",
+};
+/** What a person reads when an action fails; the code itself is never shown. */
+export const failureMessage = (code: string): string =>
+  failureText[code] ??
+  "That did not go through. Refresh to see the current state before trying again.";
 async function send(url: string, body: unknown) {
   const node = document.querySelector<HTMLElement>("[data-review-status]");
   if (node)
-    node.textContent = "Request in progress. Publication is not yet confirmed.";
+    node.textContent =
+      "Working on it. Nothing is confirmed until this finishes.";
   try {
     const response = await fetch(url, {
       method: "POST",
@@ -30,14 +39,14 @@ async function send(url: string, body: unknown) {
     if (!response.ok) {
       const raw: unknown = await response.json();
       if (node)
-        node.textContent = `Action unavailable (${reviewFailure(raw, response.status)}). Refresh to inspect canonical state before trying again.`;
+        node.textContent = failureMessage(reviewFailure(raw, response.status));
       return;
     }
     window.location.reload();
   } catch {
     if (node)
       node.textContent =
-        "Action unavailable or outcome uncertain. Refresh to inspect canonical state before trying again.";
+        "We could not confirm the result. Refresh to see the current state before trying again.";
   }
 }
 function initialize() {
@@ -66,7 +75,8 @@ function initialize() {
             "[data-review-status]",
           );
           if (node)
-            node.textContent = "Select at least one approved business fact.";
+            node.textContent =
+              "Choose at least one business fact the response may use.";
           return;
         }
         const ai =
@@ -77,7 +87,7 @@ function initialize() {
           const node = document.querySelector<HTMLElement>(
             "[data-review-status]",
           );
-          if (node) node.textContent = "Enter a response.";
+          if (node) node.textContent = "Write a response first.";
           return;
         }
         form

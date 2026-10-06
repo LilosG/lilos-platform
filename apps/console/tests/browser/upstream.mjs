@@ -476,6 +476,40 @@ createServer(async (req, res) => {
       url.searchParams.get("location_id") !== data.location_id
     )
       return reply({ code: "NOT_FOUND" }, 404);
+    // Synthetic Beta has never imported reviews: nothing is counted, and it can import.
+    if (claims.sub === ids.b) {
+      Object.assign(data, {
+        items: [],
+        inventory_count: null,
+        average_rating: null,
+        open_restricted_cases: null,
+        awaiting_response_count: null,
+        can_ingest: true,
+        source: {
+          ...data.source,
+          connection_status: "connected",
+          last_ingested_at: null,
+          freshness: "unavailable",
+          quality: "unavailable",
+        },
+      });
+      return reply(data);
+    }
+    const reviewTabs = {
+      needs_response: ["classified-open"],
+      draft: ["draft"],
+      awaiting_approval: ["awaiting_approval"],
+      published: ["published"],
+    };
+    const wanted = url.searchParams.get("status");
+    if (wanted) {
+      if (!(wanted in reviewTabs)) return reply({ code: "VALIDATION" }, 422);
+      data.items = data.items.filter((r) => {
+        const open = r.response_status === null;
+        const key = open ? "classified-open" : r.response_status;
+        return reviewTabs[wanted].includes(key);
+      });
+    }
     return reply(data);
   }
   if (path.startsWith("command-center/reviews/locations/")) {

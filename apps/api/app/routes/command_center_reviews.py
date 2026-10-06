@@ -31,6 +31,16 @@ router = APIRouter(
 )
 
 
+ReviewFilter = Literal["all", "needs_response", "draft", "awaiting_approval", "published"]
+# One typed mapping from the console's filter tabs to canonical review statuses.
+FILTER_STATUSES: dict[str, tuple[str, ...]] = {
+    "needs_response": ("new", "classified", "triaged", "escalated", "publication_failed"),
+    "draft": ("drafting",),
+    "awaiting_approval": ("awaiting_approval", "approved", "publishing"),
+    "published": ("responded",),
+}
+
+
 class ReviewLocation(BaseModel):
     id: UUID
     name: str
@@ -56,6 +66,9 @@ class ReviewInventoryItem(BaseModel):
     provider: str
     external_review_id: str
     reviewer_reference: str | None
+    reviewer_identity: Literal["named", "anonymous", "unknown"]
+    reviewer_display_name: str | None
+    reviewer_photo_url: str | None
     rating: float | None
     body: str | None
     title: str | None
@@ -65,6 +78,7 @@ class ReviewInventoryItem(BaseModel):
     created_at: datetime
     last_synced_at: datetime
     response_status: str | None
+    response_text: str | None
 
 
 class ReviewsWorkspace(BaseModel):
@@ -75,6 +89,7 @@ class ReviewsWorkspace(BaseModel):
     inventory_count: int | None
     average_rating: float | None
     open_restricted_cases: int | None
+    awaiting_response_count: int | None
     items: list[ReviewInventoryItem]
     next_offset: int | None
     can_ingest: bool
@@ -220,6 +235,11 @@ async def item_view(session: Session, review: Review) -> ReviewInventoryItem:
         provider=review.provider,
         external_review_id=review.external_review_id,
         reviewer_reference=review.reviewer_reference,
+        reviewer_identity=TypeAdapter(Literal["named", "anonymous", "unknown"]).validate_python(
+            review.reviewer_identity
+        ),
+        reviewer_display_name=review.reviewer_display_name,
+        reviewer_photo_url=review.reviewer_photo_url,
         rating=float(review.rating) if review.rating is not None else None,
         body=revision.body if revision else None,
         title=revision.title if revision else None,
@@ -229,6 +249,7 @@ async def item_view(session: Session, review: Review) -> ReviewInventoryItem:
         created_at=review.review_created_at,
         last_synced_at=review.last_synced_at,
         response_status=response.status if response else None,
+        response_text=response.response_text if response else None,
     )
 
 
@@ -240,6 +261,7 @@ async def workspace(
     principal: Authenticated,
     location_id: UUID | None = None,
     offset: int = Query(0, ge=0, le=100000),
+    status: ReviewFilter = "all",
 ) -> ReviewsWorkspace:
     locations = []
     for location in await session.scalars(
@@ -255,10 +277,16 @@ async def workspace(
         raise ReviewNotFoundError
     selected = location_id or locations[0].id
     items, more = await service.list_reviews(
-        session, organization_id, selected, limit=50, offset=offset
+        session,
+        organization_id,
+        selected,
+        status_in=FILTER_STATUSES.get(status),
+        limit=50,
+        offset=offset,
     )
     summary = await service.summary(session, organization_id, selected)
-    count = sum(TypeAdapter(dict[str, int]).validate_python(summary["by_status"]).values())
+    by_status = TypeAdapter(dict[str, int]).validate_python(summary["by_status"])
+    count = sum(by_status.values())
     source = await source_view(session, organization_id, selected, count > 0)
     evidence = count > 0 or source.last_ingested_at is not None
     return ReviewsWorkspace(
@@ -269,6 +297,9 @@ async def workspace(
         inventory_count=count if evidence else None,
         average_rating=summary["average_rating"],  # type: ignore[arg-type]
         open_restricted_cases=summary["open_restricted_cases"] if evidence else None,  # type: ignore[arg-type]
+        awaiting_response_count=sum(by_status.get(k, 0) for k in FILTER_STATUSES["needs_response"])
+        if evidence
+        else None,
         items=[await item_view(session, item) for item in items],
         next_offset=offset + 50 if more else None,
         can_ingest=source.mapping_status == "confirmed"
