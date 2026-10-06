@@ -93,7 +93,10 @@ const list = <T extends z.ZodType>(item: T) =>
 const mediaRow = z.object({
   id: uuid,
   media_type: z.enum(["photo", "video", "logo", "cover"]),
-  source_reference: z.string(),
+  /** An uploaded file or a photo added by link; the storage path is never exposed. */
+  origin: z.enum(["upload", "link"]),
+  /** A short-lived signed address for an upload, or the link's own https address. */
+  preview_url: z.string().nullable(),
   rights_authority: z.string(),
   status: z.string(),
   verified_at: z.string().nullable(),
@@ -105,6 +108,7 @@ const hoursRow = z.object({
   id: uuid,
   service_date: z.string(),
   revision: z.number().int(),
+  closed: z.boolean(),
   periods: z.array(z.object({ opens: z.string(), closes: z.string() })),
   source: z.string(),
   status: z.string(),

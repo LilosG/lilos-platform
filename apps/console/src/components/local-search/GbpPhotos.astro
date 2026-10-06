@@ -88,8 +88,8 @@ const rights = [
       </div>
     ) : (
       <EmptyState title="No photos yet">
-        Fresh photos help people choose the business. Add one by its web address
-        and confirm the rights to use it.
+        Fresh photos help people choose the business. Upload one from your
+        computer and confirm who may use it.
         {canPropose && (
           <button
             slot="action"
@@ -110,7 +110,7 @@ const rights = [
   data-shell-dialog
   data-gbp-dialog="photo"
 >
-  <form data-gbp-form="photo" class="formgrid">
+  <form data-gbp-form="photo" class="formgrid" novalidate>
     <div class="panelhead">
       <span class="muted">Google Business Profile</span>
       <button type="button" class="close" aria-label="Close" data-close
@@ -123,19 +123,33 @@ const rights = [
         <h2 id="photo-dialog-title">Add a photo</h2>
       </div>
       <div class="field">
-        <label for="photo-address">Photo address</label>
-        <input
-          id="photo-address"
-          name="source_reference"
-          type="url"
-          inputmode="url"
-          placeholder="https://"
-          required
-          maxlength="1000"
-          aria-describedby="photo-address-hint"
-        />
-        <span class="hint" id="photo-address-hint">
-          A secure (https) link to the image file.
+        <span class="label" id="photo-file-label">Photo</span>
+        <div class="dropzone" data-dropzone>
+          <input
+            id="photo-file"
+            type="file"
+            name="file"
+            accept="image/jpeg,image/png"
+            data-photo-input
+            aria-labelledby="photo-file-label"
+            aria-describedby="photo-file-hint"
+          />
+          <label for="photo-file" class="dropbody" data-photo-drop>
+            <strong>Drag a photo here</strong>
+            <span>or choose a file</span>
+          </label>
+          <div class="photochosen" data-photo-chosen hidden>
+            <img alt="Preview of the chosen photo" data-photo-preview />
+            <div>
+              <b data-photo-facts></b>
+              <button type="button" class="link" data-photo-clear>
+                Choose a different photo
+              </button>
+            </div>
+          </div>
+        </div>
+        <span class="hint" id="photo-file-hint">
+          JPG or PNG, 10 KB to 5 MB, at least 250 × 250 pixels.
         </span>
       </div>
       <div class="field">
@@ -148,18 +162,34 @@ const rights = [
       </div>
       <div class="field">
         <label for="photo-rights">Who may use it</label>
-        <select id="photo-rights" name="rights_authority">
+        <select id="photo-rights" name="rights_authority" required>
+          <option value="" selected disabled>Choose one</option>
           {rights.map((text) => <option value={text}>{text}</option>)}
         </select>
       </div>
       <p class="hint">
-        The photo is sent for approval before anything reaches Google.
+        The photo is held privately and sent for approval before anything
+        reaches Google.
       </p>
+      <div
+        class="progress"
+        role="progressbar"
+        aria-label="Upload progress"
+        aria-valuemin="0"
+        aria-valuemax="100"
+        aria-valuenow="0"
+        data-upload-progress
+        hidden
+      >
+        <i></i>
+      </div>
       <p class="formstatus" role="alert" data-form-status></p>
     </div>
     <div class="dialogfoot">
       <button type="button" class="control" data-close>Cancel</button>
-      <button type="submit" class="control primary">Save for approval</button>
+      <button type="submit" class="control primary" disabled>
+        Upload for approval
+      </button>
     </div>
   </form>
 </dialog>

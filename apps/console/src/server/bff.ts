@@ -3,7 +3,12 @@ import { leadRoutes } from "./lead-routes";
 import { websiteRoutes } from "./website-routes";
 import { reviewRoutes } from "./review-routes";
 import { searchRoutes } from "./search-routes";
-import { assertMutation, boundedBody, privateHeaders } from "./security";
+import {
+  assertMutation,
+  boundedBody,
+  boundedBytes,
+  privateHeaders,
+} from "./security";
 import type { paths } from "@lilos/contracts/api";
 const uuid =
   "([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})";
@@ -198,7 +203,8 @@ export async function forward(
     )
       return response("QUERY_INVALID", 400);
   }
-  let body: string | undefined;
+  let body: string | Uint8Array<ArrayBuffer> | undefined;
+  let contentType = "application/json";
   if (request.method === "POST" || request.method === "DELETE") {
     try {
       assertMutation(
@@ -208,32 +214,42 @@ export async function forward(
         locals.userId,
         locals.settings,
       );
-      if (
-        request.method === "POST" &&
-        request.headers.get("content-type")?.split(";", 1)[0] !==
-          "application/json"
-      )
-        return response("BODY_INVALID", 400);
-      const raw =
-        request.method === "DELETE"
-          ? {}
-          : JSON.parse(await boundedBody(request, 262144));
-      if (
-        request.method === "DELETE" &&
-        (await boundedBody(request, 262144)).length
-      )
-        return response("BODY_INVALID", 400);
-      if (request.method === "DELETE") {
-        body = undefined;
-      } else {
-        if (!("body" in route) || !route.body)
+      const upload = "multipart" in route ? route.multipart : undefined;
+      if (upload) {
+        // An upload is passed through as bytes with its own boundary; the API validates it.
+        const given = request.headers.get("content-type") ?? "";
+        if (!/^multipart\/form-data; boundary=[^\s;]+$/.test(given))
           return response("BODY_INVALID", 400);
-        const parsed = route.body.safeParse(raw);
-        if (!parsed.success) return response("BODY_INVALID", 400);
-        if (route.body === decision) {
-          const typed: DecisionBody = parsed.data as DecisionBody;
-          body = JSON.stringify(typed);
-        } else body = JSON.stringify(parsed.data);
+        contentType = given;
+        body = await boundedBytes(request, upload.maxBytes);
+      } else {
+        if (
+          request.method === "POST" &&
+          request.headers.get("content-type")?.split(";", 1)[0] !==
+            "application/json"
+        )
+          return response("BODY_INVALID", 400);
+        const raw =
+          request.method === "DELETE"
+            ? {}
+            : JSON.parse(await boundedBody(request, 262144));
+        if (
+          request.method === "DELETE" &&
+          (await boundedBody(request, 262144)).length
+        )
+          return response("BODY_INVALID", 400);
+        if (request.method === "DELETE") {
+          body = undefined;
+        } else {
+          if (!("body" in route) || !route.body)
+            return response("BODY_INVALID", 400);
+          const parsed = route.body.safeParse(raw);
+          if (!parsed.success) return response("BODY_INVALID", 400);
+          if (route.body === decision) {
+            const typed: DecisionBody = parsed.data as DecisionBody;
+            body = JSON.stringify(typed);
+          } else body = JSON.stringify(parsed.data);
+        }
       }
     } catch (error) {
       return response(
@@ -259,7 +275,7 @@ export async function forward(
         signal: AbortSignal.timeout(request.method === "GET" ? 10000 : 30000),
         headers: {
           Authorization: `Bearer ${locals.token}`,
-          "Content-Type": "application/json",
+          "Content-Type": contentType,
           "X-Correlation-ID": locals.correlationId,
         },
       },

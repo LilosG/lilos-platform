@@ -260,8 +260,6 @@ export const initials = (name: string) =>
     .slice(0, 2)
     .join("")
     .toUpperCase();
-export const priorityText = (score: number | null) =>
-  score === null ? "Priority unavailable" : `Priority ${Math.round(score)}`;
 export const AREAS = {
   opportunities: "Opportunities",
   reports: "Reports",

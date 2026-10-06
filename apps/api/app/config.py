@@ -5,7 +5,7 @@ from functools import lru_cache
 from typing import Annotated, ClassVar
 
 from cryptography.fernet import Fernet
-from pydantic import Field, HttpUrl, PostgresDsn, field_validator, model_validator
+from pydantic import Field, HttpUrl, PostgresDsn, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -84,6 +84,13 @@ class Settings(BaseSettings):
     supabase_auth_jwks_stale_seconds: Annotated[int, Field(ge=60, le=86_400)] = 3_600
     supabase_auth_clock_skew_seconds: Annotated[int, Field(ge=0, le=300)] = 60
     supabase_auth_max_token_bytes: Annotated[int, Field(ge=1_024, le=65_536)] = 16_384
+
+    # Supabase Storage (private buckets, e.g. gbp-media). The service-role key is server-only:
+    # it is never returned by an API and objects are only ever exposed as short-lived signed URLs.
+    supabase_url: HttpUrl | None = None
+    supabase_service_role_key: (
+        Annotated[SecretStr, Field(min_length=20, max_length=4_096)] | None
+    ) = None
 
     google_oauth_client_id: Annotated[str, Field(min_length=1, max_length=255)] | None = None
     google_oauth_client_secret: Annotated[str, Field(min_length=1, max_length=255)] | None = None

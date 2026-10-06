@@ -1232,6 +1232,7 @@ class SearchConsoleService:
             [
                 {
                     "page": str(o.dimensions.get("page", "")),
+                    "page_id": str(o.page_id) if o.page_id else None,
                     "clicks": o.clicks,
                     "impressions": o.impressions,
                     "ctr": float(o.ctr) if o.ctr is not None else None,
@@ -1254,7 +1255,26 @@ class SearchConsoleService:
             }
         ]
 
+        # Per-query and per-page rows are stored for a period's own window only, so the previous
+        # period's are present only when that exact window was synced as a window of its own.
+        # Insights use them when there; they are not part of the response contract.
+        previous_queries = await self._get_typed_observations(
+            session, prop_ids, comp_start, comp_end, "top_query", website_id, exact_window=True
+        )
+        previous_pages = await self._get_typed_observations(
+            session, prop_ids, comp_start, comp_end, "top_page", website_id, exact_window=True
+        )
+
         return {
+            "previous_top_queries": [
+                {"query": str(o.dimensions.get("query", "")), "clicks": o.clicks}
+                for o in previous_queries
+            ],
+            "previous_top_pages": [
+                {"page": str(o.dimensions.get("page", "")), "clicks": o.clicks}
+                for o in previous_pages
+                if o.website_id in (None, website_id)
+            ],
             "connected": True,
             "properties": prop_data,
             "range": format_range_label(current_start, current_end, days),

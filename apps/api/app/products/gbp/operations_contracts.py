@@ -36,14 +36,18 @@ class SpecialHoursPeriod(BaseModel):
 class SpecialHoursPropose(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
     service_date: date
-    periods: list[SpecialHoursPeriod] = Field(min_length=1, max_length=10)
+    # closed=true means the business is closed all day and there are no periods; closed=false
+    # needs at least one. The service enforces the pairing so a violation is a typed error.
+    closed: bool = False
+    periods: list[SpecialHoursPeriod] = Field(default_factory=list, max_length=10)
     source: str = Field(min_length=1, max_length=64)
 
 
-class MediaPropose(BaseModel):
+class MediaUploadPropose(BaseModel):
+    """The form fields that accompany an uploaded photo."""
+
     model_config = ConfigDict(frozen=True, extra="forbid")
-    media_type: Literal["photo", "video", "logo", "cover"]
-    source_reference: str = Field(min_length=1, max_length=1000)
+    media_type: Literal["photo", "logo", "cover"]
     rights_authority: str = Field(min_length=1, max_length=500)
     idempotency_key: str = Field(min_length=8, max_length=128)
 

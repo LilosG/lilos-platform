@@ -2096,3 +2096,69 @@ button.statuschip .badge {
 .banner p {
   color: #526460;
 }
+
+.dropzone {
+  position: relative;
+}
+.dropzone input[type="file"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+.dropbody {
+  display: grid;
+  gap: 4px;
+  justify-items: center;
+  padding: 26px 16px;
+  border: 1.5px dashed var(--line);
+  border-radius: var(--radius-panel);
+  background: var(--bg);
+  text-align: center;
+  cursor: pointer;
+  font-weight: 400;
+}
+.dropbody strong {
+  font-weight: 600;
+}
+.dropbody span {
+  color: var(--muted);
+}
+.dropbody.dragging,
+.dropzone:focus-within .dropbody {
+  border-color: var(--green);
+  background: #eef5ef;
+}
+.photochosen {
+  display: grid;
+  grid-template-columns: 112px 1fr;
+  gap: 14px;
+  align-items: center;
+}
+.photochosen img {
+  width: 112px;
+  height: 84px;
+  object-fit: cover;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--line);
+}
+.photochosen div {
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+}
+.checkrow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.checkrow input {
+  width: auto;
+}
+.field .label {
+  font-size: 13px;
+  font-weight: 600;
+}

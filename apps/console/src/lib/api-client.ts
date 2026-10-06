@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { photoProblemText } from "./photo-check";
 const envelope = z
   .object({
     data: z.unknown().optional(),
@@ -35,7 +36,45 @@ export async function action(
     );
   return parsed.data;
 }
+/** An upload with its progress, which `fetch` cannot report. Sent as multipart through the
+ * console's own server, which holds the session. */
+export function upload(
+  url: string,
+  form: FormData,
+  onProgress: (fraction: number) => void,
+): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    request.open("POST", url);
+    request.setRequestHeader("X-CSRF-Token", csrf());
+    request.upload.onprogress = (event) => {
+      if (event.lengthComputable) onProgress(event.loaded / event.total);
+    };
+    request.onerror = () => reject(new ApiFailure("UPLOAD_FAILED"));
+    request.onload = () => {
+      try {
+        const parsed = envelope.parse(JSON.parse(request.responseText));
+        if (request.status >= 400 || parsed.error || parsed.code)
+          reject(
+            new ApiFailure(
+              parsed.code ?? parsed.error?.code ?? `HTTP_${request.status}`,
+            ),
+          );
+        else resolve(parsed.data);
+      } catch {
+        reject(new ApiFailure(`HTTP_${request.status}`));
+      }
+    };
+    request.send(form);
+  });
+}
 const known: Record<string, string> = {
+  ...photoProblemText,
+  STORAGE_NOT_CONFIGURED:
+    "Photo uploads are not set up yet. Ask an administrator to finish setup.",
+  UPLOAD_FAILED:
+    "The upload was interrupted. Check your connection and try again.",
+  BODY_TOO_LARGE: photoProblemText.MEDIA_TOO_LARGE,
   MFA_REQUIRED: "Verify your authenticator, then try again.",
   AAL2_REQUIRED: "Verify your authenticator, then try again.",
   AUTH_REQUIRED: "Your session ended. Sign in again to continue.",

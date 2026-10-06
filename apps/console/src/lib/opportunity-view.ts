@@ -15,6 +15,9 @@ export const bandLabel = {
   medium: "Medium",
   low: "Low",
 } as const;
+/** A band as a chip: "High priority", never the score behind it. */
+export const bandChip = (band?: OpportunityView["priority_band"]): string =>
+  band ? `${bandLabel[band]} priority` : "Priority unavailable";
 export const SITE_CHANGES_NOT_CONFIGURED =
   "Site changes not configured for this client";
 const nextActionText: Record<OpportunityView["next_action"], string> = {
@@ -224,6 +227,40 @@ export function rowView(
         ? SITE_CHANGES_NOT_CONFIGURED
         : null,
   };
+}
+/** One row of a compact opportunity list, shared by the client Overview and Local Search. */
+export interface CompactOpportunity {
+  id: string;
+  title: string;
+  clientName: string;
+  clientHref: string;
+  href: string;
+  classification: string;
+  /** The priority band as a chip label. */
+  priority: string;
+}
+/** A client's open findings for a compact list: one per finding, titled and banded as on the
+ * Opportunities screen. */
+export function compactRows(
+  items: OpportunityView[],
+  now: Date,
+): CompactOpportunity[] {
+  return dedupeFindings(items, (o) => [
+    o.organization_id,
+    o.source_type,
+    o.subject.query ?? o.subject.path,
+  ]).map((o) => {
+    const row = rowView(o, now, "client");
+    return {
+      id: row.id,
+      title: row.title,
+      clientName: row.clientName,
+      clientHref: row.clientHref,
+      href: row.href,
+      classification: o.classification,
+      priority: bandChip(o.priority_band),
+    };
+  });
 }
 export const filterOptions = {
   type: [

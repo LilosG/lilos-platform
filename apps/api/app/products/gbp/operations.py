@@ -35,6 +35,28 @@ def validate_hours(periods: list[tuple[date, time, time]]) -> None:
             raise ValueError("hours intervals overlap")
 
 
+def special_hour_periods(
+    service_date: date, periods: list[tuple[time, time]], *, closed: bool
+) -> list[dict[str, object]]:
+    """Google's ``specialHours.specialHourPeriods`` entries for one date.
+
+    A closed day is a single entry with ``closed: true`` and no times; otherwise one entry per
+    opening interval.
+    """
+    start = {"year": service_date.year, "month": service_date.month, "day": service_date.day}
+    if closed:
+        return [{"startDate": start, "closed": True}]
+    return [
+        {
+            "startDate": start,
+            "openTime": {"hours": opens.hour, "minutes": opens.minute},
+            "closeTime": {"hours": closes.hour, "minutes": closes.minute},
+            "closed": False,
+        }
+        for opens, closes in periods
+    ]
+
+
 def completeness(supported: set[str], observed: dict[str, object]) -> dict[str, object]:
     known = sorted(key for key in supported if key in observed)
     unknown = sorted(key for key in supported if key not in observed)

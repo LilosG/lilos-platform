@@ -5,10 +5,10 @@ completeness/conflicts reporting, and suspension case reporting.
 """
 
 from datetime import datetime
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Request, Response, status
+from fastapi import APIRouter, Depends, File, Form, Request, Response, UploadFile, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,16 +19,17 @@ from apps.api.app.authentication.enums import AssuranceLevel
 from apps.api.app.authorization.contracts import AuthorizationDecision
 from apps.api.app.authorization.dependencies import require_authorization
 from apps.api.app.database.session import get_database_session
-from apps.api.app.errors import error_response, request_correlation_id
+from apps.api.app.errors import ApiError, error_response, request_correlation_id
 from apps.api.app.products.gbp.discovery_service import GBPDiscoveryService
+from apps.api.app.products.gbp.media_upload import MAX_BYTES, validate_image
 from apps.api.app.products.gbp.models import GBPLocation
 from apps.api.app.products.gbp.operations_contracts import (
     CapabilitySnapshotRecord,
     ChangeSetDecision,
     ChangeSetPropose,
     MediaDecision,
-    MediaPropose,
     MediaPublishRequest,
+    MediaUploadPropose,
     PostDecision,
     PostDispatchResponse,
     PostPublishRequest,
@@ -49,6 +50,7 @@ from apps.api.app.products.gbp.operations_models import (
 from apps.api.app.products.gbp.operations_service import GBPOperationsService
 from apps.api.app.routes.health import settings_from_request
 from apps.api.app.schemas import ErrorCategory
+from apps.api.app.storage.objects import ObjectStorage, object_storage
 
 router = APIRouter(
     prefix="/api/v1/organizations/{organization_id}/locations/{location_id}/gbp/operations",
@@ -136,20 +138,39 @@ def special_hours_row(item: GBPSpecialHours) -> dict[str, object]:
         "service_date": item.service_date,
         "revision": item.revision,
         "periods": item.periods,
+        "closed": item.closed,
         "source": item.source,
         "status": item.status,
     }
 
 
-def media_row(item: GBPMedia) -> dict[str, object]:
+def media_row(item: GBPMedia, preview: str | None = None) -> dict[str, object]:
+    """A media item. An uploaded file is never addressed by its storage path: it carries a
+    short-lived signed ``preview_url`` instead, and a link-added item its own https address."""
     return {
         "id": str(item.id),
         "media_type": item.media_type,
-        "source_reference": item.source_reference,
+        "origin": "upload" if item.storage_path else "link",
+        "preview_url": preview or (item.source_reference if not item.storage_path else None),
         "rights_authority": item.rights_authority,
         "status": item.status,
         "verified_at": item.verified_at,
     }
+
+
+def storage_from(request: Request) -> ObjectStorage:
+    return object_storage(settings_from_request(request))
+
+
+async def preview_url(request: Request, item: GBPMedia) -> str | None:
+    """A signed address for an uploaded file; None when storage is unavailable, so a list
+    still loads and the item shows without its thumbnail."""
+    if not (item.storage_bucket and item.storage_path):
+        return None
+    try:
+        return await storage_from(request).signed_url(item.storage_bucket, item.storage_path)
+    except ApiError:
+        return None
 
 
 def post_revision_row(
@@ -423,7 +444,10 @@ async def list_media(
 ) -> dict[str, object]:
     await require_gbp_location_scope(session, organization_id, location_id, gbp_location_id)
     items = await service.list_media(session, organization_id, gbp_location_id)
-    return {"data": [media_row(item) for item in items], "meta": meta(request)}
+    return {
+        "data": [media_row(item, await preview_url(request, item)) for item in items],
+        "meta": meta(request),
+    }
 
 
 @router.post(
@@ -436,21 +460,40 @@ async def propose_media(
     organization_id: UUID,
     location_id: UUID,
     gbp_location_id: UUID,
-    command: MediaPropose,
     session: Session,
     principal: Authenticated,
     _: Annotated[AuthorizationDecision, policy("gbp.propose")],
+    file: Annotated[UploadFile, File()],
+    media_type: Annotated[Literal["photo", "logo", "cover"], Form()],
+    # The rights statement is required: at least one visible character.
+    rights_authority: Annotated[str, Form(min_length=1, max_length=500, pattern=r"\S")],
+    idempotency_key: Annotated[str, Form(min_length=8, max_length=128)],
 ) -> dict[str, object]:
+    """Upload a photo (multipart). It is checked against Google's limits, held in private
+    storage, and queued for approval; nothing reaches Google until it is approved and published."""
     await require_gbp_location_scope(session, organization_id, location_id, gbp_location_id)
-    item = await service.propose_media(
+    command = MediaUploadPropose.model_validate(
+        {
+            "media_type": media_type,
+            "rights_authority": rights_authority.strip(),
+            "idempotency_key": idempotency_key,
+        }
+    )
+    data = await file.read(MAX_BYTES + 1)
+    image = validate_image(data)
+    storage = storage_from(request)
+    item = await service.propose_media_upload(
         session,
         organization_id,
         gbp_location_id,
         command,
+        image,
+        data,
+        storage,
         actor_id=principal.platform_user_id,
         correlation_id=request_correlation_id(request),
     )
-    return {"data": media_row(item), "meta": meta(request)}
+    return {"data": media_row(item, await preview_url(request, item)), "meta": meta(request)}
 
 
 @router.post(

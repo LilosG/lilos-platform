@@ -9,59 +9,98 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { chromium } from "@playwright/test";
 const reference = process.env.REFERENCE ?? "http://127.0.0.1:4401";
 const consoleUrl = process.env.CONSOLE ?? "http://127.0.0.1:4346";
-const step = process.argv[2] ?? "step-4b";
+const step = process.argv[2] ?? "step-4c";
 const out = new URL(`../visual/${step}/`, import.meta.url);
 const sizes = { desktop: [1440, 1000], mobile: [390, 844] };
 const gbp = "/clients/synthetic-beta/local-search/google-business-profile/";
 const coco = "/clients/coco-maya/local-search/";
-const open = (name) => async (page) => {
-  await page.getByRole("button", { name, exact: true }).first().click();
-  await page.locator("dialog[open]").waitFor();
-};
 // Each screen: the console route, the user to sign in as, the nearest reference route, and
 // an optional step that opens a dialog before the capture.
+const hours = `${gbp}?view=special-hours`;
+const photos = `${gbp}?view=photos`;
+const beta = "http://127.0.0.1:4455";
+const reset = () =>
+  fetch(`${beta}/test/gbp-reset`, { method: "POST", body: "{}" });
+const emptyPhotos = async () => {
+  await reset();
+  await fetch(`${beta}/test/gbp-clear-media`, { method: "POST", body: "{}" });
+};
+// A synthetic photo chosen through the real file input, as a person would.
+const choosePhoto = async (page) => {
+  await page.getByRole("button", { name: "Add photo" }).first().click();
+  await page.locator("dialog[open]").waitFor();
+  await page.locator("[data-photo-input]").evaluate(async (input) => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 640;
+    canvas.height = 480;
+    const g = canvas.getContext("2d");
+    const sky = g.createLinearGradient(0, 0, 0, 480);
+    sky.addColorStop(0, "#f6a15c");
+    sky.addColorStop(1, "#235448");
+    g.fillStyle = sky;
+    g.fillRect(0, 0, 640, 480);
+    for (let i = 0; i < 4000; i++) {
+      g.fillStyle = `rgba(255,255,255,${Math.random() * 0.25})`;
+      g.fillRect(Math.random() * 640, Math.random() * 480, 3, 3);
+    }
+    const blob = await new Promise((r) => canvas.toBlob(r, "image/png"));
+    const transfer = new DataTransfer();
+    transfer.items.add(new File([blob], "patio.png", { type: "image/png" }));
+    input.files = transfer.files;
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await page.locator("[data-photo-preview]").waitFor({ state: "visible" });
+  await page.getByLabel("Who may use it").selectOption("Owned by the business");
+};
+const closedAllDay = async (page) => {
+  await page.getByRole("button", { name: "Add special hours" }).first().click();
+  await page.locator("dialog[open]").waitFor();
+  await page.getByLabel("Date", { exact: true }).fill("2026-12-31");
+  await page.getByLabel("Closed all day").check();
+};
+// Each screen: name, the user to sign in as, the console route, the nearest reference route,
+// and an optional step before the capture.
 const screens = [
   ["local-search-overview", "b", "/clients/synthetic-beta/local-search/", coco],
-  ["gbp-performance", "b", gbp, `${coco}google-business-profile/`],
-  ["gbp-posts", "b", `${gbp}?view=posts`, `${coco}google-business-profile/`],
   [
-    "gbp-post-dialog",
+    "gbp-photos-empty",
     "b",
-    `${gbp}?view=posts`,
+    photos,
     `${coco}google-business-profile/`,
-    open("New post"),
+    undefined,
+    emptyPhotos,
   ],
-  ["gbp-photos", "b", `${gbp}?view=photos`, `${coco}google-business-profile/`],
   [
-    "gbp-special-hours",
+    "gbp-photos-selected",
     "b",
-    `${gbp}?view=special-hours`,
+    photos,
     `${coco}google-business-profile/`,
+    choosePhoto,
+    reset,
   ],
   [
-    "gbp-profile",
+    "gbp-photos-grid",
     "b",
-    `${gbp}?view=profile`,
+    photos,
     `${coco}google-business-profile/`,
+    undefined,
+    reset,
   ],
   [
-    "gbp-profile-dialog",
+    "special-hours-form",
     "b",
-    `${gbp}?view=profile`,
+    hours,
     `${coco}google-business-profile/`,
-    open("Edit details"),
+    closedAllDay,
+    reset,
   ],
   [
-    "search-console",
+    "special-hours-list",
     "b",
-    "/clients/synthetic-beta/local-search/search-console/",
-    `${coco}search-console/`,
-  ],
-  [
-    "rankings",
-    "b",
-    "/clients/synthetic-beta/local-search/rankings/",
-    `${coco}rankings/`,
+    hours,
+    `${coco}google-business-profile/`,
+    undefined,
+    reset,
   ],
   ["client-overview", "a", "/clients/synthetic-alpha/", "/clients/coco-maya/"],
 ];
@@ -74,8 +113,19 @@ async function signIn(context, who) {
   await page.waitForURL((url) => !url.pathname.startsWith("/login"));
   await page.close();
 }
+const swatch = (name) => {
+  const hue = [...name].reduce((n, c) => n + c.charCodeAt(0), 0) % 360;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600"><defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="hsl(${hue},70%,68%)"/><stop offset="1" stop-color="hsl(${(hue + 40) % 360},45%,28%)"/></linearGradient></defs><rect width="800" height="600" fill="url(#g)"/></svg>`;
+};
 async function shot(context, url, step) {
   const page = await context.newPage();
+  // The synthetic photo addresses do not resolve; serve a picture for each.
+  await page.route("https://photos.example.invalid/**", (route) =>
+    route.fulfill({
+      contentType: "image/svg+xml",
+      body: swatch(route.request().url()),
+    }),
+  );
   await page.goto(url, { waitUntil: "networkidle" });
   if (step) await step(page);
   const image = await page.screenshot({
@@ -119,7 +169,8 @@ for (const [label, [width, height]] of Object.entries(sizes)) {
     await signIn(contexts[who], who);
   }
   const plain = await browser.newContext({ viewport });
-  for (const [name, who, path, refPath, step] of screens) {
+  for (const [name, who, path, refPath, step, prepare] of screens) {
+    await (prepare ?? reset)();
     const right = await shot(contexts[who], consoleUrl + path, step);
     const left = await shot(plain, reference + refPath, undefined);
     const combined = await side(browser, [width, height], left, right);

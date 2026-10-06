@@ -24,6 +24,7 @@ import {
   handle as beta,
   notConnected,
   reset as resetBeta,
+  clearMedia,
 } from "./local-search-sim.mjs";
 const ids = {
   a: "11111111-1111-4111-8111-111111111111",
@@ -84,11 +85,33 @@ const session = (id, aal = "aal1") => ({
   expires_in: 3600,
   user: user(id),
 });
+function readMultipart(raw) {
+  const text = raw.toString("latin1");
+  const fields = {};
+  let fileBytes = 0;
+  for (const part of text.split(/--[^\r\n]+\r?\n/).slice(1)) {
+    const name = /name="([^"]+)"/.exec(part)?.[1];
+    const [head, ...rest] = part.split("\r\n\r\n");
+    const content = rest.join("\r\n\r\n").replace(/\r\n(--[^\r\n]+)?$/, "");
+    if (name === "file") fileBytes = Buffer.byteLength(content, "latin1");
+    else if (name && !head.includes("filename")) fields[name] = content;
+  }
+  return { fields, fileBytes };
+}
 createServer(async (req, res) => {
   const url = new URL(req.url, "http://127.0.0.1:4455");
-  let body = "";
-  for await (const chunk of req) body += chunk;
-  const parsed = body ? JSON.parse(body) : {};
+  const chunks = [];
+  for await (const chunk of req) chunks.push(chunk);
+  const raw = Buffer.concat(chunks);
+  const multipart = (req.headers["content-type"] ?? "").startsWith(
+    "multipart/form-data",
+  );
+  // An upload is read as its text fields and the file's size; the file itself is not kept.
+  const parsed = multipart
+    ? readMultipart(raw)
+    : raw.length
+      ? JSON.parse(raw.toString())
+      : {};
   let claims;
   try {
     claims = JSON.parse(
@@ -111,6 +134,10 @@ createServer(async (req, res) => {
   }
   if (url.pathname === "/test/gbp-reset") {
     resetBeta();
+    return reply({ ok: true });
+  }
+  if (url.pathname === "/test/gbp-clear-media") {
+    clearMedia();
     return reply({ ok: true });
   }
   if (url.pathname === "/health") return reply({ ok: true });

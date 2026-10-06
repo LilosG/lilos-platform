@@ -9,7 +9,6 @@ import {
   healthLabel,
   healthSub,
   initials,
-  priorityText,
   show,
   signed,
   systemLabel,
@@ -20,7 +19,12 @@ import {
   type Shown,
 } from "./present";
 import { clientRoute } from "../config/routes";
-import { dedupeFindings, findingTitle } from "./opportunity-view";
+import {
+  bandChip,
+  dedupeFindings,
+  findingTitle,
+  type CompactOpportunity,
+} from "./opportunity-view";
 type Attention = PortfolioOverview["attention"][number];
 type Opportunity = PortfolioOverview["opportunities"][number];
 export interface AttentionRow {
@@ -57,15 +61,7 @@ export function attentionRows(items: Attention[], now: Date): AttentionRow[] {
     };
   });
 }
-export interface OpportunityRowView {
-  id: string;
-  title: string;
-  clientName: string;
-  clientHref: string;
-  href: string;
-  classification: string;
-  priority: string;
-}
+export type OpportunityRowView = CompactOpportunity;
 export function opportunityRows(items: Opportunity[]): OpportunityRowView[] {
   const findings = dedupeFindings(items, (item) => [
     item.organization_id,
@@ -84,7 +80,7 @@ export function opportunityRows(items: Opportunity[]): OpportunityRowView[] {
     clientHref: clientRoute(item.organization_slug),
     href: `/clients/${item.organization_slug}/opportunities/${item.id}/`,
     classification: item.classification,
-    priority: priorityText(item.priority),
+    priority: bandChip(item.priority_band),
   }));
 }
 export interface ClientRowView {

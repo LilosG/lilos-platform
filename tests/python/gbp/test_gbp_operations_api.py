@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 from typing import cast
 from uuid import UUID, uuid4
 
+import httpx
 import pytest
 from authorization.fixtures import add_effective_product_entitlement
 from fastapi import FastAPI
@@ -38,7 +39,13 @@ from apps.api.app.organizations.enums import OrganizationStatus, OrganizationTyp
 from apps.api.app.organizations.models import Organization
 from apps.api.app.products.gbp.discovery_service import GBPDiscoveryService
 from apps.api.app.products.gbp.models import GBPAccount, GBPLocation
-from apps.api.app.products.gbp.operations_models import GBPPostPublication, GBPProviderPost
+from apps.api.app.products.gbp.operations_models import (
+    GBPMedia,
+    GBPPostPublication,
+    GBPProviderPost,
+)
+
+from .media_images import flat, noise, oversized
 
 
 class FakeVerifier:
@@ -105,6 +112,51 @@ def _notification_event_exists(
 
 
 HEADERS = {"Authorization": "Bearer fabricated.token"}
+
+
+class FakeStorage:
+    """Stands in for Supabase Storage: records writes, signs deterministically."""
+
+    def __init__(self) -> None:
+        self.objects: dict[tuple[str, str], tuple[bytes, str]] = {}
+        self.deleted: list[tuple[str, str]] = []
+
+    async def put(self, bucket: str, path: str, data: bytes, content_type: str) -> None:
+        self.objects[(bucket, path)] = (data, content_type)
+
+    async def delete(self, bucket: str, path: str) -> None:
+        self.deleted.append((bucket, path))
+        self.objects.pop((bucket, path), None)
+
+    async def signed_url(self, bucket: str, path: str, expires_in: int = 900) -> str:
+        return f"https://storage.example.invalid/sign/{bucket}/{path}?exp={expires_in}"
+
+
+@pytest.fixture
+def fake_storage(monkeypatch: pytest.MonkeyPatch) -> FakeStorage:
+    storage = FakeStorage()
+    monkeypatch.setattr("apps.api.app.routes.gbp_operations.storage_from", lambda request: storage)
+    return storage
+
+
+def upload(
+    client: TestClient,
+    base: str,
+    gbp_location: UUID,
+    data: bytes,
+    key: str,
+    *,
+    media_type: str = "photo",
+    rights: str = "Owned by the business",
+    content_type: str = "image/jpeg",
+) -> httpx.Response:
+    response: httpx.Response = client.post(
+        f"{base}/locations/{gbp_location}/media",
+        headers=HEADERS,
+        data={"media_type": media_type, "rights_authority": rights, "idempotency_key": key},
+        files={"file": ("photo", data, content_type)},
+    )
+    return response
 
 
 @pytest.fixture
@@ -417,6 +469,7 @@ def test_special_hours_reject_overlap_and_approve_valid(
 @pytest.mark.integration
 def test_media_proposal_and_post_publish_flow(
     gbp_operations_client: tuple[TestClient, dict[str, UUID]],
+    fake_storage: "FakeStorage",
 ) -> None:
     client, ids = gbp_operations_client
     org, location, gbp_location, workflow_run = (
@@ -427,16 +480,7 @@ def test_media_proposal_and_post_publish_flow(
     )
     base = f"/api/v1/organizations/{org}/locations/{location}/gbp/operations"
 
-    media = client.post(
-        f"{base}/locations/{gbp_location}/media",
-        headers=HEADERS,
-        json={
-            "media_type": "photo",
-            "source_reference": "https://example.invalid/photo.jpg",
-            "rights_authority": "Business owner upload",
-            "idempotency_key": "gbp-media-key-001",
-        },
-    )
+    media = upload(client, base, gbp_location, noise(300, 300), "gbp-media-key-001")
     assert media.status_code == 201, media.text
     assert media.json()["data"]["status"] == "awaiting_approval"
 
@@ -813,3 +857,168 @@ def test_console_post_dispatch_is_atomic_idempotent_and_location_scoped(
         assert len(rows) == 1
 
     run_db(postgresql_test_url, count)
+
+
+@pytest.mark.integration
+def test_upload_is_private_idempotent_audited_and_listed_with_a_signed_preview(
+    gbp_operations_client: tuple[TestClient, dict[str, UUID]],
+    fake_storage: FakeStorage,
+    postgresql_test_url: str,
+) -> None:
+    client, ids = gbp_operations_client
+    org, location, gbp_location = ids["organization"], ids["location"], ids["gbp_location"]
+    base = f"/api/v1/organizations/{org}/locations/{location}/gbp/operations"
+    data = noise(320, 320)
+
+    first = upload(client, base, gbp_location, data, "upload-key-0001")
+    assert first.status_code == 201, first.text
+    row = first.json()["data"]
+    assert row["status"] == "awaiting_approval"
+    assert row["origin"] == "upload"
+    assert row["preview_url"].startswith("https://storage.example.invalid/sign/gbp-media/")
+    assert "source_reference" not in row and "storage_path" not in row
+
+    again = upload(client, base, gbp_location, data, "upload-key-0001")
+    assert again.status_code == 201
+    assert again.json()["data"]["id"] == row["id"]
+    assert len(fake_storage.objects) == 1
+
+    (bucket, path), (stored, content_type) = next(iter(fake_storage.objects.items()))
+    assert bucket == "gbp-media"
+    assert path.startswith(f"{org}/{gbp_location}/") and path.endswith(".jpg")
+    assert stored == data and content_type == "image/jpeg"
+
+    async def record(session: AsyncSession) -> tuple[GBPMedia, list[str]]:
+        media = await session.scalar(select(GBPMedia).where(GBPMedia.id == UUID(row["id"])))
+        events = list(
+            await session.scalars(
+                select(AuditEvent.event_type).where(AuditEvent.organization_id == org)
+            )
+        )
+        assert media is not None
+        return media, events
+
+    media, events = run_db(postgresql_test_url, record)
+    assert media.source_reference is None
+    assert (media.storage_bucket, media.storage_path) == ("gbp-media", path)
+    assert (media.byte_size, media.width, media.height) == (len(data), 320, 320)
+    assert media.rights_authority == "Owned by the business"
+    assert events.count("gbp.media.proposed") == 1
+
+    listing = client.get(f"{base}/locations/{gbp_location}/media", headers=HEADERS)
+    assert listing.json()["data"][0]["preview_url"].endswith("exp=900")
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    ("data", "code", "status_code"),
+    [
+        (b"plain text, not a picture" * 800, "MEDIA_TYPE_UNSUPPORTED", 415),
+        (noise(300, 300, "GIF"), "MEDIA_TYPE_UNSUPPORTED", 415),
+        (flat(400, 400), "MEDIA_TOO_SMALL", 422),
+        (oversized(), "MEDIA_TOO_LARGE", 413),
+        (noise(200, 300), "MEDIA_DIMENSIONS_TOO_SMALL", 422),
+    ],
+)
+def test_upload_rejects_what_google_would_with_a_typed_error(
+    gbp_operations_client: tuple[TestClient, dict[str, UUID]],
+    fake_storage: FakeStorage,
+    data: bytes,
+    code: str,
+    status_code: int,
+) -> None:
+    client, ids = gbp_operations_client
+    org, location, gbp_location = ids["organization"], ids["location"], ids["gbp_location"]
+    base = f"/api/v1/organizations/{org}/locations/{location}/gbp/operations"
+    response = upload(client, base, gbp_location, data, f"bad-{code.lower()}-key")
+    assert response.status_code == status_code, response.text
+    assert response.json()["error"]["code"] == code
+    assert fake_storage.objects == {}
+
+
+@pytest.mark.integration
+def test_upload_without_storage_configured_is_a_typed_error_and_writes_nothing(
+    gbp_operations_client: tuple[TestClient, dict[str, UUID]],
+    postgresql_test_url: str,
+) -> None:
+    client, ids = gbp_operations_client
+    org, location, gbp_location = ids["organization"], ids["location"], ids["gbp_location"]
+    base = f"/api/v1/organizations/{org}/locations/{location}/gbp/operations"
+    response = upload(client, base, gbp_location, noise(300, 300), "no-storage-key-1")
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "STORAGE_NOT_CONFIGURED"
+
+    async def count(session: AsyncSession) -> int:
+        return len(list(await session.scalars(select(GBPMedia.id))))
+
+    assert run_db(postgresql_test_url, count) == 0
+
+
+@pytest.mark.integration
+def test_upload_requires_a_rights_statement_and_stays_inside_its_location(
+    gbp_operations_client: tuple[TestClient, dict[str, UUID]],
+    fake_storage: FakeStorage,
+) -> None:
+    client, ids = gbp_operations_client
+    org, location, gbp_location = ids["organization"], ids["location"], ids["gbp_location"]
+    base = f"/api/v1/organizations/{org}/locations/{location}/gbp/operations"
+    blank = upload(client, base, gbp_location, noise(300, 300), "rights-key-0001", rights="   ")
+    assert blank.status_code == 422
+    sibling = f"/api/v1/organizations/{org}/locations/{ids['sibling_location']}/gbp/operations"
+    wrong_place = upload(client, sibling, gbp_location, noise(300, 300), "sibling-key-0001")
+    assert wrong_place.status_code == 404
+    assert fake_storage.objects == {}
+
+
+@pytest.mark.integration
+def test_closed_all_day_special_hours_persist_list_and_validate(
+    gbp_operations_client: tuple[TestClient, dict[str, UUID]],
+) -> None:
+    client, ids = gbp_operations_client
+    org, location, gbp_location = ids["organization"], ids["location"], ids["gbp_location"]
+    base = f"/api/v1/organizations/{org}/locations/{location}/gbp/operations"
+    url = f"{base}/locations/{gbp_location}/special-hours"
+
+    closed = client.post(
+        url,
+        headers=HEADERS,
+        json={"service_date": "2026-12-25", "closed": True, "source": "console"},
+    )
+    assert closed.status_code == 201, closed.text
+    assert closed.json()["data"]["closed"] is True
+    assert closed.json()["data"]["periods"] == []
+
+    open_day = client.post(
+        url,
+        headers=HEADERS,
+        json={
+            "service_date": "2026-12-24",
+            "periods": [{"opens": "09:00:00", "closes": "13:00:00"}],
+            "source": "console",
+        },
+    )
+    assert open_day.json()["data"]["closed"] is False
+
+    both = client.post(
+        url,
+        headers=HEADERS,
+        json={
+            "service_date": "2026-12-26",
+            "closed": True,
+            "periods": [{"opens": "09:00:00", "closes": "13:00:00"}],
+            "source": "console",
+        },
+    )
+    assert both.status_code == 409
+    assert both.json()["error"]["code"] == "GBP_INVALID_HOURS"
+    neither = client.post(
+        url, headers=HEADERS, json={"service_date": "2026-12-26", "source": "console"}
+    )
+    assert neither.status_code == 409
+    assert neither.json()["error"]["code"] == "GBP_INVALID_HOURS"
+
+    listing = client.get(url, headers=HEADERS).json()["data"]
+    assert {item["service_date"]: item["closed"] for item in listing} == {
+        "2026-12-25": True,
+        "2026-12-24": False,
+    }

@@ -329,7 +329,7 @@ export function photoRows(
 ): PhotoRow[] {
   return items.map((item) => ({
     id: item.id,
-    url: secure(item.source_reference),
+    url: item.preview_url ? secure(item.preview_url) : null,
     kind: mediaKind[item.media_type],
     chip: approvalChip(item.status),
     rights: item.rights_authority,
@@ -348,6 +348,8 @@ export interface HoursRow {
   id: string;
   date: string;
   times: string;
+  /** Closed all day: the list shows a "Closed" chip beside the approval state. */
+  closed: boolean;
   chip: Chip;
   actions: ("approve" | "reject")[];
 }
@@ -370,7 +372,8 @@ export function hoursRows(
         day: "numeric",
         year: "numeric",
       }).format(new Date(`${item.service_date}T00:00:00Z`)),
-      times: times(item.periods),
+      times: item.closed ? "Closed all day" : times(item.periods),
+      closed: item.closed,
       chip: approvalChip(item.status),
       actions:
         item.status === "awaiting_approval" && canApprove
