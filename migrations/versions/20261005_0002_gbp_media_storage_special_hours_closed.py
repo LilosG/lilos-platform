@@ -10,7 +10,7 @@ down_revision: str | Sequence[str] | None = "20261005_0001"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
-MEDIA_COLUMNS: tuple[tuple[str, sa.types.TypeEngine[object]], ...] = (
+MEDIA_COLUMNS = (
     ("storage_bucket", sa.String(63)),
     ("storage_path", sa.String(512)),
     ("content_type", sa.String(64)),

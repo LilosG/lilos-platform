@@ -50,6 +50,12 @@ const landing = [
   ["https://cococabana.example/reservations/", 61, 700, 0.087, 2.4],
 ].map(([page, clicks, impressions, ctr, position]) => ({
   page,
+  page_id: page.endsWith("reservations/") ? null : uuid(300 + page.length),
+  index_status: page.endsWith("private-events/")
+    ? "not_indexable"
+    : page.endsWith("reservations/")
+      ? "not_crawled"
+      : "indexable",
   clicks,
   impressions,
   ctr,
@@ -169,6 +175,44 @@ export function search(org, count) {
       write_enabled: i === 0,
       last_synced_at: "2026-10-04T06:00:00Z",
     })),
+    insights: [
+      {
+        code: "PAGE_GAINING_CLICKS",
+        link: "pages",
+        subject: "https://cococabana.example/menu/",
+        current: 421,
+        previous: 305,
+        percent_change: 38,
+        count: null,
+      },
+      {
+        code: "SEARCH_CLICKS_UP",
+        link: "search_console",
+        subject: null,
+        current: 1842,
+        previous: 1617,
+        percent_change: 13.9,
+        count: null,
+      },
+      {
+        code: "PROFILE_ACTIONS_UP",
+        link: "google_business_profile",
+        subject: null,
+        current: 898,
+        previous: 784,
+        percent_change: 14.5,
+        count: null,
+      },
+    ],
+    technical_health: {
+      pages_crawled: { state: "tracked", value: 26 },
+      indexable_pages: { state: "tracked", value: 24 },
+      excluded_pages: { state: "tracked", value: 2 },
+      pages_with_issues: { state: "tracked", value: 4 },
+      structured_data_pages: { state: "tracked", value: 22 },
+      google_indexed_pages: { state: "not_tracked", value: null },
+      last_crawled_at: "2026-10-03T06:00:00Z",
+    },
     can_crawl: true,
     unsupported: ["geographic_rank_grid", "rank_scan", "google_indexation"],
   };
@@ -273,6 +317,10 @@ export function performance(org, params) {
   };
 }
 const state = { posts: [], media: [], hours: [], changes: [], seq: 100 };
+/** Screenshots only: the photo list with nothing in it. */
+export function clearMedia() {
+  state.media = [];
+}
 export function reset() {
   state.posts = [
     {
@@ -378,20 +426,22 @@ export function reset() {
   ].map(([media_type, rights_authority, status, verified_at], i) => ({
     id: uuid(60 + i),
     media_type,
-    source_reference: `https://photos.example.invalid/cococabana-${i}.jpg`,
+    origin: i === 3 ? "link" : "upload",
+    preview_url: `https://photos.example.invalid/cococabana-${i}.jpg`,
     rights_authority,
     status,
     verified_at,
   }));
   state.hours = [
     ["2026-11-26", "11:00", "15:00", "awaiting_approval"],
-    ["2026-12-25", "12:00", "16:00", "approved"],
+    ["2026-12-25", null, null, "approved"],
     ["2027-01-01", "16:00", "23:00", "approved"],
   ].map(([service_date, opens, closes, status], i) => ({
     id: uuid(70 + i),
     service_date,
     revision: 1,
-    periods: [{ opens, closes }],
+    closed: opens === null,
+    periods: opens === null ? [] : [{ opens, closes }],
     source: "console",
     status,
   }));
@@ -564,11 +614,16 @@ export function handle(path, method, parsed, url, org) {
   }
   if (rest.endsWith("/posts/reconcile")) return ok({ data: { reconciled: 0 } });
   if (rest.endsWith("/media")) {
+    // The upload arrives as multipart; the stand-in reads its fields and the file's size.
+    const { fields, fileBytes } = parsed;
+    if (fileBytes < 10 * 1024)
+      return ok({ error: { code: "MEDIA_TOO_SMALL" } }, 422);
     const row = {
       id: seq(),
-      media_type: parsed.media_type,
-      source_reference: parsed.source_reference,
-      rights_authority: parsed.rights_authority,
+      media_type: fields.media_type,
+      origin: "upload",
+      preview_url: `https://photos.example.invalid/uploaded-${state.seq}.jpg`,
+      rights_authority: fields.rights_authority,
       status: "awaiting_approval",
       verified_at: null,
     };
@@ -587,6 +642,7 @@ export function handle(path, method, parsed, url, org) {
       id: seq(),
       service_date: parsed.service_date,
       revision: 1,
+      closed: parsed.closed,
       periods: parsed.periods,
       source: parsed.source,
       status: "awaiting_approval",

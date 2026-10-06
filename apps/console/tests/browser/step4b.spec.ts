@@ -1,5 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
+import { png } from "./photo";
 async function login(page: Page, target: string) {
   await page.goto(`/login/?return=${encodeURIComponent(target)}`);
   await page.getByLabel("Email", { exact: true }).fill("b@example.test");
@@ -90,10 +91,13 @@ test("Photos, special hours and profile edits all go for approval", async ({
 }) => {
   await login(page, `${gbp}?view=photos`);
   await page.getByRole("button", { name: "Add photo" }).first().click();
-  await page
-    .getByLabel("Photo address")
-    .fill("https://photos.example.invalid/new.jpg");
-  await page.getByRole("button", { name: "Save for approval" }).click();
+  await page.getByLabel("Photo", { exact: true }).setInputFiles({
+    name: "new.png",
+    mimeType: "image/png",
+    buffer: png(300, 300),
+  });
+  await page.getByLabel("Who may use it").selectOption("Owned by the business");
+  await page.getByRole("button", { name: "Upload for approval" }).click();
   await expect(page.locator("[data-photo]")).toHaveCount(5);
   await page.goto(`${gbp}?view=special-hours`);
   await page.locator("[data-gbp][data-ready]").waitFor();

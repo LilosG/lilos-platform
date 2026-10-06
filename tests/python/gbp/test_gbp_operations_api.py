@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 from typing import cast
 from uuid import UUID, uuid4
 
+import httpx
 import pytest
 from authorization.fixtures import add_effective_product_entitlement
 from fastapi import FastAPI
@@ -148,13 +149,14 @@ def upload(
     media_type: str = "photo",
     rights: str = "Owned by the business",
     content_type: str = "image/jpeg",
-):  # type: ignore[no-untyped-def]
-    return client.post(
+) -> httpx.Response:
+    response: httpx.Response = client.post(
         f"{base}/locations/{gbp_location}/media",
         headers=HEADERS,
         data={"media_type": media_type, "rights_authority": rights, "idempotency_key": key},
         files={"file": ("photo", data, content_type)},
     )
+    return response
 
 
 @pytest.fixture
