@@ -21,6 +21,7 @@ from apps.api.app.execution.service import ExecutionService
 from apps.api.app.integrations.errors import IntegrationReconnectRequiredError
 from apps.api.app.notifications.models import NotificationTemplate
 from apps.api.app.notifications.service import NotificationService
+from apps.api.app.products.gbp.media_upload import ImageFacts
 from apps.api.app.products.gbp.models import GBPLocation, GBPProfileSnapshot
 from apps.api.app.products.gbp.operations import (
     Capability,
@@ -32,7 +33,7 @@ from apps.api.app.products.gbp.operations import validate_hours as validate_hour
 from apps.api.app.products.gbp.operations_contracts import (
     ChangeSetPropose,
     MediaDecision,
-    MediaPropose,
+    MediaUploadPropose,
     PostRevisionCreate,
     SpecialHoursPropose,
     SuspensionCaseReport,
@@ -63,6 +64,7 @@ from apps.api.app.products.gbp.operations_models import (
     GBPSuspensionCase,
 )
 from apps.api.app.products.gbp.post_generation_models import GBPPostAsset
+from apps.api.app.storage.objects import GBP_MEDIA_BUCKET, ObjectStorage
 
 NOTIFICATION_TEMPLATES = {
     "gbp.suspension_case.reported": ("in_app", "A Business Profile suspension case was reported."),
@@ -437,6 +439,9 @@ class GBPOperationsService:
             )
             for period in command.periods
         ]
+        if command.closed == bool(command.periods):
+            # Closed all day carries no periods; open hours need at least one.
+            raise GBPInvalidHoursError
         try:
             validate_hours_periods(periods)
         except ValueError as error:
@@ -456,6 +461,7 @@ class GBPOperationsService:
             service_date=command.service_date,
             revision=(last or 0) + 1,
             periods=[period.model_dump() for period in command.periods],
+            closed=command.closed,
             source=command.source,
             status="awaiting_approval",
         )
@@ -471,7 +477,7 @@ class GBPOperationsService:
             resource_id=gbp_location_id,
             correlation_id=correlation_id,
             summary=f"Special hours proposed for {command.service_date.isoformat()}.",
-            metadata={"revision": record.revision},
+            metadata={"revision": record.revision, "closed": record.closed},
         )
         return record
 
@@ -525,16 +531,20 @@ class GBPOperationsService:
             )
         )
 
-    async def propose_media(
+    async def propose_media_upload(
         self,
         session: AsyncSession,
         organization_id: UUID,
         gbp_location_id: UUID,
-        command: MediaPropose,
+        command: MediaUploadPropose,
+        image: ImageFacts,
+        data: bytes,
+        storage: ObjectStorage,
         *,
         actor_id: UUID | None,
         correlation_id: str,
     ) -> GBPMedia:
+        """Store an uploaded photo privately and record it as awaiting approval."""
         await self._get_gbp_location(session, organization_id, gbp_location_id)
         existing = await session.scalar(
             select(GBPMedia).where(
@@ -544,17 +554,31 @@ class GBPOperationsService:
         )
         if existing:
             return existing
+        media_id = uuid4()
+        path = f"{organization_id}/{gbp_location_id}/{media_id}.{image.extension}"
+        await storage.put(GBP_MEDIA_BUCKET, path, data, image.content_type)
         media = GBPMedia(
+            id=media_id,
             organization_id=organization_id,
             gbp_location_id=gbp_location_id,
             media_type=command.media_type,
-            source_reference=command.source_reference,
+            source_reference=None,
+            storage_bucket=GBP_MEDIA_BUCKET,
+            storage_path=path,
+            content_type=image.content_type,
+            byte_size=image.byte_size,
+            width=image.width,
+            height=image.height,
             rights_authority=command.rights_authority,
             idempotency_key=command.idempotency_key,
             status="awaiting_approval",
         )
-        session.add(media)
-        await session.flush()
+        try:
+            session.add(media)
+            await session.flush()
+        except Exception:
+            await storage.delete(GBP_MEDIA_BUCKET, path)
+            raise
         await self._audit(
             session,
             event="gbp.media.proposed",
@@ -564,8 +588,12 @@ class GBPOperationsService:
             resource_type="gbp_location",
             resource_id=gbp_location_id,
             correlation_id=correlation_id,
-            summary=f"Media proposed: {command.media_type}.",
-            metadata={"media_id": str(media.id)},
+            summary=f"Photo uploaded: {command.media_type}.",
+            metadata={
+                "media_id": str(media.id),
+                "source": "upload",
+                "byte_size": image.byte_size,
+            },
         )
         return media
 

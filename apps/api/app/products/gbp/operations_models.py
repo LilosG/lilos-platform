@@ -5,6 +5,7 @@ from datetime import date, datetime
 from uuid import UUID
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     Date,
     DateTime,
@@ -13,6 +14,7 @@ from sqlalchemy import (
     Integer,
     String,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
@@ -108,6 +110,10 @@ class GBPSpecialHours(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     service_date: Mapped[date] = mapped_column(Date, nullable=False)
     revision: Mapped[int] = mapped_column(Integer, nullable=False)
     periods: Mapped[list[object]] = mapped_column(JSONB, nullable=False)
+    # A date the business is closed all day: no periods, and Google's closed:true.
+    closed: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
     source: Mapped[str] = mapped_column(String(64), nullable=False)
     status: Mapped[str] = mapped_column(String(24), nullable=False)
 
@@ -121,13 +127,25 @@ class GBPMedia(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             ondelete="RESTRICT",
         ),
         UniqueConstraint("organization_id", "idempotency_key", name="uq_gbp_media_idempotency"),
+        CheckConstraint(
+            "source_reference IS NOT NULL OR storage_path IS NOT NULL",
+            name="has_source",
+        ),
     )
     organization_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
     )
     gbp_location_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
     media_type: Mapped[str] = mapped_column(String(32), nullable=False)
-    source_reference: Mapped[str] = mapped_column(String(1000), nullable=False)
+    # An https address for media added by link; null for an uploaded file, which is held in
+    # private storage and referenced by bucket and path instead.
+    source_reference: Mapped[str | None] = mapped_column(String(1000))
+    storage_bucket: Mapped[str | None] = mapped_column(String(63))
+    storage_path: Mapped[str | None] = mapped_column(String(512))
+    content_type: Mapped[str | None] = mapped_column(String(64))
+    byte_size: Mapped[int | None] = mapped_column(Integer)
+    width: Mapped[int | None] = mapped_column(Integer)
+    height: Mapped[int | None] = mapped_column(Integer)
     rights_authority: Mapped[str] = mapped_column(String(500), nullable=False)
     idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
     provider_media_id: Mapped[str | None] = mapped_column(String(500))

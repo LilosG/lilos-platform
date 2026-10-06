@@ -15,6 +15,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from apps.api.app.errors import ApiError
 from apps.api.app.execution.contracts import JobOutcome
 from apps.api.app.integrations.adapter_factory import gbp_adapter
 from apps.api.app.integrations.connection_service import GBPConnectionService
@@ -25,6 +26,7 @@ from apps.api.app.integrations.errors import (
 from apps.api.app.integrations.models import IntegrationConnection
 from apps.api.app.integrations.secrets import SecretUnavailableError
 from apps.api.app.products.gbp.adapter import GBPAdapter
+from apps.api.app.storage.objects import SIGNED_URL_SECONDS, ObjectStorage, object_storage
 
 if TYPE_CHECKING:
     from apps.api.app.config import Settings
@@ -35,6 +37,16 @@ logger = logging.getLogger(__name__)
 # via ``handlers._adapter_factory = lambda: FakeAdapter()`` to inject a
 # deterministic fake without touching the network.
 _adapter_factory: Callable[[], GBPAdapter] = gbp_adapter
+
+
+def _production_object_storage() -> ObjectStorage:
+    from apps.api.app.config import Settings
+
+    return object_storage(Settings())
+
+
+# Object storage factory — tests override it to inject a fake without touching the network.
+_object_storage: Callable[[], ObjectStorage] = _production_object_storage
 
 
 def _google_writes_enabled() -> bool:
@@ -1246,10 +1258,23 @@ async def _handle_gbp_upload_media(
     adapter = _adapter_factory()
     location_name = v4_location_parent(account.external_account_id, location.external_location_id)
 
+    source_url = media.source_reference
+    if media.storage_bucket and media.storage_path:
+        # An uploaded file lives in private storage; Google fetches it from a signed address
+        # that stops working after 15 minutes.
+        try:
+            source_url = await _object_storage().signed_url(
+                media.storage_bucket, media.storage_path, SIGNED_URL_SECONDS
+            )
+        except ApiError as exc:
+            media.status = "failed"
+            media.safe_error_code = exc.code
+            return JobOutcome(result="retryable_failure", safe_error=exc.code)
+
     media_item: dict[str, Any] = {
         "mediaFormat": "PHOTO",
         "locationAssociation": {"category": "ADDITIONAL"},
-        "sourceUrl": media.source_reference,
+        "sourceUrl": source_url,
     }
     if media.media_type == "video":
         media_item["mediaFormat"] = "VIDEO"
