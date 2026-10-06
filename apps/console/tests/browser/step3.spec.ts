@@ -47,12 +47,17 @@ test("Portfolio Opportunities lists every kind on real data and filters on the s
     "3 opportunities",
   );
   await clean(page);
+  // Each filter change is a full server navigation; wait for the load event so the
+  // page's deferred filter script is attached before the next change.
   await page.getByLabel("Filter opportunity type").selectOption("growth");
-  await expect(page).toHaveURL(/kind=growth/);
+  await page.waitForURL(/kind=growth/);
   await expect(rows(page)).toHaveCount(1);
   await expect(rows(page).first()).toContainText("Win brunch searches");
   await page.getByLabel("Filter opportunity type").selectOption("");
+  await page.waitForURL((url) => url.searchParams.get("kind") === "");
+  await expect(rows(page)).toHaveCount(3);
   await page.getByLabel("Filter priority").selectOption("medium");
+  await page.waitForURL(/priority=medium/);
   await expect(rows(page)).toHaveCount(2);
   await page.goto("/opportunities/?kind=nonsense");
   await expect(page.locator("body")).toContainText("Invalid filter");
