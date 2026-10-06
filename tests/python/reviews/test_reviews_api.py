@@ -729,6 +729,7 @@ def test_provider_observed_response_needs_no_local_approval(
     assert response["approval_required"] is False
     assert response["approved_at"] is None
     assert response["status"] == "published"
+    assert result.json()["review"]["response_text"] == "Existing provider reply"
     assert response["published_at"] is not None
     assert response["workflow_status"] is None
     assert response["can_approve"] is False

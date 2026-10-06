@@ -9785,6 +9785,8 @@ export interface components {
             rating: number | null;
             /** Response Status */
             response_status: string | null;
+            /** Response Text */
+            response_text: string | null;
             /** Reviewer Display Name */
             reviewer_display_name: string | null;
             /**

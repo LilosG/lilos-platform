@@ -289,3 +289,13 @@ export function clockText(value: string): string {
 }
 /** "Last 28 days" for the reporting period that a tile or table covers. */
 export const periodText = (days: number): string => `Last ${days} days`;
+
+/** "Today", "3 days ago", "2 weeks ago", then "Sep 4, 2026". Never an ISO string. */
+export function reviewDate(iso: string, now: Date): string {
+  const days = Math.round(dayNumber(now) - dayNumber(new Date(iso)));
+  if (days <= 0) return "Today";
+  if (days === 1) return "Yesterday";
+  if (days < 14) return `${days} days ago`;
+  if (days < 35) return `${Math.floor(days / 7)} weeks ago`;
+  return dateText(iso);
+}

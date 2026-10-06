@@ -10,6 +10,7 @@ async function login(page: import("@playwright/test").Page) {
   await page.getByLabel("Email", { exact: true }).fill("a@example.test");
   await page.getByLabel("Password", { exact: true }).fill("synthetic-password");
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await page.locator('body[data-app-ready="true"]').waitFor();
 }
 test("Reviews inbox, unavailable requests, exact response draft, audit and accessibility", async ({
   page,
@@ -18,14 +19,14 @@ test("Reviews inbox, unavailable requests, exact response draft, audit and acces
   page.on("pageerror", (e) => errors.push(e.message));
   await login(page);
   await expect(
-    page.getByRole("heading", { name: "Review inbox" }),
+    page.getByRole("heading", { name: /Review inbox/ }),
   ).toBeVisible();
-  await expect(
-    page.getByText(/Freshness:\s*stale\s*·\s*Quality:\s*partial/),
-  ).toBeVisible();
-  await expect(
-    page.getByText(/Google authorization: reconnect_required/),
-  ).toBeVisible();
+  await page.getByRole("button", { name: /Review source status/ }).click();
+  const source = page.getByRole("dialog");
+  await expect(source).toContainText("Google connection");
+  await expect(source).toContainText("Reconnect Google");
+  await expect(source).toContainText("Out of date");
+  await source.getByRole("button", { name: "Close", exact: true }).click();
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
   await page.screenshot({
     path: test.info().outputPath("reviews-inbox.png"),
@@ -35,25 +36,25 @@ test("Reviews inbox, unavailable requests, exact response draft, audit and acces
     .getByRole("link", { name: "Review requests", exact: true })
     .click();
   await expect(
-    page.getByRole("heading", { name: "Review requests unavailable" }),
+    page.getByRole("heading", { name: "Review requests are not tracked yet" }),
   ).toBeVisible();
   await page.goto(detail);
   await expect(
-    page.getByRole("heading", { name: "Review response", exact: true }),
+    page.getByRole("heading", { name: "Reply to Jordan Sample" }),
   ).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "Approve exact response revision 1" }),
+    page.getByRole("button", { name: "Approve this response" }),
   ).toBeDisabled();
-  await page.getByLabel("business.name", { exact: false }).check();
+  await page.getByLabel("Business name", { exact: false }).check();
   await page
-    .getByLabel("Response", { exact: true })
+    .getByLabel("Edit the response", { exact: true })
     .fill("Thanks for this synthetic visit.");
   const request = page.waitForRequest(
     (r) => r.method() === "POST" && r.url().endsWith("/responses/"),
   );
   await Promise.all([
     page.waitForEvent("load"),
-    page.getByRole("button", { name: "Save new response revision" }).click(),
+    page.getByRole("button", { name: "Save changes" }).click(),
   ]);
   expect((await request).postDataJSON()).toMatchObject({
     review_revision_id: fixtures.detail.review.revision_id,
@@ -61,12 +62,10 @@ test("Reviews inbox, unavailable requests, exact response draft, audit and acces
     approved_fact_revision_ids: [fixtures.detail.facts[0].id],
   });
   await expect(
-    page.getByRole("heading", { name: "Review response", exact: true }),
+    page.getByRole("heading", { name: "Reply to Jordan Sample" }),
   ).toBeVisible();
-  await page.getByText("Response audit history", { exact: true }).click();
-  await expect(
-    page.getByText(/Canonical synthetic draft/).first(),
-  ).toBeVisible();
+  await page.getByText("Activity", { exact: true }).click();
+  await expect(page.getByText("Response drafted").first()).toBeVisible();
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
   await page.screenshot({
     path: test.info().outputPath("review-response.png"),
@@ -118,29 +117,21 @@ test("Reviews MFA exact approval then canonical dispatch stays queued", async ({
   await page.getByLabel("Authenticator code").fill("123456");
   await page.getByRole("button", { name: "Verify", exact: true }).click();
   await expect(page).toHaveURL(new RegExp(detail));
-  await page
-    .getByRole("button", { name: "Approve exact response revision 1" })
-    .click();
+  await page.getByRole("button", { name: "Approve this response" }).click();
   await expect(
-    page.getByRole("heading", { name: "Response revision 1 · approved" }),
-  ).toBeVisible();
+    page.getByRole("region", { name: "Current response" }),
+  ).toContainText("Approved");
   const dispatch = page.waitForRequest(
     (r) => r.method() === "POST" && r.url().endsWith("/publish/"),
   );
-  await page
-    .getByRole("button", { name: "Dispatch approved response revision 1" })
-    .click();
+  await page.getByRole("button", { name: "Publish to Google" }).click();
   expect((await dispatch).postDataJSON()).toEqual({
     idempotency_key: `console-review-${fixtures.detail.responses[0].id}`,
   });
   await expect(
-    page.getByRole("heading", { name: "Response revision 1 · publishing" }),
-  ).toBeVisible();
-  await expect(page.getByText(/Workflow: queued/)).toBeVisible();
+    page.getByRole("region", { name: "Current response" }),
+  ).toContainText("Publishing");
   await expect(
-    page.getByText(/Published\/read-back: Not confirmed/),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: "Dispatch approved response revision 1" }),
+    page.getByRole("button", { name: "Publish to Google" }),
   ).toBeDisabled();
 });

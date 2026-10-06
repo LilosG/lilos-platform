@@ -1,0 +1,24 @@
+---
+interface Props {
+  rating: number | null;
+}
+const { rating } = Astro.props;
+const filled = rating === null ? 0 : Math.round(rating);
+const label = rating === null ? "No star rating" : `${filled} out of 5 stars`;
+---
+
+<span class="stars" role="img" aria-label={label}>
+  {
+    [1, 2, 3, 4, 5].map((n) => (
+      <svg
+        class:list={["star", { on: n <= filled }]}
+        viewBox="0 0 20 20"
+        width="16"
+        height="16"
+        aria-hidden="true"
+      >
+        <path d="M10 1.8l2.45 5.2 5.65.7-4.15 3.9 1.1 5.6L10 14.4l-5.05 2.8 1.1-5.6L1.9 7.7l5.65-.7z" />
+      </svg>
+    ))
+  }
+</span>

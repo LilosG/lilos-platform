@@ -1,0 +1,32 @@
+---
+import type { Reviewer } from "../../lib/review-view";
+interface Props {
+  who: Reviewer;
+}
+const { who } = Astro.props;
+---
+
+{
+  who.photo ? (
+    <img
+      class="avatar photo"
+      src={who.photo}
+      alt=""
+      width="40"
+      height="40"
+      loading="lazy"
+      referrerpolicy="no-referrer"
+    />
+  ) : who.kind === "anonymous" ? (
+    <span class="avatar generic" aria-hidden="true">
+      <svg viewBox="0 0 24 24" width="22" height="22">
+        <circle cx="12" cy="8.5" r="4" />
+        <path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7z" />
+      </svg>
+    </span>
+  ) : (
+    <span class="avatar" aria-hidden="true">
+      {who.initials}
+    </span>
+  )
+}

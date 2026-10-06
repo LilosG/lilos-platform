@@ -78,6 +78,7 @@ class ReviewInventoryItem(BaseModel):
     created_at: datetime
     last_synced_at: datetime
     response_status: str | None
+    response_text: str | None
 
 
 class ReviewsWorkspace(BaseModel):
@@ -248,6 +249,7 @@ async def item_view(session: Session, review: Review) -> ReviewInventoryItem:
         created_at=review.review_created_at,
         last_synced_at=review.last_synced_at,
         response_status=response.status if response else None,
+        response_text=response.response_text if response else None,
     )
 
 

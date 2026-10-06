@@ -1,175 +1,226 @@
 ---
 import type { ReviewDetailView } from "../../adapters/reviews";
+import { dateText, humanize, reviewDate } from "../../lib/present";
+import {
+  actorLabel,
+  eventLabel,
+  factLabel,
+  resultLabel,
+  responseChip,
+  responseNote,
+  reviewer,
+} from "../../lib/review-view";
+import { reviewChip } from "../../lib/status";
+import StatusBadge from "../ui/StatusBadge.astro";
+import ReviewerAvatar from "./ReviewerAvatar.astro";
+import Stars from "./Stars.astro";
 interface Props {
   view: ReviewDetailView;
-  slug: string;
 }
-const { view: v, slug } = Astro.props;
+const { view: v } = Astro.props;
 const api = `/api/organizations/${v.organization_id}/locations/${v.location_id}/reviews/${v.review.id}/responses/`;
+const who = reviewer(v.review);
+const chip = reviewChip(v.review.status, v.review.response_status);
+const [latest, ...earlier] = v.responses;
+const waitingOnVerify = v.responses.some(
+  (r) =>
+    (r.status === "awaiting_approval" && !r.can_approve) ||
+    (r.status === "approved" && !r.can_publish),
+);
+const mfa = `/mfa/?return=${encodeURIComponent(Astro.url.pathname)}`;
+const draftable = latest?.status !== "published";
 ---
 
-<h1 id="review-detail-title">Review response</h1>
-<div class="eyebrow">
-  {v.review.provider} · Review revision {v.review.revision}
+<div class="eyebrow">Google review</div>
+<div class="reviewhead detailhead">
+  <ReviewerAvatar who={who} />
+  <div class="reviewwho">
+    <h2 id="review-detail-title">Reply to {who.name}</h2>
+    <small>
+      <Stars rating={v.review.rating} />
+      <time datetime={v.review.created_at}>
+        {reviewDate(v.review.created_at, new Date())}
+      </time>
+    </small>
+  </div>
+  <StatusBadge text={chip.label} tone={chip.tone} />
 </div>
-<p>{v.review.body ?? "Review text unavailable"}</p>
-<p>
-  Review: {v.review.status} · Risk: {v.review.risk_level} · Last synced: {
-    v.review.last_synced_at
-  }
-</p>
-<a href={`/clients/${slug}/integrations/`}>Manage Integration</a>
-<section class="panel">
-  <h2>Source health</h2><p>
-    Google authorization: {v.source.connection_status} · Mapping: {
-      v.source.mapping_status
-    }
-  </p><p>
-    Last review import: {v.source.last_ingested_at ?? "Unavailable"} · Freshness:
-    {v.source.freshness} · Quality: {v.source.quality}
-  </p>
-</section>
-<section class="panel">
-  <h2>Draft response</h2>
-  <p>
-    Saving creates a new canonical response revision. Current backend policy
-    requires exact approval for local drafts. Approval-free client overrides are
-    unavailable in the canonical service.
-  </p>
-  {
-    !v.can_draft && (
-      <p>
-        Drafting unavailable: permission, current review revision or approved
-        business facts are missing.
-      </p>
-    )
-  }
-  <form
-    inert
-    data-review-draft
-    data-action={api}
-    data-revision={v.review.revision_id}
-  >
-    <fieldset disabled={!v.can_draft}>
-      <legend>Approved facts grounding this response</legend>{
-        v.facts.map((f) => (
-          <label>
-            <input type="checkbox" name="fact" value={f.id} />
-            {f.key} · {JSON.stringify(f.value)}
-          </label>
-        ))
-      }
-    </fieldset>
-    <label for="review-response-text">Response</label>
-    <textarea
-      id="review-response-text"
-      name="response_text"
-      maxlength="5000"
-      rows="5"
-      disabled={!v.can_draft}>{v.responses[0]?.text ?? ""}</textarea
+{
+  v.review.body ? (
+    <p class="reviewtext">
+      {v.review.title && <b>{v.review.title} </b>}
+      {v.review.body}
+    </p>
+  ) : (
+    <p class="reviewtext muted">This review has a star rating and no text.</p>
+  )
+}
+<p class="formstatus" role="status" aria-live="polite" data-review-status></p>
+{
+  waitingOnVerify && (
+    <div class="insight">
+      Approving and publishing need a verified authenticator.{" "}
+      <a class="link" href={mfa}>
+        Verify to continue
+      </a>
+    </div>
+  )
+}
+{
+  latest && (
+    <section class="replyblock" aria-label="Current response">
+      <div class="postmeta">
+        <StatusBadge
+          text={responseChip(latest.status).label}
+          tone={responseChip(latest.status).tone}
+        />
+        <span>
+          {latest.generated_by === "imported"
+            ? "Written on Google"
+            : latest.generated_by === "user"
+              ? "Written by a person"
+              : "Drafted by LILOs"}
+        </span>
+        {latest.approved_at && (
+          <span>Approved {dateText(latest.approved_at)}</span>
+        )}
+        {latest.published_at && (
+          <span>Published {dateText(latest.published_at)}</span>
+        )}
+      </div>
+      <blockquote class="quote">{latest.text}</blockquote>
+      {responseNote[latest.status] && (
+        <p class="hint">{responseNote[latest.status]}</p>
+      )}
+      <div class="rowactions">
+        <button
+          type="button"
+          class="control primary"
+          inert
+          data-review-action={api + latest.id + "/approve/"}
+          disabled={!latest.can_approve}
+        >
+          Approve this response
+        </button>
+        <button
+          type="button"
+          class="control primary"
+          inert
+          data-review-action={api + latest.id + "/publish/"}
+          data-key={`console-review-${latest.id}`}
+          disabled={!latest.can_publish}
+        >
+          Publish to Google
+        </button>
+      </div>
+    </section>
+  )
+}
+{
+  draftable && (
+    <form
+      inert
+      class="formgrid"
+      data-review-draft
+      data-action={api}
+      data-revision={v.review.revision_id}
     >
-    <button type="submit" disabled={!v.can_draft}
-      >Save new response revision</button
-    >
-    <button type="submit" name="mode" value="ai" disabled={!v.can_ai_draft}
-      >Generate canonical AI draft</button
-    >
-  </form>
-</section>
-<section class="panel">
-  <h2>Response revisions</h2>
-  <p>
-    To revise a response, save a new draft above. Editing in place, rejection,
-    deletion and manual response retry are unavailable in the canonical API.
-  </p>
-  {
-    v.responses.length ? (
-      v.responses.map((r) => (
-        <article class="reviewrow">
-          <>
-            <h3>
-              Response revision {r.revision} · {r.status}
-            </h3>
-            <p class="savedresponse">{r.text}</p>
-          </>
-          <p>
-            Source: {r.generated_by} · Approval required:{" "}
-            {r.approval_required
-              ? "Yes — canonical local response policy"
-              : "No — provider-observed reply"}
-          </p>
-          <p>
-            Approved: {r.approved_at ?? "Not approved"} · Published/read-back:{" "}
-            {r.published_at ?? "Not confirmed"}
-          </p>
-          <p>
-            Provider reference: {r.external_response_id ?? "Unavailable"} ·
-            Error: {r.safe_error_code ?? "None recorded"}
-          </p>
-          <p>
-            Workflow: {r.workflow_status ?? "Not dispatched"} ·{" "}
-            {r.workflow_failure ?? ""} · {r.workflow_id ?? ""}
-          </p>
-          <button
-            inert
-            data-review-action={api + r.id + "/approve/"}
-            disabled={!r.can_approve}
-          >
-            Approve exact response revision {r.revision}
-          </button>
-          <button
-            inert
-            data-review-action={api + r.id + "/publish/"}
-            data-key={`console-review-${r.id}`}
-            disabled={!r.can_publish}
-          >
-            Dispatch approved response revision {r.revision}
-          </button>
-          <details>
-            <summary>Response audit history</summary>
-            {v.can_read_audit ? (
-              r.history.map((h) => (
-                <p>
-                  {h.occurred_at} · {h.event_type} · {h.result} · {h.actor_type}{" "}
-                  · {h.summary}
-                </p>
-              ))
-            ) : (
-              <p>Audit permission unavailable.</p>
-            )}
-          </details>
-        </article>
-      ))
-    ) : (
-      <p>No persisted response revisions.</p>
-    )
-  }
-</section>
-<section class="panel">
-  <h2>Review history and recovery</h2>
-  <p>
-    Queued or retry scheduled work is not published. Published responses require
-    canonical provider read-back. Ambiguous writes remain reconciliation
-    required. Worker retries and review imports use canonical recovery; a manual
-    response retry endpoint is unavailable.
-  </p>
-  {
-    v.can_read_audit ? (
-      v.history.map((h) => (
-        <p>
-          {h.occurred_at} · {h.event_type} · {h.result} · {h.actor_type} ·{" "}
-          {h.summary}
+      {!v.can_draft && (
+        <p class="hint">
+          Drafting is unavailable right now. It needs permission and at least
+          one approved business fact.
         </p>
-      ))
-    ) : (
-      <p>Audit permission unavailable.</p>
+      )}
+      <fieldset disabled={!v.can_draft}>
+        <legend>Facts this response may use</legend>
+        {v.facts.length ? (
+          v.facts.map((f) => (
+            <label class="factpick">
+              <input type="checkbox" name="fact" value={f.id} />
+              {humanize(f.key)}: {factLabel(f.value)}
+            </label>
+          ))
+        ) : (
+          <p class="hint">No approved business facts yet.</p>
+        )}
+      </fieldset>
+      <div class="field">
+        <label for="review-response-text">
+          {latest ? "Edit the response" : "Write a response"}
+        </label>
+        <textarea
+          id="review-response-text"
+          name="response_text"
+          maxlength="5000"
+          rows="5"
+          disabled={!v.can_draft}
+          set:text={latest?.text ?? ""}
+        />
+        <span class="hint">
+          Saving sends the wording for approval. Nothing is posted to Google
+          until it is approved and published.
+        </span>
+      </div>
+      <div class="rowactions">
+        <button type="submit" class="control" disabled={!v.can_draft}>
+          {latest ? "Save changes" : "Save draft"}
+        </button>
+        <button
+          type="submit"
+          class="control"
+          name="mode"
+          value="ai"
+          disabled={!v.can_ai_draft}
+        >
+          Generate a draft
+        </button>
+      </div>
+    </form>
+  )
+}
+{
+  earlier.length > 0 && (
+    <details class="activity">
+      <summary>Earlier versions ({earlier.length})</summary>
+      {earlier.map((r) => (
+        <div class="listrow">
+          <div>
+            {r.text}
+            <small>
+              Version {r.revision}
+              {r.published_at ? ` · Published ${dateText(r.published_at)}` : ""}
+            </small>
+          </div>
+          <StatusBadge
+            text={responseChip(r.status).label}
+            tone={responseChip(r.status).tone}
+          />
+        </div>
+      ))}
+    </details>
+  )
+}
+{
+  v.can_read_audit &&
+    (v.history.length > 0 || v.responses.some((r) => r.history.length > 0)) && (
+      <details class="activity">
+        <summary>Activity</summary>
+        {[...v.history, ...v.responses.flatMap((r) => r.history)]
+          .sort((a, b) => b.occurred_at.localeCompare(a.occurred_at))
+          .map((h) => (
+            <div class="listrow">
+              <div>
+                {eventLabel(h.event_type)}
+                <small>
+                  {actorLabel(h.actor_type)} · {dateText(h.occurred_at)}
+                  {resultLabel(h.result) ? ` · ${resultLabel(h.result)}` : ""}
+                </small>
+              </div>
+            </div>
+          ))}
+      </details>
     )
-  }
-  <a href={`/mfa/?return=${encodeURIComponent(Astro.url.pathname)}`}
-    >Verify authenticator for protected actions</a
-  >
-</section>
-<p role="status" aria-live="polite" data-review-status></p>
+}
 <script>
   import "../../lib/review-actions";
 </script>

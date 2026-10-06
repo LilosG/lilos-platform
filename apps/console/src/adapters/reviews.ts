@@ -9,6 +9,9 @@ const item = z.object({
   provider: z.string(),
   external_review_id: z.string(),
   reviewer_reference: nullable,
+  reviewer_identity: z.enum(["named", "anonymous", "unknown"]),
+  reviewer_display_name: nullable,
+  reviewer_photo_url: nullable,
   rating: z.number().min(0).max(5).nullable(),
   body: nullable,
   title: nullable,
@@ -18,6 +21,7 @@ const item = z.object({
   created_at: z.string(),
   last_synced_at: z.string(),
   response_status: nullable,
+  response_text: nullable,
 });
 const history = z.object({
   id: z.uuid(),
@@ -46,6 +50,7 @@ const workspace = z.object({
   inventory_count: z.number().int().nonnegative().nullable(),
   average_rating: z.number().nullable(),
   open_restricted_cases: z.number().int().nonnegative().nullable(),
+  awaiting_response_count: z.number().int().nonnegative().nullable(),
   items: z.array(item),
   next_offset: z.number().int().nonnegative().nullable(),
   can_ingest: z.boolean(),
@@ -147,6 +152,19 @@ export function adaptReviewDetail(
     throw new Error("REVIEW_SCOPE_MISMATCH");
   return view;
 }
+/** The status tabs; each value is the typed `status` query the API accepts. */
+export const REVIEW_FILTERS = [
+  ["all", "All reviews"],
+  ["needs_response", "Needs response"],
+  ["draft", "Draft"],
+  ["awaiting_approval", "Awaiting approval"],
+  ["published", "Published"],
+] as const;
+export type ReviewFilter = (typeof REVIEW_FILTERS)[number][0];
+export const reviewFilter = (raw: string | null): ReviewFilter | null =>
+  raw === null || raw === ""
+    ? "all"
+    : (REVIEW_FILTERS.find(([key]) => key === raw)?.[0] ?? null);
 export function metric(value: number | null): string {
   return value === null ? "Unavailable" : String(value);
 }

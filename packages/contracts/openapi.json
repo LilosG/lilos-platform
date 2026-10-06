@@ -13784,6 +13784,17 @@
             ],
             "title": "Response Status"
           },
+          "response_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Response Text"
+          },
           "reviewer_display_name": {
             "anyOf": [
               {
@@ -13885,7 +13896,8 @@
           "risk_level",
           "created_at",
           "last_synced_at",
-          "response_status"
+          "response_status",
+          "response_text"
         ],
         "title": "ReviewInventoryItem",
         "type": "object"
