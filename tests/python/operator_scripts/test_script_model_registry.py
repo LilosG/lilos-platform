@@ -35,6 +35,7 @@ SCRIPT_RUNS: dict[str, tuple[list[str], int]] = {
     "retire_stale_growth_work": ([], 0),
     "reevaluate_active_websites": ([], 0),
     "ensure_client_schedules": ([], 0),
+    "ensure_storage_buckets": ([], 2),  # dry run; Supabase Storage is not configured here
     "recover_stuck_publications": ([], 0),
     "seed_publishing_target_contracts": ([], 0),
     "suspend_organization": (["--organization-id", str(uuid4())], 1),  # organization not found

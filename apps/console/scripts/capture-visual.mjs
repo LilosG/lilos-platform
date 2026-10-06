@@ -14,10 +14,6 @@ const out = new URL(`../visual/${step}/`, import.meta.url);
 const sizes = { desktop: [1440, 1000], mobile: [390, 844] };
 const gbp = "/clients/synthetic-beta/local-search/google-business-profile/";
 const coco = "/clients/coco-maya/local-search/";
-const open = (name) => async (page) => {
-  await page.getByRole("button", { name, exact: true }).first().click();
-  await page.locator("dialog[open]").waitFor();
-};
 // Each screen: the console route, the user to sign in as, the nearest reference route, and
 // an optional step that opens a dialog before the capture.
 const hours = `${gbp}?view=special-hours`;
