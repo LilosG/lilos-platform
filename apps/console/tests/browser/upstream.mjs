@@ -85,16 +85,40 @@ const session = (id, aal = "aal1") => ({
   expires_in: 3600,
   user: user(id),
 });
-function readMultipart(raw) {
-  const text = raw.toString("latin1");
+/**
+ * Reads a multipart body by its declared boundary. The file is random binary, so the body must
+ * never be split on a pattern that bytes inside the file could also match: that made the measured
+ * file size occasionally fall under the 10 KB minimum and failed uploads at random.
+ */
+function readMultipart(raw, contentType) {
+  const boundary = /boundary=(?:"([^"]+)"|([^;]+))/
+    .exec(contentType)
+    ?.slice(1)
+    .find(Boolean);
   const fields = {};
   let fileBytes = 0;
-  for (const part of text.split(/--[^\r\n]+\r?\n/).slice(1)) {
-    const name = /name="([^"]+)"/.exec(part)?.[1];
-    const [head, ...rest] = part.split("\r\n\r\n");
-    const content = rest.join("\r\n\r\n").replace(/\r\n(--[^\r\n]+)?$/, "");
-    if (name === "file") fileBytes = Buffer.byteLength(content, "latin1");
-    else if (name && !head.includes("filename")) fields[name] = content;
+  if (!boundary) return { fields, fileBytes };
+  const delimiter = Buffer.from(`--${boundary}`);
+  const parts = [];
+  let start = raw.indexOf(delimiter);
+  while (start !== -1) {
+    const from = start + delimiter.length;
+    if (raw.subarray(from, from + 2).toString() === "--") break;
+    const end = raw.indexOf(delimiter, from);
+    if (end === -1) break;
+    // A part runs from after the delimiter's line break to the line break before the next one.
+    parts.push(raw.subarray(from + 2, end - 2));
+    start = end;
+  }
+  for (const part of parts) {
+    const split = part.indexOf("\r\n\r\n");
+    if (split === -1) continue;
+    const head = part.subarray(0, split).toString("latin1");
+    const content = part.subarray(split + 4);
+    const name = /name="([^"]+)"/.exec(head)?.[1];
+    if (name === "file") fileBytes = content.length;
+    else if (name && !head.includes("filename"))
+      fields[name] = content.toString("latin1");
   }
   return { fields, fileBytes };
 }
@@ -108,7 +132,7 @@ createServer(async (req, res) => {
   );
   // An upload is read as its text fields and the file's size; the file itself is not kept.
   const parsed = multipart
-    ? readMultipart(raw)
+    ? readMultipart(raw, req.headers["content-type"])
     : raw.length
       ? JSON.parse(raw.toString())
       : {};
