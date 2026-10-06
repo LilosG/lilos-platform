@@ -266,3 +266,54 @@ def test_transition_is_isolated_to_the_selected_organization(
         assert second_events[0].event_type == "platform.organization.created"
 
     asyncio.run(exercise())
+
+
+@pytest.mark.integration
+def test_removed_at_is_only_valid_on_an_archived_organization_and_hides_it_from_the_list(
+    organization_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    from sqlalchemy.exc import IntegrityError
+
+    from apps.api.app.database.base import utc_now
+    from apps.api.app.organizations.repository import OrganizationRepository
+
+    async def exercise() -> None:
+        service = OrganizationService()
+        async with organization_session_factory.begin() as session:
+            live = await service.create(session, command("live-client"), correlation_id="live")
+            gone = await service.create(session, command("gone-client"), correlation_id="gone")
+            live_id, gone_id = live.id, gone.id
+        for action in (
+            OrganizationLifecycleAction.START_OFFBOARDING,
+            OrganizationLifecycleAction.ARCHIVE,
+        ):
+            async with organization_session_factory.begin() as session:
+                current = await service.get(session, gone_id)
+                await service.transition(
+                    session,
+                    gone_id,
+                    action=action,
+                    expected_version=current.version,
+                    correlation_id="archive-gone",
+                )
+
+        # A tombstone is only possible for an archived organization.
+        with pytest.raises(IntegrityError):
+            async with organization_session_factory.begin() as session:
+                organization = await session.get(Organization, live_id)
+                assert organization is not None
+                organization.removed_at = utc_now()
+
+        repository = OrganizationRepository()
+        async with organization_session_factory.begin() as session:
+            assert await repository.mark_removed(session, live_id) is None
+            tombstone = await repository.mark_removed(session, gone_id)
+            assert tombstone is not None and tombstone.removed_at is not None
+            assert tombstone.primary_contact_email is None and tombstone.name == "Gone Client"
+        async with organization_session_factory() as session:
+            visible, _ = await repository.list(session, limit=10, offset=0)
+            assert [item.id for item in visible] == [live_id]
+            everything, _ = await repository.list(session, limit=10, offset=0, include_removed=True)
+            assert {item.id for item in everything} == {live_id, gone_id}
+
+    asyncio.run(exercise())

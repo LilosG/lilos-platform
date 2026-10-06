@@ -23,6 +23,7 @@ WORKFLOW_TYPES: dict[str, tuple[str, str]] = {
     "gbp.sync": ("Scheduled GBP profile discovery and sync", "gbp"),
     "gbp.sync_performance": ("Scheduled GBP performance metrics sync", "gbp"),
     "reviews.ingest": ("Scheduled reviews ingestion", "reviews"),
+    "organization.remove": ("Permanently remove an archived client's data", "platform"),
     "agent.gbp": ("Hermes GBP governed agent", "gbp"),
     "agent.seo": ("Hermes SEO evidence agent", "seo"),
     "agent.content": ("Hermes grounded Content agent", "content"),

@@ -19,6 +19,7 @@ from apps.api.app.execution.provider_sync_handlers import (
     handle_gbp_performance_sync,
     handle_search_console_sync,
 )
+from apps.api.app.organizations.removal import handle_organization_remove
 from apps.api.app.products.gbp.post_strategy import StrategicGBPPostGenerationService
 from apps.api.app.products.gbp.proposal_enrichment import GBPProposalEnrichmentError
 from apps.api.app.products.seo.orchestration import SEOOrchestrationService
@@ -406,6 +407,7 @@ async def _handle_gbp_generate_post(
     )
 
 
+register_workflow_handler("organization.remove", handle_organization_remove)
 register_workflow_handler("seo.crawl_or_analysis", _handle_seo_crawl_and_analysis)
 register_workflow_handler("seo.analyze", _handle_seo_analysis)
 register_workflow_handler("seo.apply_site_change", handle_seo_apply_site_change)

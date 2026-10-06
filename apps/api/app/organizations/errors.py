@@ -1,6 +1,7 @@
 """Safe organization-domain errors exposed through the standard API envelope."""
 
 from apps.api.app.errors import ConflictError, NotFoundError
+from apps.api.app.organizations.enums import OrganizationRemovalErrorCode
 
 
 class OrganizationNotFoundError(NotFoundError):
@@ -45,3 +46,17 @@ class OrganizationNameConflictError(ConflictError):
         "Another organization already uses this name. Open the existing one, or "
         "resend with allow_duplicate_name to create a second client with the same name."
     )
+
+
+class OrganizationRemovalRequiresArchivedError(ConflictError):
+    """Permanent removal is the second step; the organization must already be archived."""
+
+    code = OrganizationRemovalErrorCode.REQUIRES_ARCHIVED.value
+    public_message = "Only an archived organization can be removed."
+
+
+class OrganizationRemovalConfirmationMismatchError(ConflictError):
+    """The typed confirmation did not match the organization name."""
+
+    code = OrganizationRemovalErrorCode.CONFIRMATION_MISMATCH.value
+    public_message = "The confirmation did not match the organization name."

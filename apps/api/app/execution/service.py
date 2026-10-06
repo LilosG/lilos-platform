@@ -42,6 +42,8 @@ from apps.api.app.execution.workflow_catalog import WORKFLOW_TYPES, is_known_wor
 from apps.api.app.locations.models import Location
 
 CONSUMABLE_WORKFLOW_RUN_STATUSES = {"created", "queued"}
+# Resumable workflows that legitimately run longer than the default job budget.
+LONG_RUNNING = frozenset({"organization.remove"})
 
 
 class IdempotencyConflict(ValueError):
@@ -223,7 +225,14 @@ class ExecutionService:
             await session.flush()
         return run, True
 
-    async def enqueue_run_job(self, session: AsyncSession, run: WorkflowRun) -> None:
+    async def enqueue_run_job(
+        self,
+        session: AsyncSession,
+        run: WorkflowRun,
+        *,
+        max_attempts: int | None = None,
+        timeout_seconds: int | None = None,
+    ) -> None:
         """Queue the durable worker job for a run that was started un-enqueued.
 
         Products that must bind a domain row to a run before it executes start the
@@ -232,7 +241,8 @@ class ExecutionService:
         and fail permanently on a missing record.
 
         The job idempotency key is derived from the run, so a repeated call cannot
-        queue the same run twice.
+        queue the same run twice. ``max_attempts`` and ``timeout_seconds`` override the
+        queue defaults for long, resumable work.
         """
         existing = await session.scalar(
             select(Job).where(
@@ -242,6 +252,11 @@ class ExecutionService:
         )
         if existing is not None:
             return
+        limits: dict[str, int] = {}
+        if max_attempts is not None:
+            limits["max_attempts"] = max_attempts
+        if timeout_seconds is not None:
+            limits["timeout_seconds"] = timeout_seconds
         session.add(
             Job(
                 organization_id=run.organization_id,
@@ -250,6 +265,7 @@ class ExecutionService:
                 status="queued",
                 idempotency_key=f"run:{run.id}",
                 payload={"run_id": str(run.id)},
+                **limits,
             )
         )
         await session.flush()
@@ -331,7 +347,11 @@ class ExecutionService:
                 output_schema={},
                 step_specification=[],
                 retry_policy={},
-                timeout_seconds=900 if workflow_key.startswith("agent.") else 300,
+                timeout_seconds=(
+                    900
+                    if workflow_key.startswith("agent.") or workflow_key in LONG_RUNNING
+                    else 300
+                ),
             )
             session.add(version)
             await session.flush()
