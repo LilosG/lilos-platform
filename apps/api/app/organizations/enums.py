@@ -35,3 +35,19 @@ class OrganizationLifecycleAction(StrEnum):
     SUSPEND = "suspend"
     START_OFFBOARDING = "start_offboarding"
     ARCHIVE = "archive"
+
+
+class OrganizationRemovalState(StrEnum):
+    """Where a permanent-removal request stands, as reported to the caller."""
+
+    REQUESTED = "requested"
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class OrganizationRemovalErrorCode(StrEnum):
+    """Stable codes for refusing a removal request; the UI chooses its message from these."""
+
+    REQUIRES_ARCHIVED = "ORGANIZATION_REMOVAL_REQUIRES_ARCHIVED"
+    CONFIRMATION_MISMATCH = "ORGANIZATION_REMOVAL_CONFIRMATION_MISMATCH"

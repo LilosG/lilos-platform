@@ -29,8 +29,10 @@ from apps.api.app.authorization.dependencies import require_authorization
 from apps.api.app.database.session import get_database_session
 from apps.api.app.errors import request_correlation_id
 from apps.api.app.execution.contracts import ScheduleCreate, ScheduleUpdate
+from apps.api.app.execution.errors import WorkflowKeyUnknownError
 from apps.api.app.execution.models import WorkflowRun
 from apps.api.app.execution.service import ExecutionService
+from apps.api.app.execution.workflow_catalog import is_tenant_workflow_key
 
 router = APIRouter(
     prefix="/api/v1/organizations/{organization_id}/workflows",
@@ -178,6 +180,8 @@ async def create_workflow_schedule(
     principal: Authenticated,
     _: Annotated[AuthorizationDecision, policy("schedules.manage")],
 ) -> dict[str, object]:
+    if not is_tenant_workflow_key(command.workflow_key):
+        raise WorkflowKeyUnknownError
     schedule_cmd = ScheduleCreate(
         workflow_key=command.workflow_key,
         key=command.key,
@@ -281,6 +285,8 @@ async def start_workflow_run(
     worker sees it. Operator-facing automation controls use ``execute=true``
     for standalone workflows such as GBP sync and reviews ingestion.
     """
+    if not is_tenant_workflow_key(workflow_key):
+        raise WorkflowKeyUnknownError
     run = await service.start_named(
         session,
         organization_id,

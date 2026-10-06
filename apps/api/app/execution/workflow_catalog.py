@@ -23,6 +23,7 @@ WORKFLOW_TYPES: dict[str, tuple[str, str]] = {
     "gbp.sync": ("Scheduled GBP profile discovery and sync", "gbp"),
     "gbp.sync_performance": ("Scheduled GBP performance metrics sync", "gbp"),
     "reviews.ingest": ("Scheduled reviews ingestion", "reviews"),
+    "organization.remove": ("Permanently remove an archived client's data", "platform"),
     "agent.gbp": ("Hermes GBP governed agent", "gbp"),
     "agent.seo": ("Hermes SEO evidence agent", "seo"),
     "agent.content": ("Hermes grounded Content agent", "content"),
@@ -31,6 +32,16 @@ WORKFLOW_TYPES: dict[str, tuple[str, str]] = {
     "agent.insights": ("Hermes cross-product Insights agent", "insights"),
     "agent.growth": ("Hermes cross-product Growth planner", "growth"),
 }
+
+
+# Workflows only the platform may start. A tenant-facing route must treat these as unknown:
+# they act on the organization itself, not on one of its products.
+PLATFORM_ONLY_WORKFLOWS = frozenset({"organization.remove"})
+
+
+def is_tenant_workflow_key(key: str) -> bool:
+    """A known workflow a client organization's own users may list, start or schedule."""
+    return key in WORKFLOW_TYPES and key not in PLATFORM_ONLY_WORKFLOWS
 
 
 def is_known_workflow_key(key: str) -> bool:

@@ -10198,6 +10198,18 @@
             ],
             "title": "Primary Contact Phone"
           },
+          "removed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Removed At"
+          },
           "slug": {
             "title": "Slug",
             "type": "string"
@@ -10249,6 +10261,7 @@
           "onboarding_mode",
           "industry_id",
           "archived_at",
+          "removed_at",
           "created_at",
           "updated_at",
           "version"
@@ -11174,6 +11187,36 @@
           "meta"
         ],
         "title": "OrganizationProfileResponse",
+        "type": "object"
+      },
+      "OrganizationRemove": {
+        "additionalProperties": false,
+        "description": "Typed confirmation that permanently removes an archived organization's data.",
+        "properties": {
+          "confirm_name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Confirm Name",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "confirm_name"
+        ],
+        "title": "OrganizationRemove",
         "type": "object"
       },
       "OrganizationResponse": {
@@ -36705,6 +36748,122 @@
           }
         },
         "summary": "Provision intended safe defaults an existing client may lack",
+        "tags": [
+          "platform-administration"
+        ]
+      }
+    },
+    "/api/v1/platform/organizations/{organization_id}/removal": {
+      "get": {
+        "description": "Report the removal as requested, in progress, completed or failed (with its typed code).",
+        "operationId": "get_organization_removal_api_v1_platform_organizations__organization_id__removal_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "Caller is not an active platform administrator"
+          },
+          "404": {
+            "description": "Organization or location not found"
+          },
+          "409": {
+            "description": "Slug, lifecycle, primary, or version conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get where an organization's removal stands",
+        "tags": [
+          "platform-administration"
+        ]
+      }
+    },
+    "/api/v1/platform/organizations/{organization_id}/remove": {
+      "post": {
+        "description": "Step two of retiring a client: queue the permanent deletion of its data.\n\nArchiving stays step one and keeps every record. This only records the request, audits\nit and queues the ``organization.remove`` workflow; the worker stops the client's\nschedules and runs, deletes its data, and finally marks the organization removed. It is\nidempotent: asking again returns the state of the removal already queued or finished.\nAuthorization is the router's: an active platform administrator at AAL2.",
+        "operationId": "remove_organization_api_v1_platform_organizations__organization_id__remove_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrganizationRemove"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "Caller is not an active platform administrator"
+          },
+          "404": {
+            "description": "Organization or location not found"
+          },
+          "409": {
+            "description": "ORGANIZATION_REMOVAL_REQUIRES_ARCHIVED or ORGANIZATION_REMOVAL_CONFIRMATION_MISMATCH"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Permanently remove an archived organization's data",
         "tags": [
           "platform-administration"
         ]

@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import cast
 from uuid import UUID
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.app.database.base import utc_now
@@ -74,15 +74,22 @@ class OrganizationRepository:
         *,
         limit: int,
         offset: int,
+        include_removed: bool = False,
     ) -> tuple[list[Organization], bool]:
-        """Return a bounded deterministic administrative page."""
+        """Return a bounded deterministic administrative page.
+
+        A removed organization is only a tombstone kept for the audit trail, so it is left
+        out unless the caller explicitly asks for it.
+        """
         if not 1 <= limit <= MAX_ORGANIZATION_LIST_LIMIT:
             raise ValueError(f"Organization list limit must be 1-{MAX_ORGANIZATION_LIST_LIMIT}")
         if offset < 0:
             raise ValueError("Organization list offset must not be negative")
+        statement = select(Organization)
+        if not include_removed:
+            statement = statement.where(Organization.removed_at.is_(None))
         result = await session.scalars(
-            select(Organization)
-            .order_by(Organization.created_at.asc(), Organization.id.asc())
+            statement.order_by(Organization.created_at.asc(), Organization.id.asc())
             .offset(offset)
             .limit(limit + 1)
         )
@@ -115,6 +122,68 @@ class OrganizationRepository:
                 Organization.version == expected_version,
             )
             .values(**values)
+            .returning(Organization)
+        )
+        return cast(Organization | None, await session.scalar(statement))
+
+    async def mark_removal_requested(
+        self, session: AsyncSession, organization_id: UUID
+    ) -> Organization | None:
+        """Record that an administrator asked for removal; the first request time is kept.
+
+        This is the state the database's delete guard reads, so it is only called from the
+        authorized remove endpoint's service method, and only for an archived organization.
+        """
+        statement = (
+            update(Organization)
+            .where(
+                Organization.id == organization_id,
+                Organization.status == OrganizationStatus.ARCHIVED,
+                Organization.removed_at.is_(None),
+            )
+            .values(
+                removal_requested_at=func.coalesce(Organization.removal_requested_at, utc_now()),
+                updated_at=utc_now(),
+            )
+            .returning(Organization)
+        )
+        return cast(Organization | None, await session.scalar(statement))
+
+    async def mark_removed(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        *,
+        removed_at: datetime | None = None,
+    ) -> Organization | None:
+        """Turn an archived organization into a tombstone.
+
+        Only id, name, slug, status, archived_at and removed_at keep their values. Every other
+        identifying column is cleared; the two NOT NULL ones fall back to neutral defaults.
+        """
+        statement = (
+            update(Organization)
+            .where(
+                Organization.id == organization_id,
+                Organization.status == OrganizationStatus.ARCHIVED,
+            )
+            .values(
+                removed_at=removed_at or utc_now(),
+                legal_name=None,
+                website_url=None,
+                primary_contact_name=None,
+                primary_contact_email=None,
+                primary_contact_phone=None,
+                billing_email=None,
+                external_reference=None,
+                onboarding_status=None,
+                onboarding_mode=None,
+                industry_id=None,
+                timezone="UTC",
+                default_currency="USD",
+                version=Organization.version + 1,
+                updated_at=utc_now(),
+            )
             .returning(Organization)
         )
         return cast(Organization | None, await session.scalar(statement))

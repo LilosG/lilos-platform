@@ -66,6 +66,9 @@ from apps.api.app.organizations.contracts import (
     OrganizationCreate,
     OrganizationData,
     OrganizationIndustryAssignment,
+    OrganizationRemovalData,
+    OrganizationRemovalStatusData,
+    OrganizationRemove,
     OrganizationTransition,
 )
 from apps.api.app.organizations.enums import OrganizationLifecycleAction
@@ -490,6 +493,72 @@ async def archive_organization(
     """
     return await _transition_organization(
         request, organization_id, command, session, OrganizationLifecycleAction.ARCHIVE
+    )
+
+
+@router.post(
+    "/organizations/{organization_id}/remove",
+    response_model=DataResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Permanently remove an archived organization's data",
+    responses={
+        409: {
+            "description": (
+                "ORGANIZATION_REMOVAL_REQUIRES_ARCHIVED or "
+                "ORGANIZATION_REMOVAL_CONFIRMATION_MISMATCH"
+            )
+        }
+    },
+)
+async def remove_organization(
+    request: Request,
+    organization_id: UUID,
+    command: OrganizationRemove,
+    session: DatabaseSession,
+    principal: Authenticated,
+) -> DataResponse:
+    """Step two of retiring a client: queue the permanent deletion of its data.
+
+    Archiving stays step one and keeps every record. This only records the request, audits
+    it and queues the ``organization.remove`` workflow; the worker stops the client's
+    schedules and runs, deletes its data, and finally marks the organization removed. It is
+    idempotent: asking again returns the state of the removal already queued or finished.
+    Authorization is the router's: an active platform administrator at AAL2.
+    """
+    organization, state, run_id = await organizations.request_removal(
+        session,
+        organization_id,
+        command,
+        actor_id=principal.platform_user_id,
+        correlation_id=request_correlation_id(request),
+    )
+    return response(
+        request,
+        OrganizationRemovalData(
+            organization=OrganizationData.model_validate(organization),
+            state=state,
+            workflow_run_id=run_id,
+        ),
+    )
+
+
+@router.get(
+    "/organizations/{organization_id}/removal",
+    response_model=DataResponse,
+    summary="Get where an organization's removal stands",
+)
+async def get_organization_removal(
+    request: Request,
+    organization_id: UUID,
+    session: DatabaseSession,
+) -> DataResponse:
+    """Report the removal as requested, in progress, completed or failed (with its typed code)."""
+    state, failure_code, run_id = await organizations.removal_status(session, organization_id)
+    return response(
+        request,
+        OrganizationRemovalStatusData(
+            state=state, failure_code=failure_code, workflow_run_id=run_id
+        ),
     )
 
 

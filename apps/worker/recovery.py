@@ -13,7 +13,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from apps.api.app.agents.hermes_client import HermesRuntimeError
@@ -35,6 +35,8 @@ from apps.api.app.execution.models import (
     WorkflowVersion,
 )
 from apps.api.app.execution.service import ExecutionService
+from apps.api.app.organizations.enums import OrganizationStatus
+from apps.api.app.organizations.models import Organization
 from apps.api.app.products.content.models import ContentPublication
 from apps.api.app.products.gbp.operations_models import GBPPostPublication
 from apps.api.app.products.gbp.operations_service import GBPOperationsService, settlement_code
@@ -74,6 +76,21 @@ CONTENT_DEPLOY_RATE_LIMIT_WINDOW = timedelta(hours=24, minutes=5)
 REVIEW_REPLY_SUPERSEDED = "REVIEW_REPLY_SUPERSEDED"
 CONTENT_DEPLOY_RESUME_KEY = "content-deploy-rate-limit"
 CONTENT_DEPLOY_RESUME_MAX_ATTEMPTS = 30  # same budget as an operator-initiated resume
+
+
+def _retired_organization_ids() -> Any:
+    """Organizations recovery must never start new work for.
+
+    Archived clients have been retired, and removed ones (or ones being removed, which are
+    always archived) have had their data deleted. Recovery is for live clients: re-queuing a
+    failed run for a retired one would resume provider activity the removal exists to stop.
+    """
+    return select(Organization.id).where(
+        or_(
+            Organization.status == OrganizationStatus.ARCHIVED,
+            Organization.removed_at.is_not(None),
+        )
+    )
 
 
 def _hermes_run_missing(exc: HermesRuntimeError) -> bool:
@@ -322,6 +339,7 @@ async def resume_rate_limited_content_deploys(
                 WorkflowDefinition.key == "content.publish",
                 WorkflowRun.status == "failed",
                 WorkflowRun.failure_code == "CONTENT_DEPLOYMENT_RATE_LIMITED",
+                WorkflowRun.organization_id.not_in(_retired_organization_ids()),
             )
             .order_by(WorkflowRun.updated_at)
             .with_for_update(skip_locked=True, of=WorkflowRun)
@@ -721,6 +739,7 @@ async def requeue_recoverable_failures(
             .where(
                 WorkflowRun.status == "failed",
                 WorkflowRun.failure_code.in_(RECOVERABLE_FAILURES),
+                WorkflowRun.organization_id.not_in(_retired_organization_ids()),
             )
             .order_by(WorkflowRun.updated_at.desc())
             .with_for_update(skip_locked=True)

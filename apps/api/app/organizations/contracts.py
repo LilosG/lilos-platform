@@ -16,7 +16,11 @@ from pydantic import (
     model_validator,
 )
 
-from apps.api.app.organizations.enums import OrganizationStatus, OrganizationType
+from apps.api.app.organizations.enums import (
+    OrganizationRemovalState,
+    OrganizationStatus,
+    OrganizationType,
+)
 from apps.api.app.schemas import ResponseMeta
 
 ORGANIZATION_SLUG_PATTERN = re.compile(
@@ -118,6 +122,15 @@ class OrganizationTransition(BaseModel):
     expected_version: Annotated[int, Field(ge=1)]
 
 
+class OrganizationRemove(BaseModel):
+    """Typed confirmation that permanently removes an archived organization's data."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, str_strip_whitespace=True)
+
+    confirm_name: Annotated[str, Field(min_length=1, max_length=200)]
+    reason: Annotated[str, Field(min_length=1, max_length=500)] | None = None
+
+
 class OrganizationIndustryAssignment(BaseModel):
     """Narrow compare-and-swap command for one primary industry assignment."""
 
@@ -150,9 +163,30 @@ class OrganizationData(BaseModel):
     onboarding_mode: str | None
     industry_id: UUID | None
     archived_at: datetime | None
+    removed_at: datetime | None
     created_at: datetime
     updated_at: datetime
     version: int
+
+
+class OrganizationRemovalData(BaseModel):
+    """Outcome of a removal request: the organization and where its removal stands."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    organization: OrganizationData
+    state: OrganizationRemovalState
+    workflow_run_id: UUID | None
+
+
+class OrganizationRemovalStatusData(BaseModel):
+    """Where an organization's removal stands; ``state`` is null if none was ever requested."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    state: OrganizationRemovalState | None
+    failure_code: str | None
+    workflow_run_id: UUID | None
 
 
 class OrganizationResponse(BaseModel):

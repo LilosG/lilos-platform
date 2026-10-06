@@ -103,6 +103,7 @@ def test_canonical_workflow_types_registered() -> None:
         "gbp.upload_media",
         "insights.sync_analytics",
         "leads.send_communication",
+        "organization.remove",
         "reviews.ingest",
         "reviews.publish_response",
         "seo.analyze",

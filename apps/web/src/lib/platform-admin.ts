@@ -1,4 +1,8 @@
 import { apiGet, apiRequest, type ApiOutcome } from "./api-client";
+import type {
+  OrganizationRemoval,
+  OrganizationRemovalStatus,
+} from "./organization-removal";
 
 export type OrganizationType =
   "client" | "internal" | "partner" | "demo" | "test";
@@ -27,6 +31,8 @@ export type AdminOrganization = {
   status: OrganizationStatus;
   timezone: string;
   default_currency: string;
+  /** Set once the client's data has been permanently removed. */
+  removed_at?: string | null;
   version: number;
 };
 
@@ -457,6 +463,34 @@ export function archiveOrganization(
   return apiRequest<AdminOrganization>(
     `${base}/organizations/${organizationId}/archive`,
     { method: "POST", body: { expected_version: expectedVersion } },
+  );
+}
+
+/**
+ * Ask for an archived client's data to be permanently removed. The server only
+ * records the request and queues the work: the answer says how far it has got,
+ * and the client leaves the list once the worker finishes.
+ */
+export function removeOrganization(
+  organizationId: string,
+  confirmName: string,
+  reason?: string,
+): Promise<ApiOutcome<OrganizationRemoval>> {
+  return apiRequest<OrganizationRemoval>(
+    `${base}/organizations/${organizationId}/remove`,
+    {
+      method: "POST",
+      body: { confirm_name: confirmName, ...(reason ? { reason } : {}) },
+    },
+  );
+}
+
+/** Where an organization's removal stands: requested, in progress, completed or failed. */
+export function fetchOrganizationRemoval(
+  organizationId: string,
+): Promise<ApiOutcome<OrganizationRemovalStatus>> {
+  return apiGet<OrganizationRemovalStatus>(
+    `${base}/organizations/${organizationId}/removal`,
   );
 }
 

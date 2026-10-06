@@ -329,7 +329,10 @@ async def visible_scope(session: Session, principal: AuthenticatedPrincipal) -> 
     everyone = list(
         await session.scalars(
             select(Organization)
-            .where(Organization.status == OrganizationStatus.ACTIVE)
+            .where(
+                Organization.status == OrganizationStatus.ACTIVE,
+                Organization.removed_at.is_(None),
+            )
             .order_by(func.lower(Organization.name))
         )
     )

@@ -6,6 +6,8 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest
+from httpx import Response
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from starlette.testclient import TestClient
 
@@ -18,6 +20,7 @@ from apps.api.app.config import EnvironmentName, Settings
 from apps.api.app.industries.enums import IndustryStatus
 from apps.api.app.industries.models import Industry
 from apps.api.app.main import create_app
+from apps.api.app.organizations.repository import OrganizationRepository
 from apps.api.app.platform_admin.models import PlatformAdministrator
 
 
@@ -211,6 +214,11 @@ def test_non_platform_administrator_gets_403_on_every_mutating_route(
             "POST",
             f"/api/v1/platform/organizations/{organization_id}/archive",
             {"expected_version": 1},
+        ),
+        (
+            "POST",
+            f"/api/v1/platform/organizations/{organization_id}/remove",
+            {"confirm_name": "Denied Org"},
         ),
     ]
     for method, path, body in requests:
@@ -807,3 +815,203 @@ def test_archiving_is_refused_without_offboarding_first(
     )
     assert response.status_code == 409, response.text
     assert response.json()["error"]["code"] == "ORGANIZATION_TRANSITION_CONFLICT"
+
+
+def _archive(client: TestClient, organization: dict[str, object]) -> dict[str, object]:
+    offboarding = client.post(
+        f"/api/v1/platform/organizations/{organization['id']}/start-offboarding",
+        headers=HEADERS,
+        json={"expected_version": organization["version"]},
+    )
+    assert offboarding.status_code == 200, offboarding.text
+    archived = client.post(
+        f"/api/v1/platform/organizations/{organization['id']}/archive",
+        headers=HEADERS,
+        json={"expected_version": offboarding.json()["data"]["version"]},
+    )
+    assert archived.status_code == 200, archived.text
+    return dict(archived.json()["data"])
+
+
+def _remove(client: TestClient, organization_id: object, confirm_name: str) -> Response:
+    response: Response = client.post(
+        f"/api/v1/platform/organizations/{organization_id}/remove",
+        headers=HEADERS,
+        json={"confirm_name": confirm_name, "reason": "Client left"},
+    )
+    return response
+
+
+@pytest.mark.integration
+def test_removal_is_refused_until_the_client_is_archived(
+    platform_administration_client: tuple[TestClient, FakeVerifier, dict[str, UUID]],
+) -> None:
+    client, verifier, ids = platform_administration_client
+    verifier.result = claims(ids["admin_subject"])
+    organization = _create_organization(client, slug=f"live-{uuid4().hex[:10]}")
+
+    response = _remove(client, organization["id"], str(organization["name"]))
+
+    assert response.status_code == 409, response.text
+    assert response.json()["error"]["code"] == "ORGANIZATION_REMOVAL_REQUIRES_ARCHIVED"
+
+
+@pytest.mark.integration
+def test_removal_needs_the_client_name_typed_back(
+    platform_administration_client: tuple[TestClient, FakeVerifier, dict[str, UUID]],
+    platform_administration_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    client, verifier, ids = platform_administration_client
+    verifier.result = claims(ids["admin_subject"])
+    organization = _archive(
+        client, _create_organization(client, slug=f"mismatch-{uuid4().hex[:8]}")
+    )
+
+    response = _remove(client, organization["id"], "Some Other Client")
+
+    assert response.status_code == 409, response.text
+    assert response.json()["error"]["code"] == "ORGANIZATION_REMOVAL_CONFIRMATION_MISMATCH"
+    # Refusing records nothing: no run was queued and no request was audited.
+    assert _removal_runs(platform_administration_session_factory, organization["id"]) == 0
+    assert _removal_audit(platform_administration_session_factory, organization["id"]) == []
+
+
+@pytest.mark.integration
+def test_a_removal_request_only_queues_the_workflow_and_is_idempotent(
+    platform_administration_client: tuple[TestClient, FakeVerifier, dict[str, UUID]],
+    platform_administration_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    client, verifier, ids = platform_administration_client
+    verifier.result = claims(ids["admin_subject"])
+    organization = _archive(client, _create_organization(client, slug=f"gone-{uuid4().hex[:10]}"))
+
+    first = _remove(client, organization["id"], str(organization["name"]).upper())
+    again = _remove(client, organization["id"], str(organization["name"]))
+
+    assert first.status_code == 202, first.text
+    body = first.json()["data"]
+    assert body["state"] == "requested" and body["workflow_run_id"]
+    assert body["organization"]["status"] == "archived"
+    assert body["organization"]["removed_at"] is None, "the endpoint deletes nothing itself"
+    assert (
+        again.status_code == 202
+        and again.json()["data"]["workflow_run_id"] == (body["workflow_run_id"])
+    )
+    factory = platform_administration_session_factory
+    assert _removal_runs(factory, organization["id"]) == 1
+    assert _removal_audit(factory, organization["id"]) == ["organization.removal_requested"]
+    # Still listed while the worker has not run, so the UI can show it as being removed.
+    listed = client.get("/api/v1/platform/organizations", headers=HEADERS).json()["data"]["items"]
+    assert organization["id"] in {item["id"] for item in listed}
+
+
+@pytest.mark.integration
+def test_a_removed_client_leaves_the_administration_list_and_answers_with_its_state(
+    platform_administration_client: tuple[TestClient, FakeVerifier, dict[str, UUID]],
+    platform_administration_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    client, verifier, ids = platform_administration_client
+    verifier.result = claims(ids["admin_subject"])
+    organization = _archive(client, _create_organization(client, slug=f"done-{uuid4().hex[:10]}"))
+
+    async def finish() -> None:
+        async with platform_administration_session_factory.begin() as session:
+            removed = await OrganizationRepository().mark_removed(
+                session, UUID(str(organization["id"]))
+            )
+            assert removed is not None
+
+    asyncio.run(finish())
+
+    listed = client.get("/api/v1/platform/organizations", headers=HEADERS).json()["data"]["items"]
+    assert organization["id"] not in {item["id"] for item in listed}
+    response = _remove(client, organization["id"], "no longer matters")
+    assert response.status_code == 202, response.text
+    assert response.json()["data"]["state"] == "completed"
+    tombstone = response.json()["data"]["organization"]
+    assert tombstone["removed_at"] and tombstone["name"] == organization["name"]
+    assert tombstone["legal_name"] is None and tombstone["billing_email"] is None
+
+
+@pytest.mark.integration
+def test_removal_status_reports_a_failure_and_a_retry_queues_a_fresh_run(
+    platform_administration_client: tuple[TestClient, FakeVerifier, dict[str, UUID]],
+    platform_administration_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    client, verifier, ids = platform_administration_client
+    verifier.result = claims(ids["admin_subject"])
+    factory = platform_administration_session_factory
+    organization = _archive(client, _create_organization(client, slug=f"flop-{uuid4().hex[:8]}"))
+    path = f"/api/v1/platform/organizations/{organization['id']}/removal"
+
+    never = client.get(path, headers=HEADERS).json()["data"]
+    assert never == {"state": None, "failure_code": None, "workflow_run_id": None}
+    # The database guard reads this timestamp, so it must not exist before a request.
+    assert _organization_row(factory, organization["id"])["removal_requested_at"] is None
+
+    queued = _remove(client, organization["id"], str(organization["name"])).json()["data"]
+    assert client.get(path, headers=HEADERS).json()["data"]["state"] == "requested"
+    assert _organization_row(factory, organization["id"])["removal_requested_at"] is not None
+
+    async def fail_the_run() -> None:
+        async with factory.begin() as session:
+            await session.execute(
+                text(
+                    "UPDATE workflow_runs SET status = 'failed', "
+                    "failure_code = 'ORGANIZATION_REMOVAL_BLOCKED' WHERE id = :id"
+                ),
+                {"id": UUID(queued["workflow_run_id"])},
+            )
+
+    asyncio.run(fail_the_run())
+    failed = client.get(path, headers=HEADERS).json()["data"]
+    assert failed["state"] == "failed"
+    assert failed["failure_code"] == "ORGANIZATION_REMOVAL_BLOCKED"
+
+    # Trying again after a failure queues a new run (and a wrong name is still refused).
+    wrong = _remove(client, organization["id"], "not the name")
+    assert wrong.json()["error"]["code"] == "ORGANIZATION_REMOVAL_CONFIRMATION_MISMATCH"
+    again = _remove(client, organization["id"], str(organization["name"])).json()["data"]
+    assert again["state"] == "requested"
+    assert again["workflow_run_id"] != queued["workflow_run_id"]
+    assert client.get(path, headers=HEADERS).json()["data"]["state"] == "requested"
+
+
+def _organization_row(
+    factory: async_sessionmaker[AsyncSession], organization_id: object
+) -> dict[str, object]:
+    async def read() -> dict[str, object]:
+        async with factory() as session:
+            result = await session.execute(
+                text("SELECT * FROM organizations WHERE id = :id"),
+                {"id": UUID(str(organization_id))},
+            )
+            return dict(result.mappings().one())
+
+    return asyncio.run(read())
+
+
+def _removal_runs(factory: async_sessionmaker[AsyncSession], organization_id: object) -> int:
+    return len(_database_rows(factory, "workflow_runs", organization_id))
+
+
+def _removal_audit(factory: async_sessionmaker[AsyncSession], organization_id: object) -> list[str]:
+    return [
+        str(row["event_type"])
+        for row in _database_rows(factory, "audit_events", organization_id)
+        if str(row["event_type"]).startswith("organization.")
+    ]
+
+
+def _database_rows(
+    factory: async_sessionmaker[AsyncSession], table: str, organization_id: object
+) -> list[dict[str, object]]:
+    async def read() -> list[dict[str, object]]:
+        async with factory() as session:
+            result = await session.execute(
+                text(f"SELECT * FROM {table} WHERE organization_id = :id"),  # noqa: S608
+                {"id": UUID(str(organization_id))},
+            )
+            return [dict(row) for row in result.mappings()]
+
+    return asyncio.run(read())

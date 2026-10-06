@@ -140,11 +140,13 @@ def test_organization_migration_schema_drift_downgrade_and_reupgrade(
 
     state = asyncio.run(catalog(postgresql_test_url))
     assert state["revision"] == alembic_head
-    assert len(state["columns"]) == 21
+    assert len(state["columns"]) == 23
     assert ("onboarding_mode", "character varying", "YES") in state["columns"]
     assert ("created_at", "timestamp with time zone", "NO") in state["columns"]
     assert ("updated_at", "timestamp with time zone", "NO") in state["columns"]
     assert ("archived_at", "timestamp with time zone", "YES") in state["columns"]
+    assert ("removed_at", "timestamp with time zone", "YES") in state["columns"]
+    assert ("removal_requested_at", "timestamp with time zone", "YES") in state["columns"]
     constraint_names = {name for name, _ in state["constraints"]}
     assert {
         "ck_organizations_organization_status",

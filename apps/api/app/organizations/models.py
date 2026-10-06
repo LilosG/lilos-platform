@@ -45,8 +45,10 @@ class Organization(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         CheckConstraint("default_currency ~ '^[A-Z]{3}$'", name="currency_format"),
         CheckConstraint("version >= 1", name="version_positive"),
         CheckConstraint(
-            "(status = 'archived' AND archived_at IS NOT NULL) OR "
-            "(status <> 'archived' AND archived_at IS NULL)",
+            "((status = 'archived' AND archived_at IS NOT NULL) OR "
+            "(status <> 'archived' AND archived_at IS NULL)) AND "
+            "(removed_at IS NULL OR status = 'archived') AND "
+            "(removal_requested_at IS NULL OR status = 'archived')",
             name="archived_timestamp_matches_status",
         ),
         CheckConstraint(
@@ -113,6 +115,15 @@ class Organization(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ),
     )
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Written only by the platform-administrator-gated remove endpoint. The delete-blocking
+    # triggers on governed history read it (with status and removed_at) to decide whether the
+    # removal workflow may delete this organization's rows.
+    removal_requested_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # Set once, when the removal workflow has deleted everything the organization owned. The
+    # row then survives only as a tombstone: audit_events is append-only and RESTRICTs deletes.
+    removed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     version: Mapped[int] = mapped_column(
         Integer,
         nullable=False,
