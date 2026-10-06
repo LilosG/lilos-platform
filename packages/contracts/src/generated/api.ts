@@ -5071,6 +5071,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/platform/organizations/{organization_id}/remove": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Permanently remove an archived organization's data
+         * @description Step two of retiring a client: queue the permanent deletion of its data.
+         *
+         *     Archiving stays step one and keeps every record. This only records the request, audits
+         *     it and queues the ``organization.remove`` workflow; the worker stops the client's
+         *     schedules and runs, deletes its data, and finally marks the organization removed. It is
+         *     idempotent: asking again returns the state of the removal already queued or finished.
+         *     Authorization is the router's: an active platform administrator at AAL2.
+         */
+        post: operations["remove_organization_api_v1_platform_organizations__organization_id__remove_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/platform/organizations/{organization_id}/resume": {
         parameters: {
             query?: never;
@@ -8593,6 +8619,8 @@ export interface components {
             primary_contact_name: string | null;
             /** Primary Contact Phone */
             primary_contact_phone: string | null;
+            /** Removed At */
+            removed_at: string | null;
             /** Slug */
             slug: string;
             status: components["schemas"]["OrganizationStatus"];
@@ -8844,6 +8872,16 @@ export interface components {
         OrganizationProfileResponse: {
             data: components["schemas"]["OrganizationProfileData"];
             meta: components["schemas"]["ResponseMeta"];
+        };
+        /**
+         * OrganizationRemove
+         * @description Typed confirmation that permanently removes an archived organization's data.
+         */
+        OrganizationRemove: {
+            /** Confirm Name */
+            confirm_name: string;
+            /** Reason */
+            reason?: string | null;
         };
         /**
          * OrganizationResponse
@@ -22988,6 +23026,62 @@ export interface operations {
                 content?: never;
             };
             /** @description Slug, lifecycle, primary, or version conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_organization_api_v1_platform_organizations__organization_id__remove_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organization_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OrganizationRemove"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DataResponse"];
+                };
+            };
+            /** @description Caller is not an active platform administrator */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Organization or location not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description ORGANIZATION_REMOVAL_REQUIRES_ARCHIVED or ORGANIZATION_REMOVAL_CONFIRMATION_MISMATCH */
             409: {
                 headers: {
                     [name: string]: unknown;

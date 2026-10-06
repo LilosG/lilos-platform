@@ -301,6 +301,68 @@ import "../styles/global.css";
         </div>
       </div>
     </AppShell>
+    <dialog
+      id="remove-client-modal"
+      class="ui-modal ui-modal--md"
+      aria-labelledby="remove-client-title"
+    >
+      <div class="ui-modal__surface">
+        <header class="ui-modal__header">
+          <div>
+            <h2 id="remove-client-title">Remove client</h2>
+            <p id="remove-client-lede"></p>
+          </div>
+          <button
+            type="button"
+            class="ui-button ui-button--ghost"
+            id="remove-client-close"
+            aria-label="Close">✕</button
+          >
+        </header>
+        <form id="remove-client-form" class="ui-modal__body ui-form-grid">
+          <div class="ui-field ui-field--full">
+            <p><strong>This permanently deletes:</strong></p>
+            <ul id="remove-client-deletes"></ul>
+          </div>
+          <div class="ui-field ui-field--full">
+            <p><strong>This does not touch:</strong></p>
+            <ul id="remove-client-untouched"></ul>
+            <p class="ui-text-secondary">
+              The audit trail is kept. Removing cannot be undone.
+            </p>
+          </div>
+          <div class="ui-field ui-field--full">
+            <label class="ui-field__label" for="remove-client-confirm"
+              >Type the client name to confirm</label
+            >
+            <input
+              id="remove-client-confirm"
+              class="ui-input"
+              autocomplete="off"
+              spellcheck="false"
+              maxlength="200"
+              required
+            />
+          </div>
+          <p id="remove-client-status" class="ui-text-secondary" role="status">
+          </p>
+        </form>
+        <footer class="ui-modal__footer">
+          <button
+            type="button"
+            class="ui-button ui-button--secondary ui-button--md"
+            id="remove-client-cancel">Cancel</button
+          >
+          <button
+            type="submit"
+            form="remove-client-form"
+            class="ui-button ui-button--danger ui-button--md"
+            id="remove-client-submit"
+            disabled>Remove client</button
+          >
+        </footer>
+      </div>
+    </dialog>
     <script>
       import {
         fetchServices,
@@ -327,6 +389,8 @@ import "../styles/global.css";
         activateOrganization,
         startOffboardingOrganization,
         archiveOrganization,
+        fetchOrganization,
+        removeOrganization,
         fetchOrganizationLocations,
         createLocation,
         activateLocation,
@@ -343,6 +407,15 @@ import "../styles/global.css";
         type EntitlementRowState,
         type ProductEntitlementMap,
       } from "../lib/product-entitlements";
+      import {
+        REMOVAL_DELETES,
+        REMOVAL_UNTOUCHED,
+        canRemoveOrganization,
+        isRemovalComplete,
+        removalConfirmationMatches,
+        removalFailureMessage,
+        removalProgressMessage,
+      } from "../lib/organization-removal";
       import { withBootBoundary } from "../lib/boot-boundary";
       import {
         applyShellAudience,
@@ -760,6 +833,24 @@ import "../styles/global.css";
           });
           actions.append(retireButton);
         }
+        if (canRemoveOrganization(organization)) {
+          // Step two of retiring a client. Retiring keeps every record; this
+          // permanently deletes them, so it is only offered once archived and
+          // always behind a typed confirmation.
+          const removeButton = document.createElement("button");
+          removeButton.type = "button";
+          removeButton.className = "ui-button ui-button--danger ui-button--sm";
+          removeButton.textContent = removingClientIds.has(organization.id)
+            ? "Removing…"
+            : "Remove client";
+          removeButton.disabled = removingClientIds.has(organization.id);
+          removeButton.title =
+            "Permanently deletes this client's data. Provider accounts and websites are not touched.";
+          removeButton.addEventListener("click", () =>
+            openRemoveClientDialog(organization),
+          );
+          actions.append(removeButton);
+        }
         if (currentPrincipal) {
           const ownerButton = document.createElement("button");
           ownerButton.type = "button";
@@ -852,6 +943,138 @@ import "../styles/global.css";
         return item;
       }
 
+      // Clients whose removal this page has requested and not yet seen finish.
+      // The server holds the real state; this only drives the "Removing…" label.
+      const removingClientIds = new Set<string>();
+      const REMOVAL_POLL_MS = 3000;
+      const REMOVAL_POLL_LIMIT = 100;
+
+      function fillList(id: string, items: readonly string[]): void {
+        const list = document.getElementById(id)!;
+        list.replaceChildren(
+          ...items.map((text) => {
+            const item = document.createElement("li");
+            item.textContent = text;
+            return item;
+          }),
+        );
+      }
+
+      async function watchRemoval(
+        organization: AdminOrganization,
+      ): Promise<void> {
+        for (let attempt = 0; attempt < REMOVAL_POLL_LIMIT; attempt += 1) {
+          await new Promise((resolve) => setTimeout(resolve, REMOVAL_POLL_MS));
+          const current = await fetchOrganization(organization.id);
+          if (
+            current.kind === "not-found" ||
+            (current.kind === "ok" && isRemovalComplete(current.data))
+          ) {
+            removingClientIds.delete(organization.id);
+            platformAlert(
+              "success",
+              removalProgressMessage(organization.name, "completed"),
+            );
+            await renderClientsList();
+            if (selectedClientOrganization?.id === organization.id) {
+              document.getElementById("client-detail")!.hidden = true;
+            }
+            return;
+          }
+        }
+        platformAlert(
+          "error",
+          `Removal of ${organization.name} is taking longer than expected. It continues in the background; reload this page to check on it.`,
+        );
+      }
+
+      function openRemoveClientDialog(organization: AdminOrganization): void {
+        const modal = document.getElementById(
+          "remove-client-modal",
+        ) as HTMLDialogElement;
+        const form = document.getElementById(
+          "remove-client-form",
+        ) as HTMLFormElement;
+        const input = document.getElementById(
+          "remove-client-confirm",
+        ) as HTMLInputElement;
+        const submit = document.getElementById(
+          "remove-client-submit",
+        ) as HTMLButtonElement;
+        const cancel = document.getElementById(
+          "remove-client-cancel",
+        ) as HTMLButtonElement;
+        const closeButton = document.getElementById(
+          "remove-client-close",
+        ) as HTMLButtonElement;
+        const status = document.getElementById("remove-client-status")!;
+        document.getElementById("remove-client-lede")!.textContent =
+          `${organization.name} will be permanently removed.`;
+        fillList("remove-client-deletes", REMOVAL_DELETES);
+        fillList("remove-client-untouched", REMOVAL_UNTOUCHED);
+        input.value = "";
+        input.disabled = false;
+        submit.disabled = true;
+        submit.textContent = "Remove client";
+        status.textContent = "";
+
+        let busy = false;
+        const sync = (): void => {
+          submit.disabled =
+            busy || !removalConfirmationMatches(input.value, organization.name);
+        };
+        input.oninput = sync;
+        cancel.onclick = closeButton.onclick = () => {
+          if (!busy) modal.close();
+        };
+        form.onsubmit = async (event) => {
+          event.preventDefault();
+          if (
+            busy ||
+            !removalConfirmationMatches(input.value, organization.name)
+          )
+            return;
+          busy = true;
+          input.disabled = true;
+          submit.disabled = true;
+          submit.textContent = "Removing…";
+          status.textContent = "Removing…";
+          const result = await removeOrganization(organization.id, input.value);
+          if (result.kind !== "ok") {
+            // Typed codes choose the message; API text is never shown.
+            status.textContent = removalFailureMessage(
+              result,
+              describeFailure(result),
+            );
+            busy = false;
+            input.disabled = false;
+            submit.textContent = "Remove client";
+            sync();
+            return;
+          }
+          modal.close();
+          if (result.data.state === "completed") {
+            platformAlert(
+              "success",
+              removalProgressMessage(organization.name, "completed"),
+            );
+            await renderClientsList();
+            document.getElementById("client-detail")!.hidden = true;
+            return;
+          }
+          removingClientIds.add(organization.id);
+          platformAlert(
+            "success",
+            removalProgressMessage(organization.name, result.data.state),
+          );
+          await renderClientsList();
+          await renderClientDetail(result.data.organization);
+          void watchRemoval(organization);
+        };
+        modal.showModal();
+        input.focus();
+      }
+
       async function renderClientsList(): Promise<void> {
         const list = document.getElementById("clients-list")!;
         const metrics = document.getElementById("portfolio-metrics")!;
@@ -889,10 +1112,12 @@ import "../styles/global.css";
           info.append(title, meta);
           const actionsCell = document.createElement("div");
           actionsCell.append(
-            badge(
-              organization.status === "active" ? "ready" : "setup",
-              organization.status,
-            ),
+            removingClientIds.has(organization.id)
+              ? badge("setup", "Removing…")
+              : badge(
+                  organization.status === "active" ? "ready" : "setup",
+                  organization.status,
+                ),
           );
           const manageButton = document.createElement("button");
           manageButton.type = "button";
