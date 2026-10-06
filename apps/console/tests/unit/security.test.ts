@@ -8,6 +8,7 @@ import {
 import { acceptedWrites, validCookieHeader } from "../../src/server/session";
 import { config } from "../../src/server/config";
 import { forward } from "../../src/server/bff";
+import { PHOTO_UPLOAD_MAX_BYTES } from "../../src/server/search-routes";
 import { resolveSlug } from "../../src/server/context";
 const settings = {
   origin: "https://console.test",
@@ -117,6 +118,76 @@ describe("CSRF/host/returns", () => {
       CONSOLE_CSRF_SECRET: "x".repeat(32),
     };
     expect(() => config(env)).toThrow();
+  });
+});
+describe("photo upload through the BFF", () => {
+  const path = `organizations/${org}/locations/${org}/gbp/operations/locations/${org}/media/`;
+  const upload = (type: string, body: BodyInit, origin = settings.origin) =>
+    new Request(settings.origin + "/api/" + path, {
+      method: "POST",
+      headers: {
+        Origin: origin,
+        "Content-Type": type,
+        "X-CSRF-Token": csrfToken("session-1", userId, settings.csrfSecret),
+      },
+      body,
+    });
+  it("passes the bytes through with the form's own boundary", async () => {
+    const request = upload("multipart/form-data; boundary=xyz", "--xyz--");
+    const fetcher = vi.fn(
+      async (_input: unknown, _init: RequestInit = {}) =>
+        new Response('{"data":{}}', {
+          headers: { "Content-Type": "application/json" },
+        }),
+    );
+    const result = await forward(request, path, locals(), fetcher);
+    expect(result.status).toBe(200);
+    const init = fetcher.mock.calls[0][1]!;
+    expect((init.headers as Record<string, string>)["Content-Type"]).toBe(
+      "multipart/form-data; boundary=xyz",
+    );
+    expect(Buffer.from(init.body as Uint8Array).toString()).toBe("--xyz--");
+  });
+  it("keeps binary bodies intact", async () => {
+    const bytes = new Uint8Array([0xff, 0xd8, 0xff, 0x00, 0x80, 0xfe]);
+    const fetcher = vi.fn(
+      async (_input: unknown, _init: RequestInit = {}) =>
+        new Response('{"data":{}}', {
+          headers: { "Content-Type": "application/json" },
+        }),
+    );
+    await forward(
+      upload("multipart/form-data; boundary=xyz", bytes),
+      path,
+      locals(),
+      fetcher,
+    );
+    expect([...(fetcher.mock.calls[0][1]!.body as Uint8Array)]).toEqual([
+      ...bytes,
+    ]);
+  });
+  it("refuses JSON on the upload route, other origins and oversized bodies", async () => {
+    const fetcher = vi.fn(async () => new Response("{}"));
+    expect(
+      (await forward(upload("application/json", "{}"), path, locals(), fetcher))
+        .status,
+    ).toBe(400);
+    expect(
+      (
+        await forward(
+          upload("multipart/form-data; boundary=x", "x", "https://evil.test"),
+          path,
+          locals(),
+          fetcher,
+        )
+      ).status,
+    ).toBe(403);
+    const big = upload(
+      "multipart/form-data; boundary=x",
+      new Uint8Array(PHOTO_UPLOAD_MAX_BYTES + 1),
+    );
+    expect((await forward(big, path, locals(), fetcher)).status).toBe(413);
+    expect(fetcher).not.toHaveBeenCalled();
   });
 });
 describe("concurrent refresh and chunk cleanup", () => {

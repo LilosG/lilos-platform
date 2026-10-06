@@ -56,6 +56,8 @@ import {
   adaptAttention,
   adaptDetail,
 } from "../../../adapters/opportunities";
+import { compactRows } from "../../../lib/opportunity-view";
+import type { CompactOpportunity } from "../../../lib/opportunity-view";
 import type {
   OpportunityListView,
   AttentionView,
@@ -83,6 +85,7 @@ let localSearch: LocalSearchView | undefined;
 let pageView: PageView | undefined;
 let gbpOverview: GbpPerformanceView | null = null;
 let gbpTab: GbpTabData | null = null;
+let overviewOpportunities: CompactOpportunity[] | null = null;
 const segments = path.split("/");
 const tab = segments[1] ?? "";
 const days = Number(Astro.url.searchParams.get("days") ?? 28);
@@ -266,13 +269,25 @@ try {
         client.organization_id,
         websiteId,
       );
-      if (tab === "")
+      if (tab === "") {
         gbpOverview = await loadGbpOverview(
           Astro.locals,
           client.organization_id,
           days,
         );
-      else if (tab === "google-business-profile")
+        // Findings for the Overview's panel; a failure shows its own state, not a page error.
+        overviewOpportunities = await read(
+          Astro.locals,
+          scope + "opportunities/?limit=20",
+        )
+          .then((payload) =>
+            compactRows(
+              adaptOpportunityList(payload, client.organization_id, null).items,
+              new Date(),
+            ),
+          )
+          .catch(() => null);
+      } else if (tab === "google-business-profile")
         gbpTab = await loadGbpTab(
           Astro.locals,
           localSearch,
@@ -501,6 +516,7 @@ const title =
             offset={offset}
             gbp={gbpOverview}
             gbpTab={gbpTab}
+            opportunities={overviewOpportunities}
           />
         ) : opportunities ? (
           <Opportunities

@@ -175,29 +175,27 @@ form("profile", (data) => {
     idempotency_key: key(),
   });
 });
-form("photo", (data) => {
-  const address = String(data.get("source_reference") ?? "").trim();
-  if (!address.startsWith("https://"))
-    return "Use a secure photo address that starts with https://.";
-  return action(`${ops}locations/${profile}/media/`, {
-    media_type: z
-      .enum(["photo", "cover", "logo"])
-      .parse(data.get("media_type")),
-    source_reference: address,
-    rights_authority: String(data.get("rights_authority") ?? ""),
-    idempotency_key: key(),
-  });
+// Special hours: a closed day has no times, so the toggle hides them and sends none.
+const hoursDialog = dialogOf("hours");
+const closedToggle = hoursDialog?.querySelector<HTMLInputElement>(
+  "[data-hours-closed]",
+);
+const times = hoursDialog?.querySelector<HTMLElement>("[data-hours-times]");
+closedToggle?.addEventListener("change", () => {
+  if (times) times.hidden = closedToggle.checked;
 });
 form("hours", (data) => {
   const date = String(data.get("service_date") ?? "");
+  const closed = data.get("closed") === "on";
   const opens = String(data.get("opens") ?? "");
   const closes = String(data.get("closes") ?? "");
   if (!date) return "Choose the date first.";
-  if (!opens || !closes || opens >= closes)
+  if (!closed && (!opens || !closes || opens >= closes))
     return "Closing time must be after opening time.";
   return action(`${ops}locations/${profile}/special-hours/`, {
     service_date: date,
-    periods: [{ opens, closes }],
+    closed,
+    periods: closed ? [] : [{ opens, closes }],
     source: "console",
   });
 });

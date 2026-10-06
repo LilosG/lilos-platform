@@ -66,7 +66,21 @@ const performance = z.object({
   metrics: z.record(text, metric),
   series: z.array(json),
   top_queries: z.array(z.object({ query: text, ...searchRow })),
-  top_pages: z.array(z.object({ page: text, ...searchRow })),
+  top_pages: z.array(
+    z.object({
+      page: text,
+      page_id: uuid.nullable().optional().default(null),
+      index_status: z
+        .enum(["indexable", "not_indexable", "not_crawled"])
+        .optional()
+        .default("not_crawled"),
+      ...searchRow,
+    }),
+  ),
+});
+const tracked = z.object({
+  state: z.enum(["tracked", "not_tracked"]),
+  value: z.number().int().nullable(),
 });
 const integration = z.object({
   organization_id: uuid,
@@ -156,6 +170,42 @@ const search = z.object({
       last_synced_at: nullableText,
     }),
   ),
+  insights: z
+    .array(
+      z.object({
+        code: z.enum([
+          "QUERY_GAINING_CLICKS",
+          "QUERY_LOSING_CLICKS",
+          "PAGE_GAINING_CLICKS",
+          "PAGE_LOSING_CLICKS",
+          "SEARCH_CLICKS_UP",
+          "SEARCH_CLICKS_DOWN",
+          "IMPRESSIONS_OUTRUNNING_CLICKS",
+          "PROFILE_ACTIONS_UP",
+          "PROFILE_ACTIONS_DOWN",
+          "QUERIES_NEAR_PAGE_ONE",
+        ]),
+        link: z.enum(["search_console", "pages", "google_business_profile"]),
+        subject: nullableText,
+        current: number,
+        previous: number,
+        percent_change: number,
+        count: z.number().int().nullable(),
+      }),
+    )
+    .default([]),
+  technical_health: z
+    .object({
+      pages_crawled: tracked,
+      indexable_pages: tracked,
+      excluded_pages: tracked,
+      pages_with_issues: tracked,
+      structured_data_pages: tracked,
+      google_indexed_pages: tracked,
+      last_crawled_at: nullableText,
+    })
+    .nullable()
+    .default(null),
   can_crawl: z.boolean(),
   unsupported: z.array(text),
 });

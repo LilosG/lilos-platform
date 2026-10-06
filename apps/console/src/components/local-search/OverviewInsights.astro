@@ -1,0 +1,86 @@
+---
+import type { LocalSearchView } from "../../adapters/local-search";
+import type { GbpPerformanceView } from "../../adapters/gbp";
+import {
+  insightRows,
+  profileAndSearchRows,
+  type InsightHrefs,
+} from "../../lib/local-search-overview";
+import SectionHeading from "../ui/SectionHeading.astro";
+import InsightPanel from "../ui/InsightPanel.astro";
+import EmptyState from "../ui/EmptyState.astro";
+import Trend from "../ui/Trend.astro";
+interface Props {
+  view: LocalSearchView;
+  gbp: GbpPerformanceView | null;
+  days: number;
+  hrefs: InsightHrefs;
+  integrationsHref: string;
+}
+const { view, gbp, days, hrefs, integrationsHref } = Astro.props;
+const insights = insightRows(view, hrefs);
+const facts = profileAndSearchRows(view, gbp, days);
+const connected = Boolean(view.search_console?.connected);
+---
+
+<div class="grid spaced-section">
+  <section class="panel" data-overview-insights>
+    <SectionHeading>
+      <Fragment slot="title">What is driving search performance</Fragment>
+      <Fragment slot="actions"></Fragment>
+    </SectionHeading>
+    {
+      insights.length ? (
+        insights.map((item) => (
+          <div class="listrow">
+            <div>
+              <h3>{item.title}</h3>
+              <p>{item.detail}</p>
+            </div>
+            <a class="link" href={item.href}>
+              {item.linkLabel}
+            </a>
+          </div>
+        ))
+      ) : (
+        <EmptyState title="Not enough to explain the change yet">
+          {connected
+            ? "Findings appear once there is a previous period to compare and enough activity to say something reliable."
+            : "Connect Search Console to see what is moving search clicks."}
+          {!connected && (
+            <a slot="action" class="control primary" href={integrationsHref}>
+              Open Integrations
+            </a>
+          )}
+        </EmptyState>
+      )
+    }
+  </section>
+  <section class="panel" data-overview-profile>
+    <SectionHeading>
+      <Fragment slot="title">Profile and organic search</Fragment>
+      <Fragment slot="actions"></Fragment>
+    </SectionHeading>
+    {
+      facts.map((row) => (
+        <div class="listrow">
+          <div>
+            {row.label}
+            <small>{row.sub}</small>
+          </div>
+          <b class:list={{ muted: row.missing }}>
+            {row.value}
+            {row.trend !== null && (
+              <span class="trend">
+                <Trend value={row.trend} />
+              </span>
+            )}
+          </b>
+        </div>
+      ))
+    }
+    <InsightPanel class="insight">
+      Profile actions are intent signals, not completed visits or bookings.
+    </InsightPanel>
+  </section>
+</div>

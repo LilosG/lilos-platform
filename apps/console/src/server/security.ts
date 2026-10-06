@@ -82,6 +82,29 @@ export function assertMutation(
   )
     throw new Error("CSRF_DENIED");
 }
+/** The request body as bytes, never past `maximum`; for an upload, which must not be read as text. */
+export async function boundedBytes(
+  request: Request,
+  maximum: number,
+): Promise<Uint8Array<ArrayBuffer>> {
+  if (Number(request.headers.get("content-length") ?? 0) > maximum)
+    throw new Error("BODY_TOO_LARGE");
+  const reader = request.body?.getReader();
+  if (!reader) return new Uint8Array(0);
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > maximum) {
+      await reader.cancel();
+      throw new Error("BODY_TOO_LARGE");
+    }
+    chunks.push(value);
+  }
+  return new Uint8Array(Buffer.concat(chunks));
+}
 export async function boundedBody(
   request: Request,
   maximum: number,

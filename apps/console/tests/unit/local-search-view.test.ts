@@ -142,7 +142,8 @@ describe("Business Profile presenters", () => {
         {
           id: "1",
           media_type: "photo",
-          source_reference: "http://insecure.example/a.jpg",
+          origin: "link",
+          preview_url: "http://insecure.example/a.jpg",
           rights_authority: "Owned by the business",
           status: "awaiting_approval",
           verified_at: null,
@@ -159,6 +160,7 @@ describe("Business Profile presenters", () => {
           id: "h",
           service_date: "2026-12-25",
           revision: 1,
+          closed: false,
           periods: [{ opens: "12:00", closes: "16:00" }],
           source: "console",
           status: "approved",

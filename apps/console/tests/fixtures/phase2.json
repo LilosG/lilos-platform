@@ -204,7 +204,9 @@
       "rank_scan",
       "gbp_performance_metrics",
       "google_indexation"
-    ]
+    ],
+    "insights": [],
+    "technical_health": null
   },
   "page": {
     "version": "page_intelligence.v1",

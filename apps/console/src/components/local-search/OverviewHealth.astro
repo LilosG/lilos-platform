@@ -1,0 +1,126 @@
+---
+import type { LocalSearchView } from "../../adapters/local-search";
+import { priorityPages, technicalRows } from "../../lib/local-search-overview";
+import type { CompactOpportunity } from "../../lib/opportunity-view";
+import SectionHeading from "../ui/SectionHeading.astro";
+import StatusBadge from "../ui/StatusBadge.astro";
+import EmptyState from "../ui/EmptyState.astro";
+import ErrorState from "../ui/ErrorState.astro";
+import OpportunityList from "../opportunities/OpportunityList.astro";
+interface Props {
+  view: LocalSearchView;
+  /** The client's open findings; null when they could not be loaded. */
+  opportunities: CompactOpportunity[] | null;
+  technicalHref: string;
+  pagesHref: string;
+  opportunitiesHref: string;
+  /** The address of one page's own screen. */
+  pageHref: (websiteId: string, pageId: string) => string;
+  integrationsHref: string;
+}
+const {
+  view,
+  opportunities,
+  technicalHref,
+  pagesHref,
+  opportunitiesHref,
+  pageHref,
+  integrationsHref,
+} = Astro.props;
+const health = view.technical_health;
+const technical = health ? technicalRows(health) : [];
+const pages = priorityPages(view, pageHref);
+const connected = Boolean(view.search_console?.connected);
+---
+
+<div class="grid spaced-section">
+  <section class="panel" data-overview-technical>
+    <SectionHeading>
+      <Fragment slot="title">Indexing and technical health</Fragment>
+      <Fragment slot="actions">
+        <a class="link" href={technicalHref}>Inspect</a>
+      </Fragment>
+    </SectionHeading>
+    {
+      health ? (
+        technical.map((row) => (
+          <div class="listrow">
+            <div>
+              {row.label}
+              <small>{row.sub}</small>
+            </div>
+            <b class:list={{ muted: row.missing }}>{row.value}</b>
+          </div>
+        ))
+      ) : (
+        <EmptyState title="No website to check">
+          Add a website in Integrations to see how it is crawled and indexed.
+          <a slot="action" class="control primary" href={integrationsHref}>
+            Open Integrations
+          </a>
+        </EmptyState>
+      )
+    }
+  </section>
+  <section class="panel" data-overview-pages>
+    <SectionHeading>
+      <Fragment slot="title">Priority landing pages</Fragment>
+      <Fragment slot="actions">
+        <a class="link" href={pagesHref}>All pages</a>
+      </Fragment>
+    </SectionHeading>
+    {
+      pages.length ? (
+        pages.map((page) => (
+          <div class="listrow">
+            <div>
+              {page.href ? (
+                <a class="link" href={page.href}>
+                  {page.label}
+                </a>
+              ) : (
+                page.label
+              )}
+              <small>{page.sub}</small>
+            </div>
+            <StatusBadge text={page.chip.label} tone={page.chip.tone} />
+          </div>
+        ))
+      ) : (
+        <EmptyState
+          title={
+            connected
+              ? "No landing pages yet"
+              : "Search Console is not connected"
+          }
+        >
+          {connected
+            ? "Pages appear here once Search Console attributes clicks to them."
+            : "Connect Search Console to see which pages bring visitors."}
+          {!connected && (
+            <a slot="action" class="control primary" href={integrationsHref}>
+              Open Integrations
+            </a>
+          )}
+        </EmptyState>
+      )
+    }
+  </section>
+</div>
+<section class="panel" data-overview-opportunities>
+  <SectionHeading>
+    <Fragment slot="title">Relevant opportunities</Fragment>
+    <Fragment slot="actions">
+      <a class="link" href={opportunitiesHref}>All findings</a>
+    </Fragment>
+  </SectionHeading>
+  {
+    opportunities ? (
+      <OpportunityList rows={opportunities} limit={3} showClient={false} />
+    ) : (
+      <ErrorState title="Opportunities could not be loaded">
+        Refresh to try again.
+      </ErrorState>
+    )
+  }
+</section>

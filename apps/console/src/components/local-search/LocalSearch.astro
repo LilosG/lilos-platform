@@ -28,6 +28,9 @@ import RankingDistribution from "./RankingDistribution.astro";
 import RankingRows from "./RankingRows.astro";
 import GbpTab from "./GbpTab.astro";
 import CrawlEvidence from "./CrawlEvidence.astro";
+import OverviewInsights from "./OverviewInsights.astro";
+import OverviewHealth from "./OverviewHealth.astro";
+import type { CompactOpportunity } from "../../lib/opportunity-view";
 interface Props {
   view: LocalSearchView;
   slug: string;
@@ -39,6 +42,8 @@ interface Props {
   gbp: GbpPerformanceView | null;
   /** The Business Profile tab's data, loaded only for that tab. */
   gbpTab: GbpTabData | null;
+  /** The client's open findings for the Overview; null when they could not be loaded. */
+  opportunities: CompactOpportunity[] | null;
 }
 const {
   view: v,
@@ -49,6 +54,7 @@ const {
   offset,
   gbp,
   gbpTab,
+  opportunities,
 } = Astro.props;
 const base = `/clients/${slug}/local-search/`;
 const integrationsHref = `/clients/${slug}/integrations/`;
@@ -171,6 +177,17 @@ const gbpActions = gbp ? dailyCharts(gbp).actions : null;
           )}
         </section>
       </div>
+      <OverviewInsights
+        view={v}
+        gbp={gbp}
+        days={days}
+        integrationsHref={integrationsHref}
+        hrefs={{
+          search_console: `${base}search-console/?${query()}`,
+          pages: `${base}pages/?${query()}`,
+          google_business_profile: gbpHref("performance"),
+        }}
+      />
       <QueryTable
         rows={queryRows(v, 10)}
         title="Top search queries"
@@ -178,6 +195,17 @@ const gbpActions = gbp ? dailyCharts(gbp).actions : null;
         moreHref={`${base}search-console/?${query()}`}
         connected={connected}
         integrationsHref={integrationsHref}
+      />
+      <OverviewHealth
+        view={v}
+        opportunities={opportunities}
+        integrationsHref={integrationsHref}
+        technicalHref={`${base}technical/?${query()}`}
+        pagesHref={`${base}pages/?${query()}`}
+        opportunitiesHref={`/clients/${slug}/opportunities/`}
+        pageHref={(websiteId, pageId) =>
+          `${base}pages/${websiteId}/${pageId}/?${query()}`
+        }
       />
     </Fragment>
   ) : tab === "search-console" ? (

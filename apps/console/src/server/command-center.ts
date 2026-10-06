@@ -93,6 +93,7 @@ const opportunity = z.object({
   classification: z.enum(["Issue", "Growth Opportunity"]),
   status: z.string(),
   priority: z.number().nullable(),
+  priority_band: z.enum(["high", "medium", "low"]).nullable(),
   query: z.string().nullable(),
   page: z.string().nullable(),
   impressions: z.number().nullable(),

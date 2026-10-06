@@ -18,16 +18,19 @@ const route = (
 const empty = z.object({}).strict();
 const decide = z.object({ approve: z.boolean() }).strict();
 const ops = `${location}/gbp/operations`;
-const media = z
-  .object({
-    media_type: z.enum(["photo", "video", "logo", "cover"]),
-    source_reference: z.url({ protocol: /^https$/ }).max(1000),
-    rights_authority: z.string().min(1).max(500),
-    idempotency_key: z.string().min(8).max(128),
-  })
-  .strict();
+/** A photo is uploaded as multipart; the API checks its type, size and dimensions. The room
+ * above Google's 5 MB limit is the form's own fields and boundaries. */
+export const PHOTO_UPLOAD_MAX_BYTES = 5 * 1024 * 1024 + 64 * 1024;
+const upload = (pattern: string) => ({
+  pattern: new RegExp(`^${pattern}/$`),
+  method: "POST" as const,
+  upstream: "",
+  query: [] as string[],
+  multipart: { maxBytes: PHOTO_UPLOAD_MAX_BYTES },
+});
 const hours = z
   .object({
+    closed: z.boolean(),
     service_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
     periods: z
       .array(
@@ -38,11 +41,12 @@ const hours = z
           })
           .strict(),
       )
-      .min(1)
       .max(10),
     source: z.literal("console"),
   })
-  .strict();
+  .strict()
+  // Closed all day has no periods; open hours need at least one.
+  .refine((value) => value.closed === (value.periods.length === 0));
 // What a profile edit may change today, each as one exact field and value to approve.
 const profileEdit = z
   .object({
@@ -177,7 +181,7 @@ export const searchRoutes = [
   route(`${ops}/posts/publications/${uuid}/(repost|discard)`, "POST", empty),
   route(`${ops}/locations/${uuid}/posts/reconcile`, "POST", empty),
   route(`${ops}/locations/${uuid}/media`, "GET"),
-  route(`${ops}/locations/${uuid}/media`, "POST", media),
+  upload(`${ops}/locations/${uuid}/media`),
   route(`${ops}/media/${uuid}/decide`, "POST", decide),
   route(
     `${ops}/media/${uuid}/publish`,

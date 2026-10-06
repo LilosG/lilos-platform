@@ -45,7 +45,7 @@ function searchGap(report: Report | null): { value: string; note: string } {
     return { value: "Not connected", note: "Connect Search Console" };
   return { value: "No data", note: "Connected, nothing reported yet" };
 }
-function searchTile(
+export function searchTile(
   report: Report | null,
   key: "clicks" | "impressions",
   label: string,

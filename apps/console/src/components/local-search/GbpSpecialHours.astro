@@ -51,6 +51,7 @@ const { rows, canPropose, canApprove, verifyHref } = Astro.props;
             <small>{row.times}</small>
           </div>
           <div class="rowactions">
+            {row.closed && <StatusBadge text="Closed" tone="neutral" />}
             <StatusBadge text={row.chip.label} tone={row.chip.tone} />
             {row.actions.map((action) => (
               <button
@@ -105,7 +106,17 @@ const { rows, canPropose, canApprove, verifyHref } = Astro.props;
         <label for="hours-date">Date</label>
         <input id="hours-date" name="service_date" type="date" required />
       </div>
-      <div class="formgrid">
+      <label class="checkrow" for="hours-closed">
+        <input
+          id="hours-closed"
+          name="closed"
+          type="checkbox"
+          role="switch"
+          data-hours-closed
+        />
+        <span>Closed all day</span>
+      </label>
+      <div class="formgrid" data-hours-times>
         <div class="field">
           <label for="hours-opens">Opens</label>
           <input id="hours-opens" name="opens" type="time" value="09:00" />
