@@ -103,6 +103,7 @@ async def reevaluate_active_websites(
                 .where(
                     SEOWebsite.status == "active",
                     Organization.status == OrganizationStatus.ACTIVE,
+                    Organization.removed_at.is_(None),
                 )
                 .order_by(SEOWebsite.created_at, SEOWebsite.id)
             )

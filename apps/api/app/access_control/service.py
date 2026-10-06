@@ -374,8 +374,10 @@ class AccessControlService:
                         # A retired client stays in the database — archiving is a
                         # lifecycle state, not a delete — but it must leave the
                         # switcher, or retiring it would change nothing an
-                        # operator can see.
+                        # operator can see. A removed client is archived too; the
+                        # explicit check keeps it hidden should that ever change.
                         Organization.status != OrganizationStatus.ARCHIVED,
+                        Organization.removed_at.is_(None),
                     )
                 )
             ).all()

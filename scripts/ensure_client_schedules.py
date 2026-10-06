@@ -20,8 +20,8 @@ Schedules run in the organization's own timezone and carry the key `ensure:<work
 `:<location id>` for reviews), so a re-run finds them again: a matching schedule is left alone,
 a drifted one (cron, timezone, paused or cancelled) is corrected, a missing one is created.
 Schedules this script did not create (for example Coco Maya's `gbp.generate_post`) are never
-touched. Only ACTIVE organizations are considered, which excludes archived ones; Wheyland
-Electric is excluded by name as well.
+touched. Only ACTIVE organizations are considered, which excludes archived and removed ones;
+Wheyland Electric is excluded by name as well.
 
 Dry run by default: it prints exactly what `--apply` would do.
 
@@ -360,7 +360,12 @@ async def ensure_client_schedules(
     execution = execution or ExecutionService()
     now = now or datetime.now(UTC)
     async with session_factory() as session:
-        statement = select(Organization).where(Organization.status == OrganizationStatus.ACTIVE)
+        # A removed organization is archived, so ACTIVE already excludes it; the explicit check
+        # makes sure a removed client can never be given schedules again.
+        statement = select(Organization).where(
+            Organization.status == OrganizationStatus.ACTIVE,
+            Organization.removed_at.is_(None),
+        )
         if organization_id is not None:
             statement = statement.where(Organization.id == organization_id)
         organizations = [

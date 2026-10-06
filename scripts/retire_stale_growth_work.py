@@ -619,7 +619,9 @@ async def retire_stale_growth_work(
     content = content or ContentService()
     growth = growth or GrowthService()
     async with session_factory() as session:
-        statement = select(Organization).where(Organization.status == OrganizationStatus.ACTIVE)
+        statement = select(Organization).where(
+            Organization.status == OrganizationStatus.ACTIVE, Organization.removed_at.is_(None)
+        )
         if organization_id is not None:
             statement = statement.where(Organization.id == organization_id)
         organizations = list(
