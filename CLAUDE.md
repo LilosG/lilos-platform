@@ -32,7 +32,7 @@ LILOs is Lilos Growth's operating platform: one multi-tenant product for running
 ## Cloud sessions (Claude Code on the web)
 
 - At the start of a cloud session run `source scripts/cloud_session_setup.sh`. It installs dependencies like CI (`npm ci`, `uv sync --locked`), starts a disposable local PostgreSQL with a `lilos_test` database, and exports `LILOS_TEST_DATABASE_URL`. The container's PostgreSQL may be older than CI's 17; CI is the authority.
-- Chromium is preinstalled for `npm run check:browser` and screenshots. The network is allowlisted (package registries and GitHub), so nothing in a cloud session can reach Render or production. Never point tests at Supabase.
+- The setup script also points console Playwright at the preinstalled Chromium (`PLAYWRIGHT_CHROMIUM_EXECUTABLE`), so console browser tests and screenshots run in the cloud. apps/web browser tests need Google Chrome and run in CI only. The network is allowlisted (package registries and GitHub), so nothing in a cloud session can reach Render or production. Never point tests at Supabase.
 - One session per branch, one PR per step; the same rules as the terminal apply.
 
 ## Commands

@@ -68,5 +68,12 @@ psql -h 127.0.0.1 -p "${PGPORT}" -U postgres -tAc \
   || psql -h 127.0.0.1 -p "${PGPORT}" -U postgres -qc \
     "CREATE DATABASE ${PGDB_NAME} OWNER ${PGUSER_NAME}"
 
+# The container's preinstalled Chromium may be a different build than the repo's Playwright
+# expects; apps/console/playwright.config.ts launches this path when the variable is set.
+if [ -z "${PLAYWRIGHT_CHROMIUM_EXECUTABLE:-}" ] && [ -x /opt/pw-browsers/chromium ]; then
+  export PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium
+  echo "==> Console browser tests will use ${PLAYWRIGHT_CHROMIUM_EXECUTABLE}"
+fi
+
 export LILOS_TEST_DATABASE_URL="postgresql+asyncpg://${PGUSER_NAME}:${PGUSER_NAME}@127.0.0.1:${PGPORT}/${PGDB_NAME}"
 echo "==> Ready. LILOS_TEST_DATABASE_URL=${LILOS_TEST_DATABASE_URL}"
