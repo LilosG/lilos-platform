@@ -15438,6 +15438,22 @@
         "title": "SpecialHoursPropose",
         "type": "object"
       },
+      "SpecialHoursRetry": {
+        "additionalProperties": false,
+        "properties": {
+          "idempotency_key": {
+            "maxLength": 128,
+            "minLength": 8,
+            "title": "Idempotency Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "idempotency_key"
+        ],
+        "title": "SpecialHoursRetry",
+        "type": "object"
+      },
       "StatusEvent": {
         "additionalProperties": false,
         "properties": {
@@ -28690,6 +28706,81 @@
           }
         },
         "summary": "Decide Special Hours",
+        "tags": [
+          "gbp"
+        ]
+      }
+    },
+    "/api/v1/organizations/{organization_id}/locations/{location_id}/gbp/operations/special-hours/{special_hours_id}/retry": {
+      "post": {
+        "operationId": "retry_special_hours_api_v1_organizations__organization_id__locations__location_id__gbp_operations_special_hours__special_hours_id__retry_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "location_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Location Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "special_hours_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Special Hours Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SpecialHoursRetry"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Retry Special Hours Api V1 Organizations  Organization Id  Locations  Location Id  Gbp Operations Special Hours  Special Hours Id  Retry Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Retry Special Hours",
         "tags": [
           "gbp"
         ]

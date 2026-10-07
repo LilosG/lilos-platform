@@ -196,6 +196,7 @@ export const searchRoutes = [
   route(`${ops}/locations/${uuid}/special-hours`, "GET"),
   route(`${ops}/locations/${uuid}/special-hours`, "POST", hours),
   route(`${ops}/special-hours/${uuid}/decision`, "POST", decide),
+  route(`${ops}/special-hours/${uuid}/retry`, "POST", key),
   route(`${ops}/locations/${uuid}/completeness`, "GET"),
   route(`${ops}/locations/${uuid}/change-sets`, "GET"),
   route(`${ops}/locations/${uuid}/change-sets`, "POST", profileEdit),

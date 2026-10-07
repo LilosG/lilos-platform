@@ -193,7 +193,12 @@ const side = async (browser, size, left, right) => {
   await page.close();
   return image;
 };
-const activeScreens = stepName === "step-6" ? reviewScreens : screens;
+const activeScreens =
+  stepName === "step-6"
+    ? reviewScreens
+    : stepName === "special-hours-publish"
+      ? screens.filter(([name]) => name === "special-hours-list")
+      : screens;
 await mkdir(out, { recursive: true });
 const browser = await chromium.launch(
   process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE

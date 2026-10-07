@@ -164,12 +164,15 @@ describe("Business Profile presenters", () => {
           periods: [{ opens: "12:00", closes: "16:00" }],
           source: "console",
           status: "approved",
+          safe_error_code: null,
+          verified_at: null,
         },
       ],
       true,
     )[0];
     expect(hours.date).toBe("Friday, December 25, 2026");
     expect(hours.times).toBe("12:00 PM – 4:00 PM");
+    expect(hours.chip.label).toBe("Publishing");
   });
   it("reads the provider profile as a person would", () => {
     const summary = profileSummary({

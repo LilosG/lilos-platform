@@ -70,6 +70,28 @@ const approvalChips: Record<string, Chip> = {
 /** Photos, special hours and profile changes share one approval vocabulary. */
 export const approvalChip = (status: string): Chip =>
   approvalChips[status] ?? postChips.draft;
+export type HoursState =
+  "awaiting_approval" | "rejected" | "publishing" | "live" | "needs_attention";
+export const hoursChips: Record<HoursState, Chip> = {
+  awaiting_approval: postChips.awaiting_approval,
+  rejected: postChips.rejected,
+  publishing: postChips.publishing,
+  live: { label: "Live on Google", tone: "" },
+  needs_attention: postChips.needs_attention,
+};
+const hoursStates: Record<string, HoursState> = {
+  awaiting_approval: "awaiting_approval",
+  rejected: "rejected",
+  // Approved dates are queued to go to Google, so they read as publishing until confirmed.
+  approved: "publishing",
+  publishing: "publishing",
+  published: "live",
+  failed: "needs_attention",
+  reconciliation_required: "needs_attention",
+};
+/** A special-hours date's state. A status this app does not know is shown as needing attention. */
+export const hoursState = (status: string): HoursState =>
+  hoursStates[status] ?? "needs_attention";
 export const connectionChips = {
   connected: { label: "Google connected", tone: "" },
   degraded: { label: "Google needs attention", tone: "warn" },

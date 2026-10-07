@@ -7,7 +7,7 @@ from datetime import UTC, date, datetime, time, timedelta
 from typing import cast
 from uuid import UUID, uuid4
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.app.audit.contracts import AuditEventCreate
@@ -51,7 +51,9 @@ from apps.api.app.products.gbp.operations_errors import (
     GBPPostPublicationExistsError,
     GBPPostPublicationNotActionableError,
     GBPPostRevisionNotFoundError,
+    GBPSpecialHoursNotDecidableError,
     GBPSpecialHoursNotFoundError,
+    GBPSpecialHoursNotRetryableError,
 )
 from apps.api.app.products.gbp.operations_models import (
     GBPCapabilitySnapshot,
@@ -61,9 +63,11 @@ from apps.api.app.products.gbp.operations_models import (
     GBPPostRevision,
     GBPProviderPost,
     GBPSpecialHours,
+    GBPSpecialHoursPublication,
     GBPSuspensionCase,
 )
 from apps.api.app.products.gbp.post_generation_models import GBPPostAsset
+from apps.api.app.products.gbp.special_hours_publish import APPROVED_STATUSES
 from apps.api.app.storage.objects import GBP_MEDIA_BUCKET, ObjectStorage
 
 NOTIFICATION_TEMPLATES = {
@@ -491,6 +495,11 @@ class GBPOperationsService:
         *,
         correlation_id: str,
     ) -> GBPSpecialHours:
+        """Approve or reject one proposed date. Approving queues the publish to Google.
+
+        Deciding twice is a no-op, and a date that was already decided the other way is a
+        typed conflict, so one approval can only ever queue one publish.
+        """
         record = await session.scalar(
             select(GBPSpecialHours)
             .where(
@@ -501,6 +510,12 @@ class GBPOperationsService:
         )
         if not record:
             raise GBPSpecialHoursNotFoundError
+        if record.status != "awaiting_approval":
+            if approve and record.status in APPROVED_STATUSES:
+                return record
+            if not approve and record.status == "rejected":
+                return record
+            raise GBPSpecialHoursNotDecidableError
         record.status = "approved" if approve else "rejected"
         await session.flush()
         await self._audit(
@@ -515,7 +530,141 @@ class GBPOperationsService:
             summary=f"Special hours {record.status}.",
             metadata={"revision": record.revision},
         )
+        if approve:
+            await session.execute(
+                update(GBPSpecialHours)
+                .where(
+                    GBPSpecialHours.organization_id == organization_id,
+                    GBPSpecialHours.gbp_location_id == record.gbp_location_id,
+                    GBPSpecialHours.service_date == record.service_date,
+                    GBPSpecialHours.revision < record.revision,
+                    GBPSpecialHours.status.in_(APPROVED_STATUSES),
+                )
+                .values(status="superseded")
+            )
+            await self._reserve_special_hours_publication(
+                session,
+                record,
+                idempotency_key=f"gbp-special-hours:{record.id}",
+                actor_id=user_id,
+                correlation_id=correlation_id,
+            )
         return record
+
+    async def retry_special_hours_publication(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        special_hours_id: UUID,
+        idempotency_key: str,
+        *,
+        actor_id: UUID,
+        correlation_id: str,
+    ) -> GBPSpecialHours:
+        """Queue another publish for a date that failed or is not confirmed on Google.
+
+        The write sends the same full list, so repeating it is safe even when the earlier
+        attempt may have reached Google. Repeating the request with the same key queues once.
+        """
+        record = await session.scalar(
+            select(GBPSpecialHours)
+            .where(
+                GBPSpecialHours.organization_id == organization_id,
+                GBPSpecialHours.id == special_hours_id,
+            )
+            .with_for_update()
+        )
+        if not record:
+            raise GBPSpecialHoursNotFoundError
+        key = (
+            "gbp-special-hours-retry:"
+            + hashlib.sha256(f"{record.id}:{idempotency_key}".encode()).hexdigest()
+        )
+        already = await session.scalar(
+            select(GBPSpecialHoursPublication.id).where(
+                GBPSpecialHoursPublication.organization_id == organization_id,
+                GBPSpecialHoursPublication.idempotency_key == key,
+            )
+        )
+        if already is not None:
+            return record
+        if record.status not in ("failed", "reconciliation_required"):
+            raise GBPSpecialHoursNotRetryableError
+        record.status = "approved"
+        record.safe_error_code = None
+        await session.flush()
+        await self._reserve_special_hours_publication(
+            session,
+            record,
+            idempotency_key=key,
+            actor_id=actor_id,
+            correlation_id=correlation_id,
+        )
+        return record
+
+    async def _reserve_special_hours_publication(
+        self,
+        session: AsyncSession,
+        record: GBPSpecialHours,
+        *,
+        idempotency_key: str,
+        actor_id: UUID | None,
+        correlation_id: str,
+    ) -> GBPSpecialHoursPublication:
+        """Attach a queued publish run to an approved date, through the one write gate."""
+        organization_id = record.organization_id
+        existing = await session.scalar(
+            select(GBPSpecialHoursPublication).where(
+                GBPSpecialHoursPublication.organization_id == organization_id,
+                GBPSpecialHoursPublication.idempotency_key == idempotency_key,
+            )
+        )
+        if existing is not None:
+            return existing
+        gbp_location = await self._get_gbp_location(
+            session, organization_id, record.gbp_location_id
+        )
+        run = await self.execution.start_named(
+            session,
+            organization_id,
+            "gbp.publish_special_hours",
+            idempotency_key,
+            location_id=gbp_location.location_id,
+            actor_id=actor_id,
+            correlation_id=correlation_id,
+            enqueue_job=False,
+        )
+        run = await self.execution.resolve_for_consumption(
+            session, organization_id, run.id, "gbp.publish_special_hours"
+        )
+        publication = GBPSpecialHoursPublication(
+            organization_id=organization_id,
+            gbp_location_id=record.gbp_location_id,
+            workflow_run_id=run.id,
+            idempotency_key=idempotency_key,
+            status="reserved",
+        )
+        session.add(publication)
+        await session.flush()
+        record.publication_id = publication.id
+        run.input_document = {
+            **(run.input_document or {}),
+            "publication_id": str(publication.id),
+        }
+        await self._audit(
+            session,
+            event="gbp.special_hours.publication_reserved",
+            organization_id=organization_id,
+            location_id=None,
+            actor_id=actor_id,
+            resource_type="gbp_special_hours_publication",
+            resource_id=publication.id,
+            correlation_id=correlation_id,
+            summary="Special hours publication reserved.",
+            metadata={"service_date": record.service_date.isoformat(), "revision": record.revision},
+        )
+        await self.execution.enqueue_consumed_run(session, run)
+        return publication
 
     async def list_special_hours(
         self, session: AsyncSession, organization_id: UUID, gbp_location_id: UUID

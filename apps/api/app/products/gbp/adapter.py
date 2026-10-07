@@ -37,6 +37,9 @@ SUPPORTED_READ_MASK = ",".join(
     ]
 )
 SUPPORTED_WRITE_FIELDS = frozenset({"profile.description", "regularHours"})
+# Special hours are written only by the governed special-hours publisher, never through a
+# profile change, so the field is allowed on the adapter but not part of SUPPORTED_WRITE_FIELDS.
+SPECIAL_HOURS_FIELD = "specialHours"
 
 ACCOUNT_PAGE_SIZE = 20
 LOCATION_PAGE_SIZE = 100
@@ -232,7 +235,9 @@ class GoogleBusinessProfileAdapter:
         update_mask: list[str],
         idempotency_key: str,
     ) -> dict[str, Any]:
-        if not update_mask or not set(update_mask) <= SUPPORTED_WRITE_FIELDS:
+        if not update_mask or not set(update_mask) <= SUPPORTED_WRITE_FIELDS | {
+            SPECIAL_HOURS_FIELD
+        }:
             raise ValueError("unsupported GBP update field")
         return await self._request(
             "PATCH",

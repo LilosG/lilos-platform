@@ -49,6 +49,8 @@ const calls: Record<string, Call> = {
     action(`${ops}special-hours/${id}/decision/`, decision(true)),
   "hours-reject": (id) =>
     action(`${ops}special-hours/${id}/decision/`, decision(false)),
+  "hours-retry": (id) =>
+    action(`${ops}special-hours/${id}/retry/`, { idempotency_key: key() }),
   "change-approve": (id) =>
     action(`${ops}change-sets/${id}/decision/`, decision(true)),
   "change-reject": (id) =>
