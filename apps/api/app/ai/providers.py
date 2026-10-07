@@ -17,6 +17,11 @@ from apps.api.app.ai.completion_text import (
     strip_code_fence,
 )
 from apps.api.app.ai.errors import AIProviderConfigurationError, AIProviderError
+from apps.api.app.products.content.link_validation import (
+    InventoryPage,
+    build_inventory,
+    validate_links,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -46,12 +51,37 @@ _ARTICLE_CONTENT_TYPES = frozenset(
         "landing",
         "landing_page",
         "landing-page",
+        "service_page",
+        "service-page",
+        "location_page",
+        "location-page",
+        "listicle",
+        "list_post",
+        "list-post",
+        "roundup",
+        "pillar",
     }
+)
+_PAGE_CONTENT_TYPES = frozenset(
+    {
+        "page",
+        "landing",
+        "landing_page",
+        "landing-page",
+        "service_page",
+        "service-page",
+        "location_page",
+        "location-page",
+    }
+)
+_LISTICLE_CONTENT_TYPES = frozenset(
+    {"listicle", "list_post", "list-post", "roundup", "pillar"}
 )
 _LONGFORM_CONTENT_TYPES = frozenset(
     {"article", "blog", "blog_post", "blog-post", "guide", "local_guide", "local-guide"}
+    | _LISTICLE_CONTENT_TYPES
+    | _PAGE_CONTENT_TYPES
 )
-_PAGE_CONTENT_TYPES = frozenset({"page", "landing", "landing_page", "landing-page"})
 _ARTICLE_MINIMUM_RELEVANT_H2S = 3
 _ARTICLE_MINIMUM_FAQ_ANSWER_WORDS = 18
 _ARTICLE_MINIMUM_SECTION_WORDS = 90
@@ -105,15 +135,6 @@ def _article_quality_profile(content_type: object) -> dict[str, int]:
             "minimum_h2s": 7,
             "minimum_internal_links": 4,
             "minimum_faqs": 4,
-        }
-    if normalized in _PAGE_CONTENT_TYPES:
-        return {
-            "minimum_words": 1_100,
-            "target_minimum_words": 1_350,
-            "target_maximum_words": 1_800,
-            "minimum_h2s": 6,
-            "minimum_internal_links": 3,
-            "minimum_faqs": 3,
         }
     return {
         "minimum_words": 900,
@@ -215,6 +236,22 @@ def _extract_content_payload(content_text: str) -> dict[str, Any]:
     return parsed
 
 
+def _link_inventory_for_validation(input_document: dict[str, Any]) -> list[InventoryPage]:
+    """The verified first-party pages a draft may link to.
+
+    The compose/draft services pass the full `link_inventory` (crawled pages plus existing
+    content). Older callers only carry the bounded website knowledge excerpt.
+    """
+    rows = input_document.get("link_inventory")
+    if not isinstance(rows, list):
+        knowledge = _content_knowledge_for_prompt(input_document.get("knowledge"))
+        rows = knowledge.get("website_knowledge") or []
+    return build_inventory(
+        [row for row in rows if isinstance(row, dict)],
+        origin_host=str(input_document.get("site_host") or "") or None,
+    )
+
+
 def _validate_article_payload(payload: dict[str, Any], input_document: dict[str, Any]) -> list[str]:
     """Deterministic quality floor for AI-generated local SEO content."""
     if not _is_article_content_type(input_document.get("content_type")):
@@ -248,24 +285,16 @@ def _validate_article_payload(payload: dict[str, Any], input_document: dict[str,
         if thin_sections > _ARTICLE_MAXIMUM_THIN_SECTIONS:
             errors.append("article_sections_too_thin")
 
-    internal_links = re.findall(r"\[[^\]]+\]\((/[^)\s]+)\)", draft)
-    unique_links = set(internal_links)
-    knowledge = _content_knowledge_for_prompt(input_document.get("knowledge"))
-    website_pages = knowledge.get("website_knowledge")
-    allowed_urls = (
-        {
-            str(page.get("url"))
-            for page in website_pages
-            if isinstance(page, dict) and page.get("url")
-        }
-        if isinstance(website_pages, list)
-        else set()
+    inventory = _link_inventory_for_validation(input_document)
+    errors.extend(
+        code.value
+        for code in validate_links(
+            draft,
+            inventory,
+            minimum_links=profile["minimum_internal_links"],
+            origin_host=str(input_document.get("site_host") or "") or None,
+        )
     )
-    required_links = min(profile["minimum_internal_links"], len(allowed_urls))
-    if required_links and len(unique_links & allowed_urls) < required_links:
-        errors.append("article_internal_links_missing")
-    if allowed_urls and any(link not in allowed_urls for link in unique_links):
-        errors.append("article_internal_link_unverified")
 
     paragraphs = [
         " ".join(paragraph.split()).casefold()

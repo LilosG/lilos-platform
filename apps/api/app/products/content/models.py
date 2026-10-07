@@ -12,6 +12,7 @@ from sqlalchemy import (
     Index,
     Integer,
     String,
+    Text,
     UniqueConstraint,
     func,
     text,
@@ -125,6 +126,8 @@ class ContentBrief(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     source_evidence_references: Mapped[list[object]] = mapped_column(JSONB, nullable=False)
     validation_requirements: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
     approval_policy_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
+    # The operator's own words when this brief came from a prompt (content.compose).
+    source_prompt: Mapped[str | None] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     blocked_reason_code: Mapped[str | None] = mapped_column(String(64))
 
