@@ -111,11 +111,6 @@ const failures: Record<string, Failure> = {
     detail:
       "It missed the length, structure or internal-link standard even after one repair attempt, so it was not saved. Try again, or add detail to the prompt.",
   },
-  CONTENT_TOPIC_OVERLAP: {
-    title: "This topic is already covered on the site",
-    detail:
-      "An existing page competes for the same search. Improve that page, or ask for a different angle.",
-  },
   CONTENT_PLAN_INVALID: {
     title: "The request could not be turned into a plan",
     detail:
@@ -310,8 +305,20 @@ export interface Review {
   inbound: InboundEdit[];
   claims: ClaimRow[];
   unresolved: number;
+  /** A page already on the site that covers a related topic. Advisory, never blocks approval. */
+  similarPage: SimilarPage | null;
   revisions: RevisionRow[];
   prompt: string | null;
+}
+export interface SimilarPage {
+  title: string;
+  href: string;
+}
+function similarPageOf(doc: Record<string, unknown>): SimilarPage | null {
+  const overlap = obj(doc.topic_overlap);
+  const href = str(overlap.url);
+  if (!href) return null;
+  return { href, title: str(overlap.title) ?? "Existing page" };
 }
 export function review(view: ContentView): Review {
   const latest = view.revisions[0];
@@ -399,6 +406,7 @@ export function review(view: ContentView): Review {
     inbound,
     claims,
     unresolved: claims.filter((c) => c.status === "needs_confirmation").length,
+    similarPage: similarPageOf(doc),
     revisions: view.revisions.map((r, index) => ({
       id: r.id,
       label: `Revision ${r.revision_number}`,

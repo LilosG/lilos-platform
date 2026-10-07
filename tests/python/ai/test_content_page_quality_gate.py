@@ -85,7 +85,7 @@ def test_existing_canonical_target_is_not_rejected_as_duplicate_content() -> Non
     assert _find_existing_topic_overlap(document) is None
 
 
-def test_competing_page_with_same_topic_is_still_rejected() -> None:
+def test_competing_page_with_same_topic_is_reported_as_an_advisory() -> None:
     from apps.api.app.ai.providers import _find_existing_topic_overlap
 
     document = {
@@ -102,7 +102,7 @@ def test_competing_page_with_same_topic_is_still_rejected() -> None:
         },
     }
 
-    assert (
-        _find_existing_topic_overlap(document)
-        == "https://inlovewiththecoco.com/restaurants-little-italy"
-    )
+    assert _find_existing_topic_overlap(document) == {
+        "url": "https://inlovewiththecoco.com/restaurants-little-italy",
+        "title": "Restaurants in Little Italy San Diego",
+    }

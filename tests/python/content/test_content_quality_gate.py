@@ -105,7 +105,7 @@ def test_content_prompt_uses_source_knowledge_and_article_contract() -> None:
     assert "4 to six FAQs" in prompt
 
 
-def test_topic_overlap_blocks_duplicate_local_article() -> None:
+def test_topic_overlap_is_an_advisory_for_a_similar_local_article() -> None:
     document = _input_document()
     document["knowledge"] = {
         "website_knowledge": [
@@ -116,7 +116,10 @@ def test_topic_overlap_blocks_duplicate_local_article() -> None:
         ]
     }
 
-    assert _find_existing_topic_overlap(document) == "/blog/best-happy-hour-little-italy/"
+    assert _find_existing_topic_overlap(document) == {
+        "url": "/blog/best-happy-hour-little-italy/",
+        "title": "Happy Hour in Little Italy: Coco Maya's Weekday Menu",
+    }
 
 
 def test_thin_article_fails_quality_floor() -> None:
@@ -163,3 +166,18 @@ def test_substantive_article_passes_quality_floor() -> None:
     errors = _validate_article_payload(_payload(_article_body()), _input_document())
 
     assert errors == []
+
+
+def test_overlap_url_is_added_to_the_prompt_as_a_distinct_angle_instruction() -> None:
+    document = _input_document()
+    document["topic_overlap"] = {
+        "url": "/blog/best-happy-hour-little-italy/",
+        "title": "Happy Hour in Little Italy",
+    }
+
+    prompt = _build_prompt("content.draft_revision", document)
+
+    assert "/blog/best-happy-hour-little-italy/" in prompt
+    assert "clearly distinct angle" in prompt
+    assert "related read" in prompt
+    assert "SIMILAR EXISTING PAGE" not in _build_prompt("content.draft_revision", _input_document())

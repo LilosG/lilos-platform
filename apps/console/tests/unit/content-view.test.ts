@@ -109,7 +109,6 @@ describe("why a piece could not be written", () => {
     for (const code of [
       "CONTENT_WEBSITE_NOT_CRAWLED",
       "CONTENT_BELOW_QUALITY_FLOOR",
-      "CONTENT_TOPIC_OVERLAP",
       "CONTENT_PLAN_INVALID",
       "AI_PROVIDER_CONFIGURATION_ERROR",
       "AI_PROVIDER_TEMPORARY_FAILURE",
@@ -240,7 +239,10 @@ const doc = {
     { status: "unavailable", code: "SOME_FUTURE_CODE", page_url: "/jobs" },
   ],
 };
-const detail = (over: Record<string, unknown> = {}): ContentView => {
+const detail = (
+  over: Record<string, unknown> = {},
+  document: Record<string, unknown> = doc,
+): ContentView => {
   const base = structuredClone(fixtures.detail) as Record<string, unknown>;
   const revisions = base.revisions as Record<string, unknown>[];
   revisions[0] = {
@@ -257,7 +259,7 @@ const detail = (over: Record<string, unknown> = {}): ContentView => {
         { question: "", answer: "dropped" },
       ],
     },
-    validation_document: doc,
+    validation_document: document,
   };
   return adaptContent(
     { ...base, organization_id: fixtures.workspace.organization_id, ...over },
@@ -265,6 +267,31 @@ const detail = (over: Record<string, unknown> = {}): ContentView => {
     fixtures.detail.id,
   );
 };
+
+describe("the similar page advisory", () => {
+  it("reads the overlapping page as a titled link and never as a block", () => {
+    const r = review(
+      detail(
+        {},
+        {
+          ...doc,
+          topic_overlap: {
+            url: "https://missbs.example/blog/packers-bar",
+            title: "The Packers Bar in San Diego",
+          },
+        },
+      ),
+    );
+    expect(r.similarPage).toEqual({
+      href: "https://missbs.example/blog/packers-bar",
+      title: "The Packers Bar in San Diego",
+    });
+    expect(r.unresolved).toBe(1); // only unbacked claims gate approval
+  });
+  it("shows nothing when no page overlaps", () => {
+    expect(review(detail()).similarPage).toBeNull();
+  });
+});
 
 describe("the draft review", () => {
   it("measures the draft against its floor and reads the SEO fields and FAQs", () => {

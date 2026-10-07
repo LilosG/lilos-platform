@@ -1731,6 +1731,12 @@ class ContentService:
         if "claims" in document:
             return
         output = execution.output_document or {}
+        overlap = output.get("topic_overlap")
+        if isinstance(overlap, dict) and overlap.get("url"):
+            document["topic_overlap"] = {
+                "url": str(overlap["url"]),
+                "title": str(overlap.get("title") or overlap["url"]),
+            }
         draft = str(output.get("draft") or "")
         fact_ids = [UUID(str(x)) for x in brief.approved_fact_revision_ids]
         facts = await resolve_governed_facts(

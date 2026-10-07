@@ -577,6 +577,10 @@ export function contentDetail(org, id) {
             valid: true,
             errors: [],
             quality: { ...QUALITY, word_count: item.word_count ?? 1520 },
+            topic_overlap: {
+              url: "https://synthetic.example.invalid/blog/packers-games-san-diego/",
+              title: "Where to Watch Packers Games in San Diego",
+            },
             claims,
             inbound_links: [
               {

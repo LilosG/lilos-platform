@@ -419,15 +419,19 @@ const side = async (browser, size, left, right) => {
 const activeScreens =
   stepName === "dashboard-gbp-actions"
     ? dashboardScreens
-    : stepName === "step-5b"
-      ? contentScreens
-      : stepName === "step-5a"
-        ? websiteScreens
-        : stepName === "step-6"
-          ? reviewScreens
-          : stepName === "special-hours-publish"
-            ? screens.filter(([name]) => name === "special-hours-list")
-            : screens;
+    : stepName === "step-5b-followup"
+      ? contentScreens.filter(([name]) =>
+          ["content-composer", "content-draft-review"].includes(name),
+        )
+      : stepName === "step-5b"
+        ? contentScreens
+        : stepName === "step-5a"
+          ? websiteScreens
+          : stepName === "step-6"
+            ? reviewScreens
+            : stepName === "special-hours-publish"
+              ? screens.filter(([name]) => name === "special-hours-list")
+              : screens;
 await mkdir(out, { recursive: true });
 const browser = await chromium.launch(
   process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE

@@ -15,10 +15,11 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from apps.api.app.administration.knowledge_service import BusinessKnowledgeService
 from apps.api.app.administration.models import BusinessFactRevision
 from apps.api.app.ai.errors import AIProviderError
 from apps.api.app.ai.models import AIExecution
-from apps.api.app.ai.providers import _validate_article_payload
+from apps.api.app.ai.providers import _find_existing_topic_overlap, _validate_article_payload
 from apps.api.app.audit.models import AuditEvent
 from apps.api.app.authentication.enums import UserStatus
 from apps.api.app.authentication.models import UserProfile
@@ -120,7 +121,11 @@ class ScriptedGateway:
                 "AI provider returned Content output below the publishing quality floor: "
                 + ", ".join(errors),
             )
-        return {**base, **payload}
+        output = {**base, **payload}
+        overlap = _find_existing_topic_overlap(request.input_document)
+        if overlap:
+            output["topic_overlap"] = overlap
+        return output
 
 
 def doc(revision: ContentRevision) -> dict[str, Any]:
@@ -395,6 +400,51 @@ async def test_compose_writes_audit_rows(
             "content.brief.created",
             "content.revision.drafted",
         } <= events
+
+
+@pytest.mark.anyio
+async def test_a_title_that_overlaps_an_existing_page_is_an_advisory_not_a_block(
+    content_session_factory: async_sessionmaker[AsyncSession], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    gateway = ScriptedGateway([draft_payload()])
+    use_gateway(monkeypatch, gateway)
+    real_retrieve = BusinessKnowledgeService.retrieve_for_content
+
+    async def retrieve_with_indexed_page(self: Any, *args: Any, **kwargs: Any) -> Any:
+        knowledge = dict(await real_retrieve(self, *args, **kwargs))
+        knowledge["website_knowledge"] = [
+            {
+                "url": f"{ORIGIN}/blog/packers-bar-san-diego",
+                "title": "Miss B's: The Green Bay Packers Bar in San Diego",
+            }
+        ]
+        return knowledge
+
+    monkeypatch.setattr(
+        BusinessKnowledgeService, "retrieve_for_content", retrieve_with_indexed_page
+    )
+    async with content_session_factory() as session:
+        world = await seed_world(session)
+        item, run_input, run = await start(session, world)
+        outcome = await run_compose(session, world, run_input, run.id)
+        assert outcome.result == "succeeded"
+        revision = await session.scalar(
+            select(ContentRevision).where(ContentRevision.content_item_id == item.id)
+        )
+        assert revision is not None and revision.status == "awaiting_editorial"
+        overlap = doc(revision)["topic_overlap"]
+        assert overlap["url"].endswith("/blog/packers-bar-san-diego")
+        assert overlap["title"] == "Miss B's: The Green Bay Packers Bar in San Diego"
+
+        approved = await ContentService().decide(
+            session,
+            world.org,
+            revision.id,
+            ApprovalDecision(stage="editorial", approve=True),
+            world.user,
+            correlation_id="c",
+        )
+        assert approved.status == "awaiting_client"
 
 
 @pytest.mark.anyio
