@@ -101,7 +101,7 @@ def test_content_prompt_uses_source_knowledge_and_article_contract() -> None:
     assert "Do NOT put an H1 in the markdown body" in prompt
     assert "1,700–2,300 substantive words" in prompt
     assert "at least 7 descriptive H2 sections" in prompt
-    assert "up to 4 relevant first-party URLs" in prompt
+    assert "at least 4 natural internal markdown links" in prompt
     assert "4 to six FAQs" in prompt
 
 

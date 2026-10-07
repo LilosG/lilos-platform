@@ -1,6 +1,8 @@
 ---
 import type { ContentView } from "../../adapters/website-content";
-import { value } from "../../adapters/local-search";
+import { publicationChip } from "../../lib/content-view";
+import { dateText, humanize } from "../../lib/present";
+import StatusBadge from "../ui/StatusBadge.astro";
 interface Props {
   publication: ContentView["publications"][number];
   itemId: string;
@@ -8,45 +10,98 @@ interface Props {
 }
 const { publication: p, itemId, organizationId } = Astro.props;
 const api = `/api/organizations/${organizationId}/content-operations/${itemId}/publications/${p.id}/recover/`;
+const chip = publicationChip(p.status);
 ---
 
-<article>
-  <h3>Publication: {p.status}</h3>
-  <p>
-    Target path: {p.target_path} · Exact revision: {
-      p.revision_id ?? "Unavailable"
-    }
-  </p>
-  <p>
-    Workflow: {p.workflow_status ?? "Unavailable"} · Failure: {
-      p.workflow_failure ?? "None recorded"
-    } · Correlation: {p.correlation_id ?? "Unavailable"}
-  </p>
-  <p>
-    PR: {p.external_pull_request_id ?? "Not created"} · Checks/build: {
-      p.build_status ?? "Unavailable"
-    }
-  </p>
-  <p>
-    Deployment: {p.deployment_status ?? "Not confirmed"} · Merged revision: {
-      p.external_revision_id ?? "Unavailable"
-    } · Approved head: {p.approved_head_sha ?? "Unavailable"}
-  </p>
-  <p>
-    Live verification: {p.verification_status ?? "Not confirmed"} · Verified at: {
-      p.verified_at ?? "Not confirmed"
-    } · URL: {p.published_url ?? "Unavailable"}
-  </p>
-  <details>
-    <summary>Live read-back evidence</summary>
-    <p>{value(p.verification_evidence)}</p>
-  </details>
-  <p>Error: {p.safe_error_code ?? "None recorded"}</p>
+<article class="publication" data-publication>
+  <div class="listrow">
+    <div>
+      <b>{p.target_path}</b>
+      <small>
+        {
+          p.verified_at
+            ? `Confirmed live ${dateText(p.verified_at)}`
+            : "Live confirmation pending"
+        }
+      </small>
+    </div>
+    <StatusBadge text={chip.label} tone={chip.tone} />
+  </div>
+  {
+    p.published_url && (
+      <p>
+        <a href={p.published_url}>View the live page</a>
+      </p>
+    )
+  }
+  {
+    p.safe_error_code && (
+      <p class="formstatus" role="alert">
+        Publishing stopped. Resume reconciliation to check the site's current
+        state.
+      </p>
+    )
+  }
   {
     p.can_recover && (
-      <button inert data-content-action={api}>
-        Resume canonical reconciliation
+      <button
+        type="button"
+        class="control"
+        inert
+        data-content-action={api}
+        data-label="Resume reconciliation"
+      >
+        Resume reconciliation
       </button>
     )
   }
+  <details>
+    <summary>Details</summary>
+    <dl class="exactchange">
+      <div>
+        <dt>Pull request</dt>
+        <dd>
+          {
+            p.external_pull_request_id
+              ? `#${p.external_pull_request_id}`
+              : "Not created"
+          }
+        </dd>
+      </div>
+      <div>
+        <dt>Checks</dt>
+        <dd>{p.build_status ? humanize(p.build_status) : "Not reported"}</dd>
+      </div>
+      <div>
+        <dt>Deployment</dt>
+        <dd>
+          {
+            p.deployment_status
+              ? humanize(p.deployment_status)
+              : "Not confirmed"
+          }
+        </dd>
+      </div>
+      <div>
+        <dt>Live check</dt>
+        <dd>
+          {
+            p.verification_status
+              ? humanize(p.verification_status)
+              : "Not confirmed"
+          }
+        </dd>
+      </div>
+      <div>
+        <dt>Approved version</dt>
+        <dd>
+          {
+            p.approved_head_sha
+              ? p.approved_head_sha.slice(0, 7)
+              : "Not recorded"
+          }
+        </dd>
+      </div>
+    </dl>
+  </details>
 </article>

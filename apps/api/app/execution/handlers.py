@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable, Sequence
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol, cast
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -624,6 +624,7 @@ async def _handle_content_draft_revision(
             workflow_run_id=workflow_run_id,
             user_id=user_id,
             correlation_id=correlation_id,
+            instructions=str(input_document.get("instructions") or "") or None,
         )
     except AIProviderConfigurationError as exc:
         logger.error(
@@ -658,7 +659,9 @@ async def _handle_content_draft_revision(
         return JobOutcome(
             result="retryable_failure" if retryable else "permanent_failure",
             safe_error=(
-                "AI_PROVIDER_TEMPORARY_FAILURE" if retryable else "CONTENT_GENERATION_REJECTED"
+                "AI_PROVIDER_TEMPORARY_FAILURE"
+                if retryable
+                else _content_rejection_code(exc.safe_message)
             ),
         )
     except ApiError as exc:
@@ -691,10 +694,201 @@ async def _handle_content_draft_revision(
             safe_error="CONTENT_GENERATION_EXCEPTION",
         )
 
+    await _propose_inbound_links(
+        session,
+        organization_id=organization_id,
+        item_id=item_id,
+        revision=revision,
+        user_id=user_id,
+        correlation_id=correlation_id,
+    )
     return JobOutcome(
         result="succeeded",
         result_reference=f"revision:{revision.id}",
     )
+
+
+def _content_rejection_code(safe_message: str) -> str:
+    """A typed code for a permanently rejected draft, never the provider's prose."""
+    from apps.api.app.products.content.enums import ComposeFailureCode
+
+    if "below the publishing quality floor" in safe_message:
+        return ComposeFailureCode.BELOW_QUALITY_FLOOR.value
+    if "overlaps an existing website page" in safe_message:
+        return ComposeFailureCode.TOPIC_OVERLAP.value
+    return "CONTENT_GENERATION_REJECTED"
+
+
+async def _propose_inbound_links(
+    session: AsyncSession,
+    *,
+    organization_id: UUID,
+    item_id: UUID,
+    revision: Any,
+    user_id: UUID | None,
+    correlation_id: str,
+) -> None:
+    """Propose links from existing pages to the new draft. Never fails the draft itself."""
+    from sqlalchemy import select
+
+    from apps.api.app.products.content.inbound_links import (
+        InboundLinkRequest,
+        InboundLinkService,
+    )
+    from apps.api.app.products.content.models import ContentBrief, ContentItem
+    from apps.api.app.products.content.service import ContentService
+
+    # The draft is complete and reviewable; make it durable before anything optional runs.
+    await session.commit()
+    try:
+        item = await session.scalar(
+            select(ContentItem).where(
+                ContentItem.organization_id == organization_id, ContentItem.id == item_id
+            )
+        )
+        brief = await session.scalar(
+            select(ContentBrief)
+            .where(
+                ContentBrief.organization_id == organization_id,
+                ContentBrief.content_item_id == item_id,
+            )
+            .order_by(ContentBrief.revision_number.desc())
+            .limit(1)
+        )
+        if item is None or brief is None:
+            return
+        website = await ContentService()._resolve_website(session, organization_id, item, brief)
+        target_path = str(brief.target_reference or "")
+        if website is None or brief.target_kind != "new_page" or not target_path.startswith("/"):
+            return
+        requirements = brief.validation_requirements or {}
+        phrases = [
+            item.title,
+            str(requirements.get("primary_topic") or ""),
+            *[str(k) for k in cast(list[object], requirements.get("keywords") or [])],
+        ]
+        proposals = await InboundLinkService().propose(
+            session,
+            InboundLinkRequest(
+                organization_id=organization_id,
+                website_id=website.id,
+                revision_id=revision.id,
+                content_hash=revision.content_hash,
+                target_url=target_path.rstrip("/") or "/",
+                topic_phrases=[p for p in phrases if p],
+                actor_id=user_id,
+                correlation_id=correlation_id,
+            ),
+        )
+        document = dict(revision.validation_document or {})
+        document["inbound_links"] = proposals
+        revision.validation_document = document
+        await session.flush()
+    except Exception:
+        await session.rollback()
+        logger.exception(
+            "Inbound link proposal failed",
+            extra={
+                "event_name": "content.inbound_links.failed",
+                "organization_id": str(organization_id),
+                "item_id": str(item_id),
+            },
+        )
+
+
+# ---------------------------------------------------------------------------
+# Content compose handler
+# ---------------------------------------------------------------------------
+
+
+async def _handle_content_compose(
+    session: AsyncSession,
+    *,
+    organization_id: UUID,
+    location_id: UUID | None,
+    input_document: dict[str, Any],
+    correlation_id: str,
+    workflow_run_id: UUID,
+) -> JobOutcome:
+    """Write a content draft from one plain prompt as a durable workflow step."""
+    from sqlalchemy import select
+
+    from apps.api.app.ai.errors import AIProviderConfigurationError, AIProviderError
+    from apps.api.app.errors import ApiError
+    from apps.api.app.products.content.compose import ComposeFailure, ContentComposeService
+    from apps.api.app.products.content.models import ContentItem
+
+    required = ("item_id", "website_id", "prompt", "idempotency_key")
+    if any(not input_document.get(key) for key in required):
+        return JobOutcome(result="permanent_failure", safe_error="MISSING_COMPOSE_INPUT")
+    try:
+        item_id = UUID(str(input_document["item_id"]))
+        UUID(str(input_document["website_id"]))
+    except (ValueError, TypeError):
+        return JobOutcome(result="permanent_failure", safe_error="INVALID_UUID")
+
+    async def mark_failed(code: str) -> None:
+        item = await session.scalar(
+            select(ContentItem).where(
+                ContentItem.organization_id == organization_id, ContentItem.id == item_id
+            )
+        )
+        if item is not None and item.status in {"drafting", "brief_ready", "briefing"}:
+            item.status = "failed"
+            await session.flush()
+        logger.warning(
+            "Content compose failed",
+            extra={
+                "event_name": "content.compose.failed",
+                "organization_id": str(organization_id),
+                "item_id": str(item_id),
+                "safe_error": code,
+            },
+        )
+
+    try:
+        revision = await ContentComposeService().execute(
+            session,
+            organization_id=organization_id,
+            input_document=input_document,
+            workflow_run_id=workflow_run_id,
+            correlation_id=correlation_id,
+        )
+    except ComposeFailure as exc:
+        await mark_failed(exc.code.value)
+        return JobOutcome(result="permanent_failure", safe_error=exc.code.value)
+    except AIProviderConfigurationError:
+        await mark_failed("AI_PROVIDER_CONFIGURATION_ERROR")
+        return JobOutcome(result="permanent_failure", safe_error="AI_PROVIDER_CONFIGURATION_ERROR")
+    except AIProviderError as exc:
+        if exc.category == "provider":
+            return JobOutcome(
+                result="retryable_failure", safe_error="AI_PROVIDER_TEMPORARY_FAILURE"
+            )
+        code = _content_rejection_code(exc.safe_message)
+        await mark_failed(code)
+        return JobOutcome(result="permanent_failure", safe_error=code)
+    except ApiError as exc:
+        await mark_failed(exc.code)
+        return JobOutcome(result="permanent_failure", safe_error=exc.code)
+    except Exception:
+        logger.exception(
+            "Content compose raised an unexpected exception",
+            extra={"event_name": "content.compose.exception", "item_id": str(item_id)},
+        )
+        await mark_failed("CONTENT_GENERATION_EXCEPTION")
+        return JobOutcome(result="permanent_failure", safe_error="CONTENT_GENERATION_EXCEPTION")
+
+    user_raw = input_document.get("user_id")
+    await _propose_inbound_links(
+        session,
+        organization_id=organization_id,
+        item_id=item_id,
+        revision=revision,
+        user_id=UUID(str(user_raw)) if user_raw else None,
+        correlation_id=correlation_id,
+    )
+    return JobOutcome(result="succeeded", result_reference=f"revision:{revision.id}")
 
 
 # ---------------------------------------------------------------------------
@@ -1808,6 +2002,7 @@ def _register_all() -> None:
     register_workflow_handler("gbp.publish_special_hours", _handle_gbp_publish_special_hours)
     register_workflow_handler("content.publish", _handle_content_publish)
     register_workflow_handler("content.draft_revision", _handle_content_draft_revision)
+    register_workflow_handler("content.compose", _handle_content_compose)
     register_workflow_handler("reviews.publish_response", _handle_reviews_publish_response)
     register_workflow_handler("leads.send_communication", _handle_leads_send_communication)
     register_workflow_handler("gbp.sync", _handle_gbp_sync)

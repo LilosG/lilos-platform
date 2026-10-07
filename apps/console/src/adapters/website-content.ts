@@ -7,6 +7,14 @@ const text = z.string();
 const uuid = z.uuid();
 const nullable = text.nullable();
 const json = z.record(text, z.json());
+const compose = z
+  .object({
+    status: z.enum(["writing", "failed"]),
+    failure_code: nullable,
+    prompt: nullable,
+    workflow_run_id: uuid,
+  })
+  .nullable();
 const item = z.object({
   id: uuid,
   title: text,
@@ -20,6 +28,8 @@ const item = z.object({
   publication_status: nullable,
   publication_job_status: nullable,
   technical_site_change: z.boolean(),
+  word_count: z.number().int().nullable(),
+  compose,
 });
 const requirements = z.object({
   target_selected: z.boolean(),
@@ -149,6 +159,8 @@ export function adaptContent(
           target_reference: text,
           approved_fact_revision_ids: z.array(uuid),
           status: text,
+          target_kind: nullable,
+          source_prompt: nullable,
         }),
       ),
       revisions: z.array(
@@ -199,6 +211,15 @@ export function adaptContent(
       ),
       publishing_requirements: requirements,
       publishing_requirements_by_target: z.record(text, requirements),
+      publish_preview: z.array(
+        z.object({
+          target_id: uuid,
+          repository_id: text,
+          base_branch: text,
+          file_path: text,
+          change_kind: z.enum(["new_file", "edit"]),
+        }),
+      ),
       draft_runs: z.array(
         z.object({
           id: uuid,

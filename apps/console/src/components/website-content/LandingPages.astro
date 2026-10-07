@@ -1,0 +1,46 @@
+---
+import type { ContentRow } from "../../lib/content-view";
+import SectionHeading from "../ui/SectionHeading.astro";
+import EmptyState from "../ui/EmptyState.astro";
+import ContentTable from "./ContentTable.astro";
+interface Props {
+  rows: ContentRow[];
+  canCreate: boolean;
+  /** Whether a composer can be opened from here. */
+  canCompose: boolean;
+}
+const { rows, canCreate, canCompose } = Astro.props;
+---
+
+<section class="panel" data-landing-pages>
+  <SectionHeading>
+    <Fragment slot="title">
+      Landing and service pages <span class="count">{rows.length}</span>
+    </Fragment>
+  </SectionHeading>
+  {
+    rows.length ? (
+      <ContentTable
+        rows={rows}
+        label="Landing and service pages"
+        canCreate={canCreate}
+      />
+    ) : (
+      <EmptyState title="No landing pages yet">
+        Ask for a landing, service or location page and it is written to the
+        same standard as an article, ready for review.
+        {canCompose && (
+          <button
+            slot="action"
+            type="button"
+            class="control primary"
+            data-dialog="content-composer"
+            data-compose-type="landing_page"
+          >
+            Write a landing page
+          </button>
+        )}
+      </EmptyState>
+    )
+  }
+</section>

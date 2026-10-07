@@ -42,6 +42,33 @@ export const websiteRoutes = [
       .strict(),
   ),
   route(
+    `${org}/content/compose`,
+    "POST",
+    z
+      .object({
+        website_id: z.uuid(),
+        prompt: z.string().trim().min(1).max(2000),
+        content_type: z
+          .enum([
+            "blog_post",
+            "listicle",
+            "landing_page",
+            "service_page",
+            "location_page",
+            "guide",
+          ])
+          .nullable()
+          .optional(),
+        idempotency_key: z.string().min(8).max(128),
+      })
+      .strict(),
+  ),
+  route(
+    `${org}/content/${uuid}/revisions/${uuid}/claims/confirm`,
+    "POST",
+    z.object({ claim_id: z.string().min(1).max(64) }).strict(),
+  ),
+  route(
     `${org}/content/${uuid}/briefs`,
     "POST",
     z
@@ -78,6 +105,7 @@ export const websiteRoutes = [
       .object({
         brief_id: z.uuid(),
         idempotency_key: z.string().min(8).max(128),
+        instructions: z.string().max(2000).nullable().optional(),
       })
       .strict(),
   ),

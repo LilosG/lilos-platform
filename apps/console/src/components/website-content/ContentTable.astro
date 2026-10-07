@@ -1,0 +1,111 @@
+---
+import type { ContentRow } from "../../lib/content-view";
+import DataTable from "../ui/DataTable.astro";
+import StatusBadge from "../ui/StatusBadge.astro";
+import ErrorState from "../ui/ErrorState.astro";
+interface Props {
+  rows: ContentRow[];
+  label: string;
+  canCreate: boolean;
+}
+const { rows, label, canCreate } = Astro.props;
+---
+
+<div
+  class="tablewrap contenttable"
+  tabindex="0"
+  role="region"
+  aria-label={label}
+>
+  <DataTable>
+    <thead>
+      <tr>
+        <th scope="col">Title</th>
+        <th scope="col">Status</th>
+        <th scope="col" class="num">Words</th>
+        <th scope="col">Draft</th>
+        <th scope="col">Publication</th>
+        <th scope="col"><span class="sr-only">Open</span></th>
+      </tr>
+    </thead>
+    <tbody>
+      {
+        rows.map((row) => (
+          <Fragment>
+            <tr
+              class="clientrow"
+              data-content-row
+              data-writing={row.writing ? "true" : undefined}
+            >
+              <td>
+                <a class="clientname" href={row.href}>
+                  <span>{row.title}</span>
+                </a>
+                <span class="sub">{row.type}</span>
+              </td>
+              <td>
+                <StatusBadge text={row.stage.label} tone={row.stage.tone} />
+              </td>
+              <td class="num">{row.words}</td>
+              <td>
+                {row.revision ? (
+                  <StatusBadge
+                    text={row.revision.label}
+                    tone={row.revision.tone}
+                  />
+                ) : (
+                  <span class="muted">–</span>
+                )}
+              </td>
+              <td>
+                {row.publication ? (
+                  <StatusBadge
+                    text={row.publication.label}
+                    tone={row.publication.tone}
+                  />
+                ) : (
+                  <span class="muted">–</span>
+                )}
+              </td>
+              <td>
+                {row.writing ? (
+                  <span class="muted" role="status">
+                    Writing…
+                  </span>
+                ) : row.failed ? null : (
+                  <a
+                    class="control"
+                    href={row.href}
+                    aria-label={`Open ${row.title}`}
+                  >
+                    Open
+                  </a>
+                )}
+              </td>
+            </tr>
+            {row.failed && row.failure && (
+              <tr data-content-failure>
+                <td colspan="6">
+                  <ErrorState title={row.failure.title} heading="h3">
+                    {row.failure.detail}
+                    {canCreate && row.retryPrompt && (
+                      <button
+                        slot="action"
+                        type="button"
+                        class="control primary"
+                        data-compose-retry={row.retryPrompt}
+                        inert
+                      >
+                        Try again
+                      </button>
+                    )}
+                  </ErrorState>
+                </td>
+              </tr>
+            )}
+          </Fragment>
+        ))
+      }
+    </tbody>
+  </DataTable>
+</div>

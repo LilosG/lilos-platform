@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import PurePosixPath
 from uuid import UUID
 
@@ -12,7 +13,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.app.config import Settings
-from apps.api.app.execution.models import Job, WorkflowRun
+from apps.api.app.execution.models import (
+    Job,
+    WorkflowDefinition,
+    WorkflowRun,
+    WorkflowVersion,
+)
 from apps.api.app.execution.service import ExecutionService
 from apps.api.app.growth.action_types import is_site_change_action
 from apps.api.app.integrations.models import IntegrationConnection
@@ -53,6 +59,12 @@ _ACTIVE_PUBLICATION_STATES = {
     "deployed",
 }
 _ATTENTION_PUBLICATION_STATES = {"checks_failed", "failed", "reconciliation_required"}
+_COMPOSE_LIVE_RUN_STATES = {"created", "queued", "running", "waiting", "retry_scheduled"}
+
+
+class ComposeRunState(StrEnum):
+    WRITING = "writing"
+    FAILED = "failed"
 
 
 @dataclass(frozen=True, slots=True)
@@ -132,6 +144,7 @@ class ContentOperatorService:
         for job in jobs:
             latest_job_status.setdefault(job.workflow_run_id, job.status)
         opportunity_types = await self._opportunity_types(session, organization_id, items)
+        compose_states = await self.compose_states(session, organization_id, item_ids)
         return [
             self._summary(
                 item,
@@ -141,9 +154,50 @@ class ContentOperatorService:
                 if item.id in latest_publication
                 else None,
                 opportunity_type=opportunity_types.get(item.id),
+                compose=compose_states.get(item.id),
             )
             for item in items
         ], has_more
+
+    async def compose_states(
+        self, session: AsyncSession, organization_id: UUID, item_ids: Sequence[UUID]
+    ) -> dict[UUID, dict[str, object]]:
+        """Typed state of each item's latest `content.compose` run, in one scoped query.
+
+        Only runs that have not produced a draft appear: `writing` while the run is live,
+        `failed` with its typed code once it has stopped. A finished run is not a state.
+        """
+        if not item_ids:
+            return {}
+        rows = await session.execute(
+            select(WorkflowRun)
+            .join(WorkflowVersion, WorkflowVersion.id == WorkflowRun.workflow_version_id)
+            .join(WorkflowDefinition, WorkflowDefinition.id == WorkflowVersion.definition_id)
+            .where(
+                WorkflowRun.organization_id == organization_id,
+                WorkflowDefinition.key == "content.compose",
+                WorkflowRun.input_document["item_id"].astext.in_([str(i) for i in item_ids]),
+            )
+            .order_by(WorkflowRun.created_at.desc())
+        )
+        states: dict[UUID, dict[str, object]] = {}
+        for run in rows.scalars():
+            item_id = UUID(str(run.input_document.get("item_id")))
+            if item_id in states:
+                continue
+            if run.status in _COMPOSE_LIVE_RUN_STATES:
+                state = ComposeRunState.WRITING
+            elif run.status in {"failed", "cancelled", "escalated"}:
+                state = ComposeRunState.FAILED
+            else:
+                continue
+            states[item_id] = {
+                "status": state.value,
+                "failure_code": run.failure_code if state is ComposeRunState.FAILED else None,
+                "prompt": run.input_document.get("prompt"),
+                "workflow_run_id": str(run.id),
+            }
+        return states
 
     async def detail(
         self,
@@ -188,6 +242,9 @@ class ContentOperatorService:
                 opportunity_type=(
                     await self._opportunity_types(session, organization_id, [item])
                 ).get(item.id),
+                compose=(await self.compose_states(session, organization_id, [item.id])).get(
+                    item.id
+                ),
             ),
             "briefs": [self._brief_row(brief) for brief in briefs],
             "revisions": [self._revision_row(revision) for revision in revisions],
@@ -195,6 +252,7 @@ class ContentOperatorService:
             "publishing_targets": [self._target_row(target) for target in targets],
             "publishing_requirements": requirements,
             "publishing_requirements_by_target": requirements_by_target,
+            "publish_preview": self._publish_preview(item, briefs, targets),
         }
 
     async def decide_revision(
@@ -500,6 +558,30 @@ class ContentOperatorService:
         return overrides
 
     @staticmethod
+    def _publish_preview(
+        item: ContentItem, briefs: Sequence[ContentBrief], targets: Sequence[PublishingTarget]
+    ) -> list[dict[str, object]]:
+        """The exact file each active target would receive: what approval signs off on."""
+        latest = max(briefs, key=lambda b: b.revision_number, default=None)
+        kind = (
+            "edit" if latest is not None and latest.target_kind == "existing_page" else "new_file"
+        )
+        return [
+            {
+                "target_id": str(target.id),
+                "repository_id": target.repository_id,
+                "base_branch": target.base_branch,
+                "file_path": ContentOperatorService._target_path(
+                    target,
+                    item.slug,
+                    FrontmatterContract.from_document(target.frontmatter_contract),
+                ),
+                "change_kind": kind,
+            }
+            for target in targets
+        ]
+
+    @staticmethod
     def _target_path(target: PublishingTarget, slug: str, contract: FrontmatterContract) -> str:
         extensions = contract.file_extensions or (".mdx",)
         extension = ".mdx" if ".mdx" in extensions else extensions[0]
@@ -542,9 +624,10 @@ class ContentOperatorService:
         job_status: str | None = None,
         *,
         opportunity_type: str | None = None,
+        compose: dict[str, object] | None = None,
     ) -> dict[str, object]:
         stage, next_action = ContentOperatorService._operator_state(
-            item, revision, publication, job_status
+            item, revision, publication, job_status, compose
         )
         technical_site_change = ContentOperatorService._technical_site_change(opportunity_type)
         if technical_site_change:
@@ -563,6 +646,8 @@ class ContentOperatorService:
             "publication_status": publication.status if publication else None,
             "publication_job_status": job_status,
             "technical_site_change": technical_site_change,
+            "word_count": len(revision.body.split()) if revision else None,
+            "compose": compose,
         }
 
     @staticmethod
@@ -601,7 +686,12 @@ class ContentOperatorService:
         revision: ContentRevision | None,
         publication: ContentPublication | None,
         job_status: str | None = None,
+        compose: dict[str, object] | None = None,
     ) -> tuple[str, dict[str, str]]:
+        if compose is not None and revision is None:
+            if compose["status"] == ComposeRunState.WRITING.value:
+                return "writing", {"key": "wait", "label": "Writing draft"}
+            return "compose_failed", {"key": "retry", "label": "Try again"}
         if publication is not None:
             if publication.status == "verified":
                 return "published", {"key": "view", "label": "View publication"}
@@ -653,6 +743,7 @@ class ContentOperatorService:
             "target_resolution": item.validation_requirements.get("target_resolution"),
             "approved_fact_revision_ids": item.approved_fact_revision_ids,
             "status": item.status,
+            "source_prompt": item.source_prompt,
         }
 
     @staticmethod

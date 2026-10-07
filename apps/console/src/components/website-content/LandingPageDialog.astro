@@ -1,0 +1,109 @@
+---
+import type { ExactChange } from "../../lib/content-view";
+import StatusBadge from "../ui/StatusBadge.astro";
+interface Props {
+  title: string;
+  revisionLabel: string;
+  words: number;
+  stage: "editorial" | "client";
+  change: ExactChange | null;
+  /** Claims nothing on file backs; approval stays closed until each is confirmed or removed. */
+  unresolved: number;
+  decisionUrl: string;
+  canApprove: boolean;
+}
+const {
+  title,
+  revisionLabel,
+  words,
+  stage,
+  change,
+  unresolved,
+  decisionUrl,
+  canApprove,
+} = Astro.props;
+const blocked = unresolved > 0 || !canApprove;
+---
+
+<dialog
+  id="content-approval"
+  aria-labelledby="content-approval-title"
+  data-shell-dialog
+>
+  <div class="panelhead">
+    <span class="muted">Approve this draft</span>
+    <button type="button" class="close" aria-label="Close" data-close>×</button>
+  </div>
+  <div class="body">
+    <h2 id="content-approval-title">{title}</h2>
+    <p class="muted">
+      {revisionLabel} · {words.toLocaleString("en-US")} words. What you approve is
+      exactly what is published; nothing else changes on the site.
+    </p>
+    {
+      change ? (
+        <dl class="exactchange" data-exact-change>
+          <div>
+            <dt>Repository</dt>
+            <dd>{change.repository}</dd>
+          </div>
+          <div>
+            <dt>Branch</dt>
+            <dd>{change.branch}</dd>
+          </div>
+          <div>
+            <dt>File</dt>
+            <dd>
+              <code>{change.filePath}</code>
+            </dd>
+          </div>
+          <div>
+            <dt>Change</dt>
+            <dd>
+              <StatusBadge
+                text={change.kindLabel}
+                tone={change.kind === "new_file" ? "neutral" : "warn"}
+              />
+            </dd>
+          </div>
+        </dl>
+      ) : (
+        <p class="muted" data-exact-change>
+          No publishing target is connected yet, so there is no file to show.
+          Approval records the draft; connect a website repository in
+          Integrations to publish it.
+        </p>
+      )
+    }
+    {
+      unresolved > 0 && (
+        <p class="formstatus" role="alert">
+          {unresolved === 1
+            ? "One claim still needs to be confirmed or removed."
+            : `${unresolved} claims still need to be confirmed or removed.`}
+        </p>
+      )
+    }
+    {
+      !canApprove && (
+        <p class="formstatus" role="alert">
+          Your role cannot approve content.
+        </p>
+      )
+    }
+    <p class="formstatus" role="status" aria-live="polite" data-approve-status>
+    </p>
+  </div>
+  <div class="dialogfoot">
+    <button type="button" class="control" data-close>Not yet</button>
+    <button
+      type="button"
+      class="control primary"
+      data-approve={decisionUrl}
+      data-approve-stage={stage}
+      disabled={blocked}
+      inert
+      >{stage === "client" ? "Approve for publishing" : "Approve draft"}</button
+    >
+  </div>
+</dialog>

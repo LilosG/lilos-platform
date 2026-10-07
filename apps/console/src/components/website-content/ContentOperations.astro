@@ -1,0 +1,149 @@
+---
+import type { WebsiteView } from "../../adapters/website-content";
+import { anyWriting, contentRows } from "../../lib/content-view";
+import SectionHeading from "../ui/SectionHeading.astro";
+import EmptyState from "../ui/EmptyState.astro";
+import ContentTable from "./ContentTable.astro";
+import LandingPages from "./LandingPages.astro";
+import ContentDialog from "./ContentDialog.astro";
+interface Props {
+  view: WebsiteView;
+  base: string;
+  api: string;
+  query: string;
+  offset: number;
+  integrationsHref: string;
+  clientName: string;
+}
+const {
+  view: v,
+  base,
+  api,
+  query,
+  offset,
+  integrationsHref,
+  clientName,
+} = Astro.props;
+const rows = contentRows(v.content, base);
+const articles = rows.filter((r) => !r.isPage);
+const pages = rows.filter((r) => r.isPage);
+const hasAccess = v.content_availability === "available";
+const canCompose = v.can_create && Boolean(v.website_id) && hasAccess;
+const pageLink = (to: number) => `?${query}${query ? "&" : ""}offset=${to}`;
+---
+
+<section
+  class="panel"
+  data-content-list
+  data-has-writing={anyWriting(v.content) ? "true" : undefined}
+>
+  <SectionHeading>
+    <Fragment slot="title">
+      Articles and guides <span class="count">{articles.length}</span>
+    </Fragment>
+    <Fragment slot="actions">
+      {
+        canCompose ? (
+          <button
+            type="button"
+            class="control primary"
+            data-dialog="content-composer"
+          >
+            New content
+          </button>
+        ) : (
+          <button
+            type="button"
+            class="control primary"
+            disabled
+            title={
+              !hasAccess
+                ? "Your role cannot see content"
+                : !v.website_id
+                  ? "Add a website in Integrations first"
+                  : "Your role cannot create content"
+            }
+          >
+            New content
+          </button>
+        )
+      }
+    </Fragment>
+  </SectionHeading>
+  {
+    !hasAccess ? (
+      <EmptyState title="You do not have access to content">
+        Ask an administrator to give you access to content.
+      </EmptyState>
+    ) : !v.website_id ? (
+      <EmptyState title="No website to write for">
+        Add the client's website in Integrations so content can link to its real
+        pages.
+        <a slot="action" class="control primary" href={integrationsHref}>
+          Open Integrations
+        </a>
+      </EmptyState>
+    ) : articles.length ? (
+      <ContentTable
+        rows={articles}
+        label="Articles and guides"
+        canCreate={v.can_create}
+      />
+    ) : (
+      <EmptyState title="No articles yet">
+        Describe what to write in a sentence, for example "a blog about why{" "}
+        {clientName} is the best place in town to watch the game". It is
+        written, linked to the site's real pages and held for your review.
+        {canCompose && (
+          <button
+            slot="action"
+            type="button"
+            class="control primary"
+            data-dialog="content-composer"
+          >
+            Write the first article
+          </button>
+        )}
+      </EmptyState>
+    )
+  }
+  {
+    (offset > 0 || v.next_content_offset !== null) && (
+      <div class="rowactions pager">
+        {offset > 0 && (
+          <a class="control" href={pageLink(Math.max(0, offset - 50))}>
+            Previous
+          </a>
+        )}
+        {v.next_content_offset !== null && (
+          <a class="control" href={pageLink(v.next_content_offset)}>
+            Next
+          </a>
+        )}
+      </div>
+    )
+  }
+</section>
+{
+  hasAccess && v.website_id && (
+    <LandingPages
+      rows={pages}
+      canCreate={v.can_create}
+      canCompose={canCompose}
+    />
+  )
+}
+<p class="formstatus" role="status" aria-live="polite" data-content-status></p>
+{
+  canCompose && (
+    <ContentDialog
+      websites={v.websites}
+      websiteId={v.website_id!}
+      api={api}
+      clientName={clientName}
+    />
+  )
+}
+<script>
+  import "../../lib/content-actions";
+</script>

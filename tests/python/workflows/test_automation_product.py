@@ -201,6 +201,7 @@ def test_list_workflow_types_returns_canonical_catalog(p5_client: P5Context) -> 
         "agent.reviews",
         "agent.seo",
         "content.draft_revision",
+        "content.compose",
         "content.publish",
         "gbp.generate_post",
         "gbp.publish_change",
@@ -1153,6 +1154,7 @@ def test_service_list_workflow_types(
             "agent.reviews",
             "agent.seo",
             "content.draft_revision",
+            "content.compose",
             "content.publish",
             "gbp.generate_post",
             "gbp.publish_change",
@@ -1177,7 +1179,7 @@ def test_service_list_workflow_types(
         return len(items)
 
     count = run_db(postgresql_test_url, scenario)
-    assert count == 24
+    assert count == 25
 
 
 @pytest.mark.integration

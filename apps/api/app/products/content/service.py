@@ -5,7 +5,7 @@ import json
 import re
 from datetime import UTC, date, datetime
 from typing import TypedDict, cast
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,6 +16,7 @@ from apps.api.app.ai.errors import AIProviderError
 from apps.api.app.ai.factory import build_ai_gateway
 from apps.api.app.ai.gateway import AIGatewayRequest
 from apps.api.app.ai.models import AIExecution, AITaskDefinition
+from apps.api.app.ai.providers import article_quality_summary
 from apps.api.app.audit.contracts import AuditEventCreate
 from apps.api.app.audit.enums import AuditActorType, AuditResult
 from apps.api.app.audit.metadata import JsonValue
@@ -29,6 +30,13 @@ from apps.api.app.integrations.secrets import FernetSecretStore
 from apps.api.app.notifications.models import NotificationTemplate
 from apps.api.app.notifications.service import NotificationService
 from apps.api.app.products.content.adapter import validate_target_path
+from apps.api.app.products.content.claims import (
+    ClaimStatus,
+    detect_unbacked_specifics,
+    merge_claims,
+    normalize_claims,
+    unresolved_claims,
+)
 from apps.api.app.products.content.contracts import (
     AIDraftCreate,
     ApprovalDecision,
@@ -45,6 +53,8 @@ from apps.api.app.products.content.enums import ContentTargetKind
 from apps.api.app.products.content.errors import (
     ContentApprovalStageConflictError,
     ContentBriefNotFoundError,
+    ContentClaimNotFoundError,
+    ContentClaimsNeedConfirmationError,
     ContentGitHubProviderNotConfiguredError,
     ContentItemNotFoundError,
     ContentNewPageTargetInvalidError,
@@ -60,6 +70,12 @@ from apps.api.app.products.content.errors import (
     ContentTargetNotConfiguredError,
 )
 from apps.api.app.products.content.evidence import content_opportunity_evidence_references
+from apps.api.app.products.content.link_validation import (
+    COMMERCIAL_KINDS,
+    build_inventory,
+    normalize_origin_host,
+    rank_link_targets,
+)
 from apps.api.app.products.content.models import (
     ContentBrief,
     ContentItem,
@@ -68,7 +84,7 @@ from apps.api.app.products.content.models import (
     ContentRevision,
     PublishingTarget,
 )
-from apps.api.app.products.seo.models import SEOOpportunity, SEOPage
+from apps.api.app.products.seo.models import SEOOpportunity, SEOPage, SEOWebsite
 from apps.api.app.products.seo.site_map_resolver import normalize_url_path
 
 SECRET_PATTERN = re.compile(r"(?i)(?:api[_-]?key|secret|token|password)\s*[:=]")
@@ -314,6 +330,58 @@ def build_publishable_frontmatter(
     if category:
         frontmatter["category"] = category
     return frontmatter
+
+
+async def record_operator_claim(
+    session: AsyncSession,
+    organization_id: UUID,
+    location_id: UUID | None,
+    text: str,
+    user_id: UUID,
+    *,
+    source: str,
+) -> BusinessFactRevision:
+    """Record one claim a person stated or vouched for as an approved, operator-verified fact.
+
+    Attributed to that person, idempotent per (organization, location, claim text): saying
+    the same thing twice returns the same fact rather than a second revision.
+    """
+    normalized = " ".join(text.split())
+    digest = hashlib.sha256(normalized.casefold().encode()).hexdigest()[:16]
+    fact_key = f"claim.operator_{digest}"
+    existing = await session.scalar(
+        select(BusinessFactRevision).where(
+            BusinessFactRevision.organization_id == organization_id,
+            BusinessFactRevision.fact_key == fact_key,
+            BusinessFactRevision.location_id.is_(None)
+            if location_id is None
+            else BusinessFactRevision.location_id == location_id,
+            BusinessFactRevision.status.in_(("approved", "active")),
+        )
+    )
+    if existing is not None:
+        return existing
+    now = datetime.now(UTC)
+    fact = BusinessFactRevision(
+        organization_id=organization_id,
+        location_id=location_id,
+        fact_identity=uuid4(),
+        fact_key=fact_key,
+        value_type="string",
+        value=normalized[:2000],
+        source=source,
+        authority="operator_verified",
+        status="active",
+        revision=1,
+        effective_from=now,
+        proposed_by=user_id,
+        approved_by=user_id,
+        approved_at=now,
+        change_reason="Stated or confirmed by an operator while writing content.",
+    )
+    session.add(fact)
+    await session.flush()
+    return fact
 
 
 class ContentService:
@@ -693,34 +761,30 @@ class ContentService:
                 summary="Content opportunity accepted and queued for governed creation.",
                 metadata={"accept": True, "dispatch_agent": True},
             )
-        elif opportunity.status != "accepted":
+        elif opportunity.status not in {"accepted", "converted"}:
             raise ContentOpportunityNotDecidableError
 
-        context_reference = f"content-opportunity:{opportunity.id}"
-        agent_objective = objective or (
-            "Convert the accepted Content opportunity into a complete, review-ready "
-            "content artifact. Read current approved business facts, website knowledge, "
-            "SEO evidence, and Content inventory first. Decide whether the opportunity "
-            "should improve an existing attributed page (target_kind existing_page) or "
-            "create a new page/article (target_kind new_page, with a proposed path). "
-            "Then create "
-            "the canonical Content item, a detailed evidence-backed brief, and a "
-            "quality-validated draft through generate_content_draft_proposal. Do not "
-            "stop after creating only an idea or brief."
+        # One pipeline: an accepted opportunity is composed exactly like an operator prompt,
+        # from a prompt built deterministically from its own evidence.
+        from apps.api.app.products.content.compose import (
+            ContentComposeService,
+            opportunity_prompt,
+            resolve_opportunity_website,
         )
-        workflow = await self.execution.start_named(
+        from apps.api.app.products.content.contracts import ComposeCreate
+
+        website = await resolve_opportunity_website(session, opportunity)
+        _, workflow = await ContentComposeService(content=self).start(
             session,
             organization_id,
-            "agent.content",
-            f"content-opportunity-{opportunity.id}",
-            location_id=opportunity.location_id,
-            input_document={
-                "objective": agent_objective[:4_000],
-                "context_reference": context_reference,
-            },
-            correlation_id=correlation_id,
+            ComposeCreate(
+                website_id=website.id,
+                prompt=opportunity_prompt(opportunity, objective),
+                idempotency_key=f"opportunity-{opportunity.id}",
+            ),
             actor_id=actor_id,
-            enqueue_job=True,
+            correlation_id=correlation_id,
+            opportunity_id=opportunity.id,
         )
         return opportunity, workflow
 
@@ -862,6 +926,7 @@ class ContentService:
             prohibited_claims=command.prohibited_claims,
             required_local_references=command.required_local_references,
             source_evidence_references=sources,
+            source_prompt=command.source_prompt,
             validation_requirements={
                 **command.validation_requirements,
                 **({"target_resolution": target_resolution} if target_resolution else {}),
@@ -1224,6 +1289,7 @@ class ContentService:
         workflow_run_id: UUID | None = None,
         user_id: UUID | None = None,
         correlation_id: str,
+        instructions: str | None = None,
     ) -> tuple[ContentRevision, AIExecution]:
         """Execute the AI content draft generation as a durable workflow step.
 
@@ -1376,6 +1442,9 @@ class ContentService:
                 "required_claims": brief.required_claims,
                 "required_local_references": brief.required_local_references,
                 "source_evidence_references": brief.source_evidence_references,
+                **await self._draft_extra_input(
+                    session, organization_id, item, brief, instructions
+                ),
             },
             input_references=(brief.id,),
             approved_fact_revision_ids=tuple(fact_ids),
@@ -1438,7 +1507,7 @@ class ContentService:
                 *_cast_str_list(knowledge.get("source_document_ids", [])),
             ],
             approved_fact_revision_ids=[str(x) for x in fact_ids],
-            output_document=output,
+            output_document=self._audited_output(output, instructions),
             output_hash=hashlib.sha256(str(output.get("draft", "")).encode()).hexdigest(),
             input_tokens=usage.get("input_tokens"),
             output_tokens=usage.get("output_tokens"),
@@ -1449,6 +1518,9 @@ class ContentService:
         )
         session.add(execution)
         await session.flush()
+        await self._audit_instructions(
+            session, organization_id, item, execution, instructions, user_id, correlation_id
+        )
 
         # --- create content revision ---
         revision = await self._create_ai_revision(
@@ -1469,7 +1541,7 @@ class ContentService:
         """Create a ContentRevision from an AI execution output."""
         fact_ids = [UUID(str(x)) for x in brief.approved_fact_revision_ids]
         draft_text = str((execution.output_document or {}).get("draft", ""))
-        return await self.create_revision(
+        revision = await self.create_revision(
             session,
             organization_id,
             item.id,
@@ -1488,6 +1560,279 @@ class ContentService:
             user_id or item.organization_id,
             correlation_id=correlation_id,
         )
+        await self._finalize_ai_revision(session, organization_id, item, brief, revision, execution)
+        return revision
+
+    @staticmethod
+    def _audited_output(output: dict[str, object], instructions: str | None) -> dict[str, object]:
+        """The execution record keeps the reviewer's instruction next to what it produced."""
+        if not instructions:
+            return output
+        return {**output, "reviewer_instructions": instructions}
+
+    async def _audit_instructions(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        item: ContentItem,
+        execution: AIExecution,
+        instructions: str | None,
+        user_id: UUID | None,
+        correlation_id: str,
+    ) -> None:
+        if not instructions:
+            return
+        await self._audit(
+            session,
+            event="content.ai_draft.instructed",
+            organization_id=organization_id,
+            location_id=item.location_id,
+            actor_id=user_id,
+            resource_type="content_item",
+            resource_id=item.id,
+            correlation_id=correlation_id,
+            summary="A reviewer gave instructions for a regenerated draft.",
+            metadata={"ai_execution_id": str(execution.id), "instructions": instructions},
+        )
+
+    async def _resolve_website(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        item: ContentItem,
+        brief: ContentBrief,
+    ) -> SEOWebsite | None:
+        raw = (brief.validation_requirements or {}).get("website_id")
+        if raw:
+            try:
+                website_id = UUID(str(raw))
+            except ValueError:
+                return None
+            found: SEOWebsite | None = await session.scalar(
+                select(SEOWebsite).where(
+                    SEOWebsite.organization_id == organization_id, SEOWebsite.id == website_id
+                )
+            )
+            return found
+        websites = list(
+            await session.scalars(
+                select(SEOWebsite).where(
+                    SEOWebsite.organization_id == organization_id,
+                    SEOWebsite.status == "active",
+                )
+            )
+        )
+        return websites[0] if len(websites) == 1 else None
+
+    async def link_context(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        item: ContentItem,
+        brief: ContentBrief,
+    ) -> dict[str, object]:
+        """Every first-party URL a draft may link to: crawled pages plus published content."""
+        website = await self._resolve_website(session, organization_id, item, brief)
+        if website is None:
+            return {}
+        local_terms = " ".join(str(x) for x in brief.required_local_references)
+        return await self.website_link_context(
+            session,
+            organization_id,
+            website,
+            topic=f"{item.title} {brief.intent} {local_terms}",
+            exclude_item_id=item.id,
+        )
+
+    async def website_link_context(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        website: SEOWebsite,
+        *,
+        topic: str,
+        exclude_item_id: UUID | None = None,
+    ) -> dict[str, object]:
+        host = normalize_origin_host(website.canonical_origin)
+        rows: list[dict[str, object]] = [
+            {"url": page.normalized_url, "title": page.title or page.h1, "source": "crawl"}
+            for page in await session.scalars(
+                select(SEOPage)
+                .where(
+                    SEOPage.organization_id == organization_id,
+                    SEOPage.website_id == website.id,
+                    SEOPage.http_status == 200,
+                    SEOPage.indexability == "indexable",
+                )
+                .limit(500)
+            )
+        ]
+        published_query = (
+            select(ContentPublication.published_url, ContentItem.title)
+            .join(ContentItem, ContentItem.id == ContentPublication.content_item_id)
+            .where(
+                ContentPublication.organization_id == organization_id,
+                ContentPublication.publication_kind == "content",
+                ContentPublication.published_url.isnot(None),
+            )
+        )
+        if exclude_item_id is not None:
+            published_query = published_query.where(ContentItem.id != exclude_item_id)
+        rows += [
+            {"url": url, "title": title, "source": "content"}
+            for url, title in await session.execute(published_query)
+        ]
+        inventory = build_inventory(rows, origin_host=host)
+        if not inventory:
+            return {"site_host": host} if host else {}
+        ranked = rank_link_targets(inventory, topic, limit=14)
+        commercial = [page for page in inventory if page.kind in COMMERCIAL_KINDS]
+        for page in rank_link_targets(commercial, topic, limit=6):
+            if page not in ranked:
+                ranked.append(page)
+        return {
+            "site_host": host,
+            "link_inventory": [
+                {"url": page.url, "title": page.title, "source": page.source} for page in inventory
+            ],
+            "recommended_link_targets": [
+                {"url": page.url, "kind": page.kind.value, "title": page.title} for page in ranked
+            ],
+        }
+
+    async def _draft_extra_input(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        item: ContentItem,
+        brief: ContentBrief,
+        instructions: str | None,
+    ) -> dict[str, object]:
+        extra: dict[str, object] = dict(
+            await self.link_context(session, organization_id, item, brief)
+        )
+        if brief.source_prompt:
+            extra["source_prompt"] = brief.source_prompt
+        if instructions:
+            extra["instructions"] = instructions
+        return extra
+
+    async def _finalize_ai_revision(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        item: ContentItem,
+        brief: ContentBrief,
+        revision: ContentRevision,
+        execution: AIExecution,
+    ) -> None:
+        """Attach the claims it makes and the measured quality to an AI revision."""
+        document = dict(revision.validation_document or {})
+        if "claims" in document:
+            return
+        output = execution.output_document or {}
+        draft = str(output.get("draft") or "")
+        fact_ids = [UUID(str(x)) for x in brief.approved_fact_revision_ids]
+        facts = await resolve_governed_facts(
+            session, organization_id, fact_ids, location_id=item.location_id
+        )
+        knowledge = await BusinessKnowledgeService().retrieve_for_content(
+            session,
+            organization_id=organization_id,
+            location_id=item.location_id,
+            content_title=item.title,
+            audience=brief.audience,
+            intent=brief.intent,
+            content_type=item.content_type,
+        )
+        grounding = [
+            json.dumps([fact["value"] for fact in facts], default=str),
+            brief.source_prompt or "",
+            json.dumps(brief.required_claims, default=str),
+            json.dumps(brief.required_local_references, default=str),
+            json.dumps(knowledge, default=str),
+            item.title,
+        ]
+        document["claims"] = merge_claims(
+            normalize_claims(output.get("claims"), draft),
+            detect_unbacked_specifics(draft, grounding),
+        )
+        quality_input: dict[str, object] = {
+            "content_type": item.content_type,
+            "content_title": item.title,
+            **await self.link_context(session, organization_id, item, brief),
+        }
+        summary = article_quality_summary(
+            {
+                "draft": draft,
+                "faqs": output.get("faqs"),
+                "meta_description": output.get("meta_description"),
+                "seo_title": output.get("seo_title"),
+            },
+            quality_input,
+        )
+        if summary is not None:
+            document["quality"] = summary
+        revision.validation_document = document
+        await session.flush()
+
+    async def confirm_claim(
+        self,
+        session: AsyncSession,
+        organization_id: UUID,
+        item_id: UUID,
+        revision_id: UUID,
+        claim_id: str,
+        user_id: UUID,
+        *,
+        correlation_id: str,
+    ) -> ContentRevision:
+        """The reviewer vouches for one flagged claim. It becomes an operator-verified fact."""
+        revision = await session.scalar(
+            select(ContentRevision)
+            .where(
+                ContentRevision.organization_id == organization_id,
+                ContentRevision.id == revision_id,
+                ContentRevision.content_item_id == item_id,
+            )
+            .with_for_update()
+        )
+        if revision is None:
+            raise ContentRevisionNotFoundError
+        item = await self.get_item(session, organization_id, item_id)
+        document = dict(revision.validation_document or {})
+        claims = [dict(c) for c in cast(list[dict[str, object]], document.get("claims") or [])]
+        target = next((c for c in claims if c.get("claim_id") == claim_id), None)
+        if target is None:
+            raise ContentClaimNotFoundError
+        if target.get("status") == ClaimStatus.NEEDS_CONFIRMATION.value:
+            await record_operator_claim(
+                session,
+                organization_id,
+                item.location_id,
+                str(target.get("text") or ""),
+                user_id,
+                source="content_reviewer_confirmation",
+            )
+            target["status"] = ClaimStatus.CONFIRMED.value
+            target["confirmed_by"] = str(user_id)
+            target["confirmed_at"] = datetime.now(UTC).isoformat()
+            document["claims"] = claims
+            revision.validation_document = document
+            await session.flush()
+            await self._audit(
+                session,
+                event="content.claim.confirmed",
+                organization_id=organization_id,
+                location_id=item.location_id,
+                actor_id=user_id,
+                resource_type="content_revision",
+                resource_id=revision.id,
+                correlation_id=correlation_id,
+                summary="A reviewer confirmed a claim in a draft.",
+                metadata={"claim_id": claim_id},
+            )
+        return revision
 
     async def generate_ai_draft(
         self,
@@ -1606,6 +1951,9 @@ class ContentService:
                     "content_type": item.content_type,
                     "governed_facts": governed_facts,
                     "knowledge": knowledge,
+                    **await self._draft_extra_input(
+                        session, organization_id, item, brief, command.instructions
+                    ),
                 },
                 input_references=(brief.id,),
                 approved_fact_revision_ids=tuple(fact_ids),
@@ -1627,7 +1975,7 @@ class ContentService:
                     *_cast_str_list(knowledge.get("source_document_ids", [])),
                 ],
                 approved_fact_revision_ids=[str(x) for x in fact_ids],
-                output_document=output,
+                output_document=self._audited_output(output, command.instructions),
                 output_hash=hashlib.sha256(str(output.get("draft", "")).encode()).hexdigest(),
                 input_tokens=usage.get("input_tokens"),
                 output_tokens=usage.get("output_tokens"),
@@ -1638,29 +1986,20 @@ class ContentService:
             )
             session.add(execution)
             await session.flush()
-            draft_text = str(output.get("draft", ""))
+            await self._audit_instructions(
+                session,
+                organization_id,
+                item,
+                execution,
+                command.instructions,
+                user_id,
+                correlation_id,
+            )
         else:
             execution = existing_execution
-            draft_text = str((execution.output_document or {}).get("draft", ""))
 
-        revision = await self.create_revision(
-            session,
-            organization_id,
-            item_id,
-            RevisionCreate(
-                body=draft_text,
-                frontmatter=build_publishable_frontmatter(
-                    title=item.title,
-                    ai_output=execution.output_document,
-                    body=draft_text,
-                ),
-                created_by_type="ai",
-                approved_fact_revision_ids=fact_ids,
-                ai_execution_id=execution.id,
-                prohibited_claims=[str(x) for x in brief.prohibited_claims],
-            ),
-            user_id or item.organization_id,
-            correlation_id=correlation_id,
+        revision = await self._create_ai_revision(
+            session, organization_id, item, brief, execution, user_id, correlation_id
         )
         return revision, execution
 
@@ -1709,6 +2048,8 @@ class ContentService:
         )
         if revision is None:
             raise ContentRevisionNotFoundError
+        if command.approve and unresolved_claims(revision.validation_document or {}):
+            raise ContentClaimsNeedConfirmationError
         if not command.approve:
             revision.status = "rejected"
         elif command.stage == "editorial" and revision.status == "awaiting_editorial":

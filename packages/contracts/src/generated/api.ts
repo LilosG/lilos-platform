@@ -1084,6 +1084,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/organizations/{organization_id}/content/compose": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Compose
+         * @description Write content from one plain prompt.
+         *
+         *     Reserves a placeholder item and starts the durable ``content.compose`` run; Hermes
+         *     resolves type, title, slug, target, audience and links in the worker. Repeating a
+         *     request with the same ``idempotency_key`` returns the same item and run.
+         */
+        post: operations["compose_api_v1_organizations__organization_id__content_compose_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/organizations/{organization_id}/content/connections": {
         parameters: {
             query?: never;
@@ -1312,6 +1336,26 @@ export interface paths {
          *     (backward compatibility for synchronous callers and tests).
          */
         post: operations["ai_draft_api_v1_organizations__organization_id__content__item_id__revisions_ai_draft_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/organizations/{organization_id}/content/{item_id}/revisions/{revision_id}/claims/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm Claim
+         * @description The reviewer vouches for one flagged claim; it is recorded as an operator-verified fact.
+         */
+        post: operations["confirm_claim_api_v1_organizations__organization_id__content__item_id__revisions__revision_id__claims_confirm_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -5592,6 +5636,8 @@ export interface components {
             required_local_references?: string[];
             /** Source Evidence References */
             source_evidence_references?: string[];
+            /** Source Prompt */
+            source_prompt?: string | null;
             /** @default existing_page */
             target_kind: components["schemas"]["ContentTargetKind"];
             /** Target Reference */
@@ -5710,6 +5756,11 @@ export interface components {
          * @enum {string}
          */
         ChecklistSeverity: "blocker" | "warning";
+        /** ClaimConfirm */
+        ClaimConfirm: {
+            /** Claim Id */
+            claim_id: string;
+        };
         /** ClientOverview */
         ClientOverview: {
             /**
@@ -5817,6 +5868,45 @@ export interface components {
             /** Message Reference */
             message_reference: string;
         };
+        /**
+         * ComposeContentType
+         * @description Types an operator may pin when composing from a prompt; absent means Hermes decides.
+         * @enum {string}
+         */
+        ComposeContentType: "blog_post" | "listicle" | "landing_page" | "service_page" | "location_page" | "guide";
+        /**
+         * ComposeCreate
+         * @description One plain prompt in, a governed draft out. Hermes resolves everything unstated.
+         */
+        ComposeCreate: {
+            content_type?: components["schemas"]["ComposeContentType"] | null;
+            /** Idempotency Key */
+            idempotency_key: string;
+            /** Prompt */
+            prompt: string;
+            /**
+             * Website Id
+             * Format: uuid
+             */
+            website_id: string;
+        };
+        /** ComposeStateView */
+        ComposeStateView: {
+            /** Failure Code */
+            failure_code: string | null;
+            /** Prompt */
+            prompt: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "writing" | "failed";
+            /**
+             * Workflow Run Id
+             * Format: uuid
+             */
+            workflow_run_id: string;
+        };
         /** ConfigurationCreate */
         ConfigurationCreate: {
             /** Change Reason */
@@ -5886,8 +5976,12 @@ export interface components {
             intent: string;
             /** Revision Number */
             revision_number: number;
+            /** Source Prompt */
+            source_prompt?: string | null;
             /** Status */
             status: string;
+            /** Target Kind */
+            target_kind?: string | null;
             /** Target Reference */
             target_reference: string;
         };
@@ -9549,6 +9643,25 @@ export interface components {
             /** Workflow Run Id */
             workflow_run_id: string | null;
         };
+        /** PublishPreviewView */
+        PublishPreviewView: {
+            /** Base Branch */
+            base_branch: string;
+            /**
+             * Change Kind
+             * @enum {string}
+             */
+            change_kind: "new_file" | "edit";
+            /** File Path */
+            file_path: string;
+            /** Repository Id */
+            repository_id: string;
+            /**
+             * Target Id
+             * Format: uuid
+             */
+            target_id: string;
+        };
         /** PublishResponse */
         PublishResponse: {
             /** Idempotency Key */
@@ -10645,6 +10758,7 @@ export interface components {
             can_edit: boolean;
             /** Can Publish */
             can_publish: boolean;
+            compose?: components["schemas"]["ComposeStateView"] | null;
             /** Content Type */
             content_type: string;
             /** Draft Runs */
@@ -10675,6 +10789,8 @@ export interface components {
             publication_status: string | null;
             /** Publications */
             publications: components["schemas"]["ContentPublicationView"][];
+            /** Publish Preview */
+            publish_preview: components["schemas"]["PublishPreviewView"][];
             /** Published At */
             published_at: string | null;
             publishing_requirements: components["schemas"]["ContentRequirementsView"];
@@ -10694,9 +10810,12 @@ export interface components {
             technical_site_change: boolean;
             /** Title */
             title: string;
+            /** Word Count */
+            word_count?: number | null;
         };
         /** WebsiteContentItem */
         WebsiteContentItem: {
+            compose?: components["schemas"]["ComposeStateView"] | null;
             /** Content Type */
             content_type: string;
             /**
@@ -10726,6 +10845,8 @@ export interface components {
             technical_site_change: boolean;
             /** Title */
             title: string;
+            /** Word Count */
+            word_count?: number | null;
         };
         /** WebsiteCreate */
         WebsiteCreate: {
@@ -10859,6 +10980,8 @@ export interface components {
             brief_id: string;
             /** Idempotency Key */
             idempotency_key: string;
+            /** Instructions */
+            instructions?: string | null;
         };
         /** PublishRequest */
         apps__api__app__products__gbp__contracts__PublishRequest: {
@@ -12980,6 +13103,41 @@ export interface operations {
             };
         };
     };
+    compose_api_v1_organizations__organization_id__content_compose_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organization_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ComposeCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_connections_api_v1_organizations__organization_id__content_connections_get: {
         parameters: {
             query?: never;
@@ -13570,6 +13728,45 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    confirm_claim_api_v1_organizations__organization_id__content__item_id__revisions__revision_id__claims_confirm_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organization_id: string;
+                item_id: string;
+                revision_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClaimConfirm"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */

@@ -1,0 +1,87 @@
+---
+import type { WebsiteView } from "../../adapters/website-content";
+import { COMPOSE_TYPES } from "../../lib/content-view";
+interface Props {
+  websites: WebsiteView["websites"];
+  websiteId: string;
+  api: string;
+  clientName: string;
+}
+const { websites, websiteId, api, clientName } = Astro.props;
+// The example names the active client so the prompt reads as something to adapt, not a form.
+const example = `Write a blog about why ${clientName} is the best place to watch the game`;
+---
+
+<dialog
+  id="content-composer"
+  aria-labelledby="content-composer-title"
+  data-shell-dialog
+  data-compose-action={api + "content/compose/"}
+>
+  <div class="panelhead">
+    <span class="muted">Website & Content</span>
+    <button type="button" class="close" aria-label="Close" data-close>×</button>
+  </div>
+  <form class="body" id="compose-form" data-compose-form inert>
+    <h2 id="content-composer-title">New content</h2>
+    <p class="muted">
+      Say what you want in a sentence. The piece is written to a professional
+      standard, linked to the site's real pages, and held for your review.
+    </p>
+    <label for="compose-prompt">What should it be about?</label>
+    <textarea
+      id="compose-prompt"
+      name="prompt"
+      rows="4"
+      maxlength="2000"
+      required
+      placeholder={example}
+      data-compose-prompt></textarea>
+    {
+      websites.length > 1 ? (
+        <Fragment>
+          <label for="compose-website">Website</label>
+          <select id="compose-website" name="website_id">
+            {websites.map((site) => (
+              <option value={site.id} selected={site.id === websiteId}>
+                {site.name}
+              </option>
+            ))}
+          </select>
+        </Fragment>
+      ) : (
+        <input type="hidden" name="website_id" value={websiteId} />
+      )
+    }
+    <fieldset class="typechips">
+      <legend>Type</legend>
+      <div class="chips" role="radiogroup" aria-label="Content type">
+        {
+          COMPOSE_TYPES.map((type) => (
+            <label class="chip typechip">
+              <input
+                type="radio"
+                name="content_type"
+                value={type.key ?? ""}
+                checked={type.key === null}
+              />
+              <span>{type.label}</span>
+            </label>
+          ))
+        }
+      </div>
+    </fieldset>
+    <p class="formstatus" role="status" aria-live="polite" data-compose-status>
+    </p>
+  </form>
+  <div class="dialogfoot">
+    <button type="button" class="control" data-close>Cancel</button>
+    <button
+      type="submit"
+      class="control primary"
+      form="compose-form"
+      data-compose-submit
+      disabled>Write it</button
+    >
+  </div>
+</dialog>

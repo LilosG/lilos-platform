@@ -238,6 +238,130 @@ const websiteScreens = [
   ],
   ["website-error", "a", site, referenceSite, undefined, scenario("error")],
 ];
+// Step 5b: the Content tab, the composer, the draft review and the approval. The reference's
+// Content tab and its content dialog stand in for them; the console shows each in the scenario
+// that exercises it.
+const hexId = (n) =>
+  `${n.toString(16).padStart(8, "0")}-0000-4000-8000-000000000000`;
+const readyDraft = `${site}content/${hexId(0xc1)}/`;
+const referenceContent = `${referenceSite}content/`;
+const openComposer = async (page) => {
+  await page.getByRole("button", { name: "New content" }).click();
+  await page.locator("dialog[open]").waitFor();
+  await page
+    .getByLabel("What should it be about?")
+    .fill("listicle: best places to watch Packers games in San Diego");
+  await page.getByRole("radio", { name: "Listicle" }).check();
+};
+const openApproval = async (page) => {
+  await page.getByRole("button", { name: "Confirm" }).click();
+  await page.locator("[data-claim='confirmed']").waitFor();
+  await page.getByRole("button", { name: "Approve…" }).click();
+  await page.locator("#content-approval[open]").waitFor();
+};
+const openRegenerate = async (page) => {
+  await page.getByRole("button", { name: "Regenerate…" }).click();
+  await page
+    .getByLabel("What should change?")
+    .fill("make it longer, add a section on game-day specials");
+};
+const contentScreens = [
+  [
+    "content-list",
+    "a",
+    `${site}content/`,
+    referenceContent,
+    undefined,
+    scenario("content"),
+  ],
+  [
+    "content-composer",
+    "a",
+    `${site}content/`,
+    referenceContent,
+    openComposer,
+    scenario("content"),
+    undefined,
+  ],
+  [
+    "content-empty",
+    "a",
+    `${site}content/`,
+    referenceContent,
+    undefined,
+    scenario("content_empty"),
+  ],
+  [
+    "content-not-connected",
+    "a",
+    `${site}content/`,
+    referenceContent,
+    undefined,
+    scenario("no_website"),
+  ],
+  [
+    "content-error",
+    "a",
+    `${site}content/`,
+    referenceContent,
+    undefined,
+    scenario("error"),
+  ],
+  [
+    "content-draft-review",
+    "a",
+    readyDraft,
+    referenceContent,
+    undefined,
+    scenario("content"),
+    undefined,
+  ],
+  [
+    "content-regenerate",
+    "a",
+    readyDraft,
+    referenceContent,
+    openRegenerate,
+    scenario("content"),
+    undefined,
+  ],
+  [
+    "content-approval",
+    "a",
+    readyDraft,
+    referenceContent,
+    openApproval,
+    scenario("content"),
+    undefined,
+  ],
+  [
+    "content-writing",
+    "a",
+    `${site}content/${hexId(0xc2)}/`,
+    referenceContent,
+    undefined,
+    scenario("content"),
+    undefined,
+  ],
+  [
+    "content-failed",
+    "a",
+    `${site}content/${hexId(0xc3)}/`,
+    referenceContent,
+    undefined,
+    scenario("content"),
+    undefined,
+  ],
+  [
+    "content-landing-page-review",
+    "a",
+    `${site}content/${hexId(0xc4)}/`,
+    referenceContent,
+    undefined,
+    scenario("content"),
+    undefined,
+  ],
+];
 // Dashboard GBP actions column: the platform administrator sees every client, so all three cell
 // states (trend, no previous period, not connected) are on screen.
 const dashboardScreens = [["dashboard-gbp-actions", "admin", "/", "/"]];
@@ -295,13 +419,15 @@ const side = async (browser, size, left, right) => {
 const activeScreens =
   stepName === "dashboard-gbp-actions"
     ? dashboardScreens
-    : stepName === "step-5a"
-      ? websiteScreens
-      : stepName === "step-6"
-        ? reviewScreens
-        : stepName === "special-hours-publish"
-          ? screens.filter(([name]) => name === "special-hours-list")
-          : screens;
+    : stepName === "step-5b"
+      ? contentScreens
+      : stepName === "step-5a"
+        ? websiteScreens
+        : stepName === "step-6"
+          ? reviewScreens
+          : stepName === "special-hours-publish"
+            ? screens.filter(([name]) => name === "special-hours-list")
+            : screens;
 await mkdir(out, { recursive: true });
 const browser = await chromium.launch(
   process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE

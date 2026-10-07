@@ -110,6 +110,8 @@ const base = (org) => ({
 export const modes = [
   "default",
   "rich",
+  "content",
+  "content_empty",
   "empty",
   "no_website",
   "no_access",
@@ -318,3 +320,349 @@ export function pageDetail(mode, org, websiteId, pageId) {
       : [],
   };
 }
+
+// --- Content: the list, the draft review, and the actions on them -------------------------
+const CONTENT = {
+  ready: uuid(0xc1),
+  writing: uuid(0xc2),
+  failed: uuid(0xc3),
+  page: uuid(0xc4),
+  published: uuid(0xc5),
+};
+const REV = uuid(0xd1);
+const REV_NEW = uuid(0xd2);
+const BRIEF = uuid(0xe1);
+const FACT = uuid(0xf1);
+const TARGET = uuid(0xa1);
+export const contentSim = {
+  requests: [],
+  composed: [],
+  advanced: false,
+  confirmed: false,
+  regenerated: false,
+  revisionStatus: "awaiting_editorial",
+};
+export function resetContent() {
+  contentSim.requests = [];
+  contentSim.composed = [];
+  contentSim.advanced = false;
+  contentSim.confirmed = false;
+  contentSim.regenerated = false;
+  contentSim.revisionStatus = "awaiting_editorial";
+}
+const composeState = (status, code, prompt, n) => ({
+  status,
+  failure_code: code,
+  prompt,
+  workflow_run_id: uuid(0x500 + n),
+});
+const row = (id, over) => ({
+  id,
+  title: "Untitled",
+  slug: "untitled",
+  content_type: "blog_post",
+  stage: "drafting",
+  next_action: { key: "review", label: "Review draft" },
+  published_at: null,
+  latest_revision_status: null,
+  latest_revision_number: null,
+  publication_status: null,
+  publication_job_status: null,
+  technical_site_change: false,
+  word_count: null,
+  compose: null,
+  ...over,
+});
+const stageForRevision = {
+  awaiting_editorial: "editorial_review",
+  awaiting_client: "client_review",
+  approved: "ready_to_publish",
+};
+export function contentItems() {
+  const items = [
+    row(CONTENT.ready, {
+      title: "Miss B's: The Green Bay Packers Bar in San Diego",
+      slug: "green-bay-packers-bar-san-diego",
+      stage: stageForRevision[contentSim.revisionStatus],
+      latest_revision_status: contentSim.revisionStatus,
+      latest_revision_number: contentSim.regenerated ? 2 : 1,
+      word_count: contentSim.regenerated ? 1810 : 1520,
+    }),
+    row(CONTENT.writing, {
+      title: "Best places to watch Packers games in San Diego",
+      slug: "draft-2",
+      content_type: "listicle",
+      stage: contentSim.advanced ? "editorial_review" : "writing",
+      latest_revision_status: contentSim.advanced ? "awaiting_editorial" : null,
+      latest_revision_number: contentSim.advanced ? 1 : null,
+      word_count: contentSim.advanced ? 1640 : null,
+      compose: contentSim.advanced
+        ? null
+        : composeState(
+            "writing",
+            null,
+            "listicle: best places to watch Packers games in San Diego",
+            2,
+          ),
+    }),
+    row(CONTENT.failed, {
+      title: "A guide to game day parking",
+      slug: "draft-3",
+      content_type: "guide",
+      stage: "compose_failed",
+      compose: composeState(
+        "failed",
+        "CONTENT_BELOW_QUALITY_FLOOR",
+        "write a guide to game day parking near Miss B's",
+        3,
+      ),
+    }),
+    row(CONTENT.page, {
+      title: "Packers watch party space",
+      slug: "packers-watch-party",
+      content_type: "landing_page",
+      stage: "editorial_review",
+      latest_revision_status: "awaiting_editorial",
+      latest_revision_number: 1,
+      word_count: 1490,
+    }),
+    row(CONTENT.published, {
+      title: "Wing night at Miss B's",
+      slug: "wing-night",
+      stage: "published",
+      latest_revision_status: "approved",
+      latest_revision_number: 2,
+      publication_status: "verified",
+      publication_job_status: "succeeded",
+      word_count: 1710,
+      published_at: ago(6),
+    }),
+  ];
+  for (const [index, c] of contentSim.composed.entries())
+    items.unshift(
+      row(uuid(0x700 + index), {
+        title: c.prompt.slice(0, 60),
+        slug: `draft-${index}`,
+        content_type: c.content_type ?? "blog_post",
+        stage: "writing",
+        compose: composeState("writing", null, c.prompt, 10 + index),
+      }),
+    );
+  return items;
+}
+export function contentWorkspace(mode, org, requested) {
+  const data = workspace("rich", org, requested);
+  if (!data) return data;
+  data.content = mode === "content_empty" ? [] : contentItems();
+  return data;
+}
+const BODY = [
+  "## Why Packers fans pick Miss B's in San Diego",
+  "",
+  "Every Sunday the bar fills with green and gold. Start with [our full food and drink menu](/menu/) before kickoff, then [reserve a table for game day](/reservations/) so your group sits together.",
+  "",
+  "## Where the bar is and how to get there",
+  "",
+  "Find us at [the San Diego location](/locations/san-diego/), a short walk from the trolley.",
+  "",
+  "## What to order during the game",
+  "",
+  "- Wings by the dozen",
+  "- Cheese curds",
+  "",
+  "### Group orders",
+  "",
+  "Large groups can order ahead and see [upcoming game day events](/events/).",
+].join("\n");
+const FILLER = (words) =>
+  Array.from({ length: words }, (_, n) => `detail${n}`).join(" ");
+const bodyOf = (words) => {
+  const count = (text) => (text.match(/[\w'-]+/g) ?? []).length;
+  const head = `${BODY}\n\n## More about game day\n\n`;
+  return head + FILLER(Math.max(0, words - count(head)));
+};
+const QUALITY = {
+  floor: {
+    minimum_words: 1400,
+    target_minimum_words: 1700,
+    target_maximum_words: 2300,
+    minimum_h2s: 7,
+    minimum_internal_links: 4,
+    minimum_faqs: 4,
+  },
+  word_count: 1520,
+  links: [
+    {
+      anchor: "our full food and drink menu",
+      url: "/menu",
+      verified: true,
+      kind: "menu",
+    },
+    {
+      anchor: "reserve a table for game day",
+      url: "/reservations",
+      verified: true,
+      kind: "reservation",
+    },
+    {
+      anchor: "the San Diego location",
+      url: "/locations/san-diego",
+      verified: true,
+      kind: "location",
+    },
+    {
+      anchor: "upcoming game day events",
+      url: "/events",
+      verified: true,
+      kind: "other",
+    },
+  ],
+  checks: [
+    "article_too_thin",
+    "article_heading_depth_missing",
+    "article_internal_links_missing",
+    "article_internal_link_unverified",
+    "article_anchor_generic",
+    "article_anchor_stuffing",
+    "article_commercial_link_missing",
+    "article_faq_depth_missing",
+  ].map((code) => ({ code, passed: true })),
+};
+const FAQS = [
+  {
+    question: "Do you show every Packers game?",
+    answer: "Yes, every game is on the big screens.",
+  },
+  {
+    question: "Can I reserve a table?",
+    answer: "Yes, reserve ahead for game days.",
+  },
+];
+export function contentDetail(org, id) {
+  const items = contentItems();
+  const item = items.find((c) => c.id === id);
+  if (!item) return null;
+  const hasDraft = item.latest_revision_status !== null;
+  const claims = [
+    {
+      claim_id: "a1b2c3d4e5f6",
+      text: "Miss B's opened in 1987 and has hosted every Packers game since.",
+      basis: "needs_confirmation",
+      status: contentSim.confirmed ? "confirmed" : "needs_confirmation",
+      detected: true,
+    },
+    {
+      claim_id: "b2c3d4e5f6a1",
+      text: "Miss B's is a Green Bay Packers bar in San Diego.",
+      basis: "operator_prompt",
+      status: "backed",
+      detected: false,
+    },
+  ];
+  const revision = (revId, number, by, status) => ({
+    id: revId,
+    revision_number: number,
+    body: bodyOf(item.word_count ?? 1520),
+    frontmatter: {
+      title: item.title,
+      seo_title: "Packers Bar in San Diego | Miss B's",
+      description: "Where to watch Green Bay Packers games in San Diego.",
+      faqs: FAQS,
+    },
+    created_by_type: by,
+    status,
+    validation_document:
+      id === CONTENT.ready
+        ? {
+            valid: true,
+            errors: [],
+            quality: { ...QUALITY, word_count: item.word_count ?? 1520 },
+            claims,
+            inbound_links: [
+              {
+                status: "proposed",
+                page_url: "https://synthetic.example.invalid/events/",
+                field: "internal_link",
+                anchor: "Green Bay Packers bar",
+                target_url: "/blog/green-bay-packers-bar-san-diego",
+                before: "Visit the Green Bay Packers bar for game day.",
+                after:
+                  "Visit the [Green Bay Packers bar](/blog/green-bay-packers-bar-san-diego) for game day.",
+                recommendation_id: uuid(0x910),
+              },
+              {
+                status: "unavailable",
+                code: "LINK_FIELD_NOT_MAPPED",
+                page_url: "https://synthetic.example.invalid/about/",
+                field: "internal_link",
+              },
+            ],
+          }
+        : { valid: true, errors: [] },
+    approved_at: null,
+  });
+  const revisions = !hasDraft
+    ? []
+    : contentSim.regenerated && id === CONTENT.ready
+      ? [
+          revision(REV_NEW, 2, "ai", contentSim.revisionStatus),
+          revision(REV, 1, "ai", "superseded"),
+        ]
+      : [revision(REV, 1, "ai", item.latest_revision_status)];
+  const requirements = {
+    target_selected: true,
+    target_id: TARGET,
+    missing: [],
+    requires_image: false,
+    requires_image_alt: false,
+    file_extensions: [".mdx"],
+  };
+  return {
+    ...item,
+    organization_id: org,
+    briefs: [
+      {
+        id: BRIEF,
+        revision_number: 1,
+        audience: "Packers fans in San Diego",
+        intent: "Find the best place to watch Packers games",
+        target_reference: `/blog/${item.slug}/`,
+        approved_fact_revision_ids: [FACT],
+        status: "ready",
+        target_kind: "new_page",
+        source_prompt:
+          "write a blog about Miss B's being the Green Bay Packers bar in San Diego",
+      },
+    ],
+    revisions,
+    publications: [],
+    publishing_targets: [
+      {
+        id: TARGET,
+        key: "miss-bs",
+        repository_id: "synthetic/missbs-site",
+        base_branch: "main",
+        allowed_path_prefix: "src/content/blog",
+        file_extensions: [".mdx"],
+        status: "active",
+      },
+    ],
+    publishing_requirements: requirements,
+    publishing_requirements_by_target: { [TARGET]: requirements },
+    publish_preview: [
+      {
+        target_id: TARGET,
+        repository_id: "synthetic/missbs-site",
+        base_branch: "main",
+        file_path: `src/content/blog/${item.slug}.mdx`,
+        change_kind: "new_file",
+      },
+    ],
+    facts: [{ id: FACT, key: "business.name", value: "Miss B's" }],
+    draft_runs: [],
+    can_edit: true,
+    can_approve: true,
+    can_publish: true,
+  };
+}
+export const contentIds = CONTENT;

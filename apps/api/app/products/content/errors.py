@@ -103,3 +103,20 @@ class ContentPublicationIdempotencyConflictError(ConflictError):
 class ContentQueryInvalidError(ConflictError):
     code = "CONTENT_QUERY_INVALID"
     public_message = "The content query parameters are invalid."
+
+
+class ContentClaimsNeedConfirmationError(ConflictError):
+    code = "CONTENT_CLAIMS_NEED_CONFIRMATION"
+    public_message = (
+        "This draft makes claims nothing on file backs. Confirm or remove each one before approval."
+    )
+
+
+class ContentClaimNotFoundError(NotFoundError):
+    code = "CONTENT_CLAIM_NOT_FOUND"
+    public_message = "The requested claim was not found on this revision."
+
+
+class ContentComposeWebsiteNotFoundError(NotFoundError):
+    code = "CONTENT_COMPOSE_WEBSITE_NOT_FOUND"
+    public_message = "The selected website was not found."

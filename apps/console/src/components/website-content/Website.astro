@@ -20,7 +20,7 @@ import PerformanceInsight from "../client/PerformanceInsight.astro";
 import PageTable from "./PageTable.astro";
 import Technical from "./Technical.astro";
 import Conversions from "./Conversions.astro";
-import ContentTab from "./ContentTab.astro";
+import ContentOperations from "./ContentOperations.astro";
 import SiteChangeRow from "./SiteChangeRow.astro";
 import WebsiteDetails from "./WebsiteDetails.astro";
 interface Props {
@@ -122,7 +122,15 @@ const pagerHref = (to: number) =>
 <p class="formstatus" role="status" aria-live="polite" data-website-status></p>
 {
   tab === "content" ? (
-    <ContentTab view={v} base={base} api={api} query={query} offset={offset} />
+    <ContentOperations
+      view={v}
+      base={base}
+      api={api}
+      query={query}
+      offset={offset}
+      integrationsHref={integrationsHref}
+      clientName={clientName}
+    />
   ) : tab === "conversions" ? (
     <Conversions
       integrationsHref={integrationsHref}
