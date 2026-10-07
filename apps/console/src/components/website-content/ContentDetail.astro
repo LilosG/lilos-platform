@@ -1,7 +1,22 @@
 ---
 import Publication from "./Publication.astro";
+import LandingPageDialog from "./LandingPageDialog.astro";
 import type { ContentView } from "../../adapters/website-content";
-import { value } from "../../adapters/local-search";
+import {
+  approvalStage,
+  exactChange,
+  failureFor,
+  review as buildReview,
+  revisionChip,
+  stageChip,
+  typeLabel,
+} from "../../lib/content-view";
+import { renderMarkdown } from "../../lib/markdown";
+import { fmt } from "../../lib/present";
+import SectionHeading from "../ui/SectionHeading.astro";
+import StatusBadge from "../ui/StatusBadge.astro";
+import EmptyState from "../ui/EmptyState.astro";
+import ErrorState from "../ui/ErrorState.astro";
 interface Props {
   view: ContentView;
   slug: string;
@@ -10,322 +25,539 @@ const { view: v, slug } = Astro.props;
 const api = `/api/organizations/${v.organization_id}/`;
 const revision = v.revisions[0];
 const brief = v.briefs[0];
+const r = buildReview(v);
+const stage = revision ? approvalStage(revision.status) : null;
+const chip = stageChip(v.stage);
+const change = exactChange(v, v.publishing_requirements.target_id ?? null);
+const decisionUrl = revision
+  ? `${api}content-operations/${v.id}/revisions/${revision.id}/decision/`
+  : "";
+const canDecide = v.can_approve && stage !== null;
+const length = (value: string | null) => (value ? value.length : 0);
+const writing = v.compose?.status === "writing" && !revision;
+const failed = v.compose?.status === "failed" && !revision;
 ---
 
-<h1 id="content-detail-title">Content: {v.title}</h1><p>
-  {v.content_type} · {v.slug} · {v.stage}
-</p>
-<p>
-  Publication target selection uses canonical repository contracts. Deployment
-  and live success require their own recorded evidence.
-</p>
+{writing && <span data-has-writing hidden />}
+{
+  v.draft_runs[0] && (
+    <span
+      hidden
+      data-draft-run-state={v.draft_runs[0].status}
+      data-draft-run-failure={v.draft_runs[0].failure_code ?? undefined}
+    />
+  )
+}
+<div class="pagehead contentheader">
+  <div>
+    <div class="eyebrow">{typeLabel(v.content_type)}</div>
+    <h1 id="content-detail-title">{v.title}</h1>
+    {
+      r.prompt && (
+        <p class="muted" data-source-prompt>
+          Written from: “{r.prompt}”
+        </p>
+      )
+    }
+  </div>
+  <StatusBadge text={chip.label} tone={chip.tone} />
+</div>
+
+{
+  writing && (
+    <EmptyState title="Writing this draft">
+      Claude is writing, checking the draft against the quality standard and
+      verifying every link. This page updates when the draft is ready.
+    </EmptyState>
+  )
+}
+{
+  failed && (
+    <ErrorState title={failureFor(v.compose?.failure_code).title}>
+      {failureFor(v.compose?.failure_code).detail}
+      {v.can_edit && v.compose?.prompt && (
+        <a
+          slot="action"
+          class="control primary"
+          href={`/clients/${slug}/website-content/content/?retry=${encodeURIComponent(v.compose.prompt)}`}
+        >
+          Try again
+        </a>
+      )}
+    </ErrorState>
+  )
+}
+
 {
   v.technical_site_change && (
     <section class="panel">
-      <>
-        <h2>Governed site change required</h2>
-        <p>
-          This typed technical item cannot publish through the Content engine.
-        </p>
-        <a href={`/clients/${slug}/opportunities/`}>
-          Inspect site-change opportunities
-        </a>
-      </>
-    </section>
-  )
-}
-<section class="panel">
-  <h2>Draft workflows</h2>
-  {
-    v.draft_runs.length ? (
-      v.draft_runs.map((r) => (
-        <p>
-          Run {r.id} · {r.status} · Failure: {r.failure_code ?? "None recorded"}{" "}
-          · Completed: {r.completed_at ?? "Not completed"} · Correlation:{" "}
-          {r.correlation_id ?? "Unavailable"}
-        </p>
-      ))
-    ) : (
-      <p>No canonical AI draft workflow in this item.</p>
-    )
-  }
-</section>
-<section class="panel">
-  <h2>Briefs and grounding</h2>{
-    v.briefs.length ? (
-      v.briefs.map((b) => (
-        <details open={b.id === brief?.id}>
-          <Fragment>
-            <>
-              <summary>
-                Brief {b.revision_number} · {b.status}
-              </summary>
-              <p>
-                Audience: {b.audience} · Intent: {b.intent}
-              </p>
-              <p>Target: {b.target_reference}</p>
-            </>
-            <p>Approved facts: {b.approved_fact_revision_ids.join(", ")}</p>
-            {v.can_edit && (
-              <button
-                inert
-                data-content-action={
-                  api + `content/${v.id}/revisions/ai-draft/`
-                }
-                data-body={JSON.stringify({
-                  brief_id: b.id,
-                  idempotency_key: crypto.randomUUID(),
-                })}
-              >
-                Queue AI draft from brief {b.revision_number}
-              </button>
-            )}
-          </Fragment>
-        </details>
-      ))
-    ) : (
-      <p>No canonical brief.</p>
-    )
-  }
-  {
-    v.can_edit && (
-      <form
-        inert
-        data-content-form="brief"
-        data-action={api + `content/${v.id}/briefs/`}
-      >
-        <Fragment>
-          <>
-            <h3>New brief</h3>
-            <label for="brief-audience">Audience</label>
-            <input
-              id="brief-audience"
-              name="audience"
-              required
-              maxlength="500"
-            />
-            <label for="brief-intent">Intent</label>
-            <input id="brief-intent" name="intent" required maxlength="500" />
-            <label for="brief-target">Target reference</label>
-            <input
-              id="brief-target"
-              name="target_reference"
-              required
-              maxlength="500"
-            />
-          </>
-          <fieldset>
-            <legend>Approved grounding facts</legend>
-            {v.facts.map((f) => (
-              <label>
-                <input type="checkbox" name="fact" value={f.id} />
-                {f.key}: {value(f.value)}
-              </label>
-            ))}
-          </fieldset>
-          {!v.facts.length && (
-            <p>No approved facts available; brief creation is unavailable.</p>
-          )}
-          <button disabled={!v.facts.length} type="submit">
-            Save new brief
-          </button>
-        </Fragment>
-      </form>
-    )
-  }
-</section>
-<section class="panel">
-  <h2>Immutable revisions</h2>{
-    !revision && <p>No revision. Create a grounded draft before review.</p>
-  }{
-    v.revisions.map((r) => (
-      <article>
-        <Fragment>
-          <h3>
-            Revision {r.revision_number} · {r.status}
-          </h3>
-          <details open={r.id === revision?.id}>
-            <>
-              <summary>Exact content and validation</summary>
-              <pre style="white-space:pre-wrap">{r.body}</pre>
-              <p>Frontmatter: {value(r.frontmatter)}</p>
-              <p>Validation: {value(r.validation_document)}</p>
-              <p>Approved: {r.approved_at ?? "Not approved"}</p>
-            </>
-          </details>
-          {["awaiting_editorial", "awaiting_client"].includes(r.status) && (
-            <>
-              <button
-                inert
-                disabled={!v.can_approve}
-                data-content-action={
-                  api + `content-operations/${v.id}/revisions/${r.id}/decision/`
-                }
-                data-body={JSON.stringify({
-                  stage:
-                    r.status === "awaiting_client" ? "client" : "editorial",
-                  approve: true,
-                })}
-              >
-                Approve exact revision {r.revision_number}
-              </button>
-              <button
-                inert
-                disabled={!v.can_approve}
-                data-content-action={
-                  api + `content-operations/${v.id}/revisions/${r.id}/decision/`
-                }
-                data-body={JSON.stringify({
-                  stage:
-                    r.status === "awaiting_client" ? "client" : "editorial",
-                  approve: false,
-                })}
-              >
-                Reject exact revision {r.revision_number}
-              </button>
-            </>
-          )}
-        </Fragment>
-      </article>
-    ))
-  }
-</section>
-{
-  v.can_edit && (
-    <section class="panel">
-      <>
-        <h2>Save a new revision</h2>
-        <p>
-          Saving creates a separate revision. Approval remains bound to exact
-          canonical content.
-        </p>
-        <form
-          inert
-          data-content-form="revision"
-          data-action={api + `content/${v.id}/revisions/`}
+      <EmptyState title="This is a website change, not an article">
+        Technical changes are approved and applied through site changes, not as
+        content.
+        <a
+          slot="action"
+          class="control primary"
+          href={`/clients/${slug}/opportunities/`}
         >
-          <>
-            <label for="revision-body">Body</label>
-            <textarea
-              id="revision-body"
-              name="body"
-              required
-              maxlength="200000"
-            >
-              {revision?.body ?? ""}
-            </textarea>
-            <label for="revision-frontmatter">Frontmatter JSON</label>
-            <textarea id="revision-frontmatter" name="frontmatter" required>
-              {JSON.stringify(revision?.frontmatter ?? {}, null, 2)}
-            </textarea>
-            <fieldset>
-              <legend>Approved facts for revision</legend>
-              {v.facts.map((f) => (
-                <label>
-                  <input type="checkbox" name="fact" value={f.id} />
-                  {f.key}: {value(f.value)}
-                </label>
-              ))}
-            </fieldset>
-            <button type="submit" disabled={!v.facts.length}>
-              Save new content revision
-            </button>
-          </>
-        </form>
-      </>
+          Open site changes
+        </a>
+      </EmptyState>
     </section>
   )
 }
-<section class="panel">
-  <h2>Governed GitHub publishing</h2><a href={`/clients/${slug}/integrations/`}
-    >Manage Integration</a
-  ><p>
-    Missing requirements: {
-      v.publishing_requirements.missing.join(", ") || "None recorded"
-    }
-  </p>{
-    v.publishing_targets.length ? (
-      <form
-        inert
-        data-content-form="publish"
-        data-action={api + `content-operations/${v.id}/publish/`}
-        data-key={crypto.randomUUID()}
-      >
-        <>
-          <label for="publish-target">Publishing target</label>
-          <select id="publish-target" name="target">
-            {v.publishing_targets.map((t) => (
-              <option
-                value={t.id}
-                selected={t.id === v.publishing_requirements.target_id}
-              >
-                {t.key} · {t.repository_id} · {t.base_branch} ·{" "}
-                {t.allowed_path_prefix}
-              </option>
+
+{
+  revision && (
+    <Fragment>
+      <section class="panel" data-draft-summary>
+        <SectionHeading>
+          <Fragment slot="title">Draft review</Fragment>
+          <Fragment slot="actions">
+            <StatusBadge
+              text={revisionChip(revision.status).label}
+              tone={revisionChip(revision.status).tone}
+            />
+          </Fragment>
+        </SectionHeading>
+        <div class="detailmetrics">
+          <div>
+            Length
+            <strong data-word-count>{fmt(r.words)} words</strong>
+            <small>
+              {r.floorWords === null
+                ? "No minimum applies to this type"
+                : `Minimum ${fmt(r.floorWords)} · ${r.meetsFloor ? "meets it" : "below it"}`}
+            </small>
+          </div>
+          <div>
+            Revision
+            <strong>{revision.revision_number}</strong>
+            <small>
+              {revision.created_by_type === "ai"
+                ? "Written by Claude"
+                : "Edited by a person"}
+            </small>
+          </div>
+        </div>
+        {r.checks.length > 0 && (
+          <div class="checks" data-quality-checks>
+            {r.checks.map((check) => (
+              <StatusBadge
+                text={check.chip.label}
+                tone={check.chip.tone || undefined}
+              />
             ))}
-          </select>
-          <details>
-            <summary>Target requirements</summary>
-            {Object.entries(v.publishing_requirements_by_target).map(
-              ([id, r]) => (
-                <p>
-                  {v.publishing_targets.find((t) => t.id === id)?.key ?? id}:
-                  missing {r.missing.join(", ") || "None recorded"} · Extensions{" "}
-                  {r.file_extensions.join(", ")}
-                </p>
-              ),
+          </div>
+        )}
+        {v.can_edit && (
+          <div class="rowactions" data-review-actions>
+            <button
+              type="button"
+              class="control"
+              data-toggle="content-edit"
+              inert
+            >
+              Edit
+            </button>
+            <button
+              type="button"
+              class="control"
+              data-toggle="content-regenerate"
+              inert
+            >
+              Regenerate…
+            </button>
+            <button
+              type="button"
+              class="control primary"
+              data-open-dialog="content-approval"
+              inert
+              disabled={!canDecide}
+              title={
+                stage === null
+                  ? "This draft is not waiting for approval"
+                  : !v.can_approve
+                    ? "Your role cannot approve content"
+                    : undefined
+              }
+            >
+              Approve…
+            </button>
+            {stage !== null && v.can_approve && (
+              <button
+                type="button"
+                class="control"
+                inert
+                data-content-action={decisionUrl}
+                data-body={JSON.stringify({ stage, approve: false })}
+                data-label="Request changes"
+              >
+                Request changes
+              </button>
             )}
-          </details>
-          <label for="publish-image">Image path (if required)</label>
-          <input id="publish-image" name="image" maxlength="1000" />
-          <label for="publish-image-alt">Image alt text (if required)</label>
-          <input id="publish-image-alt" name="image_alt" maxlength="500" />
-          <button
+          </div>
+        )}
+        {v.can_edit && brief && (
+          <form
+            class="stackform"
+            data-regenerate-form
+            data-action={`${api}content/${v.id}/revisions/ai-draft/`}
+            data-brief={brief.id}
+            hidden
             inert
-            type="button"
-            data-content-assets={
-              api + `content-operations/${v.id}/publishing-assets/`
-            }
           >
-            Load canonical image assets
-          </button>
-          <p role="status" data-assets-result />
-          <button
-            type="submit"
-            disabled={
-              !v.can_publish ||
-              v.technical_site_change ||
-              v.stage !== "ready_to_publish"
-            }
+            <label for="regenerate-instructions">What should change?</label>
+            <textarea
+              id="regenerate-instructions"
+              name="instructions"
+              rows="3"
+              maxlength="2000"
+              placeholder="Make it longer and add a section on game-day specials"
+            />
+            <div class="rowactions">
+              <button type="submit" class="control primary">
+                Regenerate
+              </button>
+              <button
+                type="button"
+                class="control"
+                data-toggle="content-regenerate"
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        )}
+        {v.can_edit && (
+          <form
+            class="stackform"
+            data-edit-form
+            data-action={`${api}content/${v.id}/revisions/`}
+            data-facts={JSON.stringify(brief?.approved_fact_revision_ids ?? [])}
+            data-frontmatter={JSON.stringify(revision.frontmatter)}
+            hidden
+            inert
           >
-            Dispatch approved content
-          </button>
-        </>
-      </form>
-    ) : (
-      <p>No active canonical publishing target. Publishing is unavailable.</p>
-    )
-  }<p>
-    Approval and publishing require backend authorization and account security
-    step-up. Refresh after actions to read canonical state.
-  </p>
-</section>
-<section class="panel">
-  <h2>Publication history</h2>{
-    v.publications.length ? (
-      v.publications.map((p) => (
-        <Publication
-          publication={p}
-          itemId={v.id}
-          organizationId={v.organization_id}
+            <label for="edit-seo-title">Search title</label>
+            <input
+              id="edit-seo-title"
+              name="seo_title"
+              maxlength="60"
+              value={r.seoTitle ?? ""}
+            />
+            <label for="edit-description">Meta description</label>
+            <textarea
+              id="edit-description"
+              name="description"
+              rows="2"
+              maxlength="160"
+            >
+              {r.metaDescription ?? ""}
+            </textarea>
+            <label for="edit-body">Article</label>
+            <textarea id="edit-body" name="body" rows="18" maxlength="200000">
+              {revision.body}
+            </textarea>
+            <p class="muted">
+              Saving creates a new revision for review. The earlier version is
+              kept.
+            </p>
+            <div class="rowactions">
+              <button type="submit" class="control primary">
+                Save as a new revision
+              </button>
+              <button type="button" class="control" data-toggle="content-edit">
+                Cancel
+              </button>
+            </div>
+          </form>
+        )}
+      </section>
+
+      {r.claims.length > 0 && (
+        <section class="panel" data-claims>
+          <SectionHeading>
+            <Fragment slot="title">
+              Claims to check{" "}
+              {r.unresolved > 0 && <span class="count">{r.unresolved}</span>}
+            </Fragment>
+          </SectionHeading>
+          {r.unresolved > 0 && (
+            <p class="muted">
+              Nothing on file backs these statements. Confirm each one if it is
+              true, or remove it by editing the draft. Approval stays closed
+              until none are left.
+            </p>
+          )}
+          {r.claims.map((claim) => (
+            <div class="listrow" data-claim={claim.status}>
+              <div>“{claim.text}”</div>
+              <StatusBadge text={claim.chip.label} tone={claim.chip.tone} />
+              {claim.status === "needs_confirmation" && v.can_approve && (
+                <button
+                  type="button"
+                  class="control"
+                  inert
+                  data-content-action={`${api}content/${v.id}/revisions/${revision.id}/claims/confirm/`}
+                  data-body={JSON.stringify({ claim_id: claim.id })}
+                  data-label="Confirm"
+                >
+                  Confirm
+                </button>
+              )}
+            </div>
+          ))}
+        </section>
+      )}
+
+      <section class="panel" data-draft-preview>
+        <SectionHeading>
+          <Fragment slot="title">Article preview</Fragment>
+        </SectionHeading>
+        <article
+          class="draftpreview"
+          set:html={renderMarkdown(revision.body)}
         />
-      ))
-    ) : (
-      <p>No publication reserved.</p>
-    )
-  }
-</section>
-<p role="status" aria-live="polite" data-content-status></p>
+      </section>
+
+      <section class="panel" data-draft-search>
+        <SectionHeading>
+          <Fragment slot="title">Search listing</Fragment>
+        </SectionHeading>
+        <div class="listrow">
+          <div>
+            Search title
+            <small data-seo-title>{r.seoTitle ?? "Not set"}</small>
+          </div>
+          <span class="muted">{length(r.seoTitle)} of 60</span>
+        </div>
+        <div class="listrow">
+          <div>
+            Meta description
+            <small data-meta-description>
+              {r.metaDescription ?? "Not set"}
+            </small>
+          </div>
+          <span class="muted">{length(r.metaDescription)} of 160</span>
+        </div>
+        <h3 class="subhead">Outline</h3>
+        {r.outline.length ? (
+          <ol class="outline" data-outline>
+            {r.outline.map((entry) => (
+              <li class:list={[{ nested: entry.level === 3 }]}>{entry.text}</li>
+            ))}
+          </ol>
+        ) : (
+          <EmptyState title="No headings">
+            Add section headings so readers and search engines can scan the
+            page.
+          </EmptyState>
+        )}
+        <h3 class="subhead">Frequently asked questions</h3>
+        {r.faqs.length ? (
+          r.faqs.map((faq) => (
+            <details class="faq" data-faq>
+              <summary>{faq.question}</summary>
+              <p>{faq.answer}</p>
+            </details>
+          ))
+        ) : (
+          <EmptyState title="No FAQs">
+            This draft has no question-and-answer section.
+          </EmptyState>
+        )}
+      </section>
+
+      <section class="panel" data-draft-links>
+        <SectionHeading>
+          <Fragment slot="title">
+            Links in this article <span class="count">{r.links.length}</span>
+          </Fragment>
+        </SectionHeading>
+        {r.links.length ? (
+          r.links.map((link) => (
+            <div class="listrow" data-outbound-link>
+              <div>
+                {link.anchor}
+                <small>{link.url}</small>
+              </div>
+              <StatusBadge text={link.chip.label} tone={link.chip.tone} />
+            </div>
+          ))
+        ) : (
+          <EmptyState title="No link details">
+            Link checks are recorded when Claude writes a draft. Edited
+            revisions are checked when they are saved by the writing service.
+          </EmptyState>
+        )}
+        <h3 class="subhead">Links to add on existing pages</h3>
+        {r.inbound.length ? (
+          r.inbound.map((edit) => (
+            <div class="inbound" data-inbound-edit>
+              <div class="listrow">
+                <div>
+                  {edit.page}
+                  {edit.anchor && <small>Link “{edit.anchor}”</small>}
+                </div>
+                <StatusBadge text={edit.chip.label} tone={edit.chip.tone} />
+              </div>
+              {edit.after && (
+                <div class="beforeafter">
+                  <div>
+                    <span class="muted">Before</span>
+                    <p>{edit.before}</p>
+                  </div>
+                  <div>
+                    <span class="muted">After</span>
+                    <p>{edit.after}</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          ))
+        ) : (
+          <EmptyState title="No links proposed yet">
+            When an existing page mentions this topic and can be edited, the
+            exact link to add appears here for approval as a separate website
+            change.
+          </EmptyState>
+        )}
+      </section>
+
+      <section class="panel" data-draft-history>
+        <SectionHeading>
+          <Fragment slot="title">Revisions</Fragment>
+        </SectionHeading>
+        {r.revisions.map((entry) => (
+          <div class="listrow" data-revision>
+            <div>
+              {entry.label}
+              <small>{entry.author}</small>
+            </div>
+            <StatusBadge text={entry.chip.label} tone={entry.chip.tone} />
+          </div>
+        ))}
+      </section>
+
+      {revision.status === "approved" || v.publications.length > 0 ? (
+        <section class="panel" data-publishing>
+          <SectionHeading>
+            <Fragment slot="title">Publishing</Fragment>
+            <Fragment slot="actions">
+              <a class="link" href={`/clients/${slug}/integrations/`}>
+                Manage connection
+              </a>
+            </Fragment>
+          </SectionHeading>
+          {v.publishing_targets.length ? (
+            <form
+              inert
+              class="stackform"
+              data-content-form="publish"
+              data-action={api + `content-operations/${v.id}/publish/`}
+              data-key={crypto.randomUUID()}
+            >
+              <label for="publish-target">Website repository</label>
+              <select id="publish-target" name="target">
+                {v.publishing_targets.map((t) => (
+                  <option
+                    value={t.id}
+                    selected={t.id === v.publishing_requirements.target_id}
+                  >
+                    {t.repository_id}
+                  </option>
+                ))}
+              </select>
+              {v.publishing_requirements.missing.length > 0 && (
+                <p class="muted">
+                  This site needs{" "}
+                  {v.publishing_requirements.requires_image
+                    ? "a featured image"
+                    : "more details"}{" "}
+                  before it can publish.
+                </p>
+              )}
+              {v.publishing_requirements.requires_image && (
+                <Fragment>
+                  <label for="publish-image">Image path</label>
+                  <input id="publish-image" name="image" maxlength="1000" />
+                </Fragment>
+              )}
+              {v.publishing_requirements.requires_image_alt && (
+                <Fragment>
+                  <label for="publish-image-alt">Image description</label>
+                  <input
+                    id="publish-image-alt"
+                    name="image_alt"
+                    maxlength="500"
+                  />
+                </Fragment>
+              )}
+              <button
+                type="submit"
+                class="control primary"
+                disabled={
+                  !v.can_publish ||
+                  v.technical_site_change ||
+                  v.stage !== "ready_to_publish"
+                }
+              >
+                Publish approved draft
+              </button>
+            </form>
+          ) : (
+            <EmptyState title="No website repository connected">
+              Connect the client's website repository to publish approved
+              content.
+              <a
+                slot="action"
+                class="control primary"
+                href={`/clients/${slug}/integrations/`}
+              >
+                Open Integrations
+              </a>
+            </EmptyState>
+          )}
+          {v.publications.map((p) => (
+            <Publication
+              publication={p}
+              itemId={v.id}
+              organizationId={v.organization_id}
+            />
+          ))}
+        </section>
+      ) : null}
+
+      {stage !== null && (
+        <LandingPageDialog
+          title={v.title}
+          revisionLabel={`Revision ${revision.revision_number}`}
+          words={r.words}
+          stage={stage}
+          change={change}
+          unresolved={r.unresolved}
+          decisionUrl={decisionUrl}
+          canApprove={v.can_approve}
+        />
+      )}
+    </Fragment>
+  )
+}
+{
+  !revision && !writing && !failed && !v.technical_site_change && (
+    <EmptyState title="No draft yet">
+      Describe the piece in a sentence and it is written for you to review.
+      <a
+        slot="action"
+        class="control primary"
+        href={`/clients/${slug}/website-content/content/`}
+      >
+        Back to content
+      </a>
+    </EmptyState>
+  )
+}
+<p class="formstatus" role="status" aria-live="polite" data-content-status></p>
 <script>
   import "../../lib/content-actions";
 </script>

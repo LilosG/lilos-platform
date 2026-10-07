@@ -252,6 +252,7 @@ class ContentOperatorService:
             "publishing_targets": [self._target_row(target) for target in targets],
             "publishing_requirements": requirements,
             "publishing_requirements_by_target": requirements_by_target,
+            "publish_preview": self._publish_preview(item, briefs, targets),
         }
 
     async def decide_revision(
@@ -555,6 +556,30 @@ class ContentOperatorService:
         if command.image_alt and command.image_alt.strip():
             overrides["image_alt"] = command.image_alt.strip()
         return overrides
+
+    @staticmethod
+    def _publish_preview(
+        item: ContentItem, briefs: Sequence[ContentBrief], targets: Sequence[PublishingTarget]
+    ) -> list[dict[str, object]]:
+        """The exact file each active target would receive: what approval signs off on."""
+        latest = max(briefs, key=lambda b: b.revision_number, default=None)
+        kind = (
+            "edit" if latest is not None and latest.target_kind == "existing_page" else "new_file"
+        )
+        return [
+            {
+                "target_id": str(target.id),
+                "repository_id": target.repository_id,
+                "base_branch": target.base_branch,
+                "file_path": ContentOperatorService._target_path(
+                    target,
+                    item.slug,
+                    FrontmatterContract.from_document(target.frontmatter_contract),
+                ),
+                "change_kind": kind,
+            }
+            for target in targets
+        ]
 
     @staticmethod
     def _target_path(target: PublishingTarget, slug: str, contract: FrontmatterContract) -> str:

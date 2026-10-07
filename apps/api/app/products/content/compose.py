@@ -263,17 +263,6 @@ class ContentComposeService:
         )
         if website is None:
             raise ContentComposeWebsiteNotFoundError
-        if opportunity_id is not None:
-            opportunity = await session.scalar(
-                select(ContentOpportunity)
-                .where(
-                    ContentOpportunity.organization_id == organization_id,
-                    ContentOpportunity.id == opportunity_id,
-                )
-                .with_for_update()
-            )
-            if opportunity is not None and opportunity.status == "accepted":
-                opportunity.status = "converted"
         item_id = compose_item_id(organization_id, command.idempotency_key)
         item = await session.scalar(
             select(ContentItem).where(

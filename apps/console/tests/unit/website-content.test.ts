@@ -209,4 +209,82 @@ describe("Website & Content canonical scope and truth", () => {
       ).status,
     ).toBe(400);
   });
+  it("accepts exactly the compose, regenerate and confirm bodies the API takes", async () => {
+    const settings = config({
+      CONSOLE_ENV: "local",
+      CONSOLE_ORIGIN: "http://localhost:4346",
+      CONSOLE_EXPECTED_HOST: "localhost:4346",
+      CONSOLE_API_ORIGIN: "http://localhost:4455",
+      CONSOLE_SUPABASE_URL: "http://localhost:4455",
+      CONSOLE_SUPABASE_KEY: "synthetic",
+      CONSOLE_CSRF_SECRET: "synthetic-csrf-secret-32-characters-minimum",
+    });
+    const locals = {
+      settings,
+      userId: org,
+      token: "server-only",
+      binding: "session",
+      correlationId: "step5b",
+    } as App.Locals;
+    const nonce = csrfToken(locals.binding, org, settings.csrfSecret);
+    const post = (path: string, body: unknown) =>
+      forward(
+        new Request(settings.origin + "/api/" + path, {
+          method: "POST",
+          headers: {
+            Origin: settings.origin,
+            "Content-Type": "application/json",
+            "X-CSRF-Token": nonce,
+          },
+          body: JSON.stringify(body),
+        }),
+        path,
+        locals,
+        vi.fn(
+          async () =>
+            new Response(JSON.stringify({ data: {} }), {
+              headers: { "Content-Type": "application/json" },
+            }),
+        ),
+      );
+    const compose = `organizations/${org}/content/compose/`;
+    const good = {
+      website_id: fixtures.workspace.website_id,
+      prompt: "write a blog about the Packers bar",
+      content_type: "listicle",
+      idempotency_key: "compose-key-0001",
+    };
+    expect((await post(compose, good)).status).toBe(200);
+    expect((await post(compose, { ...good, content_type: null })).status).toBe(
+      200,
+    );
+    for (const bad of [
+      { ...good, prompt: "   " },
+      { ...good, prompt: "x".repeat(2001) },
+      { ...good, content_type: "podcast" },
+      { ...good, website_id: "not-a-uuid" },
+      { ...good, idempotency_key: "short" },
+      { ...good, organization_id: org },
+    ])
+      expect((await post(compose, bad)).status).toBe(400);
+    const draft = `organizations/${org}/content/${fixtures.detail.id}/revisions/ai-draft/`;
+    const regenerate = {
+      brief_id: fixtures.detail.briefs[0].id,
+      idempotency_key: "regenerate-0001",
+      instructions: "make it longer and add a section on game-day specials",
+    };
+    expect((await post(draft, regenerate)).status).toBe(200);
+    expect(
+      (await post(draft, { ...regenerate, instructions: "x".repeat(2001) }))
+        .status,
+    ).toBe(400);
+    const confirm = `organizations/${org}/content/${fixtures.detail.id}/revisions/${fixtures.detail.revisions[0].id}/claims/confirm/`;
+    expect((await post(confirm, { claim_id: "a1b2c3d4e5f6" })).status).toBe(
+      200,
+    );
+    expect((await post(confirm, { claim_id: "" })).status).toBe(400);
+    expect(
+      (await post(confirm, { claim_id: "a1", approve: true })).status,
+    ).toBe(400);
+  });
 });

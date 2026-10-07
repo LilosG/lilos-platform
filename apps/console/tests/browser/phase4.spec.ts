@@ -39,33 +39,40 @@ test("Website five tabs, page evidence, editor and accessibility", async ({
     page.getByRole("heading", { name: "Conversion paths are not tracked yet" }),
   ).toBeVisible();
   await page.getByRole("link", { name: "Content", exact: true }).click();
-  await page.getByLabel("Title", { exact: true }).fill("Synthetic new item");
-  await page.getByLabel("Slug", { exact: true }).fill("synthetic-new-item");
-  await page.getByLabel("Content type", { exact: true }).fill("blog");
-  await page
-    .getByRole("button", { name: "Create content item", exact: true })
-    .click();
-  await expect(page).toHaveURL(base + `content/${fixtures.detail.id}/`);
-
   await expect(
-    page.getByRole("heading", { name: "Immutable revisions" }),
+    page.getByRole("heading", { name: /Articles and guides/ }),
   ).toBeVisible();
+  await page.getByRole("button", { name: "New content" }).click();
+  await page
+    .getByLabel("What should it be about?")
+    .fill("write a blog about synthetic things");
+  const compose = page.waitForRequest(
+    (r) => r.method() === "POST" && r.url().endsWith("/content/compose/"),
+  );
+  await Promise.all([
+    page.waitForEvent("load"),
+    page.getByRole("button", { name: "Write it" }).click(),
+  ]);
+  expect((await compose).postDataJSON()).toMatchObject({
+    prompt: "write a blog about synthetic things",
+    content_type: null,
+  });
+
+  await page.goto(base + `content/${fixtures.detail.id}/`);
   await expect(
-    page.getByRole("button", { name: "Approve exact revision 1" }),
-  ).toBeDisabled();
+    page.getByRole("heading", { name: "Draft review" }),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Approve…" })).toBeDisabled();
+  await page.getByRole("button", { name: "Edit", exact: true }).click();
   await page
-    .getByLabel("Body", { exact: true })
+    .getByLabel("Article", { exact: true })
     .fill("Synthetic new immutable revision.");
-  await page
-    .locator('[data-content-form="revision"] input[name="fact"]')
-    .first()
-    .check();
   const request = page.waitForRequest(
     (r) => r.method() === "POST" && r.url().endsWith("/revisions/"),
   );
   await Promise.all([
     page.waitForEvent("load"),
-    page.getByRole("button", { name: "Save new content revision" }).click(),
+    page.getByRole("button", { name: "Save as a new revision" }).click(),
   ]);
   expect((await request).postDataJSON()).toMatchObject({
     body: "Synthetic new immutable revision.",
@@ -88,29 +95,40 @@ test("Website exact MFA approval and publication remain PR-open with no deployme
   if (await enroll.count()) await enroll.click();
   await page.getByLabel("Authenticator code").fill("123456");
   await page.getByRole("button", { name: "Verify", exact: true }).click();
-  await page.getByRole("button", { name: "Approve exact revision 1" }).click();
+  await page.getByRole("button", { name: "Approve…" }).click();
+  await expect(page.locator("[data-exact-change]")).toContainText(
+    "src/content/blog/synthetic-article.mdx",
+  );
+  await page
+    .locator("#content-approval")
+    .getByRole("button", { name: "Approve draft" })
+    .click();
+  await expect(page.locator(".badge").first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "Approve…" })).toBeEnabled();
+  await page.getByRole("button", { name: "Approve…" }).click();
+  await page
+    .locator("#content-approval")
+    .getByRole("button", {
+      name: "Approve for publishing",
+    })
+    .click();
   await expect(
-    page.getByRole("heading", { name: "Revision 1 · awaiting_client" }),
-  ).toBeVisible();
-  await page.getByRole("button", { name: "Approve exact revision 1" }).click();
-  await expect(
-    page.getByRole("heading", { name: "Revision 1 · approved" }),
-  ).toBeVisible();
+    page.getByRole("button", { name: "Publish approved draft" }),
+  ).toBeEnabled();
   const publish = page.waitForRequest(
     (r) => r.method() === "POST" && r.url().endsWith("/publish/"),
   );
-  await page.getByRole("button", { name: "Dispatch approved content" }).click();
+  await page.getByRole("button", { name: "Publish approved draft" }).click();
   expect((await publish).postDataJSON().publishing_target_id).toBe(
     fixtures.detail.publishing_targets[0].id,
   );
-  await expect(
-    page.getByRole("heading", { name: "Publication: pull_request_created" }),
-  ).toBeVisible();
-  await expect(page.getByText(/Checks\/build: checks_running/)).toBeVisible();
-  await expect(page.getByText(/Deployment: Not confirmed/)).toBeVisible();
-  await expect(
-    page.getByText(/Live verification: Not confirmed/),
-  ).toBeVisible();
+  const publication = page.locator("[data-publication]");
+  await expect(publication.locator(".badge")).toHaveText("Checking");
+  await publication.getByText("Details").click();
+  await expect(publication).toContainText("Not confirmed");
+  await expect(publication).not.toContainText(
+    /pull_request_created|checks_running/,
+  );
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
 });
 test("Website closed BFF tenant site auth CSRF and cache", async ({ page }) => {

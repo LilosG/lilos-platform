@@ -31,6 +31,7 @@ from apps.api.app.products.content.contracts import (
     RevisionCreate,
     TargetCreate,
 )
+from apps.api.app.products.content.errors import ContentComposeWebsiteNotFoundError
 from apps.api.app.products.content.models import (
     ContentBrief,
     ContentItem,
@@ -393,18 +394,25 @@ async def decide_opportunity(
 ) -> dict[str, object]:
     correlation_id = request_correlation_id(request)
     if command.accept:
-        item, workflow = await service.accept_opportunity_and_dispatch_agent(
-            session,
-            organization_id,
-            opportunity_id,
-            actor_id=principal.platform_user_id,
-            correlation_id=correlation_id,
-        )
-        response_meta = {
-            **meta(request),
-            "workflow_run_id": str(workflow.id),
-            "workflow_key": "agent.content",
-        }
+        try:
+            item, workflow = await service.accept_opportunity_and_dispatch_agent(
+                session,
+                organization_id,
+                opportunity_id,
+                actor_id=principal.platform_user_id,
+                correlation_id=correlation_id,
+            )
+            response_meta = {
+                **meta(request),
+                "workflow_run_id": str(workflow.id),
+                "workflow_key": "content.compose",
+            }
+        except ContentComposeWebsiteNotFoundError:
+            # No website to write for: the opportunity is accepted, but nothing is composed.
+            found = await session.get(ContentOpportunity, opportunity_id)
+            if found is None or found.organization_id != organization_id:
+                raise
+            item, response_meta = found, meta(request)
     else:
         item = await service.decide_opportunity(
             session,

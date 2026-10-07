@@ -773,6 +773,18 @@
             "title": "Source Evidence References",
             "type": "array"
           },
+          "source_prompt": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Prompt"
+          },
           "target_kind": {
             "$ref": "#/components/schemas/ContentTargetKind",
             "default": "existing_page"
@@ -1143,6 +1155,22 @@
         "title": "ChecklistSeverity",
         "type": "string"
       },
+      "ClaimConfirm": {
+        "additionalProperties": false,
+        "properties": {
+          "claim_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Claim Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "claim_id"
+        ],
+        "title": "ClaimConfirm",
+        "type": "object"
+      },
       "ClientOverview": {
         "additionalProperties": false,
         "properties": {
@@ -1446,6 +1474,106 @@
         "title": "CommunicationCreate",
         "type": "object"
       },
+      "ComposeContentType": {
+        "description": "Types an operator may pin when composing from a prompt; absent means Hermes decides.",
+        "enum": [
+          "blog_post",
+          "listicle",
+          "landing_page",
+          "service_page",
+          "location_page",
+          "guide"
+        ],
+        "title": "ComposeContentType",
+        "type": "string"
+      },
+      "ComposeCreate": {
+        "additionalProperties": false,
+        "description": "One plain prompt in, a governed draft out. Hermes resolves everything unstated.",
+        "properties": {
+          "content_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ComposeContentType"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "idempotency_key": {
+            "maxLength": 128,
+            "minLength": 8,
+            "title": "Idempotency Key",
+            "type": "string"
+          },
+          "prompt": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Prompt",
+            "type": "string"
+          },
+          "website_id": {
+            "format": "uuid",
+            "title": "Website Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "website_id",
+          "prompt",
+          "idempotency_key"
+        ],
+        "title": "ComposeCreate",
+        "type": "object"
+      },
+      "ComposeStateView": {
+        "properties": {
+          "failure_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Code"
+          },
+          "prompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt"
+          },
+          "status": {
+            "enum": [
+              "writing",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "workflow_run_id": {
+            "format": "uuid",
+            "title": "Workflow Run Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "failure_code",
+          "prompt",
+          "workflow_run_id"
+        ],
+        "title": "ComposeStateView",
+        "type": "object"
+      },
       "ConfigurationCreate": {
         "additionalProperties": false,
         "properties": {
@@ -1648,9 +1776,31 @@
             "title": "Revision Number",
             "type": "integer"
           },
+          "source_prompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Prompt"
+          },
           "status": {
             "title": "Status",
             "type": "string"
+          },
+          "target_kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Kind"
           },
           "target_reference": {
             "title": "Target Reference",
@@ -13014,6 +13164,44 @@
         "title": "PublicationView",
         "type": "object"
       },
+      "PublishPreviewView": {
+        "properties": {
+          "base_branch": {
+            "title": "Base Branch",
+            "type": "string"
+          },
+          "change_kind": {
+            "enum": [
+              "new_file",
+              "edit"
+            ],
+            "title": "Change Kind",
+            "type": "string"
+          },
+          "file_path": {
+            "title": "File Path",
+            "type": "string"
+          },
+          "repository_id": {
+            "title": "Repository Id",
+            "type": "string"
+          },
+          "target_id": {
+            "format": "uuid",
+            "title": "Target Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target_id",
+          "repository_id",
+          "base_branch",
+          "file_path",
+          "change_kind"
+        ],
+        "title": "PublishPreviewView",
+        "type": "object"
+      },
       "PublishResponse": {
         "additionalProperties": false,
         "properties": {
@@ -16059,6 +16247,16 @@
             "title": "Can Publish",
             "type": "boolean"
           },
+          "compose": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ComposeStateView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "content_type": {
             "title": "Content Type",
             "type": "string"
@@ -16145,6 +16343,13 @@
             "title": "Publications",
             "type": "array"
           },
+          "publish_preview": {
+            "items": {
+              "$ref": "#/components/schemas/PublishPreviewView"
+            },
+            "title": "Publish Preview",
+            "type": "array"
+          },
           "published_at": {
             "anyOf": [
               {
@@ -16196,6 +16401,17 @@
           "title": {
             "title": "Title",
             "type": "string"
+          },
+          "word_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Word Count"
           }
         },
         "required": [
@@ -16218,6 +16434,7 @@
           "publishing_targets",
           "publishing_requirements",
           "publishing_requirements_by_target",
+          "publish_preview",
           "facts",
           "draft_runs",
           "can_edit",
@@ -16229,6 +16446,16 @@
       },
       "WebsiteContentItem": {
         "properties": {
+          "compose": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ComposeStateView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "content_type": {
             "title": "Content Type",
             "type": "string"
@@ -16316,6 +16543,17 @@
           "title": {
             "title": "Title",
             "type": "string"
+          },
+          "word_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Word Count"
           }
         },
         "required": [
@@ -16694,6 +16932,18 @@
             "minLength": 8,
             "title": "Idempotency Key",
             "type": "string"
+          },
+          "instructions": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instructions"
           }
         },
         "required": [
@@ -20444,6 +20694,58 @@
         ]
       }
     },
+    "/api/v1/organizations/{organization_id}/content/compose": {
+      "post": {
+        "description": "Write content from one plain prompt.\n\nReserves a placeholder item and starts the durable ``content.compose`` run; Hermes\nresolves type, title, slug, target, audience and links in the worker. Repeating a\nrequest with the same ``idempotency_key`` returns the same item and run.",
+        "operationId": "compose_api_v1_organizations__organization_id__content_compose_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ComposeCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Compose",
+        "tags": [
+          "content"
+        ]
+      }
+    },
     "/api/v1/organizations/{organization_id}/content/connections": {
       "get": {
         "description": "List GitHub integration connections available for publishing targets.",
@@ -21410,6 +21712,82 @@
           }
         },
         "summary": "Ai Draft",
+        "tags": [
+          "content"
+        ]
+      }
+    },
+    "/api/v1/organizations/{organization_id}/content/{item_id}/revisions/{revision_id}/claims/confirm": {
+      "post": {
+        "description": "The reviewer vouches for one flagged claim; it is recorded as an operator-verified fact.",
+        "operationId": "confirm_claim_api_v1_organizations__organization_id__content__item_id__revisions__revision_id__claims_confirm_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Item Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "revision_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Revision Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClaimConfirm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Confirm Claim Api V1 Organizations  Organization Id  Content  Item Id  Revisions  Revision Id  Claims Confirm Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Confirm Claim",
         "tags": [
           "content"
         ]

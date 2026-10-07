@@ -475,15 +475,14 @@ test("a role that cannot start checks sees the control disabled with its reason"
   );
 });
 
-test("the Content tab keeps working as it did", async ({ page }) => {
+test("the Content tab lists content and offers the composer", async ({
+  page,
+}) => {
   await login(page, base + "content/");
   await expect(
-    page.getByRole("heading", { name: "Content operations" }),
+    page.getByRole("heading", { name: /Articles and guides/ }),
   ).toBeVisible();
-  await expect(page.getByLabel("Title", { exact: true })).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: "Create content item" }),
-  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "New content" })).toBeVisible();
   await expect(
     page.getByRole("link", { name: "Content", exact: true }),
   ).toHaveAttribute("aria-current", "page");

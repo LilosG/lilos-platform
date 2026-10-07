@@ -1608,11 +1608,12 @@ class ContentService:
                 website_id = UUID(str(raw))
             except ValueError:
                 return None
-            return await session.scalar(
+            found: SEOWebsite | None = await session.scalar(
                 select(SEOWebsite).where(
                     SEOWebsite.organization_id == organization_id, SEOWebsite.id == website_id
                 )
             )
+            return found
         websites = list(
             await session.scalars(
                 select(SEOWebsite).where(

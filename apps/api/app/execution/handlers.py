@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable, Sequence
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol, cast
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -765,7 +765,7 @@ async def _propose_inbound_links(
         phrases = [
             item.title,
             str(requirements.get("primary_topic") or ""),
-            *[str(k) for k in requirements.get("keywords") or []],
+            *[str(k) for k in cast(list[object], requirements.get("keywords") or [])],
         ]
         proposals = await InboundLinkService().propose(
             session,

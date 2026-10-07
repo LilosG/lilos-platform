@@ -14,7 +14,7 @@ import re
 from collections.abc import Iterable, Mapping
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import TypedDict
+from typing import TypedDict, cast
 
 
 class ClaimBasis(StrEnum):
@@ -148,7 +148,7 @@ def unresolved_claims(validation_document: Mapping[str, object]) -> list[ClaimRe
     if not isinstance(claims, list):
         return []
     return [
-        claim
+        cast(ClaimRecord, claim)
         for claim in claims
         if isinstance(claim, dict) and claim.get("status") == ClaimStatus.NEEDS_CONFIRMATION.value
-    ]  # type: ignore[return-value]
+    ]

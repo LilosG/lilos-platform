@@ -8,7 +8,7 @@ or client site is ever called.
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 from uuid import UUID, uuid4
 
 import pytest
@@ -45,7 +45,8 @@ from apps.api.app.products.content.models import (
 from apps.api.app.products.content.operator_service import ContentOperatorService
 from apps.api.app.products.content.service import ContentService
 from apps.api.app.products.seo.models import SEOPage, SEOWebsite
-from tests.python.content.test_content_floors_and_links import build_draft
+
+from .draft_builder import build_draft
 
 PROMPT = "write a blog about Miss B's being the Green Bay Packers bar in San Diego"
 ORIGIN = "https://missbs.example"
@@ -120,6 +121,10 @@ class ScriptedGateway:
                 + ", ".join(errors),
             )
         return {**base, **payload}
+
+
+def doc(revision: ContentRevision) -> dict[str, Any]:
+    return cast(dict[str, Any], revision.validation_document)
 
 
 class World:
@@ -270,8 +275,8 @@ async def test_prompt_becomes_item_brief_and_draft_with_claims_as_operator_facts
             select(ContentRevision).where(ContentRevision.content_item_id == item.id)
         )
         assert revision is not None and revision.status == "awaiting_editorial"
-        assert revision.validation_document["quality"]["word_count"] == 1_500
-        assert all(c["passed"] for c in revision.validation_document["quality"]["checks"])
+        assert doc(revision)["quality"]["word_count"] == 1_500
+        assert all(c["passed"] for c in doc(revision)["quality"]["checks"])
 
         # The claim the prompt made is an approved, operator-verified fact from this user.
         facts = list(
@@ -465,9 +470,7 @@ async def test_claims_that_need_confirmation_block_approval_until_confirmed(
             select(ContentRevision).where(ContentRevision.content_item_id == item.id)
         )
         assert revision is not None
-        pending = [
-            c for c in revision.validation_document["claims"] if c["status"] == "needs_confirmation"
-        ]
+        pending = [c for c in doc(revision)["claims"] if c["status"] == "needs_confirmation"]
         assert pending and "1987" in pending[0]["text"]
 
         content = ContentService()
@@ -524,7 +527,7 @@ async def test_an_invented_specific_the_model_did_not_label_is_still_flagged(
             select(ContentRevision).where(ContentRevision.content_item_id == item.id)
         )
         assert revision is not None
-        flagged = [c for c in revision.validation_document["claims"] if c["detected"]]
+        flagged = [c for c in doc(revision)["claims"] if c["detected"]]
         assert flagged and flagged[0]["status"] == "needs_confirmation"
 
 
@@ -554,8 +557,8 @@ async def test_regenerate_instruction_is_audited_and_still_held_to_the_floors(
             correlation_id="c",
             instructions=instruction,
         )
-        assert revision.validation_document["quality"]["word_count"] == 1_600
-        assert execution.output_document["reviewer_instructions"] == instruction
+        assert doc(revision)["quality"]["word_count"] == 1_600
+        assert (execution.output_document or {})["reviewer_instructions"] == instruction
         assert gateway.requests[-1].input_document["instructions"] == instruction
         audit = await session.scalar(
             select(AuditEvent).where(
@@ -596,10 +599,10 @@ async def test_an_accepted_opportunity_flows_through_compose(
             session, world.org, opportunity.id, actor_id=world.user, correlation_id="c"
         )
         assert workflow.input_document["opportunity_id"] == str(opportunity.id)
-        assert "packers bar san diego" in workflow.input_document["prompt"]
+        assert "packers bar san diego" in str(workflow.input_document["prompt"])
         assert workflow.input_document["website_id"] == str(world.website)
         await session.refresh(opportunity)
-        assert opportunity.status == "converted"
+        assert opportunity.status == "accepted"
 
         # Preparing the same opportunity again resolves the same run, never a second item.
         _, again = await ContentService().accept_opportunity_and_dispatch_agent(
@@ -609,7 +612,7 @@ async def test_an_accepted_opportunity_flows_through_compose(
 
         outcome = await run_compose(session, world, dict(workflow.input_document), workflow.id)
         assert outcome.result == "succeeded"
-        item = await session.get(ContentItem, UUID(workflow.input_document["item_id"]))
+        item = await session.get(ContentItem, UUID(str(workflow.input_document["item_id"])))
         assert item is not None and item.opportunity_id == opportunity.id
 
 

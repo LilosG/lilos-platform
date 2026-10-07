@@ -21,6 +21,10 @@ const growthStates = new Map();
 const contentOpportunityStates = new Map();
 import { createServer } from "node:http";
 import {
+  contentDetail,
+  contentSim,
+  contentWorkspace,
+  resetContent,
   modes as websiteModes,
   pageDetail as websitePageDetail,
   workspace as websiteWorkspace,
@@ -165,8 +169,15 @@ createServer(async (req, res) => {
   if (url.pathname === "/test/website-scenario") {
     if (!websiteModes.includes(parsed.mode)) return reply({ ok: false }, 400);
     websiteMode = parsed.mode;
+    resetContent();
     return reply({ ok: true });
   }
+  if (url.pathname === "/test/content-advance") {
+    contentSim.advanced = true;
+    return reply({ ok: true });
+  }
+  if (url.pathname === "/test/content-requests")
+    return reply({ requests: contentSim.requests });
   if (url.pathname === "/test/gbp-reset") {
     resetBeta();
     return reply({ ok: true });
@@ -400,9 +411,68 @@ createServer(async (req, res) => {
     leadStates.set(claims.sub, data);
     return reply({ data: { id: ids.next } }, 200);
   }
+  const contentMode =
+    websiteMode === "content" || websiteMode === "content_empty";
+  if (
+    contentMode &&
+    path.startsWith("command-center/website-content/content/")
+  ) {
+    const data = contentDetail(claims.sub, path.split("/").pop());
+    return data ? reply(data) : reply({ code: "NOT_FOUND" }, 404);
+  }
+  if (contentMode && req.method === "POST" && path === "content/compose") {
+    contentSim.requests.push({ kind: "compose", body: parsed });
+    contentSim.composed.push({
+      prompt: parsed.prompt,
+      content_type: parsed.content_type,
+    });
+    return reply(
+      {
+        data: { item_id: ids.next, workflow_run_id: ids.run, status: "queued" },
+      },
+      202,
+    );
+  }
+  if (
+    contentMode &&
+    req.method === "POST" &&
+    path.endsWith("/revisions/ai-draft")
+  ) {
+    contentSim.requests.push({ kind: "regenerate", body: parsed });
+    contentSim.regenerated = true;
+    return reply({ data: { workflow_run_id: ids.run, status: "queued" } }, 202);
+  }
+  if (
+    contentMode &&
+    req.method === "POST" &&
+    path.endsWith("/claims/confirm")
+  ) {
+    contentSim.requests.push({ kind: "confirm", body: parsed });
+    contentSim.confirmed = true;
+    return reply({ data: { status: "awaiting_editorial" } });
+  }
+  if (
+    contentMode &&
+    req.method === "POST" &&
+    path.startsWith("content-operations/") &&
+    path.endsWith("/decision")
+  ) {
+    if (claims.aal !== "aal2") return reply({ code: "AAL2_REQUIRED" }, 403);
+    if (!contentSim.confirmed)
+      return reply({ code: "CONTENT_CLAIMS_NEED_CONFIRMATION" }, 409);
+    contentSim.requests.push({ kind: "decision", body: parsed });
+    contentSim.revisionStatus = parsed.approve
+      ? parsed.stage === "editorial"
+        ? "awaiting_client"
+        : "approved"
+      : "rejected";
+    return reply({ data: { status: contentSim.revisionStatus } });
+  }
   if (path === "command-center/website-content" && websiteMode !== "default") {
     const requested = url.searchParams.get("website_id") ?? undefined;
-    const data = websiteWorkspace(websiteMode, claims.sub, requested);
+    const data = contentMode
+      ? contentWorkspace(websiteMode, claims.sub, requested)
+      : websiteWorkspace(websiteMode, claims.sub, requested);
     if (!data) return reply({ code: "INTERNAL" }, 500);
     if (
       requested &&

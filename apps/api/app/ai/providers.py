@@ -244,7 +244,8 @@ def _link_inventory_for_validation(input_document: dict[str, Any]) -> list[Inven
     rows = input_document.get("link_inventory")
     if not isinstance(rows, list):
         knowledge = _content_knowledge_for_prompt(input_document.get("knowledge"))
-        rows = knowledge.get("website_knowledge") or []
+        pages = knowledge.get("website_knowledge")
+        rows = pages if isinstance(pages, list) else []
     return build_inventory(
         [row for row in rows if isinstance(row, dict)],
         origin_host=str(input_document.get("site_host") or "") or None,
@@ -296,8 +297,25 @@ def article_quality_summary(
         draft, origin_host=str(input_document.get("site_host") or "") or None
     )
     faqs = payload.get("faqs")
+    known = {page.url: page for page in inventory}
+    seen: set[tuple[str, str]] = set()
+    link_rows: list[dict[str, Any]] = []
+    for link in links:
+        if (link.anchor, link.url) in seen:
+            continue
+        seen.add((link.anchor, link.url))
+        page = known.get(link.url)
+        link_rows.append(
+            {
+                "anchor": link.anchor,
+                "url": link.url,
+                "verified": page is not None,
+                "kind": page.kind.value if page is not None else None,
+            }
+        )
     return {
         "floor": floor,
+        "links": link_rows,
         "word_count": len(re.findall(r"\b[\w'-]+\b", draft)),
         "heading_count": len(re.findall(r"(?m)^##\s+\S", draft)),
         "internal_link_count": len({link.url for link in links}),
