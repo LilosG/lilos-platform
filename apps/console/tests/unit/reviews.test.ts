@@ -133,6 +133,72 @@ describe("Reviews closed BFF", () => {
       expect(fetcher).not.toHaveBeenCalled();
     }
   });
+  it("sends reply drafts without fact ids and reads the server's own facts check", async () => {
+    const headers = {
+      "Content-Type": "application/json",
+      Origin: settings.origin,
+      "X-CSRF-Token": csrfToken(
+        locals.binding,
+        locals.userId,
+        settings.csrfSecret,
+      ),
+    };
+    const base = `organizations/${org}/locations/${loc}/reviews/${fixtures.detail.review.id}/responses/`;
+    const revision = fixtures.detail.review.revision_id;
+    const send = async (path: string, body: unknown) =>
+      (
+        await forward(
+          new Request(settings.origin + "/api/" + path, {
+            method: "POST",
+            headers,
+            body: JSON.stringify(body),
+          }),
+          path,
+          locals,
+          vi.fn(
+            async () =>
+              new Response(JSON.stringify({ data: { id: org } }), {
+                status: 201,
+                headers: { "Content-Type": "application/json" },
+              }),
+          ),
+        )
+      ).status;
+    expect(
+      await send(base + "ai-draft/", {
+        review_revision_id: revision,
+        idempotency_key: "exact-revision-key",
+      }),
+    ).toBe(201);
+    expect(
+      await send(base, {
+        review_revision_id: revision,
+        response_text: "Thanks for visiting.",
+        generated_by_type: "user",
+      }),
+    ).toBe(201);
+    // The picker is gone: fact ids are no longer part of the request.
+    expect(
+      await send(base + "ai-draft/", {
+        review_revision_id: revision,
+        idempotency_key: "exact-revision-key",
+        approved_fact_revision_ids: [org],
+      }),
+    ).toBeGreaterThanOrEqual(400);
+    const none = adaptReviewDetail(
+      {
+        ...fixtures.detail,
+        has_approved_facts: false,
+        can_draft: false,
+        can_ai_draft: false,
+      },
+      org,
+      loc,
+      fixtures.detail.review.id,
+    );
+    expect(none.has_approved_facts).toBe(false);
+    expect(none.can_ai_draft).toBe(false);
+  });
   it("allows canonical body only, enforces CSRF and no-store, rejects unsupported retries", async () => {
     const path = `organizations/${org}/locations/${loc}/reviews/${fixtures.detail.review.id}/responses/${org}/publish/`;
     const headers = {

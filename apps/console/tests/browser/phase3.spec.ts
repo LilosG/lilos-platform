@@ -45,7 +45,8 @@ test("Reviews inbox, unavailable requests, exact response draft, audit and acces
   await expect(
     page.getByRole("button", { name: "Approve this response" }),
   ).toBeDisabled();
-  await page.getByLabel("Business name", { exact: false }).check();
+  await expect(page.getByText("Facts this response may use")).toHaveCount(0);
+  await expect(page.getByRole("checkbox")).toHaveCount(0);
   await page
     .getByLabel("Edit the response", { exact: true })
     .fill("Thanks for this synthetic visit.");
@@ -56,11 +57,12 @@ test("Reviews inbox, unavailable requests, exact response draft, audit and acces
     page.waitForEvent("load"),
     page.getByRole("button", { name: "Save changes" }).click(),
   ]);
-  expect((await request).postDataJSON()).toMatchObject({
+  const saved = (await request).postDataJSON();
+  expect(saved).toMatchObject({
     review_revision_id: fixtures.detail.review.revision_id,
     generated_by_type: "user",
-    approved_fact_revision_ids: [fixtures.detail.facts[0].id],
   });
+  expect(saved).not.toHaveProperty("approved_fact_revision_ids");
   await expect(
     page.getByRole("heading", { name: "Reply to Jordan Sample" }),
   ).toBeVisible();
@@ -72,6 +74,24 @@ test("Reviews inbox, unavailable requests, exact response draft, audit and acces
     fullPage: true,
   });
   expect(errors).toEqual([]);
+});
+test("A reply is generated in one click with no facts to choose", async ({
+  page,
+}) => {
+  await login(page);
+  await page.goto(detail);
+  const request = page.waitForRequest(
+    (r) => r.method() === "POST" && r.url().endsWith("/responses/ai-draft/"),
+  );
+  await Promise.all([
+    page.waitForEvent("load"),
+    page.getByRole("button", { name: "Generate a response" }).click(),
+  ]);
+  const body = (await request).postDataJSON();
+  expect(body).toMatchObject({
+    review_revision_id: fixtures.detail.review.revision_id,
+  });
+  expect(body).not.toHaveProperty("approved_fact_revision_ids");
 });
 test("Reviews authenticated reads enforce tenant, location, CSRF and private cache", async ({
   page,

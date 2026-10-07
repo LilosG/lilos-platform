@@ -106,6 +106,11 @@ const failures: Record<string, Failure> = {
     detail:
       "Links in a draft must point to pages that really exist. Run a website check first, then try again.",
   },
+  CONTENT_NO_APPROVED_FACTS: {
+    title: "There are no approved business facts yet",
+    detail:
+      "Content is written from what the business has confirmed. Add or approve business facts, then try again.",
+  },
   CONTENT_BELOW_QUALITY_FLOOR: {
     title: "The draft was not long or well linked enough",
     detail:

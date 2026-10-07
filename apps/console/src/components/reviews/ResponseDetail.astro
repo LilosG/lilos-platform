@@ -1,16 +1,16 @@
 ---
 import type { ReviewDetailView } from "../../adapters/reviews";
-import { dateText, humanize, reviewDate } from "../../lib/present";
+import { dateText, reviewDate } from "../../lib/present";
 import {
   actorLabel,
   eventLabel,
-  factLabel,
   resultLabel,
   responseChip,
   responseNote,
   reviewer,
 } from "../../lib/review-view";
 import { reviewChip } from "../../lib/status";
+import EmptyState from "../ui/EmptyState.astro";
 import StatusBadge from "../ui/StatusBadge.astro";
 import ReviewerAvatar from "./ReviewerAvatar.astro";
 import Stars from "./Stars.astro";
@@ -29,6 +29,7 @@ const waitingOnVerify = v.responses.some(
 );
 const mfa = `/mfa/?return=${encodeURIComponent(Astro.url.pathname)}`;
 const draftable = latest?.status !== "published";
+const back = `/clients/${Astro.params.clientSlug}/reviews/`;
 ---
 
 <div class="eyebrow">Google review</div>
@@ -117,7 +118,18 @@ const draftable = latest?.status !== "published";
   )
 }
 {
-  draftable && (
+  draftable && !v.has_approved_facts && (
+    <EmptyState title="There are no approved business facts yet">
+      Replies are written from what the business has confirmed. Approve business
+      facts for this location, then come back to reply.
+      <a slot="action" class="control" href={back}>
+        Back to reviews
+      </a>
+    </EmptyState>
+  )
+}
+{
+  draftable && v.has_approved_facts && (
     <form
       inert
       class="formgrid"
@@ -125,25 +137,6 @@ const draftable = latest?.status !== "published";
       data-action={api}
       data-revision={v.review.revision_id}
     >
-      {!v.can_draft && (
-        <p class="hint">
-          Drafting is unavailable right now. It needs permission and at least
-          one approved business fact.
-        </p>
-      )}
-      <fieldset disabled={!v.can_draft}>
-        <legend>Facts this response may use</legend>
-        {v.facts.length ? (
-          v.facts.map((f) => (
-            <label class="factpick">
-              <input type="checkbox" name="fact" value={f.id} />
-              {humanize(f.key)}: {factLabel(f.value)}
-            </label>
-          ))
-        ) : (
-          <p class="hint">No approved business facts yet.</p>
-        )}
-      </fieldset>
       <div class="field">
         <label for="review-response-text">
           {latest ? "Edit the response" : "Write a response"}
@@ -172,7 +165,7 @@ const draftable = latest?.status !== "published";
           value="ai"
           disabled={!v.can_ai_draft}
         >
-          Generate a draft
+          Generate a response
         </button>
       </div>
     </form>

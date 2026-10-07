@@ -69,16 +69,6 @@ function initialize() {
       form.addEventListener("submit", (event) => {
         event.preventDefault();
         const data = new FormData(form);
-        const facts = data.getAll("fact");
-        if (!facts.length) {
-          const node = document.querySelector<HTMLElement>(
-            "[data-review-status]",
-          );
-          if (node)
-            node.textContent =
-              "Choose at least one business fact the response may use.";
-          return;
-        }
         const ai =
           (event as SubmitEvent).submitter instanceof HTMLButtonElement &&
           ((event as SubmitEvent).submitter as HTMLButtonElement).value ===
@@ -95,7 +85,6 @@ function initialize() {
           .forEach((b) => (b.disabled = true));
         void send(form.dataset.action! + (ai ? "ai-draft/" : ""), {
           review_revision_id: form.dataset.revision,
-          approved_fact_revision_ids: facts,
           ...(ai
             ? { idempotency_key: crypto.randomUUID() }
             : {

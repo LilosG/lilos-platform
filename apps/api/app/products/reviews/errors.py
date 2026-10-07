@@ -32,7 +32,7 @@ class UnsafeDraftError(ConflictError):
 
 
 class GroundingRequiredError(ConflictError):
-    """A response draft was submitted without approved business-fact grounding."""
+    """The location has no approved business facts to ground a response in."""
 
     code = "REVIEW_DRAFT_GROUNDING_REQUIRED"
     public_message = "Approved business-fact grounding is required."

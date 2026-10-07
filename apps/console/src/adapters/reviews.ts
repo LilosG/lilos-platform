@@ -69,7 +69,7 @@ const detail = z.object({
     quality: z.enum(["partial", "unavailable"]),
     limitation: z.literal("persisted_inventory_not_provider_total"),
   }),
-  facts: z.array(z.object({ id: z.uuid(), key: z.string(), value: z.json() })),
+  has_approved_facts: z.boolean(),
   can_draft: z.boolean(),
   can_ai_draft: z.boolean(),
   can_read_audit: z.boolean(),

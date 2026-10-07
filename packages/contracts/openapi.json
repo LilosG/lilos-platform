@@ -2743,8 +2743,7 @@
               "format": "uuid",
               "type": "string"
             },
-            "maxItems": 50,
-            "minItems": 1,
+            "maxItems": 100,
             "title": "Approved Fact Revision Ids",
             "type": "array"
           },
@@ -2772,8 +2771,7 @@
         },
         "required": [
           "review_revision_id",
-          "response_text",
-          "approved_fact_revision_ids"
+          "response_text"
         ],
         "title": "DraftCreate",
         "type": "object"
@@ -13819,12 +13817,9 @@
             "title": "Can Read Audit",
             "type": "boolean"
           },
-          "facts": {
-            "items": {
-              "$ref": "#/components/schemas/ReviewFact"
-            },
-            "title": "Facts",
-            "type": "array"
+          "has_approved_facts": {
+            "title": "Has Approved Facts",
+            "type": "boolean"
           },
           "history": {
             "items": {
@@ -13874,7 +13869,7 @@
           "location_id",
           "review",
           "source",
-          "facts",
+          "has_approved_facts",
           "can_draft",
           "can_ai_draft",
           "responses",
@@ -16983,8 +16978,7 @@
               "format": "uuid",
               "type": "string"
             },
-            "maxItems": 50,
-            "minItems": 1,
+            "maxItems": 100,
             "title": "Approved Fact Revision Ids",
             "type": "array"
           },
@@ -17002,7 +16996,6 @@
         },
         "required": [
           "review_revision_id",
-          "approved_fact_revision_ids",
           "idempotency_key"
         ],
         "title": "AIDraftCreate",

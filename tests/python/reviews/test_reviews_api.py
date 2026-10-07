@@ -30,7 +30,7 @@ from apps.api.app.main import create_app
 from apps.api.app.notifications.models import NotificationEvent
 from apps.api.app.organizations.enums import OrganizationStatus, OrganizationType
 from apps.api.app.organizations.models import Organization
-from apps.api.app.products.reviews.models import Review, ReviewRevision
+from apps.api.app.products.reviews.models import Review, ReviewResponseRevision, ReviewRevision
 from apps.api.app.products.reviews.service import ReviewService
 
 
@@ -352,6 +352,7 @@ def test_manual_and_ai_draft_full_flow_produces_audit_and_notification(
     assert detail.status_code == 200
     assert len(detail.json()["data"]["revisions"]) == 1
 
+    _approved_fact(client, org)
     manual = client.post(
         f"{base}/{review_id}/responses",
         headers=HEADERS,
@@ -359,7 +360,6 @@ def test_manual_and_ai_draft_full_flow_produces_audit_and_notification(
             "review_revision_id": str(revision_id),
             "response_text": "Thank you so much for your kind words!",
             "generated_by_type": "user",
-            "approved_fact_revision_ids": [_approved_fact(client, org)],
         },
     )
     assert manual.status_code == 201
@@ -401,7 +401,6 @@ def test_manual_and_ai_draft_full_flow_produces_audit_and_notification(
         headers=HEADERS,
         json={
             "review_revision_id": str(revision_id),
-            "approved_fact_revision_ids": [str(fact_revision_id)],
             "idempotency_key": "reviews-ai-draft-key-001",
         },
     )
@@ -443,6 +442,61 @@ def test_manual_and_ai_draft_full_flow_produces_audit_and_notification(
         )
         is True
     )
+
+
+def _response_fact_ids(postgresql_test_url: str, response_id: str) -> list[str]:
+    async def work(session: AsyncSession) -> list[str]:
+        row = await session.get(ReviewResponseRevision, UUID(response_id))
+        assert row is not None
+        return [str(x) for x in row.approved_fact_revision_ids]
+
+    return run_db(postgresql_test_url, work)
+
+
+@pytest.mark.integration
+def test_replies_resolve_approved_facts_on_the_server(
+    postgresql_test_url: str,
+    reviews_client: tuple[TestClient, dict[str, UUID]],
+) -> None:
+    client, ids = reviews_client
+    org, location = ids["organization"], ids["location"]
+    _ingest(postgresql_test_url, ids, body="Lovely evening", rating=5, external_id="review-facts")
+    review_id, revision_id = _fetch_review_and_revision(postgresql_test_url, org, location)
+    base = f"/api/v1/organizations/{org}/locations/{location}/reviews/{review_id}/responses"
+
+    # No approved facts: a typed code, no prose to match.
+    for path, payload in (
+        ("/ai-draft", {"idempotency_key": "reviews-nofacts-key-1"}),
+        ("", {"response_text": "Thank you!", "generated_by_type": "user"}),
+    ):
+        refused = client.post(
+            base + path,
+            headers=HEADERS,
+            json={"review_revision_id": str(revision_id), **payload},
+        )
+        assert refused.status_code == 409
+        assert refused.json()["error"]["code"] == "REVIEW_DRAFT_GROUNDING_REQUIRED"
+
+    fact_id = _approved_fact(client, org)
+    ai = client.post(
+        base + "/ai-draft",
+        headers=HEADERS,
+        json={"review_revision_id": str(revision_id), "idempotency_key": "reviews-facts-key-01"},
+    )
+    assert ai.status_code == 201
+    assert _response_fact_ids(postgresql_test_url, ai.json()["data"]["id"]) == [fact_id]
+
+    manual = client.post(
+        base,
+        headers=HEADERS,
+        json={
+            "review_revision_id": str(revision_id),
+            "response_text": "Thank you for coming in.",
+            "generated_by_type": "user",
+        },
+    )
+    assert manual.status_code == 201
+    assert _response_fact_ids(postgresql_test_url, manual.json()["data"]["id"]) == [fact_id]
 
 
 @pytest.mark.integration
