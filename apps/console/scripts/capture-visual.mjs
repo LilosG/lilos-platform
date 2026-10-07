@@ -142,6 +142,9 @@ const reviewScreens = [
     referenceRespond,
   ],
 ];
+// Dashboard GBP actions column: the platform administrator sees every client, so all three cell
+// states (trend, no previous period, not connected) are on screen.
+const dashboardScreens = [["dashboard-gbp-actions", "admin", "/", "/"]];
 async function signIn(context, who) {
   const page = await context.newPage();
   await page.goto(`${consoleUrl}/login/`);
@@ -194,11 +197,13 @@ const side = async (browser, size, left, right) => {
   return image;
 };
 const activeScreens =
-  stepName === "step-6"
-    ? reviewScreens
-    : stepName === "special-hours-publish"
-      ? screens.filter(([name]) => name === "special-hours-list")
-      : screens;
+  stepName === "dashboard-gbp-actions"
+    ? dashboardScreens
+    : stepName === "step-6"
+      ? reviewScreens
+      : stepName === "special-hours-publish"
+        ? screens.filter(([name]) => name === "special-hours-list")
+        : screens;
 await mkdir(out, { recursive: true });
 const browser = await chromium.launch(
   process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE
@@ -212,7 +217,7 @@ await fetch(`${consoleUrl.replace("4346", "4455")}/test/gbp-reset`, {
 for (const [label, [width, height]] of Object.entries(sizes)) {
   const viewport = { width, height };
   const contexts = {};
-  for (const who of ["a", "b"]) {
+  for (const who of ["a", "b", "admin"]) {
     contexts[who] = await browser.newContext({ viewport });
     await signIn(contexts[who], who);
   }
