@@ -85,13 +85,14 @@ const sorts: [string, string, boolean][] = [
           <th>Organic traffic</th>
           <th>Leads</th>
           <th>Reviews</th>
+          <th>GBP actions</th>
           <th>Health</th>
           <th>Last activity / next work</th>
         </tr>
       </thead>
       <tbody id="clientrows">
         <tr data-client-empty hidden={rows.length > 0}>
-          <td colspan="8" class="empty">
+          <td colspan="9" class="empty">
             {
               rows.length === 0
                 ? "No clients are available to your account."

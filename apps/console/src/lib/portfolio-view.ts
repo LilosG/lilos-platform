@@ -97,6 +97,8 @@ export interface ClientRowView {
   organicDelta: string | null;
   leads: Shown;
   leadsDelta: string | null;
+  gbpActions: Shown;
+  gbpActionsDelta: string | null;
   reviews: {
     state: ClientRow["reviews"]["availability"];
     rating: string;
@@ -147,6 +149,8 @@ export function clientRowView(row: ClientRow, now: Date): ClientRowView {
     organicDelta: signed(row.organic_sessions.percent_delta, 0),
     leads: show(row.leads),
     leadsDelta: signed(row.leads.percent_delta, 0),
+    gbpActions: show(row.gbp_actions),
+    gbpActionsDelta: signed(row.gbp_actions.percent_delta, 0),
     reviews: {
       state: reviews.availability,
       rating: reviewShown ? (reviews.average_rating as number).toFixed(1) : "",

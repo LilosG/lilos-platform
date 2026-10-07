@@ -143,6 +143,31 @@ describe("missing data is never shown as a number", () => {
     expect(view.organic.text).toBe("120");
     expect(view.organicDelta).toBe("+20%");
   });
+  it("GBP actions show the value with a trend, without a trend, or a muted note", () => {
+    const gbp = (current: number, previous: number | null) =>
+      ({ ...have(current, previous ?? 0), source: "gbp" }) as MetricValue;
+    const withDelta = clientRowView(row({ gbp_actions: gbp(140, 100) }), now);
+    expect(withDelta.gbpActions.state).toBe("available");
+    expect(withDelta.gbpActions.text).toBe("140");
+    expect(withDelta.gbpActionsDelta).toBe("+40%");
+    const noPrevious = clientRowView(
+      row({
+        gbp_actions: {
+          ...gbp(140, null),
+          previous: null,
+          percent_delta: null,
+        },
+      }),
+      now,
+    );
+    expect(noPrevious.gbpActions.text).toBe("140");
+    expect(noPrevious.gbpActionsDelta).toBeNull();
+    const notConnected = clientRowView(row(), now);
+    expect(notConnected.gbpActions.state).toBe("not_connected");
+    expect(notConnected.gbpActions.text).toBe("Not connected");
+    expect(notConnected.gbpActions.text).not.toBe("0");
+    expect(notConnected.gbpActionsDelta).toBeNull();
+  });
   it("portfolio totals label unavailable sources", () => {
     const totals = portfolioMetrics({
       totals: {
