@@ -25,11 +25,15 @@ import {
   websiteDetails,
   websiteInsight,
 } from "../../src/lib/website-view";
-// @ts-expect-error The simulator is plain JavaScript.
 import {
   pageDetail as simPage,
   workspace as simWorkspace,
 } from "../browser/website-sim.mjs";
+type Workspace = (
+  m: string,
+  o: string,
+  r?: string,
+) => { pages: { id: string }[] };
 const org = "11111111-1111-4111-8111-111111111111";
 const site = "11111111-1111-4111-8111-111111111111";
 const now = new Date();
@@ -315,7 +319,7 @@ describe("the details dialog", () => {
 
 describe("one page", () => {
   const detail = (mode: string) => {
-    const w = simWorkspace(mode, org, undefined);
+    const w = (simWorkspace as unknown as Workspace)(mode, org, undefined);
     const first = w.pages[1];
     return pageDetail(
       adaptWebsitePage(simPage(mode, org, site, first.id), org, site, first.id),
