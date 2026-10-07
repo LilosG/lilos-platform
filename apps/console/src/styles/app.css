@@ -2310,3 +2310,43 @@ details.activity summary {
   width: auto;
   flex: none;
 }
+/* Website & Content */
+.sitelabel {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--white, #fff);
+  font-size: 13px;
+  font-weight: 600;
+}
+.pagetable td:first-child {
+  white-space: normal;
+  min-width: 220px;
+  max-width: 380px;
+}
+.pagetable .clientname {
+  display: block;
+}
+.pagetable tr[hidden] {
+  display: none;
+}
+.disclosure {
+  margin: 8px 0 16px;
+}
+.disclosure summary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 6px 0;
+}
+.tablewrap.pagetable {
+  position: relative;
+}
+@media (max-width: 760px) {
+  .pagehead .controls {
+    flex-wrap: wrap;
+  }
+}

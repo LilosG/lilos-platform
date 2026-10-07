@@ -1,0 +1,79 @@
+---
+import type { FindingGroup } from "../../lib/website-view";
+import SectionHeading from "../ui/SectionHeading.astro";
+import StatusBadge from "../ui/StatusBadge.astro";
+import EmptyState from "../ui/EmptyState.astro";
+interface Props {
+  groups: FindingGroup[];
+  /** Why there is nothing to list, when there is nothing. */
+  empty: "no_pages" | "clean" | null;
+  pagesChecked: number;
+  integrationsHref: string;
+  /** Present when the person may start a check. */
+  checkAction?: Record<string, string | undefined> | null;
+}
+const { groups, empty, pagesChecked, integrationsHref, checkAction } =
+  Astro.props;
+---
+
+<section class="panel" data-technical-findings>
+  <SectionHeading>
+    <Fragment slot="title">Technical findings</Fragment>
+  </SectionHeading>
+  {
+    groups.map((group) => (
+      <Fragment>
+        <h3 class="subhead" data-severity={group.severity}>
+          {group.chip.label}
+          <span class="count">{group.findings.length}</span>
+        </h3>
+        {group.findings.map((finding) => (
+          <div class="listrow" data-finding>
+            <div>
+              <h3>{finding.label}</h3>
+              <p>{finding.action}</p>
+              <small>Affects {finding.pagesText}</small>
+            </div>
+            <StatusBadge text={finding.chip.label} tone={finding.chip.tone} />
+            {finding.next && (
+              <a class="link" href={finding.next.href}>
+                {finding.next.label}
+              </a>
+            )}
+          </div>
+        ))}
+      </Fragment>
+    ))
+  }
+  {
+    empty === "clean" && (
+      <EmptyState title="No technical issues found">
+        None of the {pagesChecked} pages checked has a missing title,
+        description or heading, or is closed to search engines. This does not
+        show how Google indexes them.
+      </EmptyState>
+    )
+  }
+  {
+    empty === "no_pages" && (
+      <EmptyState title="No pages have been checked yet">
+        Run a website check to find missing titles, descriptions and headings,
+        and pages closed to search engines.
+        {checkAction ? (
+          <button
+            slot="action"
+            type="button"
+            class="control primary"
+            {...checkAction}
+          >
+            Run a website check
+          </button>
+        ) : (
+          <a slot="action" class="control primary" href={integrationsHref}>
+            Open Integrations
+          </a>
+        )}
+      </EmptyState>
+    )
+  }
+</section>

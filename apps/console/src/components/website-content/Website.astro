@@ -1,317 +1,222 @@
 ---
 import type { WebsiteView } from "../../adapters/website-content";
-import { value } from "../../adapters/local-search";
+import {
+  WEBSITE_TABS,
+  overviewTiles,
+  pageGap,
+  pageRows,
+  siteChanges,
+  siteStatus,
+  websiteDetails,
+  websiteInsight,
+} from "../../lib/website-view";
+import PageHeader from "../ui/PageHeader.astro";
+import MetricStrip from "../ui/MetricStrip.astro";
+import SectionHeading from "../ui/SectionHeading.astro";
+import StatusBadge from "../ui/StatusBadge.astro";
+import EmptyState from "../ui/EmptyState.astro";
+import TabNav from "../navigation/TabNav.astro";
+import PerformanceInsight from "../client/PerformanceInsight.astro";
+import PageTable from "./PageTable.astro";
+import Technical from "./Technical.astro";
+import Conversions from "./Conversions.astro";
+import ContentTab from "./ContentTab.astro";
 import SiteChangeRow from "./SiteChangeRow.astro";
+import WebsiteDetails from "./WebsiteDetails.astro";
 interface Props {
   view: WebsiteView;
   slug: string;
+  clientName: string;
   tab: string;
   offset: number;
+  now: Date;
 }
-const { view: v, slug, tab, offset } = Astro.props;
+const { view: v, slug, clientName, tab, offset, now } = Astro.props;
 const base = `/clients/${slug}/website-content/`;
 const api = `/api/organizations/${v.organization_id}/`;
 const query = v.website_id ? `website_id=${v.website_id}` : "";
-const tabs = [
-  ["Overview", ""],
-  ["Pages", "pages"],
-  ["Content", "content"],
-  ["Technical", "technical"],
-  ["Conversions", "conversions"],
-];
-const next = tab === "content" ? v.next_content_offset : v.next_page_offset;
+const integrationsHref = `/clients/${slug}/integrations/`;
+const pageHref = (websiteId: string, pageId: string) =>
+  `${base}pages/${websiteId}/${pageId}/${query ? "?" + query : ""}`;
+const tabs = WEBSITE_TABS.map(([label, path]) => ({
+  label,
+  href: `${base}${path ? path + "/" : ""}${query ? "?" + query : ""}`,
+  current: tab === path,
+}));
+const status = siteStatus(v, now);
+const details = websiteDetails(v, now);
+const gap = pageGap(v);
+const canCheck = v.can_crawl && Boolean(v.website_id);
+// One button starts a website check wherever the screen offers it.
+const checkAttributes: Record<string, string | undefined> | null = canCheck
+  ? { "data-website-check": api + `seo/websites/${v.website_id}/check/` }
+  : null;
+const insight = websiteInsight(v, now);
+const insightHref: Record<string, string> = {
+  integrations: integrationsHref,
+  technical: `${base}technical/${query ? "?" + query : ""}`,
+  pages: `${base}pages/${query ? "?" + query : ""}`,
+};
+const rows = pageRows(v, now, pageHref);
+const changes = siteChanges(v.opportunities, slug, now);
+const pagerHref = (to: number) =>
+  `${base}pages/?${query}${query ? "&" : ""}offset=${to}`;
 ---
 
-<nav class="sectiontabs" aria-label="Website & Content tabs">
-  {
-    tabs.map(([label, path]) => (
-      <a
-        class:list={["tab", { active: tab === path }]}
-        aria-current={tab === path ? "page" : undefined}
-        href={`${base}${path ? path + "/" : ""}?${query}`}
-      >
-        {label}
-      </a>
-    ))
-  }
-</nav>
-{
-  v.websites.length > 0 && (
-    <form method="get" class="filterbar">
-      <>
-        <label>
-          Website
-          <select name="website_id">
-            {v.websites.map((w) => (
-              <option value={w.id} selected={w.id === v.website_id}>
-                {w.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <button type="submit">Apply</button>
-      </>
-    </form>
-  )
-}
-<div class="banner website-banner">
-  <div>
-    <h2>Website work</h2><p>
-      Page evidence: {v.page_availability} · Content: {v.content_availability} · Content
-      scope: organization
-    </p>
-  </div><a class="control" href={`/clients/${slug}/integrations/`}
-    >Manage Integration</a
-  >
-</div>
-{
-  tab === "conversions" ? (
-    <section class="panel">
-      <>
-        <h2>Conversion paths unavailable</h2>
-        <p>
-          No canonical named CTA event, journey, funnel or page-friction
-          measurement source exists. Missing paths and event counts are
-          unavailable, not zero. Page intelligence can show sourced Organic
-          Search landing key events with its period, freshness and quality. Key
-          events do not establish business outcomes.
-        </p>
-        <a href={`${base}pages/?${query}`}>Inspect page evidence</a>
-      </>
-    </section>
-  ) : tab === "content" ? (
-    <>
-      <section class="panel">
-        <>
-          <h2>Content operations</h2>
-          <p>
-            These canonical items belong to the organization. Website
-            association is unavailable unless established by a canonical
-            publication target; selecting a website does not assign content to
-            it.
-          </p>
-          {v.content.length ? (
-            v.content.map((c) => (
-              <div class="listrow">
-                <div>
-                  <h3>{c.title}</h3>
-                  <p>
-                    {c.stage} · Revision:{" "}
-                    {c.latest_revision_status ?? "Unavailable"} · Publication:{" "}
-                    {c.publication_status ?? "Not started"} · Job:{" "}
-                    {c.publication_job_status ?? "Unavailable"}
-                  </p>
-                  <small>Published: {c.published_at ?? "Not confirmed"}</small>
-                </div>
-                <a class="control" href={`${base}content/${c.id}/`}>
-                  Inspect content
-                </a>
-              </div>
-            ))
-          ) : (
-            <p>No canonical content items in this page of the organization.</p>
-          )}
-        </>
-      </section>
-      {v.can_create && (
-        <section class="panel">
-          <h2>New content item</h2>
-          <form
-            inert
-            data-detail-base={base + "content/"}
-            data-content-form="create"
-            data-action={api + "content/"}
-          >
-            <label for="content-title">Title</label>
-            <input id="content-title" name="title" required maxlength="300" />
-            <label for="content-slug">Slug</label>
-            <input
-              id="content-slug"
-              name="slug"
-              required
-              maxlength="200"
-              pattern="[a-z0-9]+(-[a-z0-9]+)*"
-            />
-            <label for="content-type">Content type</label>
-            <input
-              id="content-type"
-              name="content_type"
-              required
-              maxlength="32"
-            />
-            <button type="submit">Create content item</button>
-          </form>
-        </section>
-      )}
-    </>
-  ) : (
-    <>
-      {tab === "" && (
-        <section class="panel">
-          <h2>Website overview</h2>
-          <p>
-            Observed pages, technical findings and governed changes below
-            describe persisted website evidence. Numeric health scores,
-            unsourced traffic totals and completed business outcomes are
-            unavailable here.
-          </p>
-          <a href={`${base}content/?${query}`}>View content operations</a>
-        </section>
-      )}
-      <section class="panel">
-        <>
-          <h2>
-            {tab === "technical" ? "Technical findings" : "Observed pages"}
-          </h2>
-          <p>
-            Crawler indexability is separate from Google indexation. Missing,
-            stale and partial evidence remain labeled.
-          </p>
-          <div
-            class="tablewrap"
-            tabindex="0"
-            role="region"
-            aria-label="Page inventory"
-          >
-            <table>
-              <>
-                <caption>Canonical page inventory</caption>
-                <thead>
-                  <tr>
-                    <>
-                      <th scope="col">Page</th>
-                      <th scope="col">HTTP / indexability</th>
-                      <th scope="col">Quality / observed</th>
-                      <th scope="col">Action</th>
-                    </>
-                  </tr>
-                </thead>
-                <tbody>
-                  {v.pages.map((p) => (
-                    <tr>
-                      <td>
-                        {p.title ?? "Untitled"}
-                        <span class="sub">{p.normalized_url}</span>
-                      </td>
-                      <td>
-                        {value(p.http_status)} · {value(p.indexability)}
-                      </td>
-                      <td>
-                        {p.quality_status}
-                        <span class="sub">
-                          {p.observed_at ?? "Unavailable"}
-                        </span>
-                      </td>
-                      <td>
-                        {tab === "technical" && (
-                          <p>
-                            {p.technical_issues.length
-                              ? p.technical_issues.map(value).join(" · ")
-                              : "No findings recorded; missing evidence does not prove health."}
-                          </p>
-                        )}
-                        <a href={`${base}pages/${p.website_id}/${p.id}/`}>
-                          Inspect page
-                        </a>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </>
-            </table>
-          </div>
-          {!v.pages.length && <p>No persisted pages in this scope.</p>}
-        </>
-      </section>
-      <section class="panel">
-        <>
-          <h2>Website checks</h2>
+<PageHeader title="Website & Content" subtitle={clientName} client>
+  <Fragment slot="actions">
+    {
+      v.websites.length > 1 ? (
+        <select aria-label="Website" data-query-select="website_id">
+          {v.websites.map((site) => (
+            <option value={site.id} selected={site.id === v.website_id}>
+              {site.name}
+            </option>
+          ))}
+        </select>
+      ) : (
+        v.websites.length === 1 && (
+          <span class="sitelabel" data-site-label>
+            {v.websites[0].name}
+          </span>
+        )
+      )
+    }
+    <button
+      type="button"
+      class="statuschip"
+      data-dialog="website-details"
+      aria-label={`Website data status: ${status.chip.label}. Open details`}
+    >
+      <StatusBadge text={status.chip.label} tone={status.chip.tone} />
+    </button>
+    {
+      tab !== "content" &&
+        (checkAttributes ? (
           <button
+            type="button"
+            class="control primary"
             inert
-            disabled={!v.can_crawl}
-            data-content-action={
-              v.website_id
-                ? api + `seo/websites/${v.website_id}/check/`
-                : undefined
-            }
-            data-body={JSON.stringify({ idempotency_key: crypto.randomUUID() })}
+            {...checkAttributes}
           >
             Run website check
           </button>
-          <p>
-            Enqueue is not crawl completion. Refresh to inspect canonical
-            progress.
-          </p>
-          {v.crawls.length ? (
-            v.crawls.map((c) => (
-              <div class="listrow">
-                <div>
-                  <h3>{c.status}</h3>
-                  <p>
-                    Completed: {c.completed_at ?? "Unavailable"} · Stop reason:{" "}
-                    {c.stop_reason ?? "Unavailable"}
-                  </p>
-                  <details>
-                    <summary>Crawl evidence</summary>
-                    <p>{value(c.safe_result)}</p>
-                  </details>
-                </div>
-              </div>
-            ))
-          ) : (
-            <p>No crawl runs.</p>
-          )}
-        </>
-      </section>
-      <section class="panel">
-        <>
-          <h2>Site-change opportunities</h2>
-          <div
-            class="tablewrap"
-            tabindex="0"
-            role="region"
-            aria-label="Site-change opportunities"
+        ) : (
+          <button
+            type="button"
+            class="control primary"
+            disabled
+            title={
+              v.can_crawl
+                ? "Add a website in Integrations first"
+                : "Your role cannot start website checks"
+            }
           >
-            <table>
-              <>
-                <caption>Selected website's governed opportunities</caption>
-                <thead>
-                  <tr>
-                    <>
-                      <th scope="col">Opportunity</th>
-                      <th scope="col">Priority</th>
-                      <th scope="col">Observed</th>
-                      <th scope="col">Action</th>
-                    </>
-                  </tr>
-                </thead>
-                <tbody>
-                  {v.opportunities.map((o) => (
-                    <SiteChangeRow opportunity={o} slug={slug} />
-                  ))}
-                </tbody>
-              </>
-            </table>
-          </div>
-          {!v.opportunities.length && (
-            <p>No opportunities in this page of the selected website.</p>
-          )}
-          {v.next_opportunity_offset !== null && (
-            <a href={`?${query}&offset=${v.next_opportunity_offset}`}>
-              More site-change opportunities
-            </a>
-          )}
-        </>
+            Run website check
+          </button>
+        ))
+    }
+  </Fragment>
+</PageHeader>
+<TabNav label="Website & Content sections" tabs={tabs} />
+<p class="formstatus" role="status" aria-live="polite" data-website-status></p>
+{
+  tab === "content" ? (
+    <ContentTab view={v} base={base} api={api} query={query} offset={offset} />
+  ) : tab === "conversions" ? (
+    <Conversions
+      integrationsHref={integrationsHref}
+      pagesHref={insightHref.pages}
+    />
+  ) : tab === "technical" ? (
+    <Technical
+      view={v}
+      slug={slug}
+      now={now}
+      pageHref={pageHref}
+      integrationsHref={integrationsHref}
+      checkAction={checkAttributes}
+      query={query}
+    />
+  ) : tab === "pages" ? (
+    <PageTable
+      rows={rows}
+      compact={false}
+      gap={gap}
+      partial={v.next_page_offset !== null}
+      pagesHref={insightHref.pages}
+      integrationsHref={integrationsHref}
+      prevHref={offset > 0 ? pagerHref(Math.max(0, offset - 50)) : null}
+      nextHref={
+        v.next_page_offset !== null ? pagerHref(v.next_page_offset) : null
+      }
+      checkAction={checkAttributes}
+    />
+  ) : (
+    <Fragment>
+      <MetricStrip items={overviewTiles(v, now)} columns={5} />
+      <section class="panel contextual" data-website-insight={insight.reason}>
+        <SectionHeading>
+          <Fragment slot="title">What needs attention</Fragment>
+        </SectionHeading>
+        <PerformanceInsight
+          title={insight.title}
+          detail={insight.detail}
+          action={
+            insight.action.target === "check"
+              ? undefined
+              : {
+                  label: insight.action.label,
+                  href: insightHref[insight.action.target],
+                }
+          }
+          button={
+            insight.action.target === "check" && checkAttributes
+              ? { label: insight.action.label, attributes: checkAttributes }
+              : undefined
+          }
+        />
       </section>
-    </>
+      <PageTable
+        rows={rows}
+        compact
+        gap={gap}
+        partial={v.next_page_offset !== null}
+        pagesHref={insightHref.pages}
+        integrationsHref={integrationsHref}
+        prevHref={null}
+        nextHref={null}
+        checkAction={checkAttributes}
+      />
+      <section class="panel" data-site-changes>
+        <SectionHeading>
+          <Fragment slot="title">
+            Proposed site changes <span class="count">{changes.length}</span>
+          </Fragment>
+        </SectionHeading>
+        {changes.length ? (
+          changes.map((change) => <SiteChangeRow change={change} />)
+        ) : (
+          <EmptyState title="No proposed changes">
+            When a finding can be fixed on the site, the proposed change appears
+            here for approval.
+          </EmptyState>
+        )}
+        {v.next_opportunity_offset !== null && (
+          <div class="rowactions pager">
+            <a
+              class="control"
+              href={`?${query}&offset=${v.next_opportunity_offset}`}
+            >
+              More proposed changes
+            </a>
+          </div>
+        )}
+      </section>
+    </Fragment>
   )
 }
-{
-  offset > 0 && (
-    <a href={`?${query}&offset=${Math.max(0, offset - 50)}`}>Previous page</a>
-  )
-}{next !== null && <a href={`?${query}&offset=${next}`}>Next page</a>}
-<p role="status" aria-live="polite" data-content-status></p>
+<WebsiteDetails details={details} integrationsHref={integrationsHref} />
 <script>
-  import "../../lib/content-actions";
+  import "../../lib/website-actions";
 </script>

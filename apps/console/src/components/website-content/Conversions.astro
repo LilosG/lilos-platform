@@ -1,0 +1,27 @@
+---
+import MetricStrip from "../ui/MetricStrip.astro";
+import SectionHeading from "../ui/SectionHeading.astro";
+import EmptyState from "../ui/EmptyState.astro";
+import { conversionTiles } from "../../lib/website-view";
+interface Props {
+  integrationsHref: string;
+  pagesHref: string;
+}
+const { integrationsHref, pagesHref } = Astro.props;
+---
+
+<MetricStrip items={conversionTiles()} columns={3} />
+<section class="panel" data-website-conversions>
+  <SectionHeading>
+    <Fragment slot="title">Website conversion paths</Fragment>
+  </SectionHeading>
+  <EmptyState title="Conversion paths are not tracked yet">
+    Nothing here is estimated. Connect Analytics and define the key events that
+    matter, such as a booking, a call or a form, to see how visitors move from a
+    page to an action.
+    <a slot="action" class="control primary" href={integrationsHref}>
+      Connect Analytics
+    </a>
+    <a slot="action" class="control" href={pagesHref}>Inspect page evidence</a>
+  </EmptyState>
+</section>

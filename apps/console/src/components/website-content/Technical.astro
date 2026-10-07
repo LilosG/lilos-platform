@@ -1,0 +1,94 @@
+---
+import type { WebsiteView } from "../../adapters/website-content";
+import {
+  findingGroups,
+  pageGap,
+  siteChanges,
+  technicalTiles,
+} from "../../lib/website-view";
+import MetricStrip from "../ui/MetricStrip.astro";
+import SectionHeading from "../ui/SectionHeading.astro";
+import EmptyState from "../ui/EmptyState.astro";
+import TechnicalFindings from "./TechnicalFindings.astro";
+import SiteChangeRow from "./SiteChangeRow.astro";
+interface Props {
+  view: WebsiteView;
+  slug: string;
+  now: Date;
+  pageHref: (websiteId: string, pageId: string) => string;
+  integrationsHref: string;
+  checkAction: Record<string, string | undefined> | null;
+  query: string;
+}
+const { view, slug, now, pageHref, integrationsHref, checkAction, query } =
+  Astro.props;
+const changes = siteChanges(view.opportunities, slug, now);
+const groups = findingGroups(view, changes, pageHref);
+const gap = pageGap(view);
+const empty =
+  gap === "not_checked" || gap === "no_website"
+    ? ("no_pages" as const)
+    : gap === null && groups.length === 0
+      ? ("clean" as const)
+      : null;
+---
+
+<MetricStrip items={technicalTiles(view, now)} columns={4} />
+{
+  gap === "no_access" || gap === "unavailable" ? (
+    <section class="panel">
+      <SectionHeading>
+        <Fragment slot="title">Technical findings</Fragment>
+      </SectionHeading>
+      <EmptyState
+        title={
+          gap === "no_access"
+            ? "You do not have access to page data"
+            : "Page data could not be read"
+        }
+      >
+        {gap === "no_access"
+          ? "Ask an administrator for access to website data."
+          : "Refresh in a moment. Nothing is estimated in its place."}
+        <a slot="action" class="control" href={integrationsHref}>
+          Open Integrations
+        </a>
+      </EmptyState>
+    </section>
+  ) : (
+    <TechnicalFindings
+      groups={groups}
+      empty={empty}
+      pagesChecked={view.pages.length}
+      integrationsHref={integrationsHref}
+      checkAction={checkAction}
+    />
+  )
+}
+<section class="panel" data-site-changes>
+  <SectionHeading>
+    <Fragment slot="title">Proposed site changes</Fragment>
+  </SectionHeading>
+  {
+    changes.length ? (
+      changes.map((change) => <SiteChangeRow change={change} />)
+    ) : (
+      <EmptyState title="No proposed changes">
+        When a finding can be fixed on the site, the proposed change appears
+        here for approval.
+      </EmptyState>
+    )
+  }
+  {
+    view.next_opportunity_offset !== null && (
+      <div class="rowactions pager">
+        <a
+          class="control"
+          href={`?${query}&offset=${view.next_opportunity_offset}`}
+        >
+          More proposed changes
+        </a>
+      </div>
+    )
+  }
+</section>

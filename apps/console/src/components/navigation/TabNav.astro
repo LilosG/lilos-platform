@@ -1,0 +1,21 @@
+---
+interface Props {
+  label: string;
+  tabs: readonly { label: string; href: string; current: boolean }[];
+}
+const { label, tabs } = Astro.props;
+---
+
+<nav class="sectiontabs" aria-label={label}>
+  {
+    tabs.map((tab) => (
+      <a
+        href={tab.href}
+        class:list={{ active: tab.current }}
+        aria-current={tab.current ? "page" : undefined}
+      >
+        {tab.label}
+      </a>
+    ))
+  }
+</nav>
