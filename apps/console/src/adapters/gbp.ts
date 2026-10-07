@@ -112,6 +112,9 @@ const hoursRow = z.object({
   periods: z.array(z.object({ opens: z.string(), closes: z.string() })),
   source: z.string(),
   status: z.string(),
+  /** Why the last publish to Google did not finish; a typed code, never shown as text. */
+  safe_error_code: z.string().nullable(),
+  verified_at: z.string().nullable(),
 });
 export type GbpSpecialHours = z.infer<typeof hoursRow>;
 export const adaptSpecialHours = (payload: unknown): GbpSpecialHours[] =>

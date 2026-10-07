@@ -33,11 +33,13 @@ const { rows, canPropose, canApprove, verifyHref } = Astro.props;
   </SectionHeading>
   {
     !canApprove &&
-      rows.some((row) => row.chip.label === "Awaiting approval") && (
+      rows.some(
+        (row) => row.chip.label === "Awaiting approval" || row.retryable,
+      ) && (
         <div class="insight">
-          Approving needs a verified authenticator.{" "}
+          Approving and publishing need a verified authenticator.{" "}
           <a class="link" href={verifyHref}>
-            Verify to approve
+            Verify to continue
           </a>
         </div>
       )
@@ -49,6 +51,8 @@ const { rows, canPropose, canApprove, verifyHref } = Astro.props;
           <div>
             <b>{row.date}</b>
             <small>{row.times}</small>
+            {row.note && <small>{row.note}</small>}
+            {row.nextStep && <small>{row.nextStep}</small>}
           </div>
           <div class="rowactions">
             {row.closed && <StatusBadge text="Closed" tone="neutral" />}
@@ -60,7 +64,11 @@ const { rows, canPropose, canApprove, verifyHref } = Astro.props;
                 data-gbp-action={`hours-${action}`}
                 data-id={row.id}
               >
-                {action === "approve" ? "Approve" : "Reject"}
+                {action === "approve"
+                  ? "Approve"
+                  : action === "retry"
+                    ? "Try again"
+                    : "Reject"}
               </button>
             ))}
           </div>

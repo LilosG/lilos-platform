@@ -9,6 +9,8 @@ import type {
 import type { ProfileView } from "../adapters/local-search";
 import {
   approvalChip,
+  hoursChips,
+  hoursState,
   postChips,
   postState,
   type Chip,
@@ -348,38 +350,90 @@ export interface HoursRow {
   id: string;
   date: string;
   times: string;
-  /** Closed all day: the list shows a "Closed" chip beside the approval state. */
+  /** Closed all day: the list shows a "Closed" chip beside the publishing state. */
   closed: boolean;
   chip: Chip;
-  actions: ("approve" | "reject")[];
+  /** When the date was confirmed on Google; empty until it is. */
+  note: string;
+  /** What happened and what to do next, only for a date that needs attention. */
+  nextStep: string;
+  /** A person with a verified authenticator could send this date to Google again. */
+  retryable: boolean;
+  actions: ("approve" | "reject" | "retry")[];
 }
 const times = (periods: GbpSpecialHours["periods"]) =>
   periods
     .map((p) => `${clockText(p.opens)} – ${clockText(p.closes)}`)
     .join(", ");
+const TRY_AGAIN = "Try again, and contact support if it keeps happening.";
+// Why a date did not reach Google, by typed code, with the action that fixes it.
+const hoursNextStep: Record<string, string> = {
+  PROVIDER_WRITES_DISABLED:
+    "Publishing to Google is paused. Try again once it is back on.",
+  WRITE_NOT_ENABLED:
+    "Editing is not turned on for this location. Turn it on in Integrations, then try again.",
+  NO_CONNECTED_INTEGRATION:
+    "Google is not connected. Reconnect it in Integrations, then try again.",
+  TOKEN_RESOLUTION_FAILED:
+    "The Google connection could not be reached. Try again in a moment.",
+  PROVIDER_READ_FAILED:
+    "Google could not be reached, so nothing was changed. Try again in a moment.",
+  PROVIDER_WRITE_AMBIGUOUS:
+    "We could not confirm what Google now shows. Try again to check and finish publishing.",
+  VERIFICATION_REREAD_FAILED:
+    "We sent these hours but could not confirm them. Try again to check.",
+  VERIFICATION_CONTENT_MISMATCH:
+    "Google is not showing these hours yet. Try again to check and finish publishing.",
+  SERVICE_DATE_PASSED:
+    "This date passed before it was sent, so nothing changed on Google. Add it again if it still matters.",
+};
+// Google refusing a request carries its HTTP status in the typed code, e.g. PROVIDER_REJECTED_400.
+const REJECTED = /^PROVIDER_REJECTED_\d{3}$/;
+const nextStepFor = (code: string | null) =>
+  code && hoursNextStep[code]
+    ? hoursNextStep[code]
+    : code && REJECTED.test(code)
+      ? "Google did not accept these hours. Check the date and times, then try again."
+      : `Something went wrong sending these hours to Google. ${TRY_AGAIN}`;
 export function hoursRows(
   items: GbpSpecialHours[],
   canApprove: boolean,
 ): HoursRow[] {
-  return [...items]
+  return items
+    .filter((item) => item.status !== "superseded")
     .sort((a, b) => a.service_date.localeCompare(b.service_date))
-    .map((item) => ({
-      id: item.id,
-      date: new Intl.DateTimeFormat("en-US", {
-        timeZone: "UTC",
-        weekday: "long",
-        month: "long",
-        day: "numeric",
-        year: "numeric",
-      }).format(new Date(`${item.service_date}T00:00:00Z`)),
-      times: item.closed ? "Closed all day" : times(item.periods),
-      closed: item.closed,
-      chip: approvalChip(item.status),
-      actions:
-        item.status === "awaiting_approval" && canApprove
-          ? ["approve", "reject"]
-          : [],
-    }));
+    .map((item) => {
+      const state = hoursState(item.status);
+      const attention = state === "needs_attention";
+      // A passed date cannot be sent, so there is nothing to retry; the next step says why.
+      const retryable =
+        attention && item.safe_error_code !== "SERVICE_DATE_PASSED";
+      return {
+        id: item.id,
+        date: new Intl.DateTimeFormat("en-US", {
+          timeZone: "UTC",
+          weekday: "long",
+          month: "long",
+          day: "numeric",
+          year: "numeric",
+        }).format(new Date(`${item.service_date}T00:00:00Z`)),
+        times: item.closed ? "Closed all day" : times(item.periods),
+        closed: item.closed,
+        chip: hoursChips[state],
+        note:
+          state === "live" && item.verified_at
+            ? `Confirmed on Google ${dateText(item.verified_at)}`
+            : "",
+        nextStep: attention ? nextStepFor(item.safe_error_code) : "",
+        retryable,
+        actions:
+          item.status === "awaiting_approval" && canApprove
+            ? ["approve", "reject"]
+            : retryable && canApprove
+              ? ["retry"]
+              : [],
+      };
+    });
 }
 const fieldLabel: Record<string, string> = {
   title: "Business name",

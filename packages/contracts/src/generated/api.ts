@@ -3093,6 +3093,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/organizations/{organization_id}/locations/{location_id}/gbp/operations/special-hours/{special_hours_id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Retry Special Hours */
+        post: operations["retry_special_hours_api_v1_organizations__organization_id__locations__location_id__gbp_operations_special_hours__special_hours_id__retry_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/organizations/{organization_id}/locations/{location_id}/gbp/publications": {
         parameters: {
             query?: never;
@@ -10377,6 +10394,11 @@ export interface components {
             service_date: string;
             /** Source */
             source: string;
+        };
+        /** SpecialHoursRetry */
+        SpecialHoursRetry: {
+            /** Idempotency Key */
+            idempotency_key: string;
         };
         /** StatusEvent */
         StatusEvent: {
@@ -17737,6 +17759,45 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["ChangeSetDecision"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    retry_special_hours_api_v1_organizations__organization_id__locations__location_id__gbp_operations_special_hours__special_hours_id__retry_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organization_id: string;
+                location_id: string;
+                special_hours_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SpecialHoursRetry"];
             };
         };
         responses: {

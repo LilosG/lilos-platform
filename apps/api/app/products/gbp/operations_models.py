@@ -115,7 +115,57 @@ class GBPSpecialHours(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         Boolean, nullable=False, default=False, server_default=text("false")
     )
     source: Mapped[str] = mapped_column(String(64), nullable=False)
+    # awaiting_approval, rejected, superseded (a newer revision of the date was approved),
+    # publishing, published, failed, reconciliation_required.
     status: Mapped[str] = mapped_column(String(24), nullable=False)
+    # The latest publication that carried this date. Not a foreign key: migration 20260803_0011
+    # builds this table from the live model before the publications table exists.
+    publication_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), nullable=True)
+    safe_error_code: Mapped[str | None] = mapped_column(String(64))
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class GBPSpecialHoursPublication(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """One write of a location's whole special-hours list to Google.
+
+    Google replaces the entire list on every patch, so a publication is never about one date:
+    it carries the full list that was sent (`sent_periods`) so what executed is on record.
+    """
+
+    __tablename__ = "gbp_special_hours_publications"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["organization_id", "gbp_location_id"],
+            ["gbp_locations.organization_id", "gbp_locations.id"],
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "workflow_run_id"],
+            ["workflow_runs.organization_id", "workflow_runs.id"],
+            ondelete="RESTRICT",
+        ),
+        UniqueConstraint(
+            "organization_id",
+            "idempotency_key",
+            name="uq_gbp_special_hours_publication_idempotency",
+        ),
+        UniqueConstraint("workflow_run_id", name="uq_gbp_special_hours_publication_run"),
+        CheckConstraint(
+            "status IN ('reserved','dispatched','verified','failed','reconciliation_required')",
+            name="status",
+        ),
+    )
+    organization_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    )
+    gbp_location_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    workflow_run_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    sent_periods: Mapped[list[object] | None] = mapped_column(JSONB)
+    safe_error_code: Mapped[str | None] = mapped_column(String(64))
+    dispatched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class GBPMedia(UUIDPrimaryKeyMixin, TimestampMixin, Base):

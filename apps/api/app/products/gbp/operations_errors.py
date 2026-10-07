@@ -44,6 +44,16 @@ class GBPChangeSetNotDecidableError(ConflictError):
     public_message = "This change set is not in a state that can be decided."
 
 
+class GBPSpecialHoursNotDecidableError(ConflictError):
+    code = "GBP_SPECIAL_HOURS_NOT_DECIDABLE"
+    public_message = "These special hours were already decided."
+
+
+class GBPSpecialHoursNotRetryableError(ConflictError):
+    code = "GBP_SPECIAL_HOURS_NOT_RETRYABLE"
+    public_message = "These special hours are not waiting on a failed or unconfirmed publish."
+
+
 class GBPSpecialHoursNotFoundError(NotFoundError):
     code = "GBP_SPECIAL_HOURS_NOT_FOUND"
     public_message = "The requested special hours revision was not found."

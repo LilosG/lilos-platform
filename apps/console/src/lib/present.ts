@@ -43,6 +43,10 @@ export function show(metric: MetricValue): Shown {
   };
 }
 const workflowText: Record<string, { noun: string; done: string }> = {
+  "gbp.publish_special_hours": {
+    noun: "Special hours publishing",
+    done: "Published special hours to Google",
+  },
   "gbp.publish_post": {
     noun: "Google post publishing",
     done: "Published a Google post",

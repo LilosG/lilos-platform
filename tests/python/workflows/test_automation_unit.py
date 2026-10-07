@@ -98,6 +98,7 @@ def test_canonical_workflow_types_registered() -> None:
         "gbp.generate_post",
         "gbp.publish_change",
         "gbp.publish_post",
+        "gbp.publish_special_hours",
         "gbp.sync",
         "gbp.sync_performance",
         "gbp.upload_media",

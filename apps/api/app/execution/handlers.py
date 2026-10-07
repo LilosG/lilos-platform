@@ -490,6 +490,36 @@ async def _handle_gbp_publish_post(
 
 
 # ---------------------------------------------------------------------------
+# GBP publish-special-hours handler
+# ---------------------------------------------------------------------------
+
+
+async def _handle_gbp_publish_special_hours(
+    session: AsyncSession,
+    *,
+    organization_id: UUID,
+    location_id: UUID | None,
+    input_document: dict[str, Any],
+    correlation_id: str,
+    workflow_run_id: UUID,
+) -> JobOutcome:
+    """Execute the canonical governed GBP special-hours publisher."""
+    from apps.api.app.products.gbp.special_hours_publish import handle_gbp_publish_special_hours
+
+    return await handle_gbp_publish_special_hours(
+        session,
+        organization_id=organization_id,
+        location_id=location_id,
+        input_document=input_document,
+        correlation_id=correlation_id,
+        workflow_run_id=workflow_run_id,
+        adapter_factory=_adapter_factory,
+        token_resolver=_token_resolver,
+        provider_writes_enabled=_google_writes_enabled,
+    )
+
+
+# ---------------------------------------------------------------------------
 # SEO crawl handler
 # ---------------------------------------------------------------------------
 
@@ -1775,6 +1805,7 @@ def _register_all() -> None:
     register_workflow_handler("gbp.publish_change", _handle_gbp_publish_change)
     register_workflow_handler("gbp.publish_post", _handle_gbp_publish_post)
     register_workflow_handler("gbp.upload_media", _handle_gbp_upload_media)
+    register_workflow_handler("gbp.publish_special_hours", _handle_gbp_publish_special_hours)
     register_workflow_handler("content.publish", _handle_content_publish)
     register_workflow_handler("content.draft_revision", _handle_content_draft_revision)
     register_workflow_handler("reviews.publish_response", _handle_reviews_publish_response)

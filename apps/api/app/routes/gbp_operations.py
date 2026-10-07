@@ -35,6 +35,7 @@ from apps.api.app.products.gbp.operations_contracts import (
     PostPublishRequest,
     PostRevisionCreate,
     SpecialHoursPropose,
+    SpecialHoursRetry,
     SuspensionCaseReport,
 )
 from apps.api.app.products.gbp.operations_errors import GBPLocationNotFoundError
@@ -141,6 +142,8 @@ def special_hours_row(item: GBPSpecialHours) -> dict[str, object]:
         "closed": item.closed,
         "source": item.source,
         "status": item.status,
+        "safe_error_code": item.safe_error_code,
+        "verified_at": item.verified_at,
     }
 
 
@@ -425,6 +428,34 @@ async def decide_special_hours(
         special_hours_id,
         command.approve,
         principal.platform_user_id,
+        correlation_id=request_correlation_id(request),
+    )
+    return {"data": special_hours_row(item), "meta": meta(request)}
+
+
+@router.post(
+    "/special-hours/{special_hours_id}/retry",
+    dependencies=[Depends(no_store)],
+)
+async def retry_special_hours(
+    request: Request,
+    organization_id: UUID,
+    location_id: UUID,
+    special_hours_id: UUID,
+    command: SpecialHoursRetry,
+    session: Session,
+    principal: Authenticated,
+    _: Annotated[AuthorizationDecision, policy("gbp.publish", True)],
+) -> dict[str, object]:
+    await require_child_location_scope(
+        session, organization_id, location_id, GBPSpecialHours, special_hours_id
+    )
+    item = await service.retry_special_hours_publication(
+        session,
+        organization_id,
+        special_hours_id,
+        command.idempotency_key,
+        actor_id=principal.platform_user_id,
         correlation_id=request_correlation_id(request),
     )
     return {"data": special_hours_row(item), "meta": meta(request)}

@@ -432,19 +432,37 @@ export function reset() {
     status,
     verified_at,
   }));
+  // One date per state the list can show; the codes are the typed ones the API records.
   state.hours = [
-    ["2026-11-26", "11:00", "15:00", "awaiting_approval"],
-    ["2026-12-25", null, null, "approved"],
-    ["2027-01-01", "16:00", "23:00", "approved"],
-  ].map(([service_date, opens, closes, status], i) => ({
-    id: uuid(70 + i),
-    service_date,
-    revision: 1,
-    closed: opens === null,
-    periods: opens === null ? [] : [{ opens, closes }],
-    source: "console",
-    status,
-  }));
+    ["2026-11-26", "11:00", "15:00", "awaiting_approval", null, null],
+    ["2026-12-25", null, null, "published", null, "2026-10-02T15:30:00Z"],
+    ["2026-12-28", "16:00", "23:00", "approved", null, null],
+    ["2027-01-01", "16:00", "23:00", "failed", "WRITE_NOT_ENABLED", null],
+    [
+      "2027-01-02",
+      "10:00",
+      "14:00",
+      "reconciliation_required",
+      "VERIFICATION_CONTENT_MISMATCH",
+      null,
+    ],
+    ["2027-01-03", "10:00", "14:00", "superseded", null, null],
+  ].map(
+    (
+      [service_date, opens, closes, status, safe_error_code, verified_at],
+      i,
+    ) => ({
+      id: uuid(70 + i),
+      service_date,
+      revision: 1,
+      closed: opens === null,
+      periods: opens === null ? [] : [{ opens, closes }],
+      source: "console",
+      status,
+      safe_error_code,
+      verified_at,
+    }),
+  );
   state.changes = [
     {
       id: uuid(80),
@@ -646,12 +664,22 @@ export function handle(path, method, parsed, url, org) {
       periods: parsed.periods,
       source: parsed.source,
       status: "awaiting_approval",
+      safe_error_code: null,
+      verified_at: null,
     };
     state.hours.push(row);
     return ok({ data: row }, 201);
   }
   if ((m = rest.match(/^special-hours\/([^/]+)\/decision$/)))
     return decide(state.hours, m[1], parsed.approve);
+  if ((m = rest.match(/^special-hours\/([^/]+)\/retry$/))) {
+    const item = state.hours.find((x) => x.id === m[1]);
+    if (item) {
+      item.status = "approved";
+      item.safe_error_code = null;
+    }
+    return ok({ data: item ?? {} });
+  }
   if (rest.endsWith("/change-sets")) {
     const row = {
       id: seq(),
