@@ -94,6 +94,7 @@ def test_canonical_workflow_types_registered() -> None:
         "agent.reviews",
         "agent.seo",
         "content.draft_revision",
+        "content.compose",
         "content.publish",
         "gbp.generate_post",
         "gbp.publish_change",
