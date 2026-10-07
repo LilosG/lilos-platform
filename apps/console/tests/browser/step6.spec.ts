@@ -196,7 +196,11 @@ test("the response dialog drafts, edits, approves and publishes in the reference
   await expect(dialog.getByLabel("Edit the response")).toHaveValue(
     "Thank you for visiting.",
   );
-  await expect(dialog.getByLabel(/Business name/)).toBeVisible();
+  await expect(dialog.getByText("Facts this response may use")).toHaveCount(0);
+  await expect(dialog.getByRole("checkbox")).toHaveCount(0);
+  await expect(
+    dialog.getByRole("button", { name: "Generate a response" }),
+  ).toBeEnabled();
   await noSystemText(page);
   await clean(page);
 });
