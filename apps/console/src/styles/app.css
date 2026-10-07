@@ -463,6 +463,19 @@ td {
   padding: 16px 18px;
   border-bottom: 1px solid #edf0ee;
 }
+/* Nine columns fit the panel at desktop width: tighter cell padding and wrapping notes. */
+@media (min-width: 1200px) {
+  .portfoliotable th,
+  .portfoliotable td {
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+  .portfoliotable td:first-child .sub,
+  .portfoliotable td:nth-child(n + 8) .sub,
+  .portfoliotable td:last-child b {
+    white-space: normal;
+  }
+}
 tbody tr:hover {
   background: #f7faf7;
 }
