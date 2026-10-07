@@ -15,18 +15,20 @@ test("Website five tabs, page evidence, editor and accessibility", async ({
   page.on("pageerror", (e) => errors.push(e.message));
   await login(page);
   await expect(
-    page.getByRole("heading", { name: "Website overview", exact: true }),
+    page.getByRole("heading", { name: "Website & Content", level: 1 }),
   ).toBeVisible();
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
   await page.getByRole("link", { name: "Pages", exact: true }).click();
   await page
-    .getByRole("link", { name: "Inspect page", exact: true })
+    .locator("[data-page-row]")
+    .first()
+    .getByRole("link")
     .first()
     .click();
-  await expect(
-    page.getByRole("heading", { name: "Page repository mapping" }),
-  ).toBeVisible();
-  await expect(page.getByText(/SITE_MAPPING_REQUIRED/)).toBeVisible();
+  await expect(page.locator("[data-page-mapping] .badge")).toHaveText(
+    "Repository not linked",
+  );
+  await expect(page.getByText(/SITE_MAPPING_REQUIRED/)).toHaveCount(0);
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
   await page.goto(base + "technical/");
   await expect(
@@ -34,7 +36,7 @@ test("Website five tabs, page evidence, editor and accessibility", async ({
   ).toBeVisible();
   await page.getByRole("link", { name: "Conversions", exact: true }).click();
   await expect(
-    page.getByRole("heading", { name: "Conversion paths unavailable" }),
+    page.getByRole("heading", { name: "Conversion paths are not tracked yet" }),
   ).toBeVisible();
   await page.getByRole("link", { name: "Content", exact: true }).click();
   await page.getByLabel("Title", { exact: true }).fill("Synthetic new item");

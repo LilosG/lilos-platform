@@ -42,6 +42,7 @@ import type { GbpPerformanceView } from "../../../adapters/gbp";
 import type { GbpTabData } from "../../../lib/gbp-view";
 import { loadGbpOverview, loadGbpTab } from "../../../server/gbp-loader";
 import ErrorState from "../../../components/ui/ErrorState.astro";
+import PageHeader from "../../../components/ui/PageHeader.astro";
 import DialogFrame from "../../../components/ui/DialogFrame.astro";
 import AppLayout from "../../../layouts/AppLayout.astro";
 import Opportunities from "../../../components/opportunities/Opportunities.astro";
@@ -82,6 +83,7 @@ let leads: LeadsView | undefined;
 let leadDetail: LeadDetailView | undefined;
 let website: WebsiteView | undefined;
 let websitePage: WebsitePageView | undefined;
+let websitePageSite: string | null = null;
 let contentDetail: ContentView | undefined;
 let reviews: ReviewsView | undefined;
 let reviewDetail: ReviewDetailView | undefined;
@@ -185,7 +187,7 @@ try {
       );
     }
   } else if (section === "website-content") {
-    if (segments.length === 4 && tab === "pages")
+    if (segments.length === 4 && tab === "pages") {
       websitePage = adaptWebsitePage(
         await read(
           Astro.locals,
@@ -196,7 +198,16 @@ try {
         segments[2],
         segments[3],
       );
-    else if (segments.length === 3 && tab === "content")
+      websitePageSite = await read<{
+        websites?: { id: string; name: string }[];
+      }>(Astro.locals, scope + `website-content/?website_id=${segments[2]}`)
+        .then(
+          (payload) =>
+            payload.websites?.find((site) => site.id === segments[2])?.name ??
+            null,
+        )
+        .catch(() => null);
+    } else if (segments.length === 3 && tab === "content")
       contentDetail = adaptContent(
         await read(
           Astro.locals,
@@ -429,6 +440,8 @@ const title =
           slot="body"
           view={websitePage}
           slug={client.organization_slug}
+          siteName={websitePageSite}
+          now={new Date()}
         />
       </DialogFrame>
     ) : reviewDetail ? (
@@ -477,7 +490,7 @@ const title =
       </DialogFrame>
     ) : (
       <Fragment>
-        {!opportunities && !localSearch && !reviews && (
+        {!opportunities && !localSearch && !reviews && !website && (
           <div class="pagehead">
             <div>
               <>
@@ -487,7 +500,26 @@ const title =
             </div>
           </div>
         )}
-        {error ? (
+        {error && section === "website-content" ? (
+          <Fragment>
+            <PageHeader
+              title="Website & Content"
+              subtitle={client.organization_name}
+              client
+            />
+            <ErrorState title="Website data could not be loaded">
+              We could not read this website's data, so nothing is shown rather
+              than a guess.
+              <a
+                slot="action"
+                class="control primary"
+                href={Astro.url.pathname + Astro.url.search}
+              >
+                Try again
+              </a>
+            </ErrorState>
+          </Fragment>
+        ) : error ? (
           <ErrorState title="This page could not be loaded">{error}</ErrorState>
         ) : badReviewFilter ? (
           <ErrorState title="Invalid filter">
@@ -506,8 +538,10 @@ const title =
           <Website
             view={website}
             slug={client.organization_slug}
+            clientName={client.organization_name}
             tab={tab}
             offset={offset}
+            now={new Date()}
           />
         ) : reviews ? (
           <Reviews

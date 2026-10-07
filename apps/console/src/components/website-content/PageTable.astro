@@ -1,0 +1,224 @@
+---
+import type { PageGap, PageRow } from "../../lib/website-view";
+import { PAGE_FILTERS, PAGE_SORTS } from "../../lib/website-view";
+import DataTable from "../ui/DataTable.astro";
+import SectionHeading from "../ui/SectionHeading.astro";
+import StatusBadge from "../ui/StatusBadge.astro";
+import EmptyState from "../ui/EmptyState.astro";
+interface Props {
+  rows: PageRow[];
+  /** The Overview shows the first few pages and a link; the Pages tab shows the table with its controls. */
+  compact: boolean;
+  gap: PageGap | null;
+  /** More pages exist beyond those loaded. */
+  partial: boolean;
+  pagesHref: string;
+  integrationsHref: string;
+  prevHref: string | null;
+  nextHref: string | null;
+  checkAction?: Record<string, string | undefined> | null;
+}
+const {
+  rows,
+  compact,
+  gap,
+  partial,
+  pagesHref,
+  integrationsHref,
+  prevHref,
+  nextHref,
+  checkAction,
+} = Astro.props;
+const shown = compact ? rows.slice(0, 6) : rows;
+---
+
+<section class="panel" data-page-table={compact ? undefined : "full"}>
+  <SectionHeading>
+    <Fragment slot="title">
+      {compact ? "Pages needing attention first" : "Website pages"}
+      {!gap && <span class="count">{rows.length}</span>}
+    </Fragment>
+    <Fragment slot="actions">
+      {
+        compact && !gap && (
+          <a class="link" href={pagesHref}>
+            All pages
+          </a>
+        )
+      }
+    </Fragment>
+  </SectionHeading>
+  {
+    gap ? (
+      <EmptyState
+        title={
+          gap === "no_website"
+            ? "No website to show"
+            : gap === "no_access"
+              ? "You do not have access to page data"
+              : gap === "unavailable"
+                ? "Page data could not be read"
+                : "No pages have been checked yet"
+        }
+      >
+        {gap === "no_website"
+          ? "Add the client's website in Integrations so its pages can be checked."
+          : gap === "no_access"
+            ? "Ask an administrator for access to website data."
+            : gap === "unavailable"
+              ? "Refresh in a moment. Nothing is estimated in its place."
+              : "Run a website check to list the pages search engines can reach."}
+        {gap === "not_checked" && checkAction ? (
+          <button
+            slot="action"
+            type="button"
+            class="control primary"
+            {...checkAction}
+          >
+            Run a website check
+          </button>
+        ) : (
+          <a slot="action" class="control primary" href={integrationsHref}>
+            Open Integrations
+          </a>
+        )}
+      </EmptyState>
+    ) : (
+      <Fragment>
+        {!compact && (
+          <Fragment>
+            <div class="toolbar">
+              <input
+                class="search"
+                type="search"
+                placeholder="Search pages by title or address…"
+                aria-label="Search pages"
+                data-page-search
+              />
+              <select aria-label="Sort pages" data-page-sort>
+                {PAGE_SORTS.map((sort) => (
+                  <option
+                    value={sort.key}
+                    disabled={sort.unavailable}
+                    selected={sort.key === "attention"}
+                  >
+                    {sort.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div class="chips">
+              {PAGE_FILTERS.map((filter) => (
+                <button
+                  type="button"
+                  class:list={["chip", { active: filter.key === "all" }]}
+                  data-page-filter={filter.key}
+                  disabled={filter.unavailable !== null}
+                  title={filter.unavailable ?? undefined}
+                >
+                  {filter.label}
+                </button>
+              ))}
+            </div>
+          </Fragment>
+        )}
+        <div
+          class="tablewrap pagetable"
+          tabindex="0"
+          role="region"
+          aria-label="Website pages"
+        >
+          <DataTable>
+            <thead>
+              <tr>
+                <th scope="col">Page</th>
+                <th scope="col">Status</th>
+                <th scope="col">Indexability</th>
+                <th scope="col">Quality</th>
+                <th scope="col">Findings</th>
+                <th scope="col">Last checked</th>
+                <th scope="col">
+                  <span class="sr-only">Open</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody data-page-rows>
+              <tr data-page-empty hidden>
+                <td colspan="7" class="empty">
+                  No pages match. Try another search or filter.
+                </td>
+              </tr>
+              {shown.map((row) => (
+                <tr
+                  class="clientrow"
+                  data-page-row
+                  data-row-href={row.href}
+                  data-search={row.search}
+                  data-name={row.label.toLowerCase()}
+                  data-index={row.indexKey}
+                  data-issues={String(row.hasIssues)}
+                  data-checked={String(row.checked)}
+                  data-observed={row.observedAt}
+                  data-attention={row.attention}
+                >
+                  <td>
+                    <a class="clientname" href={row.href}>
+                      <span>{row.label}</span>
+                    </a>
+                    <span class="sub">{row.path}</span>
+                  </td>
+                  <td>{row.httpText}</td>
+                  <td>
+                    <StatusBadge text={row.index.label} tone={row.index.tone} />
+                  </td>
+                  <td>
+                    <StatusBadge
+                      text={row.quality.label}
+                      tone={row.quality.tone}
+                    />
+                  </td>
+                  <td>{row.issuesText}</td>
+                  <td>{row.observedText}</td>
+                  <td>
+                    <a
+                      class="control"
+                      href={row.href}
+                      aria-label={`Open ${row.label}`}
+                    >
+                      Open
+                    </a>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </DataTable>
+        </div>
+        {!compact && (
+          <div class="tablefoot">
+            <span data-page-count>
+              {rows.length} of {rows.length} pages
+            </span>
+            {partial && (
+              <span>Search and filters cover the pages on this screen</span>
+            )}
+          </div>
+        )}
+        {(prevHref || nextHref) && !compact && (
+          <div class="rowactions pager">
+            {prevHref && (
+              <a class="control" href={prevHref}>
+                Previous pages
+              </a>
+            )}
+            {nextHref && (
+              <a class="control" href={nextHref}>
+                Next pages
+              </a>
+            )}
+          </div>
+        )}
+      </Fragment>
+    )
+  }
+</section>
+{!compact && !gap && <script>import "../../lib/page-table";</script>}

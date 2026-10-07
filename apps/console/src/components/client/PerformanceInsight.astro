@@ -1,0 +1,32 @@
+---
+interface Props {
+  title: string;
+  detail: string;
+  /** Where the insight leads; omitted when there is nowhere to go. */
+  action?: { label: string; href: string };
+  /** A button that runs the action instead of a link. */
+  button?: { label: string; attributes: Record<string, string | undefined> };
+}
+const { title, detail, action, button } = Astro.props;
+---
+
+<div class="listrow" data-performance-insight>
+  <div>
+    <h3>{title}</h3>
+    <p>{detail}</p>
+  </div>
+  {
+    action && (
+      <a class="link" href={action.href}>
+        {action.label}
+      </a>
+    )
+  }
+  {
+    button && (
+      <button type="button" class="control" {...button.attributes}>
+        {button.label}
+      </button>
+    )
+  }
+</div>

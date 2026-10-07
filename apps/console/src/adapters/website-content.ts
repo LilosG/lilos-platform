@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { components } from "@lilos/contracts/api";
 import { adaptLocalSearch, adaptPage } from "./local-search";
 import { adaptOpportunities } from "./opportunities";
+import type { OpportunityView } from "./opportunities";
 const text = z.string();
 const uuid = z.uuid();
 const nullable = text.nullable();
@@ -28,9 +29,16 @@ const requirements = z.object({
   requires_image_alt: z.boolean(),
   file_extensions: z.array(text),
 });
-export type WebsiteView = components["schemas"]["WebsiteWorkspace"];
+/** The opportunities are the adapter's checked rows, not the contract's looser copy. */
+export type WebsiteView = Omit<
+  components["schemas"]["WebsiteWorkspace"],
+  "opportunities"
+> & { opportunities: OpportunityView[] };
 export type ContentView = components["schemas"]["WebsiteContentDetail"];
-export type WebsitePageView = components["schemas"]["WebsitePageDetail"];
+export type WebsitePageView = Omit<
+  components["schemas"]["WebsitePageDetail"],
+  "opportunities"
+> & { opportunities: OpportunityView[] };
 export function adaptWebsite(
   payload: unknown,
   org: string,

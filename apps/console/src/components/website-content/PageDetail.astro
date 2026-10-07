@@ -1,50 +1,104 @@
 ---
 import type { WebsitePageView } from "../../adapters/website-content";
-import PageIntelligence from "../local-search/PageIntelligence.astro";
+import { pageDetail } from "../../lib/website-view";
+import StatusBadge from "../ui/StatusBadge.astro";
+import EmptyState from "../ui/EmptyState.astro";
+import SiteChangeRow from "./SiteChangeRow.astro";
 interface Props {
   view: WebsitePageView;
   slug: string;
+  siteName: string | null;
+  now: Date;
 }
-const { view: v, slug } = Astro.props;
+const { view: v, slug, siteName, now } = Astro.props;
+const d = pageDetail(v, siteName, slug, now);
+const integrations = `/clients/${slug}/integrations/`;
 ---
 
-<h1 id="website-page-detail-title">Website page</h1>
-<PageIntelligence view={v.evidence} slug={slug} />
-<section class="panel">
-  <h2>Page repository mapping</h2><p>
-    State: {v.mapping.state} · {v.mapping.code ?? "Configured"}
-  </p><p>
-    Repository: {v.mapping.repository ?? "Unavailable"} · Branch: {
-      v.mapping.base_branch ?? "Unavailable"
-    }
-  </p><dl>
-    {
-      Object.entries(v.mapping.fields).map(([field, path]) => (
-        <div class="listrow">
-          <>
-            <dt>{field}</dt>
-            <dd>{path}</dd>
-          </>
-        </div>
-      ))
-    }
-  </dl><p>
-    Mapping is configuration evidence. The canonical executor rechecks
-    repository values and the exact approved revision before writing.
-  </p>
-</section>
-<section class="panel">
-  <h2>Page opportunities</h2>{
-    v.opportunities.length ? (
-      v.opportunities.map((o) => (
-        <p>
-          <a href={`/clients/${slug}/opportunities/${o.source_id}/`}>
-            {o.source_type.replaceAll("_", " ")} · {o.status}
-          </a>
-        </p>
-      ))
-    ) : (
-      <p>No canonical opportunities linked to this page.</p>
-    )
+<div class="eyebrow">{d.site} · {d.path}</div>
+<h2 id="website-page-detail-title">{d.label}</h2>
+<p>
+  <StatusBadge text={d.index.label} tone={d.index.tone} />{" "}
+  <StatusBadge text={d.quality.label} tone={d.quality.tone} />
+</p>
+<div class="detailmetrics">
+  {
+    d.tiles.map((tile) => (
+      <div>
+        {tile.label}
+        <strong class:list={{ muted: tile.missing }}>{tile.value}</strong>
+      </div>
+    ))
   }
-</section>
+</div>
+<h3 class="subhead">Page evidence</h3>
+{
+  d.evidence.map((row) => (
+    <div class="listrow" data-evidence>
+      <div>
+        {row.name}
+        <small class:list={{ muted: row.missing }}>{row.value}</small>
+        {row.note && <small>{row.note}</small>}
+      </div>
+      <StatusBadge text={row.chip.label} tone={row.chip.tone} />
+    </div>
+  ))
+}
+<h3 class="subhead">Repository link</h3>
+<div class="listrow" data-page-mapping>
+  <div>
+    Website repository
+    <small>{d.mapping.explanation}</small>
+  </div>
+  <StatusBadge text={d.mapping.chip.label} tone={d.mapping.chip.tone} />
+</div>
+{
+  d.mapping.mapped ? (
+    <details class="disclosure">
+      <summary>Repository details</summary>
+      {d.mapping.repository && (
+        <div class="listrow">
+          <div>
+            Repository
+            <small>{d.mapping.repository}</small>
+          </div>
+        </div>
+      )}
+      {d.mapping.branch && (
+        <div class="listrow">
+          <div>
+            Branch
+            <small>{d.mapping.branch}</small>
+          </div>
+        </div>
+      )}
+      {d.mapping.fields.map((field) => (
+        <div class="listrow">
+          <div>
+            {field.label}
+            <small>{field.path}</small>
+          </div>
+        </div>
+      ))}
+    </details>
+  ) : (
+    <p>
+      <a class="control" href={integrations}>
+        Open Integrations
+      </a>
+    </p>
+  )
+}
+<h3 class="subhead">
+  Proposed changes <span class="count">{d.changes.length}</span>
+</h3>
+{
+  d.changes.length ? (
+    d.changes.map((change) => <SiteChangeRow change={change} />)
+  ) : (
+    <EmptyState title="No proposed changes for this page">
+      When a finding on this page can be fixed on the site, the proposed change
+      appears here for approval.
+    </EmptyState>
+  )
+}

@@ -142,6 +142,102 @@ const reviewScreens = [
     referenceRespond,
   ],
 ];
+// Step 5a: Website & Content. The reference's standard client stands for every tab; each console
+// screen is shown in the simulator scenario that exercises it.
+const site = "/clients/synthetic-alpha/website-content/";
+const referenceSite = "/clients/northline-electric/website-content/";
+const scenario = (mode) => () =>
+  fetch(`${beta}/test/website-scenario`, {
+    method: "POST",
+    body: JSON.stringify({ mode }),
+  });
+const openWebsiteDetails = async (page) => {
+  await page.getByRole("button", { name: /Website data status/ }).click();
+  await page.locator("dialog[open]").waitFor();
+};
+const referenceInspect = async (page) => {
+  await page.getByRole("button", { name: "Inspect" }).first().click();
+  await page.locator("dialog[open]").waitFor();
+};
+const websiteScreens = [
+  ["website-overview", "a", site, referenceSite, undefined, scenario("rich")],
+  [
+    "website-pages",
+    "a",
+    `${site}pages/`,
+    `${referenceSite}pages/`,
+    undefined,
+    scenario("rich"),
+  ],
+  [
+    "website-technical",
+    "a",
+    `${site}technical/`,
+    `${referenceSite}technical/`,
+    undefined,
+    scenario("rich"),
+  ],
+  [
+    "website-conversions",
+    "a",
+    `${site}conversions/`,
+    `${referenceSite}conversions/`,
+    undefined,
+    scenario("rich"),
+  ],
+  [
+    "website-page-detail",
+    "a",
+    `${site}pages/11111111-1111-4111-8111-111111111111/00000002-0000-4000-8000-000000000000/`,
+    `${referenceSite}pages/`,
+    undefined,
+    scenario("rich"),
+    referenceInspect,
+  ],
+  [
+    "website-page-detail-unlinked",
+    "a",
+    `${site}pages/11111111-1111-4111-8111-111111111111/00000002-0000-4000-8000-000000000000/`,
+    `${referenceSite}pages/`,
+    undefined,
+    scenario("clean"),
+    referenceInspect,
+  ],
+  [
+    "website-details",
+    "a",
+    site,
+    referenceSite,
+    openWebsiteDetails,
+    scenario("rich"),
+  ],
+  ["website-empty", "a", site, referenceSite, undefined, scenario("empty")],
+  [
+    "website-pages-empty",
+    "a",
+    `${site}pages/`,
+    `${referenceSite}pages/`,
+    undefined,
+    scenario("empty"),
+  ],
+  [
+    "website-not-connected",
+    "a",
+    site,
+    referenceSite,
+    undefined,
+    scenario("no_website"),
+  ],
+  [
+    "website-technical-clean",
+    "a",
+    `${site}technical/`,
+    `${referenceSite}technical/`,
+    undefined,
+    scenario("clean"),
+  ],
+  ["website-error", "a", site, referenceSite, undefined, scenario("error")],
+];
 // Dashboard GBP actions column: the platform administrator sees every client, so all three cell
 // states (trend, no previous period, not connected) are on screen.
 const dashboardScreens = [["dashboard-gbp-actions", "admin", "/", "/"]];
@@ -199,11 +295,13 @@ const side = async (browser, size, left, right) => {
 const activeScreens =
   stepName === "dashboard-gbp-actions"
     ? dashboardScreens
-    : stepName === "step-6"
-      ? reviewScreens
-      : stepName === "special-hours-publish"
-        ? screens.filter(([name]) => name === "special-hours-list")
-        : screens;
+    : stepName === "step-5a"
+      ? websiteScreens
+      : stepName === "step-6"
+        ? reviewScreens
+        : stepName === "special-hours-publish"
+          ? screens.filter(([name]) => name === "special-hours-list")
+          : screens;
 await mkdir(out, { recursive: true });
 const browser = await chromium.launch(
   process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE

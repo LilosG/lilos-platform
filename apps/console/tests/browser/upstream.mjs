@@ -14,11 +14,17 @@ const phase5 = JSON.parse(
 );
 const leadStates = new Map();
 let leadScenario = "inventory";
+let websiteMode = "default";
 const contentStates = new Map();
 const reviewStates = new Map();
 const growthStates = new Map();
 const contentOpportunityStates = new Map();
 import { createServer } from "node:http";
+import {
+  modes as websiteModes,
+  pageDetail as websitePageDetail,
+  workspace as websiteWorkspace,
+} from "./website-sim.mjs";
 import { commandCenter, liveChange, unified } from "./command-center-sim.mjs";
 import {
   handle as beta,
@@ -154,6 +160,11 @@ createServer(async (req, res) => {
   if (url.pathname === "/test/leads-scenario") {
     leadScenario = parsed.mode;
     leadStates.clear();
+    return reply({ ok: true });
+  }
+  if (url.pathname === "/test/website-scenario") {
+    if (!websiteModes.includes(parsed.mode)) return reply({ ok: false }, 400);
+    websiteMode = parsed.mode;
     return reply({ ok: true });
   }
   if (url.pathname === "/test/gbp-reset") {
@@ -388,6 +399,27 @@ createServer(async (req, res) => {
       return reply({ code: "AUTH_AAL2_REQUIRED" }, 403);
     leadStates.set(claims.sub, data);
     return reply({ data: { id: ids.next } }, 200);
+  }
+  if (path === "command-center/website-content" && websiteMode !== "default") {
+    const requested = url.searchParams.get("website_id") ?? undefined;
+    const data = websiteWorkspace(websiteMode, claims.sub, requested);
+    if (!data) return reply({ code: "INTERNAL" }, 500);
+    if (
+      requested &&
+      data.websites.length &&
+      !data.websites.some((w) => w.id === requested)
+    )
+      return reply({ code: "NOT_FOUND" }, 404);
+    return reply(data);
+  }
+  if (
+    path.startsWith("command-center/website-content/websites/") &&
+    websiteMode !== "default"
+  ) {
+    if (websiteMode === "error") return reply({ code: "INTERNAL" }, 500);
+    const [, , , site, , pageId] = path.split("/");
+    const data = websitePageDetail(websiteMode, claims.sub, site, pageId);
+    return data ? reply(data) : reply({ code: "NOT_FOUND" }, 404);
   }
   if (path === "command-center/website-content") {
     const data = structuredClone(phase4.workspace);

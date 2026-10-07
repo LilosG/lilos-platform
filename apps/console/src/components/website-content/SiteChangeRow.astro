@@ -1,25 +1,17 @@
 ---
+import type { SiteChange } from "../../lib/website-view";
+import StatusBadge from "../ui/StatusBadge.astro";
 interface Props {
-  opportunity: {
-    source_id: string;
-    source_type: string;
-    classification: string;
-    status: string;
-    priority: number | null;
-    observed_at: string;
-  };
-  slug: string;
+  change: SiteChange;
 }
-const { opportunity: o, slug } = Astro.props;
-const href = `/clients/${slug}/opportunities/${o.source_id}/`;
+const { change: c } = Astro.props;
 ---
 
-<tr class="opportunity-row"
-  ><td
-    ><a href={href}><b>{o.source_type.replaceAll("_", " ")}</b></a><span
-      class="sub">{o.classification} · {o.status}</span
-    ></td
-  ><td>{o.priority === null ? "Priority unavailable" : o.priority}</td><td
-    >{o.observed_at}</td
-  ><td><a class="control" href={href}>Details</a></td></tr
->
+<div class="listrow opportunitycard" data-site-change={c.id}>
+  <div>
+    <a class="link opportunity-activation" href={c.href}>{c.title}</a>
+    <small>{c.classification} · {c.status}</small>
+    <small>{c.next}</small>
+  </div>
+  <StatusBadge text={c.priority} />
+</div>

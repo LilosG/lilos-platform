@@ -1,0 +1,82 @@
+---
+import type { WebsiteDetails } from "../../lib/website-view";
+import StatusBadge from "../ui/StatusBadge.astro";
+import EmptyState from "../ui/EmptyState.astro";
+interface Props {
+  details: WebsiteDetails;
+  integrationsHref: string;
+}
+const { details, integrationsHref } = Astro.props;
+---
+
+<dialog
+  id="website-details"
+  aria-labelledby="website-details-title"
+  data-shell-dialog
+>
+  <div class="panelhead">
+    <span class="muted">Website & Content</span>
+    <button type="button" class="close" aria-label="Close details" data-close>
+      ×
+    </button>
+  </div>
+  <div class="body">
+    <h2 id="website-details-title">Website data</h2>
+    {
+      details.site && (
+        <div class="listrow">
+          <div>
+            {details.site.name}
+            <small>{details.site.origin}</small>
+          </div>
+        </div>
+      )
+    }
+    {
+      details.rows.map((row) => (
+        <div class="listrow">
+          <div>
+            {row.name}
+            <small>{row.note}</small>
+          </div>
+          <StatusBadge text={row.chip.label} tone={row.chip.tone} />
+        </div>
+      ))
+    }
+    <h3 class="subhead">Recent website checks</h3>
+    {
+      details.checks.length ? (
+        details.checks.map((check) => (
+          <div class="listrow">
+            <div>
+              {check.when}
+              {check.note && <small>{check.note}</small>}
+            </div>
+            <StatusBadge text={check.chip.label} tone={check.chip.tone} />
+          </div>
+        ))
+      ) : (
+        <EmptyState title="No checks yet">
+          Checks appear here once a website check has run.
+        </EmptyState>
+      )
+    }
+    {
+      details.notCollected.length > 0 && (
+        <Fragment>
+          <h3 class="subhead">Not collected yet</h3>
+          {details.notCollected.map((name) => (
+            <div class="listrow">
+              <div>{name}</div>
+              <StatusBadge text="Not tracked" tone="neutral" />
+            </div>
+          ))}
+        </Fragment>
+      )
+    }
+  </div>
+  <div class="dialogfoot">
+    <a class="control" href={integrationsHref}>Manage connections</a>
+    <button type="button" class="control" data-close>Close</button>
+  </div>
+</dialog>
