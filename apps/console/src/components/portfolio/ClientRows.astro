@@ -98,6 +98,23 @@ const trend = (delta: string | null) =>
         )}
       </td>
       <td>
+        <span class:list={{ muted: c.gbpActions.state !== "available" }}>
+          {c.gbpActions.text}
+        </span>
+        <span class="sub">
+          {c.gbpActionsDelta !== null ? (
+            <span class={trend(c.gbpActionsDelta)}>
+              {c.gbpActionsDelta.startsWith("−") ? "↘" : "↗"}{" "}
+              {c.gbpActionsDelta.replace(/^[+−]/, "")}
+            </span>
+          ) : c.gbpActions.state !== "available" ? (
+            c.gbpActions.note
+          ) : (
+            ""
+          )}
+        </span>
+      </td>
+      <td>
         <StatusBadge text={c.health} />
         <span class="sub">{c.healthSub}</span>
       </td>

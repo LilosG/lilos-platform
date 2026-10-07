@@ -32,6 +32,11 @@ test("Dashboard shows real states, never fixtures or invented zeros", async ({
   await expect(row.locator("td").nth(1)).toContainText("Not tracked");
   await expect(row.locator("td").nth(2)).toContainText("Not tracked");
   await expect(row.locator("td").nth(3)).toContainText("1,240");
+  await expect(
+    page.getByRole("columnheader", { name: "GBP actions" }),
+  ).toBeVisible();
+  await expect(row.locator("td").nth(6)).toContainText("698");
+  await expect(row.locator("td").nth(6)).toContainText("↗ 14%");
   await expect(page.locator("#rowcount")).toHaveText("1 of 1 clients");
   await clean(page);
 });
@@ -165,6 +170,11 @@ test("A client user sees only their organization; an administrator sees every cl
   const beta = page.locator("[data-client-row]", { hasText: "Synthetic Beta" });
   await expect(beta.locator("td").nth(4)).toContainText("0");
   await expect(beta.locator("td").nth(3)).toContainText("Not connected");
+  // GBP actions: available without a previous period shows no trend; not connected is a muted note, never 0.
+  await expect(beta.locator("td").nth(6)).toHaveText(/^\s*412\s*$/);
+  await expect(gamma.locator("td").nth(6)).toContainText("Not connected");
+  await expect(gamma.locator("td").nth(6)).not.toContainText(/\b0\b/);
+  await expect(gamma.locator("td").nth(6).locator(".muted")).toHaveCount(1);
   await page.goto("/clients/synthetic-gamma/");
   await expect(
     page.getByRole("heading", { name: "Synthetic Gamma", level: 1 }),

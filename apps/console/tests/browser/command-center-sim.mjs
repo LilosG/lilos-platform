@@ -67,7 +67,7 @@ function rows(ids) {
     },
     [ids.b]: {
       ...base(ids.b),
-      gbp_actions: metric("gbp", "available", 698, 610),
+      gbp_actions: metric("gbp", "available", 412, null),
       location: "San Diego, CA",
       category: "Bar",
       location_count: 2,
