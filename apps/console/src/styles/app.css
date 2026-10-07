@@ -2536,3 +2536,9 @@ details.activity summary {
     min-width: 180px;
   }
 }
+/* The composer's type chips wrap inside the dialog instead of scrolling off its edge. */
+.typechips .chips {
+  flex-wrap: wrap;
+  overflow: visible;
+  padding: 0;
+}
