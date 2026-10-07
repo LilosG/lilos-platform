@@ -16,10 +16,13 @@ from apps.api.app.authorization.dependencies import require_authorization
 from apps.api.app.database.session import get_database_session
 from apps.api.app.errors import request_correlation_id
 from apps.api.app.integrations.models import IntegrationConnection
+from apps.api.app.products.content.compose import ContentComposeService
 from apps.api.app.products.content.contracts import (
     AIDraftCreate,
     ApprovalDecision,
     BriefCreate,
+    ClaimConfirm,
+    ComposeCreate,
     GitHubConnectionCreate,
     ItemCreate,
     OpportunityCreate,
@@ -45,6 +48,7 @@ router = APIRouter(
     dependencies=[Depends(get_authenticated_principal)],
 )
 service = ContentService()
+compose_service = ContentComposeService(content=service)
 Session = Annotated[AsyncSession, Depends(get_database_session)]
 
 
@@ -337,6 +341,44 @@ async def create_opportunity(
         session, organization_id, command, correlation_id=request_correlation_id(request)
     )
     return {"data": opportunity_row(item), "meta": meta(request)}
+
+
+@router.post(
+    "/compose",
+    status_code=status.HTTP_202_ACCEPTED,
+    dependencies=[Depends(no_store)],
+    response_model=None,
+)
+async def compose(
+    request: Request,
+    organization_id: UUID,
+    command: ComposeCreate,
+    session: Session,
+    principal: Authenticated,
+    _: Annotated[AuthorizationDecision, policy("content.create")],
+) -> dict[str, object]:
+    """Write content from one plain prompt.
+
+    Reserves a placeholder item and starts the durable ``content.compose`` run; Hermes
+    resolves type, title, slug, target, audience and links in the worker. Repeating a
+    request with the same ``idempotency_key`` returns the same item and run.
+    """
+    item, run = await compose_service.start(
+        session,
+        organization_id,
+        command,
+        actor_id=principal.platform_user_id,
+        correlation_id=request_correlation_id(request),
+    )
+    return {
+        "data": {
+            "item_id": str(item.id),
+            "workflow_run_id": str(run.id),
+            "workflow_key": "content.compose",
+            "status": run.status,
+        },
+        "meta": meta(request),
+    }
 
 
 @router.post("/opportunities/{opportunity_id}/decision", dependencies=[Depends(no_store)])
@@ -643,6 +685,7 @@ async def ai_draft(
             "brief_id": str(command.brief_id),
             "idempotency_key": command.idempotency_key,
             "user_id": str(principal.platform_user_id) if principal.platform_user_id else None,
+            "instructions": command.instructions,
         },
         correlation_id=request_correlation_id(request),
         actor_id=principal.platform_user_id,
@@ -681,6 +724,33 @@ async def decide(
         expected_item_id=item_id,
     )
     return {"data": revision_row(item), "meta": meta(request)}
+
+
+@router.post(
+    "/{item_id}/revisions/{revision_id}/claims/confirm",
+    dependencies=[Depends(no_store)],
+)
+async def confirm_claim(
+    request: Request,
+    organization_id: UUID,
+    item_id: UUID,
+    revision_id: UUID,
+    command: ClaimConfirm,
+    session: Session,
+    principal: Authenticated,
+    _: Annotated[AuthorizationDecision, policy("content.approve", True)],
+) -> dict[str, object]:
+    """The reviewer vouches for one flagged claim; it is recorded as an operator-verified fact."""
+    revision = await service.confirm_claim(
+        session,
+        organization_id,
+        item_id,
+        revision_id,
+        command.claim_id,
+        principal.platform_user_id,
+        correlation_id=request_correlation_id(request),
+    )
+    return {"data": revision_row(revision), "meta": meta(request)}
 
 
 @router.get("/{item_id}/publications", dependencies=[Depends(no_store)])

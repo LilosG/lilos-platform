@@ -64,12 +64,18 @@ COMMERCIAL_KINDS = frozenset(
 )
 
 _KIND_TOKENS: tuple[tuple[PageKind, frozenset[str]], ...] = (
-    (PageKind.RESERVATION, frozenset({"reservations", "reservation", "reserve", "book", "booking"})),
+    (
+        PageKind.RESERVATION,
+        frozenset({"reservations", "reservation", "reserve", "book", "booking"}),
+    ),
     (PageKind.MENU, frozenset({"menu", "menus", "drinks", "food", "order", "catering"})),
     (PageKind.SERVICE, frozenset({"services", "service", "repair", "install", "installation"})),
     (PageKind.LOCATION, frozenset({"locations", "location", "areas", "service-areas", "visit"})),
     (PageKind.CONTACT, frozenset({"contact", "contact-us", "quote", "estimate"})),
-    (PageKind.CONTENT, frozenset({"blog", "blogs", "news", "guides", "guide", "articles", "posts"})),
+    (
+        PageKind.CONTENT,
+        frozenset({"blog", "blogs", "news", "guides", "guide", "articles", "posts"}),
+    ),
 )
 
 
@@ -115,6 +121,11 @@ def normalize_path(url: str, origin_host: str | None = None) -> str | None:
         return None
     path = re.sub(r"/{2,}", "/", path).casefold()
     return path if path == "/" else path.rstrip("/")
+
+
+def normalize_origin_host(origin: str) -> str | None:
+    host = re.sub(r"^https?://", "", origin.strip().casefold()).split("/")[0]
+    return host.removeprefix("www.") or None
 
 
 def classify_page_kind(path: str) -> PageKind:

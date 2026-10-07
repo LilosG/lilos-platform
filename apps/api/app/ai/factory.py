@@ -31,6 +31,7 @@ DIRECT_GENERATION_TASK_KEYS: frozenset[str] = frozenset(
     {
         "reviews.response_draft",
         "content.draft_revision",
+        "content.compose_plan",
         "gbp.generate_post",
     }
 )
@@ -180,6 +181,7 @@ def build_ai_gateway(settings: Settings | None = None) -> AIGateway:
         task_model_overrides=settings.ai_task_model_map(),
         task_max_output_tokens={
             "content.draft_revision": settings.ai_content_max_output_tokens,
+            "content.compose_plan": 2_500,
         },
         default_model=settings.ai_default_model,
         global_max_output_tokens=settings.ai_max_output_tokens,

@@ -38,6 +38,13 @@ router = APIRouter(
 operator = ContentOperatorService()
 
 
+class ComposeStateView(BaseModel):
+    status: Literal["writing", "failed"]
+    failure_code: str | None
+    prompt: str | None
+    workflow_run_id: UUID
+
+
 class WebsiteContentItem(BaseModel):
     id: UUID
     title: str
@@ -51,6 +58,8 @@ class WebsiteContentItem(BaseModel):
     publication_status: str | None
     publication_job_status: str | None
     technical_site_change: bool
+    word_count: int | None = None
+    compose: ComposeStateView | None = None
 
 
 class WebsiteWorkspace(BaseModel):
@@ -227,6 +236,7 @@ class ContentBriefView(BaseModel):
     target_reference: str
     approved_fact_revision_ids: list[UUID]
     status: str
+    source_prompt: str | None = None
 
 
 class ContentRevisionView(BaseModel):

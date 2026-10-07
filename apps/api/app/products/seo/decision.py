@@ -21,6 +21,8 @@ from apps.api.app.products.seo.models import (
 )
 
 VERSION = "seo_decision.v1"
+# A governed edit that adds a link from an existing page to a newly drafted Content piece.
+INBOUND_LINK_SOURCE = "content_inbound_link"
 GROWTH_TYPES = frozenset({"gsc_striking_distance", "gsc_low_ctr", "gsc_query_demand"})
 
 
@@ -101,6 +103,77 @@ def growth_handoff(
     }
 
 
+async def _inbound_link_decision(
+    session: AsyncSession,
+    organization_id: UUID,
+    opportunity: SEOOpportunity,
+    website: SEOWebsite,
+    source_ref: str,
+    evidence: dict[str, object],
+) -> dict[str, object]:
+    """Resolve an inbound-link opportunity against the Content revision that asks for it.
+
+    The evidence is a reference, never a claim: the revision must exist in this
+    organization and its content hash must still be the one the link was proposed for.
+    """
+    from apps.api.app.products.content.models import ContentRevision
+
+    try:
+        revision_id = UUID(str(evidence.get("content_revision_id")))
+    except ValueError as exc:
+        raise SEOEvidenceInvalidError(SEOLimitationCode.OBSERVATION_ID_INVALID) from exc
+    revision = await session.scalar(
+        select(ContentRevision).where(
+            ContentRevision.organization_id == organization_id,
+            ContentRevision.id == revision_id,
+        )
+    )
+    if revision is None:
+        raise SEOEvidenceInvalidError(SEOLimitationCode.SOURCE_RECORD_NOT_FOUND)
+    if evidence.get("content_hash") != revision.content_hash:
+        raise SEOEvidenceInvalidError(SEOLimitationCode.SOURCE_QUALITY_INVALID)
+    record_ref = f"content-revision:{revision.id}"
+    unavailable = {"availability": "unavailable", "limitation": "Not applicable to a link edit."}
+    return {
+        "contract_version": VERSION,
+        "organization_id": str(organization_id),
+        "website_id": str(website.id),
+        "location_id": str(opportunity.location_id) if opportunity.location_id else None,
+        "page_id": str(opportunity.page_id),
+        "page_mapping_state": "mapped",
+        "opportunity_id": str(opportunity.id),
+        "opportunity_version": opportunity.version,
+        "recommendation_class": recommendation_class(opportunity),
+        "source_versions": opportunity.source_versions,
+        "evidence_references": [source_ref, record_ref],
+        "source_evidence_fingerprint": _fingerprint(
+            {
+                "content_hash": revision.content_hash,
+                "target_url": evidence.get("target_url"),
+                "anchor": evidence.get("anchor"),
+            }
+        ),
+        "business_evidence_fingerprint": None,
+        "evidence_quality": "valid",
+        "evidence_freshness": str(revision.created_at),
+        "evidence_limitation": None,
+        "business_importance_state": "unavailable",
+        "business_importance_value": None,
+        "business_importance_version": None,
+        "opportunity_priority_score": opportunity.priority_score,
+        "opportunity_score_policy_version": opportunity.score_explanation.get(
+            "score_policy_version"
+        ),
+        "target_metric": None,
+        "passes": {
+            "access": unavailable,
+            "competition": unavailable,
+            "answer_engines": unavailable,
+            "conversion": unavailable,
+        },
+    }
+
+
 async def resolve_decision(
     session: AsyncSession,
     organization_id: UUID,
@@ -161,6 +234,10 @@ async def resolve_decision(
             )
         )
         record_ref = f"seo-search-observation:{record_id}"
+    elif source == INBOUND_LINK_SOURCE and opportunity.page_id is not None:
+        return await _inbound_link_decision(
+            session, organization_id, opportunity, website, source_ref, evidence
+        )
     elif source == "crawl" and opportunity.page_id is not None:
         observation = await session.scalar(
             select(SEOCrawlPageObservation)

@@ -1,9 +1,9 @@
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
-from apps.api.app.products.content.enums import ContentTargetKind
+from apps.api.app.products.content.enums import ComposeContentType, ContentTargetKind
 
 
 class GitHubConnectionCreate(BaseModel):
@@ -72,12 +72,32 @@ class BriefCreate(BaseModel):
     required_local_references: list[str] = Field(default_factory=list, max_length=100)
     source_evidence_references: list[str] = Field(default_factory=list, max_length=100)
     validation_requirements: dict[str, Any] = Field(default_factory=dict)
+    # The operator's own prompt, when this brief was composed from one.
+    source_prompt: str | None = Field(default=None, max_length=2000)
 
 
 class AIDraftCreate(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
     brief_id: UUID
     idempotency_key: str = Field(min_length=8, max_length=128)
+    # A reviewer's steer for this regeneration ("make it longer, add a game-day section").
+    # Audited with the execution; the quality floors and validators still apply to the result.
+    instructions: str | None = Field(default=None, max_length=2000)
+
+
+class ComposeCreate(BaseModel):
+    """One plain prompt in, a governed draft out. Hermes resolves everything unstated."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    website_id: UUID
+    prompt: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2000)]
+    content_type: ComposeContentType | None = None
+    idempotency_key: str = Field(min_length=8, max_length=128)
+
+
+class ClaimConfirm(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    claim_id: str = Field(min_length=1, max_length=64)
 
 
 class RevisionCreate(BaseModel):

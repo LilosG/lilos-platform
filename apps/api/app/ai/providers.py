@@ -20,6 +20,7 @@ from apps.api.app.ai.errors import AIProviderConfigurationError, AIProviderError
 from apps.api.app.products.content.link_validation import (
     InventoryPage,
     build_inventory,
+    extract_internal_links,
     validate_links,
 )
 
@@ -74,9 +75,7 @@ _PAGE_CONTENT_TYPES = frozenset(
         "location-page",
     }
 )
-_LISTICLE_CONTENT_TYPES = frozenset(
-    {"listicle", "list_post", "list-post", "roundup", "pillar"}
-)
+_LISTICLE_CONTENT_TYPES = frozenset({"listicle", "list_post", "list-post", "roundup", "pillar"})
 _LONGFORM_CONTENT_TYPES = frozenset(
     {"article", "blog", "blog_post", "blog-post", "guide", "local_guide", "local-guide"}
     | _LISTICLE_CONTENT_TYPES
@@ -250,6 +249,75 @@ def _link_inventory_for_validation(input_document: dict[str, Any]) -> list[Inven
         [row for row in rows if isinstance(row, dict)],
         origin_host=str(input_document.get("site_host") or "") or None,
     )
+
+
+QUALITY_CHECK_CODES: tuple[str, ...] = (
+    "article_too_thin",
+    "article_heading_depth_missing",
+    "article_sections_too_thin",
+    "article_internal_links_missing",
+    "article_internal_link_unverified",
+    "article_anchor_generic",
+    "article_anchor_stuffing",
+    "article_anchor_ambiguous",
+    "article_commercial_link_missing",
+    "article_faq_depth_missing",
+    "article_meta_description_missing",
+    "article_seo_title_missing",
+    "article_search_intent_headings_missing",
+    "article_repeated_paragraphs",
+    "article_duplicate_headings",
+)
+
+
+def check_article_quality(payload: dict[str, Any], input_document: dict[str, Any]) -> list[str]:
+    """Public entry to the deterministic long-form quality gate (typed failure codes)."""
+    return _validate_article_payload(payload, input_document)
+
+
+def article_quality_floor(content_type: object) -> dict[str, int] | None:
+    """The effective floors for a content type, or None when it has no long-form gate."""
+    return (
+        _article_quality_profile(content_type) if _is_article_content_type(content_type) else None
+    )
+
+
+def article_quality_summary(
+    payload: dict[str, Any], input_document: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Measured values against the floor plus every check's pass/fail, for the review screen."""
+    floor = article_quality_floor(input_document.get("content_type"))
+    if floor is None:
+        return None
+    draft = str(payload.get("draft") or "")
+    failing = set(_validate_article_payload(payload, input_document))
+    inventory = _link_inventory_for_validation(input_document)
+    links = extract_internal_links(
+        draft, origin_host=str(input_document.get("site_host") or "") or None
+    )
+    faqs = payload.get("faqs")
+    return {
+        "floor": floor,
+        "word_count": len(re.findall(r"\b[\w'-]+\b", draft)),
+        "heading_count": len(re.findall(r"(?m)^##\s+\S", draft)),
+        "internal_link_count": len({link.url for link in links}),
+        "faq_count": len(faqs) if isinstance(faqs, list) else 0,
+        "inventory_size": len(inventory),
+        "checks": [{"code": code, "passed": code not in failing} for code in QUALITY_CHECK_CODES],
+    }
+
+
+def _extract_json_object(content_text: str) -> dict[str, Any]:
+    text = strip_code_fence(content_text)
+    if not text:
+        raise DraftExtractionError("AI provider returned empty content")
+    try:
+        parsed = json.loads(text)
+    except (json.JSONDecodeError, ValueError):
+        raise DraftExtractionError("AI provider returned output that is not valid JSON") from None
+    if not isinstance(parsed, dict):
+        raise DraftExtractionError("AI provider returned output that is not a JSON object")
+    return parsed
 
 
 def _validate_article_payload(payload: dict[str, Any], input_document: dict[str, Any]) -> list[str]:
@@ -484,9 +552,14 @@ class OpenRouterProvider:
                     "service_areas",
                     "tags",
                     "category",
+                    "claims",
                 ):
                     if key in content_payload:
                         content_fields[key] = content_payload[key]
+            elif task_key == "content.compose_plan":
+                plan = _extract_json_object(content_text)
+                draft = json.dumps(plan, sort_keys=True)
+                content_fields["plan"] = plan
             else:
                 draft = extract_draft(content_text, subject="AI provider")
         except DraftExtractionError as error:
@@ -599,6 +672,48 @@ def _looks_like_review_response(draft: str) -> bool:
     return any(signal in normalized for signal in response_signals)
 
 
+def _build_compose_plan_prompt(input_document: dict[str, Any]) -> str:
+    """Ask for the structured plan a one-line operator prompt resolves to."""
+    facts = input_document.get("governed_facts") or []
+    scope = {
+        key: input_document.get(key)
+        for key in (
+            "location",
+            "existing_content",
+            "link_targets",
+            "knowledge",
+            "allowed_content_types",
+        )
+        if input_document.get(key)
+    }
+    forced_type = input_document.get("content_type")
+    return "\n".join(
+        [
+            "You plan one piece of local-SEO website content from an operator's short prompt.",
+            "Resolve the ambiguity using ONLY the client scope below; invent nothing.",
+            f"\nOPERATOR PROMPT:\n{input_document.get('source_prompt', '')}",
+            "\nAPPROVED BUSINESS FACTS:\n" + (_format_governed_facts(facts) if facts else "none"),
+            "\nCLIENT SCOPE (website pages, existing content, location):\n"
+            + json.dumps(scope, default=str),
+            (
+                f"\nThe operator fixed the content type to `{forced_type}`."
+                if forced_type
+                else "\nChoose the content type from allowed_content_types that best fits the "
+                "prompt (a 'listicle:' prompt is a listicle; 'write a blog' is a blog_post)."
+            ),
+            "\nReturn ONLY one JSON object with: `content_type`, `title` (under 70 characters), "
+            "`slug` (lowercase-hyphenated), `target_kind` (`new_page` unless the prompt asks to "
+            "rework an existing page listed in the scope, then `existing_page`), "
+            "`target_reference` (the proposed site path for a new page, or the existing page "
+            "path), `audience`, `intent`, `primary_topic`, `keywords` (3-8 search phrases), "
+            "`local_references` (places/neighbourhoods named in the prompt or scope), "
+            "`link_targets` (paths chosen only from link_targets in the scope, commercial "
+            "pages first) and `prompt_claims` (each factual statement about the business that "
+            "the PROMPT ITSELF makes, as a short sentence; never claims you inferred).",
+        ]
+    )
+
+
 def _build_prompt(task_key: str, input_document: dict[str, Any]) -> str:
     audience = str(input_document.get("audience", "general"))
     intent = str(input_document.get("intent", "inform"))
@@ -664,6 +779,9 @@ def _build_prompt(task_key: str, input_document: dict[str, Any]) -> str:
         parts.append("\nReturn ONLY a JSON object with the key 'draft'.")
         return "\n".join(parts)
 
+    if task_key == "content.compose_plan":
+        return _build_compose_plan_prompt(input_document)
+
     if task_key == "content.draft_revision":
         facts_section = _format_governed_facts(governed_facts) if governed_facts else ""
         knowledge = _content_knowledge_for_prompt(input_document.get("knowledge"))
@@ -715,6 +833,26 @@ def _build_prompt(task_key: str, input_document: dict[str, Any]) -> str:
                     "\nSOURCE EVIDENCE REFERENCES:\n"
                     + json.dumps(source_evidence_references, default=str)
                 )
+            link_targets = input_document.get("recommended_link_targets")
+            if isinstance(link_targets, list) and link_targets:
+                parts.append(
+                    "\nVERIFIED INTERNAL LINK TARGETS (the ONLY first-party URLs you may link to; "
+                    "each exists on the live site or in published content, and the commercial "
+                    "ones are the pages this topic should send readers to):\n"
+                    + json.dumps(link_targets, default=str)
+                )
+            source_prompt = str(input_document.get("source_prompt") or "").strip()
+            if source_prompt:
+                parts.append(
+                    "\nOPERATOR PROMPT (claims stated here are verified by the operator and may "
+                    f"be asserted):\n{source_prompt}"
+                )
+            reviewer_instructions = str(input_document.get("instructions") or "").strip()
+            if reviewer_instructions:
+                parts.append(
+                    "\nREVIEWER INSTRUCTIONS FOR THIS REVISION (follow them, but never relax "
+                    f"the quality contract below):\n{reviewer_instructions}"
+                )
             parts.extend(
                 [
                     "\nARTICLE QUALITY CONTRACT:",
@@ -751,9 +889,22 @@ def _build_prompt(task_key: str, input_document: dict[str, Any]) -> str:
                         "that the evidence does not establish."
                     ),
                     (
-                        f"- Include natural internal markdown links to up to "
-                        f"{profile['minimum_internal_links']} relevant first-party URLs present in "
-                        "SOURCE-BACKED WEBSITE AND LOCAL KNOWLEDGE. Never invent an internal URL."
+                        f"- Include at least {profile['minimum_internal_links']} natural internal "
+                        "markdown links to distinct first-party URLs from the verified link "
+                        "targets or SOURCE-BACKED WEBSITE AND LOCAL KNOWLEDGE, including the "
+                        "relevant service, menu, location or reservation page. Never invent an "
+                        "internal URL. Every anchor must be descriptive (two or more words naming "
+                        "the destination), distinct from every other anchor in the piece, and "
+                        "never generic ('click here', 'learn more'). Never link the same URL "
+                        "more than twice."
+                    ),
+                    (
+                        "- Assert only claims backed by APPROVED BUSINESS FACTS or the OPERATOR "
+                        "PROMPT. Invent no years, awards, menu items, prices, addresses, phone "
+                        "numbers or founding details. List every factual claim about the "
+                        "business in `claims` as {text, basis}, where `text` is the sentence "
+                        "verbatim from `draft` and `basis` is `approved_fact`, `operator_prompt` "
+                        "or `needs_confirmation` (anything you could not back)."
                     ),
                     (
                         "- Use neighborhood, city, street, landmark, menu, service, hours, and "
@@ -778,7 +929,8 @@ def _build_prompt(task_key: str, input_document: dict[str, Any]) -> str:
                     (
                         "\nReturn ONLY one JSON object with these keys: `draft`, "
                         "`meta_description`, `seo_title`, `faqs`, `related_services`, "
-                        "`service_areas`, `tags`, and `category`. `meta_description` must be "
+                        "`service_areas`, `tags`, `category`, and `claims`. "
+                        "`meta_description` must be "
                         "one useful sentence under 155 characters. `seo_title` must be under 60 "
                         "characters. Do not include frontmatter inside `draft`."
                     ),
